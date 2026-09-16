@@ -4,7 +4,7 @@
  * Every listener calls a named action — nothing here changes state directly, and
  * nothing here decides what a gesture means. That lives in `model/`.
  */
-import { state, actions, subscribe, onLog } from '../store.js';
+import { state, actions, subscribe, onLog, MODES } from '../store.js';
 import { $ } from './dom.js';
 import { renderGrid, computeLayout } from './grid.js';
 import { renderPicker, wirePickerDrag } from './picker.js';
@@ -14,6 +14,8 @@ import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
 import { renderFrameViewer, wireFrameViewer } from './frame-viewer.js';
+import { MARK_ACCEPT, MARK_EXCEPT } from '../model/modes.js';
+import { normalizeRect, idsInRect } from '../model/drag-selection.js';
 import {
   closeMenus, isMenuOpenFor,
   sortMenu
@@ -62,10 +64,173 @@ let lastTap = { id: null, at: 0 };
  */
 let lastPointerType = 'mouse';
 
-function wireGrid() {
-  $('#grid').addEventListener('pointerdown', (e) => {
-    lastPointerType = e.pointerType || 'mouse';
+const DRAG_THRESHOLD = 6;
+const TOUCH_HOLD_MS = 450;
+let gridDrag = null;
+let touchChoice = null;
+let suppressClickUntil = 0;
+let suppressContextUntil = 0;
+
+function clearGridDrag() {
+  if (!gridDrag) return;
+  const drag = gridDrag;
+  gridDrag = null;
+  clearTimeout(drag.holdTimer);
+  drag.band.remove();
+  drag.grid.classList.remove('drag-selecting', 'drag-accept');
+  drag.grid.querySelectorAll('.drag-preview').forEach((tile) => tile.classList.remove('drag-preview'));
+  if (drag.grid.hasPointerCapture?.(drag.pointerId)) {
+    try { drag.grid.releasePointerCapture(drag.pointerId); } catch (_) { /* already lost */ }
+  }
+}
+
+function suppressGridDragFollowup(drag) {
+  if (drag.touch && drag.armed) {
+    suppressClickUntil = Date.now() + 500;
+    suppressContextUntil = Date.now() + 500;
+    return;
+  }
+  if (!drag.moved) return;
+  if (drag.kind === MARK_ACCEPT) suppressContextUntil = Date.now() + 500;
+  else suppressClickUntil = Date.now() + 500;
+}
+
+function cancelGridDrag() {
+  if (!gridDrag) return;
+  suppressGridDragFollowup(gridDrag);
+  clearGridDrag();
+}
+
+function updateGridDrag(e) {
+  const drag = gridDrag;
+  if (!drag || e.pointerId !== drag.pointerId) return false;
+  const gridRect = drag.grid.getBoundingClientRect();
+  if (e.clientX < gridRect.left || e.clientX > gridRect.right
+      || e.clientY < gridRect.top || e.clientY > gridRect.bottom) {
+    cancelGridDrag();
+    return false;
+  }
+
+  const rect = normalizeRect(drag.start, { x: e.clientX, y: e.clientY });
+  if (drag.touch && !drag.armed) {
+    if (Math.hypot(rect.width, rect.height) >= DRAG_THRESHOLD) cancelGridDrag();
+    return false;
+  }
+  if (!drag.moved && Math.hypot(rect.width, rect.height) < DRAG_THRESHOLD) return false;
+  /* Capturing on pointerdown retargets an ordinary click to the grid, losing its tile. */
+  if (!drag.moved) drag.grid.setPointerCapture?.(e.pointerId);
+  drag.moved = true;
+  e.preventDefault();
+
+  const fieldRect = drag.field.getBoundingClientRect();
+  drag.band.style.left = `${rect.left - fieldRect.left + drag.field.scrollLeft}px`;
+  drag.band.style.top = `${rect.top - fieldRect.top + drag.field.scrollTop}px`;
+  drag.band.style.width = `${rect.width}px`;
+  drag.band.style.height = `${rect.height}px`;
+  drag.band.hidden = false;
+
+  const tiles = [...drag.grid.querySelectorAll('.tile[data-id]')].map((tile) => ({
+    id: Number(tile.dataset.id), tile, rect: tile.getBoundingClientRect()
+  }));
+  drag.ids = idsInRect(rect, tiles);
+  const selected = new Set(drag.ids);
+  for (const { id, tile } of tiles) tile.classList.toggle('drag-preview', selected.has(id));
+  return true;
+}
+
+function closeTouchChoice() {
+  touchChoice?.remove();
+  touchChoice = null;
+}
+
+function showTouchChoice(ids) {
+  closeTouchChoice();
+  const mode = state.mode;
+  const definition = MODES[mode];
+  const shade = document.createElement('div');
+  shade.className = 'touch-selection-choice';
+  shade.innerHTML = `<section role="dialog" aria-modal="true" aria-label="Mark selected observations">
+    <p>${ids.length} selected</p>
+    <div><button class="btn" data-selection-kind="except">${definition.verb}</button>
+    ${definition.accepts ? `<button class="btn" data-selection-kind="accept">${mode === 'training' ? 'Promote' : 'Mark Reviewed'}</button>` : ''}
+    <button class="btn" data-selection-cancel>Cancel</button></div></section>`;
+  shade.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const kind = e.target.closest('[data-selection-kind]')?.dataset.selectionKind;
+    if (kind) {
+      closeTouchChoice();
+      if (state.mode === mode) actions.dragMark(ids, kind);
+    } else if (e.target === shade || e.target.closest('[data-selection-cancel]')) {
+      closeTouchChoice();
+    }
   });
+  document.body.appendChild(shade);
+  shade.selectionContext = { mode, page: state.page, ids };
+  touchChoice = shade;
+}
+
+function wireGrid() {
+  const grid = $('#grid');
+  grid.addEventListener('pointerdown', (e) => {
+    lastPointerType = e.pointerType || 'mouse';
+    suppressClickUntil = 0;
+    suppressContextUntil = 0;
+    if (gridDrag) { cancelGridDrag(); return; }
+    const touch = lastPointerType === 'touch';
+    if (!touch && (lastPointerType !== 'mouse' || (e.button !== 0 && e.button !== 2))) return;
+    if (state.picker || e.target.closest('[data-badge],[data-changed],[data-act],a,input,select,textarea')) return;
+    if (!e.target.closest('.tile') && e.target !== grid) return;
+
+    /* Stop native image dragging before Chromium can cancel our pointer gesture. */
+    if (!touch) e.preventDefault();
+    const field = $('#field');
+    const band = document.createElement('div');
+    const kind = e.button === 2 ? MARK_ACCEPT : MARK_EXCEPT;
+    band.className = 'drag-select-band';
+    band.dataset.kind = kind;
+    band.hidden = true;
+    field.appendChild(band);
+    gridDrag = {
+      grid, field, band, kind, touch, armed: !touch, pointerId: e.pointerId,
+      start: { x: e.clientX, y: e.clientY }, ids: [], moved: false
+    };
+    if (touch) {
+      const pending = gridDrag;
+      pending.holdTimer = setTimeout(() => {
+        if (gridDrag !== pending) return;
+        pending.armed = true;
+        lastTap = { id: null, at: 0 };
+        grid.classList.add('drag-selecting');
+      }, TOUCH_HOLD_MS);
+    } else grid.classList.add('drag-selecting');
+    grid.classList.toggle('drag-accept', kind === MARK_ACCEPT);
+  });
+
+  grid.addEventListener('pointermove', updateGridDrag);
+  grid.addEventListener('pointerup', (e) => {
+    if (!gridDrag || e.pointerId !== gridDrag.pointerId) return;
+    updateGridDrag(e);
+    if (!gridDrag) return;
+    const { moved, ids, kind, touch } = gridDrag;
+    suppressGridDragFollowup(gridDrag);
+    clearGridDrag();
+    if (moved && ids.length) {
+      if (touch) showTouchChoice(ids);
+      else actions.dragMark(ids, kind);
+    }
+  });
+  /* Prevent native panning only after the hold has armed selection. An immediate swipe
+     stays entirely native; changing touch-action mid-gesture would not stop that pan. */
+  grid.addEventListener('touchmove', (e) => {
+    if (gridDrag?.touch && gridDrag.armed) e.preventDefault();
+  }, { passive: false });
+  grid.addEventListener('pointercancel', cancelGridDrag);
+  grid.addEventListener('lostpointercapture', (e) => {
+    /* Touch starts implicitly captured by the tile. Transferring it to the grid emits
+       a bubbling lost event from that tile; only losing the grid's capture cancels. */
+    if (e.target === grid) cancelGridDrag();
+  });
+  grid.addEventListener('dragstart', (e) => { if (gridDrag) e.preventDefault(); });
 
   /**
    * The accept gesture on a pointer: **right click** (#126 R2).
@@ -75,15 +240,18 @@ function wireGrid() {
    * appearing on the gap between tiles while the gesture means something else on the tiles
    * themselves is worse than not having one at all.
    */
-  $('#grid').addEventListener('contextmenu', (e) => {
+  grid.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    if (gridDrag?.touch) return;
+    if (Date.now() < suppressContextUntil) return;
     const tileEl = e.target.closest('.tile');
     if (!tileEl) return;
     if (state.picker) { actions.closePicker(); return; }
     actions.acceptMark(Number(tileEl.dataset.id));
   });
 
-  $('#grid').addEventListener('click', (e) => {
+  grid.addEventListener('click', (e) => {
+    if (Date.now() < suppressClickUntil) { e.stopPropagation(); return; }
     /* The badge opens the panel; the tile itself marks. Marking must stay a single
        uninterrupted gesture, so opening the panel is a separate target. */
     const badge = e.target.closest('[data-badge]');
@@ -177,6 +345,8 @@ function wireDismissal() {
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (touchChoice) { e.preventDefault(); closeTouchChoice(); return; }
+      if (gridDrag) { e.preventDefault(); cancelGridDrag(); return; }
       if (state.frameViewer) { actions.closeFullFrame(); return; }
       actions.closePicker(); closeMenus(); return;
     }
@@ -277,6 +447,13 @@ export function mount() {
      field settles after layout, and setPageSize no-ops when nothing changed, so this
      converges in one extra pass rather than looping. */
   subscribe(() => {
+    if (touchChoice) {
+      const context = touchChoice.selectionContext;
+      if (context.mode !== state.mode || context.page !== state.page
+          || context.ids.some((id) => !state.rows.some((row) => row.observation_id === id))) {
+        closeTouchChoice();
+      }
+    }
     renderChrome();
     renderFailure();
     renderGrid();
