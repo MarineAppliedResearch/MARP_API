@@ -187,7 +187,7 @@ export const state = {
    * instead, so the isolation holds and the work survives.
    */
   parked: new Map(),       // mode -> { pageMembers, committedPages, outcomes }
-  picker: null,            // { id, correcting }
+  picker: null,            // { id, correcting, position?: { x, y } }
   frameViewer: null,       // { id, overlay, zoom }
   lastCommit: null,
   /* What the commit button is doing. A page commit is the one action here that can
@@ -1462,6 +1462,14 @@ export const actions = {
     }
     state.picker = { id, correcting: true };
     fire('openCorrection', { id });
+    notify();
+  },
+
+  /** Remember one completed drag while this observation's details remain open. */
+  movePicker(id, position) {
+    if (!state.picker || state.picker.id !== id) return;
+    state.picker.position = { x: position.x, y: position.y };
+    fire('movePicker', { id, position: state.picker.position });
     notify();
   },
 

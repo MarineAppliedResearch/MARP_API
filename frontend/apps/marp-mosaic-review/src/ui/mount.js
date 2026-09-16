@@ -7,7 +7,7 @@
 import { state, actions, subscribe, onLog } from '../store.js';
 import { $ } from './dom.js';
 import { renderGrid, computeLayout } from './grid.js';
-import { renderPicker } from './picker.js';
+import { renderPicker, wirePickerDrag } from './picker.js';
 import { renderConfirm, wireConfirm } from './confirm.js';
 import { renderRail, wireRail } from './rail.js';
 import { resolveKey } from '../model/keys.js';
@@ -268,6 +268,7 @@ export function mount() {
   wireMenus();
   wireConfirm();
   wireFrameViewer();
+  wirePickerDrag();
   wireRail();
   wireDismissal();
   wireLayout();
