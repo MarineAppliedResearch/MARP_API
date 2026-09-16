@@ -74,4 +74,27 @@ The change has no backend, route, storage, migration, Jellyfin, or scientific-da
 
 ## Results
 
-<!-- Appended only during the approved G4 run. -->
+- **Current base — PASS.** `git fetch origin` followed by merging `origin/develop` left
+  this branch zero commits behind `develop`. The only conflicts were the two temporary
+  `.marp` records, resolved for issue #183; popup code merged cleanly.
+- **Disposable database — PASS after two recorded startup failures.** The first
+  `npm run testing-db` failed with `connect ECONNREFUSED 127.0.0.1:5460` because this
+  workspace's PostgreSQL was stopped. The first database start then reached PostgreSQL
+  before it was ready and reported `the database system is starting up`; after the server
+  became ready, rerunning `npm run testing-db` restored all manifest counts, copied 2,079
+  thumbnails, applied every migration through `20260914224500`, and provisioned both
+  reviewer and administrator logins. No production database was contacted.
+- **Spec and diff checks — PASS.** `git diff --check` reported no errors. `marp spec check`
+  accepted all five answered assumptions and all 11 requirements at the verify gate.
+- **Focused unit tier — PASS.** `npm run test:app:mosaic-review:unit` parsed 77 files and
+  passed 292 of 292 tests with zero failures, cancellations, skips, or todos. This includes
+  all four named #183 pointer-delta, edge-clamping, oversized-panel, and remembered-position
+  geometry tests.
+- **Focused real-browser tier — PASS.** `npm run test:app:mosaic-review:api --
+  popup-drag.spec.mjs` passed both projects against a real temporary API and disposable
+  PostgreSQL: desktop mouse (`api`) and Pixel-sized touch (`api-phone`). Both exercised
+  movement, rerender persistence, focus, review-state isolation, resize clamping, reset,
+  and Escape.
+- **Human interaction — PENDING.** The isolated issue #183 API will remain running on the
+  user-selected manual-test port. A person must still judge whether the grip looks
+  professional and whether mouse and phone movement feel natural.
