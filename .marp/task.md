@@ -125,4 +125,5 @@ migration, production database, or live service is required.
   cancellation, visuals, compact imagery-skip acknowledgement, and focused model/browser
   tests are implemented. Hold-then-drag touch selection and the release-time science/training
   choice are implemented. Fast parsing/model checks and the focused desktop/phone browser
-  evidence passed. The actual iPhone behavior remains for the human to confirm.
+  evidence passed. The human confirmed the actual phone behavior works and approved PR,
+  merge, and closing issue #136.

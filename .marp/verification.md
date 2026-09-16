@@ -187,5 +187,7 @@ fail 0
 skipped 0
 ```
 
-Actual iPhone Safari remains a manual confirmation, not a claimed automated result. The
-assigned server remains running from this checkout on the existing testing database.
+Actual phone confirmation — PASS. The human tested the running application and reported
+"It works!", then approved opening the PR, merging, and closing issue #136. This is manual
+evidence, not a claimed automated Safari result. The assigned server remains running from
+this checkout on the existing testing database.
