@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#192
 repos: [MARP_API]
-status: design
+status: implement
 needs: []
 ---
 
@@ -40,10 +40,9 @@ without the underlying page stealing the gesture.
 
 ## Open assumptions
 
-- [ ] **A1 · product/UI · blocking** — On a narrow screen whose visible height is too short
-  to show both the decorative diver panel and a useful portion of the form, should the
-  decorative panel disappear so sign-in controls get the space, while remaining unchanged
-  on ordinary phones?
+- [x] **A1 · product/UI · blocking** — answered 2026-09-15: hide the decorative diver panel
+  only on narrow, genuinely short viewports so sign-in controls get the space; keep it
+  unchanged on ordinary phones.
 - [x] **A2 · behavioural · blocking** — answered 2026-09-15 by #192: vertical scrolling
   belongs to the modal or its content, while the underlying landing page remains fixed.
 - [x] **A3 · architectural · blocking** — answered 2026-09-15 by the existing entry-app
@@ -57,6 +56,8 @@ without the underlying page stealing the gesture.
   path when height contracts.
 - **2026-09-15** — Cover the defect at the entry app's Playwright render tier because markup
   and unit checks cannot observe clipped controls, internal scrolling, or background motion.
+- **2026-09-15** — Hide the decorative diver panel only when both phone width and short
+  height apply; usability wins there without changing the ordinary-phone composition.
 
 ## Plan
 
@@ -86,7 +87,8 @@ or production authentication is required because the login response is intercept
 
 ## Status
 
-- **Gate:** design; implementation blocked on A1
+- **Gate:** implementing
 - **Notes:** The current dialog is viewport-capped but `overflow: hidden`; its mobile stacked
   layout can exceed that cap while the nominal content scroller has no constrained height.
-  No implementation has begun. The port-3002 issue #183 server remains untouched.
+  A1 is settled and implementation may begin. The port-3002 issue #183 server remains
+  untouched.
