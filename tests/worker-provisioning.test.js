@@ -17,10 +17,19 @@ let activationId;
 let jobId;
 let attemptId;
 let workerAppExisted = true;
+let workerAppBefore;
 
 function workerPost(path) {
     return request(app).post(path).set('Authorization', `Bearer ${global.workerCredential}`);
 }
+
+beforeAll(async () => {
+    const workerApp = await db.service_clients.findOne({
+        where: { name: 'MARP Inference Workers' },
+    });
+    workerAppExisted = Boolean(workerApp);
+    workerAppBefore = workerApp?.get({ plain: true });
+});
 
 afterAll(async () => {
     if (attemptId) await db.gpu_job_attempts.destroy({ where: { id: attemptId } });
@@ -37,6 +46,17 @@ afterAll(async () => {
     if (releaseId) await db.worker_releases.destroy({ where: { id: releaseId } });
     if (!workerAppExisted) {
         await db.service_clients.destroy({ where: { name: 'MARP Inference Workers' } });
+    } else if (workerAppBefore) {
+        await db.service_clients.update({
+            description: workerAppBefore.description,
+            status: workerAppBefore.status,
+            created_by_user_id: workerAppBefore.created_by_user_id,
+            last_used_at: workerAppBefore.last_used_at,
+            updatedAt: workerAppBefore.updatedAt,
+        }, {
+            where: { service_client_id: workerAppBefore.service_client_id },
+            silent: true,
+        });
     }
     delete global.workerCredential;
 });
@@ -90,9 +110,6 @@ describe('worker activation and operator-selected updates', () => {
     });
 
     it('binds a revocable credential to one worker and keeps failed updates terminal', async () => {
-        workerAppExisted = Boolean(await db.service_clients.findOne({
-            where: { name: 'MARP Inference Workers' },
-        }));
         const code = await global.api
             .post('/api/v2/gpu/worker-activation-codes')
             .send({ label: `jest-${runId}`, ttl_minutes: 10 });

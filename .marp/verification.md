@@ -41,7 +41,7 @@ watch window. Its worker row, attempt, events, and result are inspected through 
 
 ## Results
 
-- **Focused API group — PASS.** `npm run test:gpu`: 6 suites and 109 tests passed
+- **Focused API group — PASS.** `npm run test:gpu`: 7 suites and 111 tests passed
   against the harness disposable PostgreSQL database.
 - **Real activation — PASS.** The Windows installer enrolled laptop worker 56 and a later
   installation reused that worker's protected machine credential rather than creating a

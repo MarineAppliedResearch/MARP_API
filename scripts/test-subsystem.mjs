@@ -40,6 +40,7 @@ const SUBSYSTEMS = {
             'gpu-video-resolution',
             'gpu-playback-reporting',
             'gpu-observation-ingest',
+            'worker-provisioning',
         ],
     },
     mosaic: {
