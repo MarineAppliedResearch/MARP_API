@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#136
 repos: [MARP_API]
-status: design
+status: implement
 needs: []
 ---
 
@@ -55,16 +55,13 @@ Commit Marked workflow instead of clicking dozens of tiles individually.
 - [x] **A2 · behavioural · blocking** — answered 2026-09-15 by “it marks all those”: a drag
   is additive and sets one kind; overlapping an existing same-kind mark leaves it marked
   rather than toggling it off.
-- [ ] **A3 · product/UI · blocking** — A right drag crosses tiles with missing/unusable
-  imagery, which cannot legally be accepted. Recommendation: accept every eligible tile,
-  skip the ineligible tiles, and show one compact summary with the skipped count rather than
-  thirty simultaneous per-tile refusal messages. Is that the intended behavior?
-- [ ] **A4 · behavioural · blocking** — A left drag crosses a tile already committed as
-  reviewed/promoted. The later #135 behavior makes a single left click stage “taking back”
-  first, so forcing an exception mark would bypass that deliberate two-step workflow.
-  Recommendation: preserve #135 and apply the existing gesture semantics per tile, allowing
-  such rows to stage a take-back while undecided rows receive the exception mark. Should the
-  drag preserve that rule, or force every touched tile directly to the requested mark?
+- [x] **A3 · product/UI · blocking** — answered 2026-09-15: a right drag accepts every
+  eligible tile, skips tiles with missing/unusable imagery, and shows one compact skipped
+  count rather than simultaneous per-tile refusal messages.
+- [x] **A4 · behavioural · blocking** — answered 2026-09-15 against the recommendation:
+  drag marking must never stage “Taking Back.” It directly stages the requested mark on
+  every eligible touched tile, including a tile already committed as reviewed/promoted.
+  Taking Back remains exclusive to the existing single-click gesture.
 - [x] **A5 · product/UI · blocking** — answered by the explicit left/right mouse-button
   request and the existing phone contract: rectangle selection is mouse-only. Touch keeps
   scrolling, tap marking, and double-tap acceptance.
@@ -79,18 +76,22 @@ Commit Marked workflow instead of clicking dozens of tiles individually.
   to UI wiring; the store applies the settled group exactly once.
 - **2026-09-15** — Use a small movement threshold to distinguish a click from a drag, and
   suppress the browser's follow-up click/context-menu only after the threshold is crossed.
+- **2026-09-15** — A drag sets marks directly and never routes through the single-click
+  take-back rule. A later Commit Marked may replace the recorded decision; the drag itself
+  still writes nothing.
+- **2026-09-15** — A right drag partially succeeds across missing imagery: usable tiles are
+  marked accepted and one group summary reports how many unusable tiles were skipped.
 
 ## Plan
 
-1. Settle the missing-imagery and previously committed-decision behavior in A3–A4.
-2. Add pure rectangle normalization, intersection, and bulk-mark planning rules.
-3. Add one store action that applies the planned ids, touched/take-back state, refusals, log
+1. Add pure rectangle normalization, intersection, and bulk-mark planning rules.
+2. Add one store action that applies the planned ids, touched state, refusal summary, log
    entry, and notification as a single transaction.
-4. Wire mouse pointer capture, movement threshold, prospective-tile preview, release,
+3. Wire mouse pointer capture, movement threshold, prospective-tile preview, release,
    cancellation, and suppression of the follow-up click/context menu.
-5. Style the selection band and preview so they remain legible across all Mosaic modes.
-6. Add focused unit and API-backed desktop/phone browser coverage.
-7. Write the G3 verification plan and stop for human review before running it.
+4. Style the selection band and preview so they remain legible across all Mosaic modes.
+5. Add focused unit and API-backed desktop/phone browser coverage.
+6. Write the G3 verification plan and stop for human review before running it.
 
 ## Acceptance criteria
 
@@ -110,7 +111,8 @@ walkthrough, migration, production database, or live service is required.
 
 ## Status
 
-- **Gate:** design; implementation blocked on A3–A4
+- **Gate:** design settled; ready to implement
 - **Notes:** Issue #136 and referenced decisions #68, #126, and #135 were reviewed. Current
   left/right gestures, mark kinds, touched state, take-backs, imagery refusal, and selective
-  commit already provide the vocabulary and write path. No implementation has begun.
+  commit already provide the vocabulary and write path. All six assumptions are answered;
+  no implementation has begun.
