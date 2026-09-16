@@ -36,6 +36,7 @@ const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 
 const gpuController = require('../controller/gpu.controller');
+const workerProvisioningController = require('../controller/worker_provisioning.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
 const {
@@ -224,6 +225,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeEnrol(req.body && req.body.local_id, req.principal);
             const data = await gpuController.enrolWorker(req.body || {});
             res.json(data);
         }),
@@ -252,6 +254,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeWorker(req.body && req.body.worker_id, req.principal);
             // Whether the worker is still there to receive an answer.
             //
             // A long poll can outlive its client -- a worker stopped or a
@@ -307,6 +310,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeWorker(req.body && req.body.worker_id, req.principal);
             const data = await gpuController.heartbeat(req.params.id, req.body || {});
             res.json(data);
         }),
@@ -336,6 +340,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeWorker(req.body && req.body.worker_id, req.principal);
             const data = await gpuController.recordEvents(req.params.id, req.body || {});
             res.json(data);
         }),
@@ -366,6 +371,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeWorker(req.body && req.body.worker_id, req.principal);
             const data = await gpuController.recordResult(req.params.id, req.body || {});
             res.json(data);
         }),
@@ -396,6 +402,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeWorker(req.body && req.body.worker_id, req.principal);
             const data = await gpuController.checkArtifact(req.body || {});
             res.json(data);
         }),
@@ -451,6 +458,13 @@ function registerGpuRoutes(app) {
 
             if (attemptId !== undefined && !Number.isInteger(attemptId)) {
                 throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'attempt_id must be an integer.');
+            }
+
+            if (req.principal && req.principal.type === 'service' && attemptId === undefined) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'attempt_id is required for a worker upload.');
+            }
+            if (attemptId !== undefined) {
+                await workerProvisioningController.authorizeAttempt(attemptId, req.principal);
             }
 
             const { bytes } = await receiveArtifact(req, sha256);

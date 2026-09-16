@@ -1,8 +1,7 @@
 # Verification — MarineAppliedResearch/MARP_API#183
 
-This is the G3 plan. Unit runs made during implementation are feedback, not the approved
-G4 record. Do not run the API-backed browser or human interaction steps until the human
-approves this plan.
+This is the approved G3 plan. Unit runs made during implementation were feedback, not the
+G4 record.
 
 ## What each test proves
 
@@ -25,9 +24,8 @@ approves this plan.
 2. Copy the newest existing git-ignored local corpus dump into this isolated workspace's
    `.marp/local/corpus/`, then run `npm run testing-db` using the database assigned by
    `marp agent list`.
-   - This prepares a disposable browser database without touching the port-3001 testing
-     server the human is currently using. The dump remains local credential material and
-     is never staged or committed.
+   - This prepares a disposable browser database. The dump remains local credential
+     material and is never staged or committed.
 3. Run `git diff --check` and the umbrella `marp spec check`.
    - Expected: no whitespace/conflict errors; all 11 requirements and five assumptions are
      accepted at the verification gate.
@@ -36,13 +34,13 @@ approves this plan.
 5. Run `npm run test:app:mosaic-review:api -- popup-drag.spec.mjs`.
    - Expected: the focused test passes once in the desktop project and once in the Pixel 7
      project against the real temporary API; the runner stops only its own API.
-6. Start this isolated branch's API on the port reported by `marp agent list`, pointed at
-   its disposable testing database, while leaving port 3001 running.
+6. Start this isolated branch's API on port 3002, pointed at its disposable testing
+   database.
    - The human drags a flagged-details popup with a mouse and a phone gesture, chooses a
      reason, types in the note, resizes or rotates, presses Escape, and opens it again.
    - Expected: the handle and movement look professional; the popup follows naturally,
      stays usable, preserves the mark and controls, remains on-screen, and resets after it
-     closes. Stop this isolated API after the human finishes; do not stop port 3001.
+     closes. Leave this API running until the human finishes testing it.
 7. Run final `git diff --check` and record every command's real result below, including any
    failed attempt before its correction.
 

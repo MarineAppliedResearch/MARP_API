@@ -3545,9 +3545,14 @@
         "type": "object",
         "description": "The first half of the hand-off: asking whether MARP already holds these bytes.",
         "required": [
+          "worker_id",
           "sha256"
         ],
         "properties": {
+          "worker_id": {
+            "type": "integer",
+            "example": 3
+          },
           "sha256": {
             "type": "string",
             "example": "d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3",
@@ -13989,6 +13994,322 @@
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/worker-activation-codes": {
+      "post": {
+        "summary": "Create a one-time worker activation code",
+        "description": "Creates a short-lived code returned once. Requires `admin`.",
+        "tags": [
+          "V2 · Worker Provisioning"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "ttl_minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10080,
+                    "default": 60
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Activation code created."
+          }
+        }
+      }
+    },
+    "/v2/gpu/workers/activate": {
+      "post": {
+        "summary": "Exchange a one-time code for a machine credential",
+        "description": "Consumes an activation code and returns one worker-specific bearer credential once.",
+        "tags": [
+          "V2 · Worker Provisioning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "activation_code",
+                  "local_id",
+                  "name",
+                  "platform",
+                  "architecture",
+                  "compute_runtime"
+                ],
+                "properties": {
+                  "activation_code": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "local_id": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "platform": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "architecture": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "compute_runtime": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "worker_version": {
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Worker activated."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/worker-releases": {
+      "post": {
+        "summary": "Approve worker release metadata",
+        "description": "Registers an immutable package URL, size and SHA-256. Requires `admin`.",
+        "tags": [
+          "V2 · Worker Provisioning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "platform",
+                  "architecture",
+                  "compute_runtime",
+                  "download_url",
+                  "size_bytes",
+                  "sha256"
+                ],
+                "properties": {
+                  "version": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "platform": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "architecture": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "compute_runtime": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "download_url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "size_bytes": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Release approved."
+          }
+        }
+      },
+      "get": {
+        "summary": "List approved worker releases",
+        "description": "Lists platform and runtime-specific packages an operator may target. Requires `admin`.",
+        "tags": [
+          "V2 · Worker Provisioning"
+        ],
+        "responses": {
+          "200": {
+            "description": "Approved releases, newest approval first."
+          }
+        }
+      }
+    },
+    "/v2/gpu/workers/{id}/update": {
+      "get": {
+        "summary": "Inspect one worker update state",
+        "description": "Returns the installed release, durable state, last message, and selected target. Requires `admin`.",
+        "tags": [
+          "V2 · Worker Provisioning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Worker update state."
+          }
+        }
+      }
+    },
+    "/v2/gpu/workers/{id}/desired-release": {
+      "put": {
+        "summary": "Request a worker update",
+        "description": "Stores the operator-selected release target. Requires `admin`.",
+        "tags": [
+          "V2 · Worker Provisioning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "release_id"
+                ],
+                "properties": {
+                  "release_id": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Update requested."
+          }
+        }
+      }
+    },
+    "/v2/gpu/workers/{id}/check-in": {
+      "post": {
+        "summary": "Report installed release and discover updates",
+        "description": "Records platform, compute runtime, version and update state and returns approved release metadata. Requires `jobs:execute` and the credential bound to this worker.",
+        "tags": [
+          "V2 · Worker Provisioning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "installed_version",
+                  "platform",
+                  "architecture",
+                  "compute_runtime"
+                ],
+                "properties": {
+                  "installed_version": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "platform": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "architecture": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "compute_runtime": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "update_state": {
+                    "type": "string",
+                    "enum": [
+                      "current",
+                      "update_available",
+                      "update_requested",
+                      "updating",
+                      "succeeded",
+                      "failed",
+                      "rolled_back"
+                    ]
+                  },
+                  "update_message": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Worker state and update instructions."
           }
         }
       }

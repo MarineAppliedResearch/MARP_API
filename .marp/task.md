@@ -90,5 +90,5 @@ API-backed browser file, and the supervised interaction check; no walkthrough is
 
 - **Gate:** verifying
 - **Notes:** Geometry, remembered picker position, pointer wiring, the visible handle, and
-  focused unit/browser coverage are implemented. The G3 plan awaits human approval before
-  its browser run. No database, API, backend, migration, or live-Jellyfin work is in scope.
+  focused unit/browser coverage are implemented. The approved G4 verification is in
+  progress. No database, API, backend, migration, or live-Jellyfin work is in scope.
