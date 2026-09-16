@@ -18,6 +18,7 @@ import { toQuery, fromQuery } from './model/query-url.js';
 import { plan } from './model/schedule.js';
 import { createCache, keyFor } from './model/cache.js';
 import { clampZoom } from './model/frame-viewer.js';
+import { setMarks } from './model/drag-selection.js';
 
 export { MODES };
 
@@ -213,7 +214,9 @@ export const state = {
    * It is an acknowledgement rather than a state, so it fades the way the commit tick
    * does. One at a time: a second refusal replaces the first.
    */
-  refused: null            // null | { id, reason }
+  refused: null,           // null | { id, reason }
+  /* One acknowledgement for a whole drag, never one refusal painted on every tile. */
+  dragSummary: null        // null | { kind, applied, skipped }
 };
 
 /* ---------------------------------------------------------------- plumbing */
@@ -253,6 +256,15 @@ function clearRefusal(after = 2600) {
   clearTimeout(refusalTimer);
   refusalTimer = setTimeout(() => {
     state.refused = null;
+    notify();
+  }, after);
+}
+
+let dragSummaryTimer = null;
+function clearDragSummary(after = 2600) {
+  clearTimeout(dragSummaryTimer);
+  dragSummaryTimer = setTimeout(() => {
+    state.dragSummary = null;
     notify();
   }, after);
 }
@@ -1262,6 +1274,7 @@ export const actions = {
     state.marks.clear();
     state.picker = null;
     state.refused = null;
+    state.dragSummary = null;
     state.page = 1;
     state.touched = new Set();
     state.takenBack = new Set();
@@ -1344,6 +1357,45 @@ export const actions = {
     if (had) state.picker = null;
     fire(had ? 'unmark' : 'mark',
       { id, mode: state.mode, kind: MARK_EXCEPT, mark: MODES[state.mode].mark });
+    notify();
+  },
+
+  /**
+   * Stage one rectangle as one action (#136).
+   *
+   * Unlike an individual click, a drag always sets the requested decision directly. It
+   * therefore removes a pending take-back and never calls `recordTakeBack`, including for
+   * observations that already carry a committed decision.
+   */
+  dragMark(ids, kind) {
+    if (kind !== MARK_EXCEPT && kind !== MARK_ACCEPT) return;
+    if (kind === MARK_ACCEPT && !acceptedValue(state.mode)) return;
+
+    const wanted = new Set(ids);
+    const eligible = [];
+    let skipped = 0;
+    for (const row of state.rows) {
+      const id = row.observation_id;
+      if (!wanted.has(id) || destroyed(id)) continue;
+      if (kind === MARK_ACCEPT && !acceptRefusal(state.mode, row).ok) {
+        skipped += 1;
+        continue;
+      }
+      eligible.push(id);
+    }
+    if (!eligible.length && !skipped) return;
+
+    state.marks = setMarks(state.marks, eligible, kind);
+    for (const id of eligible) {
+      state.touched.add(id);
+      state.takenBack.delete(id);
+    }
+    state.picker = null;
+    state.refused = null;
+    clearTimeout(dragSummaryTimer);
+    state.dragSummary = skipped ? { kind, applied: eligible.length, skipped } : null;
+    if (skipped) clearDragSummary();
+    fire('dragMark', { mode: state.mode, kind, ids: eligible, skipped });
     notify();
   },
 

@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#136
 repos: [MARP_API]
-status: implement
+status: verifying
 needs: []
 ---
 
@@ -105,14 +105,14 @@ Commit Marked workflow instead of clicking dozens of tiles individually.
 
 ## Test plan
 
-To be written at G3 after A3–A4 are answered. It will name focused pure-model tests and one
-API-backed browser file running the desktop mouse behavior plus phone regression; no
-walkthrough, migration, production database, or live service is required.
+Written in `.marp/verification.md`. It names focused pure-model coverage and one API-backed
+browser file running the desktop mouse behavior plus phone regression; no walkthrough,
+migration, production database, or live service is required.
 
 ## Status
 
-- **Gate:** design settled; ready to implement
-- **Notes:** Issue #136 and referenced decisions #68, #126, and #135 were reviewed. Current
-  left/right gestures, mark kinds, touched state, take-backs, imagery refusal, and selective
-  commit already provide the vocabulary and write path. All six assumptions are answered;
-  no implementation has begun.
+- **Gate:** implementation complete; verification plan awaiting human review
+- **Notes:** The pure rectangle/bulk-mark model, single store action, mouse pointer wiring,
+  cancellation, visuals, compact imagery-skip acknowledgement, and focused model/browser
+  tests are implemented. Fast model feedback and syntax parsing passed; the approved G4
+  browser evidence has not been run.

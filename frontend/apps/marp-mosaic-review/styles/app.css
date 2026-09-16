@@ -305,6 +305,14 @@ body.rail-collapsed .fcount { display: grid; }
    never be wider than its container. JS only reads back how many fit. */
 .grid { display: grid; gap: 2px;
         grid-template-columns: repeat(auto-fill, minmax(var(--min-tile, 132px), 1fr)); }
+.grid.drag-selecting, .grid.drag-selecting * { user-select: none; }
+.drag-select-band { position: absolute; z-index: 8; pointer-events: none;
+                    border: 2px solid var(--amber-300);
+                    background: color-mix(in srgb, var(--amber-300) 14%, transparent); }
+.drag-select-band[data-kind="accept"] { border-color: var(--commit);
+                                         background: color-mix(in srgb, var(--commit) 14%, transparent); }
+.tile.drag-preview { z-index: 7; box-shadow: inset 0 0 0 4px var(--amber-300); }
+.grid.drag-accept .tile.drag-preview { box-shadow: inset 0 0 0 4px var(--commit); }
 
 /* `touch-action: manipulation` turns off the browser's own double-tap-to-zoom, which is
    what a double tap on a tile would otherwise do -- and #126 gives that gesture a job. It

@@ -14,6 +14,8 @@ import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
 import { renderFrameViewer, wireFrameViewer } from './frame-viewer.js';
+import { MARK_ACCEPT, MARK_EXCEPT } from '../model/modes.js';
+import { normalizeRect, idsInRect } from '../model/drag-selection.js';
 import {
   closeMenus, isMenuOpenFor,
   sortMenu
@@ -62,10 +64,103 @@ let lastTap = { id: null, at: 0 };
  */
 let lastPointerType = 'mouse';
 
+const DRAG_THRESHOLD = 6;
+let gridDrag = null;
+let suppressClickUntil = 0;
+let suppressContextUntil = 0;
+
+function clearGridDrag() {
+  if (!gridDrag) return;
+  const drag = gridDrag;
+  gridDrag = null;
+  drag.band.remove();
+  drag.grid.classList.remove('drag-selecting', 'drag-accept');
+  drag.grid.querySelectorAll('.drag-preview').forEach((tile) => tile.classList.remove('drag-preview'));
+  if (drag.grid.hasPointerCapture?.(drag.pointerId)) {
+    try { drag.grid.releasePointerCapture(drag.pointerId); } catch (_) { /* already lost */ }
+  }
+}
+
+function suppressGridDragFollowup(drag) {
+  if (!drag.moved) return;
+  if (drag.kind === MARK_ACCEPT) suppressContextUntil = Date.now() + 500;
+  else suppressClickUntil = Date.now() + 500;
+}
+
+function cancelGridDrag() {
+  if (!gridDrag) return;
+  suppressGridDragFollowup(gridDrag);
+  clearGridDrag();
+}
+
+function updateGridDrag(e) {
+  const drag = gridDrag;
+  if (!drag || e.pointerId !== drag.pointerId) return false;
+  const gridRect = drag.grid.getBoundingClientRect();
+  if (e.clientX < gridRect.left || e.clientX > gridRect.right
+      || e.clientY < gridRect.top || e.clientY > gridRect.bottom) {
+    cancelGridDrag();
+    return false;
+  }
+
+  const rect = normalizeRect(drag.start, { x: e.clientX, y: e.clientY });
+  if (!drag.moved && Math.hypot(rect.width, rect.height) < DRAG_THRESHOLD) return false;
+  drag.moved = true;
+  e.preventDefault();
+
+  const fieldRect = drag.field.getBoundingClientRect();
+  drag.band.style.left = `${rect.left - fieldRect.left + drag.field.scrollLeft}px`;
+  drag.band.style.top = `${rect.top - fieldRect.top + drag.field.scrollTop}px`;
+  drag.band.style.width = `${rect.width}px`;
+  drag.band.style.height = `${rect.height}px`;
+  drag.band.hidden = false;
+
+  const tiles = [...drag.grid.querySelectorAll('.tile[data-id]')].map((tile) => ({
+    id: Number(tile.dataset.id), tile, rect: tile.getBoundingClientRect()
+  }));
+  drag.ids = idsInRect(rect, tiles);
+  const selected = new Set(drag.ids);
+  for (const { id, tile } of tiles) tile.classList.toggle('drag-preview', selected.has(id));
+  return true;
+}
+
 function wireGrid() {
-  $('#grid').addEventListener('pointerdown', (e) => {
+  const grid = $('#grid');
+  grid.addEventListener('pointerdown', (e) => {
     lastPointerType = e.pointerType || 'mouse';
+    if (lastPointerType !== 'mouse' || (e.button !== 0 && e.button !== 2)) return;
+    if (state.picker || e.target.closest('[data-badge],[data-changed],[data-act],a,input,select,textarea')) return;
+    if (!e.target.closest('.tile') && e.target !== grid) return;
+
+    const field = $('#field');
+    const band = document.createElement('div');
+    const kind = e.button === 2 ? MARK_ACCEPT : MARK_EXCEPT;
+    band.className = 'drag-select-band';
+    band.dataset.kind = kind;
+    band.hidden = true;
+    field.appendChild(band);
+    gridDrag = {
+      grid, field, band, kind, pointerId: e.pointerId,
+      start: { x: e.clientX, y: e.clientY }, ids: [], moved: false
+    };
+    grid.classList.add('drag-selecting');
+    grid.classList.toggle('drag-accept', kind === MARK_ACCEPT);
+    grid.setPointerCapture?.(e.pointerId);
   });
+
+  grid.addEventListener('pointermove', updateGridDrag);
+  grid.addEventListener('pointerup', (e) => {
+    if (!gridDrag || e.pointerId !== gridDrag.pointerId) return;
+    updateGridDrag(e);
+    if (!gridDrag) return;
+    const { moved, ids, kind } = gridDrag;
+    if (moved) suppressGridDragFollowup(gridDrag);
+    clearGridDrag();
+    if (moved && ids.length) actions.dragMark(ids, kind);
+  });
+  grid.addEventListener('pointercancel', cancelGridDrag);
+  grid.addEventListener('lostpointercapture', cancelGridDrag);
+  grid.addEventListener('dragstart', (e) => { if (gridDrag) e.preventDefault(); });
 
   /**
    * The accept gesture on a pointer: **right click** (#126 R2).
@@ -75,15 +170,17 @@ function wireGrid() {
    * appearing on the gap between tiles while the gesture means something else on the tiles
    * themselves is worse than not having one at all.
    */
-  $('#grid').addEventListener('contextmenu', (e) => {
+  grid.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    if (Date.now() < suppressContextUntil) return;
     const tileEl = e.target.closest('.tile');
     if (!tileEl) return;
     if (state.picker) { actions.closePicker(); return; }
     actions.acceptMark(Number(tileEl.dataset.id));
   });
 
-  $('#grid').addEventListener('click', (e) => {
+  grid.addEventListener('click', (e) => {
+    if (Date.now() < suppressClickUntil) { e.stopPropagation(); return; }
     /* The badge opens the panel; the tile itself marks. Marking must stay a single
        uninterrupted gesture, so opening the panel is a separate target. */
     const badge = e.target.closest('[data-badge]');
@@ -177,6 +274,7 @@ function wireDismissal() {
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (gridDrag) { e.preventDefault(); cancelGridDrag(); return; }
       if (state.frameViewer) { actions.closeFullFrame(); return; }
       actions.closePicker(); closeMenus(); return;
     }
