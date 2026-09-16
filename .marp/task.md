@@ -39,8 +39,10 @@ Commit Marked workflow instead of clicking dozens of tiles individually.
   group selection.
 - **R10** — Pointer cancellation, Escape during an active drag, leaving the usable grid, or
   losing capture cancels cleanly without applying partial marks or leaving a band behind.
-- **R11** — Touch remains the phone's scrolling gesture and does not start rectangle
-  selection. Existing tap, double-tap acceptance, and phone scrolling remain unchanged.
+- **R11** — The phone supports both normal scrolling and touch rectangle multi-selection.
+  Selection release stages the requested exception or acceptance for every intersected tile;
+  the phone interaction for distinguishing scrolling from selection is settled with the human
+  before implementation.
 - **R12** — Left-dragging creates exception marks without opening dozens of detail popups;
   reasons and notes remain optional per-tile edits through the existing popup.
 - **R13** — Pure model tests cover rectangle normalization/intersection and the bulk mark
@@ -48,6 +50,11 @@ Commit Marked workflow instead of clicking dozens of tiles individually.
   one-render performance, Commit Marked compatibility, and phone gesture regression.
 
 ## Open assumptions
+
+- [x] **A7 · product/UI · blocking** — Answered 2026-09-16: immediate swipes scroll;
+  holding briefly and then dragging draws the touch selection rectangle. Releasing opens a
+  compact workflow choice (science: Flag/Reviewed; training: Exclude/Promote), and choosing
+  applies that kind to the intersected tiles. No Select toggle. Mouse behavior is unchanged.
 
 - [x] **A1 · product/UI · blocking** — answered 2026-09-15 by the user's description: “a
   specific group” means the existing mark kind, not bulk species correction. Left drag is
@@ -65,6 +72,8 @@ Commit Marked workflow instead of clicking dozens of tiles individually.
 - [x] **A5 · product/UI · blocking** — answered by the explicit left/right mouse-button
   request and the existing phone contract: rectangle selection is mouse-only. Touch keeps
   scrolling, tap marking, and double-tap acceptance.
+  **Superseded 2026-09-16:** the user explicitly requires scrolling and multi-selection on
+  the phone; R11 and A7 replace the mouse-only limitation.
 - [x] **A6 · product/UI · non-blocking** — no separate drag-undo command is added. All marks
   remain uncommitted and reversible through the existing tile gestures and Clear Marks.
 
@@ -111,8 +120,9 @@ migration, production database, or live service is required.
 
 ## Status
 
-- **Gate:** implementation complete; verification plan awaiting human review
+- **Gate:** implementation complete; mouse and real-touch browser evidence recorded
 - **Notes:** The pure rectangle/bulk-mark model, single store action, mouse pointer wiring,
   cancellation, visuals, compact imagery-skip acknowledgement, and focused model/browser
-  tests are implemented. Fast model feedback and syntax parsing passed; the approved G4
-  browser evidence has not been run.
+  tests are implemented. Hold-then-drag touch selection and the release-time science/training
+  choice are implemented. Fast parsing/model checks and the focused desktop/phone browser
+  evidence passed. The actual iPhone behavior remains for the human to confirm.

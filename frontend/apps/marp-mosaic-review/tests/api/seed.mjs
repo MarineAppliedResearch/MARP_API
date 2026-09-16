@@ -367,6 +367,7 @@ async function sweepUp({ ids, sessionId, files }) {
  * @returns {?string} The directory, or null.
  */
 function thumbnailStore() {
+  if (process.env.THUMBNAIL_STORAGE_DIR) return process.env.THUMBNAIL_STORAGE_DIR;
   try {
     const stamp = JSON.parse(readFileSync(
       new URL('../../../../../.marp/local/testing-database.json', import.meta.url), 'utf8'

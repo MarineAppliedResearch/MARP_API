@@ -185,7 +185,7 @@ function body(row) {
      * separately from the database, so a recorded thumbnail whose file is missing is a
      * real and recoverable state.
      */
-    return `<img src="${MarpBackend.thumbnailUrl(row)}" alt="${currentSpeciesName(row)}"
+    return `<img draggable="false" src="${MarpBackend.thumbnailUrl(row)}" alt="${currentSpeciesName(row)}"
       loading="lazy" onerror="this.closest('.tile').dataset.noimage='1';this.remove()">`;
   }
   if (row.thumbnail_status === 'queued') {
