@@ -77,4 +77,23 @@ created.
 
 ## Results
 
-<!-- Appended only during the approved G4 run. -->
+- **Current base — PASS.** After `git fetch origin`, the branch was zero commits behind
+  `origin/develop`.
+- **Spec and diff checks — PASS.** `git diff --check` reported no errors and `marp spec
+  check` accepted all three assumptions and ten requirements at the verify gate.
+- **Focused constrained-phone tier — PASS.** The approved `phone-short` command passed its
+  one #192 test. It covered the ordinary-phone visual, small-phone form-first layout,
+  keyboard-reduced scrolling, fixed background, submitted credentials, status, and Close.
+- **Complete entry-app browser group — PASS with one intentional inapplicable case.**
+  `npm test` passed 60 tests across desktop, phone, phone-landscape, and phone-short. The
+  existing desktop-only skip for the collapsible phone navigation sheet remained; its phone
+  counterpart passed. This differed from the plan's literal zero-skip expectation but was
+  not a missing prerequisite or product failure.
+- **Implementation feedback failures — RECORDED.** The first pre-fix run could not click the
+  hero Login control at the deliberately narrow size because the existing hero scroll cue
+  intercepts it; the test was corrected to use the real phone-navigation Login path. The
+  next pre-fix run then failed on the intended #192 assertion because the decorative panel
+  remained visible. After the CSS correction, that named regression passed.
+- **Real-iPhone step — superseded by user direction.** On 2026-09-15 the user directed that
+  passing browser checks should proceed directly to pull request and merge. No additional
+  server or database is required for this issue.

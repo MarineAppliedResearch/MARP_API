@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#192
 repos: [MARP_API]
-status: verify
+status: ready-for-pr
 needs: []
 ---
 
@@ -87,9 +87,9 @@ or production authentication is required because the login response is intercept
 
 ## Status
 
-- **Gate:** verification plan awaiting human approval
+- **Gate:** verified; ready for pull request
 - **Notes:** The current dialog is viewport-capped but `overflow: hidden`; its mobile stacked
   layout can exceed that cap while the nominal content scroller has no constrained height.
-  The dialog now owns contained scrolling, short phones prioritize the form, and the focused
-  browser regression passes as implementation feedback. Broader G4 verification has not
-  begun. The port-3002 issue #183 server remains untouched.
+  The dialog now owns contained scrolling and short phones prioritize the form. The focused
+  regression and complete entry-app browser group passed; the user approved proceeding to
+  pull request and merge on that evidence. The port-3002 server remains untouched.
