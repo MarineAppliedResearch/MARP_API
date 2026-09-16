@@ -1,5 +1,5 @@
 ---
-task: MarineAppliedResearch/MARP_API#183
+task: MarineAppliedResearch/MARP_API#192
 repos: [MARP_API]
 status: ready-for-pr
 needs: []
@@ -7,89 +7,89 @@ needs: []
 
 ## Goal
 
-A reviewer can move the flagged-observation details popup out of the way without losing
-their place, changing the pending review decision, or making any of its existing controls
-harder to use.
+A person signing in from a very small or keyboard-constrained phone can reach and operate
+every part of the landing-page login dialog, including the submit and close controls,
+without the underlying page stealing the gesture.
 
 ## Requirements
 
-- **R1** — The details popup has a visually clear drag handle in its header.
-- **R2** — Mouse, pen, and single-touch dragging move the popup directly with the pointer.
-- **R3** — Dragging is clamped inside the visible Mosaic work area: the field on desktop
-  and the visual viewport on touch-sized layouts.
-- **R4** — The chosen position survives ordinary full rerenders, note edits, status polls,
-  and opening or closing the species-correction controls while the same popup remains open.
-- **R5** — Opening a different observation, closing and reopening the popup, or changing
-  review context starts again from the existing sensible tile-anchored position.
-- **R6** — A resize, phone rotation, browser zoom, or visual-viewport change reclamps the
-  remembered position so no part required to operate the popup becomes unreachable.
-- **R7** — Only the header handle begins a drag. Buttons, chips, links, text, the observation
-  ID, the note editor, and species controls retain their existing click, selection, scroll,
-  and focus behavior.
-- **R8** — Beginning, moving, or ending a drag does not stage, clear, resolve, commit, or
-  otherwise alter a review decision, and it does not dismiss the popup.
-- **R9** — Escape still closes the popup, all existing controls remain reachable by
-  keyboard, and dragging is never required to reach or operate a control.
-- **R10** — Focus remains on the control that held it across rerenders; dragging the header
-  does not steal focus from an active note or species editor.
-- **R11** — Pure geometry tests cover pointer deltas and clamping, and real-browser tests at
-  desktop and phone sizes prove movement, persistence, controls, review-state isolation,
-  viewport reclamping, Escape, and touch input.
+- **R1** — The open login dialog and its operable surface stay within the currently visible
+  viewport on desktop, ordinary phones, very small phones, and short-height layouts.
+- **R2** — When the form is taller than the available height, the login surface scrolls
+  vertically and every field, option, status message, submit control, and close control is
+  reachable by touch and keyboard.
+- **R3** — Focusing and typing in the username or password field under a reduced effective
+  viewport does not strand the submit control; the reviewer can scroll to it and submit.
+- **R4** — Scrolling inside the dialog is contained there and does not scroll or dismiss the
+  landing page underneath it.
+- **R5** — The dialog retains a sensible edge margin whenever space permits, but uses the
+  available width and height before clipping any required control.
+- **R6** — Existing dialog behavior remains intact: initial username focus, password
+  visibility, validation, server error status, backdrop/close dismissal, and successful
+  redirect are not changed by the layout correction.
+- **R7** — The normal desktop and ordinary portrait-phone dialog retain their present
+  two-panel and stacked visual presentation respectively.
+- **R8** — A real-browser regression test at a deliberately small phone viewport opens the
+  dialog, types both credentials, scrolls to every required control, and submits a mocked
+  login request.
+- **R9** — The browser test also reduces the phone viewport height after an input is focused
+  to represent an on-screen keyboard, then proves the submit and close controls remain
+  reachable without background scroll.
+- **R10** — Existing desktop, ordinary phone, and phone-landscape render checks continue to
+  pass without horizontal overflow or page errors.
 
 ## Open assumptions
 
-- [x] **A1 · product/UI · blocking** — answered 2026-09-14 by #183: use a clear header or
-  handle; this implementation adds a compact grip to the existing header so it does not
-  consume another row of popup space.
-- [x] **A2 · behavioural · blocking** — answered 2026-09-14 by #183: remember a position
-  only while that popup remains open, and reset when a different observation is opened.
-- [x] **A3 · product/UI · blocking** — answered 2026-09-14 by the existing responsive
-  positioning contract: desktop popups stay inside the Mosaic field; phone popups stay
-  inside the live visual viewport, including while its size changes.
-- [x] **A4 · architectural · blocking** — answered 2026-09-14 by the Mosaic layering rule:
-  pointer geometry is a pure model rule; wiring owns the gesture; the final remembered
-  position belongs to `state.picker`, while transient pointer movement may update the
-  current DOM directly to avoid a full application rerender for every pixel.
-- [x] **A5 · API contract · blocking** — answered 2026-09-14 by #183 scope: dragging is
-  presentation state only and adds no API, persistence, database, or review-record field.
+- [x] **A1 · product/UI · blocking** — answered 2026-09-15: hide the decorative diver panel
+  only on narrow, genuinely short viewports so sign-in controls get the space; keep it
+  unchanged on ordinary phones.
+- [x] **A2 · behavioural · blocking** — answered 2026-09-15 by #192: vertical scrolling
+  belongs to the modal or its content, while the underlying landing page remains fixed.
+- [x] **A3 · architectural · blocking** — answered 2026-09-15 by the existing entry-app
+  boundary: this is a landing-page HTML/CSS/browser-test correction with no API, database,
+  authentication-contract, or Mosaic Viewer change.
 
 ## Decisions
 
-- **2026-09-14** — Reuse the existing popup heading as the drag surface and add a visible
-  grip; interactive content never starts a drag.
-- **2026-09-14** — Preserve the final position in the open picker state and repaint only
-  the panel during pointer movement; notify once when the gesture ends.
-- **2026-09-14** — Reuse the existing desktop-field and phone-visual-viewport boundaries so
-  dragging cannot contradict the popup's current resize and keyboard behavior.
+- **2026-09-15** — Treat the visible viewport height, not phone width alone, as the failing
+  dimension; ordinary phone width already has a responsive dialog but no usable overflow
+  path when height contracts.
+- **2026-09-15** — Cover the defect at the entry app's Playwright render tier because markup
+  and unit checks cannot observe clipped controls, internal scrolling, or background motion.
+- **2026-09-15** — Hide the decorative diver panel only when both phone width and short
+  height apply; usability wins there without changing the ordinary-phone composition.
 
 ## Plan
 
-1. Add pure popup-position geometry for pointer deltas and boundary clamping.
-2. Extend the picker state with one remembered position and actions that settle/reset it.
-3. Draw and style the header handle, then wire pointer movement without intercepting any
-   existing control.
-4. Reapply or clamp the remembered position during rerenders and viewport changes.
-5. Add the focused unit and real-browser coverage required by R11.
-6. Write the G3 verification plan and stop for human review before its browser run.
+1. Resolve whether the decorative panel is retained or removed in genuinely short phone
+   layouts.
+2. Add a height-constrained phone project or named test setup that reproduces the clipping
+   and keyboard-reduced viewport.
+3. Correct the dialog's height, overflow, overscroll, and short-height presentation without
+   changing the normal desktop or phone appearance.
+4. Assert field entry, internal scrolling, reachable close and submit controls, contained
+   background scroll, request submission, and normal-viewport regressions.
+5. Write the G3 verification plan and stop for human review before running it.
 
 ## Acceptance criteria
 
-- A reviewer can drag the details popup smoothly with a mouse, pen, or finger.
-- The popup cannot be stranded outside the usable Mosaic viewport.
-- The popup stays where the reviewer put it while its contents update.
-- A different or reopened observation starts from the normal anchored position.
-- Dragging never changes the marked observation or breaks an existing popup control.
-- Keyboard focus and Escape behave exactly as before.
+- A user can sign in from the smallest covered phone layout even after the viewport height
+  contracts around a focused input.
+- No required login control is clipped beyond the dialog's scrollable area.
+- Touch-scrolling the dialog never moves the underlying page.
+- Normal desktop and ordinary-phone dialogs retain their current visual structure.
 
 ## Test plan
 
-See `.marp/verification.md`. It names the focused geometry unit file, the desktop/phone
-API-backed browser file, and the supervised interaction check; no walkthrough is requested.
+To be written at G3 after A1 is answered. It will name the entry app's focused Playwright
+test and the existing desktop, phone, and phone-landscape render projects; no API database
+or production authentication is required because the login response is intercepted.
 
 ## Status
 
 - **Gate:** verified; ready for pull request
-- **Notes:** Geometry, remembered picker position, pointer wiring, the visible handle, and
-  focused unit/browser coverage are implemented. The human confirmed mouse and phone
-  dragging works well. No database, API, backend, migration, or live-Jellyfin work is in
-  scope.
+- **Notes:** The current dialog is viewport-capped but `overflow: hidden`; its mobile stacked
+  layout can exceed that cap while the nominal content scroller has no constrained height.
+  The dialog now owns contained scrolling and short phones prioritize the form. The focused
+  regression and complete entry-app browser group passed; the user approved proceeding to
+  pull request and merge on that evidence. The port-3002 server remains untouched.
