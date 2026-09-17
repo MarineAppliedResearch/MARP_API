@@ -37,6 +37,8 @@
  * @author Isaac Travers
  */
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 /** The repository root, as the module under test computes it. */
@@ -88,6 +90,60 @@ function loadWith(value) {
 }
 
 describe('THUMBNAIL_STORAGE_DIR', () => {
+
+    it('uses the testing database stamp before a development .env directory', () => {
+        const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'marp-thumbnail-stamp-'));
+        const stampFile = path.join(temporary, 'testing-database.json');
+        const testingThumbnails = path.join(temporary, 'observation-thumbnails');
+        fs.writeFileSync(stampFile, JSON.stringify({
+            database: 'marp_api_testing',
+            thumbnails: testingThumbnails,
+        }));
+
+        try {
+            const { config } = loadWith(path.join('storage', 'observation-thumbnails'));
+            const selected = config.storageSettingFor({
+                database: 'marp_api_testing',
+                environmentStorage: path.join('storage', 'observation-thumbnails'),
+                defaultStorage: path.join('storage', 'observation-thumbnails'),
+                stampFiles: [stampFile],
+            });
+
+            expect(selected).toEqual({
+                setting: path.resolve(testingThumbnails),
+                source: 'testing-database stamp',
+            });
+        } finally {
+            fs.rmSync(temporary, { recursive: true, force: true });
+        }
+    });
+
+    it('does not apply a testing stamp to a different database', () => {
+        const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'marp-thumbnail-stamp-'));
+        const stampFile = path.join(temporary, 'testing-database.json');
+        fs.writeFileSync(stampFile, JSON.stringify({
+            database: 'marp_api_testing',
+            thumbnails: path.join(temporary, 'observation-thumbnails'),
+        }));
+
+        try {
+            const developmentStorage = path.join('storage', 'observation-thumbnails');
+            const { config } = loadWith(developmentStorage);
+            const selected = config.storageSettingFor({
+                database: 'marp_api',
+                environmentStorage: developmentStorage,
+                defaultStorage: developmentStorage,
+                stampFiles: [stampFile],
+            });
+
+            expect(selected).toEqual({
+                setting: developmentStorage,
+                source: 'THUMBNAIL_STORAGE_DIR',
+            });
+        } finally {
+            fs.rmSync(temporary, { recursive: true, force: true });
+        }
+    });
 
     it('is storage/observation-thumbnails when nothing is set', () => {
         // The case that must never move. Production and CI both read this file

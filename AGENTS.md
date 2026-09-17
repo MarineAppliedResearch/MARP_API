@@ -792,6 +792,14 @@ defects at the same time. Fetch the current development branch, start `server.js
 repository root on a free port, and open the application through that API origin. The
 standalone servers remain useful only for their narrowly scoped automated rendering checks.
 
+**A database corpus and its thumbnail storage are one unit.** Before starting a development
+server from a worktree while using another checkout's database, explicitly carry that corpus's
+`THUMBNAIL_STORAGE_DIR` alongside the `DB_*` settings. Never let a worktree silently fall back
+to its own empty `storage/observation-thumbnails` while reading ready rows from a shared
+database. `server.js` refuses a cross-checkout launch without that explicit pairing. The
+testing-server launcher already supplies its isolated database and thumbnail directory
+together; preserve that invariant in any new launcher.
+
 Each application owns its own test suite so it can be extracted into its own repository
 later without untangling anything. `npm run test:apps` from here runs them all.
 

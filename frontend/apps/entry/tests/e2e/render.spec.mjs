@@ -162,6 +162,14 @@ for (const { name, path } of PAGES) {
   });
 }
 
+test('an application Sign in link opens the front-page login dialog', async ({ page }) => {
+  await page.goto('/?login=1');
+
+  await expect(page.locator('[data-login-dialog]')).toBeVisible();
+  await expect(page.locator("[data-login-dialog] input[name='username']")).toBeFocused();
+  await expect(page).toHaveURL(/\/$/);
+});
+
 /**
  * The hero has to fit the screen it is opened on.
  *

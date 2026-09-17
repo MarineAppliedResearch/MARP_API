@@ -19,8 +19,21 @@
 
 const fs = require('fs');
 const https = require('https');
+const path = require('path');
 const app = require('./app');
+const { STORAGE_SOURCE } = require('./config/thumbnails');
 const thumbnailExtraction = require('./service/thumbnail-extraction.service');
+
+/* A worktree can deliberately run against another checkout's development
+ * database, but its default thumbnail directory belongs to the worktree. A
+ * silent cross-checkout fallback makes every ready image look lost. Require the
+ * corpus pairing to be explicit before the port is opened. */
+if (path.resolve(process.cwd()) !== path.resolve(__dirname)
+    && STORAGE_SOURCE === 'default') {
+    throw new Error(
+        'Cross-checkout server launch requires THUMBNAIL_STORAGE_DIR alongside DB_* so the database corpus and its thumbnails stay paired.'
+    );
+}
 
 /**
  * TCP port used by the HTTP server.

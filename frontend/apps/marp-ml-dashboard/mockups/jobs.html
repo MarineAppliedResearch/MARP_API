@@ -20,51 +20,107 @@
 
     <header class="topbar">
       <div class="heading">
-        <h1 title="One queue for training and inference, newest first">Jobs</h1>
+        <h1 title="One queue for inference, training and dataset builds, newest first">Jobs</h1>
       </div>
     </header>
 
     <main class="content">
 
-      <div class="stats">
-        <div class="stat" data-state="running">
+      <div class="stats jobs-stats" aria-label="Prioritize jobs by status">
+        <button class="stat stat-sort" type="button" data-state="running" data-job-priority="running" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
           <span class="stat-lab">Running jobs</span>
-          <b class="stat-num">6</b>
-          <span class="stat-sub"><span><b>4</b> inference</span><span><b>2</b> training</span></span>
-        </div>
-        <div class="stat" data-state="queued">
+          <b class="stat-num">8</b>
+          <span class="stat-sub"><span><b>4</b> inference</span><span><b>2</b> training</span><span><b>2</b> builds</span></span>
+        </button>
+        <button class="stat stat-sort" type="button" data-state="queued" data-job-priority="queued" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span>
           <span class="stat-lab">Queued jobs</span>
-          <b class="stat-num">8</b>
-          <span class="stat-sub"><span><b>5</b> inference</span><span><b>3</b> training</span></span>
-        </div>
-        <div class="stat" data-state="done">
+          <b class="stat-num">11</b>
+          <span class="stat-sub"><span><b>5</b> inference</span><span><b>3</b> training</span><span><b>3</b> builds</span></span>
+        </button>
+        <button class="stat stat-sort" type="button" data-state="done" data-job-priority="done" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
           <span class="stat-lab">Completed today</span>
           <b class="stat-num">18</b>
           <span class="stat-sub"><span><b>15</b> clean</span><span><b>3</b> with issues</span></span>
-        </div>
-        <div class="stat" data-state="failed">
+        </button>
+        <button class="stat stat-sort" type="button" data-state="failed" data-job-priority="attention" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
           <span class="stat-lab">Needs attention</span>
-          <b class="stat-num">7</b>
-          <span class="stat-sub"><span><b>4</b> failed</span><span><b>3</b> with issues</span></span>
-        </div>
+          <b class="stat-num">8</b>
+          <span class="stat-sub"><span><b>5</b> failed</span><span><b>3</b> with issues</span></span>
+        </button>
       </div>
+
+      <section class="jobs-overview" aria-label="Jobs at a glance">
+        <article class="panel jobs-mix">
+          <header class="panel-hd"><div><h2>Job status</h2><p>Current queue and today&rsquo;s outcomes</p></div></header>
+          <div class="panel-bd jobs-mix-bd">
+            <div class="job-donut" role="img" aria-label="8 running jobs: 4 inference, 2 training and 2 dataset builds; 11 queued; 18 completed today; 8 need attention">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="donut-track" cx="60" cy="60" r="43"/>
+                <circle class="donut-part inference" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="4 41" stroke-dashoffset="0"/>
+                <circle class="donut-part training" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="2 43" stroke-dashoffset="-4"/>
+                <circle class="donut-part datasets" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="2 43" stroke-dashoffset="-6"/>
+                <circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="11 34" stroke-dashoffset="-8"/>
+                <circle class="donut-part done" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="18 27" stroke-dashoffset="-19"/>
+                <circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="8 37" stroke-dashoffset="-37"/>
+              </svg>
+              <span><b>45</b><small>jobs</small></span>
+            </div>
+            <div class="job-mix-key">
+              <span class="inference"><i></i><b>4</b> Running inference</span>
+              <span class="training"><i></i><b>2</b> Running training</span>
+              <span class="datasets"><i></i><b>2</b> Building datasets</span>
+              <span class="queued"><i></i><b>11</b> Queued</span>
+              <span class="done"><i></i><b>18</b> Completed today</span>
+              <span class="attention"><i></i><b>8</b> Need attention</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel jobs-history" data-jobs-history>
+          <header class="panel-hd jobs-history-hd">
+            <div><h2>Job activity</h2><p>Starts, completions and queue pressure</p></div>
+            <div class="seg" aria-label="Activity range">
+              <button type="button" data-jobs-range="24h">24h</button>
+              <button type="button" class="on" data-jobs-range="5h">5h</button>
+              <button type="button" data-jobs-range="1h">1h</button>
+            </div>
+          </header>
+          <div class="panel-bd jobs-history-bd">
+            <div class="jobs-chart" role="img" aria-label="Job activity over the last 5 hours; updating preview">
+              <svg viewBox="0 0 760 230" aria-hidden="true">
+                <g class="jobs-grid"><line x1="42" y1="24" x2="742" y2="24"/><line x1="42" y1="82" x2="742" y2="82"/><line x1="42" y1="140" x2="742" y2="140"/><line x1="42" y1="198" x2="742" y2="198"/></g>
+                <g class="jobs-axis"><text x="34" y="28">12</text><text x="34" y="86">8</text><text x="34" y="144">4</text><text x="34" y="202">0</text><text x="42" y="220" data-jobs-time>5h ago</text><text x="392" y="220" data-jobs-time>2.5h ago</text><text x="742" y="220" data-jobs-time>Now</text></g>
+                <path class="jobs-line started" data-jobs-line="started"/><path class="jobs-line completed" data-jobs-line="completed"/><path class="jobs-line queued" data-jobs-line="queued"/>
+              </svg>
+            </div>
+            <div class="jobs-chart-key"><span class="started">Started</span><span class="completed">Completed</span><span class="queued">Queued</span><span class="live"><i class="dot"></i>Design preview</span></div>
+          </div>
+        </article>
+      </section>
 
       <section class="panel">
         <header class="panel-hd">
-          <h2>Jobs <span class="count">(63)</span></h2>
+          <h2>Jobs <span class="count">(69)</span></h2>
           <div class="panel-tools" id="filters">
             <span class="search">
               <svg class="ico sm"><use href="#i-search"/></svg>
               <input class="inp" type="search" placeholder="Search jobs&hellip;" aria-label="Search jobs">
             </span>
-            <select class="sel" aria-label="Job type"><option>All job types</option><option>Inference</option><option>Training</option></select>
+            <select class="sel" aria-label="Job type"><option>All job types</option><option>Inference</option><option>Training</option><option>Dataset Build</option></select>
             <select class="sel" aria-label="Status"><option>All statuses</option><option>Running</option><option>Queued</option><option>Paused</option><option>Failed</option><option>Completed</option></select>
             <select class="sel" aria-label="Window"><option>Last 7 days</option><option>Last 24 hours</option><option>Last 30 days</option></select>
-            <button class="btn"><svg class="ico"><use href="#i-filter"/></svg>More filters</button>
+            <button class="btn" type="button" id="expandAll"><svg class="ico"><use href="#i-right"/></svg>Expand all</button>
+          </div>
+          <div class="jobs-sort-mobile" aria-label="Sort jobs">
+            <span>Sort</span>
+            <button type="button" data-sort-column="0">Job</button><button type="button" data-sort-column="1">Type</button>
+            <button type="button" data-sort-column="2">Scope</button><button type="button" data-sort-column="3">Model / output</button>
+            <button type="button" data-sort-column="4">Status</button><button type="button" data-sort-column="5">Progress</button>
+            <button type="button" data-sort-column="6">Submitted</button>
           </div>
           <div class="bulk" id="bulk" hidden>
             <span><span class="n" id="bulkN">0</span> selected</span>
@@ -76,12 +132,13 @@
         </header>
         <div class="panel-bd flush">
           <div class="tblwrap">
-            <table class="tbl fixed rowlink stack" id="jobs">
+            <table class="tbl fixed stack expandable" id="jobs">
               <thead>
                 <tr>
+                  <th class="ex"><span class="vh">Expand</span></th>
                   <th class="chk"><input class="chkbox" type="checkbox" id="all" aria-label="Select every job on this page"></th>
                   <th class="hjob sortable">Job</th><th class="htype sortable">Type</th><th class="hscope sortable">Scope</th>
-                  <th class="hmodel sortable">Model</th><th class="hstatus sortable">Status</th><th class="hprog sortable">Progress</th>
+                  <th class="hmodel sortable">Model / output</th><th class="hstatus sortable">Status</th><th class="hprog sortable">Progress</th>
                   <th class="hupd sortable" aria-sort="descending">Submitted</th>
                   <th class="hacts"><span class="vh">Actions</span></th>
                 </tr>
@@ -203,10 +260,10 @@
                     <td class="jtype"><span class="tag training">Training</span></td>
                     <td class="jscope"><span class="two"><span class="a">GULF_2025_Fish_Train_v1</span><span class="b">Dataset &middot; 9,140 obs</span></span></td>
                     <td class="jmodel"><span class="two"><span class="a">MARP-Fish-Det</span><span class="b">v1.1.3</span></span></td>
-                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="jprog" data-sort="82"><span class="prog" data-state="running"><span class="bar"><i style="width:82%"></i></span><span class="pct">82%</span></span></td>
+                    <td class="jstatus" data-sort="7"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="jprog" data-sort="100"><span class="prog" data-state="done"><span class="bar"><i style="width:100%"></i></span><span class="pct">100%</span></span></td>
                     <td class="jtime" data-sort="2026-09-09T12:06"><span class="two"><span class="a">12:06</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
+                    <td class="jacts"><span><button class="btn sm">Open model</button></span></td>
                   </tr>
                   <tr data-job="1730">
                     <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1730"></td>
@@ -224,7 +281,7 @@
           </div>
         </div>
         <footer class="panel-ft">
-          <span>Showing <b class="strong">1&ndash;12</b> of 63 jobs</span>
+          <span>Showing <b class="strong">1&ndash;18</b> of 69 jobs</span>
           <div class="pager">
             <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button>
             <button aria-current="page">1</button><button>2</button><button>3</button>
@@ -232,7 +289,7 @@
             <button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
           </div>
           <span class="rpp">Rows
-            <select class="sel" aria-label="Rows per page"><option>12</option><option>25</option><option>50</option></select>
+            <select class="sel" aria-label="Rows per page"><option>18</option><option>25</option><option>50</option></select>
           </span>
         </footer>
       </section>
@@ -342,7 +399,7 @@
     </div>
 
     <details class="diag">
-      <summary>Diagnostics<span class="later">Log not served yet</span></summary>
+      <summary>Diagnostics</summary>
       <div class="dbody">
         <dl class="kv">
           <dt>Attempt</dt><dd>1 of 3 &middot; leased 12:28:04 &middot; epoch 1</dd>

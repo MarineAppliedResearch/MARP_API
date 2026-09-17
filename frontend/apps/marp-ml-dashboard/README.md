@@ -60,7 +60,7 @@ node tools/mock-shots.mjs jobs desktop    # one screen, one width
 | | |
 | --- | --- |
 | `dashboard` | What the pool is running, queued, and struggling with |
-| `jobs` | One queue for training and inference, with the job drawer |
+| `jobs` | One queue for inference, training and dataset-build work, with expandable job detail |
 | `inference` | Running a model over MARP data |
 | `training` | Fine-tuning from a registered model over one saved dataset |
 | `datasets` | Building a training set, and the train/validation/test split |

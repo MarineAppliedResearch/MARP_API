@@ -24,34 +24,64 @@
 
     <main class="content">
 
-      <div class="stats">
-        <div class="stat" data-state="idle" title="Models in MARP's registry">
+      <nav class="stats inference-stats models-stats" aria-label="Model registry destinations">
+        <a class="stat stat-link" data-state="idle" href="#model-registry" title="Jump to every registered model version">
           <span class="stat-ico"><svg class="ico"><use href="#i-models"/></svg></span>
           <span class="stat-lab">Registered models</span>
           <b class="stat-num">28</b>
           <span class="stat-sub"><span><b>4</b> this month</span></span>
-        </div>
-        <div class="stat" data-state="done" title="Versions marked preferred for a task">
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="stat stat-link" data-state="done" href="#model-registry" title="Jump to preferred model versions in the registry">
           <span class="stat-ico"><svg class="ico"><use href="#i-star"/></svg></span>
           <span class="stat-lab">Preferred models</span>
           <b class="stat-num">6</b>
           <span class="stat-sub"><span>for inference and training</span></span>
-        </div>
-        <div class="stat" data-state="busy" title="Copies held on workers, ready without a download">
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="stat stat-link" data-state="busy" href="./workers.html?view=cache" title="Open Workers to inspect reported model availability">
           <span class="stat-ico"><svg class="ico"><use href="#i-slots"/></svg></span>
           <span class="stat-lab">Cached on workers</span>
           <b class="stat-num">84</b>
           <span class="stat-sub"><span>across <b>12</b> models</span></span>
-        </div>
-        <div class="stat" data-state="running" title="Versions a training run registered recently">
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="stat stat-link" data-state="running" href="./history.html?type=training&amp;window=week" title="Open recent training work that registered versions">
           <span class="stat-ico"><svg class="ico"><use href="#i-clock"/></svg></span>
           <span class="stat-lab">Recently trained</span>
           <b class="stat-num">3</b>
           <span class="stat-sub"><span>in the last 7 days</span></span>
-        </div>
-      </div>
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+      </nav>
 
-      <section class="panel">
+      <section class="inference-overview ops-overview" aria-label="Model registry at a glance">
+        <article class="panel">
+          <header class="panel-hd"><div><h2>Registry status</h2><p>Usable, under evaluation and needing attention</p></div></header>
+          <div class="panel-bd jobs-mix-bd">
+            <div class="job-donut" role="img" aria-label="28 model versions represented: 23 ready, 3 testing and 2 needing attention">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="donut-track" cx="60" cy="60" r="43"/>
+                <circle class="donut-part done" cx="60" cy="60" r="43" pathLength="28" stroke-dasharray="23 5" stroke-dashoffset="0"/>
+                <circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="28" stroke-dasharray="3 25" stroke-dashoffset="-23"/>
+                <circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="28" stroke-dasharray="2 26" stroke-dashoffset="-26"/>
+              </svg>
+              <span><b>28</b><small>model versions</small></span>
+            </div>
+            <div class="job-mix-key"><span class="done"><i></i><b>23</b> Ready</span><span class="queued"><i></i><b>3</b> Testing</span><span class="attention"><i></i><b>2</b> Need attention</span></div>
+          </div>
+        </article>
+
+        <article class="panel inference-flow ops-activity" data-ops-activity="models">
+          <header class="panel-hd inference-flow-hd"><div><h2>Registry activity</h2><p>New versions, promoted preferences and worker cache coverage</p></div><div class="seg" aria-label="Model activity range"><button type="button" data-ops-range="30d">30d</button><button type="button" class="on" data-ops-range="90d" aria-pressed="true">90d</button><button type="button" data-ops-range="1y">1y</button></div></header>
+          <div class="panel-bd inference-flow-bd">
+            <div class="inference-chart ops-chart" role="img" aria-label="Model registry activity over 90 days"><svg viewBox="0 0 780 248" aria-hidden="true"><g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g><g class="inference-axis left"><text x="46" y="32">30</text><text x="46" y="88">20</text><text x="46" y="144">10</text><text x="46" y="200">0</text><text x="54" y="225" data-ops-time>90d ago</text><text x="390" y="225" data-ops-time>45d ago</text><text x="726" y="225" data-ops-time>Now</text><text class="axis-title" x="54" y="15">MODEL VERSIONS</text></g><g class="inference-axis right"><text x="734" y="32">100%</text><text x="734" y="88">67%</text><text x="734" y="144">33%</text><text x="734" y="200">0</text><text class="axis-title" x="726" y="15">CACHE COVERAGE</text></g><path class="ops-area registered" data-ops-area="registered"/><path class="ops-line registered" data-ops-line="registered"/><path class="ops-line preferred" data-ops-line="preferred"/><path class="ops-line coverage" data-ops-line="coverage"/></svg></div>
+            <div class="inference-flow-foot"><div class="inference-chart-key result-legend"><button class="registered" data-ops-highlight="registered">Registered versions</button><button class="preferred" data-ops-highlight="preferred">Preferred versions</button><button class="coverage" data-ops-highlight="coverage">Worker cache coverage</button></div><div class="inference-current"><span><b data-ops-current="registered">28</b> registered</span><span><b data-ops-current="preferred">6</b> preferred</span><span><b data-ops-current="coverage">43%</b> cached somewhere</span><span class="live"><i class="dot"></i>Design preview</span></div></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel" id="model-registry">
         <header class="panel-hd">
           <h2>Model registry <span class="count">(28)</span></h2>
           <div class="panel-tools">
@@ -75,8 +105,6 @@
             <select class="sel" aria-label="Base model" title="Show models fine-tuned from one base">
               <option>All base models</option><option>YOLOv8l</option><option>YOLOv8m</option>
             </select>
-            <button class="btn" title="Filter by preference, size or who registered it">
-              <svg class="ico"><use href="#i-filter"/></svg>More filters</button>
           </div>
         </header>
         <div class="panel-bd flush">
@@ -153,16 +181,14 @@
                               <button class="btn primary" title="Start an inference job with this version">
                                 <svg class="ico"><use href="#i-play"/></svg>Use for inference</button>
                               <button class="btn" title="Cache it on chosen workers and prefer them for matching jobs">
-                                <svg class="ico"><use href="#i-workers"/></svg>Assign to workers
-                                <span class="later">Later</span></button>
+                                <svg class="ico"><use href="#i-workers"/></svg>Assign to workers</button>
                               <button class="btn" title="Choose the task it is preferred for, and say why">
                                 <svg class="ico"><use href="#i-star"/></svg>Mark preferred</button>
                               <button class="btn" title="Fine-tune a new version from this one">
                                 <svg class="ico"><use href="#i-training"/></svg>Train from this</button>
                               <button class="btn wide2" title="Download the weights for this version, 138 MB">
                                 <svg class="ico"><use href="#i-download"/></svg>Download weights
-                                <span class="faint">138 MB</span>
-                                <span class="later">Later</span></button>
+                                <span class="faint">138 MB</span></button>
                             </div>
                           </div>
 
@@ -330,6 +356,18 @@
     </main>
   </div>
 </div>
+
+<div class="scrim" id="modelRegisterScrim" hidden></div>
+<aside class="drawer" id="modelRegisterDrawer" role="dialog" aria-modal="true" aria-labelledby="modelRegisterTitle" hidden>
+  <header class="drawer-hd"><div><h2 id="modelRegisterTitle">Register model</h2><div class="sub">Add a trained artifact and the information needed to use and audit it</div></div><span></span><button class="btn icon" data-model-register-close aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></header>
+  <form id="modelRegisterForm" class="drawer-bd">
+    <section class="sect"><h3>Identity</h3><div class="fieldrow"><label class="field"><span>Model name</span><input class="inp" name="name" required placeholder="MARP-Gorgonian-Det"></label><label class="field"><span>Version</span><input class="inp" name="version" required placeholder="1.0.0"></label></div><div class="fieldrow"><label class="field"><span>Task</span><select class="sel" name="task" required><option>Object detection</option><option>Classification</option><option>Segmentation</option></select></label><label class="field"><span>Runtime / format</span><select class="sel" name="runtime" required><option>Ultralytics / PyTorch</option><option>PyTorch checkpoint</option><option>ONNX</option><option>TensorRT</option></select></label></div><label class="field"><span>Description</span><textarea class="inp" name="description" rows="3" placeholder="What this model recognizes and where it should be used"></textarea></label></section>
+    <section class="sect"><h3>Weights</h3><label class="field"><span>Artifact source</span><select class="sel" name="source" data-model-source><option value="upload">Upload weights</option><option value="uri">Existing artifact URI</option></select></label><label class="field" data-model-upload><span>Weights file</span><input class="inp" type="file" name="weights" accept=".pt,.pth,.onnx,.engine"></label><label class="field" data-model-uri hidden><span>Artifact URI</span><input class="inp" name="uri" placeholder="s3://…, https://…, or managed storage path"></label><label class="field"><span>SHA-256</span><input class="inp mono" name="sha256" placeholder="Calculated for uploads; required for an existing URI"></label></section>
+    <section class="sect"><h3>Scientific provenance</h3><div class="fieldrow"><label class="field"><span>Training dataset</span><select class="sel" name="dataset"><option>ALL_Projects_Inverts_v5</option><option>CAMPA_2024_Rockfish_v3</option><option>External / not in MARP</option></select></label><label class="field"><span>Base model</span><input class="inp" name="base" placeholder="YOLOv8l or registered parent"></label></div><label class="field"><span>Classes</span><textarea class="inp" name="classes" rows="4" placeholder="One class per line, in model index order"></textarea></label><label class="field"><span>Training job or external run reference</span><input class="inp" name="run" placeholder="Job 1742, experiment URL, or other provenance"></label></section>
+    <section class="sect"><h3>Registry state</h3><div class="fieldrow"><label class="field"><span>Initial status</span><select class="sel" name="status"><option>Testing</option><option>Ready</option></select></label><label class="field"><span>Preferred use</span><input class="inp" name="preferred" placeholder="Optional deployment recommendation"></label></div><p class="hint">Registration preserves the artifact hash, class order, training provenance and runtime requirements as one immutable model version.</p></section>
+  </form>
+  <footer class="drawer-ft"><button class="btn" type="button" data-model-register-close>Cancel</button><button class="btn primary" type="submit" form="modelRegisterForm"><svg class="ico"><use href="#i-plus"/></svg>Register model</button><span class="hint" data-model-register-status role="status"></span></footer>
+</aside>
 
 <script src="./mock.js"></script>
 </body>
