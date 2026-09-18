@@ -24,6 +24,7 @@
 const crypto = require('crypto');
 
 const gpuRepository = require('../repository/gpu.repository');
+const ingestRepository = require('../repository/observation-ingest.repository');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const gpuPlaybackService = require('./gpu-playback.service');
 const observationIngestService = require('./observation-ingest.service');
@@ -463,9 +464,67 @@ class GpuService {
      * @throws {Error} When either resolution fails.
      */
     async resolveSpecForLease(spec) {
-        return this.describeSessionForLease(
-            await this.resolveDataTypeForLease(await this.resolveVideoForLease(spec))
+        return this.declareModelClassesForLease(
+            await this.describeSessionForLease(
+                await this.resolveDataTypeForLease(await this.resolveVideoForLease(spec))
+            )
         );
+    }
+
+    /**
+     * Tell the worker which classes the model it asked for is supposed to have
+     * (#214).
+     *
+     * **The sha256 on a spec verifies the file, not the model.** A worker hashes
+     * what it fetched and then loads it and trusts it; nothing anywhere compares
+     * the classes it ended up with against the model the job named. The window
+     * makes that gap visible without closing it -- its labels come from
+     * `yolo_model.names`, the weights actually in memory, while its footer comes
+     * from `spec.model.name` -- so a run on the wrong weights reads as the right
+     * model producing surprising animals.
+     *
+     * That is not hypothetical. On 2026-09-18 boxes were labelled with the coral
+     * model's classes on two machines while every leased job was `rockfish5`,
+     * and the only reason it was caught at all is that somebody was watching the
+     * screen. Confident, plausible, wrong species is the worst thing this
+     * pipeline can produce, because nothing downstream can tell it from data.
+     *
+     * So the spec now carries the model's registered trained species, and the
+     * worker refuses to start when the loaded class names disagree. These are
+     * the same names the ingest resolves detections against, so a mismatch was
+     * always going to fail -- this moves the discovery from after an hour of GPU
+     * time to before the first frame.
+     *
+     * **Attached when known, and its absence is not a refusal.** A model with no
+     * `model_species` rows yet is a seeding gap rather than a wrong model, and a
+     * coordinator that stops leasing over one has turned a missing label into an
+     * outage. The worker treats an absent list as "cannot check" and says so.
+     *
+     * @async
+     * @param {Object} spec - The spec being prepared for a lease.
+     * @returns {Promise<Object>} The spec, with `model.class_names` where known.
+     */
+    async declareModelClassesForLease(spec) {
+        const modelId = spec && spec.model && spec.model.ml_model_id;
+
+        if (!modelId) {
+            return spec;
+        }
+
+        try {
+            const names = await ingestRepository.trainedSpeciesNames(modelId);
+
+            if (!names.length) {
+                return spec;
+            }
+
+            return { ...spec, model: { ...spec.model, class_names: names } };
+        } catch {
+            // Same rule as the session decoration above: a worker that cannot be
+            // told what to expect still works, and refusing a lease over it
+            // would make a reporting gap into a stopped pool.
+            return spec;
+        }
     }
 
     /**
