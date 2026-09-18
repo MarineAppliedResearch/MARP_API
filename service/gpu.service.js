@@ -50,6 +50,24 @@ const {
 } = require('../config/gpu-orchestration');
 
 /**
+ * The frame rate MARP fixes video time at, from the one module that owns it.
+ *
+ * Imported rather than written again: `db/timecode.js` is what every timecode
+ * column in the database was derived with, and a second copy here that drifted
+ * would put a job's frame count at odds with the timecodes its own observations
+ * are recorded at.
+ */
+const { ASSUMED_FPS } = require('../db/timecode');
+
+/**
+ * Jellyfin reports durations in 100-nanosecond ticks.
+ *
+ * @constant
+ * @type {number}
+ */
+const TICKS_PER_SECOND = 10_000_000;
+
+/**
  * Reject a request with the API's validation contract.
  *
  * @param {string} message - What is wrong, in terms the caller can act on.
@@ -424,7 +442,61 @@ class GpuService {
      * @throws {Error} When either resolution fails.
      */
     async resolveSpecForLease(spec) {
-        return this.resolveDataTypeForLease(await this.resolveVideoForLease(spec));
+        return this.describeSessionForLease(
+            await this.resolveDataTypeForLease(await this.resolveVideoForLease(spec))
+        );
+    }
+
+    /**
+     * Put the session's own details on the leased spec, for a worker to show.
+     *
+     * A spec carrying `{"session_id": 510}` tells a worker an integer. That is
+     * all it has ever needed -- the session is MARP's business and the worker
+     * only echoes it back -- but a machine that puts inference on screen for the
+     * person whose GPU is running it has something to say, and "510" is not it.
+     * Project, dive, line and type are what identify a piece of survey work to
+     * somebody looking at it.
+     *
+     * **Added to the leased copy only.** The stored spec keeps what was
+     * submitted, the same as the resolved video url and the resumed range: a
+     * session can be renamed or retyped after a job is queued, so freezing its
+     * details into the queue would preserve yesterday's answer.
+     *
+     * Failure is silent by design. This is decoration on a screen, and a worker
+     * that cannot be told a dive name should still process the video -- unlike
+     * the video url or the data type, where an unresolvable value means the run
+     * would be wrong rather than unlabelled.
+     *
+     * @async
+     * @param {Object} spec - The spec being prepared for a lease.
+     * @returns {Promise<Object>} The spec, with `session` expanded where possible.
+     */
+    async describeSessionForLease(spec) {
+        const session = observationIngestService.validateSpecSession(spec.session);
+
+        if (!session) {
+            return spec;
+        }
+
+        try {
+            const described = await gpuRepository.describeSession(session);
+
+            if (!described) {
+                return spec;
+            }
+
+            // A declared top-level field, not an addition to `spec.session`.
+            // The worker's `JobSpec` has no `session` at all -- it is MARP's
+            // business and a worker only ever echoed it back -- so anything put
+            // there is dropped by pydantic before the engine sees it, with no
+            // error on either side. An undeclared field would have produced an
+            // empty status bar and two agents wondering which half was wrong.
+            return { ...spec, session_context: described };
+        } catch {
+            // Decoration, not contract. A worker with an unlabelled window is
+            // working; a worker refused a lease over a label is not.
+            return spec;
+        }
     }
 
     /**
@@ -1181,22 +1253,28 @@ class GpuService {
         }
 
         this.validateSubmittedVideo(spec.video);
+        this.validateSubmittedModel(spec.model);
+        this.validateSubmittedReduction(spec.reduction);
         await this.validateSubmittedObservationTarget(kind, spec);
 
-        // The range is always present, even for a whole video, so nothing
-        // downstream has to special-case the undivided case -- and the
-        // coordinator cannot split a submission it was not given bounds for.
-        // A whole video is [0, frame_count).
-        if (!spec.range || typeof spec.range !== 'object') {
-            invalid('spec.range is required and must be {start_frame, end_frame}, even for a whole video.');
-        }
-
-        const startFrame = requiredInteger(spec.range.start_frame, 'spec.range.start_frame');
-        const endFrame = requiredInteger(spec.range.end_frame, 'spec.range.end_frame');
+        // The range still reaches the queue and the worker as an explicit
+        // `{start_frame, end_frame}`, so nothing downstream special-cases a whole
+        // video. What changed is who works the numbers out: a person naming a
+        // Jellyfin item does not know where it ends, and asking them was how two
+        // wrong ranges got queued in one afternoon -- one from a frame rate read
+        // off a screenshot, one from windows picked by hand (#199).
+        const range = spec.range && typeof spec.range === 'object' ? spec.range : {};
+        const startFrame = range.start_frame === undefined || range.start_frame === null
+            ? 0
+            : requiredInteger(range.start_frame, 'spec.range.start_frame');
 
         if (startFrame < 0) {
             invalid('spec.range.start_frame must be zero or greater.');
         }
+
+        const endFrame = range.end_frame === undefined || range.end_frame === null
+            ? await this.frameCountForVideo(spec.video)
+            : requiredInteger(range.end_frame, 'spec.range.end_frame');
 
         // Strictly greater, because the range is half-open and so
         // `end_frame == start_frame` is the empty range. Rejected here rather
@@ -1242,7 +1320,27 @@ class GpuService {
 
         const jobs = await gpuRepository.createJobs(rows);
 
-        return { batch_id: batchId, jobs };
+        // Say what was worked out, when anything was. A person who queued a whole
+        // video by naming it has no other way to see that MARP decided it is
+        // 52,582 frames, and a derivation nobody can look at is the same trap as
+        // a model registration with no bytes behind it (#198, #199).
+        const derivedRange = {};
+
+        if (range.start_frame === undefined || range.start_frame === null) {
+            derivedRange.start_frame = startFrame;
+        }
+
+        if (range.end_frame === undefined || range.end_frame === null) {
+            derivedRange.end_frame = endFrame;
+        }
+
+        const answer = { batch_id: batchId, jobs };
+
+        if (Object.keys(derivedRange).length > 0) {
+            answer.derived_range = { ...derivedRange, frames: endFrame - startFrame };
+        }
+
+        return answer;
     }
 
     /**
@@ -1405,6 +1503,212 @@ class GpuService {
         const value = params.data_type;
 
         return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+    }
+
+    /**
+     * Validate the `model` half of a submitted spec.
+     *
+     * **A worker is never told where a file is on somebody's disk.** It is given
+     * a locator it can fetch, and what sits behind that is the coordinator's
+     * business -- a local file under `MODEL_STORAGE_ROOT` today, a file server
+     * later, with nothing to change on the worker either time.
+     *
+     * This exists because every inference job MARP had ever completed carried
+     * `C:/Users/.../weights/best.pt` in its spec. That runs on exactly one
+     * computer, and nothing stopped such a job being handed to a second machine,
+     * which then failed it four times with a `FileNotFoundError` and no
+     * indication that the spec was the problem (#198). The path was not a
+     * shortcut anybody chose: `GET /api/v2/model/:id/artifact` already existed and
+     * already worked, and the registered model it serves simply had no bytes
+     * behind it -- so the absolute path was the only thing that could work, and
+     * with one machine nothing could tell the difference.
+     *
+     * Accepted: a coordinator-relative locator (`/api/v2/model/91/artifact`), or
+     * an absolute `http`/`https` URL. Everything else is refused, including
+     * `file://`, which is the same fault wearing a scheme.
+     *
+     * **`model` is required, for every engine without exception.** That was a
+     * live question for a while: the `mock` engine performs no inference, so it
+     * looked as though it should be allowed to run without weights, and the
+     * worker was about to make `model` optional to let it. It turned out mock is
+     * scaffolding from before a real engine existed -- its own `describe()` says
+     * "contract and runner testing; performs no inference" -- and the answer is
+     * that mock gets a stand-in model rather than that the contract gets a hole
+     * in it. One rule with no exceptions beats a per-engine flag the coordinator
+     * would have to be told about and could be told wrongly.
+     *
+     * A spec reaching a worker without a model is refused there anyway, after
+     * queueing, leasing, and burning every attempt, with a pydantic traceback in
+     * `failure_reason` as the only explanation. Refusing it here costs one
+     * response and says what is missing.
+     *
+     * @param {Object} [model] - `spec.model` as supplied, if any.
+     * @returns {void}
+     * @throws {ApiError} 400 when the locator is not one a worker could fetch.
+     */
+    validateSubmittedModel(model) {
+        if (model === undefined || model === null) {
+            invalid(
+                'spec.model is required: every engine runs a model, and a worker refuses a spec without one. '
+                + 'Name a registered model and its sha256.'
+            );
+        }
+
+        if (typeof model !== 'object' || Array.isArray(model)) {
+            invalid('spec.model must be an object.');
+        }
+
+        requiredString(model.name, 'spec.model.name');
+        this.validateSha256(model.sha256, 'spec.model.sha256');
+
+        if (model.url === undefined || model.url === null) {
+            return;
+        }
+
+        const url = requiredString(model.url, 'spec.model.url');
+
+        // A drive letter, a UNC path, or a backslash-rooted path. None of these
+        // mean anything on another machine.
+        const looksLikeAWindowsPath = /^[A-Za-z]:[\\/]/.test(url) || url.startsWith('\\');
+
+        if (looksLikeAWindowsPath || url.toLowerCase().startsWith('file://')) {
+            invalid(
+                `spec.model.url must be something a worker on any machine can fetch, not a path on this one (${url}). `
+                + 'Register the model and name it as /api/v2/model/<id>/artifact, or give an https URL. '
+                + 'A worker is handed a locator and never learns where the file lives.'
+            );
+        }
+
+        // A coordinator-relative locator. `//host/share` is not one of these --
+        // it is a UNC path in disguise and a protocol-relative URL besides.
+        if (url.startsWith('/')) {
+            if (url.startsWith('//')) {
+                invalid(`spec.model.url must not start with // (${url}). Use /api/v2/model/<id>/artifact.`);
+            }
+
+            return;
+        }
+
+        let parsed;
+
+        try {
+            parsed = new URL(url);
+        } catch {
+            invalid(
+                `spec.model.url must be an absolute http(s) URL or a coordinator-relative path starting with / (${url}).`
+            );
+        }
+
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            invalid(`spec.model.url must use http or https, not ${parsed.protocol} (${url}).`);
+        }
+    }
+
+    /**
+     * How many frames a video has, from the only thing that knows.
+     *
+     * `runtimeTicks / 10_000_000 * ASSUMED_FPS`. Jellyfin reports a duration in
+     * 100-nanosecond ticks and MARP fixes video time at 25 fps everywhere it
+     * touches a timecode, so the two combine into a frame count with nothing
+     * assumed that was not already assumed. Both halves have been in this
+     * repository since before the GPU work; nothing joined them.
+     *
+     * The constant is not a guess. Measured across all ten videos MARP holds
+     * observations for, `framenum` against `mediaPosition` gives 25.01 to 25.05,
+     * and `observation-ingest.service.js` already carries a check whose comment
+     * says it is the only signal that the 25 fps assumption broke.
+     *
+     * **Refused rather than guessed when the duration is unknown.** An item with
+     * no `RunTimeTicks` coalesces to null, and deriving zero from it would fail
+     * further down as `end_frame <= start_frame` -- a confusing message about an
+     * empty range standing in for an honest one about a video whose length
+     * nobody knows.
+     *
+     * A bare `video.url` has no duration to read, so a range stays required
+     * there. That is a real limit rather than an oversight: MARP does not open
+     * the file, and a URL it has never seen tells it nothing.
+     *
+     * @async
+     * @param {Object} video - `spec.video` as submitted.
+     * @returns {Promise<number>} Frames in the video, as an exclusive bound.
+     * @throws {ApiError} 400 when the length cannot be established.
+     */
+    async frameCountForVideo(video) {
+        if (!video.jellyfin_item_id) {
+            invalid(
+                'spec.range.end_frame is required for a video given as a bare url: MARP reads a length from a '
+                + 'Jellyfin item and has no way to measure an arbitrary source. Give an end_frame, or submit the '
+                + 'job with a jellyfin_item_id and let the range be worked out.'
+            );
+        }
+
+        let item;
+
+        try {
+            item = await jellyfinRepository.getItem(video.jellyfin_item_id);
+        } catch (error) {
+            invalid(
+                `spec.range.end_frame was not given and the video could not be read to work it out: ${error.message}`
+            );
+        }
+
+        if (!item || !item.runtimeTicks) {
+            invalid(
+                `Jellyfin item ${video.jellyfin_item_id} reports no duration, so the frame count cannot be worked `
+                + 'out. Give spec.range.end_frame explicitly.'
+            );
+        }
+
+        const frames = Math.floor((Number(item.runtimeTicks) / TICKS_PER_SECOND) * ASSUMED_FPS);
+
+        if (!Number.isSafeInteger(frames) || frames < 1) {
+            invalid(
+                `Jellyfin item ${video.jellyfin_item_id} reports a duration that works out to ${frames} frames, `
+                + 'which cannot be right. Give spec.range.end_frame explicitly.'
+            );
+        }
+
+        return frames;
+    }
+
+    /**
+     * Validate the `reduction` half of a submitted spec.
+     *
+     * The keyframe reduction rule applied to finished tracks. Required for the
+     * same reason as the model: the worker's `JobSpec` has it as a required
+     * field, so a spec without one is refused after being queued, leased and
+     * retried rather than at the moment it could have been corrected.
+     *
+     * `version` is accepted as a number or a string. MARP's own published spec
+     * documents it as an integer and the worker's registry keys on strings; the
+     * worker normalises it at the boundary, and refusing one of the two spellings
+     * here would make MARP disagree with its own documentation.
+     *
+     * @param {Object} [reduction] - `spec.reduction` as supplied.
+     * @returns {void}
+     * @throws {ApiError} 400 when it is missing or malformed.
+     */
+    validateSubmittedReduction(reduction) {
+        if (reduction === undefined || reduction === null) {
+            invalid(
+                'spec.reduction is required: it names the keyframe rule applied to finished tracks, '
+                + 'and a worker refuses a spec without one.'
+            );
+        }
+
+        if (typeof reduction !== 'object' || Array.isArray(reduction)) {
+            invalid('spec.reduction must be an object.');
+        }
+
+        requiredString(reduction.name, 'spec.reduction.name');
+
+        if (reduction.version === undefined || reduction.version === null) {
+            invalid('spec.reduction.version is required.');
+        }
+
+        if (typeof reduction.version !== 'string' && typeof reduction.version !== 'number') {
+            invalid('spec.reduction.version must be a string or a number.');
+        }
     }
 
     /**

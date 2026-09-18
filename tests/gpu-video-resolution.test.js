@@ -213,6 +213,309 @@ afterAll(async () => {
 });
 
 /**
+ * What a submission is allowed to say about its model.
+ *
+ * The same principle as the video below it, arrived at the expensive way: a
+ * worker is handed a locator it can fetch and never learns where a file lives.
+ * Every inference job MARP had completed carried an absolute Windows path here,
+ * which ran on one computer and failed four attempts on any other with nothing
+ * to say the spec was at fault (#198).
+ */
+describe('GPU job submission: the model', () => {
+    /**
+     * Submit with a given `spec.model`, reusing this suite's video and teardown.
+     *
+     * @param {Object} model - The `spec.model` to submit.
+     * @returns {Promise<Object>} The Supertest response.
+     */
+    function submitModel(model) {
+        return submit(
+            { url: RESOLVED_URL, source_name: 'jest-model.mp4' },
+            {
+                spec: {
+                    engine: 'ultralytics',
+                    model,
+                    video: { url: RESOLVED_URL, source_name: 'jest-model.mp4' },
+                    range: { start_frame: 0, end_frame: 100 },
+                    reduction: { name: 'v3_dirpad', version: 1 },
+                },
+            }
+        );
+    }
+
+    it('refuses a model named by an absolute Windows path', async () => {
+        const response = await submitModel({
+            name: 'jest-abs',
+            sha256: 'e'.repeat(64),
+            url: 'C:/Users/isaac/Documents/Workspace/marp-inference-worker/models/best.pt',
+        });
+
+        // The exact spec every completed inference job carried. Before this, it
+        // was accepted, queued, leased by whichever machine polled first, and
+        // failed with a FileNotFoundError naming a path that machine had never
+        // heard of.
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/not a path on this one/);
+        expect(response.body.error.message).toMatch(/api\/v2\/model/);
+    });
+
+    it('refuses a backslash path and a UNC share', async () => {
+        for (const url of ['C:\\models\\best.pt', '\\\\fileserver\\models\\best.pt']) {
+            const response = await submitModel({ name: 'jest-unc', sha256: 'e'.repeat(64), url });
+
+            expect(response.status).toBe(400);
+        }
+    });
+
+    it('refuses a file:// url, which is the same fault wearing a scheme', async () => {
+        const response = await submitModel({
+            name: 'jest-file',
+            sha256: 'e'.repeat(64),
+            url: 'file:///C:/models/best.pt',
+        });
+
+        expect(response.status).toBe(400);
+    });
+
+    it('refuses a protocol-relative url', async () => {
+        const response = await submitModel({
+            name: 'jest-proto',
+            sha256: 'e'.repeat(64),
+            url: '//fileserver/models/best.pt',
+        });
+
+        expect(response.status).toBe(400);
+    });
+
+    it('accepts a coordinator-relative locator', async () => {
+        const response = await submitModel({
+            name: 'jest-relative',
+            sha256: 'e'.repeat(64),
+            url: '/api/v2/model/91/artifact',
+        });
+
+        // What a worker is actually given. MARP resolves it to bytes; the worker
+        // fetches it with its own credential and verifies the sha256 on arrival.
+        expect(response.status).toBe(200);
+    });
+
+    it('accepts an https url, which is where a file server will be', async () => {
+        const response = await submitModel({
+            name: 'jest-https',
+            sha256: 'e'.repeat(64),
+            url: 'https://models.invalid/weights/best.pt',
+        });
+
+        expect(response.status).toBe(200);
+    });
+
+    it('still accepts a model with no url at all', async () => {
+        const response = await submitModel({ name: 'jest-nourl', sha256: 'e'.repeat(64) });
+
+        // Naming a registered model without saying where it is remains valid: the
+        // locator is optional, the model is not.
+        expect(response.status).toBe(200);
+    });
+
+    it('refuses a spec with no model, whatever the engine', async () => {
+        const response = await submitModel(undefined);
+
+        // Every engine runs a model. `mock` looked like the exception -- it
+        // performs no inference -- but it is scaffolding for testing the contract
+        // rather than an engine a volunteer runs, and the answer is that it gets a
+        // stand-in model rather than that the rule gets an exception.
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/spec\.model is required/);
+    });
+
+    it('refuses a model with no sha256, so the bytes cannot be verified', async () => {
+        const response = await submitModel({ name: 'jest-nohash' });
+
+        expect(response.status).toBe(400);
+    });
+
+    it('refuses a spec with no reduction', async () => {
+        const response = await submit(
+            { url: RESOLVED_URL, source_name: 'jest-nored.mp4' },
+            {
+                spec: {
+                    engine: 'ultralytics',
+                    model: { name: 'jest-nored', sha256: 'e'.repeat(64) },
+                    video: { url: RESOLVED_URL, source_name: 'jest-nored.mp4' },
+                    range: { start_frame: 0, end_frame: 100 },
+                },
+            }
+        );
+
+        // The worker's JobSpec requires it, so a spec without one was queued,
+        // leased, and refused three times with a pydantic traceback as the only
+        // explanation. Two suites in this repository were submitting exactly this
+        // shape and never noticed, because neither of them runs a job.
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/spec\.reduction is required/);
+    });
+
+    it('accepts a reduction version as a number or a string', async () => {
+        for (const version of [1, '1']) {
+            const response = await submit(
+                { url: RESOLVED_URL, source_name: 'jest-redver.mp4' },
+                {
+                    spec: {
+                        engine: 'ultralytics',
+                        model: { name: 'jest-redver', sha256: 'e'.repeat(64) },
+                        video: { url: RESOLVED_URL, source_name: 'jest-redver.mp4' },
+                        range: { start_frame: 0, end_frame: 100 },
+                        reduction: { name: 'v3_dirpad', version },
+                    },
+                }
+            );
+
+            // MARP's published spec documents this as an integer and the worker's
+            // registry keys on strings. Refusing either spelling would put MARP at
+            // odds with its own documentation.
+            expect(response.status).toBe(200);
+        }
+    });
+});
+
+/**
+ * Where a video ends, when nobody said.
+ *
+ * `runtimeTicks` 36000000000 is one hour, and MARP fixes video time at 25 fps,
+ * so the fixture video is 90000 frames. Every expectation below is that number
+ * or derived from it, rather than a literal repeated -- if the fixture's
+ * duration changes, these fail loudly instead of passing against a stale figure.
+ */
+describe('GPU job submission: the range it works out', () => {
+    /** One hour at 25 fps. @type {number} */
+    const FIXTURE_FRAMES = Math.floor((JELLYFIN_ITEM.runtimeTicks / 10_000_000) * 25);
+
+    /**
+     * Submit with a given `spec.range`, or none at all.
+     *
+     * @param {Object} [range] - `spec.range`, omitted entirely when undefined.
+     * @param {Object} [video] - `spec.video`, defaulting to the fixture item.
+     * @returns {Promise<Object>} The Supertest response.
+     */
+    function submitRange(range, video = { jellyfin_item_id: ITEM_ID, source_name: 'jest-range.mp4' }) {
+        const spec = {
+            engine: 'ultralytics',
+            model: { name: 'jest-range', sha256: 'e'.repeat(64) },
+            video,
+            reduction: { name: 'v3_dirpad', version: 1 },
+        };
+
+        if (range !== undefined) {
+            spec.range = range;
+        }
+
+        return submit(video, { spec });
+    }
+
+    it('takes a whole video when no range is given at all', async () => {
+        const response = await submitRange(undefined);
+
+        expect(response.status).toBe(200);
+        expect(response.body.jobs[0].spec.range).toEqual({ start_frame: 0, end_frame: FIXTURE_FRAMES });
+    });
+
+    it('runs to the end when only a start is given', async () => {
+        const response = await submitRange({ start_frame: 1000 });
+
+        expect(response.status).toBe(200);
+        expect(response.body.jobs[0].spec.range).toEqual({
+            start_frame: 1000,
+            end_frame: FIXTURE_FRAMES,
+        });
+    });
+
+    it('says what it worked out, so a person can see it', async () => {
+        const response = await submitRange(undefined);
+
+        // A derivation nobody can look at is the same trap as a model
+        // registration with no bytes behind it: it works until it does not, and
+        // then there is nothing to notice.
+        expect(response.body.derived_range).toEqual({
+            start_frame: 0,
+            end_frame: FIXTURE_FRAMES,
+            frames: FIXTURE_FRAMES,
+        });
+    });
+
+    it('says nothing about deriving when the range was given in full', async () => {
+        const response = await submitRange({ start_frame: 0, end_frame: 100 });
+
+        expect(response.status).toBe(200);
+        expect(response.body.derived_range).toBeUndefined();
+    });
+
+    it('splits a derived range into pieces, so a whole video is one call', async () => {
+        const response = await submit(
+            { jellyfin_item_id: ITEM_ID, source_name: 'jest-range.mp4' },
+            {
+                piece_frames: 20000,
+                spec: {
+                    engine: 'ultralytics',
+                    model: { name: 'jest-range-split', sha256: 'e'.repeat(64) },
+                    video: { jellyfin_item_id: ITEM_ID, source_name: 'jest-range.mp4' },
+                    reduction: { name: 'v3_dirpad', version: 1 },
+                },
+            }
+        );
+
+        expect(response.status).toBe(200);
+
+        const ranges = response.body.jobs.map((job) => job.spec.range);
+
+        // The point of the whole change: name a video and a piece size, and the
+        // coordinator does the rest. The tiling assertions matter more than the
+        // count -- this project's half-open convention has been got wrong twice,
+        // and both times the only symptom was frames quietly processed twice or
+        // not at all.
+        expect(ranges[0].start_frame).toBe(0);
+        expect(ranges[ranges.length - 1].end_frame).toBe(FIXTURE_FRAMES);
+
+        for (let i = 0; i + 1 < ranges.length; i += 1) {
+            expect(ranges[i].end_frame).toBe(ranges[i + 1].start_frame);
+        }
+
+        const covered = ranges.reduce((sum, r) => sum + (r.end_frame - r.start_frame), 0);
+
+        expect(covered).toBe(FIXTURE_FRAMES);
+    });
+
+    it('refuses rather than guessing when the item reports no duration', async () => {
+        jellyfinRepository.getItem.mockResolvedValueOnce({ ...JELLYFIN_ITEM, runtimeTicks: null });
+
+        const response = await submitRange(undefined);
+
+        // Deriving zero here would fail further down as an empty range, and the
+        // message would be about half-open bounds rather than about a video whose
+        // length nobody knows.
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/reports no duration/);
+    });
+
+    it('refuses a bare url with no end_frame, and says why', async () => {
+        const response = await submitRange(undefined, {
+            url: RESOLVED_URL,
+            source_name: 'jest-bare-range.mp4',
+        });
+
+        // A real limit rather than an oversight: MARP does not open the file, so
+        // a URL it has never seen tells it nothing about length.
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/bare url/);
+    });
+
+    it('still refuses an empty range that was given explicitly', async () => {
+        const response = await submitRange({ start_frame: 500, end_frame: 500 });
+
+        expect(response.status).toBe(400);
+    });
+});
+
+/**
  * What a submission is allowed to say about its video.
  */
 describe('GPU job submission: the video', () => {

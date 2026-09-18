@@ -435,7 +435,7 @@ describe('GPU job submission and leasing', () => {
         expect(response.body.error.message).toMatch(/must be greater than/);
     });
 
-    it('refuses a submission with no frame range, even for a whole video', async () => {
+    it('refuses a submission with no frame range when the video is a bare url', async () => {
         const spec = specFor({ start_frame: 0, end_frame: 10 });
         delete spec.range;
 
@@ -443,8 +443,16 @@ describe('GPU job submission and leasing', () => {
             .post('/api/v2/gpu/jobs')
             .send({ kind: 'inference', spec });
 
+        // A range used to be required for every submission. It is now worked
+        // out from the video's own duration (#199) -- but only for a Jellyfin
+        // item, because that is the only kind of video MARP can ask the length
+        // of. It never opens the file, so an arbitrary url tells it nothing and
+        // the range stays required there. The message says which case this is,
+        // rather than leaving somebody to guess why the same spec works for one
+        // video and not another.
         expect(response.status).toBe(400);
-        expect(response.body.error.message).toMatch(/spec.range is required/);
+        expect(response.body.error.message).toMatch(/bare url/);
+        expect(response.body.error.message).toMatch(/jellyfin_item_id/);
     });
 
     it('refuses a job of an unknown kind', async () => {

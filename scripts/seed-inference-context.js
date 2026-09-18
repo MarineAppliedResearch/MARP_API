@@ -63,12 +63,30 @@ const PROJECT = { project_id: 43, name: 'CAMPA2024' };
 const PROJECT_2026 = { project_id: 44, name: 'CAMPA2026' };
 
 /**
+ * The project the CAMPA 2021 survey is recorded under.
+ *
+ * The 2021 footage is in Jellyfin and has been since before any of this
+ * pipeline existed, but nothing in the database referred to it: there was no
+ * project, and every session was `Invert`. It gets a project here for the same
+ * reason CAMPA2026 does -- a survey year is pipeline context, not something a
+ * per-dive script should invent on first use.
+ *
+ * Added when the rockfish model was first run, which is also the first `Fish`
+ * work in this corpus. No sessions are pinned for it, for the same reason as
+ * CAMPA2026: they are created per dive and their ids are not facts about MARP.
+ *
+ * @constant
+ * @type {Object}
+ */
+const PROJECT_2021 = { project_id: 45, name: 'CAMPA2021' };
+
+/**
  * Every project this seeds, in id order.
  *
  * @constant
  * @type {Array<Object>}
  */
-const PROJECTS = [PROJECT, PROJECT_2026];
+const PROJECTS = [PROJECT, PROJECT_2026, PROJECT_2021];
 
 /**
  * The session the pipeline's observations land in.
