@@ -118,7 +118,20 @@ module.exports = (sequelize, DataTypes) => {
             published_attempt_id: {
                 type: DataTypes.INTEGER,
                 allowNull: true,
-                comment: 'The attempt whose result was recorded. Set once and never overwritten.',
+                comment: 'The attempt whose successful result finished the job. Set once and never overwritten. No longer the ingest guard -- see gpu_job_attempts.ingested_at.',
+            },
+
+            yields_made: {
+                type: DataTypes.INTEGER,
+                allowNull: false,
+                defaultValue: 0,
+                comment: 'Leases that ended in a deliberate stop. Subtracted from attempts_made when judging the budget, because a volunteer stopping is not a failed attempt.',
+            },
+
+            resume_from_frame: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                comment: 'Where the next lease starts after an operator stopped a run part-way. Null means start from the range in spec, which is never rewritten.',
             },
 
             created_by: {

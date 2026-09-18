@@ -99,15 +99,19 @@ module.exports = {
                         comment: 'Leases that ended in a deliberate stop. Subtracted from attempts_made when judging the attempt budget, because a volunteer stopping is not a failure.',
                     }, { transaction });
 
-                    await queryInterface.removeConstraint(
-                        'gpu_job_attempts', 'gpu_job_attempts_state_check', { transaction }
+                    // Plain SQL rather than `addConstraint`, which wants a
+                    // `fields` list it then ignores for a check and refuses to
+                    // run without. The clause is the whole point of this
+                    // migration, so it is written as the clause it is.
+                    await sequelize.query(
+                        'ALTER TABLE gpu_job_attempts DROP CONSTRAINT gpu_job_attempts_state_check',
+                        { transaction }
                     );
-                    await queryInterface.addConstraint('gpu_job_attempts', {
-                        type: 'check',
-                        name: 'gpu_job_attempts_state_check',
-                        where: sequelize.literal(`state IN (${quoted(ATTEMPT_STATES_AFTER)})`),
-                        transaction,
-                    });
+                    await sequelize.query(
+                        `ALTER TABLE gpu_job_attempts ADD CONSTRAINT gpu_job_attempts_state_check
+                         CHECK (state IN (${quoted(ATTEMPT_STATES_AFTER)}))`,
+                        { transaction }
+                    );
                 },
             });
             await transaction.commit();
@@ -138,15 +142,15 @@ module.exports = {
                         { transaction }
                     );
 
-                    await queryInterface.removeConstraint(
-                        'gpu_job_attempts', 'gpu_job_attempts_state_check', { transaction }
+                    await sequelize.query(
+                        'ALTER TABLE gpu_job_attempts DROP CONSTRAINT gpu_job_attempts_state_check',
+                        { transaction }
                     );
-                    await queryInterface.addConstraint('gpu_job_attempts', {
-                        type: 'check',
-                        name: 'gpu_job_attempts_state_check',
-                        where: sequelize.literal(`state IN (${quoted(ATTEMPT_STATES_BEFORE)})`),
-                        transaction,
-                    });
+                    await sequelize.query(
+                        `ALTER TABLE gpu_job_attempts ADD CONSTRAINT gpu_job_attempts_state_check
+                         CHECK (state IN (${quoted(ATTEMPT_STATES_BEFORE)}))`,
+                        { transaction }
+                    );
 
                     await queryInterface.removeColumn('gpu_jobs', 'yields_made', { transaction });
                     await queryInterface.removeColumn('gpu_jobs', 'resume_from_frame', { transaction });
