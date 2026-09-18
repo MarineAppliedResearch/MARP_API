@@ -83,7 +83,24 @@ async function sha256(filePath) {
  * @throws {Error} When it matches no species, or more than one.
  */
 async function resolveSpecies(comname, speciesList) {
-    const rows = await db.sequelize.query(
+    // Exact first, case-insensitively only if that finds nothing.
+    //
+    // A model's class names are exact strings -- the ingest matches them
+    // exactly and the identity check compares them exactly -- so a
+    // case-insensitive lookup is a convenience for a human typing a name, not
+    // the rule. It stopped being harmless with MBARI-315k, whose 499 classes
+    // include both `Equipment` and `equipment` as separate categories: folding
+    // case there finds two rows and the script refuses, correctly but
+    // uselessly, because both are real and only one is meant.
+    const exact = await db.sequelize.query(
+        `SELECT id, comname, species_list
+           FROM species
+          WHERE comname = :comname
+            AND (:speciesList::varchar IS NULL OR species_list = :speciesList)`,
+        { replacements: { comname, speciesList: speciesList || null }, type: QueryTypes.SELECT }
+    );
+
+    const rows = exact.length > 0 ? exact : await db.sequelize.query(
         `SELECT id, comname, species_list
            FROM species
           WHERE lower(comname) = lower(:comname)

@@ -63,50 +63,7 @@ const db = require('../model');
  * @constant
  * @type {Array<Object>}
  */
-const VOCABULARIES = [
-    {
-        list: 'MBARI_Benthic_Supercategory',
-        sessionType: 'MBARI_Benthic',
-        model: 'MBARI-Benthic-Supercategory-2025',
-        source: 'https://huggingface.co/FathomNet/2025-MBARI-Benthic-Supercategory-Object-Detector',
-        licence: 'CC-BY-4.0',
-        classes: [
-            'Sea Anemones', 'Bony fishes', 'Flatfish', 'Eels', 'Gastropods',
-            'Sharks', 'Rays and Skates', 'Chimaeras', 'Sea stars',
-            'Feather stars and sea lilies', 'Sea cucumbers', 'Urchins',
-            'Glass sponges', 'Sea fans', 'Soft corals', 'Sea pens',
-            'Stony corals', 'Black corals', 'Crabs', 'Shrimps',
-            'Squat lobsters', 'Barnacles', 'Sea spiders', 'Worms',
-            'Brittle Stars', 'Tube-Dwelling Anemones', 'Demosponges',
-            'Zoanthids', 'Clams',
-        ],
-    },
-    {
-        list: 'FathomNet_VME',
-        sessionType: 'FathomNet_VME',
-        model: 'FathomNet-VME-Detector',
-        source: 'https://huggingface.co/FathomNet/vulnerable-marine-ecosystems',
-        licence: 'CC-BY-4.0',
-        classes: ['corals', 'crinoids', 'sponges', 'fishes'],
-    },
-    {
-        // The one vocabulary here that is not taxonomic at all. `trash` is a
-        // category of object and `rov` is a vehicle -- the institute's own
-        // equipment appearing in its own footage. MARP has a `MarineDebris`
-        // list, and this is deliberately not merged into it: that list is a
-        // debris taxonomy recorded by people, and these are one model's classes,
-        // which is the distinction the whole per-model decision rests on.
-        list: 'FathomNet_Trash',
-        sessionType: 'FathomNet_Trash',
-        model: 'FathomNet-trash-detector',
-        source: 'https://huggingface.co/FathomNet/trash-detector',
-        licence: 'CC-BY-4.0',
-        classes: [
-            'trash', 'eel', 'rov', 'starfish', 'fish', 'crab', 'plant',
-            'animal_misc', 'shells', 'bird', 'shark', 'jellyfish', 'ray',
-        ],
-    },
-];
+const VOCABULARIES = require('./data/morphotaxa-vocabularies.json');
 
 /**
  * Reads a named command-line argument.
