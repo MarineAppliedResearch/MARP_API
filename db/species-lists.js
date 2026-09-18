@@ -39,6 +39,12 @@ const SESSION_TYPE_TO_SPECIES_LIST = Object.freeze({
     Habitat: 'Habitat',
     Substrate60Second: 'Substrate_60Seconds',
     MarineDebris: 'MarineDebris',
+    // FathomNet-family detectors classify morphotaxonomic groups rather than
+    // species, so each model's vocabulary is its own list and needs its own
+    // session type. `scripts/seed-morphotaxa-vocabulary.js` writes the rows and
+    // says why a list per model rather than one shared one.
+    MBARI_Benthic: 'MBARI_Benthic_Supercategory',
+    FathomNet_VME: 'FathomNet_VME',
 });
 
 /**
