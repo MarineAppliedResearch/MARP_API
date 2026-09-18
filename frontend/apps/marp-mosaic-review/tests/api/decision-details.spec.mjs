@@ -196,9 +196,9 @@ test('#172 translucent overlays leave the observation visible', async ({ page, r
     expect(await alpha(tile.locator('.rtag'))).toBeLessThan(0.4);
     expect(await alpha(tile.locator('.cap'))).toBe(0);
 
-    /* An excluded training row carries its reason in this corner, so it deliberately has
-       no frame-count chip. Check the frame overlay on the ordinary training candidates,
-       which is what the fixture test did after switching modes. */
+    /* Since #206 the corner carries the reason *and* the count, stacked, so an excluded
+       row has a frame chip like any other. This used to say the opposite, and picked an
+       ordinary training candidate to avoid the row it was standing on. */
     await page.goto('./?mode=training');
     await ready(page);
     await expect(page.locator('.frames').first()).toBeVisible();
@@ -207,3 +207,138 @@ test('#172 translucent overlays leave the observation visible', async ({ page, r
     await restore(request, 'training', claim);
   }
 });
+
+/**
+ * #206: the track length is on the tile in every mode, beside the reason.
+ *
+ * It used to be training mode only, and there it was the reason chip *or* the count,
+ * never both -- with the count demoted to the reason chip's `title`, which is a tooltip
+ * nobody hovers and a phone cannot show at all. So a reviewer in scientific mode had to
+ * switch modes to find out whether a detection had lasted one frame or ninety.
+ *
+ * The browser tier because the requirement is about what a tile draws and where. A
+ * store-level check cannot see a chip that is missing, and neither can it see one drawn
+ * underneath another.
+ */
+for (const mode of ['scientific', 'training']) {
+  test(`#206 R1, R5 ${mode}: the track length is on the tile, and reads 0f with no keyframes`,
+    async ({ page }) => {
+      /* No `tie`, so the seeder plants no keyframes at all -- which is R5's case and the
+         one a client that coalesced badly would render as `undefinedf`. */
+      const seeded = await seedPage({ count: 2, thumbnail: 'ready' });
+
+      try {
+        await page.goto(mode === 'scientific'
+          ? seeded.address
+          : `${seeded.address}&mode=training`);
+        await expectRealBacking(page);
+        await ready(page);
+
+        const tile = page.locator(`.tile[data-id="${seeded.ids[0]}"]`);
+        const frames = tile.locator('.frames');
+
+        await expect(frames).toBeVisible();
+        await expect(frames).toHaveText('0f');
+      } finally {
+        await seeded.remove();
+      }
+    });
+}
+
+test('#206 R2, R3, R4: a reason and the track length are both shown, and neither covers the other',
+  async ({ page }) => {
+    /* `tie` is what makes the seeder plant keyframes, so this page has a real count to
+       show rather than 0f -- the check is about two chips sharing a corner, and a count
+       of zero would still prove that, but a real one is what a reviewer sees. */
+    const seeded = await seedPage({ count: 2, thumbnail: 'ready', tie: true });
+
+    try {
+      await page.goto(seeded.address);
+      await expectRealBacking(page);
+      await ready(page);
+
+      const tile = page.locator(`.tile[data-id="${seeded.ids[1]}"]`);
+
+      await tile.click();
+      await tile.locator('[data-badge]').click();
+      await page.locator('.pick .chip', { hasText: 'Duplicate' }).click();
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.pick')).toHaveCount(0);
+
+      const reason = tile.locator('.reason-chip');
+      const frames = tile.locator('.frames');
+
+      /* Both, which is the whole requirement. This is the assertion that was false: the
+         corner returned one chip or the other. */
+      await expect(reason).toBeVisible();
+      await expect(reason).toHaveText('Duplicate');
+      await expect(frames).toBeVisible();
+      await expect(frames).toHaveText(/^\d+f$/);
+
+      /* And neither drawn over the other. Two chips can both be "visible" to Playwright
+         while occupying the same pixels, which is exactly what two rules sharing
+         `top: 4px; right: 4px` produced -- so the geometry is asserted rather than the
+         visibility alone. Runs at desktop and phone width, because the api-phone project
+         runs this file too. */
+      const boxes = await tile.evaluate((element) => {
+        const rectangle = (selector) => {
+          const found = element.querySelector(selector);
+          return found ? found.getBoundingClientRect() : null;
+        };
+        const a = rectangle('.reason-chip');
+        const b = rectangle('.frames');
+        return {
+          overlaps: a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top,
+          reasonBottom: a.bottom,
+          framesTop: b.top,
+          framesRight: b.right,
+          tileRight: element.getBoundingClientRect().right
+        };
+      });
+
+      expect(boxes.overlaps).toBe(false);
+      /* Stacked downwards, the count under the reason: the corner is a column. */
+      expect(boxes.framesTop).toBeGreaterThanOrEqual(boxes.reasonBottom - 0.5);
+      /* And still inside the tile, rather than pushed off its right edge. */
+      expect(boxes.framesRight).toBeLessThanOrEqual(boxes.tileRight + 0.5);
+    } finally {
+      await seeded.remove();
+    }
+  });
+
+test('#206 R4: the corner does not swallow a click meant for the tile',
+  async ({ page }) => {
+    /**
+     * The regression this change could cause, and the reason it is worth its own check.
+     *
+     * The two chips used to be positioned individually; they are inside a positioned
+     * container now, and a container laid over the tile is exactly the kind of thing that
+     * starts eating clicks. The tile is a `<button>` and the chips are spans inside it, so
+     * a click on one bubbles -- but that is a property of the markup, and the markup is
+     * what moved.
+     *
+     * It matters beyond tidiness: `.reason-chip[data-changed]` is a real control that
+     * reopens the species chooser, and the frame chip sits over the same corner a reviewer
+     * aims at thousands of times a sitting.
+     */
+    const seeded = await seedPage({ count: 2, thumbnail: 'ready' });
+
+    try {
+      await page.goto(seeded.address);
+      await expectRealBacking(page);
+      await ready(page);
+
+      const tile = page.locator(`.tile[data-id="${seeded.ids[0]}"]`);
+      const frames = tile.locator('.frames');
+
+      await expect(frames).toBeVisible();
+      await expect(tile).not.toHaveClass(/marked/);
+
+      /* Aimed at the chip, not at the tile. */
+      await frames.click();
+
+      await expect(tile).toHaveClass(/marked/);
+    } finally {
+      await seeded.remove();
+    }
+  });
