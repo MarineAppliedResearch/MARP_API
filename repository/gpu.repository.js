@@ -347,6 +347,16 @@ class GpuRepository {
      * Judged on the coordinator's clock, like every other timeout here. A
      * worker's own idea of the time never enters into it.
      *
+     * **`SKIP LOCKED`, and it is load-bearing rather than a flourish.** A poll
+     * takes `SELECT ... FROM gpu_workers WHERE id = :workerId FOR UPDATE` inside
+     * the transaction that leases a job, and this sweep runs on every poll -- so
+     * a plain `UPDATE` across the table would sit waiting on a row some other
+     * machine's lease is holding, turning a sweep into a queue behind the
+     * busiest thing in the system. Skipping costs nothing here: a row locked by
+     * a live lease belongs to a machine that is demonstrably talking, so it is
+     * not stale, and anything genuinely dead is still there on the next poll.
+     * `expireStaleLeases` skips for the same reason.
+     *
      * @async
      * @returns {Promise<Array<Object>>} One entry per machine marked offline:
      * `{id, name, last_seen_at}`.
@@ -357,9 +367,14 @@ class GpuRepository {
             return await this.db.sequelize.query(
                 `UPDATE gpu_workers
                     SET state = 'offline'
-                  WHERE state = 'online'
-                    AND COALESCE(last_seen_at, enrolled_at)
-                        < NOW() - (:offlineSeconds * INTERVAL '1 second')
+                  WHERE id IN (
+                        SELECT id
+                          FROM gpu_workers
+                         WHERE state = 'online'
+                           AND COALESCE(last_seen_at, enrolled_at)
+                               < NOW() - (:offlineSeconds * INTERVAL '1 second')
+                         ORDER BY id ASC
+                           FOR UPDATE SKIP LOCKED)
               RETURNING id, name, last_seen_at`,
                 {
                     replacements: { offlineSeconds: WORKER_OFFLINE_SECONDS },
