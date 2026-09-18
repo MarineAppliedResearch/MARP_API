@@ -938,8 +938,13 @@ class GpuService {
         }
 
         try {
+            // Named, so the ingest guards on this attempt rather than on the
+            // job. A job finished by several attempts in sequence brings its
+            // observations a segment at a time, and a job-level "does this
+            // already have any" would let the first through and drop the rest.
             return await observationIngestService.ingestJob({
                 ...detail.job,
+                attempt_id: published.attempt_id,
                 artifacts: mine,
             });
         } catch (error) {

@@ -1320,3 +1320,75 @@ describe('The survey convention a worker is handed', () => {
         }
     });
 });
+
+/**
+ * A job finished by two machines, one after the other.
+ *
+ * The case the whole stop-and-resume feature exists for, and the one that was
+ * broken: a volunteer stops a run, keeps the frames it did, and somebody else
+ * finishes the rest. Both halves have to reach the record.
+ */
+describe('A job two attempts finished between them', () => {
+    it('ingests the second attempt as well as the first', async () => {
+        const first = REAL_RESULT.slice(0, 2);
+        const second = REAL_RESULT.slice(2, 4);
+
+        expect(first.length).toBeGreaterThan(0);
+        expect(second.length).toBeGreaterThan(0);
+
+        // One machine stops part way, keeping what it processed.
+        const { job, lease } = await submitAndLease();
+        const firstText = `${first.map((row) => JSON.stringify(row)).join('\n')}\n`;
+        const firstHash = await handOver(firstText, lease.attempt_id);
+
+        const yielded = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'yielded',
+                completed_through_frame: 18150,
+                artifacts: [{ sha256: firstHash, role: 'observations' }],
+            });
+
+        expect(yielded.status).toBe(200);
+        console.log("YIELD INGEST:", JSON.stringify(yielded.body.ingest), "published:", yielded.body.published, "ingestable:", yielded.body.ingestable, "attempt:", yielded.body.attempt_id);
+        expect(yielded.body.ingest).toMatchObject({ ingested: true, observations: first.length });
+
+        // The job is back in the queue, so another machine takes it.
+        const resumed = await global.api
+            .post('/api/v2/gpu/poll')
+            .send({ worker_id: workerId, slot_indexes: [0], wait_seconds: 0 });
+
+        expect(resumed.status).toBe(200);
+        expect(resumed.body.job_id).toBe(job.id);
+
+        const secondText = `${second.map((row) => JSON.stringify(row)).join('\n')}\n`;
+        const secondHash = await handOver(secondText, resumed.body.attempt_id);
+
+        const finished = await global.api
+            .post(`/api/v2/gpu/attempts/${resumed.body.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: resumed.body.lease_epoch,
+                outcome: 'succeeded',
+                artifacts: [{ sha256: secondHash, role: 'observations' }],
+            });
+
+        expect(finished.status).toBe(200);
+
+        // **The assertion that was failing.** Two job-level guards survived the
+        // move to a per-attempt one, so the second attempt was answered
+        // `already_ingested` -- which reads like success -- and its
+        // observations were silently dropped. The job is the unit of
+        // scientific work; the attempt is the unit of ingest.
+        expect(finished.body.ingest).toMatchObject({
+            ingested: true,
+            observations: second.length,
+        });
+
+        const stored = await observationsForJob(job.id);
+
+        expect(stored).toHaveLength(first.length + second.length);
+    }, 30000);
+});

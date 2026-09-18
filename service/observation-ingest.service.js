@@ -130,7 +130,20 @@ class ObservationIngestService {
             );
         }
 
-        if (job.state !== 'succeeded') {
+        // **A named attempt carries its own result, whatever the job is.**
+        //
+        // This used to require the job to have succeeded, which was right while
+        // a job had exactly one result: anything else genuinely had nothing to
+        // read. A job an operator stopped is back to `queued` with its
+        // remaining range, and the attempt that stopped still produced real
+        // observations for the frames it did -- so refusing on the job's state
+        // threw away the work this whole feature exists to keep, and reported
+        // it as a failure to ingest rather than as a refusal.
+        //
+        // Without an attempt the old rule stands: the manual re-ingest route
+        // reads whatever the job published, and a job that has not finished has
+        // not published anything.
+        if (!job.attempt_id && job.state !== 'succeeded') {
             invalid(
                 `Job ${job.id} is ${job.state}. Observations are ingested from a job that succeeded, `
                 + 'because anything else has no published result to read.'
@@ -151,16 +164,24 @@ class ObservationIngestService {
 
         // The check outside the write transaction is the cheap one; the write
         // takes it again under the advisory lock, where it actually holds.
-        const already = await ingestRepository.countObservationsForJob(job.id);
+        //
+        // **Skipped when an attempt is named.** A stopped job is finished by
+        // several attempts in sequence and each brings its own observations, so
+        // asking "does this job already have any" would see the first
+        // attempt's rows and refuse every one after it. `gpu_job_attempts.
+        // ingested_at`, claimed by the caller, is the guard there.
+        if (job.attempt_id === undefined || job.attempt_id === null) {
+            const already = await ingestRepository.countObservationsForJob(job.id);
 
-        if (already > 0) {
-            return {
-                job_id: job.id,
-                ingested: false,
-                already_ingested: already,
-                observations: 0,
-                keyframes: 0,
-            };
+            if (already > 0) {
+                return {
+                    job_id: job.id,
+                    ingested: false,
+                    already_ingested: already,
+                    observations: 0,
+                    keyframes: 0,
+                };
+            }
         }
 
         const rows = this.readObservationArtifact(job);
@@ -193,6 +214,7 @@ class ObservationIngestService {
 
         const written = await ingestRepository.writeJobObservations({
             jobId: job.id,
+            attemptId: job.attempt_id,
             sessionId: sessionRow.session_id,
             projectId: sessionRow.project_id,
             sessionType: sessionRow.type,

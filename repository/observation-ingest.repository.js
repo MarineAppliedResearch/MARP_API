@@ -303,7 +303,7 @@ class ObservationIngestRepository {
      * @returns {Promise<Object>} `{observations, keyframes, observation_ids}`.
      * @throws {Error} Re-throws after rolling back if any statement fails.
      */
-    async writeJobObservations({ jobId, sessionId, projectId, sessionType, observations }) {
+    async writeJobObservations({ jobId, sessionId, projectId, sessionType, observations, attemptId }) {
         const transaction = await this.db.sequelize.transaction();
 
         try {
@@ -317,17 +317,28 @@ class ObservationIngestRepository {
             // Taken again inside the lock, because the check the service made
             // before calling was outside it and two replays could both have
             // passed it.
-            const already = await this.countObservationsForJob(jobId, transaction);
+            //
+            // **Only when this is the job's one and only ingest.** A job that
+            // an operator stopped and somebody else finished is ingested once
+            // per attempt, and counting the job's observations would see the
+            // first attempt's rows and refuse the second -- silently, reported
+            // as `already_ingested`, which reads like success while the second
+            // volunteer's work is dropped. The attempt's own `ingested_at` is
+            // the guard in that case, claimed before this is called, and it
+            // closes the same race this check exists for.
+            if (attemptId === undefined || attemptId === null) {
+                const already = await this.countObservationsForJob(jobId, transaction);
 
-            if (already > 0) {
-                await transaction.commit();
+                if (already > 0) {
+                    await transaction.commit();
 
-                return {
-                    observations: 0,
-                    keyframes: 0,
-                    observation_ids: [],
-                    already_ingested: already,
-                };
+                    return {
+                        observations: 0,
+                        keyframes: 0,
+                        observation_ids: [],
+                        already_ingested: already,
+                    };
+                }
             }
 
             const nextObservationId = await this.nextKey(
