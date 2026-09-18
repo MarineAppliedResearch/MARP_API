@@ -1090,6 +1090,7 @@ class GpuService {
         }
 
         this.validateSubmittedVideo(spec.video);
+        this.validateSubmittedModel(spec.model);
         await this.validateSubmittedObservationTarget(kind, spec);
 
         // The range is always present, even for a whole video, so nothing
@@ -1314,6 +1315,91 @@ class GpuService {
         const value = params.data_type;
 
         return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+    }
+
+    /**
+     * Validate the `model` half of a submitted spec.
+     *
+     * **A worker is never told where a file is on somebody's disk.** It is given
+     * a locator it can fetch, and what sits behind that is the coordinator's
+     * business -- a local file under `MODEL_STORAGE_ROOT` today, a file server
+     * later, with nothing to change on the worker either time.
+     *
+     * This exists because every inference job MARP had ever completed carried
+     * `C:/Users/.../weights/best.pt` in its spec. That runs on exactly one
+     * computer, and nothing stopped such a job being handed to a second machine,
+     * which then failed it four times with a `FileNotFoundError` and no
+     * indication that the spec was the problem (#198). The path was not a
+     * shortcut anybody chose: `GET /api/v2/model/:id/artifact` already existed and
+     * already worked, and the registered model it serves simply had no bytes
+     * behind it -- so the absolute path was the only thing that could work, and
+     * with one machine nothing could tell the difference.
+     *
+     * Accepted: a coordinator-relative locator (`/api/v2/model/91/artifact`), or
+     * an absolute `http`/`https` URL. Everything else is refused, including
+     * `file://`, which is the same fault wearing a scheme.
+     *
+     * `model` itself is not required here. The `mock` engine performs no
+     * inference and needs no weights, and forcing it to name a model makes it
+     * unusable on the machine it exists for -- a volunteer's, with no GPU and no
+     * model cache. Which engines require one is a fact the worker reports at
+     * enrolment, and it is not on the wire from every worker yet, so requiring
+     * `model` at all waits for MarineAppliedResearch/marp-inference-worker#20.
+     *
+     * @param {Object} [model] - `spec.model` as supplied, if any.
+     * @returns {void}
+     * @throws {ApiError} 400 when the locator is not one a worker could fetch.
+     */
+    validateSubmittedModel(model) {
+        if (model === undefined || model === null) {
+            return;
+        }
+
+        if (typeof model !== 'object' || Array.isArray(model)) {
+            invalid('spec.model must be an object.');
+        }
+
+        if (model.url === undefined || model.url === null) {
+            return;
+        }
+
+        const url = requiredString(model.url, 'spec.model.url');
+
+        // A drive letter, a UNC path, or a backslash-rooted path. None of these
+        // mean anything on another machine.
+        const looksLikeAWindowsPath = /^[A-Za-z]:[\\/]/.test(url) || url.startsWith('\\');
+
+        if (looksLikeAWindowsPath || url.toLowerCase().startsWith('file://')) {
+            invalid(
+                `spec.model.url must be something a worker on any machine can fetch, not a path on this one (${url}). `
+                + 'Register the model and name it as /api/v2/model/<id>/artifact, or give an https URL. '
+                + 'A worker is handed a locator and never learns where the file lives.'
+            );
+        }
+
+        // A coordinator-relative locator. `//host/share` is not one of these --
+        // it is a UNC path in disguise and a protocol-relative URL besides.
+        if (url.startsWith('/')) {
+            if (url.startsWith('//')) {
+                invalid(`spec.model.url must not start with // (${url}). Use /api/v2/model/<id>/artifact.`);
+            }
+
+            return;
+        }
+
+        let parsed;
+
+        try {
+            parsed = new URL(url);
+        } catch {
+            invalid(
+                `spec.model.url must be an absolute http(s) URL or a coordinator-relative path starting with / (${url}).`
+            );
+        }
+
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            invalid(`spec.model.url must use http or https, not ${parsed.protocol} (${url}).`);
+        }
     }
 
     /**

@@ -213,6 +213,113 @@ afterAll(async () => {
 });
 
 /**
+ * What a submission is allowed to say about its model.
+ *
+ * The same principle as the video below it, arrived at the expensive way: a
+ * worker is handed a locator it can fetch and never learns where a file lives.
+ * Every inference job MARP had completed carried an absolute Windows path here,
+ * which ran on one computer and failed four attempts on any other with nothing
+ * to say the spec was at fault (#198).
+ */
+describe('GPU job submission: the model', () => {
+    /**
+     * Submit with a given `spec.model`, reusing this suite's video and teardown.
+     *
+     * @param {Object} model - The `spec.model` to submit.
+     * @returns {Promise<Object>} The Supertest response.
+     */
+    function submitModel(model) {
+        return submit(
+            { url: RESOLVED_URL, source_name: 'jest-model.mp4' },
+            {
+                spec: {
+                    engine: 'ultralytics',
+                    model,
+                    video: { url: RESOLVED_URL, source_name: 'jest-model.mp4' },
+                    range: { start_frame: 0, end_frame: 100 },
+                    reduction: { name: 'v3_dirpad', version: 1 },
+                },
+            }
+        );
+    }
+
+    it('refuses a model named by an absolute Windows path', async () => {
+        const response = await submitModel({
+            name: 'jest-abs',
+            sha256: 'e'.repeat(64),
+            url: 'C:/Users/isaac/Documents/Workspace/marp-inference-worker/models/best.pt',
+        });
+
+        // The exact spec every completed inference job carried. Before this, it
+        // was accepted, queued, leased by whichever machine polled first, and
+        // failed with a FileNotFoundError naming a path that machine had never
+        // heard of.
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/not a path on this one/);
+        expect(response.body.error.message).toMatch(/api\/v2\/model/);
+    });
+
+    it('refuses a backslash path and a UNC share', async () => {
+        for (const url of ['C:\\models\\best.pt', '\\\\fileserver\\models\\best.pt']) {
+            const response = await submitModel({ name: 'jest-unc', sha256: 'e'.repeat(64), url });
+
+            expect(response.status).toBe(400);
+        }
+    });
+
+    it('refuses a file:// url, which is the same fault wearing a scheme', async () => {
+        const response = await submitModel({
+            name: 'jest-file',
+            sha256: 'e'.repeat(64),
+            url: 'file:///C:/models/best.pt',
+        });
+
+        expect(response.status).toBe(400);
+    });
+
+    it('refuses a protocol-relative url', async () => {
+        const response = await submitModel({
+            name: 'jest-proto',
+            sha256: 'e'.repeat(64),
+            url: '//fileserver/models/best.pt',
+        });
+
+        expect(response.status).toBe(400);
+    });
+
+    it('accepts a coordinator-relative locator', async () => {
+        const response = await submitModel({
+            name: 'jest-relative',
+            sha256: 'e'.repeat(64),
+            url: '/api/v2/model/91/artifact',
+        });
+
+        // What a worker is actually given. MARP resolves it to bytes; the worker
+        // fetches it with its own credential and verifies the sha256 on arrival.
+        expect(response.status).toBe(200);
+    });
+
+    it('accepts an https url, which is where a file server will be', async () => {
+        const response = await submitModel({
+            name: 'jest-https',
+            sha256: 'e'.repeat(64),
+            url: 'https://models.invalid/weights/best.pt',
+        });
+
+        expect(response.status).toBe(200);
+    });
+
+    it('still accepts a model with no url at all', async () => {
+        const response = await submitModel({ name: 'jest-nourl', sha256: 'e'.repeat(64) });
+
+        // Naming a registered model without saying where it is remains valid, and
+        // the mock engine needs no model at all. Requiring one is a separate
+        // question that waits on the worker reporting which engines need one.
+        expect(response.status).toBe(200);
+    });
+});
+
+/**
  * What a submission is allowed to say about its video.
  */
 describe('GPU job submission: the video', () => {
