@@ -61,6 +61,28 @@ const ATTEMPT_CAP_SECONDS = 24 * 60 * 60;
 const POLL_MAX_WAIT_SECONDS = 60;
 
 /**
+ * How long a worker may go unheard before the pool reports it `offline`, in
+ * seconds.
+ *
+ * Derived from the poll ceiling above rather than from the heartbeat, because
+ * the *idle* cadence is the slow one: a machine between jobs long-polls and only
+ * touches `last_seen_at` when that poll returns, so it can legitimately be
+ * quiet for a whole `POLL_MAX_WAIT_SECONDS`. A running machine beats every
+ * `HEARTBEAT_SECONDS`, so this is eighteen missed heartbeats for it and three
+ * missed polls for the other -- and a single threshold fits both because it is
+ * sized for the slower one.
+ *
+ * Three rather than one for the reason `LEASE_SECONDS` is six: a worker on a
+ * home connection loses a beat now and then, and flapping a row between
+ * `online` and `offline` makes the pool view exactly as hard to read as leaving
+ * a ghost in it.
+ *
+ * @constant
+ * @type {number}
+ */
+const WORKER_OFFLINE_SECONDS = 3 * POLL_MAX_WAIT_SECONDS;
+
+/**
  * How often a waiting poll looks again, in milliseconds.
  *
  * Repeated looking rather than `LISTEN`/`NOTIFY`: a job appears every few
@@ -324,6 +346,7 @@ module.exports = {
     LEASE_SECONDS,
     ATTEMPT_CAP_SECONDS,
     POLL_MAX_WAIT_SECONDS,
+    WORKER_OFFLINE_SECONDS,
     POLL_RETRY_INTERVAL_MS,
     JSON_BODY_LIMIT,
     MAX_WORKER_NAME_LENGTH,
