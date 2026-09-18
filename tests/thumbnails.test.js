@@ -83,6 +83,24 @@ const runId = Date.now();
 let runStateBefore = null;
 let reviewSettingsBefore = null;
 
+/**
+ * Every `queued` row this suite did not create, put back in `afterAll`.
+ *
+ * The control tests exercise `stop`, and `stop` is `discardQueue()` -- one
+ * unscoped `DELETE FROM observation_thumbnails WHERE status = 'queued'`. That is
+ * the feature working: a discarded row is simply absent and the next page view
+ * re-enqueues it. But the statement cannot tell this suite's rows from anybody
+ * else's, so on a database with real work queued it takes those too, and the
+ * corpus guard fails the file for a deletion it did not make (#142).
+ *
+ * Restored verbatim rather than re-enqueued, for the same reason the run-state
+ * row is: `requested_at` and `candidate_index` decide what the extractor picks
+ * up next, and a row put back with fresh values is a row this suite changed.
+ *
+ * @type {Array<Object>}
+ */
+let queuedBefore = [];
+
 /** Everything seeded, so `afterAll` removes exactly it. */
 const seeded = {
     projectId: null,
@@ -321,6 +339,16 @@ describe('observation thumbnails (#118)', () => {
                FROM review_imagery_settings WHERE id = 1`
         );
 
+        // Before the suite creates anything, so everything in here is somebody
+        // else's. Captured as jsonb rather than as columns: a timestamptz read
+        // into a JS Date loses the microseconds PostgreSQL keeps, and writing
+        // that back leaves the row changed by a fraction of a millisecond --
+        // the same trap `changed_at` above is read as text to avoid. jsonb
+        // renders it at full precision and converts back on the way in.
+        queuedBefore = await q(
+            `SELECT to_jsonb(t) AS row FROM observation_thumbnails t WHERE status = 'queued'`
+        );
+
         const [project] = await q(
             `INSERT INTO projects (name, "createdAt", "updatedAt")
              VALUES (:name, NOW(), NOW()) RETURNING project_id`,
@@ -421,6 +449,31 @@ describe('observation thumbnails (#118)', () => {
                         changed_at = CAST(:changed_at AS timestamptz)
                   WHERE id = 1`,
                 { replacements: reviewSettingsBefore }
+            );
+        }
+
+        // Put back whatever `stop` took that was not this suite's. Only the rows
+        // that are actually gone: a `queued` row still present was never
+        // discarded, and re-inserting it would be a duplicate key rather than a
+        // restoration. Columns come from the row itself, so a migration that adds
+        // one does not quietly stop restoring it.
+        for (const { row } of queuedBefore) {
+            if (seeded.observationIds.includes(row.observation_id)) { continue; }
+
+            const [still] = await q(
+                'SELECT 1 FROM observation_thumbnails WHERE observation_id = :id',
+                { id: row.observation_id }
+            );
+            if (still) { continue; }
+
+            // jsonb_populate_record names the columns from the table itself, so
+            // a migration that adds one does not quietly stop restoring it, and
+            // PostgreSQL does every type conversion rather than the driver.
+            await db.sequelize.query(
+                `INSERT INTO observation_thumbnails
+                 SELECT * FROM jsonb_populate_record(
+                     NULL::observation_thumbnails, CAST(:row AS jsonb))`,
+                { replacements: { row: JSON.stringify(row) } }
             );
         }
     });

@@ -515,10 +515,17 @@ Two consequences that look like bugs and are not:
   the missing per-database storage; now that storage belongs to a database, files beside
   an empty one are that database's orphans. The count is still in the load's report and
   still compared against the manifest -- it stopped being a refusal, not evidence.
-- **`marp db load` does not know about this variable.** The umbrella sets `DB_*` as real
-  environment variables and not `THUMBNAIL_STORAGE_DIR`, so a load reached with `-Port`
-  writes into whichever directory `.env` names. Use `npm run testing-db` for a testing
-  database; `marp db load` is still right for the development one.
+- **`marp db load` takes `--thumbnail-dir`, and needs it for any database but this
+  checkout's own.** It sets `THUMBNAIL_STORAGE_DIR` from that flag beside the five `DB_*`
+  ones, and refuses a load aimed at a `--data-dir` database without it, because a load
+  replaces the directory wholesale and the default one belongs to somebody else.
+
+  The flag reached `db.ps1` from the start and was never declared on the `marp` wrapper,
+  so every `marp db load` into a second database refused while this file said to run
+  exactly that command. Fixed in the umbrella. `npm run testing-db` remains the right way
+  to fill a *testing* database, because it also creates the reviewer login and records
+  which dump it came from; `marp db load` is for the development one and for any database
+  you are pointing at by hand.
 
 **It is still not CI.** The API tier needs a server, a database and a login, and a missing
 one of those fails rather than skips -- so it runs here and nowhere else, exactly as the
