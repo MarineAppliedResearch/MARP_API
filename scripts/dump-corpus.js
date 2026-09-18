@@ -304,12 +304,17 @@ async function main() {
     console.log(`  recorded in ${path.relative(path.join(__dirname, '..'), pointer)}`);
     console.log('');
     console.log('Two things worth knowing about it:');
-    console.log('  - It holds users, auth_identities and service_tokens, so it is a');
-    console.log('    credential file. Do not commit it or attach it to an issue.');
-    console.log('  - It is under a git-ignored directory, which `git clean -xdf` deletes.');
-    console.log('    Copy it somewhere outside the workspace if it is the only copy.');
+    console.log('  - It holds users, auth_identities and service_tokens on purpose, so a');
+    console.log('    workspace loaded from it can be signed into. Every account in it is a');
+    console.log('    test account. Never put a real one in here.');
+    console.log('  - It is under a git-ignored directory, which `git clean -xdf` deletes, and');
+    console.log('    it is never committed -- it is tens of megabytes and it changes whenever');
+    console.log('    the test data does. Publish it instead, and it reaches every machine.');
     console.log('');
-    console.log('Load it into an empty database with:');
+    console.log('Share it with every other workspace:');
+    console.log('  marp db publish');
+    console.log('');
+    console.log('Or load this one straight into an empty database:');
     console.log(`  marp db load "${path.join(destination, DUMP_FILENAME)}" "${thumbnailDestination}" ${FLAG.apply}`);
 }
 
