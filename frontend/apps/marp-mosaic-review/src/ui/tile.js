@@ -126,16 +126,34 @@ function borrowed(row) {
   }).join('')}</span>`;
 }
 
-/** The top-right chip: track length in training, otherwise the reason or correction. */
+/**
+ * The top-right corner: the reason or correction chip, and the track length.
+ *
+ * **Both, stacked, in every mode** (#206). This used to be a choice: training mode
+ * showed the track length *or* a reason, and the other modes never showed the length at
+ * all -- so a reviewer deciding whether a detection was scientifically sound had to switch
+ * to training mode to find out whether it had lasted one frame or ninety. Where training
+ * mode did have both to say, it put the count in the reason chip's `title`, which is a
+ * tooltip nobody hovers and a phone cannot show at all.
+ *
+ * The count is a property of the observation rather than a workflow's opinion of it --
+ * the same shape as `confidenceChip(row)`, drawn unconditionally two lines below -- so it
+ * is not conditioned on the mode.
+ *
+ * Returns the container even when only one chip is in it, so the stacking rule lives in
+ * one place in the stylesheet rather than as a second hard-coded offset here.
+ */
 function corner(row, id, { marked, changed, existing, outcome }) {
-  /* Track length is what you judge a candidate on — but once it is excluded it is
-     not going into the training set at all, so the reason is the more useful chip. */
+  return `<span class="corner">${reasonChip(row, id, { marked, changed, existing, outcome })}
+    <span class="frames" title="${row.keyframe_count} keyframes in this track">${row.keyframe_count}f</span></span>`;
+}
+
+/** The reason, correction or exclusion chip, or nothing. */
+function reasonChip(row, id, { marked, changed, existing, outcome }) {
   if (state.mode === 'training') {
     const why = (marked && marked.reason) || (existing === 'excluded' && row.exclusion_reason)
       || (outcome === 'excluded' && row.exclusion_reason);
-    return why
-      ? `<span class="reason-chip" title="${row.keyframe_count} frames">${why}</span>`
-      : `<span class="frames">${row.keyframe_count}f</span>`;
+    return why ? `<span class="reason-chip">${why}</span>` : '';
   }
 
   if (marked && marked.reason) return `<span class="reason-chip">${marked.reason}</span>`;
