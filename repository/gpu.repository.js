@@ -419,6 +419,55 @@ class GpuRepository {
     }
 
     /**
+     * What a session is, in the terms a person would recognise it by.
+     *
+     * For the watch window: a worker putting inference on somebody's screen can
+     * say which survey, dive and line it is working through, rather than an id.
+     * Read at lease time rather than frozen onto the job, because a session can
+     * be renamed or retyped after a job is queued.
+     *
+     * Takes either form of `spec.session`. Given `{session_id}` it reads the
+     * row; given `{project_id, dive, line, type}` it answers from what it was
+     * handed and looks up only the project's name, because that form names a
+     * session that does not exist yet -- the ingest creates it afterwards.
+     *
+     * @async
+     * @param {Object} session - `spec.session`, either form.
+     * @returns {Promise<Object|null>} `{session_id, project, dive, line, type}`, or null.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async describeSession(session) {
+        if (session.session_id) {
+            const [row] = await this.db.sequelize.query(
+                `SELECT s.session_id, s.dive, s.line, s.type, p.name AS project
+                   FROM sessions s
+                   LEFT JOIN projects p ON p.project_id = s.project_id
+                  WHERE s.session_id = :sessionId`,
+                { replacements: { sessionId: session.session_id }, type: QueryTypes.SELECT }
+            );
+
+            return row || null;
+        }
+
+        if (!session.project_id) {
+            return null;
+        }
+
+        const [project] = await this.db.sequelize.query(
+            'SELECT name FROM projects WHERE project_id = :projectId',
+            { replacements: { projectId: session.project_id }, type: QueryTypes.SELECT }
+        );
+
+        return {
+            session_id: null,
+            project: project ? project.name : null,
+            dive: session.dive === undefined ? null : session.dive,
+            line: session.line === undefined ? null : session.line,
+            type: session.type === undefined ? null : session.type,
+        };
+    }
+
+    /**
      * Fetch one job with every attempt at it and every artifact it produced.
      *
      * @async

@@ -442,7 +442,61 @@ class GpuService {
      * @throws {Error} When either resolution fails.
      */
     async resolveSpecForLease(spec) {
-        return this.resolveDataTypeForLease(await this.resolveVideoForLease(spec));
+        return this.describeSessionForLease(
+            await this.resolveDataTypeForLease(await this.resolveVideoForLease(spec))
+        );
+    }
+
+    /**
+     * Put the session's own details on the leased spec, for a worker to show.
+     *
+     * A spec carrying `{"session_id": 510}` tells a worker an integer. That is
+     * all it has ever needed -- the session is MARP's business and the worker
+     * only echoes it back -- but a machine that puts inference on screen for the
+     * person whose GPU is running it has something to say, and "510" is not it.
+     * Project, dive, line and type are what identify a piece of survey work to
+     * somebody looking at it.
+     *
+     * **Added to the leased copy only.** The stored spec keeps what was
+     * submitted, the same as the resolved video url and the resumed range: a
+     * session can be renamed or retyped after a job is queued, so freezing its
+     * details into the queue would preserve yesterday's answer.
+     *
+     * Failure is silent by design. This is decoration on a screen, and a worker
+     * that cannot be told a dive name should still process the video -- unlike
+     * the video url or the data type, where an unresolvable value means the run
+     * would be wrong rather than unlabelled.
+     *
+     * @async
+     * @param {Object} spec - The spec being prepared for a lease.
+     * @returns {Promise<Object>} The spec, with `session` expanded where possible.
+     */
+    async describeSessionForLease(spec) {
+        const session = observationIngestService.validateSpecSession(spec.session);
+
+        if (!session) {
+            return spec;
+        }
+
+        try {
+            const described = await gpuRepository.describeSession(session);
+
+            if (!described) {
+                return spec;
+            }
+
+            // A declared top-level field, not an addition to `spec.session`.
+            // The worker's `JobSpec` has no `session` at all -- it is MARP's
+            // business and a worker only ever echoed it back -- so anything put
+            // there is dropped by pydantic before the engine sees it, with no
+            // error on either side. An undeclared field would have produced an
+            // empty status bar and two agents wondering which half was wrong.
+            return { ...spec, session_context: described };
+        } catch {
+            // Decoration, not contract. A worker with an unlabelled window is
+            // working; a worker refused a lease over a label is not.
+            return spec;
+        }
     }
 
     /**
