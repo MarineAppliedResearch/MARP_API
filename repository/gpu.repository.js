@@ -60,6 +60,7 @@ const logger = require('../logger/api.logger');
 const {
     LEASE_SECONDS,
     ATTEMPT_CAP_SECONDS,
+    WORKER_OFFLINE_SECONDS,
     ARTIFACT_PATH_PREFIX,
     LIVE_ATTEMPT_STATES,
     TERMINAL_JOB_STATES,
@@ -317,6 +318,68 @@ class GpuRepository {
                         state = CASE WHEN state = 'offline' THEN 'online' ELSE state END
                   WHERE id = :workerId`,
                 { replacements: { workerId } }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * Mark every machine that has stopped talking `offline`.
+     *
+     * The mirror of `markWorkerSeen`, which brings an `offline` worker back the
+     * moment it asks for work. Nothing was ever doing this half, so a worker
+     * that was switched off stayed `online` for ever -- one read `online` more
+     * than an hour after its process was killed, another with a `last_seen_at`
+     * six days old (#202).
+     *
+     * **`online` only.** A `paused` machine that is then shut down is both, and
+     * the pool should not forget that an operator parked it: `paused` is an
+     * intention about the machine, `offline` is an observation of it, and the
+     * intention outlives the observation. This is the same asymmetry
+     * `markWorkerSeen` already keeps in the other direction.
+     *
+     * `COALESCE(last_seen_at, enrolled_at)` because a null must not make a row
+     * immortal. A worker somehow never heard from is judged from when it
+     * enrolled, which is the only other moment MARP knows it existed.
+     *
+     * Judged on the coordinator's clock, like every other timeout here. A
+     * worker's own idea of the time never enters into it.
+     *
+     * **`SKIP LOCKED`, and it is load-bearing rather than a flourish.** A poll
+     * takes `SELECT ... FROM gpu_workers WHERE id = :workerId FOR UPDATE` inside
+     * the transaction that leases a job, and this sweep runs on every poll -- so
+     * a plain `UPDATE` across the table would sit waiting on a row some other
+     * machine's lease is holding, turning a sweep into a queue behind the
+     * busiest thing in the system. Skipping costs nothing here: a row locked by
+     * a live lease belongs to a machine that is demonstrably talking, so it is
+     * not stale, and anything genuinely dead is still there on the next poll.
+     * `expireStaleLeases` skips for the same reason.
+     *
+     * @async
+     * @returns {Promise<Array<Object>>} One entry per machine marked offline:
+     * `{id, name, last_seen_at}`.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async markStaleWorkersOffline() {
+        try {
+            return await this.db.sequelize.query(
+                `UPDATE gpu_workers
+                    SET state = 'offline'
+                  WHERE id IN (
+                        SELECT id
+                          FROM gpu_workers
+                         WHERE state = 'online'
+                           AND COALESCE(last_seen_at, enrolled_at)
+                               < NOW() - (:offlineSeconds * INTERVAL '1 second')
+                         ORDER BY id ASC
+                           FOR UPDATE SKIP LOCKED)
+              RETURNING id, name, last_seen_at`,
+                {
+                    replacements: { offlineSeconds: WORKER_OFFLINE_SECONDS },
+                    type: QueryTypes.SELECT,
+                }
             );
         } catch (error) {
             logger.error('Error::' + error);

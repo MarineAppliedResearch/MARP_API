@@ -27,6 +27,10 @@ const { QueryTypes } = require('sequelize');
 
 const db = require('../model');
 
+/* Read rather than restated: the threshold is the coordinator's to choose, and a
+   literal here would go on passing after somebody changed it. */
+const { WORKER_OFFLINE_SECONDS } = require('../config/gpu-orchestration');
+
 /**
  * Where the API stores staged artifact bytes. The suite removes the files it
  * uploads, so a run leaves nothing behind on disk.
@@ -1484,6 +1488,179 @@ describe('GPU pool view', () => {
         // worker reports back, which is exactly what "the coordinator's row is
         // the truth about the job, not about the machine" means.
         expect(idle.body.find((worker) => worker.worker_id === workerId).activity).toBe('busy');
+    });
+});
+
+/**
+ * A machine that stops is taken out of the pool (#202).
+ *
+ * `gpu_workers.last_seen_at` has always carried the information -- it is written
+ * on enrolment, on every poll and on every heartbeat -- and nothing read it to
+ * decide `state`, so a worker that was switched off stayed `online` for ever.
+ * One was observed reading `online` more than an hour after its process was
+ * killed, and another with a `last_seen_at` six days old.
+ *
+ * Every check here moves the coordinator's clock rather than waiting, the way
+ * the lease-expiry and attempt-cap checks above already do. Three minutes of
+ * real time per assertion would make the suite unusable, and the thing under
+ * test is a comparison against `NOW()`, which an `UPDATE` exercises exactly as a
+ * passing three minutes would.
+ */
+describe('GPU stale workers', () => {
+    /**
+     * Enrol a machine of this block's own, and remember it for teardown.
+     *
+     * Its own rather than the suite's, because these checks make a machine look
+     * dead and the suite's machine is the one every other test polls with.
+     *
+     * @param {string} suffix - Distinguishes it within this block.
+     * @returns {Promise<number>} Its worker id.
+     */
+    async function enrolOwn(suffix) {
+        const response = await global.api
+            .post('/api/v2/gpu/workers/enrol')
+            .send({
+                local_id: `jest-stale-${suffix}-${runId}`,
+                name: `jest-stale-${suffix}-${runId}`,
+                slot_count: 1,
+            });
+
+        expect(response.status).toBe(200);
+        extraWorkerIds.push(response.body.worker_id);
+
+        return response.body.worker_id;
+    }
+
+    /**
+     * Move a machine's last contact into the past.
+     *
+     * @param {number} id - Worker id.
+     * @param {number} seconds - How long ago it was last heard from.
+     * @returns {Promise<void>} Resolves when written.
+     */
+    async function lastSeenSecondsAgo(id, seconds) {
+        await db.sequelize.query(
+            `UPDATE gpu_workers
+                SET last_seen_at = NOW() - (:seconds * INTERVAL '1 second')
+              WHERE id = :id`,
+            { replacements: { id, seconds } }
+        );
+    }
+
+    /**
+     * Poll once as a named machine, with no waiting.
+     *
+     * `pollOnce` above is hard-wired to the suite's own worker; these checks
+     * need the poll to come from a machine of this block's making.
+     *
+     * @param {number} id - Worker id to poll as.
+     * @returns {Promise<Object>} The Supertest response.
+     */
+    function pollAs(id) {
+        return global.api
+            .post('/api/v2/gpu/poll')
+            .send({ worker_id: id, slot_indexes: [0], wait_seconds: 0, capabilities: { gpus: [] } });
+    }
+
+    /**
+     * What the pool view says about one machine.
+     *
+     * Read through `GET /gpu/workers` rather than from the table, because the
+     * pool view is the surface the requirement is about -- a person asking what
+     * is running -- and it is also what triggers the sweep.
+     *
+     * @param {number} id - Worker id.
+     * @returns {Promise<string|undefined>} Its reported state.
+     */
+    async function pooledState(id) {
+        const pool = await global.api.get('/api/v2/gpu/workers');
+
+        expect(pool.status).toBe(200);
+
+        const mine = pool.body.find((worker) => worker.worker_id === id);
+
+        expect(mine).toBeDefined();
+
+        return mine.state;
+    }
+
+    it('R1: a machine that has stopped talking reads offline', async () => {
+        const id = await enrolOwn('gone');
+
+        // Enrolment writes `last_seen_at`, so it starts out demonstrably alive.
+        expect(await pooledState(id)).toBe('online');
+
+        await lastSeenSecondsAgo(id, WORKER_OFFLINE_SECONDS + 60);
+
+        expect(await pooledState(id)).toBe('offline');
+    });
+
+    it('R2: a machine heard from inside the threshold stays online', async () => {
+        const id = await enrolOwn('quiet');
+
+        // Comfortably stale to the eye and deliberately inside the threshold:
+        // an idle worker long-polls, so going quiet for a minute is what a
+        // healthy machine between jobs looks like, not a dead one.
+        await lastSeenSecondsAgo(id, WORKER_OFFLINE_SECONDS - 60);
+
+        expect(await pooledState(id)).toBe('online');
+    });
+
+    it('R3: a paused machine that goes quiet stays paused', async () => {
+        const id = await enrolOwn('parked');
+
+        await db.sequelize.query(
+            "UPDATE gpu_workers SET state = 'paused' WHERE id = :id",
+            { replacements: { id } }
+        );
+
+        await lastSeenSecondsAgo(id, WORKER_OFFLINE_SECONDS * 10);
+
+        // `paused` is an intention about the machine and `offline` an
+        // observation of it, and the intention outlives the observation: an
+        // operator who parked a machine and then switched it off has not
+        // un-parked it, and should not have to say so again when it comes back.
+        expect(await pooledState(id)).toBe('paused');
+    });
+
+    it('R4: a machine that comes back is online again, with nothing done to it', async () => {
+        const id = await enrolOwn('returning');
+
+        await lastSeenSecondsAgo(id, WORKER_OFFLINE_SECONDS + 60);
+
+        expect(await pooledState(id)).toBe('offline');
+
+        // One poll. A machine asking for work is by definition not offline, and
+        // this is the transition `markWorkerSeen` has always had -- the check is
+        // that the new sweep did not take it away.
+        //
+        // Either answer will do, and the looseness is deliberate: whether there
+        // is work is not what this is about, and earlier tests in this file
+        // leave jobs queued, so pinning 204 would make this check depend on the
+        // order the suite runs in. `markWorkerSeen` runs before the poll decides
+        // anything, so both answers mean the machine was heard from.
+        const poll = await pollAs(id);
+
+        expect([200, 204]).toContain(poll.status);
+        expect(await pooledState(id)).toBe('online');
+    });
+
+    it('R6: one machine polling retires another that has stopped', async () => {
+        const gone = await enrolOwn('swept-by-another');
+        const alive = await enrolOwn('sweeper');
+
+        await lastSeenSecondsAgo(gone, WORKER_OFFLINE_SECONDS + 60);
+
+        // No pool read anywhere in this check: the sweep has to happen on the
+        // poll as well, or a pool nobody has opened stays wrong until somebody
+        // opens it -- and the dashboards that matter are the ones left open.
+        const poll = await pollAs(alive);
+
+        expect([200, 204]).toContain(poll.status);
+
+        const [row] = await query('SELECT state FROM gpu_workers WHERE id = :id', { id: gone });
+
+        expect(row.state).toBe('offline');
     });
 });
 

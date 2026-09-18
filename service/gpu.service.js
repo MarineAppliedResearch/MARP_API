@@ -218,6 +218,21 @@ class GpuService {
         return expired;
     }
 
+    /**
+     * Mark every machine that has stopped talking `offline` (#202).
+     *
+     * Deliberately **not** folded into `expireStaleLeases`, though the two are
+     * swept from the same places: one is about a job and the other about a
+     * machine, and they are not the same event. A worker can be gone while
+     * holding no lease at all -- which is the case this issue was reported
+     * from -- and a lease can expire on a machine that is alive and merely slow.
+     *
+     * @returns {Promise<Array<Object>>} Machines marked offline.
+     */
+    async sweepStaleWorkers() {
+        return gpuRepository.markStaleWorkersOffline();
+    }
+
     // -----------------------------------------------------------------
     // Worker-facing
     // -----------------------------------------------------------------
@@ -331,6 +346,12 @@ class GpuService {
         // nothing is still demonstrably alive -- and `last_seen_at` is the only
         // thing a pool view has to tell an idle machine from a dead one.
         await gpuRepository.markWorkerSeen(workerId);
+
+        // And while something is happening, retire whatever has stopped
+        // happening (#202). One poll from any machine keeps the whole pool
+        // honest, which is why this needs no timer of its own -- and it is after
+        // `markWorkerSeen`, so this machine can never sweep itself.
+        await this.sweepStaleWorkers();
 
         // A paused machine is not given work. Without this it would lease a job,
         // be told to pause at its first heartbeat, and give the job back -- so a
@@ -1059,6 +1080,12 @@ class GpuService {
         // with a job whose lease ran out an hour ago. A read that reports a state
         // the system has already abandoned is worse than a slightly slower read.
         await this.expireStaleLeases();
+
+        // And the same again for the machines themselves (#202). This is the
+        // read that makes a ghost visible -- it is the one a person opens to ask
+        // what is running -- so it is the read that must not answer `online`
+        // about a computer that is switched off.
+        await this.sweepStaleWorkers();
 
         const rows = await gpuRepository.listWorkerPoolRows();
         const workers = new Map();
