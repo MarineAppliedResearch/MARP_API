@@ -35,14 +35,12 @@ import {
   discoverLoneRow,
   expectRealBacking,
   facetsFor,
-  findPageOf,
   findRow,
   lonePage,
+  openOnBrokenPicture,
   pageOf,
-  pageSizeOf,
   ready,
   restoreDecision,
-  sweepForRow,
   whateverItsStatus
 } from './support.mjs';
 
@@ -226,35 +224,15 @@ test.describe('what the fixture used to fake', () => {
   test('R10: an observation whose picture really failed still shows its species and stays markable', async ({ page, request }) => {
     /* `breakThumbnails`, replaced. Nothing is broken on purpose: the corpus carries
        observations whose extraction genuinely failed, which is what the fixture was
-       imitating. Discovered by sweeping, because the mosaic has no thumbnail-status
-       filter -- the status is a field on the row, not a dimension. */
-    const row = await sweepForRow(
-      request,
-      (candidate) => candidate.thumbnail_status === 'failed',
-      'has a thumbnail whose extraction failed'
-    );
+       imitating.
 
-    /* Narrow to the line the row is on, then find which page of *that* question it falls
-       on. Both halves matter: a page number taken from one question and used against
-       another lands on a different tile, and so does one computed at a different page
-       size -- which is why the browser is opened first and asked what size it settled on
-       rather than told. It follows the viewport. */
-    const line = { line: [row.line] };
-
-    await page.goto(`./?line=${encodeURIComponent(row.line)}`);
+       This used to sweep, narrow to the row's line and find its page by hand -- the same
+       twenty lines `openOnBrokenPicture` already held. The duplicate is gone because it
+       cost: when the sweep was corrected to ask for a row nobody has *decided* about as
+       well as one with no picture, the helper was fixed and this copy was not, so this
+       check went on failing alone for a reason that had already been found. */
+    const { row, tile } = await openOnBrokenPicture(page, request);
     await expectRealBacking(page);
-    await ready(page);
-
-    const pageSize = await pageSizeOf(page);
-    const onPage = await findPageOf(request, line, row.observation_id, pageSize);
-
-    if (onPage > 1) {
-      await page.goto(`./?line=${encodeURIComponent(row.line)}&page=${onPage}`);
-      await ready(page);
-    }
-
-    const tile = page.locator(`.tile[data-id="${row.observation_id}"]`);
-    await expect(tile).toBeVisible();
 
     /* The two things a reviewer needs from a tile with no picture: it still says what
        the row claims to be, and it can still be acted on. A tile that vanishes or goes
