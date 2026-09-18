@@ -523,10 +523,28 @@ export async function freshTile(page, { at = 0 } = {}) {
  * @returns {Promise<Object>} `{row, tile}`.
  */
 export async function openOnBrokenPicture(page, request, { status = 'failed' } = {}) {
+  /**
+   * **Undecided as well as broken**, and the second half is not optional.
+   *
+   * This opens on the row's own line rather than on `undecided()`, so a row the record
+   * already carries a decision about arrives *already marked* -- a page seeds its mode's
+   * exceptions -- and then a click takes that decision back instead of marking. The tile
+   * reads `out-reverted`, which is TAKING BACK, and the check fails saying it wanted
+   * `marked`, which describes the symptom and not the cause.
+   *
+   * It was only ever asked to be broken. That worked while the corpus happened to hold
+   * undecided broken rows near the front, and stopped when reviewing moved on: the dump
+   * gained 181 review decisions and row 1978 was one of them. Nine checks went red at
+   * once, none of them about anything that had changed in the application.
+   *
+   * `sweepForRow` fails loudly when the corpus cannot supply one, which is the behaviour
+   * wanted -- a skipped check looks green.
+   */
   const row = await sweepForRow(
     request,
-    (candidate) => candidate.thumbnail_status === status,
-    `has a thumbnail in the state \`${status}\``
+    (candidate) => candidate.thumbnail_status === status
+      && candidate.review_decision == null,
+    `has a thumbnail in the state \`${status}\` and no scientific decision on it`
   );
 
   const narrowed = { line: [row.line] };
