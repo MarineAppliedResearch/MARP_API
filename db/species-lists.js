@@ -46,6 +46,7 @@ const SESSION_TYPE_TO_SPECIES_LIST = Object.freeze({
     MBARI_Benthic: 'MBARI_Benthic_Supercategory',
     FathomNet_VME: 'FathomNet_VME',
     FathomNet_Trash: 'FathomNet_Trash',
+    MBARI_315k: 'MBARI_315k',
 });
 
 /**

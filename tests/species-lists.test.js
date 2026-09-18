@@ -512,3 +512,45 @@ describe('Species pictures', () => {
     expect(res.status).toBe(404);
   });
 });
+
+/**
+ * Every model vocabulary needs a session type, or its observations go nowhere.
+ *
+ * `scripts/seed-morphotaxa-vocabulary.js` seeds an annotation list per
+ * FathomNet-family model, and `observation-ingest.service.js` resolves a
+ * session's type to a list through `db/species-lists.js`. Those are two files,
+ * and a vocabulary added to one and forgotten in the other fails in the worst
+ * way available: the job runs, the artifact is stored, the compute is spent, and
+ * nothing reaches the database. Nothing errors -- the ingest simply cannot say
+ * which list the session reads against.
+ *
+ * That happened: `MBARI_315k` was seeded with 499 classes and had no mapping, and
+ * ten queued jobs would each have completed and written nothing. Caught by hand
+ * rather than by anything, which is why this exists.
+ */
+describe('morphotaxa vocabularies and session types', () => {
+  const vocabularies = require('../scripts/data/morphotaxa-vocabularies.json');
+  const { speciesListForSessionType } = require('../db/species-lists');
+
+  it('maps every seeded vocabulary to the list it was seeded into', () => {
+    const unmapped = vocabularies.filter(
+      (entry) => speciesListForSessionType(entry.sessionType) !== entry.list
+    );
+
+    expect(unmapped.map((entry) => `${entry.sessionType} -> ${entry.list}`)).toEqual([]);
+  });
+
+  /**
+   * The names are the contract. A detection is resolved by matching this text
+   * against `species.comname`, and the model-identity check (#216) compares it
+   * against the loaded weights exactly -- so a vocabulary with no classes, or a
+   * duplicate inside one, is a model that cannot run rather than one that runs
+   * imperfectly.
+   */
+  it('gives every vocabulary a non-empty set of distinct class names', () => {
+    for (const entry of vocabularies) {
+      expect(entry.classes.length).toBeGreaterThan(0);
+      expect(new Set(entry.classes).size).toBe(entry.classes.length);
+    }
+  });
+});
