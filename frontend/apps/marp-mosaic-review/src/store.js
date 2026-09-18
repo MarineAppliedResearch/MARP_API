@@ -1690,16 +1690,22 @@ export const actions = {
   },
 
   /**
-   * Clear this tile's pending scientific flag and ask for a different crop.
+   * Clear this tile's pending mark and ask for a different crop.
    *
    * This is deliberately separate from `_retry`: a replacement is allowed for a ready
-   * image and must never turn the temporary flag used to open the panel into review data.
+   * image and must never turn the temporary mark used to open the panel into review data.
    * The optimistic clear happens before the request, so no fast extractor can finish
-   * while the panel still presents the flag as pending. A refusal or transport failure
+   * while the panel still presents the mark as pending. A refusal or transport failure
    * restores the reviewer's unsaved work because no replacement was accepted.
+   *
+   * **Every mode, not only scientific** (#203). This returned early anywhere but
+   * scientific, matching a render condition in `picker.js` that hid the button -- two
+   * gates on one rule, so removing either alone leaves a button that does nothing or an
+   * action nothing can reach. Nothing below reads the mode: the request takes an
+   * observation id, and the rollback restores whatever was staged, whichever workflow
+   * staged it.
    */
   async requestThumbnailReplacement(id) {
-    if (state.mode !== 'scientific') return;
     const row = state.rows.find((r) => r.observation_id === id);
     if (!row) return;
 
