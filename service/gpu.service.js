@@ -351,7 +351,7 @@ class GpuService {
                 let spec;
 
                 try {
-                    spec = await this.resolveSpecForLease(lease.job.spec);
+                    spec = await this.resolveSpecForLease(this.applyResumePoint(lease.job));
                 } catch (error) {
                     // The lease is given up rather than handed over. Two worse
                     // options were available: hand out a spec with no URL in it,
@@ -425,6 +425,47 @@ class GpuService {
      */
     async resolveSpecForLease(spec) {
         return this.resolveDataTypeForLease(await this.resolveVideoForLease(spec));
+    }
+
+    /**
+     * Move a resumed job's range forward to where the last worker stopped.
+     *
+     * A job an operator stopped part-way goes back to the queue carrying
+     * `resume_from_frame`, and whoever leases it next must start there rather
+     * than at the beginning -- otherwise every hand-over reprocesses everything
+     * already done, and a job passed between three volunteers does the first
+     * frames three times.
+     *
+     * **The stored spec is not rewritten**, here or anywhere: it is what was
+     * submitted, and a scientific record that quietly edits the question it was
+     * asked is worse than one that needs a second column read. This returns a
+     * copy for the lease and leaves `gpu_jobs.spec` alone.
+     *
+     * Both bounds are half-open, and `resume_from_frame` is already an exclusive
+     * upper bound on what was finished, so it is the next `start_frame` as it
+     * stands. A resume point at or past `end_frame` is ignored rather than
+     * producing an empty or inverted range -- that would mean the job is
+     * finished, which is not this function's decision to make.
+     *
+     * @param {Object} job - The `gpu_jobs` row being leased.
+     * @returns {Object} The spec to resolve and hand over.
+     */
+    applyResumePoint(job) {
+        const spec = job.spec;
+        const resumeFrom = job.resume_from_frame;
+
+        if (resumeFrom === null || resumeFrom === undefined || !spec || !spec.range) {
+            return spec;
+        }
+
+        const startFrame = Number(spec.range.start_frame);
+        const endFrame = Number(spec.range.end_frame);
+
+        if (!(resumeFrom > startFrame) || !(resumeFrom < endFrame)) {
+            return spec;
+        }
+
+        return { ...spec, range: { ...spec.range, start_frame: resumeFrom } };
     }
 
     /**
@@ -725,6 +766,17 @@ class GpuService {
             }
         }
 
+        // How far the worker actually got. It has always computed and sent this;
+        // nothing here read it until `yielded` gave it something to mean. Kept
+        // optional because only a stop has a part-way point to report.
+        const completedThroughFrame = optionalInteger(
+            body.completed_through_frame, 'completed_through_frame', null
+        );
+
+        if (completedThroughFrame !== null && completedThroughFrame < 0) {
+            invalid('completed_through_frame must be zero or greater.');
+        }
+
         const parsedAttemptId = this.attemptIdFromPath(attemptId);
         const published = await gpuRepository.publishResult({
             attemptId: parsedAttemptId,
@@ -733,6 +785,7 @@ class GpuService {
             outcome,
             failureReason: body.failure_reason,
             artifacts: named,
+            completedThroughFrame,
         });
 
         await gpuPlaybackService.stop(parsedAttemptId);
@@ -762,13 +815,30 @@ class GpuService {
      * when this result was never a candidate.
      */
     async ingestPublishedJob(published) {
-        if (!published || !published.published || published.outcome !== 'succeeded') {
+        // **Keyed on the attempt, not on the job.** A job an operator stopped
+        // goes back to the pool and is finished by several attempts in sequence,
+        // each carrying its own observations -- so `published_attempt_id`, which
+        // names one attempt and is set once, can no longer be the guard. It would
+        // let the first segment in and refuse every later one as already
+        // ingested, silently losing the work of every volunteer but the first.
+        if (!published || !published.ingestable) {
             return null;
+        }
+
+        // The same attempt reporting twice must not ingest twice. `ingested_at`
+        // is the record of what has already been taken, and it is claimed inside
+        // a transaction below rather than checked here, so two concurrent results
+        // for one attempt cannot both pass this point.
+        const claimed = await gpuRepository.claimAttemptForIngest(published.attempt_id);
+
+        if (!claimed) {
+            return { ingested: false, skipped: 'this attempt has already been ingested' };
         }
 
         const detail = await gpuRepository.getJobDetail(published.job_id);
 
         if (!detail || !INGESTIBLE_JOB_KINDS.includes(detail.job.kind)) {
+            await gpuRepository.releaseAttemptIngestClaim(published.attempt_id);
             return null;
         }
 
@@ -776,20 +846,41 @@ class GpuService {
         // Skipped rather than failed: producing only a detections artifact is a
         // legitimate run, and every job predating spec.session is one.
         if (!detail.job.spec || !detail.job.spec.session) {
+            await gpuRepository.releaseAttemptIngestClaim(published.attempt_id);
             return { ingested: false, skipped: 'the job spec names no session' };
+        }
+
+        // **Only this attempt's artifacts.** `getJobDetail` returns every
+        // artifact the job has, and a job finished by several volunteers in
+        // sequence accumulates one per segment -- so handing the lot over would
+        // re-ingest every earlier segment on every hand-over. Each artifact
+        // records the attempt that produced it when it is recorded.
+        const mine = detail.artifacts.filter(
+            (artifact) => artifact.metadata
+                && Number(artifact.metadata.attempt_id) === Number(published.attempt_id)
+        );
+
+        if (mine.length === 0) {
+            await gpuRepository.releaseAttemptIngestClaim(published.attempt_id);
+            return { ingested: false, skipped: 'this attempt handed over no artifacts' };
         }
 
         try {
             return await observationIngestService.ingestJob({
                 ...detail.job,
-                artifacts: detail.artifacts,
+                artifacts: mine,
             });
         } catch (error) {
             const reason = error && error.message ? error.message : String(error);
 
             logger.error(`Error::observation ingest failed for job ${published.job_id}: ${reason}`);
 
-            await gpuRepository.appendCoordinatorNote(published.published_attempt_id, {
+            // Put the claim back. An attempt whose ingest threw has not been
+            // ingested, and leaving `ingested_at` set would make the recovery
+            // route refuse to try again -- which is the one thing it exists for.
+            await gpuRepository.releaseAttemptIngestClaim(published.attempt_id);
+
+            await gpuRepository.appendCoordinatorNote(published.attempt_id, {
                 note: 'observation ingest failed',
                 job_id: published.job_id,
                 reason,

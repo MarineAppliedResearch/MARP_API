@@ -251,7 +251,7 @@ const TERMINAL_JOB_STATES = ['succeeded', 'failed', 'cancelled', 'expired'];
  */
 const ATTEMPT_STATES = [
     'assigned', 'preparing', 'running', 'uploading',
-    'succeeded', 'failed', 'cancelled', 'preempted', 'abandoned',
+    'succeeded', 'failed', 'cancelled', 'preempted', 'abandoned', 'yielded',
 ];
 
 /**
@@ -295,10 +295,17 @@ const WORKER_EVENT_KINDS = ['metric', 'log'];
 /**
  * What a worker may report as the outcome of an attempt.
  *
+ * `yielded` is a stop, not a cancel, and the distinction earns its place: the
+ * operator pressed stop, the frames already processed are real and are kept, and
+ * the rest of the range goes back to the pool for somebody else to finish.
+ * `cancelled` means the opposite -- called off, with nothing to keep -- so
+ * overloading it would make the ingest condition depend on whether a frame
+ * number happened to be null rather than on what actually happened.
+ *
  * @constant
  * @type {Array<string>}
  */
-const RESULT_OUTCOMES = ['succeeded', 'failed', 'cancelled'];
+const RESULT_OUTCOMES = ['succeeded', 'failed', 'cancelled', 'yielded'];
 
 /**
  * What a heartbeat can answer.

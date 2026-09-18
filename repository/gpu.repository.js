@@ -76,6 +76,47 @@ const {
 const LIVE_ATTEMPT_STATES_SQL = LIVE_ATTEMPT_STATES.map((state) => `'${state}'`).join(', ');
 
 /**
+ * Outcomes that leave observations worth taking into the record.
+ *
+ * A stop is in here with a success, because the frames a volunteer got through
+ * before pressing stop are the same frames they would have got through without
+ * it. A failure and a cancel are not: one produced nothing trustworthy, the
+ * other was called off.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const INGESTABLE_OUTCOMES = ['succeeded', 'yielded'];
+
+/**
+ * How much of a job's attempt budget is actually spent, as SQL.
+ *
+ * `attempts_made` counts every lease ever granted, because it doubles as the
+ * lease epoch and must never stand still. A deliberate stop is not a failed
+ * attempt, so it is subtracted here -- otherwise the jobs handed between the
+ * most volunteers would be the first to become unclaimable, which is backwards
+ * for a pool.
+ *
+ * @constant
+ * @type {string}
+ */
+const ATTEMPTS_SPENT_SQL = '(attempts_made - yields_made)';
+
+/**
+ * The same sum in JavaScript, for the paths that decide from a row already read.
+ *
+ * `yields_made` is defaulted rather than nullable, but a row read before this
+ * migration ran -- in a test fixture, say -- would carry undefined, and treating
+ * that as NaN would make every comparison false and quietly expire jobs.
+ *
+ * @param {Object} job - A `gpu_jobs` row.
+ * @returns {number} Attempts that count against `max_attempts`.
+ */
+function attemptsSpent(job) {
+    return Number(job.attempts_made) - Number(job.yields_made || 0);
+}
+
+/**
  * Why a call carrying `(attempt_id, worker_id, lease_epoch)` should be refused,
  * or null when it should be honoured.
  *
@@ -582,7 +623,7 @@ class GpuRepository {
             `SELECT *
                FROM gpu_jobs
               WHERE state = 'queued'
-                AND attempts_made < max_attempts
+                AND ${ATTEMPTS_SPENT_SQL} < max_attempts
               ORDER BY priority DESC, created_at ASC, id ASC
               LIMIT 1
                 FOR UPDATE SKIP LOCKED`,
@@ -772,7 +813,7 @@ class GpuRepository {
                 let jobState = job.state;
 
                 if (job.state === 'leased') {
-                    jobState = Number(job.attempts_made) < Number(job.max_attempts) ? 'queued' : 'expired';
+                    jobState = attemptsSpent(job) < Number(job.max_attempts) ? 'queued' : 'expired';
 
                     await this.db.sequelize.query(
                         'UPDATE gpu_jobs SET state = :jobState, updated_at = NOW() WHERE id = :jobId',
@@ -1064,7 +1105,7 @@ class GpuRepository {
      * @returns {Promise<Object>} The ack: `{action, accepted, idempotent, outcome, job_state, published, published_attempt_id, artifacts_recorded}`.
      * @throws {Error} Re-throws after rolling back if anything fails.
      */
-    async publishResult({ attemptId, workerId, leaseEpoch, outcome, failureReason, artifacts }) {
+    async publishResult({ attemptId, workerId, leaseEpoch, outcome, failureReason, artifacts, completedThroughFrame }) {
         const transaction = await this.db.sequelize.transaction();
 
         try {
@@ -1181,6 +1222,91 @@ class GpuRepository {
                 });
 
                 jobState = released.jobState;
+            } else if (outcome === 'yielded') {
+                // An operator stopped this run part-way. The frames behind it are
+                // real, so the attempt is kept and ingested like a success; the
+                // rest of the range goes back to the pool for another machine.
+                //
+                // **`completed_through_frame` is an exclusive bound**, despite
+                // the name: the worker computes `start_frame + frames_processed`,
+                // which is one past the last frame it finished. That is the same
+                // half-open convention as `spec.range.end_frame`, so it is
+                // already exactly the frame a resumed lease should start at and
+                // needs no adjustment here. Adding one would silently skip a
+                // frame on every hand-over.
+                await this.db.sequelize.query(
+                    `UPDATE gpu_job_attempts
+                        SET state = 'yielded',
+                            completed_through_frame = :completedThroughFrame,
+                            failure_reason = :failureReason,
+                            finished_at = NOW()
+                      WHERE id = :attemptId`,
+                    {
+                        replacements: {
+                            attemptId: attempt.id,
+                            completedThroughFrame: completedThroughFrame === undefined ? null : completedThroughFrame,
+                            failureReason: failureReason || null,
+                        },
+                        transaction,
+                    }
+                );
+
+                // A job that finished some other way while this attempt was
+                // stopping keeps whatever it finished as, exactly as the expiry
+                // path decides it.
+                if (!TERMINAL_JOB_STATES.includes(job.state)) {
+                    jobState = 'queued';
+
+                    // `yields_made` rather than leaving `attempts_made` alone.
+                    // `attempts_made` is also the lease epoch, so it has to go on
+                    // counting every lease or two of them would share an epoch and
+                    // the coordinator could not tell a stale worker from a current
+                    // one. Counting yields separately is what lets the budget
+                    // ignore them without touching that.
+                    //
+                    // `resume_from_frame` only moves forward. A worker that
+                    // stopped before reaching the point an earlier one had already
+                    // covered must not drag the job backwards and cause those
+                    // frames to be run twice.
+                    await this.db.sequelize.query(
+                        `UPDATE gpu_jobs
+                            SET state = 'queued',
+                                yields_made = yields_made + 1,
+                                resume_from_frame = GREATEST(
+                                    COALESCE(:completedThroughFrame, resume_from_frame, 0),
+                                    COALESCE(resume_from_frame, 0)
+                                ),
+                                updated_at = NOW()
+                          WHERE id = :jobId`,
+                        {
+                            replacements: {
+                                jobId: job.id,
+                                completedThroughFrame: completedThroughFrame === undefined ? null : completedThroughFrame,
+                            },
+                            transaction,
+                        }
+                    );
+                }
+
+                await this.appendCoordinatorNote(
+                    attempt.id,
+                    {
+                        note: 'attempt yielded',
+                        completed_through_frame: completedThroughFrame === undefined ? null : completedThroughFrame,
+                        job_state: jobState,
+                    },
+                    transaction
+                );
+
+                // The artifacts are recorded the same way a success's are: the
+                // bytes exist, they belong to this job, and the next attempt adds
+                // to them rather than replacing them.
+                artifactsRecorded = await this.recordJobArtifacts({
+                    job,
+                    attempt,
+                    artifacts: artifacts || [],
+                    transaction,
+                });
             } else {
                 // Cancelled. The job is cancelled whether or not the cancel came
                 // from a human -- a worker that stops of its own accord and calls
@@ -1219,6 +1345,13 @@ class GpuRepository {
                 published,
                 published_attempt_id: publishedAttemptId,
                 artifacts_recorded: artifactsRecorded,
+
+                // Which attempt to ingest, rather than whether the job is
+                // finished. A requeued job is finished by several attempts in
+                // sequence and each carries its own observations, so the job can
+                // no longer be the unit -- see `ingestAttempt`.
+                attempt_id: attempt.id,
+                ingestable: INGESTABLE_OUTCOMES.includes(outcome),
             };
         } catch (error) {
             await transaction.rollback();
@@ -1439,7 +1572,7 @@ class GpuRepository {
         let jobState = job.state;
 
         if (!TERMINAL_JOB_STATES.includes(job.state)) {
-            jobState = Number(job.attempts_made) < Number(job.max_attempts)
+            jobState = attemptsSpent(job) < Number(job.max_attempts)
                 ? 'queued'
                 : (finalState || 'expired');
 
@@ -1450,6 +1583,61 @@ class GpuRepository {
         }
 
         return { jobState };
+    }
+
+    /**
+     * Claim an attempt for ingest, or refuse because somebody already has.
+     *
+     * One statement, and the `IS NULL` is the whole mechanism: PostgreSQL takes
+     * a row lock for the `UPDATE`, so two results arriving for one attempt at the
+     * same instant cannot both find it null. The loser updates nothing and is
+     * told so by the row count.
+     *
+     * This replaces `gpu_jobs.published_attempt_id` as the ingest guard. That
+     * column names one attempt and is written once, which was right while a job
+     * had exactly one result and is wrong now that a stopped job is finished by
+     * several in sequence.
+     *
+     * @async
+     * @param {number} attemptId - The attempt to claim.
+     * @returns {Promise<boolean>} True when this caller took the claim.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async claimAttemptForIngest(attemptId) {
+        const [, result] = await this.db.sequelize.query(
+            `UPDATE gpu_job_attempts
+                SET ingested_at = NOW()
+              WHERE id = :attemptId
+                AND ingested_at IS NULL`,
+            { replacements: { attemptId } }
+        );
+
+        // `rowCount` on postgres; the array form is the fallback other dialects
+        // answer with, and this is the one place the difference would be silent.
+        const changed = result && result.rowCount !== undefined
+            ? result.rowCount
+            : (Array.isArray(result) ? result.length : 0);
+
+        return Number(changed) === 1;
+    }
+
+    /**
+     * Give a claim back, for an ingest that did not happen after all.
+     *
+     * An attempt whose ingest threw, or which had nothing to ingest, has not been
+     * ingested -- and leaving the stamp on it would make the recovery route
+     * refuse to try again, which is the one job that route has.
+     *
+     * @async
+     * @param {number} attemptId - The attempt to release.
+     * @returns {Promise<void>}
+     * @throws {Error} Re-throws any database failure.
+     */
+    async releaseAttemptIngestClaim(attemptId) {
+        await this.db.sequelize.query(
+            'UPDATE gpu_job_attempts SET ingested_at = NULL WHERE id = :attemptId',
+            { replacements: { attemptId } }
+        );
     }
 
     /**

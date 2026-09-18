@@ -1,129 +1,123 @@
 ---
-task: MarineAppliedResearch/MARP_API#136
-repos: [MARP_API]
-status: verifying
+task: MarineAppliedResearch/MARP_API#197
+repos: [MARP_API, marp-inference-worker]
+status: verified
 needs: []
 ---
 
 ## Goal
 
-A desktop reviewer can sweep a mouse rectangle across many Mosaic tiles and give every
-eligible tile the left-click or right-click mark in one gesture, then use the existing
-Commit Marked workflow instead of clicking dozens of tiles individually.
+A volunteer who stops a running job mid-way gets what they expect: the work done so far is
+kept and ingested, and the rest of the job goes back to the pool for another machine to
+finish. Today the worker says `yielded`, MARP has no such word, the result is refused with
+400, and the run is silently lost.
+
+This is the MARP side. The worker side is MarineAppliedResearch/marp-inference-worker#20.
 
 ## Requirements
 
-- **R1** — Pressing and dragging the left mouse button over the Mosaic draws a visible
-  selection rectangle; releasing applies the active mode's exception mark to every tile
-  the rectangle touches.
-- **R2** — Pressing and dragging the right mouse button draws the same rectangle; releasing
-  applies the active mode's accepted mark in Scientific and Training modes and remains inert
-  in Delete Mode, matching the existing right-click vocabulary.
-- **R3** — Rectangle membership is geometric intersection: a tile is included when any part
-  of its rendered box touches the normalized drag rectangle, whichever direction the mouse
-  travels.
-- **R4** — The gesture adds to the current work and sets every included tile to the requested
-  kind. It does not toggle same-kind marks off; an opposite pending mark becomes the later
-  requested kind.
-- **R5** — Marks remain staged only. Releasing the drag never commits, corrects, deletes, or
-  writes any observation; the existing Commit Marked button remains the only bulk write.
-- **R6** — One completed drag updates the whole group through one store action and one render,
-  not one full application render per tile.
-- **R7** — During a drag, the band and prospective tiles provide clear visual feedback. The
-  feedback disappears on release or cancellation and is not confused with committed state.
-- **R8** — An ordinary click or right click below the movement threshold retains its exact
-  current single-tile behavior. The synthetic click/context-menu event after a completed
-  drag must not alter one additional tile.
-- **R9** — A gesture beginning on a badge, reason/detail control, changed-species chip, popup,
-  or other interactive control retains that control's existing behavior and does not begin
-  group selection.
-- **R10** — Pointer cancellation, Escape during an active drag, leaving the usable grid, or
-  losing capture cancels cleanly without applying partial marks or leaving a band behind.
-- **R11** — The phone supports both normal scrolling and touch rectangle multi-selection.
-  Selection release stages the requested exception or acceptance for every intersected tile;
-  the phone interaction for distinguishing scrolling from selection is settled with the human
-  before implementation.
-- **R12** — Left-dragging creates exception marks without opening dozens of detail popups;
-  reasons and notes remain optional per-tile edits through the existing popup.
-- **R13** — Pure model tests cover rectangle normalization/intersection and the bulk mark
-  rule; real-browser tests cover mouse drag, right drag, cancellation, click preservation,
-  one-render performance, Commit Marked compatibility, and phone gesture regression.
+- **R1** — `yielded` is a result outcome MARP accepts. A worker reporting it gets a normal
+  ack, not a 400.
+- **R2** — A yielded attempt is recorded as `yielded`, distinguishable afterwards from a
+  `cancelled` one. The attempt state check constraint permits it.
+- **R3** — `gpu_job_attempts` records how far the worker got, from the
+  `completed_through_frame` the worker already computes and already sends.
+- **R4** — A yielded job returns to `queued` with its remaining range, so another volunteer
+  resumes from where the first stopped. It is not cancelled.
+- **R5** — A yield does not spend the job's attempt budget. A job handed between volunteers
+  stays claimable.
+- **R6** — Ingest happens per attempt rather than once per job, so the second volunteer's
+  observations are not refused as already ingested.
+- **R7** — Nothing above changes what `succeeded`, `failed` or `cancelled` already do. A
+  cancel still cancels, a failure still spends an attempt.
 
 ## Open assumptions
 
-- [x] **A7 · product/UI · blocking** — Answered 2026-09-16: immediate swipes scroll;
-  holding briefly and then dragging draws the touch selection rectangle. Releasing opens a
-  compact workflow choice (science: Flag/Reviewed; training: Exclude/Promote), and choosing
-  applies that kind to the intersected tiles. No Select toggle. Mouse behavior is unchanged.
+- [x] **A1 · API contract · blocking** — answered 2026-09-17: **a fourth outcome,
+  `yielded`**, rather than reporting `cancelled` and carrying the partial-work signal in a
+  nullable frame number. `cancelled` already means "called off, nothing to keep"; overloading
+  it would make the ingest condition depend on a frame count instead of on what happened.
+  Isaac's words: *"I'm thinking i lean towards A as well."*
 
-- [x] **A1 · product/UI · blocking** — answered 2026-09-15 by the user's description: “a
-  specific group” means the existing mark kind, not bulk species correction. Left drag is
-  exception; right drag is accepted.
-- [x] **A2 · behavioural · blocking** — answered 2026-09-15 by “it marks all those”: a drag
-  is additive and sets one kind; overlapping an existing same-kind mark leaves it marked
-  rather than toggling it off.
-- [x] **A3 · product/UI · blocking** — answered 2026-09-15: a right drag accepts every
-  eligible tile, skips tiles with missing/unusable imagery, and shows one compact skipped
-  count rather than simultaneous per-tile refusal messages.
-- [x] **A4 · behavioural · blocking** — answered 2026-09-15 against the recommendation:
-  drag marking must never stage “Taking Back.” It directly stages the requested mark on
-  every eligible touched tile, including a tile already committed as reviewed/promoted.
-  Taking Back remains exclusive to the existing single-click gesture.
-- [x] **A5 · product/UI · blocking** — answered by the explicit left/right mouse-button
-  request and the existing phone contract: rectangle selection is mouse-only. Touch keeps
-  scrolling, tap marking, and double-tap acceptance.
-  **Superseded 2026-09-16:** the user explicitly requires scrolling and multi-selection on
-  the phone; R11 and A7 replace the mouse-only limitation.
-- [x] **A6 · product/UI · non-blocking** — no separate drag-undo command is added. All marks
-  remain uncommitted and reversible through the existing tile gestures and Clear Marks.
+- [x] **A2 · behavioural · blocking** — answered 2026-09-17: **the job is handed back to the
+  pool.** A stopped job returns to `queued` with its remaining range and another volunteer
+  carries on from `completed_through_frame`. Not cancelled-and-terminal. This is what makes
+  `completed_through_frame` mean something rather than be a number nobody reads.
+
+  Asked independently of the worker-side agent and answered the same way on both sides,
+  which is why it is recorded as settled rather than as a reading of one reply.
+
+- [x] **A3 · architectural · blocking** — answered 2026-09-17: **a yield does not consume an
+  attempt.** `selectClaimableJobRow` filters on `attempts_made < max_attempts`; counting a
+  yield there would mean the jobs passed between the most volunteers are the first to become
+  unclaimable, which is backwards for a pool.
+
+  **Stated consequence, accepted:** nothing then stops a job no machine can finish from being
+  retried forever. There is no backstop for that in this change. If it bites, the answer is a
+  separate guard — a total-yield ceiling or a no-progress rule — and not quietly making yields
+  cost an attempt after all.
+
+- [x] **A4 · database/schema · blocking** — answered 2026-09-17: **ingest is keyed per
+  attempt.** `gpu_jobs.published_attempt_id` holds exactly one attempt and `publishResult`
+  guards on it being null, so under A2 the second volunteer's real work would be refused as
+  already ingested. The key moves to the attempt.
+
+  Frame-range idempotency was offered and not taken: it only pays off if two workers can
+  cover overlapping frames, which nothing can produce yet. Named here so it is a decision
+  rather than an omission.
+
+- [x] **A5 · architectural** — answered 2026-09-17, for a later issue rather than this one:
+  job targeting is **both pinning and capability matching** — a nullable `target_worker_id`
+  on `gpu_jobs` plus a requirements column matched against the `capabilities` the poll
+  already carries and already snapshots. Recorded here because it lands in the same tables
+  and should not be rediscovered; it is not built by this task.
 
 ## Decisions
 
-- **2026-09-15** — This is a multiplier on the existing two mark kinds, not a new selection
-  state, new commit route, species operation, or database concept.
-- **2026-09-15** — Geometry is a pure model rule; pointer capture and the rubber band belong
-  to UI wiring; the store applies the settled group exactly once.
-- **2026-09-15** — Use a small movement threshold to distinguish a click from a drag, and
-  suppress the browser's follow-up click/context-menu only after the threshold is crossed.
-- **2026-09-15** — A drag sets marks directly and never routes through the single-click
-  take-back rule. A later Commit Marked may replace the recorded decision; the drag itself
-  still writes nothing.
-- **2026-09-15** — A right drag partially succeeds across missing imagery: usable tiles are
-  marked accepted and one group summary reports how many unusable tiles were skipped.
+- **2026-09-17** — Adding `yielded` to `RESULT_OUTCOMES` alone is worse than the present
+  bug and must never be shipped on its own. `publishResult`'s trailing `else` hardcodes
+  `SET state = 'cancelled'` and cancels the job, so the word would be accepted and then
+  silently recorded as a cancel — and because `isReplay` compares `attempt.state` against
+  `RESULT_OUTCOMES`, a retry would confirm the wrong answer rather than expose it. The
+  vocabulary, the constraint and the explicit branch land together or not at all.
+
+- **2026-09-17** — The migration spells the vocabulary out rather than importing it.
+  `config/gpu-orchestration.js` records that migrations deliberately do not read the config;
+  a mismatch then surfaces as a database error instead of as silence.
 
 ## Plan
 
-1. Add pure rectangle normalization, intersection, and bulk-mark planning rules.
-2. Add one store action that applies the planned ids, touched state, refusal summary, log
-   entry, and notification as a single transaction.
-3. Wire mouse pointer capture, movement threshold, prospective-tile preview, release,
-   cancellation, and suppression of the follow-up click/context menu.
-4. Style the selection band and preview so they remain legible across all Mosaic modes.
-5. Add focused unit and API-backed desktop/phone browser coverage.
-6. Write the G3 verification plan and stop for human review before running it.
+1. Migration: alter `gpu_job_attempts_state_check` to include `yielded`; add
+   `completed_through_frame` to `gpu_job_attempts`; add whatever A4 needs to key ingest per
+   attempt; add the remaining-range column A2 needs on `gpu_jobs`.
+2. `config/gpu-orchestration.js`: `yielded` into `RESULT_OUTCOMES` and `ATTEMPT_STATES`.
+3. `service/gpu.service.js`: `recordResult` reads and validates `completed_through_frame`.
+4. `repository/gpu.repository.js`: an explicit `yielded` branch in `publishResult` that
+   records the attempt, stores the frame, requeues the job with its remainder, and does not
+   spend an attempt.
+5. Ingest: key on the attempt (A4), and stop gating on `outcome === 'succeeded'` alone.
+6. Tests at the tier that can see each of these — a refused stop is what started this, and
+   both repositories' suites currently pass against each other's wrong assumption.
 
 ## Acceptance criteria
 
-- One left or right mouse sweep marks a large contiguous group without extra single-tile
-  changes when the button is released.
-- The selected group can be committed through Commit Marked without a special backend path.
-- Existing single-click, right-click, popup, keyboard, and phone gestures behave as before.
-- A cancelled or accidental sub-threshold movement changes no more than the ordinary click
-  would have changed.
-- A large drag causes one application rerender, not one rerender per tile.
+- A worker reporting `yielded` is accepted, and the attempt reads `yielded` afterwards.
+- The job is `queued` again with its remaining range, and a second poll leases it.
+- The first volunteer's observations are present, and the second volunteer's are added
+  rather than refused.
+- A job handed between several volunteers is still claimable.
+- A `cancelled` result still cancels the job.
 
 ## Test plan
 
-Written in `.marp/verification.md`. It names focused pure-model coverage and one API-backed
-browser file running the desktop mouse behavior plus phone regression; no walkthrough,
-migration, production database, or live service is required.
+`.marp/verification.md` on this branch. The cross-machine half is a second real GPU worker
+on another machine polling this API, which is why it is being done with that agent rather
+than simulated here.
 
 ## Status
 
-- **Gate:** implementation complete; mouse and real-touch browser evidence recorded
-- **Notes:** The pure rectangle/bulk-mark model, single store action, mouse pointer wiring,
-  cancellation, visuals, compact imagery-skip acknowledgement, and focused model/browser
-  tests are implemented. Hold-then-drag touch selection and the release-time science/training
-  choice are implemented. Fast parsing/model checks and the focused desktop/phone browser
-  evidence passed. The human confirmed the actual phone behavior works and approved PR,
-  merge, and closing issue #136.
+- **Gate:** design complete, assumptions answered, not yet implementing
+- **Notes:** Written 2026-09-17. Every claim about the current schema in this file was
+  checked against the running database rather than read off a migration. The worker-side
+  agent found A3 and A4 while reading the same code from the other end; both were put to
+  Isaac rather than settled between agents.
