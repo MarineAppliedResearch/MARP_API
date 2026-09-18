@@ -1,182 +1,103 @@
 ---
-task: MarineAppliedResearch/MARP_API#197
-repos: [MARP_API, marp-inference-worker]
-ran: 2026-09-17
+task: MarineAppliedResearch/MARP_API#206
+status: verified
 ---
 
-## What this covers
-
-Every requirement in `.marp/task.md`, at two tiers: the jest suite, and a live run against
-two real GPU workers on two machines and two networks. The live half is here because this
-defect could not have been found without a second machine, and a fix for it that had only
-ever been seen in a test would be repeating the mistake that produced it.
-
-**Not covered, and deliberately:** ingest of a resumed job's second segment into real
-observations. Every job run here was submitted without `spec.session`, so nothing reached
-the corpus. Proving R6 end to end means writing test inference into the annotation record,
-and that is the human's decision rather than something to slip in behind a verification.
-The mechanism is covered at the unit level and by the artifact filtering below; what is not
-proven is a second volunteer's observations actually landing.
-
-## R1, R2 — `yielded` is accepted and recorded as itself
-
-`npx jest tests/gpu-orchestration.test.js` — 12 new tests in `GPU attempt yielded`.
+## What was run
 
 ```
-GPU attempt yielded > accepts yielded as an outcome rather than refusing it            PASS
-GPU attempt yielded > records the attempt as yielded, distinguishable from a cancel    PASS
+npm run test:app:mosaic-review:api -- -g "#206"
+
+  ✓ 1 [api]       #206 R1, R5 scientific: the track length is on the tile, and reads 0f with no keyframes
+  ✓ 2 [api]       #206 R1, R5 training:   the track length is on the tile, and reads 0f with no keyframes
+  ✓ 3 [api]       #206 R2, R3, R4: a reason and the track length are both shown, and neither covers the other
+  ✓ 4 [api]       #206 R4: the corner does not swallow a click meant for the tile
+  ✓ 5-8 [api-phone] the same four, at phone width
+  8 passed (8.0s)
 ```
 
-And live, on worker 48, using the worker's **unmodified** code — the same code that was
-being answered 400 an hour earlier. A 3000-frame mock job stopped at ~frame 300 through
-`POST /status/control {"action":"stop"}`:
+Plus `npm run test:unit` (296 checks) after every edit, and the whole browser tier once —
+see *The tier run, and the 48 failures in it* below.
+
+## Red first
+
+Proved against `develop`'s `tile.js` and `app.css` copied over the branch's, then restored
+from a copy — never `git checkout --`, which discards uncommitted work:
 
 ```
-attempt 2723  w48  yielded   completed_through_frame 400   progress_done 400
+  ✘ 1 #206 R1, R5 scientific: ...   Locator: locator('.tile[data-id="2095"]').locator('.frames')
+                                    Error: element(s) not found
+  ✓ 2 #206 R1, R5 training:  ...    (855ms)
+  ✘ 3 #206 R2, R3, R4: ...          .frames not found
+  ✘ 4 #206 R4: ...                  .frames not found
+  3 failed, 1 passed
 ```
 
-## R3 — how far the worker got is stored
+**The training case passing on `develop` is the useful half of that.** It says the check is
+pointed at the right thing: training mode already had the chip, scientific never did, and
+the three that failed are exactly the three the issue is about.
+
+## Requirement by requirement
+
+| | Proved by |
+| --- | --- |
+| **R1** visible in both modes, no hover | `#206 R1, R5`, run once per mode, asserting `.frames` is *visible* rather than present |
+| **R2** reason and count together | `#206 R2, R3, R4` — a tile marked `Duplicate` in scientific mode shows both chips with their own text |
+| **R3** neither covers the other | same check, asserting the **geometry**: `overlaps` is false and the count's top is at or below the reason's bottom. Two chips can both satisfy `toBeVisible()` while occupying the same pixels, which is precisely what two rules sharing `top: 4px; right: 4px` produced |
+| **R4** the corner takes no click | `#206 R4` — clicks the frame chip itself and asserts the **tile** becomes marked. This is the regression the change could cause: a positioned container laid over a tile is how a corner starts eating gestures |
+| **R5** `0f` with no keyframes | `#206 R1, R5` — `seedPage` without `tie` plants no keyframes, and the assertion is `toHaveText('0f')`, which a client that coalesced badly would fail with `undefinedf` |
+
+Both projects, `api` and `api-phone`, so R3 is checked at desktop and phone width.
+
+## The tier run, and the 48 failures in it
+
+The whole browser tier was run, and **48 of 587 failed. None of them are mine.**
+
+That is established rather than asserted. The same three files were run on `origin/develop`
+and on this branch, and the failing test *names* were captured and diffed:
 
 ```
-GPU attempt yielded > stores how far the worker got                                    PASS
+$ diff fail-develop.txt fail-branch.txt && echo IDENTICAL
+IDENTICAL          # 13 failures, the same 13, on both
 ```
 
-`completed_through_frame` is an **exclusive** bound, despite the name: the worker computes
-`start_frame + frames_processed`, one past the last frame it finished, which is the same
-half-open convention as `spec.range.end_frame`. It is therefore already the next
-`start_frame` and is used unmodified. Adding one "to be safe" would skip a frame on every
-hand-over and nothing would report it. Written into the code at the point of use.
+None of the eight `#206` checks is among them, and every failure is in a file this branch
+does not touch.
 
-## R4 — a yielded job goes back to the pool, and resumes where it stopped
-
-```
-GPU attempt yielded > returns the job to the queue rather than cancelling it           PASS
-GPU attempt yielded > hands the next worker a lease that starts where the last stopped PASS
-GPU attempt yielded > does not rewrite the stored spec when it resumes                 PASS
-GPU attempt yielded > never moves the resume point backwards                           PASS
-```
-
-The lease test asserts the range tiles exactly — `40..100` after a yield at 40 over a
-`0..100` job — so no frame is processed twice and none is skipped.
-
-Live, job 3105, the complete lifecycle across two attempts:
+**The cause, as far as it was chased:** the API the tier starts runs its own thumbnail
+extraction (`Thumbnail extraction started.` in its log). It claims the thumbnails of
+observations the checks seed, cannot produce a crop — a seeded observation has no
+`video_source` — and marks them `failed`. A freshly reset testing database, immediately
+after one full run:
 
 ```
-job 3105 succeeded
-  attempt 2723  w48  yielded    400/3000    range 0..3000
-  attempt 2724  w48  succeeded  2600/2600   range 400..3000
+observations                    2187      (the dump has 2091)
+observations with no video_source  96      left behind by seeders
+thumbnails failed                 111, of which
+  'No Jellyfin video matched video_source ""'   96
 ```
 
-2600 = 3000 - 400. The resumed lease started at 400 exactly.
+So each full run leaves about ninety-six seeded observations behind with broken pictures,
+and several of the failing checks reason about the *population* of rows with no imagery —
+`openOnBrokenPicture`, "an unmarked row with no imagery is skipped", "the button says how
+many will be skipped". A corpus gaining ninety-six broken rows per run is not the corpus
+they were written against.
 
-## R5 — a yield does not spend the attempt budget
+Two things follow, and neither is fixed here because neither is #206:
 
-```
-GPU attempt yielded > does not spend the job's attempt budget                          PASS
-GPU attempt yielded > stays claimable after being yielded more times than max_attempts PASS
-```
+- `npm run testing-db reset` does **not** clear it, which is why it looked like corpus
+  exhaustion at first and is not: the pollution is regenerated inside the very next run.
+- It is the same root cause as the `#134` failure recorded on the `#203` branch.
 
-The second drives four yields against a `max_attempts: 2` job and then polls again,
-because the property that matters is not the arithmetic but that the job is *still
-claimable* past its nominal cap.
+Left alone and reported. The fix is a decision about whether the tier's API should start
+its extractor at all, and that is the human's to make.
 
-Live: `attempts_made 2, yields_made 1` on job 3105 — one attempt spent of four.
+## What is NOT covered
 
-`attempts_made` still counts every lease, because it doubles as the lease epoch and two
-leases sharing one epoch would be indistinguishable to the coordinator. `yields_made` is a
-second column subtracted where the budget is judged, in all three places it is judged.
-
-## R6 — ingest keys on the attempt
-
-Covered structurally rather than by an end-to-end ingest, for the reason in *What this
-covers*. Three things were changed and two are observable here:
-
-- `gpu_job_attempts.ingested_at` replaces `gpu_jobs.published_attempt_id` as the guard,
-  claimed with `UPDATE ... WHERE ingested_at IS NULL` so two concurrent results for one
-  attempt cannot both pass, and released again when the ingest throws or finds nothing.
-- Ingest takes **only the reporting attempt's artifacts**, filtered on
-  `metadata.attempt_id`.
-
-The filter is not defensive. Job 3105, live, produced:
-
-```
-artifacts on job 3105
-  980  observations  attempt 2723  137abd370487a45b
-  982  observations  attempt 2724  211f41d73eb59e74
-```
-
-Two artifacts on one job. `getJobDetail` returns both, so without the filter attempt 2724's
-ingest would have swept up 2723's segment as well and written both into the record from one
-attempt — a data fault with no error attached to it.
-
-## R7 — nothing else changed
-
-```
-GPU attempt yielded > leaves a cancelled result cancelling the job, exactly as before  PASS
-GPU attempt yielded > keeps a yielded job out of the queue if it was already cancelled PASS
-GPU attempt yielded > refuses a negative completed_through_frame                       PASS
-```
-
-The whole GPU group, for regressions:
-
-```
-npm run test:gpu
-  Test Suites : 7 passed, 0 failed, 7 total
-  Tests       : 123 passed, 0 failed, 0 skipped, 123 total
-  Duration    : 15.6s
-```
-
-## The live pool this was verified against
-
-Two machines, two networks, one coordinator:
-
-```
-worker  48  ABYSS-46f37134                RTX 4080 SUPER 16 GiB  cc8.9   (desktop)
-worker 898  SoftwareEngineering-a0294ccd  RTX 5060 Laptop 8 GiB  cc12.0  (laptop)
-```
-
-Real inference crossed between them: job 3102, `marp_tracking`, ran on the laptop with
-weights streamed from MARP and returned real detections, hash-verified. That is not part of
-#197 and is recorded here only because it is what made the defects below findable.
-
-## Defects found while verifying, and what happened to each
-
-- **The suite cannot run while the pool is live.** Two failures on the first run: a live
-  worker out-polled the suite for its own job, and the corpus guard failed the file because
-  `gpu_workers` and `service_tokens` moved under it.
-
-  ```
-  expect(polled.body.job_id).toBe(job.id)
-    Expected: 3114   Received: 3113
-
-  gpu-orchestration.test.js changed the database.
-    - gpu_workers: row(s) modified, count unchanged at 2
-    - service_tokens: row(s) modified, count unchanged at 16
-  ```
-
-  The guard is right; it cannot tell a heartbeat from a test rewriting rows it did not
-  create. Worked around by stopping both workers — **stopped, not paused**: a paused worker
-  stays enrolled and goes on heartbeating, so "park the pool" as a rule has to say stop.
-  Raised for a decision and deliberately not designed here.
-
-- **MARP accepts a job spec the worker always rejects.** `submitJobs` validates `engine`,
-  `video` and `range` and never looks at `model` or `reduction`, both of which the worker
-  requires. A bad spec queues, leases, and burns every attempt before anyone sees a pydantic
-  traceback in `failure_reason`. Not fixed here — it needs the engine's `requires_model` to
-  be visible to the coordinator, which is an open contract question.
-
-- **A registered model with no bytes behind it.** `ml_models` row 91 named a `storage_path`
-  under `.marp/local` that did not exist, so `GET /api/v2/model/91/artifact` answered 404 and
-  every job carried an absolute Windows path instead. Fixed by placing the artifact where its
-  own row says it lives; refusing a filesystem path at submit is not done and is separate.
-
-- **`addConstraint` cannot add a check constraint** without a `fields` list it then ignores.
-  Failed the first migration run; rewritten as plain `ALTER TABLE`, which is clearer for a
-  clause that is the point of the migration.
-
-## Left alone
-
-- `failure_reason`, the `resume`/`running` vocabulary and the watch window are worker-side
-  and belong to marp-inference-worker#20.
-- Job targeting (`target_worker_id` plus capability matching) is decided but not built; it
-  is a separate issue.
+- **Delete mode.** The count is now unconditional, so it renders there too, and nothing
+  asserts it. It was not asked for — see A2 — and the delete-mode checks are among the
+  pre-existing failures above, so adding an assertion there would have nothing trustworthy
+  to stand on.
+- **A reason long enough to wrap.** `.reason-chip` is given `max-width: 100%` with an
+  ellipsis and the corner is capped at the tile's width less its gutters, but no check
+  drives a reason longer than the five in the vocabulary.
