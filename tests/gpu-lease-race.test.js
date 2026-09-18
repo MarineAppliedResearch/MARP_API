@@ -78,6 +78,7 @@ async function queueJobs(count) {
                     // A bare url, so leasing needs nothing from the media server.
                     video: { url: `http://jest.invalid/media/jest-race-${runId}.mp4`, source_name: 'jest-race.mp4' },
                     range: { start_frame: index * 100, end_frame: (index * 100) + 100 },
+                    reduction: { name: 'v3_dirpad', version: 1 },
                 },
             });
 

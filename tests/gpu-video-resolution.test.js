@@ -312,10 +312,69 @@ describe('GPU job submission: the model', () => {
     it('still accepts a model with no url at all', async () => {
         const response = await submitModel({ name: 'jest-nourl', sha256: 'e'.repeat(64) });
 
-        // Naming a registered model without saying where it is remains valid, and
-        // the mock engine needs no model at all. Requiring one is a separate
-        // question that waits on the worker reporting which engines need one.
+        // Naming a registered model without saying where it is remains valid: the
+        // locator is optional, the model is not.
         expect(response.status).toBe(200);
+    });
+
+    it('refuses a spec with no model, whatever the engine', async () => {
+        const response = await submitModel(undefined);
+
+        // Every engine runs a model. `mock` looked like the exception -- it
+        // performs no inference -- but it is scaffolding for testing the contract
+        // rather than an engine a volunteer runs, and the answer is that it gets a
+        // stand-in model rather than that the rule gets an exception.
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/spec\.model is required/);
+    });
+
+    it('refuses a model with no sha256, so the bytes cannot be verified', async () => {
+        const response = await submitModel({ name: 'jest-nohash' });
+
+        expect(response.status).toBe(400);
+    });
+
+    it('refuses a spec with no reduction', async () => {
+        const response = await submit(
+            { url: RESOLVED_URL, source_name: 'jest-nored.mp4' },
+            {
+                spec: {
+                    engine: 'ultralytics',
+                    model: { name: 'jest-nored', sha256: 'e'.repeat(64) },
+                    video: { url: RESOLVED_URL, source_name: 'jest-nored.mp4' },
+                    range: { start_frame: 0, end_frame: 100 },
+                },
+            }
+        );
+
+        // The worker's JobSpec requires it, so a spec without one was queued,
+        // leased, and refused three times with a pydantic traceback as the only
+        // explanation. Two suites in this repository were submitting exactly this
+        // shape and never noticed, because neither of them runs a job.
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/spec\.reduction is required/);
+    });
+
+    it('accepts a reduction version as a number or a string', async () => {
+        for (const version of [1, '1']) {
+            const response = await submit(
+                { url: RESOLVED_URL, source_name: 'jest-redver.mp4' },
+                {
+                    spec: {
+                        engine: 'ultralytics',
+                        model: { name: 'jest-redver', sha256: 'e'.repeat(64) },
+                        video: { url: RESOLVED_URL, source_name: 'jest-redver.mp4' },
+                        range: { start_frame: 0, end_frame: 100 },
+                        reduction: { name: 'v3_dirpad', version },
+                    },
+                }
+            );
+
+            // MARP's published spec documents this as an integer and the worker's
+            // registry keys on strings. Refusing either spelling would put MARP at
+            // odds with its own documentation.
+            expect(response.status).toBe(200);
+        }
     });
 });
 

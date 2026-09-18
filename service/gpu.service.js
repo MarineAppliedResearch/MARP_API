@@ -1091,6 +1091,7 @@ class GpuService {
 
         this.validateSubmittedVideo(spec.video);
         this.validateSubmittedModel(spec.model);
+        this.validateSubmittedReduction(spec.reduction);
         await this.validateSubmittedObservationTarget(kind, spec);
 
         // The range is always present, even for a whole video, so nothing
@@ -1339,12 +1340,20 @@ class GpuService {
      * an absolute `http`/`https` URL. Everything else is refused, including
      * `file://`, which is the same fault wearing a scheme.
      *
-     * `model` itself is not required here. The `mock` engine performs no
-     * inference and needs no weights, and forcing it to name a model makes it
-     * unusable on the machine it exists for -- a volunteer's, with no GPU and no
-     * model cache. Which engines require one is a fact the worker reports at
-     * enrolment, and it is not on the wire from every worker yet, so requiring
-     * `model` at all waits for MarineAppliedResearch/marp-inference-worker#20.
+     * **`model` is required, for every engine without exception.** That was a
+     * live question for a while: the `mock` engine performs no inference, so it
+     * looked as though it should be allowed to run without weights, and the
+     * worker was about to make `model` optional to let it. It turned out mock is
+     * scaffolding from before a real engine existed -- its own `describe()` says
+     * "contract and runner testing; performs no inference" -- and the answer is
+     * that mock gets a stand-in model rather than that the contract gets a hole
+     * in it. One rule with no exceptions beats a per-engine flag the coordinator
+     * would have to be told about and could be told wrongly.
+     *
+     * A spec reaching a worker without a model is refused there anyway, after
+     * queueing, leasing, and burning every attempt, with a pydantic traceback in
+     * `failure_reason` as the only explanation. Refusing it here costs one
+     * response and says what is missing.
      *
      * @param {Object} [model] - `spec.model` as supplied, if any.
      * @returns {void}
@@ -1352,12 +1361,18 @@ class GpuService {
      */
     validateSubmittedModel(model) {
         if (model === undefined || model === null) {
-            return;
+            invalid(
+                'spec.model is required: every engine runs a model, and a worker refuses a spec without one. '
+                + 'Name a registered model and its sha256.'
+            );
         }
 
         if (typeof model !== 'object' || Array.isArray(model)) {
             invalid('spec.model must be an object.');
         }
+
+        requiredString(model.name, 'spec.model.name');
+        this.validateSha256(model.sha256, 'spec.model.sha256');
 
         if (model.url === undefined || model.url === null) {
             return;
@@ -1399,6 +1414,46 @@ class GpuService {
 
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
             invalid(`spec.model.url must use http or https, not ${parsed.protocol} (${url}).`);
+        }
+    }
+
+    /**
+     * Validate the `reduction` half of a submitted spec.
+     *
+     * The keyframe reduction rule applied to finished tracks. Required for the
+     * same reason as the model: the worker's `JobSpec` has it as a required
+     * field, so a spec without one is refused after being queued, leased and
+     * retried rather than at the moment it could have been corrected.
+     *
+     * `version` is accepted as a number or a string. MARP's own published spec
+     * documents it as an integer and the worker's registry keys on strings; the
+     * worker normalises it at the boundary, and refusing one of the two spellings
+     * here would make MARP disagree with its own documentation.
+     *
+     * @param {Object} [reduction] - `spec.reduction` as supplied.
+     * @returns {void}
+     * @throws {ApiError} 400 when it is missing or malformed.
+     */
+    validateSubmittedReduction(reduction) {
+        if (reduction === undefined || reduction === null) {
+            invalid(
+                'spec.reduction is required: it names the keyframe rule applied to finished tracks, '
+                + 'and a worker refuses a spec without one.'
+            );
+        }
+
+        if (typeof reduction !== 'object' || Array.isArray(reduction)) {
+            invalid('spec.reduction must be an object.');
+        }
+
+        requiredString(reduction.name, 'spec.reduction.name');
+
+        if (reduction.version === undefined || reduction.version === null) {
+            invalid('spec.reduction.version is required.');
+        }
+
+        if (typeof reduction.version !== 'string' && typeof reduction.version !== 'number') {
+            invalid('spec.reduction.version must be a string or a number.');
         }
     }
 
