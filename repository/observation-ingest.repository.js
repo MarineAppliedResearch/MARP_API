@@ -212,6 +212,42 @@ class ObservationIngestRepository {
     }
 
     /**
+     * Every common name a model was trained with, for the worker to check
+     * against the weights it actually loaded (#214).
+     *
+     * A job spec names a model and carries its sha256, and the worker verifies
+     * that hash against the *file*. Nothing then checks that the file it loaded
+     * is the model the job meant -- `species_names` comes from the loaded
+     * weights and the window's footer comes from the spec, and the two are
+     * never reconciled. A run using weights nobody asked for therefore produces
+     * confident, plausible, wrong species and the only thing that catches it is
+     * a person looking at a screen. That happened on 2026-09-18.
+     *
+     * These names are the same ones the ingest resolves detections against, so
+     * a model whose loaded classes do not match this list could not have its
+     * output ingested anyway -- the check just moves the discovery from after
+     * the run to before it.
+     *
+     * @async
+     * @param {number} mlModelId - Registered model identifier.
+     * @returns {Promise<Array<string>>} Trained common names, sorted.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async trainedSpeciesNames(mlModelId) {
+        const rows = await this.db.sequelize.query(
+            `SELECT DISTINCT s.comname
+               FROM model_species ms
+               JOIN species s ON s.id = ms.species_id
+              WHERE ms.model_id = :mlModelId
+                AND s.comname IS NOT NULL
+              ORDER BY s.comname`,
+            { replacements: { mlModelId }, type: QueryTypes.SELECT }
+        );
+
+        return rows.map((row) => row.comname);
+    }
+
+    /**
      * Every species row carrying a common name, whatever list it is on.
      *
      * The fallback for a model whose trained-species list does not name the
