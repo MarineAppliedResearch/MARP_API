@@ -349,11 +349,19 @@ body.rail-collapsed .fcount { display: grid; }
                         border: 1px solid currentColor; border-radius: 50%;
                         font-size: 7px; line-height: 1; font-weight: 900; opacity: .9;
                         white-space: nowrap; }
-.frames { position: absolute; top: 4px; right: 4px; background: rgba(8, 9, 11, .30);
+/* The reason and the track length used to share one absolute position and so could never
+   both be shown (#206). The corner is the positioned thing now and the chips stack inside
+   it, which keeps "how far down the second chip goes" a consequence of the first chip's
+   own height rather than a number written here that a padding change would falsify. */
+.corner { position: absolute; top: 4px; right: 4px; z-index: 3;
+          display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+          max-width: calc(100% - 8px); }
+.frames { background: rgba(8, 9, 11, .30);
           color: #c2cad3; font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600; }
-.reason-chip { position: absolute; top: 4px; right: 4px; background: rgba(8, 9, 11, .34);
+.reason-chip { background: rgba(8, 9, 11, .34);
                border: 1px solid rgba(246, 196, 83, .55); color: var(--amber-300);
-               font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600; }
+               font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600;
+               max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .confidence-chip { position: absolute; right: 4px; bottom: 3px; z-index: 4;
                    min-width: 18px; padding: 1.5px 4px; border-radius: 2px;
                    background: rgba(8, 9, 11, .30); color: #f7fafc;
