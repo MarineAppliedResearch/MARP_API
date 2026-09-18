@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#197
 repos: [MARP_API, marp-inference-worker]
-status: design
+status: verified
 needs: []
 ---
 

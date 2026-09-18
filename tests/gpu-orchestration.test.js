@@ -1083,6 +1083,271 @@ describe('GPU attempt result', () => {
 });
 
 /**
+ * A stopped run: the operator pressed stop, part of the range is done, and the
+ * rest has to be finishable by somebody else.
+ *
+ * This whole block exists because the worker reported `yielded` for months while
+ * MARP's vocabulary held three words, so every stop was answered 400 and thrown
+ * away -- and neither repository's suite noticed, because each was testing
+ * against its own idea of the contract. The assertions here are deliberately
+ * about the *coordinator's rows* rather than about the response body: a reply
+ * saying the right thing over a job that was actually cancelled is the exact
+ * failure this replaces (MARP_API#197,
+ * MarineAppliedResearch/marp-inference-worker#20).
+ */
+describe('GPU attempt yielded', () => {
+    /**
+     * Stop a leased job part-way, as an operator does.
+     *
+     * @param {number} completedThroughFrame - Exclusive bound on frames finished.
+     * @param {Object} [overrides] - Fields to merge into the submission body.
+     * @returns {Promise<Object>} `{job, lease, reported}`.
+     */
+    async function leaseAndYield(completedThroughFrame, overrides = {}) {
+        const { job, lease } = await submitAndLease(overrides);
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'yielded',
+                completed_through_frame: completedThroughFrame,
+            });
+
+        return { job, lease, reported };
+    }
+
+    it('accepts yielded as an outcome rather than refusing it', async () => {
+        const { reported } = await leaseAndYield(40);
+
+        // The literal failure this issue is about: 400, "outcome must be one of:
+        // succeeded, failed, cancelled".
+        expect(reported.status).toBe(200);
+        expect(reported.body.accepted).toBe(true);
+        expect(reported.body.outcome).toBe('yielded');
+    });
+
+    it('records the attempt as yielded, distinguishable from a cancel', async () => {
+        const { lease } = await leaseAndYield(40);
+
+        const [attempt] = await query(
+            'SELECT state FROM gpu_job_attempts WHERE id = :id', { id: lease.attempt_id }
+        );
+
+        // Not `cancelled`. Before the explicit branch existed, a yield fell into
+        // the trailing else and was written as a cancel -- which looked like it
+        // worked and erased the one distinction the word exists to make.
+        expect(attempt.state).toBe('yielded');
+    });
+
+    it('stores how far the worker got', async () => {
+        const { lease } = await leaseAndYield(40);
+
+        const [attempt] = await query(
+            'SELECT completed_through_frame FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        expect(attempt.completed_through_frame).toBe(40);
+    });
+
+    it('returns the job to the queue rather than cancelling it', async () => {
+        const { job } = await leaseAndYield(40);
+
+        const [row] = await query(
+            'SELECT state, resume_from_frame FROM gpu_jobs WHERE id = :id', { id: job.id }
+        );
+
+        expect(row.state).toBe('queued');
+        expect(row.resume_from_frame).toBe(40);
+    });
+
+    it('hands the next worker a lease that starts where the last one stopped', async () => {
+        const { job } = await leaseAndYield(40);
+
+        const resumed = await pollOnce();
+
+        expect(resumed.status).toBe(200);
+        expect(resumed.body.job_id).toBe(job.id);
+
+        // The frames covered must tile exactly: 40..100 and not 0..100, or every
+        // hand-over reprocesses everything already done. `completed_through_frame`
+        // is an exclusive bound, so it is the next start_frame unmodified --
+        // adding one "to be safe" would skip frame 40 and nothing would notice.
+        expect(resumed.body.spec.range.start_frame).toBe(40);
+        expect(resumed.body.spec.range.end_frame).toBe(100);
+    });
+
+    it('does not rewrite the stored spec when it resumes', async () => {
+        const { job } = await leaseAndYield(40);
+
+        await pollOnce();
+
+        const [row] = await query('SELECT spec FROM gpu_jobs WHERE id = :id', { id: job.id });
+
+        // What was submitted stays what was submitted. The resume point is a
+        // column beside the spec, not an edit to it.
+        expect(row.spec.range.start_frame).toBe(0);
+    });
+
+    it('does not spend the job\'s attempt budget', async () => {
+        const { job } = await leaseAndYield(40);
+
+        const [row] = await query(
+            'SELECT attempts_made, yields_made, max_attempts FROM gpu_jobs WHERE id = :id',
+            { id: job.id }
+        );
+
+        // `attempts_made` still counts the lease, because it doubles as the lease
+        // epoch and two leases sharing one epoch would be indistinguishable. The
+        // budget ignores it by subtracting the yield instead.
+        expect(row.attempts_made).toBe(1);
+        expect(row.yields_made).toBe(1);
+        expect(row.attempts_made - row.yields_made).toBe(0);
+    });
+
+    it('stays claimable after being yielded more times than max_attempts', async () => {
+        const { job, lease } = await leaseAndYield(10, { max_attempts: 2 });
+
+        let held = lease;
+
+        // Three more stops, one past the cap. A job handed between volunteers is
+        // the normal case in a pool, and it must not be the first thing to die.
+        for (let i = 0; i < 3; i += 1) {
+            const polled = await pollOnce();
+
+            expect(polled.status).toBe(200);
+            expect(polled.body.job_id).toBe(job.id);
+
+            held = polled.body;
+
+            await global.api
+                .post(`/api/v2/gpu/attempts/${held.attempt_id}/result`)
+                .send({
+                    worker_id: workerId,
+                    lease_epoch: held.lease_epoch,
+                    outcome: 'yielded',
+                    completed_through_frame: 10 + (i + 1) * 10,
+                });
+        }
+
+        const [row] = await query(
+            'SELECT state, attempts_made, yields_made FROM gpu_jobs WHERE id = :id', { id: job.id }
+        );
+
+        expect(row.attempts_made).toBe(4);
+        expect(row.yields_made).toBe(4);
+        expect(row.state).toBe('queued');
+
+        // The point of all of it: still claimable.
+        const again = await pollOnce();
+
+        expect(again.status).toBe(200);
+        expect(again.body.job_id).toBe(job.id);
+    });
+
+    it('never moves the resume point backwards', async () => {
+        const { job } = await leaseAndYield(60);
+
+        const second = await pollOnce();
+
+        expect(second.body.spec.range.start_frame).toBe(60);
+
+        // A worker that stopped earlier than one before it must not drag the job
+        // back and cause those frames to run twice. `completed_through_frame` is
+        // this attempt's own count, so a short second attempt reports a low
+        // number honestly and the job has to be the one that refuses it.
+        await global.api
+            .post(`/api/v2/gpu/attempts/${second.body.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: second.body.lease_epoch,
+                outcome: 'yielded',
+                completed_through_frame: 20,
+            });
+
+        const [row] = await query(
+            'SELECT resume_from_frame FROM gpu_jobs WHERE id = :id', { id: job.id }
+        );
+
+        expect(row.resume_from_frame).toBe(60);
+    });
+
+    it('leaves a cancelled result cancelling the job, exactly as before', async () => {
+        const { job, lease } = await submitAndLease();
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'cancelled',
+            });
+
+        expect(reported.status).toBe(200);
+        expect(reported.body.job_state).toBe('cancelled');
+
+        const [row] = await query(
+            'SELECT state, yields_made FROM gpu_jobs WHERE id = :id', { id: job.id }
+        );
+
+        // The regression guard for the whole change: adding a fourth word must
+        // not quietly turn the third one into it.
+        expect(row.state).toBe('cancelled');
+        expect(row.yields_made).toBe(0);
+    });
+
+    it('refuses a negative completed_through_frame', async () => {
+        const { lease } = await submitAndLease();
+
+        const response = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'yielded',
+                completed_through_frame: -1,
+            });
+
+        expect(response.status).toBe(400);
+    });
+
+    it('keeps a yielded job out of the queue if it was already cancelled', async () => {
+        const { job, lease } = await submitAndLease();
+
+        await global.api.post(`/api/v2/gpu/jobs/${job.id}/cancel`);
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'yielded',
+                completed_through_frame: 30,
+            });
+
+        expect(reported.status).toBe(200);
+
+        const [row] = await query('SELECT state FROM gpu_jobs WHERE id = :id', { id: job.id });
+
+        // A human said stop to the whole job. A worker stopping a moment later
+        // does not put it back in the queue -- the job's state is the
+        // coordinator's decision, not a race between the two.
+        expect(row.state).toBe('cancelled');
+
+        // The attempt still records what the machine actually did.
+        const [attempt] = await query(
+            'SELECT state, completed_through_frame FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        expect(attempt.state).toBe('yielded');
+        expect(attempt.completed_through_frame).toBe(30);
+    });
+});
+
+/**
  * Expiry, which is judged on the coordinator's clock and nothing else.
  */
 describe('GPU lease expiry', () => {
