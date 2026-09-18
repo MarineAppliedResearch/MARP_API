@@ -292,8 +292,9 @@ export async function renderPicker() {
       ${consqText ? `<div class="consq ${consqClass}">${consqText}</div>` : ''}
       <div class="pickfoot">
         ${isException ? `<button class="ghost" data-act="unmark" title="Remove the mark entirely">Remove ${m.mark.toLowerCase()}</button>` : ''}
-        ${isException && state.mode === 'scientific'
-          ? '<button class="ghost" data-act="replace-thumbnail" title="Clear this pending flag and ask for a different crop">Request replacement image</button>'
+        ${isException
+          ? `<button class="ghost" data-act="replace-thumbnail"
+              title="Clear this pending ${m.pending} and ask for a different crop">Request replacement image</button>`
           : ''}
         <button class="ghost" data-act="video" title="Open the source video at this observation">Open video</button>
         ${isException ? '<button class="ghost go" data-act="resolve" title="Clear the mark, keeping any correction">Mark resolved</button>'
