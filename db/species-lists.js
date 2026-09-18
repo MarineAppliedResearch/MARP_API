@@ -45,6 +45,7 @@ const SESSION_TYPE_TO_SPECIES_LIST = Object.freeze({
     // says why a list per model rather than one shared one.
     MBARI_Benthic: 'MBARI_Benthic_Supercategory',
     FathomNet_VME: 'FathomNet_VME',
+    FathomNet_Trash: 'FathomNet_Trash',
 });
 
 /**

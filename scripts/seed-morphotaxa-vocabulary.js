@@ -89,6 +89,23 @@ const VOCABULARIES = [
         licence: 'CC-BY-4.0',
         classes: ['corals', 'crinoids', 'sponges', 'fishes'],
     },
+    {
+        // The one vocabulary here that is not taxonomic at all. `trash` is a
+        // category of object and `rov` is a vehicle -- the institute's own
+        // equipment appearing in its own footage. MARP has a `MarineDebris`
+        // list, and this is deliberately not merged into it: that list is a
+        // debris taxonomy recorded by people, and these are one model's classes,
+        // which is the distinction the whole per-model decision rests on.
+        list: 'FathomNet_Trash',
+        sessionType: 'FathomNet_Trash',
+        model: 'FathomNet-trash-detector',
+        source: 'https://huggingface.co/FathomNet/trash-detector',
+        licence: 'CC-BY-4.0',
+        classes: [
+            'trash', 'eel', 'rov', 'starfish', 'fish', 'crab', 'plant',
+            'animal_misc', 'shells', 'bird', 'shark', 'jellyfish', 'ray',
+        ],
+    },
 ];
 
 /**
