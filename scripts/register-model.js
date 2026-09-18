@@ -82,10 +82,30 @@ async function sha256(filePath) {
  * @returns {Promise<Object>} The species row.
  * @throws {Error} When it matches no species, or more than one.
  */
-async function resolveSpecies(comname) {
-    const rows = await db.sequelize.query(
-        'SELECT id, comname, species_list FROM species WHERE lower(comname) = lower(:comname)',
-        { replacements: { comname }, type: QueryTypes.SELECT }
+async function resolveSpecies(comname, speciesList) {
+    // Exact first, case-insensitively only if that finds nothing.
+    //
+    // A model's class names are exact strings -- the ingest matches them
+    // exactly and the identity check compares them exactly -- so a
+    // case-insensitive lookup is a convenience for a human typing a name, not
+    // the rule. It stopped being harmless with MBARI-315k, whose 499 classes
+    // include both `Equipment` and `equipment` as separate categories: folding
+    // case there finds two rows and the script refuses, correctly but
+    // uselessly, because both are real and only one is meant.
+    const exact = await db.sequelize.query(
+        `SELECT id, comname, species_list
+           FROM species
+          WHERE comname = :comname
+            AND (:speciesList::varchar IS NULL OR species_list = :speciesList)`,
+        { replacements: { comname, speciesList: speciesList || null }, type: QueryTypes.SELECT }
+    );
+
+    const rows = exact.length > 0 ? exact : await db.sequelize.query(
+        `SELECT id, comname, species_list
+           FROM species
+          WHERE lower(comname) = lower(:comname)
+            AND (:speciesList::varchar IS NULL OR species_list = :speciesList)`,
+        { replacements: { comname, speciesList: speciesList || null }, type: QueryTypes.SELECT }
     );
 
     if (rows.length === 0) {
@@ -111,6 +131,15 @@ async function main() {
     const source = argument('--source');
     const speciesArgument = argument('--species');
     const speciesFile = argument('--species-file');
+    // Which annotation list the names belong to.
+    //
+    // A common name identifies a species only *within* a list, and that stopped
+    // being a nicety when the FathomNet models arrived: "Flatfish" is a
+    // `GULF_Fish` species and also an MBARI benthic supercategory, so an
+    // unscoped lookup finds two rows and this script correctly refuses to guess.
+    // Naming the list is how the caller says which one they mean. Omitted, the
+    // lookup stays as it was -- catalogue-wide, and refusing on ambiguity.
+    const speciesList = argument('--species-list');
     const modelType = argument('--model-type') || 'detection';
     const apply = process.argv.includes('--apply');
 
@@ -139,7 +168,17 @@ async function main() {
     }
 
     const hash = await sha256(sourcePath);
-    const storagePath = path.posix.join('models', name, 'weights', 'best.pt');
+    // Named for the model, not `best.pt`.
+    //
+    // Every checkpoint downloaded from Hugging Face is called `best.pt`, so a
+    // storage tree full of them is a tree where nothing on disk says which model
+    // it is -- and this is the directory somebody digs through when a run has
+    // produced the wrong animals. The directory already carries the name; so
+    // does the file now. The extension follows the source, because an engine
+    // picks its loader from it.
+    const storagePath = path.posix.join(
+        'models', name, 'weights', `${name}${path.extname(sourcePath) || '.pt'}`
+    );
     const root = modelArtifactService.storageRoot();
     const destination = path.resolve(root, storagePath);
 
@@ -155,7 +194,7 @@ async function main() {
     const species = [];
 
     for (const comname of comnames) {
-        species.push(await resolveSpecies(comname));
+        species.push(await resolveSpecies(comname, speciesList));
     }
 
     const lists = [...new Set(species.map((row) => row.species_list))];
