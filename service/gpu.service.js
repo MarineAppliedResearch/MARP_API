@@ -50,6 +50,24 @@ const {
 } = require('../config/gpu-orchestration');
 
 /**
+ * The frame rate MARP fixes video time at, from the one module that owns it.
+ *
+ * Imported rather than written again: `db/timecode.js` is what every timecode
+ * column in the database was derived with, and a second copy here that drifted
+ * would put a job's frame count at odds with the timecodes its own observations
+ * are recorded at.
+ */
+const { ASSUMED_FPS } = require('../db/timecode');
+
+/**
+ * Jellyfin reports durations in 100-nanosecond ticks.
+ *
+ * @constant
+ * @type {number}
+ */
+const TICKS_PER_SECOND = 10_000_000;
+
+/**
  * Reject a request with the API's validation contract.
  *
  * @param {string} message - What is wrong, in terms the caller can act on.
@@ -1094,20 +1112,24 @@ class GpuService {
         this.validateSubmittedReduction(spec.reduction);
         await this.validateSubmittedObservationTarget(kind, spec);
 
-        // The range is always present, even for a whole video, so nothing
-        // downstream has to special-case the undivided case -- and the
-        // coordinator cannot split a submission it was not given bounds for.
-        // A whole video is [0, frame_count).
-        if (!spec.range || typeof spec.range !== 'object') {
-            invalid('spec.range is required and must be {start_frame, end_frame}, even for a whole video.');
-        }
-
-        const startFrame = requiredInteger(spec.range.start_frame, 'spec.range.start_frame');
-        const endFrame = requiredInteger(spec.range.end_frame, 'spec.range.end_frame');
+        // The range still reaches the queue and the worker as an explicit
+        // `{start_frame, end_frame}`, so nothing downstream special-cases a whole
+        // video. What changed is who works the numbers out: a person naming a
+        // Jellyfin item does not know where it ends, and asking them was how two
+        // wrong ranges got queued in one afternoon -- one from a frame rate read
+        // off a screenshot, one from windows picked by hand (#199).
+        const range = spec.range && typeof spec.range === 'object' ? spec.range : {};
+        const startFrame = range.start_frame === undefined || range.start_frame === null
+            ? 0
+            : requiredInteger(range.start_frame, 'spec.range.start_frame');
 
         if (startFrame < 0) {
             invalid('spec.range.start_frame must be zero or greater.');
         }
+
+        const endFrame = range.end_frame === undefined || range.end_frame === null
+            ? await this.frameCountForVideo(spec.video)
+            : requiredInteger(range.end_frame, 'spec.range.end_frame');
 
         // Strictly greater, because the range is half-open and so
         // `end_frame == start_frame` is the empty range. Rejected here rather
@@ -1153,7 +1175,27 @@ class GpuService {
 
         const jobs = await gpuRepository.createJobs(rows);
 
-        return { batch_id: batchId, jobs };
+        // Say what was worked out, when anything was. A person who queued a whole
+        // video by naming it has no other way to see that MARP decided it is
+        // 52,582 frames, and a derivation nobody can look at is the same trap as
+        // a model registration with no bytes behind it (#198, #199).
+        const derivedRange = {};
+
+        if (range.start_frame === undefined || range.start_frame === null) {
+            derivedRange.start_frame = startFrame;
+        }
+
+        if (range.end_frame === undefined || range.end_frame === null) {
+            derivedRange.end_frame = endFrame;
+        }
+
+        const answer = { batch_id: batchId, jobs };
+
+        if (Object.keys(derivedRange).length > 0) {
+            answer.derived_range = { ...derivedRange, frames: endFrame - startFrame };
+        }
+
+        return answer;
     }
 
     /**
@@ -1415,6 +1457,73 @@ class GpuService {
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
             invalid(`spec.model.url must use http or https, not ${parsed.protocol} (${url}).`);
         }
+    }
+
+    /**
+     * How many frames a video has, from the only thing that knows.
+     *
+     * `runtimeTicks / 10_000_000 * ASSUMED_FPS`. Jellyfin reports a duration in
+     * 100-nanosecond ticks and MARP fixes video time at 25 fps everywhere it
+     * touches a timecode, so the two combine into a frame count with nothing
+     * assumed that was not already assumed. Both halves have been in this
+     * repository since before the GPU work; nothing joined them.
+     *
+     * The constant is not a guess. Measured across all ten videos MARP holds
+     * observations for, `framenum` against `mediaPosition` gives 25.01 to 25.05,
+     * and `observation-ingest.service.js` already carries a check whose comment
+     * says it is the only signal that the 25 fps assumption broke.
+     *
+     * **Refused rather than guessed when the duration is unknown.** An item with
+     * no `RunTimeTicks` coalesces to null, and deriving zero from it would fail
+     * further down as `end_frame <= start_frame` -- a confusing message about an
+     * empty range standing in for an honest one about a video whose length
+     * nobody knows.
+     *
+     * A bare `video.url` has no duration to read, so a range stays required
+     * there. That is a real limit rather than an oversight: MARP does not open
+     * the file, and a URL it has never seen tells it nothing.
+     *
+     * @async
+     * @param {Object} video - `spec.video` as submitted.
+     * @returns {Promise<number>} Frames in the video, as an exclusive bound.
+     * @throws {ApiError} 400 when the length cannot be established.
+     */
+    async frameCountForVideo(video) {
+        if (!video.jellyfin_item_id) {
+            invalid(
+                'spec.range.end_frame is required for a video given as a bare url: MARP reads a length from a '
+                + 'Jellyfin item and has no way to measure an arbitrary source. Give an end_frame, or submit the '
+                + 'job with a jellyfin_item_id and let the range be worked out.'
+            );
+        }
+
+        let item;
+
+        try {
+            item = await jellyfinRepository.getItem(video.jellyfin_item_id);
+        } catch (error) {
+            invalid(
+                `spec.range.end_frame was not given and the video could not be read to work it out: ${error.message}`
+            );
+        }
+
+        if (!item || !item.runtimeTicks) {
+            invalid(
+                `Jellyfin item ${video.jellyfin_item_id} reports no duration, so the frame count cannot be worked `
+                + 'out. Give spec.range.end_frame explicitly.'
+            );
+        }
+
+        const frames = Math.floor((Number(item.runtimeTicks) / TICKS_PER_SECOND) * ASSUMED_FPS);
+
+        if (!Number.isSafeInteger(frames) || frames < 1) {
+            invalid(
+                `Jellyfin item ${video.jellyfin_item_id} reports a duration that works out to ${frames} frames, `
+                + 'which cannot be right. Give spec.range.end_frame explicitly.'
+            );
+        }
+
+        return frames;
     }
 
     /**
