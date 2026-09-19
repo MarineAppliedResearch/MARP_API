@@ -1,48 +1,45 @@
-# 225 — A job is not finished until its data is in the database
+# 62 — The database owns observation ids
 
-**Issue:** MarineAppliedResearch/MARP_API#225
-**Branch:** `225-a-job-is-not-finished-until-its-data-landed` off `develop`
-
-Isaac, 2026-09-19: *"we 100% need to make sure that if a job is considered
-finished the api has actually ingested it's data, otherwise the job isn't
-finished. In the end there should be no reason why ingest would fail, that just
-means that we didn't get the data that was supposed to run and that is
-unacceptable."*
+**Issue:** MarineAppliedResearch/MARP_API#62
+**Branch:** `62-the-database-owns-observation-ids` off `develop`
 
 ## Requirements
 
-- **R1** An attempt whose ingest failed is `failed`, not `succeeded`, and its job
-  goes back to the queue while attempts remain.
-- **R2** A job that legitimately detected nothing still ingests zero observations
-  and finishes. Retrying those would burn three attempts on every empty result.
-- **R3** `already_have` is false when the bytes are not on disk, so a worker that
-  would otherwise skip the upload sends them.
-- **R4** A result naming an artifact MARP does not hold is refused while the
-  worker still has the file, rather than published and then withdrawn.
-- **R5** A test never deletes an artifact file or staging row that existed before
-  it ran.
+- **R1** `observation_id` is assigned by its sequence, not by the application.
+- **R2** The sequence is never behind the table, so anything inserting with the
+  column default works.
+- **R3** Two simultaneous creates get different ids.
+- **R4** An `observation_id` supplied by a caller is ignored.
+- **R5** `obsID` and `PobsID` keep being assigned by the application. They are
+  per-session and per-project numbering, not primary keys.
 
 ## Open assumptions
 
-- [x] **behavioural, blocking** — retry on a GPU, or a non-terminal state that
-  does not re-run? *Answered by Isaac: fail and retry. "In the end there should
-  be no reason why ingest would fail." The GPU cost is accepted deliberately.*
-- [x] **behavioural** — does a cancelled job come back? *No. Somebody stopped it
-  on purpose and a late ingest failure is not grounds to restart it.*
+- [x] **database/schema, blocking** — database or application ownership?
+  *Answered by Isaac on 2026-09-19: the database owns it. The issue had already
+  recommended this; it was recorded as "worth deciding" rather than decided.*
+- [x] **destructive operations** — is `setval` safe on production? *It changes no
+  row. The migration only ever moves the sequence forward (`GREATEST` of the table
+  max and the current value), because a sequence legitimately runs ahead when an
+  insert is rolled back, and winding it back would hand out a number a concurrent
+  insert may already hold.*
 
-## Why R5 is in this issue rather than its own
+## What was actually wrong
 
-It is the cause of the largest share of the symptom. `runJob([])` hands over an
-**empty** results file; artifacts are content-addressed, so that file is the same
-file every real job that detected nothing produced. The cleanup deleted it, and
-every later hand-over of that content was answered `already_have` against a row
-whose bytes were gone. 196 attempts ingested that artifact successfully; the 179
-after it did not.
+Not the model — it has carried `autoIncrement: true` all along, and the column has
+always had `DEFAULT nextval(...)`. #62 says otherwise and is stale on that point.
+The repository simply overrode both, every time.
 
-Invisible in CI, whose database holds no production empty artifact to collide
-with. It only damages a real corpus.
+## The measurement that made this urgent
+
+    observations   max=18040    seq=7562    BEHIND by 10478
+    keyframes      max=261266   seq=269150  ok
+
+#62 recorded 3 behind. It is 10,478. Every insert relying on the default collided:
+`npm run test:mosaic` failed **141 of 274**, and the dataset cascade suite failed
+all 3, both inside helpers that insert with the column default.
 
 ## Not in scope
 
-The 470 attempts already in this state. Nothing here re-ingests them; R3 means a
-re-run can now succeed, which is the mechanism by which they become recoverable.
+`obsID`/`PobsID` (R5). `VIDEO_PROCESSING_GUI#213`, which is where this was first
+tripped over.

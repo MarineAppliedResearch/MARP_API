@@ -176,3 +176,130 @@ describe('Observation lifecycle', () => {
     expect(typeof getRes.body.error.requestId).toBe('string');
   });
 });
+
+/**
+ * The database assigns `observation_id`, and its sequence stays correct (#62).
+ *
+ * The repository used to read `max(observation_id)` and add one. That is a read
+ * and a write with no lock between them -- two overlapping creates computed the
+ * same maximum and the second collided -- and it meant the column's own sequence
+ * was never consulted, so it drifted further behind the table for ever. It reached
+ * **10,478 behind**, which broke 141 of 274 mosaic tests and every test in the
+ * dataset cascade suite, both of which insert with the column default.
+ *
+ * At the HTTP tier because that is the path the annotation GUI actually takes, and
+ * the defect was in what the repository sent rather than in what the model declared
+ * -- the model has carried `autoIncrement` all along.
+ */
+describe('Who assigns an observation id (#62)', () => {
+    const { QueryTypes } = require('sequelize');
+    const db = require('../model');
+
+    let sessionId;
+    const created = [];
+
+    beforeAll(async () => {
+        const session = await global.api
+            .post('/api/v2/session')
+            .send({ session: { dive: 'jest-62', line: '62', lineId: '62', type: 'Invert' } });
+
+        sessionId = session.body.session_id || session.body.id;
+    });
+
+    afterAll(async () => {
+        if (created.length > 0) {
+            await db.sequelize.query(
+                'DELETE FROM keyframes WHERE observation_id IN (:ids)',
+                { replacements: { ids: created } }
+            );
+            await db.sequelize.query(
+                'DELETE FROM observations WHERE observation_id IN (:ids)',
+                { replacements: { ids: created } }
+            );
+        }
+
+        if (sessionId) {
+            await global.api.delete(`/api/v2/session/${sessionId}`);
+        }
+    });
+
+    /**
+     * The tripwire. Before the fix the sequence stood still while the table grew,
+     * so the gap widened by one on every create; now it moves with the row.
+     */
+    it('takes the id from the sequence, so the two stay together', async () => {
+        const [before] = await db.sequelize.query(
+            'SELECT last_value FROM observations_observation_id_seq',
+            { type: QueryTypes.SELECT }
+        );
+
+        const res = await global.api
+            .post('/api/v2/observation')
+            .send({ observation: { session_id: sessionId, comname: 'Jest 62 Subject' } });
+
+        expect(res.status).toBe(200);
+        created.push(res.body.observation_id);
+
+        const [after] = await db.sequelize.query(
+            'SELECT last_value FROM observations_observation_id_seq',
+            { type: QueryTypes.SELECT }
+        );
+
+        // The row got the number the sequence just handed out.
+        expect(Number(after.last_value)).toBeGreaterThan(Number(before.last_value));
+        expect(res.body.observation_id).toBe(Number(after.last_value));
+    });
+
+    /**
+     * And the sequence is never behind the table, which is the state that broke
+     * everything inserting with the column default.
+     */
+    it('leaves the sequence at or ahead of the table maximum', async () => {
+        const [row] = await db.sequelize.query(
+            `SELECT (SELECT max(observation_id) FROM observations) AS max_id,
+                    (SELECT last_value FROM observations_observation_id_seq) AS seq`,
+            { type: QueryTypes.SELECT }
+        );
+
+        expect(Number(row.seq)).toBeGreaterThanOrEqual(Number(row.max_id));
+    });
+
+    /**
+     * A caller supplying an id is ignored rather than trusted. The GUI has never
+     * sent one, but an endpoint that did would reintroduce the whole defect.
+     */
+    it('ignores an observation_id the caller supplies', async () => {
+        const res = await global.api
+            .post('/api/v2/observation')
+            .send({
+                observation: {
+                    observation_id: 999000062,
+                    session_id: sessionId,
+                    comname: 'Jest 62 Imposter',
+                },
+            });
+
+        expect(res.status).toBe(200);
+        created.push(res.body.observation_id);
+        expect(res.body.observation_id).not.toBe(999000062);
+    });
+
+    /**
+     * Two creates at once. Under `max(observation_id) + 1` both computed the same
+     * maximum and the second collided; a sequence hands out two distinct numbers.
+     */
+    it('gives two simultaneous creates different ids', async () => {
+        const body = (name) => ({ observation: { session_id: sessionId, comname: name } });
+
+        const [one, two] = await Promise.all([
+            global.api.post('/api/v2/observation').send(body('Jest 62 Race A')),
+            global.api.post('/api/v2/observation').send(body('Jest 62 Race B')),
+        ]);
+
+        expect(one.status).toBe(200);
+        expect(two.status).toBe(200);
+
+        created.push(one.body.observation_id, two.body.observation_id);
+        expect(one.body.observation_id).not.toBe(two.body.observation_id);
+    });
+});

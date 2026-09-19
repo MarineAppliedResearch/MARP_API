@@ -555,31 +555,27 @@ class ObservationRepository {
 
     async createObservation(observation) {
         let data = {};
-        let max_obs = {};
-        let max_observation_id = -1;
         // let maxOBSID = observation.obsID; // don't rely on the frontend for observation id
         let maxOBSID = -1;                   // instead make sure to generate in database
         let max_PobsID = -1;
 
-        // First we get the max observation_id for all sessions
-        try {
-            max_obs = await this.db.observations.findAll({
-                
-                attributes: [Sequelize.fn('max', Sequelize.col('observation_id'))],
-                raw: true,
-            }).then(function(observation_id){
-                //check if observation_id[0].max is null, if it is skip setting
-                if(observation_id[0].max != null){
-                    max_observation_id = observation_id[0].max;
-                }
-                
-             });
-            //console.log('observations:::', max_obs);
-            
-        } catch (err) {
-            console.log(err);
-        }
-
+        // **`observation_id` is the database's to assign** (#62). This used to read
+        // `max(observation_id)` and add one, which is a read and a write with no lock
+        // between them: two overlapping creates computed the same maximum and the
+        // second collided on the primary key.
+        //
+        // It also meant the column's own sequence was never consulted, so it fell
+        // further behind the table for ever -- 10,478 behind when this was fixed. That
+        // is invisible while every insert goes through here, and fatal to anything that
+        // does not: a `Model.create()`, a bulk import, a restore. It broke 141 of 274
+        // mosaic tests and every test in the dataset cascade suite.
+        //
+        // The column has always carried `DEFAULT nextval(...)` and the model has always
+        // declared `autoIncrement`. Nothing had to be added; the assignment below simply
+        // had to stop overriding them. Keyframes have worked this way all along.
+        //
+        // `obsID` and `PobsID` stay here deliberately. They are per-session and
+        // per-project numbering rather than primary keys, and no sequence owns them.
 
         // if maxOBSID is -1 it means an obs id wasn't passed in via the gui, so find the max and create.
         if(maxOBSID == -1){
@@ -617,7 +613,11 @@ class ObservationRepository {
         try {
              //first we need to get the max observation in the db.
             observation.createdate = new Date().toISOString();
-            observation.observation_id = (parseInt(max_observation_id) + 1).toString();
+
+            // Never sent, so the column default assigns it. A caller that supplies
+            // one is ignored rather than trusted: the id is the database's (#62).
+            delete observation.observation_id;
+
             observation.obsID = (parseInt(maxOBSID)).toString();
             observation.PobsID = parseInt(maxPobsID + 1);
 
