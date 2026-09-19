@@ -133,21 +133,21 @@ function q(sql, replacements = {}) {
  * @returns {Promise<Array<number>>} The new ids, ascending.
  */
 async function addObservations(count, options = {}) {
-    // `observation_id` is assigned here as `max + 1` rather than left to the
-    // column's sequence, because **the sequence cannot be relied on** (#62):
-    // `repository/observation.repository.js#createObservation` inserts an explicit
-    // `max + 1` and never advances the sequence, so once a test in this file goes
-    // through that route the sequence is behind the table and the next
-    // sequence-assigned insert collides on the primary key. That failure arrives
-    // in a *later* test than the one that caused it, with an empty error, which is
-    // as confusing as it sounds. Every writer in MARP assigns this key by hand;
-    // this helper now does too.
+    // **The sequence assigns `observation_id`, and this helper must not.** It used
+    // to insert an explicit `max + 1`, because the repository did the same and
+    // never advanced the sequence -- so a sequence-assigned insert collided, in a
+    // *later* test than the one that caused it, with an empty error.
+    //
+    // #62 reversed that: the repository leaves the column default alone, so the
+    // sequence is now the only writer and stays correct. Pinning here would put the
+    // sequence back behind the table and reintroduce exactly the failure this
+    // comment used to describe -- which is what CI caught when only half of this
+    // change had landed.
     const rows = await q(
         `INSERT INTO observations
-             (observation_id, session_id, project_id, "obsID", confidence, comname, tc,
+             (session_id, project_id, "obsID", confidence, comname, tc,
               video_source, "mediaPosition", "createdAt", "updatedAt")
-         SELECT (SELECT COALESCE(MAX(observation_id), 0) FROM observations) + g,
-                :sessionId, :projectId, 970000 + g, 0.5, :comname, '10:00:00',
+         SELECT :sessionId, :projectId, 970000 + g, 0.5, :comname, '10:00:00',
                 :videoSource, :mediaPosition, NOW(), NOW()
            FROM generate_series(1, :count) AS g
          RETURNING observation_id`,

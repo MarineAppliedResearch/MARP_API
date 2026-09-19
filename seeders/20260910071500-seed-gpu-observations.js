@@ -252,6 +252,11 @@ module.exports = {
         ['ml_models', 'id'],
         ['model_species', 'id'],
         ['keyframes', 'keyframe_id'],
+        // `observations` was missing here, which stopped mattering only because the
+        // repository assigned its own ids. It does not any more (#62), so a pinned
+        // id leaves the sequence behind and the next ordinary create collides --
+        // which is exactly what CI caught on this change.
+        ['observations', 'observation_id'],
       ]) {
         await queryInterface.sequelize.query(
           `SELECT setval(pg_get_serial_sequence('${table}', '${column}'),
