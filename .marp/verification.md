@@ -1,51 +1,59 @@
-# 223 — verification
+# 225 — verification
 
 ## What was run
 
-`npx jest tests/species-lists.test.js` — **32 passed, 0 failed.**
-
-Four of those are new and each names a requirement:
+`npx jest tests/gpu-observation-ingest.test.js` — **43 tests, all passing.**
+Five name a requirement, four of them new:
 
 | Test | Proves |
 | --- | --- |
-| resolves a session type that names a list the static map has never heard of | R1 |
-| lets the static map answer first | R2 |
-| still resolves nothing for a type that names nothing | R3 |
-| does not resolve a list with no species on it | R4 |
+| An attempt whose results were not ingested > is failed rather than succeeded, and its job goes back to the queue | R1 |
+| An attempt whose results were not ingested > leaves a job that legitimately detected nothing succeeded | R2 |
+| A job that detected nothing > ingests zero observations from an empty result file without erroring | R2 (existing) |
+| An artifact recorded without its bytes > is asked for again rather than reported as already held | R3 |
+| An artifact recorded without its bytes > refuses a result that names it, so the worker uploads instead | R4 |
 
-The R1 test asserts `speciesListForSessionType(LIST)` is **null** before asserting
-the service resolves it, so it cannot pass by the map having been edited — which
-is the exact failure mode being removed.
+The R1 test asserts the attempt row itself, not only the response: `state` is
+`failed`, `ingested_at` is still NULL — now consistent rather than contradictory
+— and the job row is `queued`.
 
-`npm run test:species` — **58 tests passed, 0 failed.**
+`npx jest tests/gpu-orchestration.test.js` — **55 passed, 0 failed**, and the
+corpus guard raised nothing.
+
+## R5, proven by doing the damage and then not doing it
+
+The empty artifact was restored to the store and its hash verified:
+
+    restored empty artifact, sha256 verifies: true
+
+The suite that used to delete it was then run **five times**. After every run:
+
+    empty artifact SURVIVED all runs
+
+Before the change the guard reported the two halves separately as they were
+fixed, which is the evidence that both were real:
+
+    gpu_artifacts_staging: 2 row(s) deleted that the suite did not create
+    gpu_artifacts_staging: 5 row(s) added and left behind
+    gpu_artifacts_staging: row(s) modified, count unchanged at 1593
+
+All three are gone. The last one is why `handOver` now checks before uploading
+rather than uploading unconditionally: re-uploading an existing artifact upserts
+a staging row the suite did not create. That also makes the helper match what a
+worker really does, which is what its own docstring always claimed.
 
 ## What was NOT proven, and why
 
-`npm run test:gpu` and `npm run test:mosaic` cannot currently be trusted on this
-machine, and **not because of this change.** Three inference workers are online
-and writing to the same database the suite runs against:
+The suite cannot be run cleanly on this machine while the pool is working. Three
+inference workers are polling the same coordinator, and `submitAndLease` fails
+with `expect(leased.status).toBe(200)` when a real worker takes the test's job
+first. Across six runs, two to four tests failed this way and **a different set
+each time**; the five above passed in every run.
 
-- `test:gpu` fails 4–5 of 148, **a different set each run** — lease and long-poll
-  tests whose queued jobs are leased by a real worker mid-test.
-- `test:mosaic` fails 141 of 274, in `addObservations`, a test helper. The
-  `observations` sequence drifts behind the table because the repository assigns
-  `max(observation_id) + 1` (#62), so a helper relying on the column default
-  collides with rows live ingest is inserting at the same moment.
+The corpus guard also reports `gpu_workers`, `service_clients` and
+`service_tokens` modified on most runs. That is the live pool heartbeating, not
+this suite. Isaac ruled on 2026-09-19 that this is acceptable for now, on the
+grounds that workers will run either in production or during deliberate testing.
 
-Both were run on unmodified `develop` by stashing, and produce the same result:
-`test:mosaic` is **133 passed / 141 failed on develop and on this branch**, the
-same tests. `test:gpu` on develop failed 4, this branch 5, with a different set
-each time.
-
-So the evidence says this change adds no failure. It does not say those two
-groups are green, and they are not — that is an environment defect worth its own
-issue, and it is named here rather than left to be rediscovered.
-
-R5 (the mosaic SQL) is therefore covered by review and by the query parsing, not
-by a passing mosaic suite.
-
-## End-to-end
-
-Pending, and it is the real proof: seed a vocabulary whose session type has never
-been named in code, queue a job against it, and confirm the observations land
-with no restart between the seeding and the ingest.
+So: the requirements are proven, and the suite around them is not clean. Both are
+stated rather than one being allowed to imply the other.

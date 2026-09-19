@@ -22,6 +22,8 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const gpuRepository = require('../repository/gpu.repository');
 const ingestRepository = require('../repository/observation-ingest.repository');
@@ -41,6 +43,7 @@ const {
     MAX_PROGRESS_PHASE_LENGTH,
     MAX_EVENTS_PER_BATCH,
     ARTIFACT_PATH_PREFIX,
+    ARTIFACT_DIRECTORY,
     JOB_KINDS,
     INGESTIBLE_JOB_KINDS,
     ENGINE_DATA_TYPES,
@@ -909,7 +912,14 @@ class GpuService {
         for (const artifact of named) {
             const staged = await gpuRepository.findStagedArtifact(artifact.sha256);
 
-            if (!staged) {
+            // The bytes, not the row (#225) -- the same reason `checkArtifact`
+            // asks the disk. Refusing here is much the better place for it: the
+            // worker still holds the file and is told to upload it, where an
+            // accepted result would publish a success and then withdraw it.
+            const held = Boolean(staged)
+                && fs.existsSync(path.join(ARTIFACT_DIRECTORY, artifact.sha256));
+
+            if (!held) {
                 throw new ApiError(
                     409,
                     ERROR_CODES.CONFLICT,
@@ -943,6 +953,36 @@ class GpuService {
         await gpuPlaybackService.stop(parsedAttemptId);
 
         const ingest = await this.ingestPublishedJob(published);
+
+        // **A success that did not reach the database is withdrawn** (#225).
+        // `publishResult` marked the attempt succeeded because the bytes arrived;
+        // that is only half of finishing, and an ingest that refused them means
+        // MARP does not have data it was supposed to have. Isaac, 2026-09-19:
+        // *"if a job is considered finished the api has actually ingested it's
+        // data, otherwise the job isn't finished."*
+        //
+        // A retry costs GPU time and is the point rather than a side effect: it
+        // is what turns a silent loss into something that either fixes itself --
+        // a missing artifact is re-offered and re-uploaded -- or keeps failing
+        // loudly until somebody looks.
+        if (ingest && ingest.failed) {
+            const withdrawn = await gpuRepository.failAttemptAfterIngest(
+                published.attempt_id, ingest.failed
+            );
+
+            logger.error(
+                `Error::attempt ${published.attempt_id} reported success but its results were not `
+                + `ingested, so it is failed and job ${published.job_id} is `
+                + `${withdrawn ? withdrawn.jobState : 'unchanged'}: ${ingest.failed}`
+            );
+
+            return {
+                ...published,
+                ingest,
+                attempt_state: 'failed',
+                job_state: withdrawn ? withdrawn.jobState : published.job_state,
+            };
+        }
 
         return ingest === null ? published : { ...published, ingest };
     }
@@ -1070,7 +1110,17 @@ class GpuService {
 
         const staged = await gpuRepository.findStagedArtifact(sha256);
 
-        if (staged) {
+        // **The bytes decide this, not the row** (#225). A worker that is told
+        // `already_have` sends nothing, correctly -- so a row that outlives its
+        // file makes every later hand-over of that content a no-op and every
+        // job producing it fail ingest, permanently and silently.
+        //
+        // That is not hypothetical and it is not rare. Artifacts are addressed
+        // by content, so every job that detects nothing produces the same empty
+        // file; when its one copy went missing, 179 attempts reported success
+        // and ingested nothing. One `existsSync` per hand-over is the whole
+        // cost of making the class impossible.
+        if (staged && fs.existsSync(path.join(ARTIFACT_DIRECTORY, sha256))) {
             return {
                 already_have: true,
                 sha256,

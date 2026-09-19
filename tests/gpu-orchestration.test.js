@@ -848,6 +848,34 @@ describe('GPU attempt events', () => {
 });
 
 /**
+ * Mark an artifact for cleanup, but only if this run is what creates it (#225).
+ *
+ * Artifacts are content-addressed, so an artifact these tests upload can be the
+ * same file a real job produced -- most sharply the empty results file, which
+ * every job that detected nothing produces byte for byte. Deleting one of those
+ * afterwards destroys the corpus's copy and every later ingest of it fails with
+ * "recorded but its bytes are not on disk".
+ *
+ * The file is asked before the upload, because `recordStagedArtifact` upserts
+ * and so the row cannot tell a first hand-over from a repeat.
+ *
+ * @async
+ * @param {string} sha256 - The artifact's hash.
+ * @returns {Promise<string>} The same hash, for chaining.
+ */
+async function stageForCleanup(sha256) {
+    const [staged] = await query(
+        'SELECT sha256 FROM gpu_artifacts_staging WHERE sha256 = :sha256', { sha256 }
+    );
+
+    if (!staged && !fs.existsSync(path.join(ARTIFACT_DIRECTORY, sha256))) {
+        stagedHashes.push(sha256);
+    }
+
+    return sha256;
+}
+
+/**
  * The artifact hand-off, which is addressed by content rather than by sender.
  */
 describe('GPU artifact hand-off', () => {
@@ -856,7 +884,7 @@ describe('GPU artifact hand-off', () => {
 
         const bytes = Buffer.from(JSON.stringify({ detections: [{ frame: 0, boxes: [] }] }));
         const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-        stagedHashes.push(sha256);
+        await stageForCleanup(sha256);
 
         const before = await global.api
             .post('/api/v2/gpu/artifacts/check')
@@ -933,7 +961,7 @@ describe('GPU attempt result', () => {
 
         const bytes = Buffer.from(`detections for job ${job.id}`);
         const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-        stagedHashes.push(sha256);
+        await stageForCleanup(sha256);
 
         await global.api
             .post(`/api/v2/gpu/artifacts/upload/${sha256}?attempt_id=${lease.attempt_id}`)

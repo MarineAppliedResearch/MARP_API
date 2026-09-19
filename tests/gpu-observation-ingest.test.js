@@ -192,14 +192,42 @@ async function handOver(text, attemptId) {
     const bytes = Buffer.from(text, 'utf8');
     const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
 
-    stagedHashes.push(sha256);
+    // **Check first, upload only if asked -- which is what a worker does** (#225).
+    // This used to upload unconditionally, and that is the whole defect in
+    // miniature. Artifacts are content-addressed, so an artifact this suite
+    // hands over is the *same* artifact as every other producer of those bytes:
+    // most sharply the empty results file `runJob([])` sends, which every real
+    // job that detected nothing produces byte for byte.
+    //
+    // Uploading it again upserts a staging row the suite did not create, and
+    // deleting it afterwards destroyed the corpus's only copy -- 196 attempts
+    // had ingested that artifact, and all 179 after it failed with "recorded but
+    // its bytes are not on disk".
+    //
+    // So: ask, and clean up only what this answer says did not exist. The two
+    // halves are tracked separately because the risk is not symmetric -- a
+    // staging row this run created is always safe to drop, and a *file* it did
+    // not create is never safe to.
+    const offered = await global.api.post('/api/v2/gpu/artifacts/check').send({ sha256 });
 
-    const uploaded = await global.api
-        .post(`/api/v2/gpu/artifacts/upload/${sha256}?attempt_id=${attemptId}`)
-        .set('Content-Type', 'application/octet-stream')
-        .send(bytes);
+    expect(offered.status).toBe(200);
 
-    expect(uploaded.status).toBe(200);
+    const held = offered.body.already_have === true;
+
+    stagedHashes.push({
+        sha256,
+        row: !held,
+        file: !fs.existsSync(path.join(ARTIFACT_DIRECTORY, sha256)),
+    });
+
+    if (!held) {
+        const uploaded = await global.api
+            .post(`/api/v2/gpu/artifacts/upload/${sha256}?attempt_id=${attemptId}`)
+            .set('Content-Type', 'application/octet-stream')
+            .send(bytes);
+
+        expect(uploaded.status).toBe(200);
+    }
 
     return sha256;
 }
@@ -389,15 +417,18 @@ afterAll(async () => {
         });
     }
 
-    for (const sha256 of stagedHashes) {
-        await db.sequelize.query('DELETE FROM gpu_artifacts_staging WHERE sha256 = :sha256', {
-            replacements: { sha256 },
-        });
+    // Each half only if this run is what brought it into being -- see handOver.
+    for (const { sha256, row, file } of stagedHashes) {
+        if (row) {
+            await db.sequelize.query('DELETE FROM gpu_artifacts_staging WHERE sha256 = :sha256', {
+                replacements: { sha256 },
+            });
+        }
 
-        const file = path.join(ARTIFACT_DIRECTORY, sha256);
+        const stored = path.join(ARTIFACT_DIRECTORY, sha256);
 
-        if (fs.existsSync(file)) {
-            fs.unlinkSync(file);
+        if (file && fs.existsSync(stored)) {
+            fs.unlinkSync(stored);
         }
     }
 
@@ -1391,4 +1422,140 @@ describe('A job two attempts finished between them', () => {
 
         expect(stored).toHaveLength(first.length + second.length);
     }, 30000);
+});
+
+/**
+ * A job is not finished until its data is in the database (#225).
+ *
+ * `publishResult` and the ingest are two steps, and only the first had ever
+ * decided what an attempt was. So an attempt whose observations were refused
+ * kept `succeeded` with `ingested_at` NULL -- a status that is true and a result
+ * that does not exist. 470 attempts were in that state when this was written.
+ *
+ * Isaac, 2026-09-19: *"we 100% need to make sure that if a job is considered
+ * finished the api has actually ingested it's data, otherwise the job isn't
+ * finished. In the end there should be no reason why ingest would fail, that
+ * just means that we didn't get the data that was supposed to run and that is
+ * unacceptable."*
+ */
+describe('An attempt whose results were not ingested', () => {
+    /**
+     * The tripwire for the whole issue. A class name MARP cannot resolve is the
+     * cheapest way to make the ingest refuse a result whose bytes are perfectly
+     * good, which is exactly the shape that used to pass as a success.
+     */
+    it('is failed rather than succeeded, and its job goes back to the queue', async () => {
+        const unknown = { ...REAL_RESULT[0], comname: 'Nothing In This Catalogue 225' };
+        const { job, lease, reported } = await runJob([unknown]);
+
+        expect(reported.status).toBe(200);
+        expect(reported.body.ingest).toMatchObject({ ingested: false });
+        expect(reported.body.ingest.failed).toEqual(expect.any(String));
+
+        // The two assertions the issue is actually about.
+        expect(reported.body.attempt_state).toBe('failed');
+        expect(reported.body.job_state).toBe('queued');
+
+        const [attempt] = await query(
+            'SELECT state, ingested_at, failure_reason FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        expect(attempt.state).toBe('failed');
+
+        // Still NULL, and now that is consistent rather than contradictory: the
+        // attempt no longer claims to have finished.
+        expect(attempt.ingested_at).toBeNull();
+        expect(attempt.failure_reason).toEqual(expect.any(String));
+
+        const [row] = await query('SELECT state FROM gpu_jobs WHERE id = :id', { id: job.id });
+
+        expect(row.state).toBe('queued');
+        expect(await observationsForJob(job.id)).toHaveLength(0);
+    });
+
+    /**
+     * The half that must NOT change. A job that detected nothing has a genuine
+     * empty result, ingests zero observations, and is finished -- if this failed
+     * and retried, every empty result in the pool would burn three attempts.
+     */
+    it('leaves a job that legitimately detected nothing succeeded', async () => {
+        const { reported } = await runJob([]);
+
+        expect(reported.body.job_state).toBe('succeeded');
+        expect(reported.body.ingest).toMatchObject({ ingested: true, observations: 0 });
+        expect(reported.body.attempt_state).toBeUndefined();
+    });
+});
+
+/**
+ * The artifact a job shares with every other job that found nothing (#225).
+ *
+ * Artifacts are content-addressed, so the empty results file is one file for the
+ * whole platform. Two things follow, and both were defects: a test that deletes
+ * it destroys the corpus's copy, and a staging row that outlives it makes every
+ * later hand-over a no-op -- the worker is told `already_have`, sends nothing,
+ * and the ingest then looks for bytes nobody wrote. 179 attempts died that way.
+ */
+describe('An artifact recorded without its bytes', () => {
+    it('is asked for again rather than reported as already held', async () => {
+        const bytes = Buffer.from('225 check-artifact bytes\n', 'utf8');
+        const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+        const file = path.join(ARTIFACT_DIRECTORY, sha256);
+
+        expect(fs.existsSync(file)).toBe(false);
+        stagedHashes.push({ sha256, row: true, file: true });
+
+        const { lease } = await submitAndLease();
+
+        await global.api
+            .post(`/api/v2/gpu/artifacts/upload/${sha256}?attempt_id=${lease.attempt_id}`)
+            .set('Content-Type', 'application/octet-stream')
+            .send(bytes);
+
+        const held = await global.api.post('/api/v2/gpu/artifacts/check').send({ sha256 });
+
+        expect(held.body.already_have).toBe(true);
+
+        // The file goes, the row stays -- which is the state 179 attempts met.
+        fs.unlinkSync(file);
+
+        const orphaned = await global.api.post('/api/v2/gpu/artifacts/check').send({ sha256 });
+
+        expect(orphaned.body.already_have).toBe(false);
+        expect(orphaned.body.upload_url).toEqual(expect.any(String));
+    });
+
+    /**
+     * And a result naming it is refused while the worker still holds the file,
+     * rather than published and then withdrawn.
+     */
+    it('refuses a result that names it, so the worker uploads instead', async () => {
+        const bytes = Buffer.from('225 report-guard bytes\n', 'utf8');
+        const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+
+        expect(fs.existsSync(path.join(ARTIFACT_DIRECTORY, sha256))).toBe(false);
+        stagedHashes.push({ sha256, row: true, file: true });
+
+        const { lease } = await submitAndLease();
+
+        await global.api
+            .post(`/api/v2/gpu/artifacts/upload/${sha256}?attempt_id=${lease.attempt_id}`)
+            .set('Content-Type', 'application/octet-stream')
+            .send(bytes);
+
+        fs.unlinkSync(path.join(ARTIFACT_DIRECTORY, sha256));
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'succeeded',
+                artifacts: [{ sha256, role: 'observations' }],
+            });
+
+        expect(reported.status).toBe(409);
+        expect(reported.body.error.message).toContain('has not been handed over');
+    });
 });

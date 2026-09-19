@@ -1,52 +1,48 @@
-# 223 — A seeded species list must work without a deploy
+# 225 — A job is not finished until its data is in the database
 
-**Issue:** MarineAppliedResearch/MARP_API#223
-**Branch:** `223-seeded-species-list-needs-no-deploy` off `develop`
+**Issue:** MarineAppliedResearch/MARP_API#225
+**Branch:** `225-a-job-is-not-finished-until-its-data-landed` off `develop`
 
-## The defect
-
-Seeding a model's annotation vocabulary is a script and takes effect at once.
-Deciding which list a session reads against was a frozen object literal in
-`db/species-lists.js`, which takes effect on the next restart.
-
-Between those two moments a job runs, uploads its artifact, reports `succeeded`
-and writes nothing: `checkSessionTypeAgainstModel` calls `unreconcilable()`
-because the session's type resolves to no list.
-
-It happened twice on 2026-09-18 — `MBARI_315k` and `MBARI_Megalodon`. 133
-observations were recovered by hand. Nothing warned; the sessions simply sat
-empty while the jobs said they had succeeded.
+Isaac, 2026-09-19: *"we 100% need to make sure that if a job is considered
+finished the api has actually ingested it's data, otherwise the job isn't
+finished. In the end there should be no reason why ingest would fail, that just
+means that we didn't get the data that was supposed to run and that is
+unacceptable."*
 
 ## Requirements
 
-- **R1** A session type that names a seeded species list resolves to it, with no
-  code change and no restart.
-- **R2** The static map still answers first, so every type whose list is called
-  something else keeps its meaning — `Invert` → `Inverts`,
-  `Substrate60Second` → `Substrate_60Seconds`,
-  `MBARI_Benthic` → `MBARI_Benthic_Supercategory`.
-- **R3** A type that names nothing still resolves to null, and the ingest still
-  refuses. An observation is never attributed to a list nobody chose.
-- **R4** A name that is not a list with species on it does not resolve. Naming an
-  empty list would point the mosaic's correction picker at nothing.
-- **R5** The mosaic's `species_list` column resolves the same way, or a new
-  model's sessions are ingestible and un-reviewable.
+- **R1** An attempt whose ingest failed is `failed`, not `succeeded`, and its job
+  goes back to the queue while attempts remain.
+- **R2** A job that legitimately detected nothing still ingests zero observations
+  and finishes. Retrying those would burn three attempts on every empty result.
+- **R3** `already_have` is false when the bytes are not on disk, so a worker that
+  would otherwise skip the upload sends them.
+- **R4** A result naming an artifact MARP does not hold is refused while the
+  worker still has the file, rather than published and then withdrawn.
+- **R5** A test never deletes an artifact file or staging row that existed before
+  it ran.
 
 ## Open assumptions
 
-- [x] **scientific / data-meaning, blocking** — is "the session type is the name
-  of the list" a rule MARP is willing to adopt for new vocabularies? *Answered by
-  the existing data: `Fish`, `Habitat`, `Inverts`, `GULF_Fish`, `GULF_Inverts`,
-  `FathomNet_VME`, `FathomNet_Trash`, `MBARI_315k`, `MBARI_Megalodon` and
-  `NOAA_Sea_Urchin` already read this way. Only `Invert`, `Substrate60Second`,
-  `MarineDebris` and `MBARI_Benthic` differ, and all four are in the map.*
-- [x] **architectural** — should the mapping become a table instead? *No. A table
-  is a migration, a seeder and a second place to forget; the lookup answers the
-  same question against rows that already have to exist for the model to run at
-  all. Revisit if a list ever needs two session types.*
+- [x] **behavioural, blocking** — retry on a GPU, or a non-terminal state that
+  does not re-run? *Answered by Isaac: fail and retry. "In the end there should
+  be no reason why ingest would fail." The GPU cost is accepted deliberately.*
+- [x] **behavioural** — does a cancelled job come back? *No. Somebody stopped it
+  on purpose and a late ingest failure is not grounds to restart it.*
+
+## Why R5 is in this issue rather than its own
+
+It is the cause of the largest share of the symptom. `runJob([])` hands over an
+**empty** results file; artifacts are content-addressed, so that file is the same
+file every real job that detected nothing produced. The cleanup deleted it, and
+every later hand-over of that content was answered `already_have` against a row
+whose bytes were gone. 196 attempts ingested that artifact successfully; the 179
+after it did not.
+
+Invisible in CI, whose database holds no production empty artifact to collide
+with. It only damages a real corpus.
 
 ## Not in scope
 
-The ingest still refuses a session it cannot resolve, and that stays. This makes
-the resolution work without a deploy; it does not make an unresolvable session
-succeed.
+The 470 attempts already in this state. Nothing here re-ingests them; R3 means a
+re-run can now succeed, which is the mechanism by which they become recoverable.
