@@ -17,6 +17,11 @@
  * and `Other`, two observations between them). They are reported rather than
  * guessed at -- `Other` genuinely does not say which list was in use.
  *
+ * **This map is not the whole answer any more, and must not be treated as one.**
+ * A session type that names a list this map has never heard of still resolves,
+ * against the database, by `speciesListNamed` on the ingest repository. See
+ * *Adding a list without a deploy* below, which is #223 and is the reason.
+ *
  * @fileoverview Session type to species list mapping.
  * @author Isaac Travers
  * @module db/species-lists
@@ -26,6 +31,9 @@
 
 /**
  * Maps a session's `type` onto the annotation list its observations belong to.
+ *
+ * Every entry here is a type whose name **differs** from its list, or predates
+ * the convention below. Nothing new should need adding: see `speciesListNamed`.
  *
  * @constant
  * @type {Object<string, string>}
@@ -43,6 +51,11 @@ const SESSION_TYPE_TO_SPECIES_LIST = Object.freeze({
     // species, so each model's vocabulary is its own list and needs its own
     // session type. `scripts/seed-morphotaxa-vocabulary.js` writes the rows and
     // says why a list per model rather than one shared one.
+    //
+    // Only `MBARI_Benthic` still has to be named here, because its list is
+    // called `MBARI_Benthic_Supercategory` and the two therefore differ. The
+    // rest are kept for the sessions already recorded against them and would
+    // resolve without this map today.
     MBARI_Benthic: 'MBARI_Benthic_Supercategory',
     FathomNet_VME: 'FathomNet_VME',
     FathomNet_Trash: 'FathomNet_Trash',
@@ -55,10 +68,14 @@ const SESSION_TYPE_TO_SPECIES_LIST = Object.freeze({
 });
 
 /**
- * The species list a session type reads against, or null when it does not say.
+ * The species list a session type reads against, from the static map alone.
  *
  * Null rather than a default, because a default here would attribute an
- * observation to a list nobody chose.
+ * observation to a list nobody chose. **Null does not mean "no such list"** --
+ * it means this map does not name one, and the caller should ask the database.
+ * `speciesListForSessionType` stays synchronous and pure so the SQL projection
+ * in `repository/mosaic.repository.js` and this module's own tests can use it
+ * without a connection.
  *
  * @param {string} sessionType - A `sessions.type` value.
  * @returns {string|null} The `species.species_list` value, or null.

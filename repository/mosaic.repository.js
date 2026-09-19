@@ -162,6 +162,13 @@ const SPECIES_LIST_CASE = [
     'CASE btrim(s.type)',
     ...Object.entries(SESSION_TYPE_TO_SPECIES_LIST)
         .map(([type, list]) => `            WHEN '${type}' THEN '${list}'`),
+    // A type the map does not name may still *be* the name of a seeded list --
+    // that is #223, and it is what lets a new model's sessions be reviewed
+    // without a deploy. The subquery rather than a bare `btrim(s.type)` because
+    // the list has to exist: naming a list that has no species on it would send
+    // the correction picker somewhere with nothing in it.
+    '            ELSE (SELECT sl.species_list FROM species sl',
+    '                   WHERE sl.species_list = btrim(s.type) LIMIT 1)',
     '        END',
 ].join('\n');
 

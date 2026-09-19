@@ -30,6 +30,13 @@ const db = require('../model');
  * one to a bad import is exactly the kind of failure that would otherwise go
  * unnoticed.
  *
+ * **These seven are a floor, not the whole set.** A model vocabulary is a list
+ * of its own (`scripts/seed-morphotaxa-vocabulary.js`), so seeding a new model
+ * adds one -- six arrived on 2026-09-18 and broke the equality this used to
+ * assert. That is the failure AGENTS.md describes under *a test may not assume
+ * the database is otherwise empty*: an assertion over a whole table is green
+ * only until something real is in it.
+ *
  * @constant
  * @type {Array<string>}
  */
@@ -48,13 +55,17 @@ describe('Annotation species lists', () => {
   /**
    * GET /api/species/lists should name every list and count its entries.
    */
-  it('lists the seven annotation lists with entry counts', async () => {
+  it('lists at least the seven annotation lists, each with entries', async () => {
     const res = await global.api.get('/api/v2/species/lists');
 
     expect(res.status).toBe(200);
 
     const names = res.body.map((list) => list.species_list);
-    expect(names).toEqual(EXPECTED_LISTS);
+
+    // Every one of the seven is still there, and they are still in order
+    // relative to each other. A list seeded since is allowed to sit between
+    // them; one of the seven going missing is not.
+    expect(names.filter((name) => EXPECTED_LISTS.includes(name))).toEqual(EXPECTED_LISTS);
 
     for (const list of res.body) {
       expect(list.entry_count).toEqual(expect.any(Number));
@@ -532,12 +543,23 @@ describe('morphotaxa vocabularies and session types', () => {
   const vocabularies = require('../scripts/data/morphotaxa-vocabularies.json');
   const { speciesListForSessionType } = require('../db/species-lists');
 
-  it('maps every seeded vocabulary to the list it was seeded into', () => {
-    const unmapped = vocabularies.filter(
+  /**
+   * Since #223 a vocabulary has two ways to resolve, and it needs one of them.
+   * Either the static map names its session type -- which is how a type whose
+   * list is called something else has to work -- or the type **is** the name of
+   * the list, which the database answers with no code change at all.
+   *
+   * The assertion is deliberately the weaker of the two. Requiring the map alone
+   * was the defect: it made adding a model an edit to a frozen object, and
+   * forgetting the edit was silent.
+   */
+  it('resolves every seeded vocabulary, by the map or by its own name', () => {
+    const unresolvable = vocabularies.filter(
       (entry) => speciesListForSessionType(entry.sessionType) !== entry.list
+        && entry.sessionType !== entry.list
     );
 
-    expect(unmapped.map((entry) => `${entry.sessionType} -> ${entry.list}`)).toEqual([]);
+    expect(unresolvable.map((entry) => `${entry.sessionType} -> ${entry.list}`)).toEqual([]);
   });
 
   /**
@@ -552,5 +574,87 @@ describe('morphotaxa vocabularies and session types', () => {
       expect(entry.classes.length).toBeGreaterThan(0);
       expect(new Set(entry.classes).size).toBe(entry.classes.length);
     }
+  });
+});
+
+/**
+ * A list seeded today is usable today, with no code change and no restart (#223).
+ *
+ * The defect this names cost two model runs in one day. `MBARI_315k` and
+ * `MBARI_Megalodon` were seeded, registered and queued; their jobs ran, stored
+ * artifacts and reported `succeeded`; and every observation was discarded,
+ * because `db/species-lists.js` had not been edited and the API had not been
+ * restarted. 133 observations were recovered by hand.
+ *
+ * So this runs against the database rather than against the map, because the
+ * map is exactly the thing that must stop being required.
+ */
+describe('a seeded species list resolves without a deploy', () => {
+  const { QueryTypes } = require('sequelize');
+  const db = require('../model');
+  const ingestService = require('../service/observation-ingest.service');
+  const { speciesListForSessionType } = require('../db/species-lists');
+
+  // A list no code anywhere names, which is the whole point of the test.
+  const LIST = 'Test_223_Vocabulary';
+
+  beforeAll(async () => {
+    await db.sequelize.query(
+      `INSERT INTO species
+           (taxserial, comname, gui_display_name, species_list, is_active,
+            notes, created_at, updated_at)
+       VALUES (1, :comname, :comname, :list, true, :notes, NOW(), NOW())`,
+      {
+        replacements: {
+          comname: 'Test 223 morphotaxon',
+          list: LIST,
+          notes: 'Seeded by tests/species-lists.test.js for #223. Removed afterwards.',
+        },
+      }
+    );
+  });
+
+  afterAll(async () => {
+    await db.sequelize.query('DELETE FROM species WHERE species_list = :list', {
+      replacements: { list: LIST },
+    });
+  });
+
+  it('resolves a session type that names a list the static map has never heard of', async () => {
+    expect(speciesListForSessionType(LIST)).toBeNull();
+    await expect(ingestService.speciesListForSession(LIST)).resolves.toBe(LIST);
+  });
+
+  /**
+   * The map wins first, and it has to. `Invert` reads `Inverts`, and a list that
+   * happened to be called `Invert` must not take that meaning away from it.
+   */
+  it('lets the static map answer first', async () => {
+    await expect(ingestService.speciesListForSession('Invert')).resolves.toBe('Inverts');
+  });
+
+  /**
+   * Null rather than a default, still. A type naming nothing is refused by the
+   * ingest, which is the behaviour that stops an observation being attributed to
+   * a list nobody chose.
+   */
+  it('still resolves nothing for a type that names nothing', async () => {
+    await expect(
+      ingestService.speciesListForSession('Type_That_Names_No_List_223')
+    ).resolves.toBeNull();
+  });
+
+  /**
+   * A name has to be a list somebody seeded, not merely a string. An empty list
+   * would send the mosaic's correction picker somewhere with nothing in it.
+   */
+  it('does not resolve a list with no species on it', async () => {
+    const [row] = await db.sequelize.query(
+      'SELECT count(*)::int AS n FROM species WHERE species_list = :list',
+      { replacements: { list: 'Never_Seeded_223' }, type: QueryTypes.SELECT }
+    );
+
+    expect(row.n).toBe(0);
+    await expect(ingestService.speciesListForSession('Never_Seeded_223')).resolves.toBeNull();
   });
 });
