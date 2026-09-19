@@ -52,19 +52,15 @@ const SESSION_TYPE_TO_SPECIES_LIST = Object.freeze({
     // session type. `scripts/seed-morphotaxa-vocabulary.js` writes the rows and
     // says why a list per model rather than one shared one.
     //
-    // Only `MBARI_Benthic` still has to be named here, because its list is
-    // called `MBARI_Benthic_Supercategory` and the two therefore differ. The
-    // rest are kept for the sessions already recorded against them and would
-    // resolve without this map today.
+    // **Only `MBARI_Benthic` is named here, and the other five are deliberately
+    // absent.** Its list is called `MBARI_Benthic_Supercategory`, so the two
+    // differ and nothing but this map can bridge them. `FathomNet_VME`,
+    // `FathomNet_Trash`, `MBARI_315k`, `MBARI_Megalodon` and `NOAA_Sea_Urchin`
+    // each name their list exactly, so they resolve against the database -- and
+    // leaving them out is what keeps that path load-bearing rather than
+    // decorative. If the fallback ever breaks, five live models stop ingesting
+    // and somebody finds out at once, which is the opposite of #223.
     MBARI_Benthic: 'MBARI_Benthic_Supercategory',
-    FathomNet_VME: 'FathomNet_VME',
-    FathomNet_Trash: 'FathomNet_Trash',
-    MBARI_315k: 'MBARI_315k',
-    // Single-class detectors. Megalodon names nothing -- its one class is
-    // 'item' -- so it finds candidates and leaves the naming to a person or a
-    // second model, which is a different shape from everything above it.
-    MBARI_Megalodon: 'MBARI_Megalodon',
-    NOAA_Sea_Urchin: 'NOAA_Sea_Urchin',
 });
 
 /**
