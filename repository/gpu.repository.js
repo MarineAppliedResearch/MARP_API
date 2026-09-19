@@ -1698,6 +1698,98 @@ class GpuRepository {
     }
 
     /**
+     * Undo a published success whose data never reached the database (#225).
+     *
+     * `publishResult` has already set the attempt `succeeded` and the job with
+     * it, because publishing and ingesting are two steps and only the first had
+     * happened. When the second fails, that success is not true: *"if a job is
+     * considered finished the api has actually ingested it's data, otherwise the
+     * job isn't finished"* -- Isaac, 2026-09-19.
+     *
+     * So this is deliberately not `endAttemptAndReleaseJob`. That one refuses to
+     * move a job already in a terminal state, which is right when a lease is
+     * taken back from a job somebody else finished, and wrong here: the terminal
+     * state it would be protecting is the very one being withdrawn.
+     *
+     * `published_attempt_id` is cleared for the same reason. It records which
+     * attempt finished the job, and a retry has to be able to publish.
+     *
+     * The job goes back to the queue while attempts remain. Re-running costs GPU
+     * time, and that is accepted rather than overlooked: an ingest that fails
+     * means MARP does not have data it was supposed to have, and a retry is how
+     * the system says so rather than filing the loss quietly.
+     *
+     * @async
+     * @param {number} attemptId - The attempt whose ingest failed.
+     * @param {string} reason - Why the ingest refused it.
+     * @returns {Promise<{attemptState: string, jobState: string}|null>} What the
+     * two are now, or null when the attempt has gone.
+     */
+    async failAttemptAfterIngest(attemptId, reason) {
+        const transaction = await this.db.sequelize.transaction();
+
+        try {
+            const [attempt] = await this.db.sequelize.query(
+                'SELECT * FROM gpu_job_attempts WHERE id = :attemptId FOR UPDATE',
+                { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
+            );
+
+            if (!attempt) {
+                await transaction.rollback();
+
+                return null;
+            }
+
+            const [job] = await this.db.sequelize.query(
+                'SELECT * FROM gpu_jobs WHERE id = :jobId FOR UPDATE',
+                { replacements: { jobId: attempt.job_id }, type: QueryTypes.SELECT, transaction }
+            );
+
+            await this.db.sequelize.query(
+                `UPDATE gpu_job_attempts
+                    SET state = 'failed',
+                        failure_reason = :reason,
+                        finished_at = NOW()
+                  WHERE id = :attemptId`,
+                { replacements: { attemptId, reason }, transaction }
+            );
+
+            // A cancelled job stays cancelled: somebody stopped it deliberately
+            // and a late ingest failure is not grounds to start it again.
+            let jobState = job ? job.state : null;
+
+            if (job && job.state !== 'cancelled') {
+                jobState = attemptsSpent(job) < Number(job.max_attempts) ? 'queued' : 'failed';
+
+                await this.db.sequelize.query(
+                    `UPDATE gpu_jobs
+                        SET state = :jobState,
+                            published_attempt_id = CASE
+                                WHEN published_attempt_id = :attemptId THEN NULL
+                                ELSE published_attempt_id END,
+                            updated_at = NOW()
+                      WHERE id = :jobId`,
+                    { replacements: { jobState, jobId: job.id, attemptId }, transaction }
+                );
+            }
+
+            await this.appendCoordinatorNote(
+                attemptId,
+                { note: 'attempt failed because its results were not ingested', reason, job_state: jobState },
+                transaction
+            );
+
+            await transaction.commit();
+
+            return { attemptState: 'failed', jobState };
+        } catch (error) {
+            await transaction.rollback();
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
      * Claim an attempt for ingest, or refuse because somebody already has.
      *
      * One statement, and the `IS NULL` is the whole mechanism: PostgreSQL takes
