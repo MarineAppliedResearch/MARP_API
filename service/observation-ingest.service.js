@@ -504,6 +504,29 @@ class ObservationIngestService {
     }
 
     /**
+     * The annotation list a session type reads against, static map or database.
+     *
+     * Two sources, in this order, and the order is the point. The static map in
+     * `db/species-lists.js` names every type whose list is called something else
+     * -- `Invert` reads `Inverts` -- so it has to win, or those types would stop
+     * resolving the moment a list happened to share their name.
+     *
+     * Failing that, a type that **is** the name of a seeded list resolves to it.
+     * That is #223: registering a new model was a seeder run plus an edit to a
+     * frozen object plus a restart, and forgetting the last two was silent --
+     * the job succeeded and its observations went nowhere. Now the seeder is
+     * enough.
+     *
+     * @async
+     * @param {string} sessionType - A `sessions.type` value.
+     * @returns {Promise<string|null>} The species list, or null when nothing says.
+     */
+    async speciesListForSession(sessionType) {
+        return speciesListForSessionType(sessionType)
+            || ingestRepository.speciesListNamed(sessionType);
+    }
+
+    /**
      * Check that the session's type is one this model's species belong to.
      *
      * `sessions.type` is what the annotation GUI routes on, and an inverts
@@ -528,13 +551,14 @@ class ObservationIngestService {
             return;
         }
 
-        const sessionList = speciesListForSessionType(sessionRow.type);
+        const sessionList = await this.speciesListForSession(sessionRow.type);
 
         if (!sessionList) {
             unreconcilable(
                 `Session ${sessionRow.session_id} has type "${sessionRow.type}", which does not say which `
                 + 'species list its observations are recorded against, so it cannot be checked against '
-                + `model ${model.id}.`
+                + `model ${model.id}. Seed the list with scripts/seed-morphotaxa-vocabulary.js, or name `
+                + 'the session type after an existing list.'
             );
         }
 

@@ -294,6 +294,44 @@ class ObservationIngestRepository {
     }
 
     /**
+     * The species list of this exact name, if any species are on it.
+     *
+     * This is what lets a **new** model work without a deploy (#223). Seeding a
+     * vocabulary is a script and takes effect at once; `db/species-lists.js` is
+     * code and takes effect on the next restart. Between the two a job ran,
+     * stored its artifact, reported `succeeded` and wrote nothing -- twice in one
+     * day, on `MBARI_315k` and `MBARI_Megalodon`.
+     *
+     * So a session type that **is** the name of a list resolves to it. That is
+     * already how most of the catalogue reads (`Fish` -> `Fish`,
+     * `Habitat` -> `Habitat`), and it is a lookup rather than a guess: the list
+     * has to exist, with species on it, or this returns null and the caller
+     * refuses. The static map still answers first, which is what keeps
+     * `Invert` -> `Inverts` and `MBARI_Benthic` -> `MBARI_Benthic_Supercategory`
+     * meaning what they have always meant.
+     *
+     * @async
+     * @param {string} name - A candidate `species.species_list` value.
+     * @param {Object} [transaction] - Transaction to read inside.
+     * @returns {Promise<string|null>} The list name as stored, or null.
+     */
+    async speciesListNamed(name, transaction) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            return null;
+        }
+
+        const [row] = await this.db.sequelize.query(
+            `SELECT species_list
+               FROM species
+              WHERE species_list = :name
+              LIMIT 1`,
+            { replacements: { name: name.trim() }, type: QueryTypes.SELECT, transaction }
+        );
+
+        return row ? row.species_list : null;
+    }
+
+    /**
      * Fetch one registered model.
      *
      * @async
