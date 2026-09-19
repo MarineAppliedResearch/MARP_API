@@ -583,5 +583,27 @@
    "jellyfish",
    "ray"
   ]
+ },
+ {
+  "model": "MBARI-Megalodon-2024",
+  "list": "MBARI_Megalodon",
+  "sessionType": "MBARI_Megalodon",
+  "source": "https://huggingface.co/FathomNet/megalodon-2024-yolov11",
+  "licence": "CC-BY-4.0",
+  "sha256": "27ab91d07fa61d6ae1af9a2c18e29d6b89044254aec7d38b1a4331cbb9b3a450",
+  "classes": [
+   "item"
+  ]
+ },
+ {
+  "model": "NOAA-Sea-Urchin-Detector",
+  "list": "NOAA_Sea_Urchin",
+  "sessionType": "NOAA_Sea_Urchin",
+  "source": "https://huggingface.co/NMFS-OSI/yolo11x-sea-urchin-detector",
+  "licence": "AGPL-3.0",
+  "sha256": "6bf26a6c6e79d89e1ac81b38f06fa0582a1a0d5eff1af0228a0db41fc3b90199",
+  "classes": [
+   "urchin"
+  ]
  }
 ]

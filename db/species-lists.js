@@ -47,6 +47,11 @@ const SESSION_TYPE_TO_SPECIES_LIST = Object.freeze({
     FathomNet_VME: 'FathomNet_VME',
     FathomNet_Trash: 'FathomNet_Trash',
     MBARI_315k: 'MBARI_315k',
+    // Single-class detectors. Megalodon names nothing -- its one class is
+    // 'item' -- so it finds candidates and leaves the naming to a person or a
+    // second model, which is a different shape from everything above it.
+    MBARI_Megalodon: 'MBARI_Megalodon',
+    NOAA_Sea_Urchin: 'NOAA_Sea_Urchin',
 });
 
 /**
