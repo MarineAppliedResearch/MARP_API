@@ -37,6 +37,7 @@ const {
     holdsCorpus,
     compareCounts,
     countThumbnailFiles,
+    advanceSequences,
 } = require('../db/corpus');
 
 /**
@@ -182,4 +183,150 @@ describe('CORPUS_TABLES against the schema', () => {
     // this file's -- so closing sequelize here made a suite of fourteen passing
     // tests report "failed to run", with the real error thirty lines down in the
     // setup file. `npm test` passes --forceExit for exactly this.
+});
+
+/**
+ * A restored database has to be able to take a new row (#62).
+ *
+ * A restore writes each row with the id it had in the backup and never touches the
+ * counter PostgreSQL uses to hand out the next one, so after a load every counter
+ * points at a number that already exists. That was invisible while the API picked
+ * its own ids, and stopped being invisible the moment the database started picking
+ * them: the first observation created after a load collided on the primary key.
+ *
+ * The failure it produces is the nastiest kind available -- the load reports
+ * success, verifies its own row counts against the manifest, and hands back a
+ * database nothing can be added to. And the whole reason this database exists is so
+ * the automated tests can run against it.
+ *
+ * Against the real database because the defect is in what PostgreSQL does with a
+ * counter, which nothing below this tier can observe. The drift is created and put
+ * back deliberately; no row is touched either way.
+ */
+describe('advanceSequences', () => {
+    const { QueryTypes } = require('sequelize');
+
+    /** A pg-shaped client over the suite's own connection, which is what it takes. */
+    const client = {
+        query: async (sql, values = []) => ({
+            rows: await db.sequelize.query(sql, { bind: values, type: QueryTypes.SELECT }),
+        }),
+    };
+
+    /**
+     * Where a table's counter stands, and how far it is above its own rows.
+     *
+     * @param {string} table - Table name.
+     * @param {string} column - Its primary key.
+     * @returns {Promise<{seq: number, max: number}>} Counter and table maximum.
+     */
+    async function standing(table, column) {
+        const [row] = await db.sequelize.query(
+            // `pg_get_serial_sequence` yields the sequence's *name*, which cannot be
+            // selected from directly, so its position comes from the catalogue view.
+            `SELECT (SELECT COALESCE(max(${column}), 0) FROM ${table})::int AS max,
+                    (SELECT last_value FROM pg_sequences
+                      WHERE schemaname || '.' || sequencename
+                            = pg_get_serial_sequence('${table}', '${column}'))::int AS seq`,
+            { type: QueryTypes.SELECT }
+        );
+
+        return { seq: Number(row.seq), max: Number(row.max) };
+    }
+
+    let restore;
+
+    /** Observations this block created, removed in afterAll. @type {Array<number>} */
+    const seeded = [];
+
+    afterAll(async () => {
+        if (seeded.length > 0) {
+            await db.sequelize.query(
+                'DELETE FROM observations WHERE observation_id IN (:ids)',
+                { replacements: { ids: seeded } }
+            );
+        }
+
+        if (restore) {
+            await db.sequelize.query(
+                "SELECT setval('observations_observation_id_seq', :value, true)",
+                { replacements: { value: restore } }
+            );
+        }
+    });
+
+    /**
+     * The tripwire. A counter left behind its table is exactly the state a restore
+     * produces, and the next insert taking an id that already exists is the bug.
+     *
+     * **It seeds its own rows.** CI builds an empty database, where there is no
+     * maximum for a counter to fall behind and the whole scenario cannot exist --
+     * which is how this first went red there while passing against a database that
+     * happened to have data in it.
+     */
+    it('lifts a counter that has been left behind its table', async () => {
+        restore = (await standing('observations', 'observation_id')).seq;
+
+        const rows = await db.sequelize.query(
+            `INSERT INTO observations ("obsID", comname, "createdAt", "updatedAt")
+             SELECT 960000 + g, 'Jest Corpus Sequence', NOW(), NOW()
+               FROM generate_series(1, 2) AS g
+             RETURNING observation_id`,
+            { type: QueryTypes.SELECT }
+        );
+
+        seeded.push(...rows.map((row) => row.observation_id));
+
+        const before = await standing('observations', 'observation_id');
+
+        expect(before.max).toBeGreaterThan(1);
+
+        // Stand the counter back at 1, which is where a restore leaves it.
+        await db.sequelize.query(
+            "SELECT setval('observations_observation_id_seq', 1, true)"
+        );
+
+        const drifted = await standing('observations', 'observation_id');
+
+        expect(drifted.seq).toBeLessThan(drifted.max);
+
+        const advanced = await advanceSequences(client);
+
+        expect(advanced).toContain('observations');
+
+        const after = await standing('observations', 'observation_id');
+
+        expect(after.seq).toBeGreaterThanOrEqual(after.max);
+    });
+
+    /**
+     * Every corpus table, not observations alone. The same is true of all of them;
+     * observations is only the one that had a writer relying on it.
+     */
+    it('leaves no corpus table with a counter behind its rows', async () => {
+        await advanceSequences(client);
+
+        for (const table of CORPUS_TABLES) {
+            const [key] = await db.sequelize.query(
+                `SELECT c.column_name
+                   FROM information_schema.columns c
+                   JOIN information_schema.key_column_usage k
+                     ON k.table_name = c.table_name AND k.column_name = c.column_name
+                   JOIN information_schema.table_constraints t
+                     ON t.constraint_name = k.constraint_name
+                    AND t.constraint_type = 'PRIMARY KEY'
+                  WHERE c.table_name = :table
+                    AND pg_get_serial_sequence(:table, c.column_name) IS NOT NULL`,
+                { replacements: { table }, type: QueryTypes.SELECT }
+            );
+
+            if (!key) {
+                continue;
+            }
+
+            const { seq, max } = await standing(table, key.column_name);
+
+            expect({ table, behind: seq < max }).toEqual({ table, behind: false });
+        }
+    });
 });

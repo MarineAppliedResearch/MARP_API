@@ -391,6 +391,39 @@ The human is the programmer; the agent is the assistant.
 <!-- marp:shared end -->
 
 
+## NEVER file a GitHub issue
+
+**Do not create an issue in this repository, or any MARP repository, unless Isaac has
+explicitly told you to file one in that conversation.** This is the rule agents break
+most often and it does the most damage.
+
+He has filed roughly a dozen issues. The tracker holds over a hundred. **He can no longer
+find his own work in it, and his other agents pick up agent-filed issues instead of the
+ones he actually wants done.** In his words, on 2026-09-19:
+
+> *"for weeks I've been trying to get something basic done, and I can't even track what
+> I'm getting done because you keep filing issues and pulling my other agents off of the
+> actual issues that I'm filing. And then I can't remember which ones I filed. I filed
+> issue, like, 13, and suddenly I look at GitHub, and there's 138 fucking issues."*
+
+**There is no case where filing is the safe choice:**
+
+- **Not** a data-losing or urgent defect. That is a reason to raise it in the conversation
+  immediately, not a reason to file it.
+- **Not** because the branch name or `Refs #NN` seems to need a number. Use a descriptive
+  branch name and say that an issue is needed.
+- **Not** to stop a finding being lost. The conversation is the record.
+- **Not** by asking another agent to file it. Routing it through a teammate is still
+  filing it.
+- **Not** when you have been given broad permission to fix something. Authorisation to fix
+  is never authorisation to file.
+
+**What to do instead:** name the defect in your reply, say what it would take, and let him
+decide whether it is fixed now, tracked, or ignored. If it should be tracked, he files it.
+
+The shared block above says *"do not open an issue for it unless you were asked to"*. Read
+that as absolute rather than as a default.
+
 ## This repository
 
 ## Running anything
