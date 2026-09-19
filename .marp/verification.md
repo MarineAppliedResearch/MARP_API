@@ -1,59 +1,68 @@
-# 225 — verification
+# 62 — verification
 
 ## What was run
 
-`npx jest tests/gpu-observation-ingest.test.js` — **43 tests, all passing.**
-Five name a requirement, four of them new:
+`npm run test:observations` — **60 passed, 0 failed, 5 suites, no suite-level failures.**
+`npm run test:mosaic` — **274 passed, 0 failed, 7 suites, no suite-level failures.**
+
+Four tests are new, in `tests/observations.test.js`, at the HTTP tier because that
+is the path the annotation GUI takes and the defect was in what the repository sent
+rather than in what the model declared:
 
 | Test | Proves |
 | --- | --- |
-| An attempt whose results were not ingested > is failed rather than succeeded, and its job goes back to the queue | R1 |
-| An attempt whose results were not ingested > leaves a job that legitimately detected nothing succeeded | R2 |
-| A job that detected nothing > ingests zero observations from an empty result file without erroring | R2 (existing) |
-| An artifact recorded without its bytes > is asked for again rather than reported as already held | R3 |
-| An artifact recorded without its bytes > refuses a result that names it, so the worker uploads instead | R4 |
+| takes the id from the sequence, so the two stay together | R1 |
+| leaves the sequence at or ahead of the table maximum | R2 |
+| gives two simultaneous creates different ids | R3 |
+| ignores an observation_id the caller supplies | R4 |
 
-The R1 test asserts the attempt row itself, not only the response: `state` is
-`failed`, `ingested_at` is still NULL — now consistent rather than contradictory
-— and the job row is `queued`.
+## Proven red before green
 
-`npx jest tests/gpu-orchestration.test.js` — **55 passed, 0 failed**, and the
-corpus guard raised nothing.
+The repository was reverted to `develop`'s version, the new block run, and the
+tripwire failed:
 
-## R5, proven by doing the damage and then not doing it
+    Tests: 3 passed, 1 failed, 6 skipped, 10 total
+    ✗ Who assigns an observation id (#62) > takes the id from the sequence, so the two stay together
 
-The empty artifact was restored to the store and its hash verified:
+Then restored. **Only one of the four goes red**, and that is worth saying rather
+than implying all four are tripwires: R4's test passes under the old code too,
+because `max(observation_id) + 1` also overwrote a caller's id; it is a guard
+against a future regression rather than a demonstration of this one. R2 and R3 need
+a run with real concurrency and a drifted sequence to fail, which is the state this
+migration removes.
 
-    restored empty artifact, sha256 verifies: true
+## The mosaic suite is the real evidence
 
-The suite that used to delete it was then run **five times**. After every run:
+Before, on `develop`, with the sequence 10,478 behind:
 
-    empty artifact SURVIVED all runs
+    npm run test:mosaic        133 passed, 141 failed
 
-Before the change the guard reported the two halves separately as they were
-fixed, which is the evidence that both were real:
+After:
 
-    gpu_artifacts_staging: 2 row(s) deleted that the suite did not create
-    gpu_artifacts_staging: 5 row(s) added and left behind
-    gpu_artifacts_staging: row(s) modified, count unchanged at 1593
+    npm run test:mosaic        274 passed, 0 failed
 
-All three are gone. The last one is why `handOver` now checks before uploading
-rather than uploading unconditionally: re-uploading an existing artifact upserts
-a staging row the suite did not create. That also makes the helper match what a
-worker really does, which is what its own docstring always claimed.
+Every one of the 141 failed inside `addObservations`, a helper that inserts with the
+column default. `tests/dataset-observations-cascade.test.js` went 0/3 to 3/3 the
+same way.
 
-## What was NOT proven, and why
+## The migration
 
-The suite cannot be run cleanly on this machine while the pool is working. Three
-inference workers are polling the same coordinator, and `submitAndLease` fails
-with `expect(leased.status).toBe(200)` when a real worker takes the test's job
-first. Across six runs, two to four tests failed this way and **a different set
-each time**; the five above passed in every run.
+Run against development:
 
-The corpus guard also reports `gpu_workers`, `service_clients` and
-`service_tokens` modified on most runs. That is the live pool heartbeating, not
-this suite. Isaac ruled on 2026-09-19 that this is acceptable for now, on the
-grounds that workers will run either in production or during deliberate testing.
+    [observations sequence] max_id 18040, sequence 18040 -> 18040.
+    The next observation takes 18041.
 
-So: the requirements are proven, and the suite around them is not clean. Both are
-stated rather than one being allowed to imply the other.
+Run twice (undo, then up again) to confirm it is idempotent, and it reports the
+no-op `down` honestly rather than pretending to reverse.
+
+**Not verified against production**, and it cannot be from here. Production has
+never advanced this sequence either, so the migration's `up` is what stops the first
+insert after deploy from colliding — that is the half of this change that cannot be
+done in code, and it should be watched on the release.
+
+## Note on the corpus guard
+
+Both groups ran clean, including the guard — the first fully clean run of the night.
+Earlier runs reported `gpu_workers` and `service_tokens` modified by the live pool;
+that traffic happened to be quiet here. The environmental noise is unchanged, not
+fixed.
