@@ -236,7 +236,17 @@ describe('advanceSequences', () => {
 
     let restore;
 
+    /** Observations this block created, removed in afterAll. @type {Array<number>} */
+    const seeded = [];
+
     afterAll(async () => {
+        if (seeded.length > 0) {
+            await db.sequelize.query(
+                'DELETE FROM observations WHERE observation_id IN (:ids)',
+                { replacements: { ids: seeded } }
+            );
+        }
+
         if (restore) {
             await db.sequelize.query(
                 "SELECT setval('observations_observation_id_seq', :value, true)",
@@ -248,14 +258,30 @@ describe('advanceSequences', () => {
     /**
      * The tripwire. A counter left behind its table is exactly the state a restore
      * produces, and the next insert taking an id that already exists is the bug.
+     *
+     * **It seeds its own rows.** CI builds an empty database, where there is no
+     * maximum for a counter to fall behind and the whole scenario cannot exist --
+     * which is how this first went red there while passing against a database that
+     * happened to have data in it.
      */
     it('lifts a counter that has been left behind its table', async () => {
+        restore = (await standing('observations', 'observation_id')).seq;
+
+        const rows = await db.sequelize.query(
+            `INSERT INTO observations ("obsID", comname, "createdAt", "updatedAt")
+             SELECT 960000 + g, 'Jest Corpus Sequence', NOW(), NOW()
+               FROM generate_series(1, 2) AS g
+             RETURNING observation_id`,
+            { type: QueryTypes.SELECT }
+        );
+
+        seeded.push(...rows.map((row) => row.observation_id));
+
         const before = await standing('observations', 'observation_id');
 
-        restore = before.seq;
         expect(before.max).toBeGreaterThan(1);
 
-        // Stand the counter back at 1, which is where a fresh restore leaves it.
+        // Stand the counter back at 1, which is where a restore leaves it.
         await db.sequelize.query(
             "SELECT setval('observations_observation_id_seq', 1, true)"
         );
