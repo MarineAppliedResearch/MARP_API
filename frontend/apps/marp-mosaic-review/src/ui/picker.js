@@ -9,6 +9,7 @@ import { state, actions, MODES } from '../store.js';
 import { acceptedValue, existingNote, existingReason, existingState, markKind, MARK_EXCEPT } from '../model/modes.js';
 import { observationIdText } from '../model/observation-id.js';
 import { fullFrameActionState } from '../model/frame-viewer.js';
+import { openVideoWindow } from './video-window.js';
 import { clampPickerPosition, draggedPosition } from '../model/picker-position.js';
 import { $, el, ICON } from './dom.js';
 import { acceptIcon, markIcon } from './tile.js';
@@ -334,7 +335,11 @@ export async function renderPicker() {
   if (requestFrame) requestFrame.addEventListener('click', () => actions.requestFullFrame(id));
   const openFrame = panel.querySelector('[data-act="open-full-frame"]');
   if (openFrame) openFrame.addEventListener('click', () => actions.openFullFrame(id));
-  panel.querySelector('[data-act="video"]').addEventListener('click', () => actions.openVideo(id));
+  panel.querySelector('[data-act="video"]').addEventListener('click', () => {
+    // The page's other observations go too, so their boxes are drawn beside this one.
+    openVideoWindow(id, state.rows.map((r) => r.observation_id));
+    actions.openVideo(id);
+  });
   const resolve = panel.querySelector('[data-act="resolve"]');
   if (resolve) resolve.addEventListener('click', () => actions.resolve(id));
   const close = panel.querySelector('[data-act="close"]');

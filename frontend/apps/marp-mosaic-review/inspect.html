@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP Source Video</title>
+<link rel="icon" href="../../shared/assets/images/marp-mark.png">
+<link rel="stylesheet" href="../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="./styles/inspect.css">
+<!-- The player, installed from its release; see shared/vendor/marp-video-player. -->
+<script src="../../shared/vendor/marp-video-player/dist/marp-video-player.standalone.js"></script>
+</head>
+<body>
+<header class="inspect-head">
+  <strong id="inspectTitle">Source video</strong>
+  <span id="inspectDetail" class="inspect-detail"></span>
+</header>
+<main class="inspect-stage">
+  <div id="player" class="inspect-player"></div>
+  <canvas id="boxes" class="inspect-boxes" aria-hidden="true"></canvas>
+  <div id="poster" class="inspect-poster" hidden>
+    <img id="posterImage" alt="The observation's frame, shown while the video loads">
+    <canvas id="posterBoxes" class="inspect-boxes" aria-hidden="true"></canvas>
+  </div>
+  <p id="inspectStatus" class="inspect-status" role="status"></p>
+  <form id="signIn" class="inspect-signin" hidden>
+    <p>Sign in to the video server with your own Jellyfin account.</p>
+    <label>User <input name="username" autocomplete="username" required></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">Sign in</button>
+    <p id="signInError" class="inspect-error" role="alert"></p>
+  </form>
+</main>
+<script type="module" src="./src/inspector/main.js"></script>
+</body>
+</html>

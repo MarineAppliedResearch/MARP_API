@@ -177,6 +177,13 @@ export const MarpApi = {
     });
   },
 
+  /* The source-video inspector's read (#181): a page's observations, grouped by video. */
+  async videoContext(observationIds = [], { signal } = {}) {
+    return request('/mosaic/observations/video-context', {
+      method: 'POST', body: { observation_ids: idList(observationIds, 'observation_ids') }, signal
+    });
+  },
+
   fullFrameUrl: (row) => fullFrameUrl(row && row.observation_id),
 
   /**
