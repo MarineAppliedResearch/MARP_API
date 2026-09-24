@@ -39,15 +39,14 @@ results below do not make it approved.
 
 ## Known gaps
 
-- **A8 is open and blocking.** The worker's `frame` is `observation_frame % int(fps)`, and
-  MARP's is the time-based sub-second index. The synthetic rows above are built with MARP's
-  definition, so they pass; **a real result from a non-25 video is still refused.** See
-  `.marp/task.md` A8. The acceptance criterion on job 7163 fails for that reason.
+- **A8, answered (A).** The worker now writes MARP's definition, on marp-inference-worker
+  `231-frame-is-the-sub-second-index`. Nothing non-25 ingests until a worker running it is
+  deployed. Job 7163's staged artifact was written by the old worker and stays refused.
 - Jellyfin is stubbed in every test here. `getVideoFrameRate` was called once by hand
   against the central server for job 7163's item and returned
   `{"averageFrameRate":24.946007,"realFrameRate":25}`. `npm run test:media` was not run.
-- `npm run test:observations` fails in 3 suites, 24 tests, **on develop's code as well** —
-  see Results. Not caused by this change and not fixed here.
+- `npm run test:observations` was failing 3 suites on develop: the observation id
+  regression. Fixed underneath this branch; see Results.
 
 ## Manual steps
 
@@ -102,3 +101,42 @@ timecode-resync. The same failures occur with develop's code. The `observations`
 sits far behind `max(observation_id)` because the ingest assigns `MAX + 1` while other paths
 take the sequence, so any observation created through the API or GUI collides and 500s on
 this database. Outside this task; reported, not fixed.
+
+---
+
+**2026-09-24, after A8 was answered, and after the observation id regression was fixed.**
+
+**The observation id regression — `62-ingest-takes-ids-from-the-sequence`, `678c2625`.**
+7f3a8a74 moved creates onto the `observations` sequence; the GPU ingest kept assigning
+`max + 1`, so every GPU run left the sequence further behind and every create through the
+API or the GUI collided. The ingest takes `nextval` now, and a migration moved the sequence
+up again (`max_id 114718, sequence 18056 -> 114718` on the development database). Tripwire
+in `gpu-observation-ingest`, red on develop's ingest (`Expected: >= 114724, Received:
+114718`), green with the fix.
+
+On that branch alone: `test:observations` 60/60 in 5 suites, `test:gpu` 169/169,
+`test:review` 49/49, `test:mosaic` 274/274, `test:core` 245/245, `test:ml` 37/37.
+
+A first run of those two groups failed whole files in the corpus guard (`gpu_workers`,
+`service_clients`, `service_tokens` modified) and three poll/heartbeat tests: the API was
+back on port 3000 and a live worker was heartbeating into the database. Stopped, rerun green.
+
+**The worker, `231-frame-is-the-sub-second-index`, `338bfaa`:** full `pytest`, 272 passed,
+4 skipped (the same platform skips as before). The new test is red on the old formula
+(`assert '22' == '5'`).
+
+**Across the two repositories, once, not committed.** The worker's `frame_to_timecode` and
+`frame_to_subsecond_index` for every frame of a two-hour video, through this branch's real
+`deriveTimecodes`:
+
+```
+24.946007 rows 180000 refused 0
+25.0      rows 180000 refused 0
+23.976    rows 172800 refused 0
+29.97     rows 216000 refused 0
+30.0      rows 216000 refused 0
+```
+
+Before the change, 172,807 of the 180,000 at 24.946 were refused.
+
+**This branch, stacked on the id fix:** `test:gpu` 184/184, `test:observations` 62/62.

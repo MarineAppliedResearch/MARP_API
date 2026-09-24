@@ -94,7 +94,8 @@ Read from `origin/develop` and the development database on 2026-09-24.
   at 25 is left as it is: thumbnails refuse by R21, `classifyRow` and the timecode resync
   treat a non-25 row as not reproducible and skip it, and the annotation GUI is
   VIDEO_PROCESSING_GUI#221. Each is the safe behaviour for its own assumption.
-- [ ] **A8 · cross-repository integration / data-meaning · blocking** — found in G2, running
+- [x] **A8 · cross-repository integration / data-meaning · blocking** — answered 2026-09-24:
+  **(A), the worker writes MARP's definition.** Found in G2, running
   job 7163's real staged artifact through the derivation. **The worker and MARP define
   `frame` differently, and the two agree only at exactly 25 fps.** The worker writes
   `frame = observation_frame % int(fps)` (`tracking/observations.py`, the `"frame"` key) — at
@@ -122,6 +123,8 @@ Read from `origin/develop` and the development database on 2026-09-24.
 - **2026-09-24** — Jellyfin's `AverageFrameRate`, measured to agree with the worker's own
   reading on the refused video (A1).
 - **2026-09-24** — Existing observations untouched; a note in the code at the seam (A2).
+- **2026-09-24** — The worker writes `frame` as MARP's time-based sub-second index, with the
+  coordinator's own arithmetic (A8). marp-inference-worker `231-frame-is-the-sub-second-index`.
 
 ## Plan
 
@@ -144,7 +147,8 @@ Read from `origin/develop` and the development database on 2026-09-24.
 - A retry handing over the byte-identical artifact of a refused attempt ingests it.
 - A `succeeded` attempt naming no artifacts for a session-naming job ends `failed`.
 - `npm run test:gpu` and `npm run test:observations` pass.
-- Job 7163's real staged artifact passes the derivation at Jellyfin's rate.
+- The new worker's `tc` and `frame` pass the derivation at 24.946 fps for every frame of a
+  two-hour video. Job 7163's staged artifact was written by the old worker and stays refused (A8).
 
 ## Test plan
 
@@ -160,8 +164,8 @@ Read from `origin/develop` and the development database on 2026-09-24.
 
 ## Status
 
-- **Gate:** implementing — stopped at A8
+- **Gate:** verifying
 - **Notes:** A1 and A2 answered 2026-09-24 before bed; A3–A7 are judgement calls taken with
   their reasons, for review in the morning before anything is pushed. A8 was found during
-  G2 and blocks the rest: R1–R9 are implemented and tested, but no real non-25 result
-  ingests until A8 is answered.
+  G2 and answered (A). Stacked on `62-ingest-takes-ids-from-the-sequence`, the observation
+  id regression, so the two merge in that order.
