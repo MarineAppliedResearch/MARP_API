@@ -2628,7 +2628,7 @@ const buildOpenApiSpec = () => {
                     GpuEventsRequest: {
                         type: 'object',
                         description:
-                            'A batch of durable metrics and log lines. Keyed `(attempt_id, seq)`, so resending a batch whose answer was never seen inserts nothing the second time.',
+                            'A batch of durable metrics, log lines and settings reports. Keyed `(attempt_id, seq)`, so resending a batch whose answer was never seen inserts nothing the second time.',
                         required: ['worker_id', 'lease_epoch', 'events'],
                         properties: {
                             worker_id: { type: 'integer', example: 3 },
@@ -2644,12 +2644,17 @@ const buildOpenApiSpec = () => {
                                         seq: { type: 'integer', minimum: 0, example: 17 },
                                         kind: {
                                             type: 'string',
-                                            enum: ['metric', 'log'],
+                                            enum: ['metric', 'log', 'settings'],
                                             example: 'metric',
-                                            description: 'A worker sends metrics and log lines. `note` is the coordinator\'s own kind and is refused here, so the record of why a lease was taken away stays trustworthy.',
+                                            description: 'A worker sends metrics, log lines, and one `settings` report per attempt before its first frame. `note` is the coordinator\'s own kind and is refused here, so the record of why a lease was taken away stays trustworthy.',
                                         },
                                         at: { type: 'string', format: 'date-time', description: 'When the worker says it happened. Evidence, not a clock anything is judged on.' },
-                                        payload: { type: 'object', additionalProperties: true, example: { frames_per_second: 41.2 } },
+                                        payload: {
+                                            type: 'object',
+                                            additionalProperties: true,
+                                            example: { frames_per_second: 41.2 },
+                                            description: 'Free-form for `metric` and `log`. For `settings` it has a fixed shape, checked whole before anything is written: `{engine, settings: {name: {value, type, source}}, ignored: {key: requested value}}`. `type` is one of `real`, `int`, `bool`, `text` and must match the catalogue for a known setting; `source` is `job`, `default` or `engine`; `value` may not be null, because a default is recorded as the value that was used. Example: `{"engine": "marp_tracking", "settings": {"confidence": {"value": 0.001, "type": "real", "source": "job"}, "imgsz": {"value": 640, "type": "int", "source": "default"}}, "ignored": {"track_threshh": 0.5}}`.',
+                                        },
                                     },
                                 },
                             },

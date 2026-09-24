@@ -40,6 +40,8 @@ const SUBSYSTEMS = {
             'gpu-video-resolution',
             'gpu-playback-reporting',
             'gpu-observation-ingest',
+            // #232: the settings an attempt ran with, reported on the event stream.
+            'gpu-attempt-settings',
             'worker-provisioning',
         ],
     },

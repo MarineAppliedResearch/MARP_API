@@ -1,45 +1,155 @@
-# 62 — The database owns observation ids
+---
+task: MarineAppliedResearch/MARP_API#232
+repos: [marp-api, marp-inference-worker]
+status: verifying
+needs: []
+---
 
-**Issue:** MarineAppliedResearch/MARP_API#62
-**Branch:** `62-the-database-owns-observation-ids` off `develop`
+## Goal
+
+When somebody looks at an observation that inference produced, they can say exactly how
+the model was run: every setting that shaped the result, whether the job asked for it or
+it was a default, and anything the job asked for that the worker ignored. Today two runs
+of the same model at confidence 0.60 and 0.001 — different scientific instruments — are
+indistinguishable in the database.
+
+## What investigation found
+
+Read from `origin/develop` of both repositories and the development database on
+2026-09-23. It changes the size of the job.
+
+- **The worker already logs the settings it applies.** Worker PR #48 added an
+  `inference settings: confidence=… imgsz=… iou=…` log line, which cites this issue.
+  It reaches the database as free text inside `gpu_job_events` (690 attempts so far).
+- **The engine already returns the effective tracker settings.** `TrackingEngine.run()`
+  returns `"tracker": tracker_args.as_dict` and `"confidence"` in its summary, which is
+  stored inside the `attempt finished as succeeded` log event (3,124 attempts).
+- **What is genuinely missing:**
+  - effective values for predict settings the job did not set — the log line says
+    `(ultralytics defaults)` instead of the values, which is the gap the issue names;
+  - whether each value came from the job or from a default;
+  - ignored keys, as data rather than as a phrase in a log line;
+  - a queryable home — today the values are only recoverable by parsing log payloads;
+  - failed, preempted and cancelled attempts, which never return a summary;
+  - any link from an observation to the attempt that produced it. `observations`
+    carries `gpu_job_id` only.
 
 ## Requirements
 
-- **R1** `observation_id` is assigned by its sequence, not by the application.
-- **R2** The sequence is never behind the table, so anything inserting with the
-  column default works.
-- **R3** Two simultaneous creates get different ids.
-- **R4** An `observation_id` supplied by a caller is ignored.
-- **R5** `obsID` and `PobsID` keep being assigned by the application. They are
-  per-session and per-project numbering, not primary keys.
+- **R1** — Every attempt records the inference settings the worker applied: at least
+  `confidence`, `iou`, `imgsz`, `augment`, `agnostic_nms`, `max_det`, `half`,
+  `track_thresh`, `match_thresh`, `track_buffer` and `mot20`.
+- **R2** — Every recorded value states its source: `job` when the spec set it,
+  `default` when it did not. A default is recorded as its value, never as "default".
+- **R3** — Keys the job spec set and the worker did not honour are recorded as ignored.
+- **R4** — Settings are recorded when the engine resolves them, before the first frame,
+  so an attempt that fails, is preempted or is cancelled still carries them.
+- **R5** — The record lives in normalised tables, queryable setting by setting, not only
+  in a log payload. The schema stays self-describing: what each setting is, which engine
+  it belongs to and what type it holds are in the database, not only in worker code.
+- **R6** — An observation can be traced to the settings of the attempt that produced it.
+- **R7** — An attempt from a worker that does not report settings stores nothing, and
+  that absence is stored as absence: never guessed, never copied from the job spec.
 
 ## Open assumptions
 
-- [x] **database/schema, blocking** — database or application ownership?
-  *Answered by Isaac on 2026-09-19: the database owns it. The issue had already
-  recommended this; it was recorded as "worth deciding" rather than decided.*
-- [x] **destructive operations** — is `setval` safe on production? *It changes no
-  row. The migration only ever moves the sequence forward (`GREATEST` of the table
-  max and the current value), because a sequence legitimately runs ahead when an
-  insert is rolled back, and winding it back would hand out a number a concurrent
-  insert may already hold.*
+- [x] **A1 · database/schema · blocking** — answered 2026-09-23: **normalised tables, not
+  `jsonb`.** *"I want everything to be as queryable as we can get it while maintaining the
+  ability to understand the schema."* The shape is A8.
+- [x] **A2 · API contract / cross-repository · blocking** — answered 2026-09-23: **reported
+  before the first frame.** The worker reports the record
+  as a structured event the moment the engine resolves it, and the API writes it to the
+  settings tables. The alternative, adding it to the finish summary that already exists, is
+  less code but breaks R4: a failed attempt never returns a summary. This adds a named
+  field to the worker-to-API protocol.
+- [x] **A3 · scientific/data-meaning · blocking** — answered 2026-09-23: **yes, add the
+  nullable `observations.gpu_attempt_id`, new rows only.** How an observation reaches its
+  attempt (R6). A job that yields and resumes can hold observations from several
+  attempts on different workers — potentially different worker versions with different
+  defaults — so `gpu_jobs.published_attempt_id` names one attempt and can be wrong for
+  the rest. Proposal: a nullable `observations.gpu_attempt_id`, set at ingest for new
+  rows only. Existing rows stay NULL, so nothing is changed or lost.
+- [ ] **A4 · data-meaning · non-blocking** — No backfill. Existing attempts carry the
+  tracker settings in a log payload but the predict settings only as
+  `(ultralytics defaults)`, so a backfill would record some values as known and others
+  as unknown in a way that reads as complete. They stay NULL, per R7.
+- [ ] **A5 · behavioural · non-blocking** — Ultralytics defaults are read at run time
+  from `ultralytics.cfg.DEFAULT_CFG` rather than written into worker code, so a recorded
+  default is what that worker's pinned Ultralytics actually used.
+- [ ] **A6 · behavioural · non-blocking** — Engine constants that shape results but are
+  not job settings, such as the class-matching IoU of 0.4, are recorded with source
+  `engine`. Cheap, and within the issue's intent that nothing about how the model ran
+  goes unrecorded.
+- [x] **A7 · environment · non-blocking** — answered 2026-09-23: **no — use the main
+  MARP_API checkout and its database, the ones behind port 3000, and restart the API as
+  needed.** *"that IS the proper one to use."* Proposed was: implementation happens in isolated
+  workspaces (`marp agent start`) for both repositories. The main MARP_API checkout is
+  serving the API on port 3000 for another agent, and nodemon restarts it on every
+  `.js` change. The worker checkout is mid-task on the watch-window branch with
+  uncommitted work.
+- [x] **A8 · database/schema · blocking** — answered 2026-09-23: **option 1.** Which
+  normalised shape (follows from A1).
+  *Option 1, recommended:* a catalogue `inference_settings (id, name, engine, value_type,
+  description)`; values in `gpu_attempt_settings (attempt_id, setting_id, value_real |
+  value_int | value_bool | value_text, source)` with exactly one value column set per
+  `value_type`; and `gpu_attempt_ignored_params (attempt_id, key, requested_value)`. A
+  setting the catalogue does not yet know is added to it and stored, never refused —
+  refusing would lose the record this issue exists to make. *Option 2:* one wide row per
+  attempt, a typed column and a source column per setting. Option 1 because settings
+  differ by engine (`mock` has none; MARP_API#221's substrate models will have their
+  own), the list grows (PR #48 already added `max_det` and `half`), and the catalogue is
+  what keeps the schema understandable. A view can lay common settings out wide.
 
-## What was actually wrong
+## Decisions
 
-Not the model — it has carried `autoIncrement: true` all along, and the column has
-always had `DEFAULT nextval(...)`. #62 says otherwise and is stale on that point.
-The repository simply overrode both, every time.
+- **2026-09-23** — Normalised tables rather than a `jsonb` column (A1).
+- **2026-09-23** — The worker reports its settings before the first frame, so a failed
+  attempt still has them (A2).
+- **2026-09-23** — `observations.gpu_attempt_id`, nullable, written at ingest for new rows
+  only; existing rows untouched (A3).
+- **2026-09-23** — Work in the main MARP_API checkout and its database, the ones behind
+  port 3000 (A7).
+- **2026-09-23** — Catalogue plus one row per setting per attempt, plus an ignored-params
+  table; an unknown setting is registered, never refused (A8).
+- **2026-09-23** — Not the existing `hyperparameters` table. It hangs off `training_runs`
+  through a `NOT NULL` key, holds one `jsonb` blob, and has no rows: it describes training,
+  and it is the shape A1 decided against.
+- **2026-09-23** — The report is a `settings` kind on the existing events stream, so it
+  inherits the lease check and the `(attempt_id, seq)` replay safety rather than needing
+  its own.
+- **2026-09-23** — The first report for an attempt is the record. A later one is kept as an
+  event and written nowhere else: the rule `published_attempt_id` already follows.
 
-## The measurement that made this urgent
+## Plan
 
-    observations   max=18040    seq=7562    BEHIND by 10478
-    keyframes      max=261266   seq=269150  ok
+1. Worker: build the record in `TrackingEngine.run()` — every setting as
+   `{value, source}` plus an `ignored` list — and report it as a structured event before
+   the first frame (A2).
+2. API: migrations creating the settings tables in the shape A8 settles, and seeding the
+   catalogue with the settings the worker has today — a seeder, not typed rows.
+3. API: accept the event and write the rows; accept its absence from an older worker
+   without error (R7).
+4. API: migration adding `observations.gpu_attempt_id`, written at ingest (A3).
+5. Tests at the tiers that can see each change; see the test plan.
 
-#62 recorded 3 behind. It is 10,478. Every insert relying on the default collided:
-`npm run test:mosaic` failed **141 of 274**, and the dataset cascade suite failed
-all 3, both inside helpers that insert with the column default.
+## Acceptance criteria
 
-## Not in scope
+- A job that sets `conf 0.001` and nothing else produces an attempt whose record shows
+  `confidence 0.001` from `job` and every other setting with its real value from
+  `default`.
+- A job that sets a key the worker does not honour lists it under `ignored`.
+- An attempt that fails after settings are resolved still has its record.
+- An attempt from a worker without this change stores NULL and ingests as it does today.
+- An observation ingested after this change resolves to its attempt's record.
 
-`obsID`/`PobsID` (R5). `VIDEO_PROCESSING_GUI#213`, which is where this was first
-tripped over.
+## Test plan
+
+Filled in at G3.
+
+## Status
+
+- **Gate:** verifying
+- **Notes:** Both halves implemented and committed. A5 changed in how, not in intent: a
+  default is read the way `predict()` resolves it -- the checkpoint's own `imgsz` before
+  DEFAULT_CFG -- because DEFAULT_CFG alone would record 640 for a run at 1280. See
+  `.marp/verification.md`; the rest of `npm run test:gpu` waits on the queue being cleared.

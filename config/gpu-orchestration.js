@@ -297,12 +297,13 @@ const LIVE_ATTEMPT_STATES = ['assigned', 'preparing', 'running', 'uploading'];
 const REPORTABLE_ATTEMPT_STATES = ['preparing', 'running', 'uploading'];
 
 /**
- * Event kinds. `note` is the coordinator's own; a worker sends `metric` or `log`.
+ * Event kinds. `note` is the coordinator's own; a worker sends `metric`, `log`,
+ * or `settings` -- its report of the inference settings it applied (#232).
  *
  * @constant
  * @type {Array<string>}
  */
-const EVENT_KINDS = ['metric', 'log', 'note'];
+const EVENT_KINDS = ['metric', 'log', 'note', 'settings'];
 
 /**
  * The kinds a worker may send. `note` is absent on purpose: it is the
@@ -312,7 +313,25 @@ const EVENT_KINDS = ['metric', 'log', 'note'];
  * @constant
  * @type {Array<string>}
  */
-const WORKER_EVENT_KINDS = ['metric', 'log'];
+const WORKER_EVENT_KINDS = ['metric', 'log', 'settings'];
+
+/**
+ * How a recorded setting's value is stored, one value column each on
+ * `gpu_attempt_settings`. Matches the table's check constraint.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const SETTING_VALUE_TYPES = ['real', 'int', 'bool', 'text'];
+
+/**
+ * Where a recorded setting's value came from: the job spec, a default, or an
+ * engine constant no job can set. Matches the table's check constraint.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const SETTING_SOURCES = ['job', 'default', 'engine'];
 
 /**
  * What a worker may report as the outcome of an attempt.
@@ -368,6 +387,8 @@ module.exports = {
     REPORTABLE_ATTEMPT_STATES,
     EVENT_KINDS,
     WORKER_EVENT_KINDS,
+    SETTING_VALUE_TYPES,
+    SETTING_SOURCES,
     RESULT_OUTCOMES,
     CONTROL_ACTIONS,
 };

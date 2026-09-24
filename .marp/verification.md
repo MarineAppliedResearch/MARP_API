@@ -1,68 +1,82 @@
-# 62 — verification
+# Verification — MARP_API#232: an attempt records the settings it ran with
+
+Two branches, verified together:
+
+- `MARP_API` — `232-record-inference-settings`
+- `marp-inference-worker` — `232-report-inference-settings`
+
+Every result below was run on 2026-09-23 against the development database, with the API
+moved to port 3001 so that no worker could reach it and write to the database mid-run.
+
+## Results, by requirement
+
+| Req | What proves it | Tier | Result |
+|---|---|---|---|
+| R1 | `gpu-attempt-settings` — every setting recorded; worker `test_every_setting_is_reported_under_its_catalogue_type` | API, unit | pass |
+| R2 | `records a default as the value that was used`; worker `test_an_unset_imgsz_is_the_models_training_size_not_ultralytics_default`, `test_what_the_job_set_is_the_jobs_and_the_rest_is_default` | API, unit | pass |
+| R3 | `records what the job asked for that the worker did not honour`; worker `test_keys_nothing_honours_are_reported_with_what_the_job_asked_for` | API, unit | pass |
+| R4 | `still has its settings after it reports failure`; worker `test_a_fault_in_the_settings_report_does_not_fail_the_job` | API, unit | pass |
+| R5 | `can be queried setting by setting, which is the point of the tables` | API | pass |
+| R6 | `carries the attempt it came from, and so reaches that attempt's settings` | API | pass |
+| R7 | `records nothing, and its other events are accepted as before`; worker `test_a_refused_settings_report_is_kept_as_a_warning_log_line` | API, wire | pass |
 
 ## What was run
 
-`npm run test:observations` — **60 passed, 0 failed, 5 suites, no suite-level failures.**
-`npm run test:mosaic` — **274 passed, 0 failed, 7 suites, no suite-level failures.**
+**marp-api, `tests/gpu-attempt-settings.test.js`** — 16 passed, 0 failed, and
+`corpus-guard` passed: the file left the database exactly as it found it.
 
-Four tests are new, in `tests/observations.test.js`, at the HTTP tier because that
-is the path the annotation GUI takes and the defect was in what the repository sent
-rather than in what the model declared:
+**marp-inference-worker, full `pytest`** — 271 passed, 0 failed, 4 skipped. The skips are
+platform branches and predate this change: two POSIX permission-bit tests, the non-Windows
+credential store, and a symlink test that needs elevation. There is no test job in this
+repository's CI, so this run is the evidence.
 
-| Test | Proves |
-| --- | --- |
-| takes the id from the sequence, so the two stay together | R1 |
-| leaves the sequence at or ahead of the table maximum | R2 |
-| gives two simultaneous creates different ids | R3 |
-| ignores an observation_id the caller supplies | R4 |
+**Across the two repositories, once, not committed.** The worker's real code built the
+event it would send — real `DEFAULT_CFG`, real `TrackerArgs`, a checkpoint `imgsz` of 1280,
+the deep-sea regime from `object_tracking_live.py` and one misspelt key — and it was posted
+through the real API. All 12 settings landed with the values and sources the worker
+reported, and both ignored keys were recorded:
 
-## Proven red before green
+    agnostic_nms true/job   augment true/job   class_match_iou 0.4/engine
+    confidence 0.001/job    half false/default imgsz 1280/job     iou 0.2/job
+    match_thresh 0.8/job    max_det 300/default mot20 true/job
+    track_buffer 300/job    track_thresh 0.01/job
+    ignored: track_threshh '0.5', tracker 'null'
 
-The repository was reverted to `develop`'s version, the new block run, and the
-tripwire failed:
+This is the tier the worker's own contract suite warns about: six divergences once passed
+both repositories' tests and broke only when the halves ran together.
 
-    Tests: 3 passed, 1 failed, 6 skipped, 10 total
-    ✗ Who assigns an observation id (#62) > takes the id from the sequence, so the two stay together
+**The migrations, both ways.** Applied, undone, and applied again. `guardDataIntegrity`
+reported no rows deleted, dereferenced or orphaned across 114,613 observations and 571,316
+events. The undo removed the three tables and the column and put the event kinds back to
+`metric, log, note`.
 
-Then restored. **Only one of the four goes red**, and that is worth saying rather
-than implying all four are tripwires: R4's test passes under the old code too,
-because `max(observation_id) + 1` also overwrote a caller's id; it is a guard
-against a future regression rather than a demonstration of this one. R2 and R3 need
-a run with real concurrency and a drifted sequence to fail, which is the state this
-migration removes.
+**A guard that can go red.** With the engine's `except` made to re-raise,
+`test_a_fault_in_the_settings_report_does_not_fail_the_job` fails; restored, it passes.
 
-## The mosaic suite is the real evidence
+**`npm run test:gpu`, the whole group** — after the development queue of 1,161 test jobs
+was cancelled through `gpuService.cancelJob`, which five of these suites need empty:
 
-Before, on `develop`, with the sequence 10,478 behind:
+    Test Suites : 8 passed, 0 failed, 8 total
+    Tests       : 168 passed, 0 failed, 0 skipped, 168 total
 
-    npm run test:mosaic        133 passed, 141 failed
+    gpu-orchestration 55   gpu-lease-race 6   gpu-abandoned-poll 4   gpu-video-resolution 30
+    gpu-playback-reporting 12   gpu-observation-ingest 43   gpu-attempt-settings 16
+    worker-provisioning 2
 
-After:
+`corpus-guard` failed no file. `gpu-observation-ingest` is the suite that exercises the
+ingest path this change touches.
 
-    npm run test:mosaic        274 passed, 0 failed
+## Not covered
 
-Every one of the 141 failed inside `addObservations`, a helper that inserts with the
-column default. `tests/dataset-observations-cascade.test.js` went 0/3 to 3/3 the
-same way.
+- A real inference run on a GPU worker end to end. The wire-level and cross-repository
+  checks cover the contract; the frame loop itself is unchanged.
+- The testing database (`marp_test`) was not rebuilt. Nothing in the browser tier reads
+  these tables.
 
-## The migration
+## Found and left alone
 
-Run against development:
-
-    [observations sequence] max_id 18040, sequence 18040 -> 18040.
-    The next observation takes 18041.
-
-Run twice (undo, then up again) to confirm it is idempotent, and it reports the
-no-op `down` honestly rather than pretending to reverse.
-
-**Not verified against production**, and it cannot be from here. Production has
-never advanced this sequence either, so the migration's `up` is what stops the first
-insert after deploy from colliding — that is the half of this change that cannot be
-done in code, and it should be watched on the release.
-
-## Note on the corpus guard
-
-Both groups ran clean, including the guard — the first fully clean run of the night.
-Earlier runs reported `gpu_workers` and `service_tokens` modified by the live pool;
-that traffic happened to be quiet here. The environmental noise is unchanged, not
-fixed.
+- **`gpu-abandoned-poll` has no queued-jobs guard**, unlike the five suites above. Run
+  against a non-empty queue it leased three real jobs and left four workers and three
+  attempts behind. Cleaned up; the guard itself is not this task's.
+- **Test debris from 2026-09-19**: workers `jest-ingest-worker-1789805535629` and
+  `jest-ingest-worker-1789805601846`, and about fifty attempts on test jobs 6706–6745.
