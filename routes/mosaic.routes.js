@@ -1,5 +1,5 @@
 /**
- * The mosaic reviewer's two query routes.
+ * The mosaic reviewer's query routes, and the source-video inspector's read (#181).
  *
  * Phase 4 of #68: the endpoint `frontend/apps/marp-mosaic-review` is already built
  * against, whose fixture implementation is that app's `src/data.js` `queryPages()`
@@ -37,6 +37,7 @@
  */
 
 const mosaicRepository = require('../repository/mosaic.repository');
+const videoContextService = require('../service/mosaic-video-context.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
@@ -245,6 +246,97 @@ function registerMosaicRoutes(app) {
         }),
     });
 
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: PERMISSION,
+        path: '/api/mosaic/observations/video-context',
+        summary: 'The video, moment and keyframes of a page of observations, for the source-video inspector',
+        description:
+            'Groups the named observations by the video they came from and answers, per video, the Jellyfin item to play and its '
+            + 'nominal frame rate, and per observation its moment and its keyframe boxes **in seconds** (#181). Times are decided '
+            + 'here because a frame number means different things by who wrote it: the annotation GUI counts at an assumed 25, a GPU '
+            + 'row at the video\'s nominal rate. The video is resolved from `video_source` exactly as the thumbnail pass resolves it, '
+            + 'and a weak match is returned with `jellyfin_item_id` null and a reason rather than guessed at. `jellyfin_server` is '
+            + 'where a reviewer signs in with their own Jellyfin account; no Jellyfin credential passes through MARP.',
+        tags: [TAG],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['observation_ids'],
+                        properties: {
+                            observation_ids: {
+                                type: 'array',
+                                items: { type: 'integer' },
+                                maxItems: videoContextService.MAX_OBSERVATIONS,
+                                example: [115874, 115875],
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: 'The observations, grouped by video.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                jellyfin_server: { type: 'string', nullable: true },
+                                videos: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            video_source: { type: 'string', nullable: true },
+                                            jellyfin_item_id: { type: 'string', nullable: true },
+                                            unresolved_reason: { type: 'string', nullable: true },
+                                            frame_rate: { type: 'number', nullable: true },
+                                            observations: {
+                                                type: 'array',
+                                                items: {
+                                                    type: 'object',
+                                                    properties: {
+                                                        observation_id: { type: 'integer' },
+                                                        comname: { type: 'string', nullable: true },
+                                                        moment_s: { type: 'number', nullable: true },
+                                                        keyframes: {
+                                                            type: 'array',
+                                                            items: {
+                                                                type: 'object',
+                                                                properties: {
+                                                                    t: { type: 'number', description: 'Seconds into the video.' },
+                                                                    subset: { type: 'string', nullable: true },
+                                                                    type: { type: 'string', nullable: true },
+                                                                    x: { type: 'number' },
+                                                                    y: { type: 'number' },
+                                                                    width: { type: 'number' },
+                                                                    height: { type: 'number' },
+                                                                },
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoContextService.videoContext(req.body || {}));
+        }),
+    });
 }
 
 module.exports = registerMosaicRoutes;

@@ -55,6 +55,8 @@ const SUBSYSTEMS = {
             // and the row's reviewer ids. Same group as the query it rides beside --
             // both are the read path the mosaic client joins to.
             'mosaic-facets',
+            // #181: the source-video inspector's read, which rides beside the query.
+            'mosaic-video-context',
             // Phase 6 (#118). Here rather than in a group of their own: the
             // thumbnail is what a mosaic tile draws, and the row key, the
             // enqueue-on-page-fetch and the `no-imagery` skip are all changes to
