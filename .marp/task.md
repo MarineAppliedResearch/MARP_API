@@ -94,6 +94,28 @@ Read from `origin/develop` and the development database on 2026-09-24.
   at 25 is left as it is: thumbnails refuse by R21, `classifyRow` and the timecode resync
   treat a non-25 row as not reproducible and skip it, and the annotation GUI is
   VIDEO_PROCESSING_GUI#221. Each is the safe behaviour for its own assumption.
+- [ ] **A8 · cross-repository integration / data-meaning · blocking** — found in G2, running
+  job 7163's real staged artifact through the derivation. **The worker and MARP define
+  `frame` differently, and the two agree only at exactly 25 fps.** The worker writes
+  `frame = observation_frame % int(fps)` (`tracking/observations.py`, the `"frame"` key) — at
+  24.946 that is mod 24, so frame 430 is `"22"`. MARP's column is the time-based sub-second
+  index, `floor((ms % 1000) * fps / 1000)` — frame 430 is 17.237 s, so `"5"`. Across a
+  two-hour 24.946 fps video the two disagree on 172,807 of 180,000 frames, so **every real
+  result from a non-25 video is still refused**, fix or no fix, and the acceptance criterion
+  on job 7163 fails. The API's `tc` also rounded where the worker truncates (91 frames in two
+  hours); that part needed no decision and is fixed on the API side (`ecae9b0c`).
+  Options:
+  - **(A) The worker writes MARP's definition.** One line in marp-inference-worker and a
+    worker release; the API is unchanged and keeps checking every line. Nothing non-25
+    ingests until the new worker is running.
+  - **(B) The API derives `frame` itself and checks only `tc`.** No worker release; old
+    output ingests, including job 7163. Drops the half of the check that caught #231.
+  - **(C) The API checks `frame` with the worker's formula** but stores MARP's. Keeps a
+    check, on a number that means nothing at a non-integer rate.
+
+  Recommended: **(A)**. The column means what the GUI, `classifyRow` and the resync read it
+  as, and history barely weighs: about 177 artifacts were refused for frame rate and only
+  job 7163's is still on disk.
 
 ## Decisions
 
@@ -138,6 +160,8 @@ Read from `origin/develop` and the development database on 2026-09-24.
 
 ## Status
 
-- **Gate:** implementing
+- **Gate:** implementing — stopped at A8
 - **Notes:** A1 and A2 answered 2026-09-24 before bed; A3–A7 are judgement calls taken with
-  their reasons, for review in the morning before anything is pushed.
+  their reasons, for review in the morning before anything is pushed. A8 was found during
+  G2 and blocks the rest: R1–R9 are implemented and tested, but no real non-25 result
+  ingests until A8 is answered.
