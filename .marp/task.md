@@ -1,155 +1,143 @@
 ---
-task: MarineAppliedResearch/MARP_API#232
-repos: [marp-api, marp-inference-worker]
-status: verifying
-needs: []
+task: MarineAppliedResearch/MARP_API#231
+repos: [marp-api]
+status: implementing
+needs: [jellyfin]
 ---
 
 ## Goal
 
-When somebody looks at an observation that inference produced, they can say exactly how
-the model was run: every setting that shaped the result, whether the job asked for it or
-it was a default, and anything the job asked for that the worker ignored. Today two runs
-of the same model at confidence 0.60 and 0.001 — different scientific instruments — are
-indistinguishable in the database.
+A GPU result from a video that is not exactly 25 fps is ingested, with timecodes that
+agree with the video, instead of being refused. And a job can no longer report success
+when none of its results reached the database. Together these are why pieces of session 755
+hold no data: #231 refuses the result, and #230 turns the retry into a false success.
+
+Covers #231 and #230. One branch, because #231 supplies the failure that #230 launders.
 
 ## What investigation found
 
-Read from `origin/develop` of both repositories and the development database on
-2026-09-23. It changes the size of the job.
+Read from `origin/develop` and the development database on 2026-09-24.
 
-- **The worker already logs the settings it applies.** Worker PR #48 added an
-  `inference settings: confidence=… imgsz=… iou=…` log line, which cites this issue.
-  It reaches the database as free text inside `gpu_job_events` (690 attempts so far).
-- **The engine already returns the effective tracker settings.** `TrackingEngine.run()`
-  returns `"tracker": tracker_args.as_dict` and `"confidence"` in its summary, which is
-  stored inside the `attempt finished as succeeded` log event (3,124 attempts).
-- **What is genuinely missing:**
-  - effective values for predict settings the job did not set — the log line says
-    `(ultralytics defaults)` instead of the values, which is the gap the issue names;
-  - whether each value came from the job or from a default;
-  - ignored keys, as data rather than as a phrase in a log line;
-  - a queryable home — today the values are only recoverable by parsing log payloads;
-  - failed, preempted and cancelled attempts, which never return a summary;
-  - any link from an observation to the attempt that produced it. `observations`
-    carries `gpu_job_id` only.
+- **Jellyfin reports two frame rates, and only one is what the video delivers.** For
+  `20260611_161158_Fwd` — jobs 7163, 7165 and 7167, the refusals quoted in #231 — Jellyfin
+  gives `AverageFrameRate` **24.946007** and `RealFrameRate` **25**; the worker measured
+  **24.946** from the stream. Three 25 fps videos report 25 for both. `RealFrameRate` is
+  the nominal rate and would reproduce the bug exactly.
+- **25 is assumed in three places, not two.** The ingest's timecode derivation and its
+  consistency check (`observation-ingest.service.js`, `deriveTimecodes`), `db/timecode.js`,
+  and `gpu.service.js#frameCountForVideo`, which sizes a whole-video submission from
+  Jellyfin's duration × 25 — so on 24.946 fps the last piece asks for frames that do not exist.
+- **#230's cause is one line.** `recordJobArtifacts` skips a hash *already recorded for
+  this job* under the same role. A retry producing byte-identical output names the same
+  hash, so the retry gets no artifact row; `ingestPublishedJob` filters to the current
+  attempt, finds none, returns `skipped`, and the job ends `succeeded` with nothing ingested.
+  The dedupe exists to stop a *replay* — the same attempt reporting twice — and keying it on
+  the job also swallows a different attempt handing over the same bytes.
+- **Nothing blocks a second row.** `artifacts` has no unique index on job, hash and role.
+- **Pieces already refused are recoverable by an existing route.** `POST
+  /api/gpu/jobs/:id/ingest` ingests from a job's staged artifacts with no attempt filter and
+  is idempotent per job, so once the frame rate is read inside the shared ingest, the
+  recovery path is the route that exists.
+- **Thumbnails are already safe.** The extraction pass refuses to seek when the source rate
+  differs from 25 by more than 0.01 (R21), so a 24.946 fps observation gets an honest
+  refusal rather than a picture of the wrong moment.
 
 ## Requirements
 
-- **R1** — Every attempt records the inference settings the worker applied: at least
-  `confidence`, `iou`, `imgsz`, `augment`, `agnostic_nms`, `max_det`, `half`,
-  `track_thresh`, `match_thresh`, `track_buffer` and `mot20`.
-- **R2** — Every recorded value states its source: `job` when the spec set it,
-  `default` when it did not. A default is recorded as its value, never as "default".
-- **R3** — Keys the job spec set and the worker did not honour are recorded as ignored.
-- **R4** — Settings are recorded when the engine resolves them, before the first frame,
-  so an attempt that fails, is preempted or is cancelled still carries them.
-- **R5** — The record lives in normalised tables, queryable setting by setting, not only
-  in a log payload. The schema stays self-describing: what each setting is, which engine
-  it belongs to and what type it holds are in the database, not only in worker code.
-- **R6** — An observation can be traced to the settings of the attempt that produced it.
-- **R7** — An attempt from a worker that does not report settings stores nothing, and
-  that absence is stored as absence: never guessed, never copied from the job spec.
+- **R1** — The ingest derives the timecode columns at the video's frame rate as Jellyfin's
+  `AverageFrameRate` reports it, read through the job's `jellyfin_item_id`.
+- **R2** — A result from a 24.946 fps video ingests, with `tc`, `frame`, `mediaPosition`
+  and `actualPosition` agreeing with each other and with the worker's own report.
+- **R3** — The consistency check still refuses a result whose timecode does not match its
+  frame number, at the video's real rate.
+- **R4** — When no rate can be read — a bare `video.url`, Jellyfin unreachable, or a stream
+  with no `AverageFrameRate` — the ingest uses 25 as today, says so in the log, and R3 stays
+  the backstop: a 25 fps video still ingests, and any other is refused rather than stored wrong.
+- **R5** — A whole-video submission is sized at the video's frame rate, not at 25.
+- **R6** — A piece already refused for this reason can be re-ingested from its staged
+  artifact through `POST /api/gpu/jobs/:id/ingest`.
+- **R7** — A different attempt handing over bytes an earlier attempt already handed over
+  gets its own artifact row; the same attempt reporting twice still records once.
+- **R8** — A `succeeded` attempt that hands over no artifacts, for a job whose spec names a
+  session, is withdrawn like an ingest failure rather than recorded as a success.
+- **R9** — Existing observations are not changed. Rows written before this were derived at
+  an assumed 25; the code says so where a future bug would lead.
 
 ## Open assumptions
 
-- [x] **A1 · database/schema · blocking** — answered 2026-09-23: **normalised tables, not
-  `jsonb`.** *"I want everything to be as queryable as we can get it while maintaining the
-  ability to understand the schema."* The shape is A8.
-- [x] **A2 · API contract / cross-repository · blocking** — answered 2026-09-23: **reported
-  before the first frame.** The worker reports the record
-  as a structured event the moment the engine resolves it, and the API writes it to the
-  settings tables. The alternative, adding it to the finish summary that already exists, is
-  less code but breaks R4: a failed attempt never returns a summary. This adds a named
-  field to the worker-to-API protocol.
-- [x] **A3 · scientific/data-meaning · blocking** — answered 2026-09-23: **yes, add the
-  nullable `observations.gpu_attempt_id`, new rows only.** How an observation reaches its
-  attempt (R6). A job that yields and resumes can hold observations from several
-  attempts on different workers — potentially different worker versions with different
-  defaults — so `gpu_jobs.published_attempt_id` names one attempt and can be wrong for
-  the rest. Proposal: a nullable `observations.gpu_attempt_id`, set at ingest for new
-  rows only. Existing rows stay NULL, so nothing is changed or lost.
-- [ ] **A4 · data-meaning · non-blocking** — No backfill. Existing attempts carry the
-  tracker settings in a log payload but the predict settings only as
-  `(ultralytics defaults)`, so a backfill would record some values as known and others
-  as unknown in a way that reads as complete. They stay NULL, per R7.
-- [ ] **A5 · behavioural · non-blocking** — Ultralytics defaults are read at run time
-  from `ultralytics.cfg.DEFAULT_CFG` rather than written into worker code, so a recorded
-  default is what that worker's pinned Ultralytics actually used.
-- [ ] **A6 · behavioural · non-blocking** — Engine constants that shape results but are
-  not job settings, such as the class-matching IoU of 0.4, are recorded with source
-  `engine`. Cheap, and within the issue's intent that nothing about how the model ran
-  goes unrecorded.
-- [x] **A7 · environment · non-blocking** — answered 2026-09-23: **no — use the main
-  MARP_API checkout and its database, the ones behind port 3000, and restart the API as
-  needed.** *"that IS the proper one to use."* Proposed was: implementation happens in isolated
-  workspaces (`marp agent start`) for both repositories. The main MARP_API checkout is
-  serving the API on port 3000 for another agent, and nodemon restarts it on every
-  `.js` change. The worker checkout is mid-task on the watch-window branch with
-  uncommitted work.
-- [x] **A8 · database/schema · blocking** — answered 2026-09-23: **option 1.** Which
-  normalised shape (follows from A1).
-  *Option 1, recommended:* a catalogue `inference_settings (id, name, engine, value_type,
-  description)`; values in `gpu_attempt_settings (attempt_id, setting_id, value_real |
-  value_int | value_bool | value_text, source)` with exactly one value column set per
-  `value_type`; and `gpu_attempt_ignored_params (attempt_id, key, requested_value)`. A
-  setting the catalogue does not yet know is added to it and stored, never refused —
-  refusing would lose the record this issue exists to make. *Option 2:* one wide row per
-  attempt, a typed column and a source column per setting. Option 1 because settings
-  differ by engine (`mock` has none; MARP_API#221's substrate models will have their
-  own), the list grows (PR #48 already added `max_det` and `half`), and the catalogue is
-  what keeps the schema understandable. A view can lay common settings out wide.
+- [x] **A1 · data-meaning · blocking** — answered 2026-09-24: **the frame rate is what
+  Jellyfin reports.** *"what Jellyfin reports and what Jellyfin gives you should be the
+  same thing."* Refined by evidence to `AverageFrameRate`, the one of Jellyfin's two rates
+  that matches what the stream delivers; `RealFrameRate` is nominal and reads 25 on the
+  affected video.
+- [x] **A2 · data-meaning · blocking** — answered 2026-09-24: **existing observations are
+  not changed**, and the code carries a note so a later bug can be traced to the seam.
+- [ ] **A3 · behavioural · non-blocking** — With no readable rate, fall back to 25 (R4)
+  rather than failing the ingest. The consistency check makes the fallback safe: it can only
+  store a 25 fps video, and it refuses anything else exactly as today. Failing instead would
+  refuse every 25 fps result whenever Jellyfin is briefly down.
+- [ ] **A4 · behavioural · non-blocking** — #230 offers two fixes: the retry ingests the
+  artifact an earlier attempt staged, or a data-caused failure does not retry. Taken: the
+  first (R7). The code records the second as the opposite of a settled decision — *"A retry
+  … is what turns a silent loss into something that either fixes itself … or keeps failing
+  loudly until somebody looks"*, beside Isaac's *"if a job is considered finished the api has
+  actually ingested it's data"*. Not retrying data-caused failures could be added later; it
+  would reverse that.
+- [ ] **A5 · behavioural · non-blocking** — #230's *"cannot reach succeeded with
+  ingested_at NULL by any path"* is read for jobs whose spec names a session. A job with no
+  session is designed to finish without an ingest — `ingestPublishedJob` calls it a
+  legitimate run — and the literal reading would make those impossible to finish.
+- [ ] **A6 · behavioural · non-blocking** — R8 applies to `succeeded` only. A `yielded`
+  attempt is a stop, not a claim of success, and the engine always publishes a results file,
+  so a stop with none is a separate anomaly.
+- [ ] **A7 · data-meaning · non-blocking** — Everything downstream that reads these columns
+  at 25 is left as it is: thumbnails refuse by R21, `classifyRow` and the timecode resync
+  treat a non-25 row as not reproducible and skip it, and the annotation GUI is
+  VIDEO_PROCESSING_GUI#221. Each is the safe behaviour for its own assumption.
 
 ## Decisions
 
-- **2026-09-23** — Normalised tables rather than a `jsonb` column (A1).
-- **2026-09-23** — The worker reports its settings before the first frame, so a failed
-  attempt still has them (A2).
-- **2026-09-23** — `observations.gpu_attempt_id`, nullable, written at ingest for new rows
-  only; existing rows untouched (A3).
-- **2026-09-23** — Work in the main MARP_API checkout and its database, the ones behind
-  port 3000 (A7).
-- **2026-09-23** — Catalogue plus one row per setting per attempt, plus an ignored-params
-  table; an unknown setting is registered, never refused (A8).
-- **2026-09-23** — Not the existing `hyperparameters` table. It hangs off `training_runs`
-  through a `NOT NULL` key, holds one `jsonb` blob, and has no rows: it describes training,
-  and it is the shape A1 decided against.
-- **2026-09-23** — The report is a `settings` kind on the existing events stream, so it
-  inherits the lease check and the `(attempt_id, seq)` replay safety rather than needing
-  its own.
-- **2026-09-23** — The first report for an attempt is the record. A later one is kept as an
-  event and written nowhere else: the rule `published_attempt_id` already follows.
+- **2026-09-24** — Jellyfin's `AverageFrameRate`, measured to agree with the worker's own
+  reading on the refused video (A1).
+- **2026-09-24** — Existing observations untouched; a note in the code at the seam (A2).
 
 ## Plan
 
-1. Worker: build the record in `TrackingEngine.run()` — every setting as
-   `{value, source}` plus an `ignored` list — and report it as a structured event before
-   the first frame (A2).
-2. API: migrations creating the settings tables in the shape A8 settles, and seeding the
-   catalogue with the settings the worker has today — a seeder, not typed rows.
-3. API: accept the event and write the rows; accept its absence from an older worker
-   without error (R7).
-4. API: migration adding `observations.gpu_attempt_id`, written at ingest (A3).
-5. Tests at the tiers that can see each change; see the test plan.
+1. `repository/jellyfin.repository.js`: read `AverageFrameRate` and `RealFrameRate` from an
+   item's video stream.
+2. `db/timecode.js`: `deriveFrame` and `absoluteFrame` take an optional frame rate,
+   defaulting to 25, so every existing caller is unchanged. The note (R9) goes on
+   `ASSUMED_FPS`.
+3. `service/observation-ingest.service.js`: resolve the rate once per ingest (R1, R4) and
+   derive and check at it (R2, R3).
+4. `service/gpu.service.js#frameCountForVideo`: size at the rate (R5).
+5. `repository/gpu.repository.js#recordJobArtifacts`: dedupe on the attempt as well (R7).
+6. `service/gpu.service.js#recordResult`: withdraw a success that handed over nothing (R8).
+7. Tests at the tier that can see each; see the test plan.
 
 ## Acceptance criteria
 
-- A job that sets `conf 0.001` and nothing else produces an attempt whose record shows
-  `confidence 0.001` from `job` and every other setting with its real value from
-  `default`.
-- A job that sets a key the worker does not honour lists it under `ignored`.
-- An attempt that fails after settings are resolved still has its record.
-- An attempt from a worker without this change stores NULL and ingests as it does today.
-- An observation ingested after this change resolves to its attempt's record.
+- A result line consistent at 24.946 fps ingests, and its four timecode columns agree.
+- The same line checked at 25 is refused, as today.
+- A retry handing over the byte-identical artifact of a refused attempt ingests it.
+- A `succeeded` attempt naming no artifacts for a session-naming job ends `failed`.
+- `npm run test:gpu` and `npm run test:observations` pass.
+- Job 7163's real staged artifact passes the derivation at Jellyfin's rate.
 
 ## Test plan
 
-Filled in at G3.
+- `db/timecode.js`: the frame-rate argument, and that its absence is exactly today's arithmetic.
+- The Jellyfin parse: both rates read from a raw item.
+- The ingest at the API tier, with Jellyfin stubbed the way `gpu-video-resolution` stubs it:
+  R1–R4 and R6.
+- `frameCountForVideo` at a stubbed 24.946 (R5).
+- #230's own reproduction at the API tier, no GPU: a first attempt hands over a hash and its
+  ingest is refused; a second attempt hands over the same hash (R7). And a succeeded attempt
+  naming nothing (R8).
+- Once, not committed: job 7163's staged artifact through the derivation at 24.946007.
 
 ## Status
 
-- **Gate:** verifying
-- **Notes:** Both halves implemented and committed. A5 changed in how, not in intent: a
-  default is read the way `predict()` resolves it -- the checkpoint's own `imgsz` before
-  DEFAULT_CFG -- because DEFAULT_CFG alone would record 640 for a run at 1280. See
-  `.marp/verification.md`; the rest of `npm run test:gpu` waits on the queue being cleared.
+- **Gate:** implementing
+- **Notes:** A1 and A2 answered 2026-09-24 before bed; A3–A7 are judgement calls taken with
+  their reasons, for review in the morning before anything is pushed.
