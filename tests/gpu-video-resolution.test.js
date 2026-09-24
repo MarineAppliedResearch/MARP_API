@@ -384,8 +384,8 @@ describe('GPU job submission: the model', () => {
 /**
  * Where a video ends, when nobody said.
  *
- * `runtimeTicks` 36000000000 is one hour, and MARP fixes video time at 25 fps,
- * so the fixture video is 90000 frames. Every expectation below is that number
+ * `runtimeTicks` 36000000000 is one hour, and the stubbed frame rate is 25, so
+ * the fixture video is 90000 frames. Every expectation below is that number
  * or derived from it, rather than a literal repeated -- if the fixture's
  * duration changes, these fail loudly instead of passing against a stale figure.
  */
@@ -420,6 +420,33 @@ describe('GPU job submission: the range it works out', () => {
 
         expect(response.status).toBe(200);
         expect(response.body.jobs[0].spec.range).toEqual({ start_frame: 0, end_frame: FIXTURE_FRAMES });
+    });
+
+    /**
+     * #231. The rate is Jellyfin's AverageFrameRate now, the one that matches what
+     * the stream delivers. At 25, an hour of the refused CAMPA2026 footage would be
+     * sized 195 frames past its end.
+     */
+    it('sizes a whole video at the rate Jellyfin reports, not at 25', async () => {
+        jellyfinRepository.getVideoFrameRate.mockResolvedValueOnce({ averageFrameRate: 24.946007, realFrameRate: 25 });
+
+        const response = await submitRange(undefined);
+
+        expect(response.status).toBe(200);
+        expect(response.body.jobs[0].spec.range).toEqual({
+            start_frame: 0,
+            end_frame: Math.floor((JELLYFIN_ITEM.runtimeTicks / 10_000_000) * 24.946007),
+        });
+        expect(response.body.jobs[0].spec.range.end_frame).toBeLessThan(FIXTURE_FRAMES);
+    });
+
+    it('sizes at 25 when the rate cannot be read, as it always did', async () => {
+        jellyfinRepository.getVideoFrameRate.mockRejectedValueOnce(new Error('jellyfin.invalid is unreachable'));
+
+        const response = await submitRange(undefined);
+
+        expect(response.status).toBe(200);
+        expect(response.body.jobs[0].spec.range.end_frame).toBe(FIXTURE_FRAMES);
     });
 
     it('runs to the end when only a start is given', async () => {

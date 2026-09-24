@@ -756,7 +756,9 @@ class ObservationIngestService {
      * @throws {ApiError} 409 when the derivation disagrees with the worker.
      */
     deriveTimecodes(row, where, fps = ASSUMED_FPS) {
-        const milliseconds = (row.observation_frame * 1000) / fps;
+        // Truncated, as ticks are and as the worker truncates seconds. Rounding put a
+        // frame 0.09 ms before a second into the next one. At 25 every frame is whole ms.
+        const milliseconds = Math.floor((row.observation_frame * 1000) / fps);
         const position = formatTimeSpan(milliseconds);
         const tc = deriveTc(milliseconds);
         const frame = deriveFrame(milliseconds, fps);

@@ -35,8 +35,12 @@ const { QueryTypes } = require('sequelize');
 const db = require('../model');
 const ingestRepository = require('../repository/observation-ingest.repository');
 const ingestService = require('../service/observation-ingest.service');
+const jellyfinRepository = require('../repository/jellyfin.repository');
+const gpuRepository = require('../repository/gpu.repository');
 const { ARTIFACT_DIRECTORY } = require('../config/gpu-orchestration');
-const { classifyRow, parseTimeSpan, absoluteFrame } = require('../db/timecode');
+const {
+    classifyRow, parseTimeSpan, absoluteFrame, deriveTc, deriveFrame,
+} = require('../db/timecode');
 
 /**
  * Unique per run, so a failed run's leftovers are recognisable and two runs
@@ -1573,5 +1577,400 @@ describe('An artifact recorded without its bytes', () => {
 
         expect(reported.status).toBe(409);
         expect(reported.body.error.message).toContain('has not been handed over');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// #231 and #230: a video that is not exactly 25 fps, and the retry after it.
+// ---------------------------------------------------------------------------
+
+/**
+ * The frame rate Jellyfin reports for the CAMPA2026 video #231 was found on,
+ * `20260611_161158_Fwd`, as `AverageFrameRate`. Its `RealFrameRate` is 25.
+ *
+ * @constant
+ * @type {number}
+ */
+const CAMPA_FPS = 24.946007;
+
+/**
+ * The Jellyfin item these tests' jobs name. Every Jellyfin call is stubbed, so
+ * this never reaches the media server.
+ *
+ * @constant
+ * @type {string}
+ */
+const ITEM_231 = `jest-231-item-${runId}`;
+
+/**
+ * A spec naming a Jellyfin item, so the ingest has a video to read a rate for.
+ *
+ * @returns {Object} A submittable spec.
+ */
+function itemSpecFor() {
+    return specFor({ video: { jellyfin_item_id: ITEM_231, source_name: 'jest-231.mp4' } });
+}
+
+/**
+ * The real result rows as a worker would write them for a video at `fps`: the
+ * same absolute frames, with `tc` and `frame` derived at that rate.
+ *
+ * @param {Array<Object>} rows - Rows as recorded at 25 fps.
+ * @param {number} fps - The video's frame rate.
+ * @returns {Array<Object>} Rows consistent at `fps`.
+ */
+function atRate(rows, fps) {
+    return rows.map((row) => {
+        const milliseconds = Math.floor((row.observation_frame * 1000) / fps);
+
+        return { ...row, tc: deriveTc(milliseconds), frame: deriveFrame(milliseconds, fps) };
+    });
+}
+
+/**
+ * Stub every Jellyfin call a job naming an item makes -- at lease, at the
+ * playback stop, and at ingest -- with the frame rate the video is to report.
+ *
+ * @param {number|null|Error} rate - The `AverageFrameRate` Jellyfin reports:
+ *   a number, null for a stream that reports none, or an Error for a server
+ *   that cannot be reached.
+ * @returns {void}
+ */
+function stubJellyfin(rate) {
+    jest.spyOn(jellyfinRepository, 'buildDirectStreamUrl')
+        .mockResolvedValue(`http://jellyfin.invalid/Videos/${ITEM_231}/stream?static=true`);
+    jest.spyOn(jellyfinRepository, 'getItem').mockResolvedValue({
+        id: ITEM_231, name: 'jest-231', type: 'Video', path: 'C:/media/jest-231.mp4',
+        isFolder: false, mediaType: 'Video', runtimeTicks: 36000000000, childCount: null,
+    });
+    jest.spyOn(jellyfinRepository, 'reportPlaybackStarted').mockResolvedValue();
+    jest.spyOn(jellyfinRepository, 'reportPlaybackProgress').mockResolvedValue();
+    jest.spyOn(jellyfinRepository, 'reportPlaybackStopped').mockResolvedValue();
+    jest.spyOn(jellyfinRepository, 'getPlaybackSession').mockResolvedValue(null);
+
+    const rates = jest.spyOn(jellyfinRepository, 'getVideoFrameRate');
+
+    if (rate instanceof Error) {
+        rates.mockRejectedValue(rate);
+    } else {
+        rates.mockResolvedValue({ averageFrameRate: rate, realFrameRate: 25 });
+    }
+}
+
+/**
+ * Lease a job that has gone back to the queue.
+ *
+ * @async
+ * @param {number} jobId - The job expected to come back.
+ * @returns {Promise<Object>} The new lease.
+ */
+async function leaseAgain(jobId) {
+    const leased = await global.api
+        .post('/api/v2/gpu/poll')
+        .send({ worker_id: workerId, slot_indexes: [0], wait_seconds: 0 });
+
+    expect(leased.status).toBe(200);
+    expect(leased.body.job_id).toBe(jobId);
+
+    return leased.body;
+}
+
+/**
+ * Take a job this suite left queued out of the queue, so no later poll leases it.
+ *
+ * @async
+ * @param {number} jobId - The job.
+ * @returns {Promise<void>}
+ */
+async function cancel(jobId) {
+    const response = await global.api.post(`/api/v2/gpu/jobs/${jobId}/cancel`);
+
+    expect(response.status).toBe(200);
+}
+
+/**
+ * R1-R4 of #231: the timecode columns are derived at the video's own rate.
+ */
+describe('A video that is not exactly 25 fps (#231)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    it('ingests a result derived at the rate Jellyfin reports, and every timecode agrees with it', async () => {
+        stubJellyfin(CAMPA_FPS);
+        const rows = atRate(REAL_RESULT, CAMPA_FPS);
+
+        // The fixture has to exercise the difference, or this proves nothing:
+        // at these frames the two rates disagree about the second.
+        expect(rows.some((row, index) => row.tc !== REAL_RESULT[index].tc)).toBe(true);
+
+        const { job, reported } = await runJob(rows, itemSpecFor());
+
+        expect(reported.status).toBe(200);
+        expect(reported.body.ingest).toMatchObject({
+            ingested: true,
+            frame_rate: CAMPA_FPS,
+            frame_rate_source: 'jellyfin AverageFrameRate',
+        });
+
+        const stored = await observationsForJob(job.id);
+
+        expect(stored).toHaveLength(rows.length);
+
+        for (let index = 0; index < stored.length; index += 1) {
+            const position = parseTimeSpan(stored[index].actualPosition);
+
+            // The stored moment is the frame's time at 24.946 fps, truncated to the millisecond.
+            const behind = (rows[index].observation_frame * 1000) / CAMPA_FPS - position;
+
+            expect(behind).toBeGreaterThanOrEqual(0);
+            expect(behind).toBeLessThan(1);
+            expect(stored[index].tc).toBe(rows[index].tc);
+            expect(String(stored[index].frame)).toBe(rows[index].frame);
+            expect(stored[index].mediaPosition).toBe(stored[index].actualPosition);
+        }
+    });
+
+    /**
+     * Frame 923 starts at 36.99991 s. The worker truncates and says 36; rounding
+     * the milliseconds said 37 and refused the line. 91 frames in two hours do this.
+     */
+    it('puts a frame just under a whole second in that second, as the worker does', () => {
+        const row = { observation_frame: 923, tc: '00:00:36', frame: '24' };
+        const derived = ingestService.deriveTimecodes(row, 'line 1', CAMPA_FPS);
+
+        expect(derived).toMatchObject({ tc: '00:00:36', frame: '24' });
+        expect(derived.actualPosition).toBe('00:00:36.9990000');
+    });
+
+    it('still refuses a result that disagrees with itself at the video\'s rate', async () => {
+        stubJellyfin(CAMPA_FPS);
+
+        // Consistent at 25, which is not this video's rate.
+        const { job, reported } = await runJob(REAL_RESULT, itemSpecFor());
+
+        expect(reported.body.ingest.ingested).toBe(false);
+        expect(reported.body.ingest.failed).toContain(`${CAMPA_FPS} fps`);
+        expect(await observationsForJob(job.id)).toHaveLength(0);
+
+        await cancel(job.id);
+    });
+
+    it('derives at 25 when Jellyfin cannot be read, so a 25 fps result still ingests', async () => {
+        stubJellyfin(new Error('jellyfin.invalid is unreachable'));
+
+        const { job, reported } = await runJob(REAL_RESULT, itemSpecFor());
+
+        expect(reported.body.ingest).toMatchObject({ ingested: true, frame_rate: 25 });
+        expect(reported.body.ingest.frame_rate_source).toMatch(/^assumed: Jellyfin could not be read/);
+        expect(await observationsForJob(job.id)).toHaveLength(REAL_RESULT.length);
+    });
+
+    it('refuses rather than stores wrong when no rate is reported and the video is not 25 fps', async () => {
+        stubJellyfin(null);
+
+        const { job, reported } = await runJob(atRate(REAL_RESULT, CAMPA_FPS), itemSpecFor());
+
+        expect(reported.body.ingest.ingested).toBe(false);
+        expect(reported.body.ingest.failed).toContain('25 fps');
+        expect(await observationsForJob(job.id)).toHaveLength(0);
+
+        await cancel(job.id);
+    });
+
+    /**
+     * R6. The pieces #231 cost were refused, and then #230 marked them
+     * succeeded with nothing ingested. The recovery route reads a succeeded
+     * job's staged artifact, so once the rate is readable it takes them in.
+     */
+    it('re-ingests a piece refused for its frame rate, once the rate is read', async () => {
+        stubJellyfin(null);
+        const rows = atRate(REAL_RESULT, CAMPA_FPS);
+        const { job, reported } = await runJob(rows, itemSpecFor());
+
+        expect(reported.body.ingest.ingested).toBe(false);
+
+        // The state #230 left 505 jobs in: succeeded, with nothing ingested.
+        await db.sequelize.query("UPDATE gpu_jobs SET state = 'succeeded' WHERE id = :id", {
+            replacements: { id: job.id },
+        });
+
+        jest.restoreAllMocks();
+        stubJellyfin(CAMPA_FPS);
+
+        const recovered = await global.api.post(`/api/v2/gpu/jobs/${job.id}/ingest`);
+
+        expect(recovered.status).toBe(200);
+        expect(recovered.body).toMatchObject({ ingested: true, frame_rate: CAMPA_FPS });
+        expect(await observationsForJob(job.id)).toHaveLength(rows.length);
+    });
+});
+
+/**
+ * #230: a retry of a refused attempt is ingested, and a success with nothing
+ * handed over is not a success.
+ */
+describe('A retry of an attempt whose results were refused (#230)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    /**
+     * The four-for-four pattern from the sweep, with no GPU: the first attempt
+     * hands over its artifact and is refused; the retry produces the same bytes,
+     * is told `already_have`, and names the same hash.
+     */
+    it('gives the retry its own artifact row, so it is ingested rather than skipped', async () => {
+        stubJellyfin(null);
+        const rows = atRate(REAL_RESULT, CAMPA_FPS);
+        const { job, lease, reported } = await runJob(rows, itemSpecFor());
+
+        expect(reported.body.attempt_state).toBe('failed');
+        expect(reported.body.job_state).toBe('queued');
+
+        // The rate is readable by the time of the retry.
+        jest.restoreAllMocks();
+        stubJellyfin(CAMPA_FPS);
+
+        const retry = await leaseAgain(job.id);
+        const again = await reportObservations(retry, rows);
+
+        expect(again.status).toBe(200);
+        expect(again.body.ingest).toMatchObject({ ingested: true });
+        expect(again.body.job_state).toBe('succeeded');
+
+        const artifacts = await query(
+            "SELECT metadata FROM artifacts WHERE job_id = :id AND artifact_type = 'observations'",
+            { id: job.id }
+        );
+
+        // One row per attempt, both naming the same bytes.
+        expect(artifacts.map((row) => Number(row.metadata.attempt_id)).sort((a, b) => a - b))
+            .toEqual([lease.attempt_id, retry.attempt_id].sort((a, b) => a - b));
+        expect(new Set(artifacts.map((row) => row.metadata.sha256)).size).toBe(1);
+
+        expect(await observationsForJob(job.id)).toHaveLength(rows.length);
+    });
+
+    /**
+     * The half of the dedupe that must not change: a replay is the same attempt
+     * reporting twice, and still records once.
+     */
+    it('still records one row when the same attempt hands the same bytes over twice', async () => {
+        const { job, lease } = await runJob(REAL_RESULT);
+        const [recorded] = await query(
+            "SELECT hash FROM artifacts WHERE job_id = :id AND artifact_type = 'observations'",
+            { id: job.id }
+        );
+        const [attempt] = await query('SELECT * FROM gpu_job_attempts WHERE id = :id', { id: lease.attempt_id });
+        const [jobRow] = await query('SELECT * FROM gpu_jobs WHERE id = :id', { id: job.id });
+
+        const written = await gpuRepository.recordJobArtifacts({
+            job: jobRow,
+            attempt,
+            artifacts: [{ sha256: recorded.hash, role: 'observations' }],
+        });
+
+        expect(written).toBe(0);
+
+        const [count] = await query(
+            "SELECT count(*)::int AS n FROM artifacts WHERE job_id = :id AND artifact_type = 'observations'",
+            { id: job.id }
+        );
+
+        expect(count.n).toBe(1);
+    });
+
+    it('withdraws a success that hands over no artifacts, for a job that names a session', async () => {
+        const { job, lease } = await submitAndLease(specFor());
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({ worker_id: workerId, lease_epoch: lease.lease_epoch, outcome: 'succeeded', artifacts: [] });
+
+        expect(reported.status).toBe(200);
+        expect(reported.body.ingest.failed).toMatch(/handed over no artifacts/);
+        expect(reported.body.attempt_state).toBe('failed');
+        expect(reported.body.job_state).not.toBe('succeeded');
+
+        const [attempt] = await query('SELECT state FROM gpu_job_attempts WHERE id = :id', { id: lease.attempt_id });
+
+        expect(attempt.state).toBe('failed');
+
+        await cancel(job.id);
+    });
+
+    it('leaves a stop that handed over nothing as a stop, not a failure', async () => {
+        const { job, lease } = await submitAndLease(specFor());
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'yielded',
+                completed_through_frame: 18100,
+                artifacts: [],
+            });
+
+        expect(reported.status).toBe(200);
+        expect(reported.body.ingest).toMatchObject({ ingested: false, skipped: 'this attempt handed over no artifacts' });
+
+        const [attempt] = await query('SELECT state FROM gpu_job_attempts WHERE id = :id', { id: lease.attempt_id });
+
+        expect(attempt.state).toBe('yielded');
+
+        await cancel(job.id);
+    });
+});
+
+/**
+ * Where #231's rate comes from: Jellyfin's video stream, its average rather
+ * than its nominal one.
+ */
+describe('Reading a video\'s frame rate from Jellyfin (#231)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    /**
+     * Answer one item lookup with a raw Jellyfin response.
+     *
+     * @param {Object} raw - The response body.
+     * @returns {void}
+     */
+    function answerWith(raw) {
+        jest.spyOn(jellyfinRepository, '_ensureAuthenticated').mockResolvedValue({ userId: 'jest-user' });
+        jest.spyOn(jellyfinRepository, '_authenticatedRequest').mockResolvedValue(raw);
+    }
+
+    it('reads both rates from the video stream, not the audio one', async () => {
+        answerWith({
+            Items: [{
+                MediaSources: [{
+                    MediaStreams: [
+                        { Type: 'Audio', AverageFrameRate: 0 },
+                        { Type: 'Video', AverageFrameRate: 24.946007, RealFrameRate: 25 },
+                    ],
+                }],
+            }],
+        });
+
+        await expect(jellyfinRepository.getVideoFrameRate(ITEM_231))
+            .resolves.toEqual({ averageFrameRate: 24.946007, realFrameRate: 25 });
+    });
+
+    it('reports a rate Jellyfin leaves out, or gives as zero, as none', async () => {
+        answerWith({ Items: [{ MediaSources: [{ MediaStreams: [{ Type: 'Video', AverageFrameRate: 0 }] }] }] });
+
+        await expect(jellyfinRepository.getVideoFrameRate(ITEM_231))
+            .resolves.toEqual({ averageFrameRate: null, realFrameRate: null });
+    });
+
+    it('answers null for an item with no video stream', async () => {
+        answerWith({ Items: [{ MediaSources: [{ MediaStreams: [{ Type: 'Audio' }] }] }] });
+
+        await expect(jellyfinRepository.getVideoFrameRate(ITEM_231)).resolves.toBeNull();
     });
 });
