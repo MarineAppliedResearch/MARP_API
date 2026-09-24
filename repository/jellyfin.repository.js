@@ -458,6 +458,58 @@ class JellyfinRepository {
      * @returns {Promise<Object>} Parsed playback info (see {@link JellyfinRepository#_parsePlaybackInfo}).
      * @throws {ApiError} 400/VALIDATION_ERROR when itemId is missing; 404/RESOURCE_NOT_FOUND when the item does not exist.
      */
+    /**
+     * The frame rates Jellyfin reports for an item's video stream (#231).
+     *
+     * **Two rates, and they are not the same thing.** `AverageFrameRate` is what
+     * the stream delivers -- frames over duration -- and `RealFrameRate` is the
+     * nominal rate the container declares. On `20260611_161158_Fwd` they read
+     * 24.946007 and 25, and the worker measured 24.946 from the stream itself, so
+     * a caller converting frames to time wants `averageFrameRate`. Both are
+     * returned so the difference stays visible rather than decided here.
+     *
+     * Kept out of `_parseItem` on purpose: that shape is the public `JellyfinItem`
+     * schema, and this is an internal need.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id.
+     * @param {Object} [clientIdentity] - Client identity for the session.
+     * @returns {Promise<{averageFrameRate: number|null, realFrameRate: number|null}|null>}
+     *   The two rates, a field null where Jellyfin gives none, or null when the
+     *   item has no video stream.
+     * @throws {ApiError} When the item id is missing or Jellyfin cannot be reached.
+     */
+    async getVideoFrameRate(itemId, clientIdentity = {}) {
+        if (!itemId) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const url =
+            `${this.baseUrl}/Users/${encodeURIComponent(session.userId)}/Items` +
+            `?Ids=${encodeURIComponent(itemId)}` +
+            `&Fields=${encodeURIComponent('MediaSources')}`;
+
+        const data = await this._authenticatedRequest(session, 'GET', url);
+        const [rawItem] = (data && data.Items) || [];
+        const streams = (rawItem && rawItem.MediaSources && rawItem.MediaSources[0]
+            && rawItem.MediaSources[0].MediaStreams) || [];
+        const video = streams.find((stream) => stream.Type === 'Video');
+
+        if (!video) {
+            return null;
+        }
+
+        // A rate Jellyfin leaves out, or reports as zero, is no rate at all.
+        const rate = (value) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : null);
+
+        return {
+            averageFrameRate: rate(video.AverageFrameRate),
+            realFrameRate: rate(video.RealFrameRate),
+        };
+    }
+
     async getPlaybackInfo(itemId, options = {}, clientIdentity = {}) {
         if (!itemId) {
             throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');

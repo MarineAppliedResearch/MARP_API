@@ -183,6 +183,9 @@ beforeEach(() => {
     // replace one of these without leaking that into the next.
     jest.spyOn(jellyfinRepository, 'buildDirectStreamUrl').mockResolvedValue(RESOLVED_URL);
     jest.spyOn(jellyfinRepository, 'getItem').mockResolvedValue(JELLYFIN_ITEM);
+    // A whole-video submission is sized at the video's rate since #231, so this
+    // is stubbed too -- otherwise sizing would reach the real media server.
+    jest.spyOn(jellyfinRepository, 'getVideoFrameRate').mockResolvedValue({ averageFrameRate: 25, realFrameRate: 25 });
     jest.spyOn(jellyfinRepository, 'reportPlaybackStarted').mockResolvedValue();
     jest.spyOn(jellyfinRepository, 'reportPlaybackProgress').mockResolvedValue();
     jest.spyOn(jellyfinRepository, 'reportPlaybackStopped').mockResolvedValue();

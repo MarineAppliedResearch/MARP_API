@@ -23,6 +23,16 @@
  * Frames per second the GUI assumes when deriving `frame`. Hardcoded there too;
  * VIDEO_PROCESSING_GUI#221 is about measuring it instead.
  *
+ * **If a timecode bug involves a video that is not exactly 25 fps, start here.**
+ * Until 2026-09-24 every machine-written observation was derived at this 25, and
+ * a result that disagreed was refused. Since MARP_API#231 the GPU ingest derives
+ * at the video's real rate -- Jellyfin's `AverageFrameRate`, 24.946 on some
+ * CAMPA2026 footage -- so the database holds rows derived both ways, and nothing
+ * on a row records which. Rows written before were deliberately left as they were.
+ * Everything that still converts at this constant (`classifyRow`, the timecode
+ * resync, the thumbnail pass, the annotation GUI) is correct for 25 fps video and
+ * treats a non-25 row as unreproducible or refuses it, which is the safe failure.
+ *
  * @constant
  * @type {number}
  */
@@ -131,12 +141,14 @@ function deriveTc(actualMs) {
  * media time; two different quantities sharing a name.
  *
  * @param {number} actualMs - Actual position in milliseconds.
+ * @param {number} [fps] - The video's frame rate. Defaults to {@link ASSUMED_FPS},
+ *   which is what every row the GUI wrote was derived at (#231).
  * @returns {string} Frame index as text, since the column is a string.
  */
-function deriveFrame(actualMs) {
+function deriveFrame(actualMs, fps = ASSUMED_FPS) {
     const withinSecond = ((actualMs % 1000) + 1000) % 1000;
 
-    return String(Math.floor((withinSecond * ASSUMED_FPS) / 1000));
+    return String(Math.floor((withinSecond * fps) / 1000));
 }
 
 /**
@@ -147,10 +159,11 @@ function deriveFrame(actualMs) {
  * {@link deriveFrame}, which is the sub-second index stored on an observation.
  *
  * @param {number} mediaMs - Media position in milliseconds.
+ * @param {number} [fps] - The video's frame rate. Defaults to {@link ASSUMED_FPS} (#231).
  * @returns {number} Absolute frame number.
  */
-function absoluteFrame(mediaMs) {
-    return Math.floor((mediaMs * ASSUMED_FPS) / 1000);
+function absoluteFrame(mediaMs, fps = ASSUMED_FPS) {
+    return Math.floor((mediaMs * fps) / 1000);
 }
 
 /**
