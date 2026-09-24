@@ -455,6 +455,22 @@ afterAll(async () => {
  * R1, R7, R9, R10, R11, R15 -- the whole of one real run, end to end.
  */
 describe('Ingesting a real result file', () => {
+    /**
+     * #62. The ingest assigned `max + 1` and never advanced the sequence, so every GPU
+     * run pushed the table past it and the next create through the API collided.
+     */
+    it('takes observation ids from the sequence, so the sequence is never behind them', async () => {
+        const { job, reported } = await runJob(REAL_RESULT);
+
+        expect(reported.body.ingest.ingested).toBe(true);
+
+        const ids = (await observationsForJob(job.id)).map((row) => Number(row.observation_id));
+        const [sequence] = await query('SELECT last_value FROM observations_observation_id_seq');
+
+        expect(ids).toHaveLength(REAL_RESULT.length);
+        expect(Number(sequence.last_value)).toBeGreaterThanOrEqual(Math.max(...ids));
+    });
+
     it('writes one observation per finished track, with its keyframes, without being asked', async () => {
         const { job, reported } = await runJob(REAL_RESULT);
 
