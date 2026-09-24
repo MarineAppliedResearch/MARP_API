@@ -69,7 +69,8 @@ the player. The box layer is built so that editing can grow into it.
 
 ## Open assumptions
 
-- [ ] **A1 · product/UI · blocking** — **Where does it open?**
+- [x] **A1 · product/UI · blocking** — answered 2026-09-24: **(a), its own reused window.**
+  **Where does it open?**
   - **(a) Its own window, opened by the Mosaic and reused.** Recommended: it can sit on a
     second monitor, it survives anything the Mosaic re-renders, the player stays warm, and
     it is a page, so on a phone it opens as a tab. Editing later gets a whole page to grow
@@ -78,12 +79,17 @@ the player. The box layer is built so that editing can grow into it.
     grid's screen and its code lives inside the Mosaic.
   - **(c) A plain new page, navigated to.** Simplest, but leaving the Mosaic is what R5
     says must not happen.
-- [ ] **A2 · product/UI · blocking** — **Which boxes does it draw?**
+- [x] **A2 · product/UI · blocking** — answered 2026-09-24: **(a), the current page's, in
+  this video.** **Which boxes does it draw?**
   - **(a) Every observation on the current Mosaic page that falls in this video.**
     Recommended: that is "the ones being reviewed", and neighbours are visible.
   - **(b) Only the observation that was opened.**
   - **(c) Every observation in the database for that video,** reviewed or not.
-- [ ] **A3 · cross-repository / architectural · blocking** — **How does marp-api get the
+- [x] **A3 · cross-repository / architectural · blocking** — answered 2026-09-24: **the way
+  VIDEO_PROCESSING_GUI does it.** A released host archive from a marp-video-player GitHub
+  release, unpacked into the repository by an update script, with `PLAYER_VERSION`
+  recording which release is installed, and never edited by hand
+  (`MAREGUI_PROOFofCONCEPT/player/`). **How does marp-api get the
   player?** The two are deliberately disconnected today.
   - **(a) A pinned copy of the player's built bundle,** checked into marp-api with the
     version and commit it came from, updated deliberately. Recommended: it is one file with
@@ -95,7 +101,8 @@ the player. The box layer is built so that editing can grow into it.
   the MARP page over the player's canvas, timed off the engine's current frame. It does not
   go into the player library yet. It moves into the player later if the annotation GUI
   wants the same thing. Editing is then built on that layer.
-- [ ] **A5 · data-meaning · blocking** — **Fix the non-25 thumbnails first?** Thumbnails
+- [x] **A5 · data-meaning · blocking** — answered 2026-09-24: **(a), first, on its own
+  branch.** **Fix the non-25 thumbnails first?** Thumbnails
   for 24.946 fps video fail permanently (above). The fix is the same time rule as R2: seek
   to `framenum / real rate` for a GPU row, and keep refusing a GUI row whose rate
   disagrees.
@@ -110,6 +117,13 @@ the player. The box layer is built so that editing can grow into it.
   compete with Jellyfin's small stream ceiling, which thumbnails and the GUI share.
 
 ## Decisions
+
+- **2026-09-24** — The player opens in its own window, opened by the Mosaic and reused (A1).
+- **2026-09-24** — It draws the boxes of the current Mosaic page's observations in that
+  video (A2).
+- **2026-09-24** — marp-api installs the player from a released host archive, the way
+  VIDEO_PROCESSING_GUI does (A3).
+- **2026-09-24** — The non-25 thumbnail fix goes first, on its own branch (A5).
 
 ## Plan
 
@@ -128,4 +142,4 @@ To be written at G3.
 ## Status
 
 - **Gate:** design
-- **Notes:** A1–A3 and A5 need Isaac.
+- **Notes:** A1–A3 and A5 answered 2026-09-24. Waiting on the thumbnail fix (A5) before G2.
