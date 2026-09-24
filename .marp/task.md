@@ -44,29 +44,31 @@ Read from `origin/develop` of both repositories and the development database on
 - **R3** — Keys the job spec set and the worker did not honour are recorded as ignored.
 - **R4** — Settings are recorded when the engine resolves them, before the first frame,
   so an attempt that fails, is preempted or is cancelled still carries them.
-- **R5** — The record is a queryable column on `gpu_job_attempts`, not only a log payload.
+- **R5** — The record lives in normalised tables, queryable setting by setting, not only
+  in a log payload. The schema stays self-describing: what each setting is, which engine
+  it belongs to and what type it holds are in the database, not only in worker code.
 - **R6** — An observation can be traced to the settings of the attempt that produced it.
 - **R7** — An attempt from a worker that does not report settings stores nothing, and
   that absence is stored as absence: never guessed, never copied from the job spec.
 
 ## Open assumptions
 
-- [ ] **A1 · database/schema · blocking** — Store the record as one nullable `jsonb`
-  column, `gpu_job_attempts.inference_settings`, following `capabilities_snapshot` beside
-  it? The alternative is a normalised settings table, which is heavier and buys nothing
-  until something queries individual settings across many attempts.
-- [ ] **A2 · API contract / cross-repository · blocking** — The worker reports the record
-  as a structured event the moment the engine resolves it, and the API copies it into
-  the column. The alternative, adding it to the finish summary that already exists, is
+- [x] **A1 · database/schema · blocking** — answered 2026-09-23: **normalised tables, not
+  `jsonb`.** *"I want everything to be as queryable as we can get it while maintaining the
+  ability to understand the schema."* The shape is A8.
+- [x] **A2 · API contract / cross-repository · blocking** — answered 2026-09-23: **reported
+  before the first frame.** The worker reports the record
+  as a structured event the moment the engine resolves it, and the API writes it to the
+  settings tables. The alternative, adding it to the finish summary that already exists, is
   less code but breaks R4: a failed attempt never returns a summary. This adds a named
   field to the worker-to-API protocol.
-- [ ] **A3 · scientific/data-meaning · blocking** — How an observation reaches its
+- [x] **A3 · scientific/data-meaning · blocking** — answered 2026-09-23: **yes, add the
+  nullable `observations.gpu_attempt_id`, new rows only.** How an observation reaches its
   attempt (R6). A job that yields and resumes can hold observations from several
   attempts on different workers — potentially different worker versions with different
   defaults — so `gpu_jobs.published_attempt_id` names one attempt and can be wrong for
   the rest. Proposal: a nullable `observations.gpu_attempt_id`, set at ingest for new
-  rows only. Existing rows stay NULL, so nothing is changed or lost. This is a migration
-  on the observations table and wants your decision.
+  rows only. Existing rows stay NULL, so nothing is changed or lost.
 - [ ] **A4 · data-meaning · non-blocking** — No backfill. Existing attempts carry the
   tracker settings in a log payload but the predict settings only as
   `(ultralytics defaults)`, so a backfill would record some values as known and others
@@ -83,16 +85,34 @@ Read from `origin/develop` of both repositories and the development database on
   serving the API on port 3000 for another agent, and nodemon restarts it on every
   `.js` change. The worker checkout is mid-task on the watch-window branch with
   uncommitted work.
+- [ ] **A8 · database/schema · blocking** — Which normalised shape (follows from A1).
+  *Option 1, recommended:* a catalogue `inference_settings (id, name, engine, value_type,
+  description)`; values in `gpu_attempt_settings (attempt_id, setting_id, value_real |
+  value_int | value_bool | value_text, source)` with exactly one value column set per
+  `value_type`; and `gpu_attempt_ignored_params (attempt_id, key, requested_value)`. A
+  setting the catalogue does not yet know is added to it and stored, never refused —
+  refusing would lose the record this issue exists to make. *Option 2:* one wide row per
+  attempt, a typed column and a source column per setting. Option 1 because settings
+  differ by engine (`mock` has none; MARP_API#221's substrate models will have their
+  own), the list grows (PR #48 already added `max_det` and `half`), and the catalogue is
+  what keeps the schema understandable. A view can lay common settings out wide.
 
 ## Decisions
+
+- **2026-09-23** — Normalised tables rather than a `jsonb` column (A1).
+- **2026-09-23** — The worker reports its settings before the first frame, so a failed
+  attempt still has them (A2).
+- **2026-09-23** — `observations.gpu_attempt_id`, nullable, written at ingest for new rows
+  only; existing rows untouched (A3).
 
 ## Plan
 
 1. Worker: build the record in `TrackingEngine.run()` — every setting as
    `{value, source}` plus an `ignored` list — and report it as a structured event before
    the first frame (A2).
-2. API: migration adding `gpu_job_attempts.inference_settings` (A1).
-3. API: accept the event and write the column; accept its absence from an older worker
+2. API: migrations creating the settings tables in the shape A8 settles, and seeding the
+   catalogue with the settings the worker has today — a seeder, not typed rows.
+3. API: accept the event and write the rows; accept its absence from an older worker
    without error (R7).
 4. API: migration adding `observations.gpu_attempt_id`, written at ingest (A3).
 5. Tests at the tiers that can see each change; see the test plan.
@@ -114,4 +134,4 @@ Filled in at G3.
 ## Status
 
 - **Gate:** design
-- **Notes:** Investigation done. Waiting on A1–A3.
+- **Notes:** A1–A3 answered 2026-09-23. Waiting on A8, which the A1 answer raised.
