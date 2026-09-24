@@ -1762,6 +1762,36 @@ describe('observation thumbnails (#118)', () => {
             expect(extraction.frameRateRefusal(null)).toMatch(/unreadable/);
         });
 
+        /**
+         * #231. A GPU row is in the video's own frames and its position was
+         * derived at the video's rate, so it is cut at that rate. A GUI row's
+         * frames assume 25, and R21 still refuses it on any other rate.
+         */
+        it('cuts a GPU row at the rate of its own video, and still refuses a GUI row (#231)', () => {
+            expect(extraction.frameRateFor({ gpu_job_id: 1 }, 24.946007)).toEqual({ fps: 24.946007 });
+            expect(extraction.frameRateFor({ gpu_job_id: null }, 24.946007).refusal).toMatch(/24\.946007/);
+            expect(extraction.frameRateFor({ gpu_job_id: null }, 25)).toEqual({ fps: 25 });
+
+            // Unreadable is refused whoever wrote the row.
+            expect(extraction.frameRateFor({ gpu_job_id: 1 }, null).refusal).toMatch(/unreadable/);
+        });
+
+        it('plans the own frame of a GPU row from its truncated position (#231)', () => {
+            // Frame 1000 at 24.946007 fps starts at 40086.57 ms; the ingest stored
+            // 40.086. At 25 that reads as 1002, and floored at the real rate, 999.
+            const plan = extraction.planObservation(
+                { observation_id: 1, gpu_job_id: 1, mediaPosition: '00:00:40.0860000' },
+                [
+                    { framenum: 990, subset: '1', x: 0.50, y: 0.50, width: 0.10, height: 0.10 },
+                    { framenum: 1010, subset: '1', x: 0.60, y: 0.60, width: 0.10, height: 0.10 },
+                ],
+                24.946007
+            );
+
+            expect(plan.ok).toBe(true);
+            expect(plan.frame).toBe(1000);
+        });
+
         it('fails an observation with no keyframes permanently (R9, F6)', () => {
             const plan = extraction.planObservation(
                 { observation_id: 1, mediaPosition: '00:12:00.0000000' },

@@ -859,9 +859,21 @@ class GpuService {
             throw new Error(`Jellyfin returned no stream URL for item ${itemId}.`);
         }
 
+        // The nominal rate, so the worker numbers frames on the video's own clock
+        // rather than by counting them (#231). Optional: a worker that is not
+        // given it uses the rate its decoder reports.
+        let frameRate = null;
+
+        try {
+            const rates = await jellyfinRepository.getVideoFrameRate(itemId, MEDIA_CLIENT_IDENTITY);
+            frameRate = rates && rates.realFrameRate ? rates.realFrameRate : null;
+        } catch (error) {
+            logger.info(`no frame rate for Jellyfin item ${itemId} at lease: ${error.message}`);
+        }
+
         return {
             ...spec,
-            video: { ...video, url, source_name: sourceName },
+            video: { ...video, url, source_name: sourceName, ...(frameRate ? { frame_rate: frameRate } : {}) },
         };
     }
 
@@ -1871,7 +1883,7 @@ class GpuService {
      * How many frames a video has, from the only thing that knows.
      *
      * `runtimeTicks / 10_000_000 * fps`, where fps is Jellyfin's
-     * `AverageFrameRate` for the video (#231). Jellyfin reports a duration in
+     * `RealFrameRate` for the video (#231). Jellyfin reports a duration in
      * 100-nanosecond ticks and a rate the stream actually delivers, and the two
      * combine into a frame count.
      *
@@ -1921,18 +1933,18 @@ class GpuService {
             );
         }
 
-        // At the video's own rate (#231). Jellyfin's AverageFrameRate is what the
-        // stream delivers -- 24.946 on some CAMPA2026 footage, where 25 sized the
-        // last piece past the end of the video. 25 when no rate can be read, as
-        // before: the length is what matters here, and a rate off by a fraction
-        // only moves where the final piece ends.
+        // At the video's nominal rate (#231). A frame number is playback time
+        // times that rate, so the last one is the duration times it -- whatever
+        // the average says about gaps in the timestamps. 25 when no rate can be
+        // read, as before: the length is what matters here, and a rate off by a
+        // fraction only moves where the final piece ends.
         let fps = ASSUMED_FPS;
 
         try {
             const rates = await jellyfinRepository.getVideoFrameRate(video.jellyfin_item_id);
 
-            if (rates && rates.averageFrameRate) {
-                fps = rates.averageFrameRate;
+            if (rates && rates.realFrameRate) {
+                fps = rates.realFrameRate;
             }
         } catch (error) {
             logger.info(

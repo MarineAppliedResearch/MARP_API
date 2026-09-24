@@ -104,6 +104,20 @@ function invalid(message) {
  *
  * @class ObservationIngestService
  */
+/**
+ * Whether a video's average frame rate says its timestamps jump (#231).
+ *
+ * An average below the nominal rate means time passed with no frames in it. The
+ * tolerance allows for a nominal rate Jellyfin rounds, such as 29.97 for 30000/1001.
+ *
+ * @param {number} average - Jellyfin's `AverageFrameRate`.
+ * @param {number} nominal - Jellyfin's `RealFrameRate`.
+ * @returns {boolean} True when the two differ by more than 0.05%.
+ */
+function hasTimestampGap(average, nominal) {
+    return Math.abs(average - nominal) / nominal > 0.0005;
+}
+
 class ObservationIngestService {
 
     /**
@@ -245,10 +259,16 @@ class ObservationIngestService {
     /**
      * The frame rate a job's video runs at, for deriving its timecodes (#231).
      *
-     * **Jellyfin's `AverageFrameRate`, not its `RealFrameRate`.** Jellyfin reports
-     * both, and only the average is what the stream delivers: on
-     * `20260611_161158_Fwd` they read 24.946007 and 25, and the worker measured
-     * 24.946. Deriving at the nominal 25 is exactly what refused that video.
+     * **Jellyfin's `RealFrameRate`, the nominal rate.** A frame number is playback
+     * time times the nominal rate, so that is the rate that turns one back into a
+     * time. The average is not a rate the video runs at: on `20260611_161158_Fwd`
+     * it reads 24.946 because the timestamps jump 2.4 s after the twelfth frame,
+     * and the video is 25 fps on either side of the jump.
+     *
+     * **`gapped` when the average is below the nominal rate.** That is a jump in
+     * the timestamps, and a worker that numbers frames by counting them numbers
+     * every frame after it early. `ingestJob` refuses such a result unless it says
+     * its frames are on the playback clock.
      *
      * **25 when no rate can be read**, which is what every ingest did before --
      * a bare `video.url`, Jellyfin unreachable, or no rate reported. It is safe
@@ -259,13 +279,14 @@ class ObservationIngestService {
      * @async
      * @param {Object} spec - The job's spec.
      * @param {Object} job - The job, for the log line.
-     * @returns {Promise<{fps: number, source: string}>} The rate and where it came from.
+     * @returns {Promise<{fps: number, source: string, gapped: boolean}>} The rate,
+     *   where it came from, and whether the video's timestamps jump.
      */
     async frameRateForSpec(spec, job) {
         const itemId = spec.video && spec.video.jellyfin_item_id;
 
         if (!itemId) {
-            return { fps: ASSUMED_FPS, source: 'assumed: the job names no Jellyfin item' };
+            return { fps: ASSUMED_FPS, source: 'assumed: the job names no Jellyfin item', gapped: false };
         }
 
         let reported = null;
@@ -277,17 +298,23 @@ class ObservationIngestService {
             reason = `Jellyfin could not be read: ${error.message}`;
         }
 
-        if (reported && reported.averageFrameRate) {
-            return { fps: reported.averageFrameRate, source: 'jellyfin AverageFrameRate' };
+        if (reported && reported.realFrameRate) {
+            const average = reported.averageFrameRate;
+
+            return {
+                fps: reported.realFrameRate,
+                source: 'jellyfin RealFrameRate',
+                gapped: Boolean(average) && hasTimestampGap(average, reported.realFrameRate),
+            };
         }
 
-        reason = reason || 'Jellyfin reported no AverageFrameRate for the video';
+        reason = reason || 'Jellyfin reported no RealFrameRate for the video';
         logger.info(
             `job ${job.id}: ${reason}; deriving timecodes at the assumed ${ASSUMED_FPS} fps. `
             + 'A video at any other rate will be refused by the consistency check, not stored wrong.'
         );
 
-        return { fps: ASSUMED_FPS, source: `assumed: ${reason}` };
+        return { fps: ASSUMED_FPS, source: `assumed: ${reason}`, gapped: false };
     }
 
     /**
@@ -708,6 +735,18 @@ class ObservationIngestService {
         }
 
         const species = await this.resolveSpecies(row.comname, model, speciesByName);
+        // A worker that counts frames numbers everything after a timestamp jump
+        // early, by the length of the jump. Only a result on the playback clock
+        // can be stored from such a video.
+        if (frameRate && frameRate.gapped && row.frame_clock !== 'playback') {
+            unreconcilable(
+                `${where} numbers its frames by counting them, and this video's timestamps jump: its `
+                + `average rate is below its nominal ${frameRate.fps} fps. Every frame after the jump would `
+                + 'be stored early. A worker that numbers frames by playback time reports frame_clock '
+                + '"playback". Nothing was ingested.'
+            );
+        }
+
         const timecodes = this.deriveTimecodes(row, where, frameRate ? frameRate.fps : ASSUMED_FPS);
         const confidence = this.readConfidence(row, where);
 

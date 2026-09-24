@@ -331,7 +331,9 @@ async function claimBatch(limit = CLAIM_BATCH_SIZE) {
                 t.full_frame_subset,
                 t.full_frame_filename,
                 o.video_source,
-                o."mediaPosition"
+                o."mediaPosition",
+                -- Who wrote the row decides what its frame numbers mean (#231).
+                o.gpu_job_id
            FROM claimed c
            JOIN observation_thumbnails t
              ON t.observation_thumbnail_id = c.observation_thumbnail_id

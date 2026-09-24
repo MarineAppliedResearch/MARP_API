@@ -22,10 +22,12 @@
  *    picture of the wrong dive and the reviewer would read that as a bad
  *    detection rather than as a bug (A8).
  * 2. **Probe** the stream for its real pixel dimensions and its real frame rate.
- *    A rate that disagrees with the 25 `db/timecode.js` used to derive the
- *    observation's frame is **recorded as a failure carrying both rates**, not
- *    warned about and continued (R21): on any other rate the seek silently lands
- *    somewhere else and produces a confident picture of the wrong thing.
+ *    Frame numbers are playback time times the nominal rate, so that is the rate
+ *    a frame is cut at (#231). A GPU observation is numbered at the video's own
+ *    nominal rate; any other row at the 25 `db/timecode.js` assumes, and a video
+ *    whose nominal rate disagrees is **recorded as a failure carrying both
+ *    rates**, not warned about and continued (R21): the seek would land somewhere
+ *    else and produce a confident picture of the wrong thing.
  * 3. **Cut every wanted frame of one video from one ffmpeg pass** (R17). The
  *    first real run's six observations were six frames inside eleven seconds of
  *    one video; six connections would be a fifth of Jellyfin's whole ceiling.
@@ -215,6 +217,12 @@ async function checkBinaries() {
  * `framenum` becomes a seek time through a frame rate, and the wrong rate seeks
  * to the wrong moment.
  *
+ * **The nominal rate, `r_frame_rate`, not the average (#231).** A frame number is
+ * playback time times the nominal rate, for the annotation GUI and the GPU worker
+ * alike. The average is what a gap in the timestamps drags below it: 24.946 on a
+ * 25 fps video whose clock jumps 2.4 s, where seeking at the average landed 59
+ * frames early.
+ *
  * @async
  * @param {string} streamUrl - Resolved Jellyfin stream URL. Never logged.
  * @returns {Promise<Object>} `{ width, height, fps, duration, codec }`.
@@ -241,7 +249,7 @@ async function probeStream(streamUrl) {
         throw new Error('ffprobe returned no video stream for this source.');
     }
 
-    const [num, den] = String(stream.avg_frame_rate || '0/1').split('/').map(Number);
+    const [num, den] = String(stream.r_frame_rate || stream.avg_frame_rate || '0/1').split('/').map(Number);
 
     return {
         width: stream.width,
@@ -355,6 +363,28 @@ function frameRateRefusal(fps) {
 }
 
 /**
+ * The frame rate one observation's frame numbers were written at, or a refusal.
+ *
+ * **A GPU row is numbered at the video's own nominal rate**, the playback time of
+ * each frame times it (#231), so the probed nominal rate is the right one. Every
+ * other row is the annotation GUI's, whose frames assume 25
+ * (VIDEO_PROCESSING_GUI#221), and R21 still refuses it on any other rate.
+ *
+ * @param {Object} claim - A row from `claimBatch`, carrying `gpu_job_id`.
+ * @param {number|null} fps - The nominal rate ffprobe reported.
+ * @returns {Object} `{ fps }` to plan at, or `{ refusal }`.
+ */
+function frameRateFor(claim, fps) {
+    if (claim.gpu_job_id != null && Number.isFinite(fps) && fps > 0) {
+        return { fps };
+    }
+
+    const refusal = frameRateRefusal(fps);
+
+    return refusal ? { refusal } : { fps: ASSUMED_FPS };
+}
+
+/**
  * Works out which frame and which box one claimed observation wants.
  *
  * Everything that can be decided without touching Jellyfin is decided here, so an
@@ -364,9 +394,10 @@ function frameRateRefusal(fps) {
  *
  * @param {Object} claim - A row from `claimBatch`.
  * @param {Array<Object>} keyframes - That observation's keyframes.
+ * @param {number} [fps] - The rate its position was derived at; see {@link frameRateFor}.
  * @returns {Object} `{ ok: true, frame, box, subset, source }` or `{ ok: false, error, permanent }`.
  */
-function planObservation(claim, keyframes) {
+function planObservation(claim, keyframes, fps = ASSUMED_FPS) {
     if (!keyframes || keyframes.length === 0) {
         // F6: an observation can have no keyframes at all, which means no box,
         // which means no cropped tile, ever. This is the case that makes a
@@ -388,7 +419,12 @@ function planObservation(claim, keyframes) {
         };
     }
 
-    const observationFrame = absoluteFrame(mediaMs);
+    // A GPU row's position is its frame's start, truncated to the millisecond by the
+    // ingest, so the frame is the one that position rounds up to. Flooring it lands
+    // one frame early at a rate where frames do not start on a whole millisecond.
+    const observationFrame = claim.gpu_job_id != null
+        ? Math.ceil((mediaMs * fps) / 1000 - 1e-6)
+        : absoluteFrame(mediaMs, fps);
     const candidates = thumbnailCandidates(keyframes, observationFrame);
     const candidateIndex = Number.isInteger(Number(claim.candidate_index))
         ? Number(claim.candidate_index) : 0;
@@ -612,30 +648,26 @@ async function extractVideoGroup(videoSource, claims) {
         return outcome;
     }
 
-    // R21. Permanent, because the same video reports the same rate on every
-    // retry -- so a retry is a request to Jellyfin that cannot succeed. Clearing
-    // these rows is what a fix for variable rates would do.
-    const rateRefusal = frameRateRefusal(probe.fps);
-
-    if (rateRefusal) {
-        for (const id of ids) {
-            const claim = claims.find((item) => item.observation_id === id);
-            await recordClaimFailure(claim, rateRefusal, true);
-        }
-
-        outcome.failed = ids.length;
-
-        return outcome;
-    }
-
     const keyframes = await thumbnailRepository.keyframesFor(ids);
     const wanted = [];
 
     for (const claim of claims) {
+        // R21, per row now: a GPU row is cut at the video's own rate, and any
+        // other row on a non-25 video is refused. Permanent, because the same
+        // video reports the same rate on every retry.
+        const rate = frameRateFor(claim, probe.fps);
+
+        if (rate.refusal) {
+            await recordClaimFailure(claim, rate.refusal, true);
+            outcome.failed += 1;
+
+            continue;
+        }
+
         const observationKeyframes = keyframes.get(claim.observation_id);
         const plan = claim.artifact_kind === 'full_frame'
             ? fullFramePlan(claim, observationKeyframes)
-            : planObservation(claim, observationKeyframes);
+            : planObservation(claim, observationKeyframes, rate.fps);
 
         if (!plan.ok) {
             await recordClaimFailure(claim, plan.error, plan.permanent, plan);
@@ -1056,6 +1088,7 @@ module.exports = {
     elideToken,
     extractVideoGroup,
     frameRateRefusal,
+    frameRateFor,
     fullFramePlan,
     groupByVideo,
     planObservation,
