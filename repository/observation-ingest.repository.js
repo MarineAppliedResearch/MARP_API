@@ -7,17 +7,17 @@
  *
  * **Three things here are deliberate and each was a trap first.**
  *
- * 1. *The keys are assigned by hand, and the sequence is not used.*
- *    `observations.observation_id` has a sequence that has never been advanced by
- *    the annotation GUI's writes, so it sits far behind the table and `nextval`
- *    would collide immediately. `repository/observation.repository.js` assigns
- *    `max + 1`; so does this, because two conventions for one column is worse
- *    than one awkward convention. Tracked in #62.
- * 2. *An advisory lock covers the whole assignment.* `max + 1` computed by two
- *    transactions at once yields the same number twice, and two workers finishing
- *    within a second of each other is the normal case, not the unlucky one. The
- *    lock is transaction-scoped, so it is released by the commit or the rollback
- *    and cannot be leaked.
+ * 1. *`observation_id` comes from its sequence, as every other create's does* (#62).
+ *    This path used to assign `max + 1` and never advance the sequence. Once
+ *    `observation.repository.js` moved to the sequence, every GPU run left it
+ *    further behind, and every create through the API or the GUI collided -- 96,670
+ *    behind on the development database on 2026-09-24. Two conventions for one
+ *    column is the bug.
+ * 2. *An advisory lock covers the whole assignment.* `obsID` and `PobsID` are still
+ *    `max + 1`, and `max + 1` computed by two transactions at once yields the same
+ *    number twice, and two workers finishing within a second of each other is the
+ *    normal case, not the unlucky one. The lock is transaction-scoped, so it is
+ *    released by the commit or the rollback and cannot be leaked.
  * 3. *Rows are inserted with SQL rather than `db.observations.create`.* The model
  *    declares `observation_id` as a primary key that Sequelize believes is
  *    generated, so `create()` sends an explicit null for it and the insert fails.
@@ -415,12 +415,6 @@ class ObservationIngestRepository {
                 }
             }
 
-            const nextObservationId = await this.nextKey(
-                'SELECT COALESCE(MAX(observation_id), 0)::int AS m FROM observations',
-                {},
-                transaction
-            );
-
             const nextObsId = await this.nextKey(
                 'SELECT COALESCE(MAX("obsID"), 0)::int AS m FROM observations WHERE session_id = :sessionId',
                 { sessionId },
@@ -443,7 +437,7 @@ class ObservationIngestRepository {
 
             for (let index = 0; index < observations.length; index += 1) {
                 const { row, keyframes } = observations[index];
-                const observationId = nextObservationId + index;
+                const observationId = await this.nextObservationId(transaction);
 
                 await this.insertObservation({
                     ...row,
@@ -493,6 +487,25 @@ class ObservationIngestRepository {
         );
 
         return (row && row.m ? Number(row.m) : 0) + 1;
+    }
+
+    /**
+     * Take the next `observation_id` from the column's own sequence.
+     *
+     * One at a time rather than a range: a sequence promises distinct numbers, not
+     * consecutive ones, and nothing reads these ids as a run.
+     *
+     * @async
+     * @param {Object} transaction - Transaction to write inside.
+     * @returns {Promise<number>} An id no other insert has been or will be given.
+     */
+    async nextObservationId(transaction) {
+        const [row] = await this.db.sequelize.query(
+            "SELECT nextval('observations_observation_id_seq')::int AS id",
+            { type: QueryTypes.SELECT, transaction }
+        );
+
+        return Number(row.id);
     }
 
     /**
