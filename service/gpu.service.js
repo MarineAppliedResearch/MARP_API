@@ -1156,6 +1156,26 @@ class GpuService {
 
         if (mine.length === 0) {
             await gpuRepository.releaseAttemptIngestClaim(published.attempt_id);
+
+            // **A success that handed over nothing is not a success** (#230).
+            // Reaching here means the spec names a session, so observations were
+            // expected; returned as `failed`, the caller withdraws it the way it
+            // withdraws an ingest that refused. It used to be `skipped`, which
+            // left the job `succeeded` with nothing ingested. A stop hands over
+            // what it has and is not a claim of success, so it stays a skip.
+            if (published.outcome === 'succeeded') {
+                const reason = 'this attempt reported success but handed over no artifacts, '
+                    + 'so none of its results reached the database';
+
+                await gpuRepository.appendCoordinatorNote(published.attempt_id, {
+                    note: 'observation ingest failed',
+                    job_id: published.job_id,
+                    reason,
+                });
+
+                return { ingested: false, failed: reason };
+            }
+
             return { ingested: false, skipped: 'this attempt handed over no artifacts' };
         }
 
@@ -1850,16 +1870,15 @@ class GpuService {
     /**
      * How many frames a video has, from the only thing that knows.
      *
-     * `runtimeTicks / 10_000_000 * ASSUMED_FPS`. Jellyfin reports a duration in
-     * 100-nanosecond ticks and MARP fixes video time at 25 fps everywhere it
-     * touches a timecode, so the two combine into a frame count with nothing
-     * assumed that was not already assumed. Both halves have been in this
-     * repository since before the GPU work; nothing joined them.
+     * `runtimeTicks / 10_000_000 * fps`, where fps is Jellyfin's
+     * `AverageFrameRate` for the video (#231). Jellyfin reports a duration in
+     * 100-nanosecond ticks and a rate the stream actually delivers, and the two
+     * combine into a frame count.
      *
-     * The constant is not a guess. Measured across all ten videos MARP holds
-     * observations for, `framenum` against `mediaPosition` gives 25.01 to 25.05,
-     * and `observation-ingest.service.js` already carries a check whose comment
-     * says it is the only signal that the 25 fps assumption broke.
+     * This used to multiply by 25. The measurement that justified it -- 25.01 to
+     * 25.05 across the ten videos MARP held observations for -- could only ever
+     * see 25 fps footage, because the ingest refused anything else before it
+     * reached the table. CAMPA2026 has video at 24.946.
      *
      * **Refused rather than guessed when the duration is unknown.** An item with
      * no `RunTimeTicks` coalesces to null, and deriving zero from it would fail
@@ -1902,7 +1921,27 @@ class GpuService {
             );
         }
 
-        const frames = Math.floor((Number(item.runtimeTicks) / TICKS_PER_SECOND) * ASSUMED_FPS);
+        // At the video's own rate (#231). Jellyfin's AverageFrameRate is what the
+        // stream delivers -- 24.946 on some CAMPA2026 footage, where 25 sized the
+        // last piece past the end of the video. 25 when no rate can be read, as
+        // before: the length is what matters here, and a rate off by a fraction
+        // only moves where the final piece ends.
+        let fps = ASSUMED_FPS;
+
+        try {
+            const rates = await jellyfinRepository.getVideoFrameRate(video.jellyfin_item_id);
+
+            if (rates && rates.averageFrameRate) {
+                fps = rates.averageFrameRate;
+            }
+        } catch (error) {
+            logger.info(
+                `sizing ${video.jellyfin_item_id} at the assumed ${ASSUMED_FPS} fps: its frame rate could not be read: `
+                + error.message
+            );
+        }
+
+        const frames = Math.floor((Number(item.runtimeTicks) / TICKS_PER_SECOND) * fps);
 
         if (!Number.isSafeInteger(frames) || frames < 1) {
             invalid(

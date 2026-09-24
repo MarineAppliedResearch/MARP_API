@@ -1992,8 +1992,17 @@ class GpuRepository {
      * and already has a `hash`. `training_run_id` is null here and `job_id` names
      * the job instead -- the pair that the migration made possible.
      *
-     * Skips a hash already recorded for this job under the same role, so a replay
-     * that somehow reaches this far still cannot double-record.
+     * Skips a hash **this attempt** already recorded under the same role, so a
+     * replay that somehow reaches this far still cannot double-record.
+     *
+     * **Per attempt, not per job (#230).** It used to skip a hash already recorded
+     * for the *job*, and a retry that reproduces its predecessor's output byte for
+     * byte names the same hash. So the retry got no row, the ingest -- which reads
+     * only the current attempt's artifacts -- found nothing, and a job whose first
+     * attempt had failed honestly ended `succeeded` with nothing in the database:
+     * 505 of them by 2026-09-20. A replay is the same attempt reporting twice; a
+     * retry is a different attempt handing over the same bytes, and gets its own
+     * row pointing at the same staged file.
      *
      * @async
      * @param {Object} params
@@ -2009,12 +2018,17 @@ class GpuRepository {
         for (const artifact of artifacts) {
             const role = artifact.role || 'result';
 
-            const existing = await this.db.artifacts.findOne({
+            const recorded = await this.db.artifacts.findAll({
                 where: { job_id: job.id, hash: artifact.sha256, artifact_type: role },
                 transaction,
             });
 
-            if (existing) {
+            // Only this attempt's own earlier row makes this a replay.
+            const replay = recorded.some(
+                (row) => row.metadata && Number(row.metadata.attempt_id) === Number(attempt.id)
+            );
+
+            if (replay) {
                 continue;
             }
 

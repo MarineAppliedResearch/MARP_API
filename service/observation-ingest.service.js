@@ -48,6 +48,8 @@ const fs = require('fs');
 const path = require('path');
 
 const ingestRepository = require('../repository/observation-ingest.repository');
+const jellyfinRepository = require('../repository/jellyfin.repository');
+const logger = require('../logger/api.logger');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const {
     ARTIFACT_DIRECTORY,
@@ -198,6 +200,9 @@ class ObservationIngestService {
 
         await this.checkSessionTypeAgainstModel(sessionRow, model);
 
+        // Once per ingest: every line of a job comes from one video (#231).
+        const frameRate = await this.frameRateForSpec(spec, job);
+
         const built = [];
         const speciesByName = new Map();
 
@@ -208,6 +213,7 @@ class ObservationIngestService {
                     model,
                     sessionRow,
                     speciesByName,
+                    frameRate,
                 })
             );
         }
@@ -231,7 +237,57 @@ class ObservationIngestService {
             observations: written.observations,
             keyframes: written.keyframes,
             observation_ids: written.observation_ids,
+            frame_rate: frameRate.fps,
+            frame_rate_source: frameRate.source,
         };
+    }
+
+    /**
+     * The frame rate a job's video runs at, for deriving its timecodes (#231).
+     *
+     * **Jellyfin's `AverageFrameRate`, not its `RealFrameRate`.** Jellyfin reports
+     * both, and only the average is what the stream delivers: on
+     * `20260611_161158_Fwd` they read 24.946007 and 25, and the worker measured
+     * 24.946. Deriving at the nominal 25 is exactly what refused that video.
+     *
+     * **25 when no rate can be read**, which is what every ingest did before --
+     * a bare `video.url`, Jellyfin unreachable, or no rate reported. It is safe
+     * because `deriveTimecodes` checks every line against the worker's own
+     * report: at 25 a 25 fps video still ingests, and any other is refused as
+     * it always was, never stored wrong.
+     *
+     * @async
+     * @param {Object} spec - The job's spec.
+     * @param {Object} job - The job, for the log line.
+     * @returns {Promise<{fps: number, source: string}>} The rate and where it came from.
+     */
+    async frameRateForSpec(spec, job) {
+        const itemId = spec.video && spec.video.jellyfin_item_id;
+
+        if (!itemId) {
+            return { fps: ASSUMED_FPS, source: 'assumed: the job names no Jellyfin item' };
+        }
+
+        let reported = null;
+        let reason;
+
+        try {
+            reported = await jellyfinRepository.getVideoFrameRate(itemId);
+        } catch (error) {
+            reason = `Jellyfin could not be read: ${error.message}`;
+        }
+
+        if (reported && reported.averageFrameRate) {
+            return { fps: reported.averageFrameRate, source: 'jellyfin AverageFrameRate' };
+        }
+
+        reason = reason || 'Jellyfin reported no AverageFrameRate for the video';
+        logger.info(
+            `job ${job.id}: ${reason}; deriving timecodes at the assumed ${ASSUMED_FPS} fps. `
+            + 'A video at any other rate will be refused by the consistency check, not stored wrong.'
+        );
+
+        return { fps: ASSUMED_FPS, source: `assumed: ${reason}` };
     }
 
     /**
@@ -637,11 +693,12 @@ class ObservationIngestService {
      * @async
      * @param {Object} row - One parsed line of the worker's result file.
      * @param {number} index - Its position in the file, for messages.
-     * @param {Object} context - `{job, model, sessionRow, speciesByName}`.
+     * @param {Object} context - `{job, model, sessionRow, speciesByName, frameRate}`.
+     *   `frameRate` is `frameRateForSpec`'s answer; without one, 25 as before.
      * @returns {Promise<Object>} `{row, keyframes}` ready to write.
      * @throws {ApiError} 409 when the line cannot be reconciled.
      */
-    async buildObservation(row, index, { job, model, sessionRow, speciesByName }) {
+    async buildObservation(row, index, { job, model, sessionRow, speciesByName, frameRate }) {
         const where = `line ${index + 1} of job ${job.id}'s result file`;
 
         if (!Number.isInteger(row.observation_frame)) {
@@ -651,7 +708,7 @@ class ObservationIngestService {
         }
 
         const species = await this.resolveSpecies(row.comname, model, speciesByName);
-        const timecodes = this.deriveTimecodes(row, where);
+        const timecodes = this.deriveTimecodes(row, where, frameRate ? frameRate.fps : ASSUMED_FPS);
         const confidence = this.readConfidence(row, where);
 
         return {
@@ -687,30 +744,38 @@ class ObservationIngestService {
      * reported. See rule 3 in this module's header for why copying is wrong, and
      * R8 for why the check is the only signal that the 25 fps assumption broke.
      *
+     * **At the video's rate, since #231.** It was 25 always, and a video at 24.946
+     * fps was refused whole. The check below is unchanged: it still compares every
+     * line against the worker's own `tc` and `frame`, so a result that genuinely
+     * disagrees with itself is refused at any rate.
+     *
      * @param {Object} row - One parsed result line.
      * @param {string} where - Where it came from, for messages.
+     * @param {number} [fps] - The video's frame rate. Defaults to 25.
      * @returns {Object} `{tc, frame, mediaPosition, actualPosition}`.
      * @throws {ApiError} 409 when the derivation disagrees with the worker.
      */
-    deriveTimecodes(row, where) {
-        const milliseconds = (row.observation_frame * 1000) / ASSUMED_FPS;
+    deriveTimecodes(row, where, fps = ASSUMED_FPS) {
+        // Truncated, as ticks are and as the worker truncates seconds. Rounding put a
+        // frame 0.09 ms before a second into the next one. At 25 every frame is whole ms.
+        const milliseconds = Math.floor((row.observation_frame * 1000) / fps);
         const position = formatTimeSpan(milliseconds);
         const tc = deriveTc(milliseconds);
-        const frame = deriveFrame(milliseconds);
+        const frame = deriveFrame(milliseconds, fps);
 
         if (typeof row.tc === 'string' && row.tc !== tc) {
             unreconcilable(
-                `${where} reports tc "${row.tc}" at frame ${row.observation_frame}, but ${ASSUMED_FPS} fps `
-                + `puts that frame at "${tc}". MARP assumes ${ASSUMED_FPS} fps in every timecode column, `
-                + 'so a disagreement means the video is not 25 fps and its observations cannot be stored '
-                + 'correctly. Nothing was ingested.'
+                `${where} reports tc "${row.tc}" at frame ${row.observation_frame}, but ${fps} fps `
+                + `puts that frame at "${tc}". The timecode columns are derived at the video's frame rate, `
+                + 'so a disagreement means the result and the video do not agree about when this frame is, '
+                + 'and its observations cannot be stored correctly. Nothing was ingested.'
             );
         }
 
         if (row.frame !== undefined && row.frame !== null && String(row.frame) !== frame) {
             unreconcilable(
                 `${where} reports frame "${row.frame}" at absolute frame ${row.observation_frame}, but `
-                + `${ASSUMED_FPS} fps makes the sub-second index "${frame}". Nothing was ingested.`
+                + `${fps} fps makes the sub-second index "${frame}". Nothing was ingested.`
             );
         }
 
