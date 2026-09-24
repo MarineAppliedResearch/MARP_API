@@ -53,13 +53,18 @@ events. The undo removed the three tables and the column and put the event kinds
 **A guard that can go red.** With the engine's `except` made to re-raise,
 `test_a_fault_in_the_settings_report_does_not_fail_the_job` fails; restored, it passes.
 
-## Not yet run, and why
+**`npm run test:gpu`, the whole group** — after the development queue of 1,161 test jobs
+was cancelled through `gpuService.cancelJob`, which five of these suites need empty:
 
-**`npm run test:gpu`, the rest of the group.** Five suites refuse to run while the
-database holds queued GPU jobs — `gpu-orchestration`, `gpu-lease-race`,
-`gpu-video-resolution`, `gpu-playback-reporting`, `gpu-observation-ingest` — and there are
-over a thousand. `gpu-observation-ingest` matters most here, because it exercises the
-ingest path this change touches. Run after the queue is cleared.
+    Test Suites : 8 passed, 0 failed, 8 total
+    Tests       : 168 passed, 0 failed, 0 skipped, 168 total
+
+    gpu-orchestration 55   gpu-lease-race 6   gpu-abandoned-poll 4   gpu-video-resolution 30
+    gpu-playback-reporting 12   gpu-observation-ingest 43   gpu-attempt-settings 16
+    worker-provisioning 2
+
+`corpus-guard` failed no file. `gpu-observation-ingest` is the suite that exercises the
+ingest path this change touches.
 
 ## Not covered
 
