@@ -2180,5 +2180,6 @@ export const actions = {
     return actions.refresh();
   },
 
-  openVideo(id) { fire('openVideo', { id }); }   // deliberately unimplemented
+  /* The window itself is ui/video-window.js's (#181); this records that it was asked for. */
+  openVideo(id) { fire('openVideo', { id }); }
 };
