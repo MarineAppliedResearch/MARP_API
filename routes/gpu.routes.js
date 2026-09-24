@@ -320,9 +320,9 @@ function registerGpuRoutes(app) {
         method: 'post',
         permission: 'jobs:write',
         path: '/api/gpu/attempts/:id/events',
-        summary: 'Append a batch of metrics and log lines',
+        summary: 'Append a batch of metrics, log lines and settings reports',
         description:
-            'Records durable numbers and log lines against an attempt. Keyed `(attempt_id, seq)`, so a worker that resends a batch it never saw the answer to inserts nothing the second time and is told how many were duplicates -- which is the expected answer to a replay rather than an error. Per-frame detections never come through here; they are handed over as a hashed artifact, because a stream of events is the wrong shape for hundreds of megabytes. `note` is not an accepted kind: it is the coordinator\'s own, used for recording why a lease was taken away, and a worker able to write one could muddy that record.',
+            'Records durable numbers, log lines and the settings report of an attempt against it. A `settings` event is the worker saying, before its first frame, exactly what it ran with -- every setting as `{value, type, source}` and every key the job set that it did not honour -- and it is written to `gpu_attempt_settings` and `gpu_attempt_ignored_params` as well as kept as the event. The first settings report for an attempt is the record; a later one is kept as an event and changes nothing. A setting the catalogue does not know is registered rather than refused. Keyed `(attempt_id, seq)`, so a worker that resends a batch it never saw the answer to inserts nothing the second time and is told how many were duplicates -- which is the expected answer to a replay rather than an error. Per-frame detections never come through here; they are handed over as a hashed artifact, because a stream of events is the wrong shape for hundreds of megabytes. `note` is not an accepted kind: it is the coordinator\'s own, used for recording why a lease was taken away, and a worker able to write one could muddy that record.',
         tags: [GPU_TAG],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'Attempt the events belong to.' },

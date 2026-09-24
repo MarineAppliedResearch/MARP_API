@@ -57,6 +57,8 @@ const db = require('../model');
  */
 const logger = require('../logger/api.logger');
 
+const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
+
 const {
     LEASE_SECONDS,
     ATTEMPT_CAP_SECONDS,
@@ -88,6 +90,20 @@ const LIVE_ATTEMPT_STATES_SQL = LIVE_ATTEMPT_STATES.map((state) => `'${state}'`)
  * @type {Array<string>}
  */
 const INGESTABLE_OUTCOMES = ['succeeded', 'yielded'];
+
+/**
+ * Which value column on `gpu_attempt_settings` each catalogue type is stored in.
+ * Interpolated into SQL, so it is a constant here and never input.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const SETTING_VALUE_COLUMN = {
+    real: 'value_real',
+    int: 'value_int',
+    bool: 'value_bool',
+    text: 'value_text',
+};
 
 /**
  * How much of a job's attempt budget is actually spent, as SQL.
@@ -1112,6 +1128,124 @@ class GpuRepository {
     }
 
     /**
+     * Record the inference settings an attempt ran with (#232).
+     *
+     * **The first report is the record.** An attempt resolves its settings once,
+     * before its first frame, so a second report for the same attempt is kept as
+     * an event but written nowhere else -- the same rule as
+     * `published_attempt_id`, which is set once and never overwritten.
+     *
+     * **A setting the catalogue does not know is registered, not refused.** A
+     * newer worker reporting a setting this database has not seen would otherwise
+     * lose exactly the record this exists to make. It arrives with the type the
+     * worker declared and no description.
+     *
+     * @async
+     * @param {number} attemptId - Attempt the settings belong to.
+     * @param {{engine: string, settings: Array<Object>, ignored: Array<Object>}} report - Parsed by the service.
+     * @param {Object} transaction - The events transaction, so the report and its event land together.
+     * @returns {Promise<void>} Resolves once the rows are written, or skipped as a repeat.
+     * @throws {ApiError} 400 when a value's type disagrees with its catalogue entry.
+     */
+    async recordAttemptSettings(attemptId, report, transaction) {
+        const [already] = await this.db.sequelize.query(
+            `SELECT 1 AS present FROM gpu_attempt_settings WHERE attempt_id = :attemptId
+             UNION ALL
+             SELECT 1 FROM gpu_attempt_ignored_params WHERE attempt_id = :attemptId
+             LIMIT 1`,
+            { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
+        );
+
+        if (already) {
+            logger.info(`attempt ${attemptId} reported its settings again; the first report stands`);
+            return;
+        }
+
+        for (const setting of report.settings) {
+            const entry = await this.catalogueEntry(report.engine, setting, transaction);
+
+            // The catalogue's type decides the column. A worker reporting a
+            // different one means the two disagree about what the setting is,
+            // and storing it anyway would put a value in the wrong column.
+            if (entry.value_type !== setting.type) {
+                throw new ApiError(
+                    400,
+                    ERROR_CODES.VALIDATION_ERROR,
+                    `setting ${report.engine}.${setting.name} is recorded as ${entry.value_type} `
+                    + `in the catalogue but was reported as ${setting.type}.`
+                );
+            }
+
+            const column = SETTING_VALUE_COLUMN[entry.value_type];
+
+            await this.db.sequelize.query(
+                `INSERT INTO gpu_attempt_settings (attempt_id, setting_id, ${column}, source)
+                 VALUES (:attemptId, :settingId, :value, :source)
+                 ON CONFLICT (attempt_id, setting_id) DO NOTHING`,
+                {
+                    replacements: {
+                        attemptId,
+                        settingId: entry.id,
+                        value: setting.value,
+                        source: setting.source,
+                    },
+                    transaction,
+                }
+            );
+        }
+
+        for (const item of report.ignored) {
+            await this.db.sequelize.query(
+                `INSERT INTO gpu_attempt_ignored_params (attempt_id, key, requested_value)
+                 VALUES (:attemptId, :key, :requestedValue)
+                 ON CONFLICT (attempt_id, key) DO NOTHING`,
+                {
+                    replacements: { attemptId, key: item.key, requestedValue: item.requestedValue },
+                    transaction,
+                }
+            );
+        }
+    }
+
+    /**
+     * Find a setting in the catalogue, registering it if it is not there.
+     *
+     * Insert-or-read rather than read-then-insert, so two attempts reporting the
+     * same new setting at once both end up pointing at one row.
+     *
+     * @async
+     * @param {string} engine - Engine the setting belongs to.
+     * @param {{name: string, type: string}} setting - The reported setting.
+     * @param {Object} transaction - Transaction to work inside.
+     * @returns {Promise<{id: number, value_type: string}>} The catalogue row.
+     */
+    async catalogueEntry(engine, setting, transaction) {
+        const [registered] = await this.db.sequelize.query(
+            `INSERT INTO inference_settings (engine, name, value_type)
+             VALUES (:engine, :name, :valueType)
+             ON CONFLICT (engine, name) DO NOTHING
+             RETURNING id, value_type`,
+            {
+                replacements: { engine, name: setting.name, valueType: setting.type },
+                type: QueryTypes.SELECT,
+                transaction,
+            }
+        );
+
+        if (registered) {
+            logger.info(`registered inference setting ${engine}.${setting.name} (${setting.type}) from a worker report`);
+            return registered;
+        }
+
+        const [existing] = await this.db.sequelize.query(
+            'SELECT id, value_type FROM inference_settings WHERE engine = :engine AND name = :name',
+            { replacements: { engine, name: setting.name }, type: QueryTypes.SELECT, transaction }
+        );
+
+        return existing;
+    }
+
+    /**
      * Append a batch of worker events, ignoring any the coordinator already has.
      *
      * `ON CONFLICT DO NOTHING` against the `(attempt_id, seq)` primary key is the
@@ -1123,7 +1257,7 @@ class GpuRepository {
      * @param {number} params.attemptId - Attempt the events belong to.
      * @param {number} params.workerId - Worker sending them.
      * @param {number} params.leaseEpoch - Lease epoch it holds.
-     * @param {Array<Object>} params.events - `{seq, kind, at, payload}` entries.
+     * @param {Array<Object>} params.events - `{seq, kind, at, payload, settings}` entries; `settings` is the parsed report on a settings event.
      * @returns {Promise<Object>} `{action, reason, accepted, duplicates, next_seq}`.
      * @throws {Error} Re-throws after rolling back if anything fails.
      */
@@ -1166,6 +1300,12 @@ class GpuRepository {
 
                 if (inserted.length > 0) {
                     accepted += 1;
+
+                    // Only a newly accepted report is written: a replayed batch
+                    // arrives with the same seq and must not be recorded twice.
+                    if (event.settings) {
+                        await this.recordAttemptSettings(attemptId, event.settings, transaction);
+                    }
                 }
             }
 

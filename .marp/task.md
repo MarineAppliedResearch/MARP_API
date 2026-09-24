@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#232
 repos: [marp-api, marp-inference-worker]
-status: design
+status: implementing
 needs: []
 ---
 
@@ -80,12 +80,15 @@ Read from `origin/develop` of both repositories and the development database on
   not job settings, such as the class-matching IoU of 0.4, are recorded with source
   `engine`. Cheap, and within the issue's intent that nothing about how the model ran
   goes unrecorded.
-- [ ] **A7 · environment · non-blocking** — Implementation happens in isolated
+- [x] **A7 · environment · non-blocking** — answered 2026-09-23: **no — use the main
+  MARP_API checkout and its database, the ones behind port 3000, and restart the API as
+  needed.** *"that IS the proper one to use."* Proposed was: implementation happens in isolated
   workspaces (`marp agent start`) for both repositories. The main MARP_API checkout is
   serving the API on port 3000 for another agent, and nodemon restarts it on every
   `.js` change. The worker checkout is mid-task on the watch-window branch with
   uncommitted work.
-- [ ] **A8 · database/schema · blocking** — Which normalised shape (follows from A1).
+- [x] **A8 · database/schema · blocking** — answered 2026-09-23: **option 1.** Which
+  normalised shape (follows from A1).
   *Option 1, recommended:* a catalogue `inference_settings (id, name, engine, value_type,
   description)`; values in `gpu_attempt_settings (attempt_id, setting_id, value_real |
   value_int | value_bool | value_text, source)` with exactly one value column set per
@@ -104,6 +107,18 @@ Read from `origin/develop` of both repositories and the development database on
   attempt still has them (A2).
 - **2026-09-23** — `observations.gpu_attempt_id`, nullable, written at ingest for new rows
   only; existing rows untouched (A3).
+- **2026-09-23** — Work in the main MARP_API checkout and its database, the ones behind
+  port 3000 (A7).
+- **2026-09-23** — Catalogue plus one row per setting per attempt, plus an ignored-params
+  table; an unknown setting is registered, never refused (A8).
+- **2026-09-23** — Not the existing `hyperparameters` table. It hangs off `training_runs`
+  through a `NOT NULL` key, holds one `jsonb` blob, and has no rows: it describes training,
+  and it is the shape A1 decided against.
+- **2026-09-23** — The report is a `settings` kind on the existing events stream, so it
+  inherits the lease check and the `(attempt_id, seq)` replay safety rather than needing
+  its own.
+- **2026-09-23** — The first report for an attempt is the record. A later one is kept as an
+  event and written nowhere else: the rule `published_attempt_id` already follows.
 
 ## Plan
 
@@ -133,5 +148,5 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** design
-- **Notes:** A1–A3 answered 2026-09-23. Waiting on A8, which the A1 answer raised.
+- **Gate:** implementing
+- **Notes:** Every blocking assumption answered 2026-09-23. A4–A6 proceed as proposed.

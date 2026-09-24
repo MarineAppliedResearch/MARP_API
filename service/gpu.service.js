@@ -50,6 +50,8 @@ const {
     JOB_STATES,
     REPORTABLE_ATTEMPT_STATES,
     WORKER_EVENT_KINDS,
+    SETTING_VALUE_TYPES,
+    SETTING_SOURCES,
     RESULT_OUTCOMES,
 } = require('../config/gpu-orchestration');
 
@@ -168,6 +170,98 @@ function requiredEnum(value, field, allowed) {
     }
 
     return value;
+}
+
+/**
+ * Whether a value is what its declared type says it is.
+ *
+ * `real` accepts an integral number: JSON cannot tell 1.0 from 1, so a real
+ * setting that happens to be whole arrives looking like an integer.
+ *
+ * @param {*} value - Value as supplied.
+ * @param {string} type - One of SETTING_VALUE_TYPES.
+ * @returns {boolean} True when the value fits the type.
+ */
+function valueFitsType(value, type) {
+    switch (type) {
+        case 'real': return typeof value === 'number' && Number.isFinite(value);
+        case 'int': return Number.isInteger(value);
+        case 'bool': return typeof value === 'boolean';
+        case 'text': return typeof value === 'string';
+        default: return false;
+    }
+}
+
+/**
+ * Read a worker's report of the inference settings it applied (#232).
+ *
+ * `{engine, settings: {name: {value, type, source}}, ignored: {key: value}}`.
+ * Checked whole before anything is written, so a malformed report is refused
+ * rather than half-recorded. A null value is refused too: a default is recorded
+ * as the value that was used, never as its absence.
+ *
+ * @param {*} payload - The event's payload as supplied.
+ * @param {string} field - Field name, for the message.
+ * @returns {{engine: string, settings: Array<Object>, ignored: Array<Object>}} The report.
+ * @throws {ApiError} When any part of it is malformed.
+ */
+function settingsReport(payload, field) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        invalid(`${field} must be an object for a settings event.`);
+    }
+
+    const engine = requiredString(payload.engine, `${field}.engine`);
+
+    if (engine.length > 64) {
+        invalid(`${field}.engine must be 64 characters or fewer.`);
+    }
+
+    if (!payload.settings || typeof payload.settings !== 'object' || Array.isArray(payload.settings)) {
+        invalid(`${field}.settings must be an object of {name: {value, type, source}}.`);
+    }
+
+    const settings = Object.entries(payload.settings).map(([name, entry]) => {
+        const where = `${field}.settings.${name}`;
+
+        if (name.length === 0 || name.length > 64) {
+            invalid(`${where}: a setting name must be 1 to 64 characters.`);
+        }
+
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            invalid(`${where} must be an object of {value, type, source}.`);
+        }
+
+        const type = requiredEnum(entry.type, `${where}.type`, SETTING_VALUE_TYPES);
+        const source = requiredEnum(entry.source, `${where}.source`, SETTING_SOURCES);
+
+        if (entry.value === undefined || entry.value === null) {
+            invalid(`${where}.value is required; a default is recorded as the value that was used.`);
+        }
+
+        if (!valueFitsType(entry.value, type)) {
+            invalid(`${where}.value ${JSON.stringify(entry.value)} is not a ${type}.`);
+        }
+
+        return { name, type, source, value: entry.value };
+    });
+
+    const ignoredIn = payload.ignored === undefined || payload.ignored === null ? {} : payload.ignored;
+
+    if (typeof ignoredIn !== 'object' || Array.isArray(ignoredIn)) {
+        invalid(`${field}.ignored must be an object of {key: requested value}.`);
+    }
+
+    const ignored = Object.entries(ignoredIn).map(([key, requested]) => {
+        if (key.length === 0 || key.length > 128) {
+            invalid(`${field}.ignored: a key must be 1 to 128 characters.`);
+        }
+
+        // Kept as the JSON it was sent in: an ignored key's value can be any
+        // shape, and the point is to show what the job asked for.
+        return { key, requestedValue: requested === undefined ? null : JSON.stringify(requested) };
+    });
+
+    return { engine, settings, ignored };
 }
 
 /**
@@ -869,7 +963,15 @@ class GpuService {
             // why a lease was taken away untrustworthy.
             const kind = requiredEnum(event.kind, `events[${index}].kind`, WORKER_EVENT_KINDS);
 
-            return { seq, kind, at: event.at, payload: event.payload };
+            // A settings report is read whole here, so a malformed one refuses
+            // the batch before anything is written. The raw payload is still
+            // what gets stored as the event; the parsed report is what the
+            // repository writes into the settings tables.
+            const settings = kind === 'settings'
+                ? settingsReport(event.payload, `events[${index}].payload`)
+                : undefined;
+
+            return { seq, kind, at: event.at, payload: event.payload, settings };
         });
 
         return gpuRepository.appendEvents({

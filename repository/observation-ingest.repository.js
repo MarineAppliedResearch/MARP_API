@@ -71,7 +71,7 @@ const OBSERVATION_COLUMNS = [
     'observation_id', 'obsID', 'PobsID', 'project_id', 'session_id', 'user_id',
     'tc', 'frame', 'taxserial', 'species_id', 'comname', 'count',
     'video_source', 'videoLocation', 'mediaPosition', 'actualPosition',
-    'confidence', 'ml_model_id', 'gpu_job_id', 'jellyfin_item_id',
+    'confidence', 'ml_model_id', 'gpu_job_id', 'gpu_attempt_id', 'jellyfin_item_id',
     'createdAt', 'updatedAt',
 ];
 
@@ -453,6 +453,9 @@ class ObservationIngestRepository {
                     session_id: sessionId,
                     project_id: projectId,
                     gpu_job_id: jobId,
+                    // The attempt whose settings produced this row (#232). Null
+                    // on the path with no attempt, as it has no settings either.
+                    gpu_attempt_id: attemptId ?? null,
                 }, transaction);
 
                 keyframesWritten += await this.insertKeyframes(observationId, keyframes, transaction);
