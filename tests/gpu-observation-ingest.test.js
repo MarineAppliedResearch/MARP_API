@@ -1592,7 +1592,7 @@ describe('An artifact recorded without its bytes', () => {
  * @constant
  * @type {number}
  */
-const CAMPA_FPS = 24.946007;
+const OTHER_FPS = 29.97;
 
 /**
  * The Jellyfin item these tests' jobs name. Every Jellyfin call is stubbed, so
@@ -1637,7 +1637,7 @@ function atRate(rows, fps) {
  *   that cannot be reached.
  * @returns {void}
  */
-function stubJellyfin(rate) {
+function stubJellyfin(rate, average = rate) {
     jest.spyOn(jellyfinRepository, 'buildDirectStreamUrl')
         .mockResolvedValue(`http://jellyfin.invalid/Videos/${ITEM_231}/stream?static=true`);
     jest.spyOn(jellyfinRepository, 'getItem').mockResolvedValue({
@@ -1654,7 +1654,7 @@ function stubJellyfin(rate) {
     if (rate instanceof Error) {
         rates.mockRejectedValue(rate);
     } else {
-        rates.mockResolvedValue({ averageFrameRate: rate, realFrameRate: 25 });
+        rates.mockResolvedValue({ averageFrameRate: average, realFrameRate: rate });
     }
 }
 
@@ -1698,8 +1698,8 @@ describe('A video that is not exactly 25 fps (#231)', () => {
     });
 
     it('ingests a result derived at the rate Jellyfin reports, and every timecode agrees with it', async () => {
-        stubJellyfin(CAMPA_FPS);
-        const rows = atRate(REAL_RESULT, CAMPA_FPS);
+        stubJellyfin(OTHER_FPS);
+        const rows = atRate(REAL_RESULT, OTHER_FPS);
 
         // The fixture has to exercise the difference, or this proves nothing:
         // at these frames the two rates disagree about the second.
@@ -1710,8 +1710,8 @@ describe('A video that is not exactly 25 fps (#231)', () => {
         expect(reported.status).toBe(200);
         expect(reported.body.ingest).toMatchObject({
             ingested: true,
-            frame_rate: CAMPA_FPS,
-            frame_rate_source: 'jellyfin AverageFrameRate',
+            frame_rate: OTHER_FPS,
+            frame_rate_source: 'jellyfin RealFrameRate',
         });
 
         const stored = await observationsForJob(job.id);
@@ -1722,7 +1722,7 @@ describe('A video that is not exactly 25 fps (#231)', () => {
             const position = parseTimeSpan(stored[index].actualPosition);
 
             // The stored moment is the frame's time at 24.946 fps, truncated to the millisecond.
-            const behind = (rows[index].observation_frame * 1000) / CAMPA_FPS - position;
+            const behind = (rows[index].observation_frame * 1000) / OTHER_FPS - position;
 
             expect(behind).toBeGreaterThanOrEqual(0);
             expect(behind).toBeLessThan(1);
@@ -1738,20 +1738,20 @@ describe('A video that is not exactly 25 fps (#231)', () => {
      */
     it('puts a frame just under a whole second in that second, as the worker does', () => {
         const row = { observation_frame: 923, tc: '00:00:36', frame: '24' };
-        const derived = ingestService.deriveTimecodes(row, 'line 1', CAMPA_FPS);
+        const derived = ingestService.deriveTimecodes(row, 'line 1', 24.946007);
 
         expect(derived).toMatchObject({ tc: '00:00:36', frame: '24' });
         expect(derived.actualPosition).toBe('00:00:36.9990000');
     });
 
     it('still refuses a result that disagrees with itself at the video\'s rate', async () => {
-        stubJellyfin(CAMPA_FPS);
+        stubJellyfin(OTHER_FPS);
 
         // Consistent at 25, which is not this video's rate.
         const { job, reported } = await runJob(REAL_RESULT, itemSpecFor());
 
         expect(reported.body.ingest.ingested).toBe(false);
-        expect(reported.body.ingest.failed).toContain(`${CAMPA_FPS} fps`);
+        expect(reported.body.ingest.failed).toContain(`${OTHER_FPS} fps`);
         expect(await observationsForJob(job.id)).toHaveLength(0);
 
         await cancel(job.id);
@@ -1770,7 +1770,7 @@ describe('A video that is not exactly 25 fps (#231)', () => {
     it('refuses rather than stores wrong when no rate is reported and the video is not 25 fps', async () => {
         stubJellyfin(null);
 
-        const { job, reported } = await runJob(atRate(REAL_RESULT, CAMPA_FPS), itemSpecFor());
+        const { job, reported } = await runJob(atRate(REAL_RESULT, OTHER_FPS), itemSpecFor());
 
         expect(reported.body.ingest.ingested).toBe(false);
         expect(reported.body.ingest.failed).toContain('25 fps');
@@ -1786,7 +1786,7 @@ describe('A video that is not exactly 25 fps (#231)', () => {
      */
     it('re-ingests a piece refused for its frame rate, once the rate is read', async () => {
         stubJellyfin(null);
-        const rows = atRate(REAL_RESULT, CAMPA_FPS);
+        const rows = atRate(REAL_RESULT, OTHER_FPS);
         const { job, reported } = await runJob(rows, itemSpecFor());
 
         expect(reported.body.ingest.ingested).toBe(false);
@@ -1797,12 +1797,50 @@ describe('A video that is not exactly 25 fps (#231)', () => {
         });
 
         jest.restoreAllMocks();
-        stubJellyfin(CAMPA_FPS);
+        stubJellyfin(OTHER_FPS);
 
         const recovered = await global.api.post(`/api/v2/gpu/jobs/${job.id}/ingest`);
 
         expect(recovered.status).toBe(200);
-        expect(recovered.body).toMatchObject({ ingested: true, frame_rate: CAMPA_FPS });
+        expect(recovered.body).toMatchObject({ ingested: true, frame_rate: OTHER_FPS });
+        expect(await observationsForJob(job.id)).toHaveLength(rows.length);
+    });
+});
+
+/**
+ * #231, the second half. A video whose timestamps jump is 25 fps on either side of
+ * the jump, and its average rate is the jump spread over the file. A worker that
+ * counts frames numbers everything after the jump early, so only a result on the
+ * playback clock can be stored from it.
+ */
+describe('A video whose timestamps jump (#231)', () => {
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    it('refuses a result that counted its frames', async () => {
+        stubJellyfin(25, 24.946007);
+
+        const { job, reported } = await runJob(REAL_RESULT, itemSpecFor());
+
+        expect(reported.body.ingest.ingested).toBe(false);
+        expect(reported.body.ingest.failed).toMatch(/timestamps jump/);
+        expect(await observationsForJob(job.id)).toHaveLength(0);
+
+        await cancel(job.id);
+    });
+
+    it('stores a result on the playback clock, at the nominal rate', async () => {
+        stubJellyfin(25, 24.946007);
+        const rows = REAL_RESULT.map((row) => ({ ...row, frame_clock: 'playback' }));
+
+        const { job, reported } = await runJob(rows, itemSpecFor());
+
+        expect(reported.body.ingest).toMatchObject({
+            ingested: true,
+            frame_rate: 25,
+            frame_rate_source: 'jellyfin RealFrameRate',
+        });
         expect(await observationsForJob(job.id)).toHaveLength(rows.length);
     });
 });
@@ -1823,7 +1861,7 @@ describe('A retry of an attempt whose results were refused (#230)', () => {
      */
     it('gives the retry its own artifact row, so it is ingested rather than skipped', async () => {
         stubJellyfin(null);
-        const rows = atRate(REAL_RESULT, CAMPA_FPS);
+        const rows = atRate(REAL_RESULT, OTHER_FPS);
         const { job, lease, reported } = await runJob(rows, itemSpecFor());
 
         expect(reported.body.attempt_state).toBe('failed');
@@ -1831,7 +1869,7 @@ describe('A retry of an attempt whose results were refused (#230)', () => {
 
         // The rate is readable by the time of the retry.
         jest.restoreAllMocks();
-        stubJellyfin(CAMPA_FPS);
+        stubJellyfin(OTHER_FPS);
 
         const retry = await leaseAgain(job.id);
         const again = await reportObservations(retry, rows);

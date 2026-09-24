@@ -423,21 +423,20 @@ describe('GPU job submission: the range it works out', () => {
     });
 
     /**
-     * #231. The rate is Jellyfin's AverageFrameRate now, the one that matches what
-     * the stream delivers. At 25, an hour of the refused CAMPA2026 footage would be
-     * sized 195 frames past its end.
+     * #231. Frame numbers are playback time times the nominal rate, so the last
+     * one is the duration times Jellyfin's RealFrameRate. The average is not used:
+     * a gap in the timestamps drags it down without shortening the video.
      */
-    it('sizes a whole video at the rate Jellyfin reports, not at 25', async () => {
-        jellyfinRepository.getVideoFrameRate.mockResolvedValueOnce({ averageFrameRate: 24.946007, realFrameRate: 25 });
+    it('sizes a whole video at its nominal rate, not at 25 and not at the average', async () => {
+        jellyfinRepository.getVideoFrameRate.mockResolvedValueOnce({ averageFrameRate: 29.9, realFrameRate: 29.97 });
 
         const response = await submitRange(undefined);
 
         expect(response.status).toBe(200);
         expect(response.body.jobs[0].spec.range).toEqual({
             start_frame: 0,
-            end_frame: Math.floor((JELLYFIN_ITEM.runtimeTicks / 10_000_000) * 24.946007),
+            end_frame: Math.floor((JELLYFIN_ITEM.runtimeTicks / 10_000_000) * 29.97),
         });
-        expect(response.body.jobs[0].spec.range.end_frame).toBeLessThan(FIXTURE_FRAMES);
     });
 
     it('sizes at 25 when the rate cannot be read, as it always did', async () => {
@@ -627,6 +626,21 @@ describe('GPU lease: the video the worker is handed', () => {
         const [row] = await query('SELECT spec FROM gpu_jobs WHERE id = :id', { id: submitted.body.jobs[0].id });
 
         expect(row.spec.video.url).toBeUndefined();
+    });
+
+    /**
+     * #231. The worker numbers frames by playback time times this rate. Without
+     * it, the decoder's average -- dragged down by any gap in the timestamps --
+     * is all a worker has.
+     */
+    it('hands the worker the video\'s nominal frame rate at lease time', async () => {
+        jellyfinRepository.getVideoFrameRate.mockResolvedValue({ averageFrameRate: 24.946007, realFrameRate: 25 });
+
+        const submitted = await submit({ jellyfin_item_id: ITEM_ID, source_name: 'jest-rate.mp4' });
+        const polled = await pollOnce();
+
+        expect(polled.body.job_id).toBe(submitted.body.jobs[0].id);
+        expect(polled.body.spec.video.frame_rate).toBe(25);
     });
 
     it('fills source_name from the Jellyfin item when the submission left it out', async () => {

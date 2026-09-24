@@ -26,12 +26,19 @@
  * **If a timecode bug involves a video that is not exactly 25 fps, start here.**
  * Until 2026-09-24 every machine-written observation was derived at this 25, and
  * a result that disagreed was refused. Since MARP_API#231 the GPU ingest derives
- * at the video's real rate -- Jellyfin's `AverageFrameRate`, 24.946 on some
- * CAMPA2026 footage -- so the database holds rows derived both ways, and nothing
- * on a row records which. Rows written before were deliberately left as they were.
+ * at the video's nominal rate, Jellyfin's `RealFrameRate`, so the database holds
+ * rows derived both ways, and nothing on a row records which. Rows written before
+ * were deliberately left as they were.
+ *
+ * **A frame number is playback time times the nominal rate**, never a count of
+ * frames decoded. They differ on a video whose timestamps jump:
+ * `20260611_161158_Fwd` is 25 fps with a 2.4 s jump after its twelfth frame, and
+ * counting numbered everything after it 61 frames early. Its *average* rate, 24.946,
+ * is that jump spread over the file, and is not a rate to convert at.
+ *
  * Everything that still converts at this constant (`classifyRow`, the timecode
- * resync, the thumbnail pass, the annotation GUI) is correct for 25 fps video and
- * treats a non-25 row as unreproducible or refuses it, which is the safe failure.
+ * resync, the annotation GUI) is correct for 25 fps video and treats a non-25 row
+ * as unreproducible or refuses it, which is the safe failure.
  *
  * @constant
  * @type {number}
