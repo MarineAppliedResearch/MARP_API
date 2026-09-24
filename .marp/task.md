@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#232
 repos: [marp-api, marp-inference-worker]
-status: implementing
+status: verifying
 needs: []
 ---
 
@@ -148,5 +148,8 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** implementing
-- **Notes:** Every blocking assumption answered 2026-09-23. A4–A6 proceed as proposed.
+- **Gate:** verifying
+- **Notes:** Both halves implemented and committed. A5 changed in how, not in intent: a
+  default is read the way `predict()` resolves it -- the checkpoint's own `imgsz` before
+  DEFAULT_CFG -- because DEFAULT_CFG alone would record 640 for a run at 1280. See
+  `.marp/verification.md`; the rest of `npm run test:gpu` waits on the queue being cleared.
