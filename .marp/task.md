@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#181
 repos: [marp-api, marp-video-player]
-status: design
+status: implementing
 needs: [jellyfin]
 ---
 
@@ -123,11 +123,36 @@ the player. The box layer is built so that editing can grow into it.
   video (A2).
 - **2026-09-24** — marp-api installs the player from a released host archive, the way
   VIDEO_PROCESSING_GUI does (A3).
-- **2026-09-24** — The non-25 thumbnail fix goes first, on its own branch (A5).
+- **2026-09-24** — The non-25 thumbnail fix goes first, on its own branch (A5). Done in
+  #236 and #237, which also found that a frame number is playback time times the video's
+  *nominal* rate, never a count of frames decoded.
+- **2026-09-24** — A reviewer reaches Jellyfin with their own Jellyfin account, signing in
+  from the player page. Isaac: *"the user will login and they will be able to access the
+  jellyfin server with their credentials."* MARP's own sign-in is local and does not carry a
+  Jellyfin session, so the player's own `JellyfinClient` signs in and keeps its session in
+  the browser, the way jellyfin-web does. MARP never sees a Jellyfin password.
 
 ## Plan
 
-To be written once A1–A3 and A5 are answered.
+1. **Install the player** the way VIDEO_PROCESSING_GUI does: an update script downloads
+   the host archive of a marp-video-player release into `frontend/shared/vendor/
+   marp-video-player/`, with `PLAYER_VERSION` recording which. v0.4.0, the latest release.
+2. **One read for the player**, `POST /api/v2/mosaic/video-context` with the page's
+   observation ids. It returns them grouped by video: the Jellyfin item (resolved from
+   `video_source` as the thumbnail pass does, refused below the same match score), the
+   nominal rate, and per observation its moment and its keyframes **already in seconds**.
+   A GUI row's frames are `framenum / 25`; a GPU row's are `framenum / nominal rate`.
+3. **The player page**, `inspect.html` in the Mosaic app: the player with its own
+   interface and Jellyfin sign-in, and a canvas over it that draws, at each presented
+   frame, every page observation whose keyframes span that time, interpolated, with the
+   opened one marked.
+4. **The Mosaic opens it**: a tile action opens or reuses one named window and tells it
+   which observation and which page, by `BroadcastChannel`. The same video is a seek; a
+   different one is a load.
+5. **Responsiveness**: the page shows the observation's extracted full frame, or its
+   thumbnail, with its box at once, and swaps to the video when the first frame at that
+   moment is presented. The video context is fetched once per page and kept.
+6. Tests at the tiers below.
 
 ## Acceptance criteria
 
@@ -137,9 +162,17 @@ To be written once A1–A3 and A5 are answered.
 
 ## Test plan
 
-To be written at G3.
+- **API, `mosaic-video-context.test.js`**: grouping by video; a GUI row's times at 25 and
+  a GPU row's at the nominal rate; an unresolvable or weak match reported, not guessed;
+  the permission.
+- **Unit, Mosaic `tests/unit`**: the box at a time, interpolated between keyframes, and none
+  outside the track's span.
+- **Browser, API tier**: the tile action opens the named window and hands it the
+  observation; opening a second one reuses it.
+- **By hand, once:** a real observation, signed in to Jellyfin, box on the animal. That
+  step needs a person to sign in; Claude does not enter passwords.
 
 ## Status
 
-- **Gate:** design
+- **Gate:** implementing
 - **Notes:** A1–A3 and A5 answered 2026-09-24. Waiting on the thumbnail fix (A5) before G2.
