@@ -57,6 +57,10 @@ const SUBSYSTEMS = {
             'mosaic-facets',
             // #181: the source-video inspector's read, which rides beside the query.
             'mosaic-video-context',
+            // #181: the Jellyfin proxy the video page plays through, and the one port
+            // that answers HTTPS beside HTTP so that page can be secure.
+            'jellyfin-proxy',
+            'listen',
             // Phase 6 (#118). Here rather than in a group of their own: the
             // thumbnail is what a mosaic tile draws, and the row key, the
             // enqueue-on-page-fetch and the `no-imagery` skip are all changes to

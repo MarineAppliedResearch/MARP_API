@@ -135,6 +135,7 @@ const {
     requestIdMiddleware,
 } = require('./middleware/error-contract.middleware');
 const { requireAuthenticatedSession, requirePermissionSession } = require('./middleware/require-authenticated-session.middleware');
+const { mountJellyfinProxy, PROXY_PATH: JELLYFIN_PROXY_PATH } = require('./middleware/jellyfin-proxy.middleware');
 const { resolvePrincipal } = require('./middleware/resolve-principal.middleware');
 
 
@@ -299,7 +300,9 @@ mountGpuBodyParsing(app);
 
 // Parse incoming JSON request bodies. Must run before any route (including
 // code-first registries like registerTaskRoutes) that reads req.body.
-app.use(bodyParser.json());
+// Not for the Jellyfin proxy, which passes a body on as it arrived (#181).
+const parseJson = bodyParser.json();
+app.use((req, res, next) => (req.path.startsWith(`${JELLYFIN_PROXY_PATH}/`) ? next() : parseJson(req, res, next)));
 
 // Attach or generate an API request correlation id.
 app.use(requestIdMiddleware);
@@ -314,6 +317,10 @@ configureAuthentication(app);
 // session middleware above (session identity takes priority) and before
 // any route registration below.
 app.use(resolvePrincipal);
+
+// Jellyfin under MARP's own address, for the Mosaic's video page (#181). After the
+// session, which its gate reads; see the middleware for why MARP carries these bytes.
+mountJellyfinProxy(app);
 
 
 /**
@@ -516,6 +523,22 @@ app.use('/shared', express.static(frontendSharedDirectory, { index: false }));
 
 // The admin page needs the stricter admin-only check, registered before
 // the broader dashboard guard below so it runs first for this one file.
+// A browser asking for a page over plain http is sent to https when the server has a
+// certificate (#181): the video player needs a secure page, and a reviewer typing the
+// address they always have should not land on one where it cannot play. Pages only --
+// the API itself goes on answering plain http, which the workers and the GUI use. Not on
+// localhost, which a browser already treats as secure.
+app.use('/apps', (req, res, next) => {
+    const onThisMachine = ['localhost', '127.0.0.1', '[::1]'].includes(req.hostname);
+
+    if (process.env.HTTPS_KEY_PATH && process.env.HTTPS_CERT_PATH && !req.secure && !onThisMachine
+        && (req.method === 'GET' || req.method === 'HEAD')) {
+        return res.redirect(302, `https://${req.headers.host}${req.originalUrl}`);
+    }
+
+    return next();
+});
+
 app.use('/apps/dashboard/admin.html', requirePermissionSession('admin'));
 
 // Gate every page under the dashboard app behind a real session, before the

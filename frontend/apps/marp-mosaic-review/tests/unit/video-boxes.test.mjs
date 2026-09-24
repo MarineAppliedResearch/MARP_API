@@ -49,3 +49,10 @@ test('#181: a letterboxed picture is centred with bars on the long side', () => 
   // In a wide box: bars left and right.
   assert.deepEqual(contentRect(400, 90, 1920, 1080), { left: 120, top: 0, width: 160, height: 90 });
 });
+
+test('#181: an insecure address is named as the reason video cannot play', async () => {
+  const { playbackBlocker } = await import('../../src/model/video-boxes.js');
+  assert.match(playbackBlocker({ secureContext: false, hasVideoDecoder: false }), /secure address/);
+  assert.match(playbackBlocker({ secureContext: true, hasVideoDecoder: false }), /WebCodecs/);
+  assert.equal(playbackBlocker({ secureContext: true, hasVideoDecoder: true }), null);
+});

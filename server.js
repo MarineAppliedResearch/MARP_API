@@ -18,8 +18,8 @@
  */
 
 const fs = require('fs');
-const https = require('https');
 const app = require('./app');
+const { listenHttpAndHttps } = require('./config/listen');
 const thumbnailExtraction = require('./service/thumbnail-extraction.service');
 
 /**
@@ -39,6 +39,11 @@ const port = process.env.PORT || 3000;
  * Both must be set to serve over HTTPS. Browsers only expose WebCodecs
  * (VideoDecoder), and other secure-context-gated APIs, over https or on
  * localhost -- so reaching this server at a LAN address needs real TLS.
+ * `scripts/create-dev-tls-certificate.js` makes a pair for an IP address.
+ *
+ * **HTTPS is added, not swapped in.** The same port goes on answering plain
+ * HTTP, because the workers, the installers and the annotation GUI are all
+ * pointed at `http://...`. See `config/listen.js`.
  *
  * @constant
  * @type {string|undefined}
@@ -47,17 +52,12 @@ const httpsKeyPath = process.env.HTTPS_KEY_PATH;
 const httpsCertPath = process.env.HTTPS_CERT_PATH;
 
 if (httpsKeyPath && httpsCertPath) {
-    https
-        .createServer(
-            {
-                key: fs.readFileSync(httpsKeyPath),
-                cert: fs.readFileSync(httpsCertPath),
-            },
-            app
-        )
-        .listen(port, () => {
-            console.log(`Server listening (https) on the port  ${port}`);
-        });
+    listenHttpAndHttps(
+        app,
+        port,
+        { key: fs.readFileSync(httpsKeyPath), cert: fs.readFileSync(httpsCertPath) },
+        () => console.log(`Server listening (http and https) on the port  ${port}`)
+    );
 } else {
     app.listen(port, () => {
         console.log(`Server listening on the port  ${port}`);

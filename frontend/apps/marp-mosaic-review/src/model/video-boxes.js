@@ -70,3 +70,24 @@ export function contentRect(elementWidth, elementHeight, pictureWidth, pictureHe
   const shown = width / aspect;
   return { left: 0, top: (height - shown) / 2, width, height: shown };
 }
+
+/**
+ * Why this browser cannot play video in the inspector, or null when it can.
+ *
+ * The player decodes with WebCodecs, and signs in to Jellyfin with `crypto.randomUUID`,
+ * and a browser offers neither on a page that is not a secure context: plain `http://`
+ * anywhere but `localhost`. Found by using it at the development server's public address,
+ * where signing in failed with "crypto.randomUUID is not a function".
+ */
+export function playbackBlocker({ secureContext, hasVideoDecoder }) {
+  if (!secureContext) {
+    return 'Video playback needs a secure address. This page was opened over plain http, where '
+      + 'the browser turns off the video decoder the player needs. Open MARP over https, or on '
+      + 'this machine at localhost.';
+  }
+  if (!hasVideoDecoder) {
+    return 'This browser has no WebCodecs video decoder, which the player needs. Use a current '
+      + 'Chrome or Edge.';
+  }
+  return null;
+}
