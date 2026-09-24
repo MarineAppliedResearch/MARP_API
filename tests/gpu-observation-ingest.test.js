@@ -35,6 +35,7 @@ const { QueryTypes } = require('sequelize');
 const db = require('../model');
 const ingestRepository = require('../repository/observation-ingest.repository');
 const ingestService = require('../service/observation-ingest.service');
+const logger = require('../logger/api.logger');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const gpuRepository = require('../repository/gpu.repository');
 const { ARTIFACT_DIRECTORY } = require('../config/gpu-orchestration');
@@ -1810,24 +1811,23 @@ describe('A video that is not exactly 25 fps (#231)', () => {
 /**
  * #231, the second half. A video whose timestamps jump is 25 fps on either side of
  * the jump, and its average rate is the jump spread over the file. A worker that
- * counts frames numbers everything after the jump early, so only a result on the
- * playback clock can be stored from it.
+ * counts frames numbers everything after the jump early. Its result is stored
+ * anyway, by the human's decision, and the log says so.
  */
 describe('A video whose timestamps jump (#231)', () => {
     afterEach(() => {
         jest.restoreAllMocks();
     });
 
-    it('refuses a result that counted its frames', async () => {
+    it('stores a result that counted its frames, and says so in the log', async () => {
         stubJellyfin(25, 24.946007);
+        const logged = jest.spyOn(logger, 'info');
 
         const { job, reported } = await runJob(REAL_RESULT, itemSpecFor());
 
-        expect(reported.body.ingest.ingested).toBe(false);
-        expect(reported.body.ingest.failed).toMatch(/timestamps jump/);
-        expect(await observationsForJob(job.id)).toHaveLength(0);
-
-        await cancel(job.id);
+        expect(reported.body.ingest).toMatchObject({ ingested: true, frame_rate: 25 });
+        expect(await observationsForJob(job.id)).toHaveLength(REAL_RESULT.length);
+        expect(logged.mock.calls.some(([message]) => /timestamps jump/.test(message))).toBe(true);
     });
 
     it('stores a result on the playback clock, at the nominal rate', async () => {

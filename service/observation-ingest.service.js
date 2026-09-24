@@ -100,11 +100,6 @@ function invalid(message) {
 
 
 /**
- * Application behaviour for turning a job's result into observations.
- *
- * @class ObservationIngestService
- */
-/**
  * Whether a video's average frame rate says its timestamps jump (#231).
  *
  * An average below the nominal rate means time passed with no frames in it. The
@@ -118,6 +113,11 @@ function hasTimestampGap(average, nominal) {
     return Math.abs(average - nominal) / nominal > 0.0005;
 }
 
+/**
+ * Application behaviour for turning a job's result into observations.
+ *
+ * @class ObservationIngestService
+ */
 class ObservationIngestService {
 
     /**
@@ -267,8 +267,8 @@ class ObservationIngestService {
      *
      * **`gapped` when the average is below the nominal rate.** That is a jump in
      * the timestamps, and a worker that numbers frames by counting them numbers
-     * every frame after it early. `ingestJob` refuses such a result unless it says
-     * its frames are on the playback clock.
+     * every frame after it early. `ingestJob` stores such a result and logs it,
+     * unless it says its frames are on the playback clock.
      *
      * **25 when no rate can be read**, which is what every ingest did before --
      * a bare `video.url`, Jellyfin unreachable, or no rate reported. It is safe
@@ -736,14 +736,13 @@ class ObservationIngestService {
 
         const species = await this.resolveSpecies(row.comname, model, speciesByName);
         // A worker that counts frames numbers everything after a timestamp jump
-        // early, by the length of the jump. Only a result on the playback clock
-        // can be stored from such a video.
+        // early, by the length of the jump. Stored anyway, by the human's
+        // decision (2026-09-24), and said in the log so it can be found later.
         if (frameRate && frameRate.gapped && row.frame_clock !== 'playback') {
-            unreconcilable(
-                `${where} numbers its frames by counting them, and this video's timestamps jump: its `
-                + `average rate is below its nominal ${frameRate.fps} fps. Every frame after the jump would `
-                + 'be stored early. A worker that numbers frames by playback time reports frame_clock '
-                + '"playback". Nothing was ingested.'
+            logger.info(
+                `job ${job.id}: ${where} numbers its frames by counting them, and this video's timestamps `
+                + `jump (average rate below its nominal ${frameRate.fps} fps). Stored as reported; frames `
+                + 'after the jump are early by the length of the jump.'
             );
         }
 
