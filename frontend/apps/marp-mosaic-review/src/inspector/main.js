@@ -14,6 +14,7 @@
 import { MarpApi } from '../api/index.js';
 import { VIDEO_WINDOW } from '../ui/video-window.js';
 import { boxesAt, contentRect, playbackBlocker } from '../model/video-boxes.js';
+import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -21,7 +22,7 @@ const $ = (id) => document.getElementById(id);
 const TARGET = '#c7ff62';
 const OTHERS = 'rgba(100, 246, 242, 0.85)';
 
-const player = window.MarpVideoEngine.createMarpVideoPlayer($('player'), {});
+const { player, budgets } = createInspectorPlayer($('player'));
 
 /* Video context per page, keyed by its sorted ids, so reopening a page asks nothing. */
 const contexts = new Map();
@@ -108,8 +109,11 @@ function watch(engine) {
 function showPoster() {
   const image = $('posterImage');
   $('poster').hidden = false;
+  image.hidden = false;
   image.onload = () => drawBoxes($('posterBoxes'), image, image.naturalWidth, image.naturalHeight, showing.moment);
-  image.onerror = () => { $('poster').hidden = true; };
+  // No full frame yet: the poster stays as a plain curtain, so the video's first frame,
+  // which it decodes before it can seek, is never shown as if it were the observation.
+  image.onerror = () => { image.hidden = true; };
   image.src = MarpApi.fullFrameUrl({ observation_id: showing.observationId });
 }
 
@@ -173,6 +177,7 @@ async function play(mine) {
       status('The video could not be opened. The player\'s own log says why.');
       return;
     }
+    applyBudgets(engine, budgets);
   }
   watch(player.engine);
   player.engine.pause();
@@ -229,3 +234,6 @@ try {
 } catch {
   status('Open a video from the Mosaic.');
 }
+
+/* The curtain waits for the moment's frame; a tap lifts it if that frame never comes. */
+$('poster').addEventListener('click', () => { $('poster').hidden = true; });

@@ -49,6 +49,20 @@ body {
   inset: 0;
 }
 
+/* The player fills the stage: the picture letterboxes in the middle and its controls sit
+   at the bottom, over the bars rather than over the animal. */
+.inspect-player > .marp-player {
+  width: 100%;
+  height: 100%;
+}
+
+/* The settings menu opens upward from the gear; on a short screen it scrolls inside the
+   player instead of running off the top of it. */
+.inspect-player .marp-settings-menu {
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
+}
+
 /* Drawn over the player's picture and never in the way of its controls. */
 .inspect-boxes {
   position: absolute;

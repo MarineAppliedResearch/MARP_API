@@ -91,3 +91,20 @@ export function playbackBlocker({ secureContext, hasVideoDecoder }) {
   }
   return null;
 }
+
+/**
+ * How much memory the player may hold, by device (#181).
+ *
+ * Deliberately small, with the player's Advanced settings there to raise it: a phone
+ * browser is killed rather than slowed when it runs out, and the player's own defaults
+ * (3 GiB of raw video and 3 GiB of decoded frames) killed one on first use. A decoded
+ * 1080p frame is about 3 MB, so 256 MB is some eighty frames, a few seconds around the
+ * moment -- which is what reviewing an observation needs.
+ */
+export function cacheBudgets({ phone, deviceMemoryGB }) {
+  if (phone) return { rawGiB: 0.125, decodedGiB: 0.25 };
+  const memory = Number(deviceMemoryGB);
+  // `navigator.deviceMemory` is capped at 8 and absent outside Chromium.
+  if (Number.isFinite(memory) && memory < 8) return { rawGiB: 0.25, decodedGiB: 0.5 };
+  return { rawGiB: 0.5, decodedGiB: 1 };
+}
