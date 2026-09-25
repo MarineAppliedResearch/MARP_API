@@ -45,3 +45,36 @@ case: its box was checked against the decoded frame pixel for pixel during #236.
   1944 after, with the store applying {"confidence":null}"*). Nothing in this change touches
   the rail. Run alone it passed twice at both widths, so it is intermittent in a full run.
   Left as found, not fixed here.
+
+---
+
+**2026-09-24, after first use: `181-video-page-on-an-insecure-address`.**
+
+Isaac's first use failed: *"crypto.randomUUID is not a function"* on signing in. MARP is
+reached at `http://47.208.203.78:3000`, which a browser does not treat as secure, and there
+it offers neither `crypto.randomUUID` nor WebCodecs. Every test above ran on localhost, which
+it does treat as secure, so none of them could see it. Fixed by serving HTTPS beside HTTP on
+port 3000 with a certificate for the address, and by reaching Jellyfin through MARP at
+`/jellyfin`, because a secure page cannot fetch from plain-http Jellyfin.
+
+Measured at the public address with Chromium, certificate warning accepted:
+
+```
+https://47.208.203.78:3000/ {"secure":true,"VideoDecoder":"function","randomUUID":"function"}
+http://47.208.203.78:3000/  {"secure":false,"VideoDecoder":"undefined","randomUUID":"undefined"}
+```
+
+A second defect, found by the new sign-in test: the sign-in form was never hidden, because
+its `display: grid` beat the `hidden` attribute. Red before the style fix, green after.
+
+- `tests/listen.test.js` 5, `tests/jellyfin-proxy.test.js` 6: both protocols on one port,
+  the page redirect and its localhost exception, and the proxy's pass-through, cookie
+  stripping, Range, sign-in body, redirect rewriting and gate.
+- `tests/api/video-window.spec.mjs` 6 (3 × 2 widths): the window, the real Jellyfin reached
+  through `/jellyfin`, and signing in with Jellyfin's answer stood in.
+- `test:mosaic` 288, `test:core` 245, `test:auth` 36, `test:gpu` 187; Mosaic unit 303.
+- Whole browser tier: 596 passed, 1 failed, 21 skipped. The failure was *A4: an accept mark
+  on a tile with no picture is refused* at phone width; alone it passed twice at both widths.
+  The run before, a different phone-width test failed the same way. Intermittent, not fixed here.
+
+Still not by a test: playback after a real Jellyfin sign-in. That step is Isaac's.
