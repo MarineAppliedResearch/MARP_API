@@ -95,3 +95,30 @@ test('#181 signing in to Jellyfin from the video page takes effect', async ({ pa
   // The player keeps the session, so the next page load does not ask again.
   expect(await page.evaluate(() => Object.keys(localStorage).some((key) => /jellyfin/i.test(key)))).toBe(true);
 });
+
+test('#181 nothing covers the player while the video opens', async ({ page, request }) => {
+  const id = await playableObservation(request);
+  // Jellyfin's answer to the sign-in only, as above, so the page goes on to open the video.
+  await page.route('**/jellyfin/Users/AuthenticateByName', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ AccessToken: 'jest-token', User: { Id: 'jest-user', Name: 'jest' }, ServerId: 'jest' })
+  }));
+  const hash = encodeURIComponent(JSON.stringify({ type: 'show', observationId: id, pageIds: [id] }));
+  await page.goto(`inspect.html#${hash}`);
+  const form = page.locator('#signIn');
+  await form.getByLabel('User').fill('jest-reviewer');
+  await form.getByLabel('Password').fill('jest-not-a-password');
+  await form.getByRole('button', { name: 'Sign in' }).click();
+  await expect(form).toBeHidden();
+
+  // The middle of the player is the player -- its picture and its spinner -- and not a
+  // frame laid over it. A full-page poster used to cover it from the first request until
+  // the seek landed, which on a phone read as the whole player disappearing.
+  const hit = await page.evaluate(() => {
+    const rect = document.getElementById('player').getBoundingClientRect();
+    const element = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return { inside: Boolean(element && element.closest('#player')), what: element && (element.id || element.className) };
+  });
+  expect(hit.inside, `the middle of the player is covered by ${hit.what}`).toBe(true);
+});

@@ -87,7 +87,7 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   }
 }
 
-/* Follow the engine frame by frame: redraw the boxes, and drop the poster once the
+/* Follow the engine frame by frame: redraw the boxes, and clear the status once the
    video is showing the moment it was opened at. */
 function watch(engine) {
   if (!engine || engine === watchedEngine) return;
@@ -96,25 +96,10 @@ function watch(engine) {
   const onFrame = (_now, metadata) => {
     if (engine !== watchedEngine) return;
     drawBoxes($('boxes'), canvas, canvas.width, canvas.height, metadata.mediaTime);
-    if (showing && !$('poster').hidden && Math.abs(metadata.mediaTime - showing.moment) < 0.25) {
-      $('poster').hidden = true;
-      status('');
-    }
+    if (showing && Math.abs(metadata.mediaTime - showing.moment) < 0.25) status('');
     engine.requestVideoFrameCallback(onFrame);
   };
   engine.requestVideoFrameCallback(onFrame);
-}
-
-/* The extracted full frame with the opened box, at once, while the video loads. */
-function showPoster() {
-  const image = $('posterImage');
-  $('poster').hidden = false;
-  image.hidden = false;
-  image.onload = () => drawBoxes($('posterBoxes'), image, image.naturalWidth, image.naturalHeight, showing.moment);
-  // No full frame yet: the poster stays as a plain curtain, so the video's first frame,
-  // which it decodes before it can seek, is never shown as if it were the observation.
-  image.onerror = () => { image.hidden = true; };
-  image.src = MarpApi.fullFrameUrl({ observation_id: showing.observationId });
 }
 
 async function show(request) {
@@ -145,10 +130,12 @@ async function show(request) {
 
   // Jellyfin through MARP's own address, so a secure page can reach it (#181).
   const server = answer.jellyfin_server ? new URL(answer.jellyfin_server, window.location.origin).href : null;
+  // Nothing is laid over the player while it loads or seeks: its own spinner and controls
+  // are what the reviewer should see. A full-page frame covered them, and read as the
+  // player disappearing.
   showing = { request, video, observationId: request.observationId, moment: row.moment_s, server };
-  showPoster();
 
-  // On an insecure address the browser has no decoder, so the frame is all there is.
+  // On an insecure address the browser has no decoder, so there is nothing to play.
   const blocker = playbackBlocker({
     secureContext: window.isSecureContext,
     hasVideoDecoder: typeof window.VideoDecoder === 'function'
@@ -183,7 +170,6 @@ async function play(mine) {
   }
   watch(player.engine);
   player.engine.pause();
-  status('Seeking…');
   player.engine.currentTime = moment;
 }
 
@@ -237,5 +223,3 @@ try {
   status('Open a video from the Mosaic.');
 }
 
-/* The curtain waits for the moment's frame; a tap lifts it if that frame never comes. */
-$('poster').addEventListener('click', () => { $('poster').hidden = true; });
