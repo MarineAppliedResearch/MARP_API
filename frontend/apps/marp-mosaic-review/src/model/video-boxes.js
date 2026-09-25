@@ -105,3 +105,57 @@ export function playbackBlocker({ secureContext, hasVideoDecoder }) {
 export function cacheBudgets({ desktop }) {
   return desktop ? null : { rawGiB: 0.125, decodedGiB: 0.25 };
 }
+
+/**
+ * The quality a video opens at, by device (#181), or null for the player's own choice.
+ *
+ * A desktop plays the original file, as it always has. Anything else opens a 720p
+ * transcode: the original is 1080p with a keyframe every ten seconds, and the player
+ * decodes a whole keyframe interval at a time -- about 742 MB a unit, three held at
+ * once -- which ran a phone out of memory and took its other apps down with it. The
+ * transcode starts every three-second segment on a keyframe, so a unit is a tenth of
+ * that. The name must be one of the player's own tiers: its quality menu matches on it.
+ * The menu is still there to choose another.
+ */
+export function openingQuality({ desktop }) {
+  return desktop ? null : { name: '720p, 4 Mbps', maxStreamingBitrate: 4_000_000, maxWidth: 1280, maxHeight: 720 };
+}
+
+/**
+ * When the picture on screen was really taken, from the player's frame metadata.
+ *
+ * A transcode's segment grid runs ahead of its pictures -- six seconds by ten minutes into
+ * one dive -- so `mediaTime` names a moment the picture is not from. `rawFrameTime` is the
+ * decoded frame's own timestamp, which the burned-in dive clock agrees with. On the
+ * original file the two are the same.
+ */
+export function pictureTime(metadata) {
+  return Number.isFinite(metadata.rawFrameTime) ? metadata.rawFrameTime : metadata.mediaTime;
+}
+
+/**
+ * Where to seek so the picture shows `moment`, or null when it already does.
+ *
+ * Within half a frame is on it. Otherwise the offset between the picture and the grid
+ * is carried over to the target, which lands on the moment because the offset barely
+ * changes across a few seconds.
+ */
+export function landingCorrection({ moment, mediaTime, pictureTime: shown, fps = 25 }) {
+  if (![moment, mediaTime, shown].every(Number.isFinite)) return null;
+  if (Math.abs(shown - moment) <= 0.5 / fps) return null;
+  return mediaTime + (moment - shown);
+}
+
+/**
+ * Where the first seek goes: one frame short of the moment.
+ *
+ * The player opens on the moment and paints it before the page is watching, and it
+ * reports a frame only when it paints a new one -- so a seek to the moment itself
+ * paints nothing, reports nothing, and the page never learns what it is showing. That
+ * left the status reading "Seeking…" for good. A frame short always paints, and the
+ * landing correction then steps onto the moment.
+ */
+export function firstSeekTarget(moment, fps = 25) {
+  const frame = 1 / fps;
+  return moment >= frame ? moment - frame : moment + frame;
+}

@@ -13,7 +13,7 @@
  */
 import { MarpApi } from '../api/index.js';
 import { VIDEO_WINDOW } from '../ui/video-window.js';
-import { boxesAt, contentRect, playbackBlocker } from '../model/video-boxes.js';
+import { boxesAt, contentRect, playbackBlocker, pictureTime, landingCorrection, firstSeekTarget } from '../model/video-boxes.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 
 const $ = (id) => document.getElementById(id);
@@ -22,7 +22,7 @@ const $ = (id) => document.getElementById(id);
 const TARGET = '#c7ff62';
 const OTHERS = 'rgba(100, 246, 242, 0.85)';
 
-const { player, budgets } = createInspectorPlayer($('player'));
+const { player, budgets, quality } = createInspectorPlayer($('player'));
 
 /* Video context per page, keyed by its sorted ids, so reopening a page asks nothing. */
 const contexts = new Map();
@@ -35,6 +35,13 @@ let watchedEngine = null;
 
 /* The newest request, so a slow load never overwrites a later click. */
 let latest = 0;
+
+/* When the picture on screen was taken, so a resize redraws the boxes for it. */
+let shownAt = null;
+
+/* The seek meant to land on the moment, and how many corrections it has left. A
+   transcode's grid runs ahead of its pictures, so the first seek can land seconds off. */
+let landing = null;
 
 function status(text) {
   $('inspectStatus').textContent = text || '';
@@ -87,16 +94,18 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   }
 }
 
-/* Follow the engine frame by frame: redraw the boxes, and clear the status once the
-   video is showing the moment it was opened at. */
+/* Follow the engine frame by frame: redraw the boxes for when the picture was really
+   taken, nudge the seek until the picture is the opened moment, and clear the status. */
 function watch(engine) {
   if (!engine || engine === watchedEngine) return;
   watchedEngine = engine;
   const canvas = $('player').querySelector('.marp-canvas');
   const onFrame = (_now, metadata) => {
     if (engine !== watchedEngine) return;
-    drawBoxes($('boxes'), canvas, canvas.width, canvas.height, metadata.mediaTime);
-    if (showing && Math.abs(metadata.mediaTime - showing.moment) < 0.25) status('');
+    shownAt = pictureTime(metadata);
+    drawBoxes($('boxes'), canvas, canvas.width, canvas.height, shownAt);
+    land(engine, metadata);
+    if (showing && Math.abs(shownAt - showing.moment) < 0.25) status('');
     engine.requestVideoFrameCallback(onFrame);
   };
   engine.requestVideoFrameCallback(onFrame);
@@ -160,7 +169,8 @@ async function play(mine) {
     status('Opening the video…');
     // Opened at the moment itself (marp-video-player 0.5.0), so the start of the dive
     // is neither fetched nor shown first.
-    const engine = await player.loadItem(video.jellyfin_item_id, null, { startTime: moment });
+    // A phone opens a transcode rather than the original file, which it cannot hold.
+    const engine = await player.loadItem(video.jellyfin_item_id, quality, { startTime: moment });
     if (mine !== latest) return;
     if (!engine) {
       status('The video could not be opened. The player\'s own log says why.');
@@ -170,7 +180,30 @@ async function play(mine) {
   }
   watch(player.engine);
   player.engine.pause();
-  player.engine.currentTime = moment;
+  seekTo(player.engine, firstSeekTarget(moment, video.frame_rate || 25), 3);
+}
+
+function seekTo(engine, target, corrections) {
+  landing = { target, corrections };
+  engine.currentTime = target;
+}
+
+/* Once the seek has arrived, check the picture is the moment and correct it if not. Only
+   while paused: a reviewer who pressed play has moved on from the moment. */
+function land(engine, metadata) {
+  if (!landing || !showing || !engine.paused) return;
+  if (Math.abs(metadata.mediaTime - landing.target) > 0.1) return;
+  const target = landingCorrection({
+    moment: showing.moment,
+    mediaTime: metadata.mediaTime,
+    pictureTime: pictureTime(metadata),
+    fps: showing.video.frame_rate || 25
+  });
+  if (target === null || landing.corrections === 0) {
+    landing = null;
+    return;
+  }
+  seekTo(engine, target, landing.corrections - 1);
 }
 
 function askToSignIn() {
@@ -205,7 +238,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('resize', () => {
   if (showing && player.engine) {
     const canvas = $('player').querySelector('.marp-canvas');
-    drawBoxes($('boxes'), canvas, canvas.width, canvas.height, player.engine.currentTime);
+    drawBoxes($('boxes'), canvas, canvas.width, canvas.height, shownAt ?? player.engine.currentTime);
   }
 });
 
