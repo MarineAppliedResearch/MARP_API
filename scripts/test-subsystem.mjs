@@ -61,6 +61,8 @@ const SUBSYSTEMS = {
             // that answers HTTPS beside HTTP so that page can be secure.
             'jellyfin-proxy',
             'listen',
+            // The player bundle the video page loads is in the checkout at all.
+            'video-player-vendor',
             // Phase 6 (#118). Here rather than in a group of their own: the
             // thumbnail is what a mosaic tile draws, and the row key, the
             // enqueue-on-page-fetch and the `no-imagery` skip are all changes to
