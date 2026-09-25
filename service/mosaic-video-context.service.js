@@ -30,6 +30,7 @@ const jellyfinRepository = require('../repository/jellyfin.repository');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { MIN_MATCH_SCORE } = require('../config/thumbnails');
 const { ASSUMED_FPS, parseTimeSpan } = require('../db/timecode');
+const { PROXY_PATH } = require('../middleware/jellyfin-proxy.middleware');
 
 /** How many observations one request may name: a page, with room to spare. */
 const MAX_OBSERVATIONS = 1000;
@@ -198,7 +199,9 @@ async function videoContext(body) {
         });
     }
 
-    return { jellyfin_server: jellyfinRepository.baseUrl || null, videos };
+    // The proxy under MARP's own address, never Jellyfin's: a secure page cannot reach a
+    // plain-http server, and the player needs a secure page (#181).
+    return { jellyfin_server: jellyfinRepository.baseUrl ? PROXY_PATH : null, videos };
 }
 
 module.exports = { videoContext, MAX_OBSERVATIONS };

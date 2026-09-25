@@ -13,7 +13,7 @@
  */
 import { MarpApi } from '../api/index.js';
 import { VIDEO_WINDOW } from '../ui/video-window.js';
-import { boxesAt, contentRect } from '../model/video-boxes.js';
+import { boxesAt, contentRect, playbackBlocker } from '../model/video-boxes.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -139,8 +139,20 @@ async function show(request) {
     return;
   }
 
-  showing = { request, video, observationId: request.observationId, moment: row.moment_s, server: answer.jellyfin_server };
+  // Jellyfin through MARP's own address, so a secure page can reach it (#181).
+  const server = answer.jellyfin_server ? new URL(answer.jellyfin_server, window.location.origin).href : null;
+  showing = { request, video, observationId: request.observationId, moment: row.moment_s, server };
   showPoster();
+
+  // On an insecure address the browser has no decoder, so the frame is all there is.
+  const blocker = playbackBlocker({
+    secureContext: window.isSecureContext,
+    hasVideoDecoder: typeof window.VideoDecoder === 'function'
+  });
+  if (blocker) {
+    status(blocker);
+    return;
+  }
 
   if (!player.jellyfinClient.isAuthenticated()) {
     askToSignIn();

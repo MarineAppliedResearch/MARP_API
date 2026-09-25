@@ -1,7 +1,7 @@
 /** #181: the source video opens in its own window, and that window is reused. */
 import { test, expect } from '@playwright/test';
 import { seedPage } from './seed.mjs';
-import { expectRealBacking, ready } from './support.mjs';
+import { expectRealBacking, ready, pageOf } from './support.mjs';
 
 /* Open one tile's details and press its Open video button. */
 async function openVideo(page, id) {
@@ -46,3 +46,52 @@ test('#181 Open video shows the observation in its own window, and reuses that w
       await seeded.remove();
     }
   });
+
+/* An observation on the testing database whose video really resolves, found rather than
+   pinned. Fails, never skips, when there is none. */
+async function playableObservation(request) {
+  const { rows } = await pageOf(request, {}, { pageSize: 50 });
+  const res = await request.post('/api/v2/mosaic/observations/video-context', {
+    data: { observation_ids: rows.map((row) => row.observation_id) }
+  });
+  expect(res.ok(), `the video-context read was refused: ${res.status()}`).toBeTruthy();
+  const video = (await res.json()).videos.find((entry) => entry.jellyfin_item_id);
+  expect(video, 'no observation on the first page resolves to a Jellyfin video').toBeTruthy();
+  return video.observations[0].observation_id;
+}
+
+test('#181 the video page reaches the real Jellyfin through MARP\'s own address', async ({ page }) => {
+  await page.goto('inspect.html');
+  // Same origin as the page, so a secure page can reach it; the gate is the MARP session.
+  const status = await page.evaluate(async () => (await fetch('/jellyfin/System/Info/Public')).status);
+  expect(status).toBe(200);
+});
+
+test('#181 signing in to Jellyfin from the video page takes effect', async ({ page, request }) => {
+  const id = await playableObservation(request);
+  // Only Jellyfin's answer to the sign-in is stood in: no real account is used here.
+  let signedIn = null;
+  await page.route('**/jellyfin/Users/AuthenticateByName', async (route) => {
+    signedIn = JSON.parse(route.request().postData() || '{}');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ AccessToken: 'jest-token', User: { Id: 'jest-user', Name: 'jest' }, ServerId: 'jest' })
+    });
+  });
+
+  const hash = encodeURIComponent(JSON.stringify({ type: 'show', observationId: id, pageIds: [id] }));
+  await page.goto(`inspect.html#${hash}`);
+
+  const form = page.locator('#signIn');
+  await expect(form).toBeVisible();
+  await form.getByLabel('User').fill('jest-reviewer');
+  await form.getByLabel('Password').fill('jest-not-a-password');
+  await form.getByRole('button', { name: 'Sign in' }).click();
+
+  await expect(form).toBeHidden();
+  await expect(page.locator('#signInError')).toBeEmpty();
+  expect(signedIn && signedIn.Username).toBe('jest-reviewer');
+  // The player keeps the session, so the next page load does not ask again.
+  expect(await page.evaluate(() => Object.keys(localStorage).some((key) => /jellyfin/i.test(key)))).toBe(true);
+});

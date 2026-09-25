@@ -1,5 +1,11 @@
 /* The Mosaic's source-video inspector (#181). */
 
+/* `hidden` has to win over the display each panel sets below, or a hidden panel stays
+   on screen: the sign-in form did, whether or not anyone was signed in. */
+[hidden] {
+  display: none !important;
+}
+
 html, body {
   height: 100%;
   margin: 0;

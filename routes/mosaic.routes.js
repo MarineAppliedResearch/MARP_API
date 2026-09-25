@@ -257,7 +257,8 @@ function registerMosaicRoutes(app) {
             + 'here because a frame number means different things by who wrote it: the annotation GUI counts at an assumed 25, a GPU '
             + 'row at the video\'s nominal rate. The video is resolved from `video_source` exactly as the thumbnail pass resolves it, '
             + 'and a weak match is returned with `jellyfin_item_id` null and a reason rather than guessed at. `jellyfin_server` is '
-            + 'where a reviewer signs in with their own Jellyfin account; no Jellyfin credential passes through MARP.',
+            + 'the path of the Jellyfin proxy MARP serves, where a reviewer signs in with their own Jellyfin account; MARP adds no '
+            + 'credential of its own.',
         tags: [TAG],
         requestBody: {
             required: true,
