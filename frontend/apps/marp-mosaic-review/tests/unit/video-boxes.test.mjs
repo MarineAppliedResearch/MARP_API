@@ -57,9 +57,8 @@ test('#181: an insecure address is named as the reason video cannot play', async
   assert.equal(playbackBlocker({ secureContext: true, hasVideoDecoder: true }), null);
 });
 
-test('#181: the player holds little on a phone, more on a computer, and never its 3 GiB defaults', async () => {
+test('#181: a desktop keeps the player cache settings it came with; anything else is held small', async () => {
   const { cacheBudgets } = await import('../../src/model/video-boxes.js');
-  assert.deepEqual(cacheBudgets({ phone: true, deviceMemoryGB: 8 }), { rawGiB: 0.125, decodedGiB: 0.25 });
-  assert.deepEqual(cacheBudgets({ phone: false, deviceMemoryGB: 4 }), { rawGiB: 0.25, decodedGiB: 0.5 });
-  assert.deepEqual(cacheBudgets({ phone: false, deviceMemoryGB: undefined }), { rawGiB: 0.5, decodedGiB: 1 });
+  assert.equal(cacheBudgets({ desktop: true }), null);
+  assert.deepEqual(cacheBudgets({ desktop: false }), { rawGiB: 0.125, decodedGiB: 0.25 });
 });

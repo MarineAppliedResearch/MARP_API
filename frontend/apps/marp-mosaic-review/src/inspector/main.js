@@ -166,18 +166,20 @@ async function show(request) {
   await play(mine);
 }
 
-/* Load the video if it is not the one already open, then seek to the moment. */
+/* Open the video at the moment, or seek to it when that video is already open. */
 async function play(mine) {
   const { video, moment } = showing;
   if (player.currentItemId !== video.jellyfin_item_id || !player.engine) {
     status('Opening the video…');
-    const engine = await player.loadItem(video.jellyfin_item_id);
+    // Opened at the moment itself (marp-video-player 0.5.0), so the start of the dive
+    // is neither fetched nor shown first.
+    const engine = await player.loadItem(video.jellyfin_item_id, null, { startTime: moment });
     if (mine !== latest) return;
     if (!engine) {
       status('The video could not be opened. The player\'s own log says why.');
       return;
     }
-    applyBudgets(engine, budgets);
+    applyBudgets(engine, budgets, player);
   }
   watch(player.engine);
   player.engine.pause();
