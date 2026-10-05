@@ -85,7 +85,8 @@ and on a phone, both for watching and for editing.
 - [x] **A7 · scientific · blocking** — answered 2026-10-05: boxes on the exact frames, so the
   player is fixed (Direct Play's edit list included). Existing data is not touched.
 - [x] **A8 · product/UI · blocking** — answered 2026-10-05: watching and editing on a phone.
-- [ ] **A9 · API contract · blocking** — **how the page gets its boxes.** Recommended: two
+- [x] **A9 · API contract · blocking** — answered 2026-10-05: the two reads, windowed (the
+  recommendation). **How the page gets its boxes.** Recommended: two
   reads, both taking the Mosaic's filters body plus the video: (1) the matching
   observations in that video with their species and start/end times -- small, loaded once;
   (2) keyframes for those observations within a time window, fetched around the playhead.
@@ -98,7 +99,7 @@ and on a phone, both for watching and for editing.
 
 ## Decisions
 
-- **2026-10-05** — answers A1-A8 above, from Isaac.
+- **2026-10-05** — answers A1-A9 above, from Isaac.
 
 ## Plan
 
