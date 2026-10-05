@@ -69,6 +69,48 @@ body {
   pointer-events: none;
 }
 
+/* With editing on, a finger on the picture drags a box rather than panning the page
+   (#181). Presses on no box still reach the player. */
+.inspect-stage.editing {
+  touch-action: none;
+}
+
+/* The annotation GUI's box menu. */
+.inspect-menu {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: calc(100% - 16px);
+  padding: 4px 0;
+  background: var(--navy-850);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.inspect-menu button {
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  color: var(--white);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inspect-menu button:hover:not(:disabled),
+.inspect-menu button:focus-visible {
+  background: var(--navy-700, rgba(255, 255, 255, 0.08));
+}
+
+.inspect-menu button:disabled {
+  color: var(--muted);
+  font-size: 0.85em;
+  cursor: default;
+}
+
 .inspect-status {
   position: absolute;
   left: 12px;

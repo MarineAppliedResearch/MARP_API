@@ -21,7 +21,15 @@ export function boxesAt(observations, t) {
     for (const track of tracksOf(observation.keyframes)) {
       const box = boxOnTrack(track, t);
       if (box) {
-        out.push({ observation_id: observation.observation_id, comname: observation.comname, ...box });
+        // The track's subset and keyframes go with the box, so an edit knows which track
+        // it is on and whether the picture is on one of its keyframes.
+        out.push({
+          observation_id: observation.observation_id,
+          comname: observation.comname,
+          subset: track[0].subset == null ? null : String(track[0].subset),
+          keyframes: track,
+          ...box
+        });
       }
     }
   }

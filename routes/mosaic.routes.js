@@ -409,6 +409,7 @@ function registerMosaicRoutes(app) {
                                             observation_id: { type: 'integer' },
                                             species_id: { type: 'integer', nullable: true },
                                             comname: { type: 'string', nullable: true },
+                                            version: { type: 'integer', description: 'The row version a delete must name.' },
                                             start_s: { type: 'number' },
                                             end_s: { type: 'number' },
                                         },

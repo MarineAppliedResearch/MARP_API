@@ -117,6 +117,33 @@ export function videoKeyframesBody({ observationIds, from, to }) {
 }
 
 /**
+ * A box as the edit routes take it (#181): centre and size, fractions of the picture.
+ * Plain numbers only -- a box read off a canvas can carry NaN, which JSON sends as null.
+ */
+export function keyframeBoxBody(box) {
+  const out = {};
+  for (const key of ['x', 'y', 'width', 'height']) {
+    const value = box && box[key];
+    if (!Number.isFinite(value)) {
+      throw new TypeError(`a box needs a number for ${key}, not ${JSON.stringify(value)}`);
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/** `POST /api/v2/mosaic/video/keyframe` (#181): a middle keyframe at `t` seconds. */
+export function addKeyframeBody({ observationId, subset, t, box }) {
+  if (!Number.isInteger(observationId)) {
+    throw new TypeError(`observationId must be an integer, not ${JSON.stringify(observationId)}`);
+  }
+  if (!Number.isFinite(t)) throw new TypeError(`t must be a time in seconds, not ${JSON.stringify(t)}`);
+  const body = { observation_id: observationId, t, ...keyframeBoxBody(box) };
+  if (subset != null) body.subset = String(subset);
+  return body;
+}
+
+/**
  * `POST /api/v2/mosaic/observations/pages`.
  *
  * R3: a **visible** page is one call with `includeTotal: true`; a **prefetch** is one call

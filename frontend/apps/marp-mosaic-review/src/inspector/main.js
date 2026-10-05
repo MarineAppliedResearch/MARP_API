@@ -22,11 +22,17 @@ import { VIDEO_WINDOW } from '../ui/video-window.js';
 import { boxesAt, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
 import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour } from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
+import { createBoxEditor } from './editing.js';
+import { toScreen, gripsOf, trackKey, withEdit, GRIP_RADIUS } from '../model/box-edit.js';
 
 const $ = (id) => document.getElementById(id);
 
 /* The opened observation's box. Every other box is its species' colour. */
 const HIGHLIGHT = '#c7ff62';
+
+/* A box being moved, and one being resized: the GUI's Orange and BlueViolet. */
+const DRAGGING = '#ffa500';
+const RESIZING = '#8a2be2';
 
 /* The most observations one keyframe request names; the API takes up to 2,000. */
 const IDS_PER_REQUEST = 1000;
@@ -63,6 +69,10 @@ let shownAt = null;
 /* The moment to step onto once the first seek -- a frame short of it -- has painted. */
 let thenTo = null;
 
+/* What was last drawn, in draw order, and the picture's area: what a press is tested
+   against. */
+let drawnNow = { rects: [], area: null };
+
 function status(text) {
   $('inspectStatus').textContent = text || '';
 }
@@ -84,19 +94,24 @@ function fitOverlay(overlay, element) {
   return { context, width: rect.width, height: rect.height };
 }
 
-/* Draw every box at time `t` over a picture of the given intrinsic size: the others first
-   in their species' colours, the opened one last, on top, highlighted. */
+/* Draw every box at time `t` over a picture of the given intrinsic size, lowest first: the
+   others in their species' colours, the opened one highlighted above them, and a box the
+   reviewer has pressed above both. The selected box carries the GUI's four grips. */
 function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   const { context, width, height } = fitOverlay(overlay, element);
+  drawnNow = { rects: [], area: null };
   if (!showing) return;
   const area = contentRect(width, height, pictureWidth, pictureHeight);
-  const boxes = boxesAt(drawable, t)
-    .sort((a, b) => (a.observation_id === showing.observationId) - (b.observation_id === showing.observationId));
-  for (const box of boxes) {
+  const entries = boxesAt(drawable, t).map((box) => {
+    const key = trackKey(box);
     const opened = box.observation_id === showing.observationId;
-    const colour = opened ? HIGHLIGHT : speciesColour(box.comname);
-    const left = area.left + (box.x - box.width / 2) * area.width;
-    const top = area.top + (box.y - box.height / 2) * area.height;
+    const preview = editor.previewFor(key);
+    return { key, box, opened, preview, rect: preview ? preview.rect : toScreen(box, area) };
+  }).sort((a, b) => editor.rankOf(a.key, a.opened) - editor.rankOf(b.key, b.opened));
+
+  for (const { key, box, opened, preview, rect } of entries) {
+    const base = opened ? HIGHLIGHT : speciesColour(box.comname);
+    const colour = preview ? (preview.part === 'body' ? DRAGGING : RESIZING) : base;
     context.save();
     if (opened) {
       context.shadowColor = HIGHLIGHT;
@@ -104,13 +119,29 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
     }
     context.strokeStyle = colour;
     context.lineWidth = opened ? 4 : 2;
-    context.strokeRect(left, top, box.width * area.width, box.height * area.height);
+    context.strokeRect(rect.left, rect.top, rect.width, rect.height);
     context.restore();
     context.font = opened ? 'bold 14px system-ui, sans-serif' : '13px system-ui, sans-serif';
     context.fillStyle = colour;
     const label = opened ? `${box.comname || 'Observation'} · ${box.observation_id}` : (box.comname || '');
-    if (label) context.fillText(label, left, Math.max(13, top - 5));
+    if (label) context.fillText(label, rect.left, Math.max(13, rect.top - 5));
+    if (key === editor.selectedKey) {
+      // The record identifier under the selected box, as the GUI shows it.
+      context.font = '12px system-ui, sans-serif';
+      context.fillStyle = '#ffffff';
+      context.fillText(`${box.observation_id}:${box.subset ?? ''}`, rect.left, rect.top + rect.height + 14);
+      for (const grip of gripsOf(rect)) {
+        context.beginPath();
+        context.arc(grip.x, grip.y, GRIP_RADIUS, 0, Math.PI * 2);
+        context.fillStyle = '#ffffff';
+        context.fill();
+        context.lineWidth = 1.5;
+        context.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+        context.stroke();
+      }
+    }
   }
+  drawnNow = { rects: entries, area };
 }
 
 function redraw() {
@@ -238,6 +269,7 @@ async function show(request) {
   // Jellyfin through MARP's own address, so a secure page can reach it (#181).
   const server = answer.jellyfin_server ? new URL(answer.jellyfin_server, window.location.origin).href : null;
   forgetKeyframes();
+  editor.reset();
   // Nothing is laid over the player while it loads or seeks: its own spinner and controls
   // are what the reviewer should see.
   showing = {
@@ -340,6 +372,55 @@ $('signIn').addEventListener('submit', async (event) => {
   form.hidden = true;
   if (typeof player.updateLoginStatus === 'function') player.updateLoginStatus();
   await play(latest);
+});
+
+/* Box editing (#181), for a reviewer who may write keyframes. */
+const editor = createBoxEditor({
+  stage: $('player').parentElement,
+  overlay: $('boxes'),
+  menu: $('boxMenu'),
+  host: {
+    drawn: () => drawnNow,
+    time: () => shownAt ?? (player.engine ? player.engine.currentTime : 0),
+    frameRate: () => (showing && showing.video.frame_rate) || 25,
+    pause: () => { if (player.engine) player.engine.pause(); },
+    redraw,
+    status,
+    apply(answer) {
+      const next = withEdit(held, answer);
+      held.clear();
+      for (const [index, keyframes] of next) held.set(index, keyframes);
+      rebuildDrawable();
+    },
+    async deleteObservation(id) {
+      const row = showing && showing.observations.find((o) => o.observation_id === id);
+      if (!row) return;
+      // The Mosaic's own delete, so it is the same permanent delete with the same check
+      // that nobody changed the row since it was read.
+      const answer = await MarpApi.commitPage({
+        mode: 'delete', rows: [{ observation_id: id, version: row.version }], marks: new Map([[id, {}]])
+      });
+      const deleted = (answer.reviewed || []).some((r) => r.observation_id === id && r.outcome === 'deleted');
+      if (!deleted) {
+        status(`Observation ${id} was not deleted: it changed since this page read it. Open it again from the Mosaic.`);
+        return;
+      }
+      showing = { ...showing, observations: showing.observations.filter((o) => o.observation_id !== id) };
+      for (const [index, keyframes] of held) held.set(index, keyframes.filter((k) => k.observation_id !== id));
+      rebuildDrawable();
+      redraw();
+      status(`Observation ${id} deleted.`);
+    }
+  }
+});
+
+MarpApi.whoami().then((user) => {
+  const permissions = (user && user.permissions) || [];
+  if (permissions.includes('keyframes:write')) {
+    editor.enable({ deleteObservations: permissions.includes('observations:write') });
+  }
+}).catch(() => {
+  // Not signed in to MARP, or it could not say: the boxes are shown and not edited.
 });
 
 /* A hidden window stops fetching video for nobody. */

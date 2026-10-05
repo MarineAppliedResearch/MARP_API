@@ -140,6 +140,7 @@ async function videoObservations(body = {}) {
             observation_id: row.observation_id,
             species_id: row.species_id,
             comname: row.comname,
+            version: row.version,
             start_s: Number(row.first_framenum) / rate,
             end_s: Number(row.last_framenum) / rate,
         };
