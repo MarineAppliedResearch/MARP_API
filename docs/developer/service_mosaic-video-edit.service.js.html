@@ -73,7 +73,8 @@
  * - **Move or resize** a keyframe's box: its box changes; its frame and type do not.
  * - **Add** a keyframe -- the GUI's drag of an in-between box, or its double-click "pin" --
  *   as a `middle` at the moment the reviewer is on.
- * - **Set as end**: that keyframe becomes the end; the one that was becomes a middle.
+ * - **Set as end**: that keyframe becomes the end; the one that was becomes a middle. Not the
+ *   start: the GUI allows it and leaves the observation with no start, which Isaac ruled out.
  * - **Delete** a keyframe. Deleting the start promotes the earliest remaining to start, as the
  *   GUI does; deleting the end promotes the latest remaining to end, so an observation keeps
  *   one start and one end (Isaac: "an observation is made of at least 1 start, 1 end"). The
@@ -288,6 +289,10 @@ function addKeyframe(body = {}) {
 function setEnd(keyframeId) {
     return edit(async (transaction) => {
         const { keyframe, observation } = await keyframeForEdit(keyframeId, transaction);
+        // The start made the end would leave the track without a start (Isaac, 2026-10-05).
+        if (keyframe.type === 'start') {
+            throw invalid('The start keyframe cannot be made the end: the observation would have no start.');
+        }
         const rate = await rateOf(observation);
         const changed = [];
         for (const row of await trackOf(keyframe.observation_id, keyframe.subset, transaction)) {

@@ -423,6 +423,21 @@ MarpApi.whoami().then((user) => {
   // Not signed in to MARP, or it could not say: the boxes are shown and not edited.
 });
 
+/* For the console and the browser tier, as `window.MARP` is for the Mosaic: where each box
+   was last drawn, and what is selected. Read-only. */
+window.MARP_VIDEO = {
+  get drawn() {
+    const o = $('boxes').getBoundingClientRect();
+    return drawnNow.rects.map(({ key, box, rect }) => ({
+      key, observation_id: box.observation_id,
+      rect: { left: rect.left + o.left, top: rect.top + o.top, width: rect.width, height: rect.height }
+    }));
+  },
+  get selected() { return editor.selectedKey; },
+  get editing() { return editor.enabled; },
+  get time() { return shownAt; }
+};
+
 /* A hidden window stops fetching video for nobody. */
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && player.engine) player.engine.pause();

@@ -141,8 +141,8 @@ export function keyframeShown(keyframes, t, frameRate) {
 
 /**
  * The GUI's right-click menu for one box, in the GUI's order. A keyframe is not offered
- * "Set As Keyframe", and an end is not offered "Set As End Keyframe"; "Delete Keyframe"
- * is only for a keyframe.
+ * "Set As Keyframe", and neither an end nor a start is offered "Set As End Keyframe";
+ * "Delete Keyframe" is only for a keyframe.
  *
  * @param {{keyframe: Object|null}} box - The box's keyframe on this picture, if it has one.
  * @returns {Array<{action: string, label: string, disabled?: boolean}>}
@@ -156,7 +156,9 @@ export function menuFor({ observation_id, subset, keyframe, t }) {
     disabled: true
   }];
   if (!keyframe) items.push({ action: 'pin', label: 'Set As Keyframe' });
-  if (type !== 'end') items.push({ action: 'end', label: 'Set As End Keyframe' });
+  // Not on the start either: that would leave the observation without one (Isaac,
+  // 2026-10-05). The GUI offers it there; this page does not.
+  if (type !== 'end' && type !== 'start') items.push({ action: 'end', label: 'Set As End Keyframe' });
   items.push({ action: 'back', label: 'Send To Back' });
   items.push({ action: 'deleteObservation', label: 'Delete Entire Observation' });
   if (keyframe) items.push({ action: 'deleteKeyframe', label: 'Delete Keyframe' });

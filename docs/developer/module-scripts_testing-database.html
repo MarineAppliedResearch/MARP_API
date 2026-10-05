@@ -196,13 +196,33 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The login a person signs in with to look at a testing database.Asked for on 2026-09-12: *"Make sure the test databases and the dump databasesalways have an admin account with all rights that I could sign in with alowercase i-s-a-a-c for both the username and the password."* `marp agentstart` creates the bootstrap administrator row and never sets its password, sothere is an account and no way to authenticate as it -- which is not somethinganybody should have to discover by hand at the moment they want to look at arunning app.**This is a deliberately weak credential and the literal is the point.** It isnot a secret being committed: it opens exactly one kind of database, one thisscript created on this machine and can drop, and `weakCredentialRefusal` belowis what keeps it that way. **Do not move it into `.env` and make itconfigurable.** That is the obvious tidy-up, and it is the one change thatwould let isaac/isaac reach somewhere real -- a variable can be pointedanywhere, and a literal cannot.Beside the reviewer login rather than replacing it: `mosaic-testing` holdsthree permissions on purpose, because an account holding everything cannotshow that the gate works.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The login a person signs in with to look at a testing database.
+
+Asked for on 2026-09-12: *"Make sure the test databases and the dump databases
+always have an admin account with all rights that I could sign in with a
+lowercase i-s-a-a-c for both the username and the password."* `marp agent
+start` creates the bootstrap administrator row and never sets its password, so
+there is an account and no way to authenticate as it -- which is not something
+anybody should have to discover by hand at the moment they want to look at a
+running app.
+
+**This is a deliberately weak credential and the literal is the point.** It is
+not a secret being committed: it opens exactly one kind of database, one this
+script created on this machine and can drop, and `weakCredentialRefusal` below
+is what keeps it that way. **Do not move it into `.env` and make it
+configurable.** That is the obvious tidy-up, and it is the one change that
+would let isaac/isaac reach somewhere real -- a variable can be pointed
+anywhere, and a literal cannot.
+
+Beside the reviewer login rather than replacing it: `mosaic-testing` holds
+four permissions on purpose, because an account holding everything cannot
+show that the gate works.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line147">line 147</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line149">line 149</a>
     </li></ul></dd>
     
 
@@ -242,7 +262,27 @@
 
 
 <div class="description usertext">
-    The login a person signs in with to look at a testing database.Asked for on 2026-09-12: *"Make sure the test databases and the dump databasesalways have an admin account with all rights that I could sign in with alowercase i-s-a-a-c for both the username and the password."* `marp agentstart` creates the bootstrap administrator row and never sets its password, sothere is an account and no way to authenticate as it -- which is not somethinganybody should have to discover by hand at the moment they want to look at arunning app.**This is a deliberately weak credential and the literal is the point.** It isnot a secret being committed: it opens exactly one kind of database, one thisscript created on this machine and can drop, and `weakCredentialRefusal` belowis what keeps it that way. **Do not move it into `.env` and make itconfigurable.** That is the obvious tidy-up, and it is the one change thatwould let isaac/isaac reach somewhere real -- a variable can be pointedanywhere, and a literal cannot.Beside the reviewer login rather than replacing it: `mosaic-testing` holdsthree permissions on purpose, because an account holding everything cannotshow that the gate works.
+    The login a person signs in with to look at a testing database.
+
+Asked for on 2026-09-12: *"Make sure the test databases and the dump databases
+always have an admin account with all rights that I could sign in with a
+lowercase i-s-a-a-c for both the username and the password."* `marp agent
+start` creates the bootstrap administrator row and never sets its password, so
+there is an account and no way to authenticate as it -- which is not something
+anybody should have to discover by hand at the moment they want to look at a
+running app.
+
+**This is a deliberately weak credential and the literal is the point.** It is
+not a secret being committed: it opens exactly one kind of database, one this
+script created on this machine and can drop, and `weakCredentialRefusal` below
+is what keeps it that way. **Do not move it into `.env` and make it
+configurable.** That is the obvious tidy-up, and it is the one change that
+would let isaac/isaac reach somewhere real -- a variable can be pointed
+anywhere, and a literal cannot.
+
+Beside the reviewer login rather than replacing it: `mosaic-testing` holds
+four permissions on purpose, because an account holding everything cannot
+show that the gate works.
 </div>
 
 
@@ -274,7 +314,12 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The testing database's name when nothing says otherwise.`marp_`, not `mare_`. The development database is `mare_v1` and the production oneshares that name, which is why neither can be renamed casually -- but this database iscreated here, is disposable, and had no reason to inherit a brand that was retiredbefore it existed. There is no MARE in MARP.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The testing database's name when nothing says otherwise.
+
+`marp_`, not `mare_`. The development database is `mare_v1` and the production one
+shares that name, which is why neither can be renamed casually -- but this database is
+created here, is disposable, and had no reason to inherit a brand that was retired
+before it existed. There is no MARE in MARP.</li></ul></dd>
     
 
     
@@ -320,7 +365,12 @@
 
 
 <div class="description usertext">
-    The testing database's name when nothing says otherwise.`marp_`, not `mare_`. The development database is `mare_v1` and the production oneshares that name, which is why neither can be renamed casually -- but this database iscreated here, is disposable, and had no reason to inherit a brand that was retiredbefore it existed. There is no MARE in MARP.
+    The testing database's name when nothing says otherwise.
+
+`marp_`, not `mare_`. The development database is `mare_v1` and the production one
+shares that name, which is why neither can be renamed casually -- but this database is
+created here, is disposable, and had no reason to inherit a brand that was retired
+before it existed. There is no MARE in MARP.
 </div>
 
 
@@ -341,7 +391,12 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>What the browser tier signs in as.A login of its own rather than the human's: the tier commits real decisions,and a decision's attribution is part of the record it writes. `mosaic-testing`appearing in a testing database is self-explanatory in a way that his namewould not be.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>What the browser tier signs in as.
+
+A login of its own rather than the human's: the tier commits real decisions,
+and a decision's attribution is part of the record it writes. `mosaic-testing`
+appearing in a testing database is self-explanatory in a way that his name
+would not be.</li></ul></dd>
     
 
     
@@ -387,7 +442,12 @@
 
 
 <div class="description usertext">
-    What the browser tier signs in as.A login of its own rather than the human's: the tier commits real decisions,and a decision's attribution is part of the record it writes. `mosaic-testing`appearing in a testing database is self-explanatory in a way that his namewould not be.
+    What the browser tier signs in as.
+
+A login of its own rather than the human's: the tier commits real decisions,
+and a decision's attribution is part of the record it writes. `mosaic-testing`
+appearing in a testing database is self-explanatory in a way that his name
+would not be.
 </div>
 
 
@@ -419,7 +479,11 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Where the testing database's thumbnails go by default.Under `storage/`, which is git-ignored, and in a `testing/` subdirectory ratherthan a sibling with a decorated name: anything else a testing database needs ondisk later belongs beside it rather than scattered through `storage/`.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Where the testing database's thumbnails go by default.
+
+Under `storage/`, which is git-ignored, and in a `testing/` subdirectory rather
+than a sibling with a decorated name: anything else a testing database needs on
+disk later belongs beside it rather than scattered through `storage/`.</li></ul></dd>
     
 
     
@@ -465,7 +529,11 @@
 
 
 <div class="description usertext">
-    Where the testing database's thumbnails go by default.Under `storage/`, which is git-ignored, and in a `testing/` subdirectory ratherthan a sibling with a decorated name: anything else a testing database needs ondisk later belongs beside it rather than scattered through `storage/`.
+    Where the testing database's thumbnails go by default.
+
+Under `storage/`, which is git-ignored, and in a `testing/` subdirectory rather
+than a sibling with a decorated name: anything else a testing database needs on
+disk later belongs beside it rather than scattered through `storage/`.
 </div>
 
 
@@ -503,7 +571,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line153">line 153</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line155">line 155</a>
     </li></ul></dd>
     
 
@@ -631,13 +699,19 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Hosts this is willing to create a database on.The same reasoning as `tests/setup/local-database-guard.js`: the developmentdatabase carries the same name as production and only the host tells themapart, so a `DB_HOST` pointing somewhere real must stop this rather than bediscovered afterwards. Provisioning creates and drops databases; that is notsomething to do down a connection whose other end is a guess.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Hosts this is willing to create a database on.
+
+The same reasoning as `tests/setup/local-database-guard.js`: the development
+database carries the same name as production and only the host tells them
+apart, so a `DB_HOST` pointing somewhere real must stop this rather than be
+discovered afterwards. Provisioning creates and drops databases; that is not
+something to do down a connection whose other end is a guess.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line167">line 167</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line169">line 169</a>
     </li></ul></dd>
     
 
@@ -677,7 +751,13 @@
 
 
 <div class="description usertext">
-    Hosts this is willing to create a database on.The same reasoning as `tests/setup/local-database-guard.js`: the developmentdatabase carries the same name as production and only the host tells themapart, so a `DB_HOST` pointing somewhere real must stop this rather than bediscovered afterwards. Provisioning creates and drops databases; that is notsomething to do down a connection whose other end is a guess.
+    Hosts this is willing to create a database on.
+
+The same reasoning as `tests/setup/local-database-guard.js`: the development
+database carries the same name as production and only the host tells them
+apart, so a `DB_HOST` pointing somewhere real must stop this rather than be
+discovered afterwards. Provisioning creates and drops databases; that is not
+something to do down a connection whose other end is a guess.
 </div>
 
 
@@ -709,13 +789,19 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The permissions the mosaic reviewer needs, mirroring `create-review-user.js`.Restated rather than imported because that script is a CLI and exports nothing;`tools/api-session.mjs` checks the same three and names them in its failure, soa drift here arrives as a sign-in refusal that says which one is missing.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The permissions the mosaic reviewer needs, mirroring `create-review-user.js`, plus
+`keyframes:write` so the browser tier can edit boxes on the video page (#181). Only this
+testing login gets it here; a real reviewer is granted it by an administrator.
+
+Restated rather than imported because that script is a CLI and exports nothing;
+`tools/api-session.mjs` checks the same four and names them in its failure, so
+a drift here arrives as a sign-in refusal that says which one is missing.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line119">line 119</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line121">line 121</a>
     </li></ul></dd>
     
 
@@ -755,7 +841,13 @@
 
 
 <div class="description usertext">
-    The permissions the mosaic reviewer needs, mirroring `create-review-user.js`.Restated rather than imported because that script is a CLI and exports nothing;`tools/api-session.mjs` checks the same three and names them in its failure, soa drift here arrives as a sign-in refusal that says which one is missing.
+    The permissions the mosaic reviewer needs, mirroring `create-review-user.js`, plus
+`keyframes:write` so the browser tier can edit boxes on the video page (#181). Only this
+testing login gets it here; a real reviewer is granted it by an administrator.
+
+Restated rather than imported because that script is a CLI and exports nothing;
+`tools/api-session.mjs` checks the same four and names them in its failure, so
+a drift here arrives as a sign-in refusal that says which one is missing.
 </div>
 
 
@@ -860,7 +952,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line150">line 150</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line152">line 152</a>
     </li></ul></dd>
     
 
@@ -931,13 +1023,18 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Print what a caller most wants to know, in the order they want it.The first line says *provisioned* or *reused* in as many words. That is R9, andit is not decoration: the difference between the two is minutes against seconds,and inferring which happened from how long it took is exactly the kind of thingthat is wrong the one time it matters.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Print what a caller most wants to know, in the order they want it.
+
+The first line says *provisioned* or *reused* in as many words. That is R9, and
+it is not decoration: the difference between the two is minutes against seconds,
+and inferring which happened from how long it took is exactly the kind of thing
+that is wrong the one time it matters.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line666">line 666</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line668">line 668</a>
     </li></ul></dd>
     
 
@@ -1091,7 +1188,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line321">line 321</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line323">line 323</a>
     </li></ul></dd>
     
 
@@ -1226,13 +1323,24 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Give the testing database a login a person can actually sign in with.**After the restore, always** -- on the reused path as much as the provisionedone. "Always has an admin account" is the requirement, and a database builtbefore this existed, or one whose password somebody changed, is exactly thecase where finding out by hand is expensive.Idempotent because `create-review-user.js` is: it resets the password andre-grants rather than failing or duplicating. Every permission key, read fromthe catalogue rather than listed here, because `requirePermission` compares thekey exactly -- `admin` is not a bypass, so "all rights" has to mean every keyactually granted.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Give the testing database a login a person can actually sign in with.
+
+**After the restore, always** -- on the reused path as much as the provisioned
+one. "Always has an admin account" is the requirement, and a database built
+before this existed, or one whose password somebody changed, is exactly the
+case where finding out by hand is expensive.
+
+Idempotent because `create-review-user.js` is: it resets the password and
+re-grants rather than failing or duplicating. Every permission key, read from
+the catalogue rather than listed here, because `requirePermission` compares the
+key exactly -- `admin` is not a bypass, so "all rights" has to mean every key
+actually granted.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line293">line 293</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line295">line 295</a>
     </li></ul></dd>
     
 
@@ -1408,13 +1516,22 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Find the dump to load.`MARP_CORPUS_DUMP` wins and may name either the dump directory or the`corpus.dump` inside it, because both are things somebody reasonably has inhand. Otherwise the newest directory under `.marp/local/corpus/`, which iswhere `marp db dump` puts them and what `.marp/local/corpus-dump.md` records.Newest by name rather than by mtime: the directories are timestamps, so thename *is* the ordering, and a file copy that rewrote the mtimes would otherwisereorder them.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Find the dump to load.
+
+`MARP_CORPUS_DUMP` wins and may name either the dump directory or the
+`corpus.dump` inside it, because both are things somebody reasonably has in
+hand. Otherwise the newest directory under `.marp/local/corpus/`, which is
+where `marp db dump` puts them and what `.marp/local/corpus-dump.md` records.
+
+Newest by name rather than by mtime: the directories are timestamps, so the
+name *is* the ordering, and a file copy that rewrote the mtimes would otherwise
+reorder them.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line347">line 347</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line349">line 349</a>
     </li></ul></dd>
     
 
@@ -1516,13 +1633,17 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>A password for the testing login.Generated rather than asked for, because the point of all this is one command.It is written to the stamp under `.marp/local/`, which is git-ignored, and thedatabase it opens is disposable by construction.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>A password for the testing login.
+
+Generated rather than asked for, because the point of all this is one command.
+It is written to the stamp under `.marp/local/`, which is git-ignored, and the
+database it opens is disposable by construction.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line526">line 526</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line528">line 528</a>
     </li></ul></dd>
     
 
@@ -1630,7 +1751,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line443">line 443</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line445">line 445</a>
     </li></ul></dd>
     
 
@@ -1782,13 +1903,26 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Say where `pg_restore` is, or explain what to set.`db/corpus.js` already looks at `PG_RESTORE`, then `PG_BIN`, then `PATH`, and`marp db load` supplies `PG_BIN` because the umbrella is what knows where itsdownloaded PostgreSQL lives. Nothing supplies it here, and **this repositorymust not learn it** -- it reads five `DB_*` variables and has no idea what isserving them, which is what lets any other PostgreSQL be pointed at it.So the last resort asks the *server* rather than the umbrella: `data_directory`is a fact the connection already carries, and a self-contained PostgreSQL keepsits binaries a few levels above its data. That is a **hint, not a contract** --it is wrong on a packaged Linux install, where `bin` and `data` are unrelatedpaths -- so a miss is a message naming `PG_BIN`, never a guess that fails laterinside `pg_restore`.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Say where `pg_restore` is, or explain what to set.
+
+`db/corpus.js` already looks at `PG_RESTORE`, then `PG_BIN`, then `PATH`, and
+`marp db load` supplies `PG_BIN` because the umbrella is what knows where its
+downloaded PostgreSQL lives. Nothing supplies it here, and **this repository
+must not learn it** -- it reads five `DB_*` variables and has no idea what is
+serving them, which is what lets any other PostgreSQL be pointed at it.
+
+So the last resort asks the *server* rather than the umbrella: `data_directory`
+is a fact the connection already carries, and a self-contained PostgreSQL keeps
+its binaries a few levels above its data. That is a **hint, not a contract** --
+it is wrong on a packaged Linux install, where `bin` and `data` are unrelated
+paths -- so a miss is a message naming `PG_BIN`, never a guess that fails later
+inside `pg_restore`.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line403">line 403</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line405">line 405</a>
     </li></ul></dd>
     
 
@@ -1893,7 +2027,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line705">line 705</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line707">line 707</a>
     </li></ul></dd>
     
 
@@ -2001,7 +2135,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line537">line 537</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line539">line 539</a>
     </li></ul></dd>
     
 
@@ -2156,7 +2290,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line479">line 479</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line481">line 481</a>
     </li></ul></dd>
     
 
@@ -2258,13 +2392,18 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Refuse anything that would put this on top of the development corpus.R7, and it is the only refusal here that is not about a missing prerequisite.The whole point of a testing database is that it is a *second* one; aconfiguration where the two names agree is not a testing database with aconfusing name, it is the corpus about to be replaced by a dump.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Refuse anything that would put this on top of the development corpus.
+
+R7, and it is the only refusal here that is not about a missing prerequisite.
+The whole point of a testing database is that it is a *second* one; a
+configuration where the two names agree is not a testing database with a
+confusing name, it is the corpus about to be replaced by a dump.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line196">line 196</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line198">line 198</a>
     </li></ul></dd>
     
 
@@ -2416,13 +2555,19 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Run one of this repository's own scripts against the testing database.Overrides arrive as **real environment variables**, which is how `marp db load`already does it: `dotenv` does not overwrite something already set, so these winfor this one child process and `.env` is left exactly as written. That is thewhole mechanism by which a second database is reachable without editinganything.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Run one of this repository's own scripts against the testing database.
+
+Overrides arrive as **real environment variables**, which is how `marp db load`
+already does it: `dotenv` does not overwrite something already set, so these win
+for this one child process and `.env` is left exactly as written. That is the
+whole mechanism by which a second database is reachable without editing
+anything.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line504">line 504</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line506">line 506</a>
     </li></ul></dd>
     
 
@@ -2628,7 +2773,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line174">line 174</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line176">line 176</a>
     </li></ul></dd>
     
 
@@ -2730,13 +2875,36 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Why a known weak credential may not be created here, or null when it may.Returns the reason rather than exiting, so the judgement can be tested withouta database and without a process to kill. Same shape as `holdsCorpus` in`db/corpus.js`, and for the same reason: the decision a refusal turns on is thepart worth watching fire.Two conditions, and neither is a new judgement -- both are the one`tests/setup/local-database-guard.js` already makes:- **the host names this machine.** An unset `DB_HOST` is refused rather than  assumed local: that is exactly the state a half-written `.env` leaves behind.- **the target is not the database this checkout develops against.** The  development database carries the same name as production and only the host  tells them apart, so "is this production" is not a question a name can  answer. What it can answer is "this is the second database, the one this  script created here and can drop", and that is the whole licence for putting  `isaac`/`isaac` in it.**`MARP_TEST_ALLOW_REMOTE_DB` is deliberately not honoured.** That overrideexists so a refusal nobody can get past does not get deleted the first time itis inconvenient -- a good reason for the test suite and a bad one here. Thewhole value of this refusal is that no flag makes a weak password reach adatabase somewhere else.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Why a known weak credential may not be created here, or null when it may.
+
+Returns the reason rather than exiting, so the judgement can be tested without
+a database and without a process to kill. Same shape as `holdsCorpus` in
+`db/corpus.js`, and for the same reason: the decision a refusal turns on is the
+part worth watching fire.
+
+Two conditions, and neither is a new judgement -- both are the one
+`tests/setup/local-database-guard.js` already makes:
+
+- **the host names this machine.** An unset `DB_HOST` is refused rather than
+  assumed local: that is exactly the state a half-written `.env` leaves behind.
+- **the target is not the database this checkout develops against.** The
+  development database carries the same name as production and only the host
+  tells them apart, so "is this production" is not a question a name can
+  answer. What it can answer is "this is the second database, the one this
+  script created here and can drop", and that is the whole licence for putting
+  `isaac`/`isaac` in it.
+
+**`MARP_TEST_ALLOW_REMOTE_DB` is deliberately not honoured.** That override
+exists so a refusal nobody can get past does not get deleted the first time it
+is inconvenient -- a good reason for the test suite and a bad one here. The
+whole value of this refusal is that no flag makes a weak password reach a
+database somewhere else.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line257">line 257</a>
+        <a href="scripts_testing-database.js.html">scripts/testing-database.js</a>, <a href="scripts_testing-database.js.html#line259">line 259</a>
     </li></ul></dd>
     
 

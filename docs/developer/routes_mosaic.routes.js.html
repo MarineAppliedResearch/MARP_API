@@ -667,7 +667,8 @@ function registerMosaicRoutes(app) {
         summary: 'Make a keyframe its track\'s end',
         description:
             'The annotation GUI\'s "Set As End Keyframe" (#181). The keyframe that was the end becomes a middle, so a track keeps '
-            + 'one end. The observation\'s thumbnail is extracted again.',
+            + 'one end. The start keyframe is refused with 400: the observation would have no start. The observation\'s thumbnail '
+            + 'is extracted again.',
         tags: [TAG],
         parameters: keyframeParameter,
         responses: EDITED,

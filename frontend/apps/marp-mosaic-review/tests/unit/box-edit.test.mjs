@@ -63,6 +63,9 @@ test('the menu is the GUI\'s, offering only what applies to the box', () => {
     ['info', 'end', 'back', 'deleteObservation', 'deleteKeyframe']);
   assert.deepEqual(actions({ keyframe: { keyframe_id: 5, type: 'end' } }),
     ['info', 'back', 'deleteObservation', 'deleteKeyframe']);
+  // A start set as the end would leave the observation with no start.
+  assert.deepEqual(actions({ keyframe: { keyframe_id: 5, type: 'start' } }),
+    ['info', 'back', 'deleteObservation', 'deleteKeyframe']);
   assert.equal(menuFor({ observation_id: 7, subset: '1', t: 3, keyframe: null })[0].disabled, true);
 });
 

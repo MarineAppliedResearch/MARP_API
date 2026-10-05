@@ -191,6 +191,13 @@ describe('box edits from the video page (#181)', () => {
         expect((await track(id)).map((row) => row.type)).toEqual(['start', 'end', 'middle']);
     });
 
+    it('refuses to make the start the end, which would leave no start', async () => {
+        const { id, keyframes } = await addObservation({ frames: [250, 300, 350] });
+        const response = await global.api.post(`${ROUTE}/${keyframes[0]}/end`);
+        expect(response.status).toBe(400);
+        expect((await track(id)).map((row) => row.type)).toEqual(['start', 'middle', 'end']);
+    });
+
     it('deleting the start or the end promotes the next, and the last keyframe is refused', async () => {
         const { id, keyframes } = await addObservation({ frames: [250, 300, 350, 400] });
         await global.api.delete(`${ROUTE}/${keyframes[0]}`);

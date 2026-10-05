@@ -91,7 +91,7 @@ and on a phone, both for watching and for editing.
   observations in that video with their species and start/end times -- small, loaded once;
   (2) keyframes for those observations within a time window, fetched around the playhead.
   Alternative: one read of everything, simpler but ~4 MB for the busiest video.
-- [ ] **A10 · product/UI · non-blocking** — touch: tap selects, drag moves, corner handles
+- [x] **A10 · product/UI · non-blocking** — touch: tap selects, drag moves, corner handles
   resize, double-tap is double-click, long-press opens the menu.
 - [ ] **A11 · scientific/data-meaning · non-blocking** — keyframes drawn in the annotation
   GUI over this player since it adopted it were drawn on pictures three frames early. When
@@ -100,6 +100,14 @@ and on a phone, both for watching and for editing.
 ## Decisions
 
 - **2026-10-05** — answers A1-A9 above, from Isaac.
+- **2026-10-05** — "Set As End Keyframe" is not offered on the start keyframe, and the API
+  refuses it: the GUI allows it and leaves the observation with no start. Isaac chose to
+  withhold it.
+- **2026-10-05** — the browser test for editing signs in to the real Jellyfin with the test
+  credentials in `.env`, as the player's own end-to-end tests do, so it plays a video and
+  drags a box with the mouse. It depends on Jellyfin being reachable.
+- **2026-10-05** — touch (A10) as proposed, checked on the emulator by real touch input:
+  `edit-check.cjs` in the umbrella's git-ignored `.marp/local/emulator/`, 10 of 10.
 
 ## Plan
 

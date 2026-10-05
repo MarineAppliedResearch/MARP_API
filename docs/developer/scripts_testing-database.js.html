@@ -172,16 +172,18 @@ const DEFAULT_THUMBNAIL_DIR = path.join('storage', 'testing', 'observation-thumb
 const DEFAULT_REVIEW_USERNAME = 'mosaic-testing';
 
 /**
- * The permissions the mosaic reviewer needs, mirroring `create-review-user.js`.
+ * The permissions the mosaic reviewer needs, mirroring `create-review-user.js`, plus
+ * `keyframes:write` so the browser tier can edit boxes on the video page (#181). Only this
+ * testing login gets it here; a real reviewer is granted it by an administrator.
  *
  * Restated rather than imported because that script is a CLI and exports nothing;
- * `tools/api-session.mjs` checks the same three and names them in its failure, so
+ * `tools/api-session.mjs` checks the same four and names them in its failure, so
  * a drift here arrives as a sign-in refusal that says which one is missing.
  *
  * @constant
  * @type {Array&lt;string>}
  */
-const REVIEW_PERMISSIONS = ['observations:read', 'observations:write', 'species:read'];
+const REVIEW_PERMISSIONS = ['observations:read', 'observations:write', 'species:read', 'keyframes:write'];
 
 /**
  * The login a person signs in with to look at a testing database.
@@ -203,7 +205,7 @@ const REVIEW_PERMISSIONS = ['observations:read', 'observations:write', 'species:
  * anywhere, and a literal cannot.
  *
  * Beside the reviewer login rather than replacing it: `mosaic-testing` holds
- * three permissions on purpose, because an account holding everything cannot
+ * four permissions on purpose, because an account holding everything cannot
  * show that the gate works.
  *
  * @constant
