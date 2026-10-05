@@ -91,6 +91,32 @@ export function filtersBody(filters = {}) {
 }
 
 /**
+ * `POST /api/v2/mosaic/video/observations` (#181): the video page's observations -- every
+ * one in the opened observation's video that the query matches.
+ *
+ * The filters go exactly as the grid's own page request sends them, so "matches the query"
+ * cannot mean two things; the grid's exclusion set does not go, because it is paging
+ * bookkeeping rather than part of the question.
+ */
+export function videoObservationsBody({ observationId, filters }) {
+  if (!Number.isInteger(observationId)) {
+    throw new TypeError(`observationId must be an integer, not ${JSON.stringify(observationId)}`);
+  }
+  return { observation_id: observationId, filters: filtersBody(filters) };
+}
+
+/**
+ * `POST /api/v2/mosaic/video/keyframes` (#181): keyframes of some observations in one video,
+ * within a window in seconds.
+ */
+export function videoKeyframesBody({ observationIds, from, to }) {
+  if (!Number.isFinite(from) || !Number.isFinite(to)) {
+    throw new TypeError(`a keyframe window needs numbers, not ${JSON.stringify([from, to])}`);
+  }
+  return { observation_ids: idList(observationIds, 'observation_ids'), from_s: from, to_s: to };
+}
+
+/**
  * `POST /api/v2/mosaic/observations/pages`.
  *
  * R3: a **visible** page is one call with `includeTotal: true`; a **prefetch** is one call

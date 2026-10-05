@@ -27,7 +27,7 @@
 import { request, thumbnailUrl, fullFrameUrl } from './transport.js';
 import {
   pagesBody, countsBody, commitBody, correctionBody, retryBody, facetsBody, filtersBody,
-  idList
+  idList, videoObservationsBody, videoKeyframesBody
 } from './requests.js';
 import { sortTerms } from '../model/filters.js';
 
@@ -181,6 +181,20 @@ export const MarpApi = {
   async videoContext(observationIds = [], { signal } = {}) {
     return request('/mosaic/observations/video-context', {
       method: 'POST', body: { observation_ids: idList(observationIds, 'observation_ids') }, signal
+    });
+  },
+
+  /* The video page (#181): every observation in a video the query matches, once. */
+  async videoObservations({ observationId, filters }, { signal } = {}) {
+    return request('/mosaic/video/observations', {
+      method: 'POST', body: videoObservationsBody({ observationId, filters }), signal
+    });
+  },
+
+  /* The video page (#181): those observations' keyframes, a window of seconds at a time. */
+  async videoKeyframes({ observationIds, from, to }, { signal } = {}) {
+    return request('/mosaic/video/keyframes', {
+      method: 'POST', body: videoKeyframesBody({ observationIds, from, to }), signal
     });
   },
 
