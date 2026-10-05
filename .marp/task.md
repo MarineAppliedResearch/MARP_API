@@ -1,178 +1,128 @@
 ---
 task: MarineAppliedResearch/MARP_API#181
-repos: [marp-api, marp-video-player]
-status: implementing
-needs: [jellyfin]
+repos: [MARP_API, marp-video-player]
+status: design
+needs: []
 ---
-
-# Watch an observation in its source video, from the Mosaic
-
-Refs MarineAppliedResearch/MARP_API#181
 
 ## Goal
 
-A reviewer looking at a tile can open the source video at that observation's moment in the
-MARP Video Player. The video shows the bounding boxes of the observations being reviewed,
-and closing it returns to the Mosaic exactly as it was. Reviewers do this often, so it has
-to answer at once whatever the connection: something useful on screen immediately, the
-video as soon as the bytes allow, and no cold start the second time.
-
-**Not now, but not to be designed out:** editing a box, a keyframe or a track segment in
-the player. The box layer is built so that editing can grow into it.
+From a Mosaic tile, a reviewer opens that observation's source video at its exact frame and
+sees, on the exact frames they belong to, the boxes of every observation in that video that
+the Mosaic's current query matches -- not only the page on screen -- with the chosen
+observation highlighted above the rest. The reviewer can correct those boxes the way the
+annotation GUI lets them: drag, resize, add or delete a keyframe, set the end, delete the
+observation; each change is written through the API as it is made. It works on a desktop
+and on a phone, both for watching and for editing.
 
 ## What investigation found
 
-- **The Mosaic row does not carry a video.** `repository/mosaic.repository.js` `ROW_COLUMNS`
-  has no video identity, no position and no keyframes, only `keyframe_count` and
-  `first_framenum`. The player needs a new read: the video, the moment, and the keyframes.
-- **Finding the video is solved already.** `service/thumbnail-extraction.service.js`
-  resolves an observation's `video_source` through Jellyfin, never from
-  `jellyfin_item_id`, and refuses a weak match.
-- **The browser can already reach the video.** `GET /api/v2/jellyfin/items/:id/stream`
-  redirects to Jellyfin: Direct Play by byte range, or an HLS transcode at 1080p, 720p or
-  480p. MARP never carries the bytes.
-- **The player plays Jellyfin by byte range**, and fetches only the chunks around where it
-  is, so opening at a moment in a 20 GB dive costs seconds of video, not the file. It has
-  no runtime dependencies and makes no requests at load. Its host contract with the
-  annotation GUI (`MarpVideoEngine`, the `postMessage` lines, `player.html`'s query
-  parameters) is add-only.
-- **The player already draws boxes, but only in live mode.** `src/live-frame-presenter.js`
-  draws track boxes and labels for the worker's watch window from pushed frames. Recorded
-  playback has no box layer.
-- **The Mosaic is vanilla ES modules with no build step and no dependencies**, on purpose.
-  `src/api/` is the only place that knows a URL.
-- **A keyframe's `framenum` means two things,** depending on who wrote it:
-  - The annotation GUI computes it at an assumed 25 (VIDEO_PROCESSING_GUI#221), so its time
-    is `framenum / 25`, which recovers the millisecond it was written from, on any video.
-  - A GPU observation's `framenum` is the real decoded frame, so its time is
-    `framenum / real rate`.
-- **Thumbnails refuse every non-25 video** (R21 in `thumbnail-extraction.service.js`). Since
-  #231, 24.946 fps results are stored, and their thumbnails fail permanently: observation
-  115227 reads *"Source frame rate is 24.946… Refusing to seek."* The Mosaic cannot show
-  them. See A5.
+- **Only the current page is drawn.** The Mosaic sends the visible page's ids; observations
+  of the same video on other pages, or anywhere else the query matches, are never asked for.
+- **There is no read for "this video under this query".** The query's filters
+  (`src/api/requests.js` `filtersBody`) go to `/mosaic/observations/pages|counts|facets`,
+  none of which can narrow to a video; the Mosaic row carries no `video_source`.
+- **Boxes vanish outside a keyframe span** (`model/video-boxes.js` `boxesAt`): drawn only
+  between a track's first and last keyframe. Isaac, 2026-10-05: every observation has one
+  start, one end and usually middles, all interpolated between -- the GUI's rule
+  (`VideoPlayer.xaml.cs` `DrawAnnotations`). The database agrees: 114,840 observations,
+  114,840 start and 114,840 end keyframes, 1,869,633 middles.
+- **Volume.** 461 videos, 2.1 M keyframes. The busiest video holds 2,798 observations and
+  47,736 keyframes -- about 4 MB of JSON, too much to load upfront on a phone.
+- **The pictures are off the reported time.** The player ignores the MP4 edit list:
+  Direct Play shows each picture three frames before its time on MARP's dives (measured
+  2026-09-26), a transcode two. A cold-started Jellyfin transcode is up to ten seconds off
+  as well. Both are being fixed in marp-video-player#20 (branch
+  `20-transcode-cold-start-shift`); boxes cannot be on the exact frame, nor edits saved
+  against the right one, until it lands.
+- **A phone cannot play the original file.** A 10-second 1080p GOP decodes to ~742 MB; the
+  phone runs out of memory and its other apps are killed. Phones open a 720p transcode
+  (branch `181-phones-open-a-transcode`), which needs #20's transcode fix to be exact.
+- **How the GUI edits** (all in C# over the player): drag or resize saves on mouse-up --
+  `PUT /keyframe/:id` on a keyframe, otherwise a new `middle` keyframe at the current frame
+  via `POST /keyframe`; double-click deletes a keyframe (promoting the next to `start` if it
+  was the start) or pins a `middle`; right-click: Set As End Keyframe, Delete Keyframe,
+  Delete Entire Observation. No conflict check. Boxes are centre x/y and size, 0..1 of the
+  picture. `framenum = floor(ms × 25 / 1000)`.
+- **Editing needs groundwork in marp-api:** the video read returns no `keyframe_id`; the only
+  keyframe write is the old `PUT` (whitelist x, y, width, height, type, framenum; no range
+  check); `keyframes:write` is held only by the annotation GUI's token; an edited box does
+  not refresh its thumbnail (the trigger fires on insert); turning a seconds position back
+  into `framenum` must use 25 for a GUI row and the video's nominal rate for a GPU row.
 
 ## Requirements
 
-- **R1** — From a tile, a reviewer opens the source video at that observation's moment.
-- **R2** — The video shows the boxes of the observations under review that appear in it
-  (A2), placed in time by who wrote them (see the finding above), between keyframes by
-  linear interpolation. Linear interpolation is the premise the keyframe reduction was built on.
-- **R3** — Something useful is on screen at once: the observation's frame and box, from
-  the full frame the thumbnail pipeline already extracts, while the video loads behind it.
-- **R4** — A second observation opens without a cold start: the player stays loaded, and
-  the same video is a seek, not a reload.
-- **R5** — Closing it returns to the Mosaic with its page, filters, marks and scroll
-  untouched. A hidden player stops downloading.
-- **R6** — On a slow connection it still answers. It fetches only around the moment, shows
-  when it is waiting, and a lower-quality tier is one click away.
-- **R7** — Nothing in the player's existing host contract changes. Additions only.
+- **R1** — Opening a tile opens its video at that observation's exact frame (#20).
+- **R2** — The boxes drawn are those of every observation in this video that the Mosaic's
+  current query matches, across all pages.
+- **R3** — A box is drawn from its start keyframe to its end keyframe, interpolated linearly
+  between keyframes, on the exact frame (#20). Nothing before the start or after the end.
+- **R4** — The chosen observation is highlighted above the others; the others are drawn in
+  their species colours as in the GUI.
+- **R5** — Keyframes are loaded by time window around the playhead, the next window ahead,
+  so a 48,000-keyframe video opens as fast as a small one and a phone is not loaded with it.
+- **R6** — Editing, for a user holding `keyframes:write`: drag and resize save on release
+  (update the keyframe, or add a `middle` at the current frame on an in-between box);
+  double-click deletes a keyframe or pins one; the menu sets the end, deletes a keyframe,
+  deletes the observation. The last save wins.
+- **R7** — An edited observation's thumbnail is extracted again.
+- **R8** — Watching and editing both work on a phone.
+- **R9** — When the Mosaic's query changes while the video is open, the boxes follow it.
 
 ## Open assumptions
 
-- [x] **A1 · product/UI · blocking** — answered 2026-09-24: **(a), its own reused window.**
-  **Where does it open?**
-  - **(a) Its own window, opened by the Mosaic and reused.** Recommended: it can sit on a
-    second monitor, it survives anything the Mosaic re-renders, the player stays warm, and
-    it is a page, so on a phone it opens as a tab. Editing later gets a whole page to grow
-    in.
-  - **(b) A panel inside the Mosaic page.** Nothing to switch between, but it shares the
-    grid's screen and its code lives inside the Mosaic.
-  - **(c) A plain new page, navigated to.** Simplest, but leaving the Mosaic is what R5
-    says must not happen.
-- [x] **A2 · product/UI · blocking** — answered 2026-09-24: **(a), the current page's, in
-  this video.** **Which boxes does it draw?**
-  - **(a) Every observation on the current Mosaic page that falls in this video.**
-    Recommended: that is "the ones being reviewed", and neighbours are visible.
-  - **(b) Only the observation that was opened.**
-  - **(c) Every observation in the database for that video,** reviewed or not.
-- [x] **A3 · cross-repository / architectural · blocking** — answered 2026-09-24: **the way
-  VIDEO_PROCESSING_GUI does it.** A released host archive from a marp-video-player GitHub
-  release, unpacked into the repository by an update script, with `PLAYER_VERSION`
-  recording which release is installed, and never edited by hand
-  (`MAREGUI_PROOFofCONCEPT/player/`). **How does marp-api get the
-  player?** The two are deliberately disconnected today.
-  - **(a) A pinned copy of the player's built bundle,** checked into marp-api with the
-    version and commit it came from, updated deliberately. Recommended: it is one file with
-    no dependencies, and it matches how the worker installer pins it
-    (`packaging/player.lock.json`).
-  - **(b) An npm dependency** on marp-video-player.
-  - **(c) Served from its own deployment,** separate from marp-api.
-- [ ] **A4 · architectural · non-blocking** — The box layer for recorded video is drawn by
-  the MARP page over the player's canvas, timed off the engine's current frame. It does not
-  go into the player library yet. It moves into the player later if the annotation GUI
-  wants the same thing. Editing is then built on that layer.
-- [x] **A5 · data-meaning · blocking** — answered 2026-09-24: **(a), first, on its own
-  branch.** **Fix the non-25 thumbnails first?** Thumbnails
-  for 24.946 fps video fail permanently (above). The fix is the same time rule as R2: seek
-  to `framenum / real rate` for a GPU row, and keep refusing a GUI row whose rate
-  disagrees.
-  - **(a) First, on its own branch,** so those observations can be reviewed at all.
-    Recommended.
-  - **(b) As part of this task.**
-  - **(c) Later.**
-- [ ] **A6 · performance · non-blocking** — Bandwidth. The page opens on the extracted
-  frame instantly (R3), then plays Direct Play from the moment by byte range. It fetches the
-  index of the next videos on the page ahead, not their video, and offers the 480p
-  transcode when bytes are not arriving. Prefetching video for tiles nobody opens would
-  compete with Jellyfin's small stream ceiling, which thumbnails and the GUI share.
+- [x] **A1 · product/UI · blocking** — answered 2026-10-05: every observation in this video
+  matching the current query, all pages (1a).
+- [x] **A2 · behavioural · blocking** — answered 2026-10-05: start to end, interpolated, as
+  the GUI (2a).
+- [x] **A3 · product/UI · blocking** — answered 2026-10-05: the GUI's box controls (3a).
+  Creating observations and changing species are not in this task.
+- [x] **A4 · security/permissions · blocking** — answered 2026-10-05: the existing
+  `keyframes:write`, granted by an administrator; no new permission (4a).
+- [x] **A5 · behavioural · blocking** — answered 2026-10-05: last save wins (5a).
+- [x] **A6 · data-meaning · blocking** — answered 2026-10-05: re-extract the thumbnail after
+  an edit (6a).
+- [x] **A7 · scientific · blocking** — answered 2026-10-05: boxes on the exact frames, so the
+  player is fixed (Direct Play's edit list included). Existing data is not touched.
+- [x] **A8 · product/UI · blocking** — answered 2026-10-05: watching and editing on a phone.
+- [ ] **A9 · API contract · blocking** — **how the page gets its boxes.** Recommended: two
+  reads, both taking the Mosaic's filters body plus the video: (1) the matching
+  observations in that video with their species and start/end times -- small, loaded once;
+  (2) keyframes for those observations within a time window, fetched around the playhead.
+  Alternative: one read of everything, simpler but ~4 MB for the busiest video.
+- [ ] **A10 · product/UI · non-blocking** — touch: tap selects, drag moves, corner handles
+  resize, double-tap is double-click, long-press opens the menu.
+- [ ] **A11 · scientific/data-meaning · non-blocking** — keyframes drawn in the annotation
+  GUI over this player since it adopted it were drawn on pictures three frames early. When
+  did that start, and does that data need attention later? Not touched here.
 
 ## Decisions
 
-- **2026-09-24** — The player opens in its own window, opened by the Mosaic and reused (A1).
-- **2026-09-24** — It draws the boxes of the current Mosaic page's observations in that
-  video (A2).
-- **2026-09-24** — marp-api installs the player from a released host archive, the way
-  VIDEO_PROCESSING_GUI does (A3).
-- **2026-09-24** — The non-25 thumbnail fix goes first, on its own branch (A5). Done in
-  #236 and #237, which also found that a frame number is playback time times the video's
-  *nominal* rate, never a count of frames decoded.
-- **2026-09-24** — A reviewer reaches Jellyfin with their own Jellyfin account, signing in
-  from the player page. Isaac: *"the user will login and they will be able to access the
-  jellyfin server with their credentials."* MARP's own sign-in is local and does not carry a
-  Jellyfin session, so the player's own `JellyfinClient` signs in and keeps its session in
-  the browser, the way jellyfin-web does. MARP never sees a Jellyfin password.
+- **2026-10-05** — answers A1-A8 above, from Isaac.
 
 ## Plan
 
-1. **Install the player** the way VIDEO_PROCESSING_GUI does: an update script downloads
-   the host archive of a marp-video-player release into `frontend/shared/vendor/
-   marp-video-player/`, with `PLAYER_VERSION` recording which. v0.4.0, the latest release.
-2. **One read for the player**, `POST /api/v2/mosaic/video-context` with the page's
-   observation ids. It returns them grouped by video: the Jellyfin item (resolved from
-   `video_source` as the thumbnail pass does, refused below the same match score), the
-   nominal rate, and per observation its moment and its keyframes **already in seconds**.
-   A GUI row's frames are `framenum / 25`; a GPU row's are `framenum / nominal rate`.
-3. **The player page**, `inspect.html` in the Mosaic app: the player with its own
-   interface and Jellyfin sign-in, and a canvas over it that draws, at each presented
-   frame, every page observation whose keyframes span that time, interpolated, with the
-   opened one marked.
-4. **The Mosaic opens it**: a tile action opens or reuses one named window and tells it
-   which observation and which page, by `BroadcastChannel`. The same video is a seek; a
-   different one is a load.
-5. **Responsiveness**: the page shows the observation's extracted full frame, or its
-   thumbnail, with its box at once, and swaps to the video when the first frame at that
-   moment is presented. The video context is fetched once per page and kept.
-6. Tests at the tiers below.
+1. marp-video-player#20: finish the cold-start fix (requests to a session go forward while a
+   unit is assembled) and apply the edit list on Direct Play and local files; release.
+2. marp-api reads (A9) with tests; generated docs rebuilt.
+3. The video page: query-wide boxes, start-to-end interpolation, highlight, windowed loading,
+   following the Mosaic's query; phone opens 720p.
+4. Editing: keyframe ids in the read, the gestures, saves through the API, thumbnail refresh.
+5. Verify on desktop and on the Android emulator against the testing database.
 
 ## Acceptance criteria
 
-- From a tile, the video opens at the observation's moment with its box drawn on the right
-  frame, and the Mosaic is unchanged when it closes.
-- The second observation opened shows its frame at once and its video without a reload.
+- On a desktop and the Android emulator, a box is on the frame its keyframe names, checked
+  against the original file's pictures.
+- Every observation in the video matching the query is drawn; the chosen one stands out.
+- An edit made on the page is in the database, and the GUI shows it.
 
 ## Test plan
 
-- **API, `mosaic-video-context.test.js`**: grouping by video; a GUI row's times at 25 and
-  a GPU row's at the nominal rate; an unresolvable or weak match reported, not guessed;
-  the permission.
-- **Unit, Mosaic `tests/unit`**: the box at a time, interpolated between keyframes, and none
-  outside the track's span.
-- **Browser, API tier**: the tile action opens the named window and hands it the
-  observation; opening a second one reuses it.
-- **By hand, once:** a real observation, signed in to Jellyfin, box on the animal. That
-  step needs a person to sign in; Claude does not enter passwords.
-
-## Status
-
-- **Gate:** implementing
-- **Notes:** A1–A3 and A5 answered 2026-09-24. Waiting on the thumbnail fix (A5) before G2.
+- Unit: interpolation start-to-end; window planning; seconds-to-framenum for GUI and GPU
+  rows; the edit gestures' requests.
+- API (Jest, `npm run test:mosaic`): the new reads under filters, windows and limits; edits
+  restored afterwards.
+- Browser (`npm run test:app:mosaic-review:api`): boxes and highlight; editing on the testing
+  database; phone width.
+- Real: the emulator harness against the live Jellyfin for frame exactness.
