@@ -17,6 +17,9 @@ const PAGE = 'inspect.html';
 
 let channel = null;
 
+/* The query the window was last told, so an unchanged one is not sent again. */
+let toldQuery = null;
+
 /* The channel the inspector listens on, opened once. */
 function videoChannel() {
   if (!channel && typeof BroadcastChannel !== 'undefined') channel = new BroadcastChannel(VIDEO_WINDOW);
@@ -24,11 +27,13 @@ function videoChannel() {
 }
 
 /**
- * Show one observation in the inspector, with the rest of its page for context.
- * `pageIds` are the observations on the current page, whose boxes are drawn too.
+ * Show one observation in the video page, with every other observation in its video that
+ * the Mosaic's query matches. `filters` is that query, as the grid's own page request
+ * sends it.
  */
-export function openVideoWindow(observationId, pageIds) {
-  const request = { type: 'show', observationId, pageIds: [...new Set(pageIds || [])] };
+export function openVideoWindow(observationId, filters) {
+  const request = { type: 'show', observationId, filters: filters || {} };
+  toldQuery = JSON.stringify(request.filters);
   const existing = window.open('', VIDEO_WINDOW);
 
   if (!existing) return false;
@@ -52,4 +57,17 @@ export function openVideoWindow(observationId, pageIds) {
   existing.location.href = url.toString();
   existing.focus();
   return true;
+}
+
+/**
+ * Tell an open video page the Mosaic's query has changed, so its boxes follow it (R9). Only
+ * once a page has been opened this session, and only when the query is not the one it has.
+ */
+export function followQueryInVideoWindow(filters) {
+  if (toldQuery === null) return;
+  const text = JSON.stringify(filters || {});
+  if (text === toldQuery) return;
+  toldQuery = text;
+  const open = videoChannel();
+  if (open) open.postMessage({ type: 'query', filters: filters || {} });
 }

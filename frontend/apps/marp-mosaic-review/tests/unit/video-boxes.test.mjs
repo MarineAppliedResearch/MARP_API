@@ -80,15 +80,6 @@ test('#181 the picture time is the decoded frame\'s own timestamp when there is 
   assert.equal(pictureTime({ mediaTime: 12.5 }), 12.5);
 });
 
-test('#181 a landing six seconds early is corrected by the offset; one on the moment is left', async () => {
-  const { landingCorrection } = await import('../../src/model/video-boxes.js');
-  const corrected = landingCorrection({ moment: 600, mediaTime: 599.993, pictureTime: 594.08 });
-  assert.ok(Math.abs(corrected - 605.913) < 1e-9, `corrected to ${corrected}`);
-  // Within half a frame at 25 fps is on it.
-  assert.equal(landingCorrection({ moment: 600, mediaTime: 600, pictureTime: 600.019 }), null);
-  assert.notEqual(landingCorrection({ moment: 600, mediaTime: 600, pictureTime: 600.021 }), null);
-  assert.equal(landingCorrection({ moment: 600, mediaTime: 600, pictureTime: NaN }), null);
-});
 
 test('#181 the first seek is one frame short of the moment, so the player paints and reports', async () => {
   const { firstSeekTarget } = await import('../../src/model/video-boxes.js');

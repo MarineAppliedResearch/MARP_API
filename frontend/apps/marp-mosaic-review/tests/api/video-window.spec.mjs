@@ -122,3 +122,54 @@ test('#181 nothing covers the player while the video opens', async ({ page, requ
   });
   expect(hit.inside, `the middle of the player is covered by ${hit.what}`).toBe(true);
 });
+
+test('#181 the video page asks for every observation the query matches in the video, and their keyframes around the moment',
+  async ({ page, request }) => {
+    const id = await playableObservation(request);
+    const asked = page.waitForRequest((r) => r.url().includes('/mosaic/video/observations'));
+    const answered = page.waitForResponse((r) => r.url().includes('/mosaic/video/observations'));
+    const windowAsked = page.waitForRequest((r) => r.url().includes('/mosaic/video/keyframes'));
+    const hash = encodeURIComponent(JSON.stringify({ type: 'show', observationId: id, filters: {} }));
+    await page.goto(`inspect.html#${hash}`);
+
+    expect((await asked).postDataJSON()).toEqual({ observation_id: id, filters: {} });
+    const body = await (await answered).json();
+    const inVideo = new Set(body.observations.map((row) => row.observation_id));
+    expect(inVideo.has(id)).toBe(true);
+
+    // The window around the moment, for observations of this video only, the opened one among them.
+    const window = (await windowAsked).postDataJSON();
+    expect(window.from_s).toBeLessThanOrEqual(body.opened.moment_s);
+    expect(window.to_s).toBeGreaterThan(body.opened.moment_s);
+    expect(window.observation_ids.every((each) => inVideo.has(each))).toBe(true);
+  });
+
+test('#181 Open video sends the Mosaic\'s query, and an open video page follows the query when it changes',
+  async ({ page, context }) => {
+    const seeded = await seedPage({ count: 2, thumbnail: 'ready' });
+    try {
+      await page.goto(seeded.address);
+      await expectRealBacking(page);
+      await ready(page);
+      const line = await page.evaluate(() => window.MARP.state.filters.line);
+      expect(line && line.length).toBeTruthy();
+
+      // Listening before the click: the new window asks at once, before it is handed back.
+      const first = context.waitForEvent('request', (r) => r.url().includes('/mosaic/video/observations'));
+      const opened = context.waitForEvent('page');
+      await openVideo(page, seeded.ids[0]);
+      await opened;
+      expect((await first).postDataJSON().filters.line).toEqual(line);
+
+      // The reviewer changes the question in the Mosaic; the open page asks again with it.
+      const followed = context.waitForEvent('request', (r) => r.url().includes('/mosaic/video/observations')
+        && (r.postDataJSON().filters.sessionType || []).includes('Invert'));
+      await page.keyboard.press('Escape');
+      await page.evaluate(() => window.MARP.actions.setFilter('sessionType', ['Invert']));
+      const body = (await followed).postDataJSON();
+      expect(body.observation_id).toBe(seeded.ids[0]);
+      expect(body.filters.line).toEqual(line);
+    } finally {
+      await seeded.remove();
+    }
+  });

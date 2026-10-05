@@ -134,19 +134,6 @@ export function pictureTime(metadata) {
 }
 
 /**
- * Where to seek so the picture shows `moment`, or null when it already does.
- *
- * Within half a frame is on it. Otherwise the offset between the picture and the grid
- * is carried over to the target, which lands on the moment because the offset barely
- * changes across a few seconds.
- */
-export function landingCorrection({ moment, mediaTime, pictureTime: shown, fps = 25 }) {
-  if (![moment, mediaTime, shown].every(Number.isFinite)) return null;
-  if (Math.abs(shown - moment) <= 0.5 / fps) return null;
-  return mediaTime + (moment - shown);
-}
-
-/**
  * Where the first seek goes: one frame short of the moment.
  *
  * The player opens on the moment and paints it before the page is watching, and it
