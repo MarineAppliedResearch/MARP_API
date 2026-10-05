@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#181
 repos: [MARP_API, marp-video-player]
-status: design
+status: verified
 needs: []
 ---
 
@@ -135,3 +135,27 @@ and on a phone, both for watching and for editing.
 - Browser (`npm run test:app:mosaic-review:api`): boxes and highlight; editing on the testing
   database; phone width.
 - Real: the emulator harness against the live Jellyfin for frame exactness.
+
+## Verification
+
+Run 2026-10-05 on `181-video-review` with marp-video-player 0.6.0 installed.
+
+- Unit (`npm run test:unit` in the app): 322 pass.
+- API (`npm run test:mosaic`): 308 pass. The corpus guard flags `gpu_workers`,
+  `service_clients` and `service_tokens` on every file -- heartbeats the running workers and
+  services write during the run, not rows a test wrote.
+- Browser (`npm run test:app:mosaic-review:api -- -g "#181"`): 14 pass, desktop and phone
+  width, including the editing test over real video. Before 0.6.0 was installed the phone-width
+  editing test failed: the old player showed a picture 5 s early (the burned-in clock read
+  13:11 at a reported 13:16), so the box was never drawn.
+- Emulator (Android 15 Pixel 7, live Jellyfin, real touch input): 10 of 10 -- tap selects,
+  drag on an in-between box adds a middle at the picture's frame and draws where dropped,
+  double tap removes it, corner drag resizes a keyframe keeping its frame and kind, long press
+  opens the menu, Set As End saves, a drag on no box saves nothing. Edited rows were restored
+  exactly.
+- Frame exactness (player, marp-video-player#36): all points exact on two dives on the
+  emulator's 720p transcode, 37.5-40 dB against the original frame and 27-35 dB against its
+  neighbours; Direct Play on a desktop 45-48 dB.
+
+Not covered: the annotation GUI drawing what this page saved (the GUI reads the same rows,
+but it was not run); A11 is open.
