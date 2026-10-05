@@ -39,6 +39,7 @@
 const mosaicRepository = require('../repository/mosaic.repository');
 const videoContextService = require('../service/mosaic-video-context.service');
 const videoService = require('../service/mosaic-video.service');
+const videoEditService = require('../service/mosaic-video-edit.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
@@ -493,6 +494,136 @@ function registerMosaicRoutes(app) {
         },
         handler: asyncHandler(async (req, res) => {
             res.json(await videoService.videoKeyframes(req.body || {}));
+        }),
+    });
+
+    // Box edits from the video page (#181): the annotation GUI's controls. `keyframes:write`,
+    // the permission the GUI's own token holds; an administrator grants it to reviewers.
+    const EDIT_PERMISSION = 'keyframes:write';
+    const EDITED = {
+        200: {
+            description: 'The keyframes the edit changed, in seconds, and any it deleted.',
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        properties: {
+                            observation_id: { type: 'integer' },
+                            changed: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        keyframe_id: { type: 'integer' },
+                                        observation_id: { type: 'integer' },
+                                        subset: { type: 'string', nullable: true },
+                                        type: { type: 'string', nullable: true },
+                                        t: { type: 'number' },
+                                        ...BOX,
+                                    },
+                                },
+                            },
+                            deleted: { type: 'array', items: { type: 'integer' } },
+                        },
+                    },
+                },
+            },
+        },
+        400: { $ref: '#/components/responses/BadRequestError' },
+        404: { $ref: '#/components/responses/NotFoundError' },
+        500: { $ref: '#/components/responses/InternalServerError' },
+    };
+    const keyframeIdOf = (req) => Number.parseInt(req.params.keyframe_id, 10);
+    const keyframeParameter = [{ name: 'keyframe_id', in: 'path', required: true, schema: { type: 'integer' } }];
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: EDIT_PERMISSION,
+        path: '/api/mosaic/video/keyframe',
+        summary: 'Add a middle keyframe to an observation\'s track at a time in seconds',
+        description:
+            'The annotation GUI\'s drag of an in-between box, or its pin: a `middle` keyframe at `t` seconds on the observation\'s '
+            + 'track (`subset`, default `1`), between its start and its end (#181). On a keyframe already, that one is moved instead. '
+            + '`t` becomes a frame number by the rule the reads use: 25 for an annotation-GUI row, the video\'s nominal rate for a GPU '
+            + 'row. The observation\'s thumbnail is extracted again.',
+        tags: [TAG],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['observation_id', 't', 'x', 'y', 'width', 'height'],
+                        properties: {
+                            observation_id: { type: 'integer' },
+                            subset: { type: 'string', example: '1' },
+                            t: { type: 'number', description: 'Seconds into the video.' },
+                            ...BOX,
+                        },
+                    },
+                },
+            },
+        },
+        responses: EDITED,
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoEditService.addKeyframe(req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'put',
+        permission: EDIT_PERMISSION,
+        path: '/api/mosaic/video/keyframe/:keyframe_id',
+        summary: 'Move or resize a keyframe\'s box',
+        description:
+            'The annotation GUI\'s drag or corner resize, saved on release (#181). The box changes; the keyframe\'s frame and type do '
+            + 'not. The last save wins. The observation\'s thumbnail is extracted again.',
+        tags: [TAG],
+        parameters: keyframeParameter,
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: { type: 'object', required: ['x', 'y', 'width', 'height'], properties: { ...BOX } },
+                },
+            },
+        },
+        responses: EDITED,
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoEditService.moveBox(keyframeIdOf(req), req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: EDIT_PERMISSION,
+        path: '/api/mosaic/video/keyframe/:keyframe_id/end',
+        summary: 'Make a keyframe its track\'s end',
+        description:
+            'The annotation GUI\'s "Set As End Keyframe" (#181). The keyframe that was the end becomes a middle, so a track keeps '
+            + 'one end. The observation\'s thumbnail is extracted again.',
+        tags: [TAG],
+        parameters: keyframeParameter,
+        responses: EDITED,
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoEditService.setEnd(keyframeIdOf(req)));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'delete',
+        permission: EDIT_PERMISSION,
+        path: '/api/mosaic/video/keyframe/:keyframe_id',
+        summary: 'Delete a keyframe, keeping its track\'s start and end',
+        description:
+            'The annotation GUI\'s "Delete Keyframe" (#181). Deleting the start promotes the earliest remaining keyframe to start, as '
+            + 'the GUI does; deleting the end promotes the latest remaining to end, so an observation keeps one of each. A track\'s '
+            + 'only keyframe is refused with 400: that is deleting the observation. The observation\'s thumbnail is extracted again.',
+        tags: [TAG],
+        parameters: keyframeParameter,
+        responses: EDITED,
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoEditService.deleteKeyframe(keyframeIdOf(req)));
         }),
     });
 }
