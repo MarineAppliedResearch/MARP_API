@@ -45,6 +45,7 @@ const gpuService = require('../service/gpu.service');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const { MEDIA_CLIENT_IDENTITY, FFPROBE_PATH, FPS_TOLERANCE } = require('../config/thumbnails');
 const { ASSUMED_FPS } = require('../db/timecode');
+const { inferenceProcessorId } = require('../db/inference-processor');
 
 const { QueryTypes } = db.Sequelize;
 
@@ -505,8 +506,10 @@ async function findOrCreateSession(project, dive, line, apply) {
     // Through the model, so the application's own defaults and timestamps are
     // what wrote the row. `session_id` is autoIncrement on this model, unlike
     // `observations` -- see AGENTS.md, *Primary keys are assigned inconsistently*.
+    // Owned by the inference processor, so the GUI's opening screen can reach it.
     const created = await db.sessions.create({
         project_id: project.project_id,
+        user_id: await inferenceProcessorId(db.sequelize),
         dive,
         line: String(line),
         lineId: String(line),

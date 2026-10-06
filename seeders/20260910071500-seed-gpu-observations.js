@@ -42,6 +42,8 @@
 
 'use strict';
 
+const { inferenceProcessorId } = require('../db/inference-processor');
+
 /** Observations, exactly as the ingest wrote them. @constant @type {Array<Object>} */
 const OBSERVATIONS = [
     { observation_id: 1, project_id: 43, session_id: 142, tc: "00:12:03", frame: "9", taxserial: 158344, comname: "California sea cucumber", count: 1, video_source: "20240730_171520_Fwd.mp4", mediaPosition: "00:12:03.3600000", actualPosition: "00:12:03.3600000", obsID: 1, "PobsID": 1, confidence: 0.7502287030220032, species_id: 775, version: 1, ml_model_id: 91, jellyfin_item_id: "4ac4749aae0a8d75ac99f2d8d50717ce" },
@@ -167,13 +169,20 @@ module.exports = {
       // `type` is 'Invert', which is what routes these observations to the `Inverts`
       // species list -- see db/species-lists.js. A different type here would make the
       // model's own output unreconcilable, by design.
+      //
+      // Owned by the inference processor, which a migration creates, so the GUI's
+      // opening screen can reach it. COALESCE on conflict keeps an existing processor.
       await queryInterface.sequelize.query(
-        `INSERT INTO sessions (session_id, project_id, dive, line, "lineId", type, "createdAt", "updatedAt")
-         VALUES (142, 43, 'Dive 8', '1000', '1000', 'Invert', NOW(), NOW())
+        `INSERT INTO sessions (session_id, project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+         VALUES (142, 43, :userId, 'Dive 8', '1000', '1000', 'Invert', NOW(), NOW())
          ON CONFLICT (session_id) DO UPDATE
             SET project_id = EXCLUDED.project_id, dive = EXCLUDED.dive, line = EXCLUDED.line,
-                "lineId" = EXCLUDED."lineId", type = EXCLUDED.type, "updatedAt" = NOW()`,
-        { transaction }
+                "lineId" = EXCLUDED."lineId", type = EXCLUDED.type,
+                user_id = COALESCE(sessions.user_id, EXCLUDED.user_id), "updatedAt" = NOW()`,
+        {
+          replacements: { userId: await inferenceProcessorId(queryInterface.sequelize, transaction) },
+          transaction,
+        }
       );
 
       await queryInterface.sequelize.query(
@@ -232,8 +241,11 @@ module.exports = {
 
       await queryInterface.bulkInsert(
         'observations',
+        // videoLocation is the file's name on disk, as the ingest and the GUI now
+        // both write it. Set here at insert, never by a later UPDATE, for the
+        // version reason above.
         OBSERVATIONS.map((r) => ({
-          ...r, gpu_job_id: gpuJobId, createdAt: now, updatedAt: now,
+          ...r, videoLocation: r.video_source, gpu_job_id: gpuJobId, createdAt: now, updatedAt: now,
         })),
         { transaction }
       );
