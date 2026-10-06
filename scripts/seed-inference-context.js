@@ -27,6 +27,7 @@
 require('dotenv').config();
 
 const db = require('../model');
+const { inferenceProcessorId } = require('../db/inference-processor');
 
 const { QueryTypes } = db.Sequelize;
 
@@ -254,16 +255,19 @@ async function seed(apply) {
         );
     }
 
+    // Owned by the inference processor so the GUI's opening screen can reach it.
+    // COALESCE on conflict: a session that already has a processor keeps it.
     console.log(`session  ${SESSION.session_id}  ${SESSION.dive} / line ${SESSION.line} / ${SESSION.type}`);
     await write(
         apply,
-        `INSERT INTO sessions (session_id, project_id, dive, line, "lineId", type, "createdAt", "updatedAt")
-         VALUES (:session_id, :project_id, :dive, :line, :lineId, :type, NOW(), NOW())
+        `INSERT INTO sessions (session_id, project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+         VALUES (:session_id, :project_id, :user_id, :dive, :line, :lineId, :type, NOW(), NOW())
          ON CONFLICT (session_id) DO UPDATE
             SET project_id = EXCLUDED.project_id, dive = EXCLUDED.dive, line = EXCLUDED.line,
-                "lineId" = EXCLUDED."lineId", type = EXCLUDED.type, "updatedAt" = NOW()
+                "lineId" = EXCLUDED."lineId", type = EXCLUDED.type,
+                user_id = COALESCE(sessions.user_id, EXCLUDED.user_id), "updatedAt" = NOW()
          RETURNING session_id`,
-        SESSION
+        { ...SESSION, user_id: await inferenceProcessorId(db.sequelize) }
     );
 
     console.log(`model    ${MODEL.id}  ${MODEL.name}`);

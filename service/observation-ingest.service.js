@@ -575,12 +575,15 @@ class ObservationIngestService {
             return { ...row, created: false };
         }
 
+        // A session inference creates belongs to the inference processor, not to
+        // whoever submitted the job -- that is what puts it on the GUI's opening
+        // screen. The submitter is still recorded on each observation.
         const { session: row, created } = await ingestRepository.findOrCreateSession({
             projectId: session.project_id,
             dive: session.dive,
             line: session.line,
             type: session.type,
-            userId: job.created_by === undefined ? null : job.created_by,
+            userId: await ingestRepository.inferenceProcessorId(),
         });
 
         return { ...row, created };
@@ -759,12 +762,12 @@ class ObservationIngestService {
                 comname: species.comname,
                 count: Number.isInteger(row.count) ? row.count : 1,
                 video_source: typeof row.video_source === 'string' ? row.video_source : null,
-                // Null deliberately. In the legacy pipeline this was the
-                // operator's own local path to the file, which on a distributed
-                // worker does not exist; the resolved stream URL is per-lease and
-                // will carry an expiring token. `video_source` and
-                // `jellyfin_item_id` carry the identity instead.
-                videoLocation: null,
+                // The file's name on disk, the same as video_source and the same
+                // as the annotation GUI writes: video is found in Jellyfin by
+                // filename. Not the stream URL, which is per-lease and carries an
+                // expiring token, and not the item id, which changes when items
+                // change on the Jellyfin server.
+                videoLocation: typeof row.video_source === 'string' ? row.video_source : null,
                 mediaPosition: timecodes.mediaPosition,
                 actualPosition: timecodes.actualPosition,
                 confidence,

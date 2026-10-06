@@ -110,6 +110,9 @@ const SUBSYSTEMS = {
             'project',
             'sessions',
             'sessions-by-project',
+            // Which processor inference sessions belong to, and the models
+            // the session lists name.
+            'inference-processor',
             'tasks',
             'schema',
             'readonly-endpoints',

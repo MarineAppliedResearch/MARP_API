@@ -511,10 +511,11 @@ describe('Ingesting a real result file', () => {
             expect(row.session_id).toBe(seeded.invertSessionId);
             expect(row.project_id).toBe(seeded.projectId);
 
-            // A23: null on purpose, not by omission. In the legacy pipeline this
-            // was the operator's own local path, which a distributed worker does
-            // not have.
-            expect(row.videoLocation).toBeNull();
+            // Was A23, null on purpose. Replaced 2026-10-06
+            // (inference-processor-account A7, R7): the file's name on disk, the
+            // same as video_source and the same as the GUI writes, so the GUI can
+            // open the video by filename.
+            expect(row.videoLocation).toBe(row.video_source);
         }
 
         // R9: the score at the observation frame, as sent, null included.
@@ -917,9 +918,18 @@ describe('A job that describes its session rather than naming one', () => {
         expect(session.type).toBe('Invert');
         expect(session.lineId).toBe(`jest-dive-${runId}_2000`);
 
+        // Owned by the inference processor rather than the job's submitter, so the
+        // GUI's opening screen can reach it (inference-processor-account R3).
+        expect(session.user_id).toBe(await ingestRepository.inferenceProcessorId());
+
         const [stored] = await observationsForJob(job.id);
 
         expect(stored.session_id).toBe(session.session_id);
+
+        // The file's name on disk in both columns, as the GUI writes it, so the GUI
+        // can open the video by filename (inference-processor-account R7).
+        expect(stored.video_source).toBeTruthy();
+        expect(stored.videoLocation).toBe(stored.video_source);
     });
 
     it('reuses that session on a second job rather than creating another', async () => {
