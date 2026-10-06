@@ -421,7 +421,7 @@ function buildVideoObservationsQuery({ filters = {}, videoSource, include, limit
 
     const sql = `
 SELECT o.observation_id, o.species_id, coalesce(sp.comname, o.comname) AS comname,
-       o."obsID" AS obs_id, o.version, (o.gpu_job_id IS NOT NULL) AS machine, o."mediaPosition" AS media_position,
+       o."obsID" AS obs_id, o.version, o.count, o.session_id, (o.gpu_job_id IS NOT NULL) AS machine, o."mediaPosition" AS media_position,
        ks.first_framenum, ks.last_framenum
   FROM observations o
   LEFT JOIN sessions s ON s.session_id = o.session_id

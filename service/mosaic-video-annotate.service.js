@@ -124,7 +124,7 @@ async function createObservation(body = {}, userId = null) {
         }], transaction);
 
         const [row] = await db.sequelize.query(
-            `SELECT observation_id, "obsID" AS obs_id, species_id, comname, version, session_id
+            `SELECT observation_id, "obsID" AS obs_id, species_id, comname, version, count, session_id
                FROM observations WHERE observation_id = :observationId`,
             { replacements: { observationId }, type: QueryTypes.SELECT, transaction }
         );
