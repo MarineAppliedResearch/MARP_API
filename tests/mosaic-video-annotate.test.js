@@ -217,6 +217,18 @@ describe('annotating from the video page (#181)', () => {
         expect(thumbnail.status).toBe('ready');
     });
 
+    it('the video read lists the sessions in this video, each with its species list, for a new observation (A8)', async () => {
+        const opened = await addObservation({ sessionIndex: 0, keyframes: [[250, 'start']] });
+        await addObservation({ sessionIndex: 1, keyframes: [[260, 'start']] });
+        const read = await global.api.post('/api/v2/mosaic/video/observations').send({ observation_id: opened, filters: {} });
+        expect(read.status).toBe(200);
+        expect(read.body.opened.session_id).toBe(seeded.sessionIds[0]);
+        const { speciesListForSessionType } = require('../db/species-lists');
+        expect(read.body.sessions.map((s) => [s.session_id, s.species_list])).toEqual(
+            seeded.sessionIds.map((id) => [id, speciesListForSessionType('Fish')])
+        );
+    });
+
     it('requires a signed-in user', async () => {
         expect((await request(app).put(`${ROUTE}/1/count`).send({ count: 2 })).status).toBe(401);
     });

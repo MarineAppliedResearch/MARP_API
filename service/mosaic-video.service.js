@@ -253,11 +253,14 @@ async function videoKeyframes(body = {}) {
  * @async
  * @param {string} videoSource
  * @param {Object} [transaction]
- * @returns {Promise<Array<Object>>} `{ session_id, project_id, dive, line, type, observations }`.
+ * @returns {Promise<Array<Object>>} `{ session_id, project_id, dive, line, type, observations, species_list }`.
  */
 function sessionsInVideo(videoSource, transaction) {
     return db.sequelize.query(
-        `SELECT s.session_id, s.project_id, s.dive, s.line, s.type, count(*)::int AS observations
+        // The species list its type names, the same expression the Mosaic's rows carry, so a
+        // new observation's species is searched where its correction would be.
+        `SELECT s.session_id, s.project_id, s.dive, s.line, s.type, count(*)::int AS observations,
+                ${mosaicRepository.SPECIES_LIST_CASE} AS species_list
            FROM observations o JOIN sessions s ON s.session_id = o.session_id
           WHERE o.video_source = :videoSource
           GROUP BY s.session_id ORDER BY s.session_id`,

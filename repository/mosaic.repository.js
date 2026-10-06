@@ -1193,6 +1193,7 @@ module.exports = {
     MAX_ROWS,
     MosaicRequestError,
     SORT_FIELDS,
+    SPECIES_LIST_CASE,
     STATUS_DIMENSIONS,
     buildCountsQuery,
     buildFacetQuery,
