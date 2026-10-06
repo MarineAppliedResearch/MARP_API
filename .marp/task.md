@@ -39,28 +39,28 @@ their GUI-style editing.
 
 ## Requirements
 
-- **R1 — Add.** Dragging out a box on the picture where there is no box opens a species search
+- **R1** — **Add.** Dragging out a box on the picture where there is no box opens a species search
   beside it, recently used species first; one click or Enter creates the observation. It has a
   `start` keyframe on that frame and no end until one is set (as the GUI). Its session is
   chosen in the same popup from the sessions with observations in this video, defaulting to
   the opened observation's; `project_id`, `species_id`, `comname`, `taxserial`, the timecode
   columns, `obsID` and the reviewer's `user_id` are filled. Count 1. One request, atomic.
-- **R2 — Extend.** With an observation selected, a box drawn before its first keyframe becomes
+- **R2** — **Extend.** With an observation selected, a box drawn before its first keyframe becomes
   its `start` (the old start a `middle`), and one after its `end` becomes the `end`; elsewhere a
   `middle`. The GUI's "Add To Obs".
-- **R3 — Rename.** Changing an observation's species changes `species_id`, `comname`,
+- **R3** — **Rename.** Changing an observation's species changes `species_id`, `comname`,
   `taxserial` and every keyframe's `comname`, and the box label shows the new name. The
   Mosaic's correction does the same (A1), and still records the change in the review history.
-- **R4 — Merge.** Merging B into A moves B's keyframes onto A's track and deletes B. A keeps its
+- **R4** — **Merge.** Merging B into A moves B's keyframes onto A's track and deletes B. A keeps its
   id, species and count. Where both have a keyframe on one frame, A's box is kept. The merged
   track has exactly one `start` (the earliest) and one `end` (the latest, if either had an end);
   every other keyframe is a `middle`; every keyframe carries A's name.
-- **R5 — Count.** The count of an observation can be changed; it stays one observation with one
+- **R5** — **Count.** The count of an observation can be changed; it stays one observation with one
   set of boxes. For the science data, when the model detected fewer individuals than there were.
-- **R6 — Mosaic picture.** "Use for Mosaic picture" on a box makes the Mosaic's thumbnail be cut
+- **R6** — **Mosaic picture.** "Use for Mosaic picture" on a box makes the Mosaic's thumbnail be cut
   from that frame with that box. On a frame between keyframes, the box there is pinned as a
   keyframe first. The choice survives later automatic extraction.
-- **R7 — The panel.** Selecting a box opens a panel for its observation: species (changeable),
+- **R7** — **The panel.** Selecting a box opens a panel for its observation: species (changeable),
   count (changeable), obs ID, session, its keyframes, Merge, and Use for Mosaic picture.
 - **R8** — Every change is saved as it is made, through the API, and what the page shows
   afterwards is what the database holds. Thumbnails are extracted again where the box changed.
