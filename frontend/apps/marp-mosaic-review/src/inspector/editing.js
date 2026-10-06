@@ -145,6 +145,14 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
     return null;
   }
 
+  /* The pointer says what a press would do, as the GUI's does: move over a box, a resize
+     arrow over a grip of the selected one. A class on the stage, because the player's own
+     layers under it set cursors of their own. */
+  const CURSORS = { body: 'cursor-move', tl: 'cursor-nwse', br: 'cursor-nwse', tr: 'cursor-nesw', bl: 'cursor-nesw' };
+  function showCursor(part) {
+    for (const name of Object.values(CURSORS)) stage.classList.toggle(name, CURSORS[part] === name);
+  }
+
   function openMenu(entry, point) {
     const { t, keyframe } = boxHere(entry);
     const items = menuFor({ ...entry.box, keyframe, t })
@@ -163,13 +171,14 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
       return button;
     }));
     menu.hidden = false;
-    // Inside the stage, however near its edge the press was.
-    const stageRect = stage.getBoundingClientRect();
+    // Inside whatever holds it -- the player, so it shows in fullscreen too -- however near
+    // its edge the press was.
+    const hostRect = (menu.offsetParent || stage).getBoundingClientRect();
     const overlayRect = overlay.getBoundingClientRect();
-    const x = point.x + overlayRect.left - stageRect.left;
-    const y = point.y + overlayRect.top - stageRect.top;
-    menu.style.left = `${Math.max(0, Math.min(x, stageRect.width - menu.offsetWidth))}px`;
-    menu.style.top = `${Math.max(0, Math.min(y, stageRect.height - menu.offsetHeight))}px`;
+    const x = point.x + overlayRect.left - hostRect.left;
+    const y = point.y + overlayRect.top - hostRect.top;
+    menu.style.left = `${Math.max(0, Math.min(x, hostRect.width - menu.offsetWidth))}px`;
+    menu.style.top = `${Math.max(0, Math.min(y, hostRect.height - menu.offsetHeight))}px`;
   }
 
   function onPointerDown(event) {
@@ -219,7 +228,14 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   }
 
   function onPointerMove(event) {
-    if (!gesture || event.pointerId !== gesture.pointerId) return;
+    if (!gesture) {
+      if (enabled && event.pointerType === 'mouse') {
+        const hit = hitTest(host.drawn().rects, pointIn(event), selectedKey);
+        showCursor(hit ? hit.part : null);
+      }
+      return;
+    }
+    if (event.pointerId !== gesture.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
     const point = pointIn(event);
@@ -270,6 +286,7 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   stage.addEventListener('pointerup', onPointerUp, true);
   stage.addEventListener('pointercancel', onPointerUp, true);
   stage.addEventListener('contextmenu', onContextMenu, true);
+
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !menu.hidden) closeMenu();
   });
@@ -283,6 +300,9 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
     },
     get enabled() { return enabled; },
     get selectedKey() { return selectedKey; },
+    /* The part of a box being pressed, so it is drawn in the GUI's state colour from the
+       press, not only once it moves. */
+    pressFor(key) { return gesture && gesture.key === key ? gesture.part : null; },
     /* The dragged rectangle to draw for a box, in place of the record's, or null. */
     previewFor(key) { return preview && preview.key === key ? preview : null; },
     /* Draw order: lower first. The opened observation sits above unranked boxes. */

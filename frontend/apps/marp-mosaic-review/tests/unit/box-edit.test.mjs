@@ -31,6 +31,14 @@ test('a press lands on the topmost box, and on the selected box\'s grips before 
   assert.equal(hitTest(rects, { x: 400, y: 400 }, 'a'), null);
 });
 
+test('on a small box, the grip a press is nearest wins, not the first in reach', () => {
+  // 20 by 12: every corner is within reach of a press on any other.
+  const rects = [{ key: 'a', rect: { left: 100, top: 100, width: 20, height: 12 } }];
+  assert.deepEqual(hitTest(rects, { x: 120, y: 112 }, 'a'), { key: 'a', part: 'br' });
+  assert.deepEqual(hitTest(rects, { x: 100, y: 112 }, 'a'), { key: 'a', part: 'bl' });
+  assert.deepEqual(hitTest(rects, { x: 120, y: 100 }, 'a'), { key: 'a', part: 'tr' });
+});
+
 test('dragging the body moves the box whole and stops at the picture\'s edge', () => {
   const start = { left: 200, top: 100, width: 80, height: 60 };
   assert.deepEqual(dragged(start, 'body', 30, -20, AREA), { left: 230, top: 80, width: 80, height: 60 });

@@ -18,13 +18,16 @@ const EDGE = 1e-6;
 export function boxesAt(observations, t) {
   const out = [];
   for (const observation of observations || []) {
-    for (const track of tracksOf(observation.keyframes)) {
+    // Tracks sorted once when the keyframes arrived, where the caller has them: sorting
+    // on every frame was a cost paid for every observation held, every frame.
+    for (const track of observation.tracks || tracksOf(observation.keyframes)) {
       const box = boxOnTrack(track, t);
       if (box) {
         // The track's subset and keyframes go with the box, so an edit knows which track
         // it is on and whether the picture is on one of its keyframes.
         out.push({
           observation_id: observation.observation_id,
+          obs_id: observation.obs_id,
           comname: observation.comname,
           subset: track[0].subset == null ? null : String(track[0].subset),
           keyframes: track,
@@ -36,8 +39,8 @@ export function boxesAt(observations, t) {
   return out;
 }
 
-/* One observation's keyframes as tracks, one per subset, each in time order. */
-function tracksOf(keyframes) {
+/** One observation's keyframes as tracks, one per subset, each in time order. */
+export function tracksOf(keyframes) {
   const bySubset = new Map();
   for (const keyframe of keyframes || []) {
     const key = keyframe.subset == null ? '' : String(keyframe.subset);

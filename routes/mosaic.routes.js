@@ -409,6 +409,7 @@ function registerMosaicRoutes(app) {
                                             observation_id: { type: 'integer' },
                                             species_id: { type: 'integer', nullable: true },
                                             comname: { type: 'string', nullable: true },
+                                            obs_id: { type: 'integer', nullable: true, description: 'The observation\'s number within its session, as the annotation GUI labels it.' },
                                             version: { type: 'integer', description: 'The row version a delete must name.' },
                                             start_s: { type: 'number' },
                                             end_s: { type: 'number' },

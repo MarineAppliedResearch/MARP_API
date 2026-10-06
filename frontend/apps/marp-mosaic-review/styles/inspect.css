@@ -63,10 +63,37 @@ body {
   overflow-y: auto;
 }
 
-/* Drawn over the player's picture and never in the way of its controls. */
+/* Drawn over the player's picture and never in the way of its controls. It sits inside the
+   player's own element, after the picture and before the controls, so it goes fullscreen
+   with the player and the controls stay on top of it. */
 .inspect-boxes {
   position: absolute;
   pointer-events: none;
+}
+
+/* Paused, the picture stays clear. The player's paused layer darkens the whole picture and
+   puts a large play symbol in the middle of it, which is where the reviewer is looking
+   while moving boxes (2026-10-06). The controls bar still has play. */
+.inspect-player .marp-center-overlay {
+  display: none !important;
+}
+
+/* What a press would do, as the annotation GUI shows it: move over a box, a resize arrow
+   over a grip of the selected one. On everything under the pointer, because the player's
+   layers set cursors of their own. */
+.inspect-stage.cursor-move,
+.inspect-stage.cursor-move * {
+  cursor: move !important;
+}
+
+.inspect-stage.cursor-nwse,
+.inspect-stage.cursor-nwse * {
+  cursor: nwse-resize !important;
+}
+
+.inspect-stage.cursor-nesw,
+.inspect-stage.cursor-nesw * {
+  cursor: nesw-resize !important;
 }
 
 /* With editing on, a finger on the picture drags a box rather than panning the page

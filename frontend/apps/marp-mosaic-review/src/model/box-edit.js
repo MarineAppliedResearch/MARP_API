@@ -77,11 +77,14 @@ export function gripsOf(rect) {
 export function hitTest(rects, point, selectedKey) {
   const selected = rects.find((entry) => entry.key === selectedKey);
   if (selected) {
+    // The nearest grip in reach, not the first: on a small box -- any box on a phone --
+    // every corner is in reach of a press on one, and taking the first moved the wrong one.
+    let nearest = null;
     for (const grip of gripsOf(selected.rect)) {
-      if (Math.hypot(point.x - grip.x, point.y - grip.y) <= GRIP_REACH) {
-        return { key: selected.key, part: grip.corner };
-      }
+      const distance = Math.hypot(point.x - grip.x, point.y - grip.y);
+      if (distance <= GRIP_REACH && (!nearest || distance < nearest.distance)) nearest = { corner: grip.corner, distance };
     }
+    if (nearest) return { key: selected.key, part: nearest.corner };
   }
   for (let index = rects.length - 1; index >= 0; index -= 1) {
     const { key, rect } = rects[index];
