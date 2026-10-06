@@ -115,7 +115,7 @@ describe('the video page\'s observations (#181)', () => {
         const response = await global.api.post(OBSERVATIONS).send({ observation_id: ids.gui, filters: {} });
         expect(response.status).toBe(200);
         expect(response.body.video).toMatchObject({ video_source: VIDEO, jellyfin_item_id: `jest-item-${runId}`, frame_rate: NOMINAL });
-        expect(response.body.opened).toEqual({ observation_id: ids.gui, moment_s: 12 });
+        expect(response.body.opened).toEqual({ observation_id: ids.gui, session_id: null, moment_s: 12 });
 
         const byId = new Map(response.body.observations.map((row) => [row.observation_id, row]));
         expect([...byId.keys()].sort()).toEqual([ids.gui, ids.gpu, ids.long].sort());
