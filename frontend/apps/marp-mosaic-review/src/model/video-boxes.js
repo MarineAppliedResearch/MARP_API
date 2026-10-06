@@ -18,18 +18,29 @@ const EDGE = 1e-6;
 export function boxesAt(observations, t) {
   const out = [];
   for (const observation of observations || []) {
-    for (const track of tracksOf(observation.keyframes)) {
+    // Tracks sorted once when the keyframes arrived, where the caller has them: sorting
+    // on every frame was a cost paid for every observation held, every frame.
+    for (const track of observation.tracks || tracksOf(observation.keyframes)) {
       const box = boxOnTrack(track, t);
       if (box) {
-        out.push({ observation_id: observation.observation_id, comname: observation.comname, ...box });
+        // The track's subset and keyframes go with the box, so an edit knows which track
+        // it is on and whether the picture is on one of its keyframes.
+        out.push({
+          observation_id: observation.observation_id,
+          obs_id: observation.obs_id,
+          comname: observation.comname,
+          subset: track[0].subset == null ? null : String(track[0].subset),
+          keyframes: track,
+          ...box
+        });
       }
     }
   }
   return out;
 }
 
-/* One observation's keyframes as tracks, one per subset, each in time order. */
-function tracksOf(keyframes) {
+/** One observation's keyframes as tracks, one per subset, each in time order. */
+export function tracksOf(keyframes) {
   const bySubset = new Map();
   for (const keyframe of keyframes || []) {
     const key = keyframe.subset == null ? '' : String(keyframe.subset);
@@ -104,4 +115,45 @@ export function playbackBlocker({ secureContext, hasVideoDecoder }) {
  */
 export function cacheBudgets({ desktop }) {
   return desktop ? null : { rawGiB: 0.125, decodedGiB: 0.25 };
+}
+
+/**
+ * The quality a video opens at, by device (#181), or null for the player's own choice.
+ *
+ * A desktop plays the original file, as it always has. Anything else opens a 720p
+ * transcode: the original is 1080p with a keyframe every ten seconds, and the player
+ * decodes a whole keyframe interval at a time -- about 742 MB a unit, three held at
+ * once -- which ran a phone out of memory and took its other apps down with it. The
+ * transcode starts every three-second segment on a keyframe, so a unit is a tenth of
+ * that. The name must be one of the player's own tiers: its quality menu matches on it.
+ * The menu is still there to choose another.
+ */
+export function openingQuality({ desktop }) {
+  return desktop ? null : { name: '720p, 4 Mbps', maxStreamingBitrate: 4_000_000, maxWidth: 1280, maxHeight: 720 };
+}
+
+/**
+ * When the picture on screen was really taken, from the player's frame metadata.
+ *
+ * A transcode's segment grid runs ahead of its pictures -- six seconds by ten minutes into
+ * one dive -- so `mediaTime` names a moment the picture is not from. `rawFrameTime` is the
+ * decoded frame's own timestamp, which the burned-in dive clock agrees with. On the
+ * original file the two are the same.
+ */
+export function pictureTime(metadata) {
+  return Number.isFinite(metadata.rawFrameTime) ? metadata.rawFrameTime : metadata.mediaTime;
+}
+
+/**
+ * Where the first seek goes: one frame short of the moment.
+ *
+ * The player opens on the moment and paints it before the page is watching, and it
+ * reports a frame only when it paints a new one -- so a seek to the moment itself
+ * paints nothing, reports nothing, and the page never learns what it is showing. That
+ * left the status reading "Seeking…" for good. A frame short always paints, and the
+ * landing correction then steps onto the moment.
+ */
+export function firstSeekTarget(moment, fps = 25) {
+  const frame = 1 / fps;
+  return moment >= frame ? moment - frame : moment + frame;
 }

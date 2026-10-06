@@ -2,7 +2,7 @@
  * How the inspector builds its player (#181), in one place so a layout or memory
  * check can build it exactly the same way.
  */
-import { cacheBudgets } from '../model/video-boxes.js';
+import { cacheBudgets, openingQuality } from '../model/video-boxes.js';
 
 const GIB = 1024 ** 3;
 
@@ -20,7 +20,8 @@ export function isDesktop(win = window) {
  * cache and, at load, a 3 GiB decoded-frame cache -- killed a phone browser on first use.
  */
 export function createInspectorPlayer(container, win = window) {
-  const budgets = cacheBudgets({ desktop: isDesktop(win) });
+  const desktop = isDesktop(win);
+  const budgets = cacheBudgets({ desktop });
   const player = win.MarpVideoEngine.createMarpVideoPlayer(container, {
     // Fill the page's stage rather than a 16:9 box at its top: on a phone held upright
     // that box was a quarter of the screen, with the controls drawn over the picture.
@@ -28,7 +29,7 @@ export function createInspectorPlayer(container, win = window) {
     maxWidth: null,
     ...(budgets ? { rawCacheGiB: budgets.rawGiB, decodedCacheGiB: budgets.decodedGiB } : {})
   });
-  return { player, budgets };
+  return { player, budgets, quality: openingQuality({ desktop }) };
 }
 
 /* Apply the decoded-frame budget to a freshly loaded engine: the player sizes the raw

@@ -38,6 +38,8 @@
 
 const mosaicRepository = require('../repository/mosaic.repository');
 const videoContextService = require('../service/mosaic-video-context.service');
+const videoService = require('../service/mosaic-video.service');
+const videoEditService = require('../service/mosaic-video-edit.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
@@ -336,6 +338,295 @@ function registerMosaicRoutes(app) {
         },
         handler: asyncHandler(async (req, res) => {
             res.json(await videoContextService.videoContext(req.body || {}));
+        }),
+    });
+
+    const BOX = {
+        x: { type: 'number', description: 'Box centre, 0..1 of the picture width.' },
+        y: { type: 'number', description: 'Box centre, 0..1 of the picture height.' },
+        width: { type: 'number', description: '0..1 of the picture width.' },
+        height: { type: 'number', description: '0..1 of the picture height.' },
+    };
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: PERMISSION,
+        path: '/api/mosaic/video/observations',
+        summary: 'Every observation in an observation\'s video that the Mosaic\'s query matches, for the video page',
+        description:
+            'The video the named observation is in, and every observation in that video that `filters` -- the Mosaic\'s own '
+            + 'filters body, the one `/mosaic/observations/pages` takes -- matches, across all pages (#181). The named one is '
+            + 'always included. Each carries the span its keyframes cover **in seconds**, which tells the page which are on screen '
+            + 'when; the keyframes themselves come from `/mosaic/video/keyframes`, a window at a time. Times follow the rule '
+            + '`/mosaic/observations/video-context` states: an annotation-GUI row counts at 25, a GPU row at the video\'s nominal '
+            + 'rate. Observations with no keyframes are never in the Mosaic, and are not here.',
+        tags: [TAG],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['observation_id'],
+                        properties: {
+                            observation_id: { type: 'integer', example: 33236 },
+                            filters: { type: 'object', description: 'The Mosaic\'s filters body.' },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: 'The video and its matching observations.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                jellyfin_server: { type: 'string', nullable: true },
+                                video: {
+                                    type: 'object',
+                                    properties: {
+                                        video_source: { type: 'string', nullable: true },
+                                        jellyfin_item_id: { type: 'string', nullable: true },
+                                        unresolved_reason: { type: 'string', nullable: true },
+                                        frame_rate: { type: 'number', nullable: true },
+                                    },
+                                },
+                                opened: {
+                                    type: 'object',
+                                    properties: {
+                                        observation_id: { type: 'integer' },
+                                        moment_s: { type: 'number', nullable: true },
+                                    },
+                                },
+                                observations: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            observation_id: { type: 'integer' },
+                                            species_id: { type: 'integer', nullable: true },
+                                            comname: { type: 'string', nullable: true },
+                                            obs_id: { type: 'integer', nullable: true, description: 'The observation\'s number within its session, as the annotation GUI labels it.' },
+                                            version: { type: 'integer', description: 'The row version a delete must name.' },
+                                            start_s: { type: 'number' },
+                                            end_s: { type: 'number' },
+                                        },
+                                    },
+                                },
+                                truncated: { type: 'boolean', description: `More than ${videoService.MAX_VIDEO_OBSERVATIONS} matched.` },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoService.videoObservations(req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: PERMISSION,
+        path: '/api/mosaic/video/keyframes',
+        summary: 'The keyframes of some observations in one video, within a time window',
+        description:
+            'Keyframes of the named observations -- all in one video -- between `from_s` and `to_s`, plus each track\'s nearest '
+            + 'keyframe either side of the window, so a box crossing its edge interpolates across it (#181). The video page asks '
+            + `for a window around the playhead as it moves, at most ${videoService.MAX_WINDOW_SECONDS} s and `
+            + `${videoService.MAX_WINDOW_OBSERVATIONS} observations at a time. Times are in seconds, by the rule `
+            + '`/mosaic/observations/video-context` states; values are rounded to four decimals.',
+        tags: [TAG],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['observation_ids', 'from_s', 'to_s'],
+                        properties: {
+                            observation_ids: {
+                                type: 'array',
+                                items: { type: 'integer' },
+                                maxItems: videoService.MAX_WINDOW_OBSERVATIONS,
+                            },
+                            from_s: { type: 'number', example: 280 },
+                            to_s: { type: 'number', example: 300 },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: 'The keyframes, ascending by observation, subset and time.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                frame_rate: { type: 'number', nullable: true },
+                                keyframes: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            keyframe_id: { type: 'integer' },
+                                            observation_id: { type: 'integer' },
+                                            subset: { type: 'string', nullable: true },
+                                            type: { type: 'string', nullable: true, description: 'start, middle or end.' },
+                                            t: { type: 'number', description: 'Seconds into the video.' },
+                                            ...BOX,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoService.videoKeyframes(req.body || {}));
+        }),
+    });
+
+    // Box edits from the video page (#181): the annotation GUI's controls. `keyframes:write`,
+    // the permission the GUI's own token holds; an administrator grants it to reviewers.
+    const EDIT_PERMISSION = 'keyframes:write';
+    const EDITED = {
+        200: {
+            description: 'The keyframes the edit changed, in seconds, and any it deleted.',
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        properties: {
+                            observation_id: { type: 'integer' },
+                            changed: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        keyframe_id: { type: 'integer' },
+                                        observation_id: { type: 'integer' },
+                                        subset: { type: 'string', nullable: true },
+                                        type: { type: 'string', nullable: true },
+                                        t: { type: 'number' },
+                                        ...BOX,
+                                    },
+                                },
+                            },
+                            deleted: { type: 'array', items: { type: 'integer' } },
+                        },
+                    },
+                },
+            },
+        },
+        400: { $ref: '#/components/responses/BadRequestError' },
+        404: { $ref: '#/components/responses/NotFoundError' },
+        500: { $ref: '#/components/responses/InternalServerError' },
+    };
+    const keyframeIdOf = (req) => Number.parseInt(req.params.keyframe_id, 10);
+    const keyframeParameter = [{ name: 'keyframe_id', in: 'path', required: true, schema: { type: 'integer' } }];
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: EDIT_PERMISSION,
+        path: '/api/mosaic/video/keyframe',
+        summary: 'Add a middle keyframe to an observation\'s track at a time in seconds',
+        description:
+            'The annotation GUI\'s drag of an in-between box, or its pin: a `middle` keyframe at `t` seconds on the observation\'s '
+            + 'track (`subset`, default `1`), between its start and its end (#181). On a keyframe already, that one is moved instead. '
+            + '`t` becomes a frame number by the rule the reads use: 25 for an annotation-GUI row, the video\'s nominal rate for a GPU '
+            + 'row. The observation\'s thumbnail is extracted again.',
+        tags: [TAG],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['observation_id', 't', 'x', 'y', 'width', 'height'],
+                        properties: {
+                            observation_id: { type: 'integer' },
+                            subset: { type: 'string', example: '1' },
+                            t: { type: 'number', description: 'Seconds into the video.' },
+                            ...BOX,
+                        },
+                    },
+                },
+            },
+        },
+        responses: EDITED,
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoEditService.addKeyframe(req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'put',
+        permission: EDIT_PERMISSION,
+        path: '/api/mosaic/video/keyframe/:keyframe_id',
+        summary: 'Move or resize a keyframe\'s box',
+        description:
+            'The annotation GUI\'s drag or corner resize, saved on release (#181). The box changes; the keyframe\'s frame and type do '
+            + 'not. The last save wins. The observation\'s thumbnail is extracted again.',
+        tags: [TAG],
+        parameters: keyframeParameter,
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: { type: 'object', required: ['x', 'y', 'width', 'height'], properties: { ...BOX } },
+                },
+            },
+        },
+        responses: EDITED,
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoEditService.moveBox(keyframeIdOf(req), req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: EDIT_PERMISSION,
+        path: '/api/mosaic/video/keyframe/:keyframe_id/end',
+        summary: 'Make a keyframe its track\'s end',
+        description:
+            'The annotation GUI\'s "Set As End Keyframe" (#181). The keyframe that was the end becomes a middle, so a track keeps '
+            + 'one end. The start keyframe is refused with 400: the observation would have no start. The observation\'s thumbnail '
+            + 'is extracted again.',
+        tags: [TAG],
+        parameters: keyframeParameter,
+        responses: EDITED,
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoEditService.setEnd(keyframeIdOf(req)));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'delete',
+        permission: EDIT_PERMISSION,
+        path: '/api/mosaic/video/keyframe/:keyframe_id',
+        summary: 'Delete a keyframe, keeping its track\'s start and end',
+        description:
+            'The annotation GUI\'s "Delete Keyframe" (#181). Deleting the start promotes the earliest remaining keyframe to start, as '
+            + 'the GUI does; deleting the end promotes the latest remaining to end, so an observation keeps one of each. A track\'s '
+            + 'only keyframe is refused with 400: that is deleting the observation. The observation\'s thumbnail is extracted again.',
+        tags: [TAG],
+        parameters: keyframeParameter,
+        responses: EDITED,
+        handler: asyncHandler(async (req, res) => {
+            res.json(await videoEditService.deleteKeyframe(keyframeIdOf(req)));
         }),
     });
 }

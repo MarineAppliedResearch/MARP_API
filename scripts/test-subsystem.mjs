@@ -57,6 +57,8 @@ const SUBSYSTEMS = {
             'mosaic-facets',
             // #181: the source-video inspector's read, which rides beside the query.
             'mosaic-video-context',
+            'mosaic-video',
+            'mosaic-video-edit',
             // #181: the Jellyfin proxy the video page plays through, and the one port
             // that answers HTTPS beside HTTP so that page can be secure.
             'jellyfin-proxy',

@@ -14,6 +14,8 @@ import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
 import { renderFrameViewer, wireFrameViewer } from './frame-viewer.js';
+import { followQueryInVideoWindow } from './video-window.js';
+import { queryFilters } from '../model/filters.js';
 import { MARK_ACCEPT, MARK_EXCEPT } from '../model/modes.js';
 import { normalizeRect, idsInRect } from '../model/drag-selection.js';
 import {
@@ -458,6 +460,9 @@ export function mount() {
     renderFailure();
     renderGrid();
     renderPicker();
+    // An open video page draws what the query matches; when the query changes, so do its
+    // boxes (#181 R9). Sent only when it has changed.
+    followQueryInVideoWindow(queryFilters(state.mode, state.filters));
     renderConfirm();
     renderFrameViewer();
     renderRail();

@@ -204,4 +204,4 @@ async function videoContext(body) {
     return { jellyfin_server: jellyfinRepository.baseUrl ? PROXY_PATH : null, videos };
 }
 
-module.exports = { videoContext, MAX_OBSERVATIONS };
+module.exports = { videoContext, resolveVideo, MAX_OBSERVATIONS };
