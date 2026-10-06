@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#181
 repos: [MARP_API]
-status: design
+status: verified
 needs: []
 ---
 
@@ -130,3 +130,29 @@ their GUI-style editing.
 - API (`npm run test:mosaic`): each route, refusals, atomicity, and rows restored.
 - Browser (`npm run test:app:mosaic-review:api`): add, rename, merge, count and Mosaic picture
   over real video, desktop and phone width.
+
+## Verification
+
+Run 2026-10-06 on `181-video-annotation`, testing database rebuilt from that day's dump and
+migrated, player 0.6.0.
+
+- Unit (`npm run test:unit` in the app): 331 pass.
+- API: `npm run test:mosaic` 318 pass before the annotation routes; then
+  `tests/mosaic-video-annotate.test.js` 9, `mosaic-video-edit` 10, `mosaic-video` 7,
+  `mosaic-correction` 23 (renamed fully, old name in the log), `npm run test:review` 49 (the schema
+  test lists the two new columns). The corpus guard flags only `gpu_workers`, `service_clients`
+  and `service_tokens`, the heartbeats running workers write.
+- Migration `20261006120000-record-previous-species-name` up, down and up again on the
+  development database.
+- Browser (`npm run test:app:mosaic-review:api -- -g "#181"`): 20 pass, desktop and phone width,
+  over real video. Adding by drawing and Enter, renaming, counting, the Mosaic picture cut by the
+  real extractor, and merging from the panel; the species correction specs, 22, pass with the full
+  rename.
+- Defects these tests found and that are fixed, each with the assertion that saw it: keys typed in
+  the popup reached the player's shortcuts (a species name changed the playback speed); a box
+  made at 25 on a 29.97 video was not drawn on the frame it was made on (start-only observations
+  and merged tracks vanished, depending on the frame); picking the observation to merge started the
+  video; after a merge the merged box was not redrawn while paused.
+
+Not covered: touch on the emulator for adding and the panel (desktop was the target, 2026-10-06);
+the annotation GUI reading rows this page made (same columns, not run); A11 still open.
