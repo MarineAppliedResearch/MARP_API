@@ -87,3 +87,19 @@ test('#181 the first seek is one frame short of the moment, so the player paints
   // At the very start there is no frame before it, so it goes one after.
   assert.ok(Math.abs(firstSeekTarget(0.02, 25) - 0.06) < 1e-9);
 });
+
+test('#181: a box drawn at 25 on a 29.97 video is drawn on the picture it was made on', async () => {
+  const { trackTolerance } = await import('../../src/model/video-boxes.js');
+  // Drawn on the picture at 12.5792 s; stored as 25-frame 314, which is 12.56 s -- 19 ms early.
+  const added = { observation_id: 1, comname: 'x', keyframes: [{ keyframe_id: 1, subset: '1', type: 'start', t: 12.56, x: 0.5, y: 0.5, width: 0.1, height: 0.1 }] };
+  assert.equal(boxesAt([added], 12.5792).length, 0, 'with no tolerance the box vanished');
+  assert.equal(boxesAt([added], 12.5792, trackTolerance(29.97)).length, 1);
+  // Two pictures away it is not drawn: a start-only observation is one moment.
+  assert.equal(boxesAt([added], 12.6459, trackTolerance(29.97)).length, 0);
+  // Between keyframes it interpolates as before, and past the last within the tolerance it is the last box.
+  const track = { observation_id: 2, comname: 'y', keyframes: [
+    { keyframe_id: 2, subset: '1', type: 'start', t: 10, x: 0.2, y: 0.5, width: 0.1, height: 0.1 },
+    { keyframe_id: 3, subset: '1', type: 'end', t: 12, x: 0.6, y: 0.5, width: 0.1, height: 0.1 }] };
+  assert.ok(Math.abs(boxesAt([track], 11, trackTolerance(29.97))[0].x - 0.4) < 1e-9);
+  assert.equal(boxesAt([track], 12.015, trackTolerance(29.97))[0].x, 0.6);
+});

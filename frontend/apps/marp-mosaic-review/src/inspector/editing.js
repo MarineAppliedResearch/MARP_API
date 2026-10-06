@@ -19,7 +19,7 @@
 import { MarpApi } from '../api/index.js';
 import {
   hitTest, dragged, toRecord, keyframeShown, menuFor, trackKey,
-  DRAG_SLOP, DOUBLE_PRESS_MS, LONG_PRESS_MS
+  DRAG_SLOP, DOUBLE_PRESS_MS, LONG_PRESS_MS, MINIMUM_SIZE
 } from '../model/box-edit.js';
 
 /**
@@ -50,6 +50,14 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   let lastPress = null;
   let longPress = null;
 
+  /* A box being drawn on empty picture, for a new observation or to extend the selected one
+     (R1, R2), and the one drawn and waiting for the popup's answer. */
+  let draft = null;
+  let drawn = null;
+
+  /* Picking a box for something other than selecting it -- the observation to merge (R4). */
+  let pickHandler = null;
+
   /* Saves run one at a time, in the order they were made. */
   let saving = Promise.resolve();
 
@@ -75,6 +83,12 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   function select(key) {
     selectedKey = key;
     rank.set(key, ++front);
+    if (host.selectionChanged) host.selectionChanged(key);
+  }
+
+  function deselect() {
+    selectedKey = null;
+    if (host.selectionChanged) host.selectionChanged(null);
   }
 
   /* Queue one save, and fold its answer into what the page holds. */
@@ -129,6 +143,13 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
       });
     }
     if (action === 'deleteKeyframe' && keyframe) return save(() => MarpApi.deleteKeyframe(keyframe.keyframe_id));
+    if (action === 'picture') {
+      return save(async () => {
+        const answer = await MarpApi.usePicture(entry.box.observation_id, { t, subset: entry.box.subset, box: entry.box });
+        host.status('The Mosaic picture is now cut from this frame.');
+        return answer;
+      });
+    }
     if (action === 'back') {
       rank.set(entry.key, --back);
       host.redraw();
@@ -188,16 +209,30 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
     const point = pointIn(event);
     const hit = hitTest(host.drawn().rects, point, selectedKey);
     if (!hit) {
-      // The picture, not a box: the player's, and the selection is let go.
-      if (selectedKey && event.button === 0) {
-        selectedKey = null;
-        host.redraw();
+      // The picture, not a box. A drag on it draws a box (R1); left alone it stays the
+      // player's -- a click still plays or pauses -- until it has moved far enough to be one.
+      const area = host.drawn().area;
+      if (event.button === 0 && host.canDraw && host.canDraw() && host.isPicture(event.target) && area
+        && point.x >= area.left && point.x <= area.left + area.width
+        && point.y >= area.top && point.y <= area.top + area.height) {
+        draft = { pointerId: event.pointerId, start: point, area, rect: null };
       }
       return;
     }
     event.preventDefault();
     event.stopPropagation();
     if (event.button !== 0) return;
+
+    if (pickHandler) {
+      const handler = pickHandler;
+      pickHandler = null;
+      // Captured like any press on a box, so the click after it is not the player's: picking
+      // the observation to merge started the video playing (2026-10-06).
+      stage.setPointerCapture(event.pointerId);
+      host.pause();
+      handler(entryFor(hit.key));
+      return;
+    }
 
     host.pause();
     select(hit.key);
@@ -228,6 +263,23 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   }
 
   function onPointerMove(event) {
+    if (draft && event.pointerId === draft.pointerId) {
+      const point = pointIn(event);
+      if (!draft.rect && Math.hypot(point.x - draft.start.x, point.y - draft.start.y) < DRAG_SLOP) return;
+      if (!draft.rect) {
+        // A drag now, and the editor's: captured, so the click that ends it is not the player's.
+        stage.setPointerCapture(event.pointerId);
+        host.pause();
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const { area, start } = draft;
+      const x = Math.min(Math.max(point.x, area.left), area.left + area.width);
+      const y = Math.min(Math.max(point.y, area.top), area.top + area.height);
+      draft.rect = { left: Math.min(start.x, x), top: Math.min(start.y, y), width: Math.abs(x - start.x), height: Math.abs(y - start.y) };
+      host.redraw();
+      return;
+    }
     if (!gesture) {
       if (enabled && event.pointerType === 'mouse') {
         const hit = hitTest(host.drawn().rects, pointIn(event), selectedKey);
@@ -250,6 +302,26 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   }
 
   function onPointerUp(event) {
+    if (draft && event.pointerId === draft.pointerId) {
+      const done = draft;
+      draft = null;
+      if (!done.rect) {
+        // A click on the picture: the player's, and the selection is let go.
+        if (selectedKey && event.type === 'pointerup') {
+          deselect();
+          host.redraw();
+        }
+        return;
+      }
+      event.stopPropagation();
+      if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
+      if (event.type === 'pointerup' && done.rect.width >= MINIMUM_SIZE && done.rect.height >= MINIMUM_SIZE) {
+        drawn = done.rect;
+        host.onDrawn({ rect: done.rect, box: toRecord(done.rect, done.area), selectedKey });
+      }
+      host.redraw();
+      return;
+    }
     if (!gesture || event.pointerId !== gesture.pointerId) return;
     event.stopPropagation();
     cancelLongPress();
@@ -288,7 +360,12 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   stage.addEventListener('contextmenu', onContextMenu, true);
 
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !menu.hidden) closeMenu();
+    if (event.key !== 'Escape') return;
+    if (!menu.hidden) closeMenu();
+    if (pickHandler) {
+      pickHandler = null;
+      host.status('');
+    }
   });
 
   return {
@@ -300,6 +377,18 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
     },
     get enabled() { return enabled; },
     get selectedKey() { return selectedKey; },
+    /* The selected box as last drawn, for the panel to act on. */
+    selectedEntry() { return selectedKey ? entryFor(selectedKey) : null; },
+    select(key) { if (key) select(key); else deselect(); host.redraw(); },
+    /* Run one of the menu's actions on a box, from the panel. */
+    act(action, entry) { return act(action, entry); },
+    /* The next box pressed goes to `handler` rather than being selected; Escape cancels. */
+    pick(handler) { pickHandler = handler; },
+    /* The box being drawn, or drawn and waiting for its species, to paint; and done with it. */
+    draftRect() { return (draft && draft.rect) || drawn; },
+    clearDraft() { drawn = null; host.redraw(); },
+    /* Queue a save, so it runs after any already made. */
+    save(work) { return save(work); },
     /* The part of a box being pressed, so it is drawn in the GUI's state colour from the
        press, not only once it moves. */
     pressFor(key) { return gesture && gesture.key === key ? gesture.part : null; },
@@ -310,6 +399,9 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
     /* A new video or query: nothing selected, nothing dragged, the menu shut. */
     reset() {
       selectedKey = null;
+      draft = null;
+      drawn = null;
+      pickHandler = null;
       preview = null;
       gesture = null;
       rank.clear();

@@ -419,3 +419,20 @@ export async function holdKeyframes(observationId) {
     }
   };
 }
+
+/**
+ * Remove observations a check created through the page (#181) -- an added observation, or what
+ * a merge left -- with their keyframes, reviews and pictures' rows, which go by cascade.
+ *
+ * @param {Array<number>} ids - Observations this check made, and only those.
+ * @returns {Promise<void>}
+ */
+export async function removeObservations(ids) {
+  if (!ids.length) return;
+  const client = await connect();
+  try {
+    await client.query('DELETE FROM observations WHERE observation_id = ANY($1)', [ids]);
+  } finally {
+    await client.end();
+  }
+}

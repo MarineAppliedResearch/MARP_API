@@ -12,6 +12,7 @@
  */
 
 import { windowsAround } from './video-review.js';
+import { trackTolerance } from './video-boxes.js';
 
 /* The GUI's grips are 16 pixels across; a finger needs more, so the target is wider than
    what is drawn. */
@@ -130,10 +131,10 @@ export function dragged(start, part, dx, dy, area) {
  *
  * A keyframe's time is its frame number over its row's rate, which need not land on one of
  * this video's frames -- a GUI row counts at 25 on a 29.97 video -- so "on the picture" is
- * within half of one of the video's frames.
+ * within half a frame of the coarser rate (`trackTolerance`).
  */
 export function keyframeShown(keyframes, t, frameRate) {
-  const half = 0.5 / (frameRate || 25);
+  const half = trackTolerance(frameRate);
   let best = null;
   for (const keyframe of keyframes || []) {
     const off = Math.abs(keyframe.t - t);
@@ -163,9 +164,41 @@ export function menuFor({ observation_id, subset, keyframe, t }) {
   // 2026-10-05). The GUI offers it there; this page does not.
   if (type !== 'end' && type !== 'start') items.push({ action: 'end', label: 'Set As End Keyframe' });
   items.push({ action: 'back', label: 'Send To Back' });
+  // Not the GUI's: the Mosaic's picture is cut from this box, on this frame (#181 R6).
+  items.push({ action: 'picture', label: 'Use for Mosaic picture' });
   items.push({ action: 'deleteObservation', label: 'Delete Entire Observation' });
   if (keyframe) items.push({ action: 'deleteKeyframe', label: 'Delete Keyframe' });
   return items;
+}
+
+/**
+ * The held keyframe windows with one observation's keyframes replaced by `keyframes` -- a
+ * merge's answer, which is every keyframe the surviving observation now has -- or, with none,
+ * taken out: the merged-away observation.
+ *
+ * @param {Map<number, Object[]>} held
+ * @param {number} observationId
+ * @param {Object[]} [keyframes]
+ * @returns {Map<number, Object[]>} A new map.
+ */
+export function withObservation(held, observationId, keyframes = []) {
+  const out = new Map();
+  for (const [index, list] of held) out.set(index, list.filter((k) => k.observation_id !== observationId));
+  return withEdit(out, { changed: keyframes });
+}
+
+/**
+ * The recently used species, newest first, with `species` put at the front: what the add
+ * popup offers before anything is typed (R1). At most `max`, and one entry per species.
+ *
+ * @param {Array<Object>} recent - `{ id, comname, species }`, newest first.
+ * @param {Object} species - The one just used.
+ * @param {number} [max]
+ * @returns {Array<Object>}
+ */
+export function withRecent(recent, species, max = 8) {
+  const entry = { id: species.id, comname: species.comname, species: species.species || null };
+  return [entry, ...(recent || []).filter((s) => s.id !== species.id)].slice(0, max);
 }
 
 /**

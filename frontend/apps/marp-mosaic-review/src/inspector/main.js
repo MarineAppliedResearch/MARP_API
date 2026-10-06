@@ -19,11 +19,12 @@
  */
 import { MarpApi } from '../api/index.js';
 import { VIDEO_WINDOW } from '../ui/video-window.js';
-import { boxesAt, tracksOf, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
+import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
 import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour } from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
-import { toScreen, trackKey, withEdit, keyframeShown } from '../model/box-edit.js';
+import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '../model/box-edit.js';
+import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
 import { labelScale } from '../model/box-style.js';
 import { drawBox } from './draw-boxes.js';
 
@@ -42,6 +43,21 @@ const pictureCanvas = playerRoot.querySelector('.marp-canvas');
 if (pictureCanvas) pictureCanvas.insertAdjacentElement('afterend', $('boxes'));
 else playerRoot.appendChild($('boxes'));
 playerRoot.appendChild($('boxMenu'));
+// The add popup and the observation panel go fullscreen with the player too.
+playerRoot.appendChild($('addPopup'));
+playerRoot.appendChild($('obsPanel'));
+// Typing in them is not the player's: inside its element, a species name typed into the
+// search reached its keyboard shortcuts and changed the playback speed instead (2026-10-06).
+for (const id of ['addPopup', 'obsPanel', 'boxMenu']) {
+  for (const type of ['keydown', 'keyup', 'keypress']) $(id).addEventListener(type, (event) => event.stopPropagation());
+}
+
+/* What the reviewer may do beyond moving boxes: add, rename, count, merge (observations:write). */
+let canAnnotate = false;
+let canDelete = false;
+
+/* A box drawn and not yet given a species: painted in the GUI's drawing colour, DeepPink. */
+const DRAWING = '#ff1493';
 
 /* What is on screen: the opened observation, the query, its video, and the observations
    the query matches in it. */
@@ -121,7 +137,7 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   const area = contentRect(width, height, pictureWidth, pictureHeight);
   const scale = labelScale(area.height);
   const rate = showing.video.frame_rate || 25;
-  const entries = boxesAt(drawable, t).map((box) => {
+  const entries = boxesAt(drawable, t, trackTolerance(rate)).map((box) => {
     const key = trackKey(box);
     const opened = box.observation_id === showing.observationId;
     const preview = editor.previewFor(key);
@@ -137,6 +153,15 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
       pressed: editor.pressFor(entry.key),
       scale
     });
+  }
+  const draft = editor.draftRect();
+  if (draft) {
+    context.save();
+    context.strokeStyle = DRAWING;
+    context.lineWidth = 3.5 * scale;
+    context.setLineDash([6 * scale, 4 * scale]);
+    context.strokeRect(draft.left, draft.top, draft.width, draft.height);
+    context.restore();
   }
   drawnNow = { rects: entries, area };
   drawMs = performance.now() - started;
@@ -282,6 +307,8 @@ async function show(request) {
     observations: answer.observations,
     rows,
     moment: answer.opened.moment_s,
+    sessions: answer.sessions || [],
+    openedSession: answer.opened.session_id,
     server
   };
   if (answer.truncated) status(`Only the first ${answer.observations.length} matching observations are drawn.`);
@@ -323,7 +350,10 @@ async function followQuery(filters) {
   }
   if (mine !== latest || !showing) return;
   forgetKeyframes();
-  showing = { ...showing, filters: filters || {}, observations: read.answer.observations, rows: read.rows };
+  showing = {
+    ...showing, filters: filters || {}, observations: read.answer.observations, rows: read.rows,
+    sessions: read.answer.sessions || showing.sessions
+  };
   followPlayhead(shownAt ?? (player.engine && player.engine.currentTime));
   redraw();
 }
@@ -408,19 +438,182 @@ const editor = createBoxEditor({
         status(`Observation ${id} was not deleted: it changed since this page read it. Open it again from the Mosaic.`);
         return;
       }
-      showing = { ...showing, observations: showing.observations.filter((o) => o.observation_id !== id) };
-      for (const [index, keyframes] of held) held.set(index, keyframes.filter((k) => k.observation_id !== id));
-      rebuildDrawable();
-      redraw();
+      forgetObservation(id);
       status(`Observation ${id} deleted.`);
-    }
+    },
+    canDraw: () => canAnnotate,
+    isPicture: (target) => target === pictureCanvas,
+    onDrawn: openAdd,
+    selectionChanged: () => updatePanel()
   }
 });
+
+/* An observation the page no longer holds: deleted, or merged into another. */
+function forgetObservation(id) {
+  showing = { ...showing, observations: showing.observations.filter((o) => o.observation_id !== id) };
+  showing.rows.delete(id);
+  const next = withObservation(held, id);
+  held.clear();
+  for (const [index, keyframes] of next) held.set(index, keyframes);
+  if (editor.selectedKey && editor.selectedKey.startsWith(`${id}_`)) editor.select(null);
+  rebuildDrawable();
+  redraw();
+  updatePanel();
+}
+
+/* Widen an observation's span to cover a keyframe, so the windows still ask for it. */
+function cover(id, t) {
+  const row = showing.observations.find((o) => o.observation_id === id);
+  if (row) {
+    row.start_s = Math.min(row.start_s, t);
+    row.end_s = Math.max(row.end_s, t);
+  }
+}
+
+/* The box drawn on empty picture: a species makes it a new observation, or it joins the
+   selected one (R1, R2). */
+function openAdd({ rect, box, selectedKey }) {
+  const t = shownAt ?? player.engine.currentTime;
+  const overlay = $('boxes');
+  const at = { left: rect.left + overlay.offsetLeft, top: rect.top + overlay.offsetTop, width: rect.width, height: rect.height };
+  const selectedId = selectedKey ? Number(selectedKey.split('_')[0]) : null;
+  const selected = selectedId != null ? showing.rows.get(selectedId) : null;
+  const sessionId = showing.openedSession ?? (showing.sessions[0] && showing.sessions[0].session_id);
+  openSpeciesPopup({
+    popup: $('addPopup'),
+    at,
+    title: 'New observation',
+    sessions: showing.sessions,
+    sessionId,
+    extendLabel: selected ? `Add to ${selected.obs_id ?? '?'} · ${selected.comname || 'Unknown'}` : null,
+    onExtend: () => editor.save(async () => {
+      const answer = await MarpApi.addKeyframe({ observationId: selectedId, subset: selectedKey.split('_')[1] || null, t, box });
+      cover(selectedId, t);
+      editor.clearDraft();
+      return answer;
+    }),
+    onPick: ({ species, sessionId: chosen }) => editor.save(async () => {
+      const answer = await MarpApi.createObservation({ openedId: showing.observationId, sessionId: chosen, speciesId: species.id, t, box });
+      const row = answer.observation;
+      showing.observations.push(row);
+      showing.rows.set(row.observation_id, row);
+      editor.clearDraft();
+      status(`Added ${row.comname || 'an observation'}, obs ID ${row.obs_id}.`);
+      setTimeout(() => editor.select(`${row.observation_id}_${answer.keyframes[0].subset}`), 0);
+      return { observation_id: row.observation_id, changed: answer.keyframes, deleted: [] };
+    }),
+    onCancel: () => editor.clearDraft()
+  });
+}
+
+/* The panel follows the selection: the selected observation, or nothing (R7). */
+function updatePanel() {
+  const key = editor.selectedKey;
+  const id = key ? Number(key.split('_')[0]) : null;
+  const row = showing && id != null ? showing.rows.get(id) : null;
+  if (!row || !editor.enabled) {
+    renderPanel($('obsPanel'), null);
+    return;
+  }
+  const drawnRow = drawable.find((o) => o.observation_id === id);
+  const keyframes = drawnRow ? drawnRow.tracks.flat().sort((a, b) => a.t - b.t) : [];
+  renderPanel($('obsPanel'), {
+    row,
+    colour: speciesColour(row.comname),
+    session: showing.sessions.find((s) => s.session_id === row.session_id),
+    keyframes,
+    canWrite: canAnnotate,
+    canDelete
+  }, {
+    close: () => editor.select(null),
+    seek: (t) => {
+      if (!player.engine) return;
+      player.engine.pause();
+      player.engine.currentTime = t;
+    },
+    count: (count) => editor.save(async () => {
+      const answer = await MarpApi.setCount(id, count);
+      row.count = answer.count;
+      row.version = answer.version;
+      status(`Count is ${answer.count}.`);
+      updatePanel();
+    }),
+    rename: () => {
+      const panel = $('obsPanel');
+      const session = showing.sessions.find((s) => s.session_id === row.session_id);
+      openSpeciesPopup({
+        popup: $('addPopup'),
+        at: { left: panel.offsetLeft - 8, top: panel.offsetTop, width: 0, height: 0 },
+        title: 'Change species',
+        list: session ? session.species_list : null,
+        onPick: ({ species }) => editor.save(async () => {
+          const answer = await MarpApi.setSpecies({ observationId: id, speciesId: species.id, version: row.version });
+          if (!answer.ok) {
+            status(answer.error === 'unchanged'
+              ? 'That is already its species.'
+              : 'Not renamed: it changed since this page read it. Open it again from the Mosaic.');
+            return;
+          }
+          // The whole name changes, here as in the database (R3).
+          row.comname = answer.observation.comname;
+          row.species_id = answer.observation.species_id;
+          row.version = answer.observation.version;
+          rebuildDrawable();
+          redraw();
+          updatePanel();
+          status(`Renamed to ${row.comname}.`);
+        }),
+        onCancel: () => {}
+      });
+    },
+    picture: () => {
+      const entry = editor.selectedEntry();
+      if (!entry) {
+        status("Go to a frame where this observation's box is drawn, then choose its picture.");
+        return;
+      }
+      editor.act('picture', entry);
+    },
+    remove: () => editor.act('deleteObservation', editor.selectedEntry() || { box: { observation_id: id, comname: row.comname } }),
+    merge: () => {
+      const label = `${row.obs_id ?? '?'} · ${row.comname || 'Unknown'}`;
+      status(`Click the observation to merge into ${label}. Escape cancels.`);
+      editor.pick((entry) => {
+        const fromId = entry.box.observation_id;
+        const from = showing.rows.get(fromId);
+        if (fromId === id) {
+          status('Pick a different observation to merge into this one.');
+          return;
+        }
+        const fromLabel = `${(from && from.obs_id) ?? '?'} · ${(from && from.comname) || 'Unknown'}`;
+        if (!window.confirm(`Merge ${fromLabel} into ${label}? ${fromLabel} is deleted, and its boxes join ${label}.`)) {
+          status('');
+          return;
+        }
+        editor.save(async () => {
+          const answer = await MarpApi.mergeObservations(id, fromId);
+          forgetObservation(fromId);
+          const next = withObservation(held, id, answer.keyframes);
+          held.clear();
+          for (const [index, keyframes] of next) held.set(index, keyframes);
+          for (const keyframe of answer.keyframes) cover(id, keyframe.t);
+          rebuildDrawable();
+          // Paused, no new frame comes to draw it: the merged box is drawn now.
+          redraw();
+          updatePanel();
+          status(`Merged ${fromLabel} into ${label}.`);
+        });
+      });
+    }
+  });
+}
 
 MarpApi.whoami().then((user) => {
   const permissions = (user && user.permissions) || [];
   if (permissions.includes('keyframes:write')) {
-    editor.enable({ deleteObservations: permissions.includes('observations:write') });
+    canAnnotate = permissions.includes('observations:write');
+    canDelete = canAnnotate;
+    editor.enable({ deleteObservations: canDelete });
   }
 }).catch(() => {
   // Not signed in to MARP, or it could not say: the boxes are shown and not edited.
@@ -432,7 +625,7 @@ window.MARP_VIDEO = {
   get drawn() {
     const o = $('boxes').getBoundingClientRect();
     return drawnNow.rects.map(({ key, box, rect }) => ({
-      key, observation_id: box.observation_id,
+      key, observation_id: box.observation_id, comname: box.comname,
       rect: { left: rect.left + o.left, top: rect.top + o.top, width: rect.width, height: rect.height }
     }));
   },

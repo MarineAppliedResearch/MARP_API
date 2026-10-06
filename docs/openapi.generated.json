@@ -14799,6 +14799,14 @@
                             "type": "integer",
                             "description": "The row version a delete must name."
                           },
+                          "count": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "session_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
                           "start_s": {
                             "type": "number"
                           },

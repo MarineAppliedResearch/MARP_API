@@ -25,7 +25,8 @@ import assert from 'node:assert/strict';
 
 import {
   idList, filtersBody, pagesBody, countsBody, commitBody, correctionBody, retryBody,
-  facetsBody, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody
+  facetsBody, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody,
+  createObservationBody, countBody, pictureBody
 } from '../../src/api/requests.js';
 import { sortTerms } from '../../src/model/filters.js';
 
@@ -451,4 +452,15 @@ test('#181: a box edit sends plain numbers, and refuses a box that is not one', 
     { observation_id: 7, t: 12.48, x: 0.5, y: 0.5, width: 0.1, height: 0.1, subset: '2' }
   );
   assert.throws(() => addKeyframeBody({ observationId: '7', t: 1, box: { x: 0, y: 0, width: 1, height: 1 } }), /integer/);
+});
+
+test('#181: annotating sends what each route takes, and refuses what it cannot be', () => {
+  const box = { x: 0.3, y: 0.4, width: 0.1, height: 0.2 };
+  assert.deepEqual(onWire(createObservationBody({ openedId: 5, sessionId: 7, speciesId: 9, t: 12.48, box })),
+    { observation_id: 5, session_id: 7, species_id: 9, t: 12.48, x: 0.3, y: 0.4, width: 0.1, height: 0.2 });
+  assert.throws(() => createObservationBody({ openedId: 5, sessionId: '7', speciesId: 9, t: 1, box }), /sessionId/);
+  assert.deepEqual(onWire(countBody(4)), { count: 4 });
+  assert.throws(() => countBody(0), /at least 1/);
+  assert.throws(() => countBody(2.5), /whole number/);
+  assert.deepEqual(onWire(pictureBody({ t: 12, subset: 1, box })), { t: 12, x: 0.3, y: 0.4, width: 0.1, height: 0.2, subset: '1' });
 });
