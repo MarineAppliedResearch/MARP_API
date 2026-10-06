@@ -40,6 +40,7 @@ const mosaicRepository = require('../repository/mosaic.repository');
 const videoContextService = require('../service/mosaic-video-context.service');
 const videoService = require('../service/mosaic-video.service');
 const videoEditService = require('../service/mosaic-video-edit.service');
+const annotateService = require('../service/mosaic-video-annotate.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
@@ -629,6 +630,122 @@ function registerMosaicRoutes(app) {
         responses: EDITED,
         handler: asyncHandler(async (req, res) => {
             res.json(await videoEditService.deleteKeyframe(keyframeIdOf(req)));
+        }),
+    });
+
+    // Annotating from the video page (#181): add, count, merge, and the Mosaic picture. A rename
+    // is the Mosaic's species correction, which renames fully.
+    const ANNOTATE_PERMISSION = 'observations:write';
+    const observationIdOf = (req) => Number.parseInt(req.params.observation_id, 10);
+    const observationParameter = [{ name: 'observation_id', in: 'path', required: true, schema: { type: 'integer' } }];
+    const json = (properties, required) => ({
+        required: true,
+        content: { 'application/json': { schema: { type: 'object', required, properties } } },
+    });
+    const KEYFRAME_IN_SECONDS = {
+        type: 'object',
+        properties: {
+            keyframe_id: { type: 'integer' }, observation_id: { type: 'integer' }, subset: { type: 'string' },
+            type: { type: 'string' }, t: { type: 'number' }, ...BOX,
+        },
+    };
+    const answered = (description, properties) => ({
+        200: { description, content: { 'application/json': { schema: { type: 'object', properties } } } },
+        400: { $ref: '#/components/responses/BadRequestError' },
+        404: { $ref: '#/components/responses/NotFoundError' },
+        500: { $ref: '#/components/responses/InternalServerError' },
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: ANNOTATE_PERMISSION,
+        path: '/api/mosaic/video/observation',
+        summary: 'Add an observation from a box drawn on the video page',
+        description:
+            'A box drawn on the picture and a species picked make an observation (#181 R1), in one transaction: the row, with '
+            + 'project, species, both names, timecodes, `obsID` and `PobsID` and the reviewer filled, and one `start` keyframe at `t`. '
+            + 'The end is set later, as in the annotation GUI. `observation_id` is the observation the page was opened on, which names '
+            + 'the video; `session_id` must be one with observations in that video. Frames count at 25, as every row without a GPU job.',
+        tags: [TAG],
+        requestBody: json({
+            observation_id: { type: 'integer', description: 'The observation the page was opened on.' },
+            session_id: { type: 'integer' },
+            species_id: { type: 'integer' },
+            t: { type: 'number', description: 'Seconds into the video.' },
+            ...BOX,
+        }, ['observation_id', 'session_id', 'species_id', 't', 'x', 'y', 'width', 'height']),
+        responses: answered('The new observation, as the video page reads one, and its keyframe.', {
+            observation: { type: 'object' },
+            keyframes: { type: 'array', items: KEYFRAME_IN_SECONDS },
+        }),
+        handler: asyncHandler(async (req, res) => {
+            const userId = req.principal && req.principal.type === 'user' ? req.principal.id : null;
+            res.json(await annotateService.createObservation(req.body || {}, userId));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'put',
+        permission: ANNOTATE_PERMISSION,
+        path: '/api/mosaic/video/observation/:observation_id/count',
+        summary: 'Change an observation\'s count',
+        description:
+            'The number of individuals the observation records, for when the model detected fewer than there were (#181 R5). The '
+            + 'boxes do not change. A whole number of at least 1.',
+        tags: [TAG],
+        parameters: observationParameter,
+        requestBody: json({ count: { type: 'integer', minimum: 1 } }, ['count']),
+        responses: answered('The observation\'s count and version.', {
+            observation_id: { type: 'integer' }, count: { type: 'integer' }, version: { type: 'integer' },
+        }),
+        handler: asyncHandler(async (req, res) => {
+            res.json(await annotateService.setCount(observationIdOf(req), req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: ANNOTATE_PERMISSION,
+        path: '/api/mosaic/video/observation/:observation_id/merge',
+        summary: 'Merge another observation into this one',
+        description:
+            'Moves `from_observation_id`\'s keyframes onto this observation\'s track and deletes it (#181 R4). This observation keeps '
+            + 'its id, species and count; where both have a keyframe on one frame, this one\'s box is kept; the track ends with one '
+            + '`start` and, when either had one, one `end`; every keyframe takes this observation\'s name. Both must be in the same '
+            + 'video. **The other observation is deleted**, with its reviews and picture.',
+        tags: [TAG],
+        parameters: observationParameter,
+        requestBody: json({ from_observation_id: { type: 'integer' } }, ['from_observation_id']),
+        responses: answered('The surviving observation\'s keyframes, and the id that was deleted.', {
+            observation_id: { type: 'integer' },
+            deleted_observation_id: { type: 'integer' },
+            keyframes: { type: 'array', items: KEYFRAME_IN_SECONDS },
+        }),
+        handler: asyncHandler(async (req, res) => {
+            res.json(await annotateService.merge(observationIdOf(req), req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: EDIT_PERMISSION,
+        path: '/api/mosaic/video/observation/:observation_id/picture',
+        summary: 'Cut the observation\'s Mosaic picture from one frame\'s box',
+        description:
+            'Cuts the Mosaic thumbnail now, from the frame at `t` and the box on it (#181 R6). On a frame between keyframes the box '
+            + 'is pinned as a keyframe first. Nothing records the choice: a later box edit, which re-cuts the picture automatically, '
+            + 'replaces it.',
+        tags: [TAG],
+        parameters: observationParameter,
+        requestBody: json({ t: { type: 'number' }, subset: { type: 'string' }, ...BOX }, ['t', 'x', 'y', 'width', 'height']),
+        responses: answered('The keyframes the pin changed, and the picture cut.', {
+            observation_id: { type: 'integer' },
+            changed: { type: 'array', items: KEYFRAME_IN_SECONDS },
+            deleted: { type: 'array', items: { type: 'integer' } },
+            picture: { type: 'object' },
+        }),
+        handler: asyncHandler(async (req, res) => {
+            res.json(await annotateService.usePicture(observationIdOf(req), req.body || {}));
         }),
     });
 }

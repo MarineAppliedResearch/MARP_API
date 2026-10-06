@@ -155,9 +155,11 @@ async function setType(keyframeId, type, transaction) {
  *
  * @async
  */
-async function edit(work) {
+async function edit(work, { refresh = true } = {}) {
     const result = await db.sequelize.transaction(work);
-    await thumbnails.requestRefresh(result.observation_id);
+    // Not when the caller cuts the picture itself (#181 R6): a queued refresh would be
+    // claimed by the extractor and cut the automatic picture over the chosen one.
+    if (refresh) await thumbnails.requestRefresh(result.observation_id);
     return result;
 }
 
@@ -178,7 +180,7 @@ function moveBox(keyframeId, body) {
 
 /** Add a keyframe at `t` on an observation's track: a pinned or dragged in-between box, or one
     drawn before its start or after its end, which extends it (R2). */
-function addKeyframe(body = {}) {
+function addKeyframe(body = {}, { refresh = true } = {}) {
     const box = boxOf(body);
     const observationId = body.observation_id;
     const subset = body.subset == null ? '1' : String(body.subset);
@@ -232,7 +234,7 @@ function addKeyframe(body = {}) {
         );
         changed.push(asSeconds(rows[0], rate));
         return { observation_id: observationId, changed, deleted: [] };
-    });
+    }, { refresh });
 }
 
 /** Make a keyframe its track's end; the one that was becomes a middle. */
@@ -279,4 +281,8 @@ function deleteKeyframe(keyframeId) {
     });
 }
 
-module.exports = { moveBox, addKeyframe, setEnd, deleteKeyframe };
+module.exports = {
+    moveBox, addKeyframe, setEnd, deleteKeyframe,
+    // Shared with the annotation service, which counts frames and checks boxes the same way.
+    boxOf, rateOf, asSeconds, invalid, notFound, KEYFRAME_COLUMNS
+};

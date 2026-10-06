@@ -794,6 +794,54 @@ async function extractVideoGroup(videoSource, claims) {
 }
 
 /**
+ * Cuts one observation's Mosaic picture from a frame and box a reviewer chose (#181 R6).
+ *
+ * The same steps the queue takes for a claim -- resolve the video, probe it, check its rate,
+ * decode the frame, crop the tile, record it ready -- for one observation, now, with the
+ * frame and box given rather than planned. Nothing records the choice (A9): the next
+ * automatic cut, which a later box edit asks for, replaces it.
+ *
+ * @async
+ * @param {Object} observation - `{ observation_id, video_source, gpu_job_id }`, and the
+ *   current thumbnail's `thumbnail_filename`, `full_frame_filename`, `full_frame_framenum`.
+ * @param {{framenum: number, subset: string, box: Object}} choice - In the row's own frame count.
+ * @returns {Promise<Object>} What was recorded: `{ framenum, subset, filename }`.
+ * @throws {Error} When the video cannot be found, its rate refuses, or the frame does not decode.
+ */
+async function cutChosenPicture(observation, { framenum, subset, box }) {
+    const resolved = await jellyfinRepository.resolveVideoSource(observation.video_source, 1, MEDIA_CLIENT_IDENTITY);
+    if (resolved.score < MIN_MATCH_SCORE) {
+        throw new Error(`No exact Jellyfin match for video_source ${JSON.stringify(observation.video_source)}.`);
+    }
+    const streamUrl = await jellyfinRepository.buildDirectStreamUrl(resolved.item.id, MEDIA_CLIENT_IDENTITY);
+    const probe = await probeStream(streamUrl);
+    const rate = frameRateFor(observation, probe.fps);
+    if (rate.refusal) {
+        throw new Error(rate.refusal);
+    }
+
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'marp-thumbnail-'));
+    try {
+        const extraction = await extractFrames(streamUrl, [framenum], rate.fps, workDir);
+        const framePath = extraction.files[0];
+        if (!framePath) {
+            throw new Error(`Frame ${framenum} did not decode from the video.`);
+        }
+        const tile = await cropToTile(framePath, box);
+        await thumbnailRepository.recordReady(observation.observation_id, { ...tile, framenum, subset });
+        if (observation.thumbnail_filename && observation.thumbnail_filename !== tile.filename) {
+            await reviewImageryStorage.removeIfUnreferenced('thumbnail', observation.thumbnail_filename);
+        }
+        if (observation.full_frame_filename && Number(observation.full_frame_framenum) !== Number(framenum)) {
+            await reviewImageryStorage.removeIfUnreferenced('full_frame', observation.full_frame_filename);
+        }
+        return { framenum, subset, filename: tile.filename };
+    } finally {
+        fs.rmSync(workDir, { recursive: true, force: true });
+    }
+}
+
+/**
  * Groups a claimed batch by the video it needs (R17).
  *
  * The key is `video_source`, not the resolved item, because grouping has to
@@ -1084,6 +1132,7 @@ async function control(action, userId, note = null) {
 module.exports = {
     control,
     cropToTile,
+    cutChosenPicture,
     drainOnce,
     elideToken,
     extractVideoGroup,

@@ -4692,13 +4692,24 @@
                 "type": "string",
                 "nullable": true,
                 "example": "Blue Rockfish"
+              },
+              "comname": {
+                "type": "string",
+                "nullable": true,
+                "example": "Blue rockfish",
+                "description": "The comname the rename replaced, as the observation carried it."
+              },
+              "taxserial": {
+                "type": "integer",
+                "nullable": true,
+                "description": "The taxserial the rename replaced."
               }
             }
           },
           "review_id": {
             "type": "integer",
             "example": 9912,
-            "description": "The observation_reviews row this correction appended. It carries purpose \"scientific\", decision \"corrected\", and both species ids."
+            "description": "The observation_reviews row this correction appended. It carries purpose \"scientific\", decision \"corrected\", both species ids, and the replaced comname and taxserial."
           },
           "correctedAt": {
             "type": "string",
@@ -14940,8 +14951,8 @@
     },
     "/v2/mosaic/video/keyframe": {
       "post": {
-        "summary": "Add a middle keyframe to an observation's track at a time in seconds",
-        "description": "The annotation GUI's drag of an in-between box, or its pin: a `middle` keyframe at `t` seconds on the observation's track (`subset`, default `1`), between its start and its end (#181). On a keyframe already, that one is moved instead. `t` becomes a frame number by the rule the reads use: 25 for an annotation-GUI row, the video's nominal rate for a GPU row. The observation's thumbnail is extracted again. Requires the `keyframes:write` permission.",
+        "summary": "Add a keyframe to an observation's track at a time in seconds",
+        "description": "The annotation GUI's drag of an in-between box, its pin, or its \"Add To Obs\": a keyframe at `t` seconds on the observation's track (`subset`, default `1`) (#181). Between the start and the end it is a `middle`. Before the start it is the new `start`, and after an `end` the new `end`, the one it replaces becoming a `middle`; after the last keyframe of a track with no end it is a `middle`. On a keyframe already, that one is moved instead. `t` becomes a frame number by the rule the reads use: 25 for an annotation-GUI row, the video's nominal rate for a GPU row. The observation's thumbnail is extracted again. Requires the `keyframes:write` permission.",
         "tags": [
           "V2 · Mosaic"
         ],
@@ -15399,6 +15410,465 @@
         }
       }
     },
+    "/v2/mosaic/video/observation": {
+      "post": {
+        "summary": "Add an observation from a box drawn on the video page",
+        "description": "A box drawn on the picture and a species picked make an observation (#181 R1), in one transaction: the row, with project, species, both names, timecodes, `obsID` and `PobsID` and the reviewer filled, and one `start` keyframe at `t`. The end is set later, as in the annotation GUI. `observation_id` is the observation the page was opened on, which names the video; `session_id` must be one with observations in that video. Frames count at 25, as every row without a GPU job. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "observation_id",
+                  "session_id",
+                  "species_id",
+                  "t",
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "properties": {
+                  "observation_id": {
+                    "type": "integer",
+                    "description": "The observation the page was opened on."
+                  },
+                  "session_id": {
+                    "type": "integer"
+                  },
+                  "species_id": {
+                    "type": "integer"
+                  },
+                  "t": {
+                    "type": "number",
+                    "description": "Seconds into the video."
+                  },
+                  "x": {
+                    "type": "number",
+                    "description": "Box centre, 0..1 of the picture width."
+                  },
+                  "y": {
+                    "type": "number",
+                    "description": "Box centre, 0..1 of the picture height."
+                  },
+                  "width": {
+                    "type": "number",
+                    "description": "0..1 of the picture width."
+                  },
+                  "height": {
+                    "type": "number",
+                    "description": "0..1 of the picture height."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new observation, as the video page reads one, and its keyframe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "observation": {
+                      "type": "object"
+                    },
+                    "keyframes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "keyframe_id": {
+                            "type": "integer"
+                          },
+                          "observation_id": {
+                            "type": "integer"
+                          },
+                          "subset": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "t": {
+                            "type": "number"
+                          },
+                          "x": {
+                            "type": "number",
+                            "description": "Box centre, 0..1 of the picture width."
+                          },
+                          "y": {
+                            "type": "number",
+                            "description": "Box centre, 0..1 of the picture height."
+                          },
+                          "width": {
+                            "type": "number",
+                            "description": "0..1 of the picture width."
+                          },
+                          "height": {
+                            "type": "number",
+                            "description": "0..1 of the picture height."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/video/observation/{observation_id}/count": {
+      "put": {
+        "summary": "Change an observation's count",
+        "description": "The number of individuals the observation records, for when the model detected fewer than there were (#181 R5). The boxes do not change. A whole number of at least 1. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "parameters": [
+          {
+            "name": "observation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "count"
+                ],
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The observation's count and version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "observation_id": {
+                      "type": "integer"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "version": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/video/observation/{observation_id}/merge": {
+      "post": {
+        "summary": "Merge another observation into this one",
+        "description": "Moves `from_observation_id`'s keyframes onto this observation's track and deletes it (#181 R4). This observation keeps its id, species and count; where both have a keyframe on one frame, this one's box is kept; the track ends with one `start` and, when either had one, one `end`; every keyframe takes this observation's name. Both must be in the same video. **The other observation is deleted**, with its reviews and picture. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "parameters": [
+          {
+            "name": "observation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "from_observation_id"
+                ],
+                "properties": {
+                  "from_observation_id": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The surviving observation's keyframes, and the id that was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "observation_id": {
+                      "type": "integer"
+                    },
+                    "deleted_observation_id": {
+                      "type": "integer"
+                    },
+                    "keyframes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "keyframe_id": {
+                            "type": "integer"
+                          },
+                          "observation_id": {
+                            "type": "integer"
+                          },
+                          "subset": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "t": {
+                            "type": "number"
+                          },
+                          "x": {
+                            "type": "number",
+                            "description": "Box centre, 0..1 of the picture width."
+                          },
+                          "y": {
+                            "type": "number",
+                            "description": "Box centre, 0..1 of the picture height."
+                          },
+                          "width": {
+                            "type": "number",
+                            "description": "0..1 of the picture width."
+                          },
+                          "height": {
+                            "type": "number",
+                            "description": "0..1 of the picture height."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/video/observation/{observation_id}/picture": {
+      "post": {
+        "summary": "Cut the observation's Mosaic picture from one frame's box",
+        "description": "Cuts the Mosaic thumbnail now, from the frame at `t` and the box on it (#181 R6). On a frame between keyframes the box is pinned as a keyframe first. Nothing records the choice: a later box edit, which re-cuts the picture automatically, replaces it. Requires the `keyframes:write` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "parameters": [
+          {
+            "name": "observation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "t",
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "properties": {
+                  "t": {
+                    "type": "number"
+                  },
+                  "subset": {
+                    "type": "string"
+                  },
+                  "x": {
+                    "type": "number",
+                    "description": "Box centre, 0..1 of the picture width."
+                  },
+                  "y": {
+                    "type": "number",
+                    "description": "Box centre, 0..1 of the picture height."
+                  },
+                  "width": {
+                    "type": "number",
+                    "description": "0..1 of the picture width."
+                  },
+                  "height": {
+                    "type": "number",
+                    "description": "0..1 of the picture height."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The keyframes the pin changed, and the picture cut.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "observation_id": {
+                      "type": "integer"
+                    },
+                    "changed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "keyframe_id": {
+                            "type": "integer"
+                          },
+                          "observation_id": {
+                            "type": "integer"
+                          },
+                          "subset": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "t": {
+                            "type": "number"
+                          },
+                          "x": {
+                            "type": "number",
+                            "description": "Box centre, 0..1 of the picture width."
+                          },
+                          "y": {
+                            "type": "number",
+                            "description": "Box centre, 0..1 of the picture height."
+                          },
+                          "width": {
+                            "type": "number",
+                            "description": "0..1 of the picture width."
+                          },
+                          "height": {
+                            "type": "number",
+                            "description": "0..1 of the picture height."
+                          }
+                        }
+                      }
+                    },
+                    "deleted": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "picture": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/mosaic/observations/review": {
       "post": {
         "summary": "Commit a page of scientific review decisions",
@@ -15531,7 +16001,7 @@
     "/v2/mosaic/observations/species": {
       "post": {
         "summary": "Correct one observation's species",
-        "description": "Changes `species_id` and **nothing else**. `comname` and `taxserial` are never rewritten: they are what the species list entry was called when the annotator chose it, and roughly 50,000 observations already disagree with what their list says today because lists were renamed underneath records that were correct when made -- which is exactly what makes the drift auditable. The response carries `species_comname`, the catalogue's current name for the corrected species, as a **separate field** so it cannot be mistaken for the annotator's frozen label.\n\n**A correction invalidates every review decision on the observation, for both purposes.** The scientific review and the training disposition are removed regardless of who made them, and the observation returns to unreviewed and undecided for anyone to decide again -- a promoted training sample carrying the wrong label teaches the model the wrong thing. Their decisions stay in `observation_reviews`: the audit history is retained, only its currency is not.\n\n**`version` is required.** A correction destroys other people's approvals, so one made from a stale view would destroy approvals of a classification the corrector never saw. A stale version comes back `{ok: false, error: \"conflicted\"}` and writes nothing; an absent one is a `400`. A correction naming the species already recorded writes nothing and comes back `{ok: false, error: \"unchanged\"}`, because it would otherwise destroy live decisions in exchange for no change.\n\n**A service token is refused with 403**: a correction belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
+        "description": "**Renames the observation fully** (#181): `species_id`, `comname` and `taxserial` from the catalogue's entry for the new species, and every keyframe's `comname`. Nothing else on the row changes. The replaced `comname` and `taxserial` -- on roughly 50,000 legacy rows the only record of the label the annotator pressed, since their lists were renamed -- are kept in the correction's `observation_reviews` row (`previous_comname`, `previous_taxserial`) and returned in `previous`.\n\n**A correction invalidates every review decision on the observation, for both purposes.** The scientific review and the training disposition are removed regardless of who made them, and the observation returns to unreviewed and undecided for anyone to decide again -- a promoted training sample carrying the wrong label teaches the model the wrong thing. Their decisions stay in `observation_reviews`: the audit history is retained, only its currency is not.\n\n**`version` is required.** A correction destroys other people's approvals, so one made from a stale view would destroy approvals of a classification the corrector never saw. A stale version comes back `{ok: false, error: \"conflicted\"}` and writes nothing; an absent one is a `400`. A correction naming the species already recorded writes nothing and comes back `{ok: false, error: \"unchanged\"}`, because it would otherwise destroy live decisions in exchange for no change.\n\n**A service token is refused with 403**: a correction belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
         "tags": [
           "V2 · Mosaic"
         ],
