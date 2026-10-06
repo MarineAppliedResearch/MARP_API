@@ -108,6 +108,17 @@ module.exports = (sequelize, DataTypes) => {
                 references: { model: 'species', key: 'id' },
                 comment: 'The species the observation carried before this correction. Null when it had none, and null on every decision that is not a correction.',
             },
+            previous_comname: {
+                // A correction renames fully since #181, so the replaced label is kept here.
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                comment: 'The observation\'s comname before this correction renamed it. NULL on rows that are not renames.',
+            },
+            previous_taxserial: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                comment: 'The observation\'s taxserial before this correction renamed it. NULL on rows that are not renames.',
+            },
             corrected_species_id: {
                 // Paired with `decision` by
                 // observation_reviews_corrected_species_check, in both

@@ -87,6 +87,10 @@ their GUI-style editing.
 - [x] **A9 · database/schema · non-blocking** — answered 2026-10-06: the chosen picture is cut
   once and nothing records the choice; no schema change. A later box edit, which re-cuts the
   picture automatically, replaces it.
+- [x] **A16 · data-meaning · blocking** — answered 2026-10-06: a rename overwrites `comname` and
+  `taxserial`, which on about 50,000 rows are the only record of the label the annotator pressed
+  (their lists were renamed since), so the change's `observation_reviews` row keeps the previous
+  `comname` and `taxserial` in two new columns. Nothing is lost.
 - [ ] **A10 · data-meaning · non-blocking** — a new observation's timecode columns (`tc`,
   `actualPosition`, `frame`) come from its `mediaPosition` by the GPU ingest's own derivation
   (`service/observation-ingest.service.js`), at 25 frames per second as GUI rows are.
@@ -103,7 +107,7 @@ their GUI-style editing.
 
 ## Decisions
 
-- **2026-10-06** — A1-A8 above, from Isaac.
+- **2026-10-06** — A1-A9 and A16 above, from Isaac.
 
 ## Plan
 

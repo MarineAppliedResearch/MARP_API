@@ -3152,9 +3152,11 @@ const buildOpenApiSpec = () => {
                                 properties: {
                                     species_id: { type: 'integer', nullable: true, example: 233, description: 'Null where the observation had no species -- about 4% of rows legitimately do not.' },
                                     species_comname: { type: 'string', nullable: true, example: 'Blue Rockfish' },
+                                    comname: { type: 'string', nullable: true, example: 'Blue rockfish', description: 'The comname the rename replaced, as the observation carried it.' },
+                                    taxserial: { type: 'integer', nullable: true, description: 'The taxserial the rename replaced.' },
                                 },
                             },
-                            review_id: { type: 'integer', example: 9912, description: 'The observation_reviews row this correction appended. It carries purpose "scientific", decision "corrected", and both species ids.' },
+                            review_id: { type: 'integer', example: 9912, description: 'The observation_reviews row this correction appended. It carries purpose "scientific", decision "corrected", both species ids, and the replaced comname and taxserial.' },
                             correctedAt: { type: 'string', format: 'date-time', example: '2026-09-09T12:00:00.000Z' },
                         },
                     },

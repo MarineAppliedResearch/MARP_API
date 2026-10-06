@@ -158,7 +158,7 @@ async function observationRow(observationId) {
 function logFor(observationId) {
     return q(
         `SELECT review_id, purpose, decision, reason, reviewer_id, observation_version,
-                previous_species_id, corrected_species_id, reviewed_keyframe_count,
+                previous_species_id, corrected_species_id, previous_comname, previous_taxserial, reviewed_keyframe_count,
                 reviewed_keyframe_max_updated_at, representative_keyframe_id
            FROM observation_reviews
           WHERE observation_id = :observationId
@@ -439,7 +439,7 @@ describe('the mosaic species correction (#111)', () => {
 
     describe('what a correction changes, and what it must not (R2)', () => {
 
-        it('changes species_id and nothing else on the observation', async () => {
+        it('renames fully -- species_id, comname and taxserial -- and touches nothing else', async () => {
             const [a] = await addObservations(1, speciesFrom);
             const before = await observationRow(a);
 
@@ -453,13 +453,13 @@ describe('the mosaic species correction (#111)', () => {
 
             expect(after.species_id).toBe(speciesTo);
 
-            // Asserted rather than assumed: this is #111's one irreversible
-            // rule. `comname` is the label the list entry carried when the
-            // annotator pressed the button, and roughly 50,000 observations
-            // already disagree with what their list says today -- keeping it
-            // frozen is what makes the drift auditable.
-            expect(after.comname).toBe(before.comname);
-            expect(after.taxserial).toBe(before.taxserial);
+            // The whole name, from the catalogue's entry for the new species (#181, 2026-10-06).
+            // It used to stay frozen (#111); the replaced name is kept in the log row instead.
+            const [entry] = await q('SELECT comname, taxserial FROM species WHERE id = :id', { id: speciesTo });
+            expect(after.comname).toBe(entry.comname);
+            expect(after.taxserial).toBe(entry.taxserial);
+            expect(res.body.observation.comname).toBe(entry.comname);
+            expect(res.body.previous.comname).toBe(before.comname);
             expect(after.taxReview).toBe(before.taxReview);
             expect(after.sizereview).toBe(before.sizereview);
             expect(after.tc).toBe(before.tc);
@@ -473,7 +473,7 @@ describe('the mosaic species correction (#111)', () => {
             expect(after.version).toBe(before.version + 1);
         });
 
-        it('does not propagate a name to the keyframes', async () => {
+        it('renames every keyframe with it', async () => {
             const [a] = await addObservations(1, speciesFrom);
 
             await db.sequelize.query(
@@ -488,15 +488,14 @@ describe('the mosaic species correction (#111)', () => {
 
             await alice.post(CORRECT).send({ observation_id: a, version, species_id: speciesTo });
 
-            // `updateObservation` rewrites every keyframe's comname when the
-            // submitted one differs (observation.repository.js:690-712). The
-            // correction must not go through it -- and `keyframes` carries no
-            // species_id at all, so there is nothing there to correct.
+            // A box's label is its keyframe's name, so a rename that stopped at the observation
+            // would draw the old name on the video page (#181).
             const [keyframe] = await q(
                 'SELECT comname FROM keyframes WHERE observation_id = :a', { a }
             );
+            const [entry] = await q('SELECT comname FROM species WHERE id = :id', { id: speciesTo });
 
-            expect(keyframe.comname).toBe('Jest Keyframe Name');
+            expect(keyframe.comname).toBe(entry.comname);
         });
     });
 
@@ -527,6 +526,11 @@ describe('the mosaic species correction (#111)', () => {
             expect(log[0].reason).toBeNull();
             expect(log[0].previous_species_id).toBe(speciesFrom);
             expect(log[0].corrected_species_id).toBe(speciesTo);
+
+            // The name the rename replaced, which on legacy rows is the only record of the label
+            // the annotator pressed (A16).
+            expect(log[0].previous_comname).toBe(`Jest Correction ${runId}`);
+            expect(log[0].previous_taxserial).toBe(166730);
 
             // The version it *applied to*, not the one the trigger produced.
             expect(log[0].observation_version).toBe(version);
@@ -738,7 +742,7 @@ describe('the mosaic species correction (#111)', () => {
             expect(res.body).toEqual({ ok: false, error: 'not-found' });
         });
 
-        it('returns the corrected species name as a field distinct from comname', async () => {
+        it('returns the new name, and the name it replaced', async () => {
             const [a] = await addObservations(1, speciesFrom);
             const before = await observationRow(a);
 
@@ -752,19 +756,17 @@ describe('the mosaic species correction (#111)', () => {
             expect(res.body.observation.species_comname).toBe(to.comname);
             expect(res.body.previous.species_comname).toBe(from.comname);
 
-            // The annotator's frozen label is returned unchanged beside it, so
-            // nothing can mistake the catalogue's current name for it. Without
-            // the separate field a corrected tile would show the old animal for
-            // ever.
-            expect(res.body.observation.comname).toBe(before.comname);
-            expect(res.body.observation.species_comname).not.toBe(res.body.observation.comname);
+            // A full rename since #181: both names are the new one, and the label it replaced
+            // comes back beside them -- the same one the log row keeps (A16).
+            expect(res.body.observation.comname).toBe(to.comname);
+            expect(res.body.previous.comname).toBe(before.comname);
             expect(res.body.observation.version).toBe(before.version + 1);
         });
     });
 
     describe('what the mosaic row shows afterwards (R19)', () => {
 
-        it('serves the new species name while comname still serves the old label', async () => {
+        it('serves the new name in both comname and species_comname', async () => {
             const [a] = await addObservations(1, speciesFrom);
             const before = await observationRow(a);
 
@@ -788,15 +790,11 @@ describe('the mosaic species correction (#111)', () => {
 
             const [to] = await q('SELECT comname FROM species WHERE id = :id', { id: speciesTo });
 
-            // **The pairing is the whole point.** The row carries both, and the
-            // difference between them is what #68's "was Bat Star" indicator
-            // draws from. Without `species_comname` a corrected tile would show
-            // the old animal for ever, on every reload -- while the species
-            // filter is `o.species_id`, so filtering for the new species would
-            // return a tile labelled as the old one.
+            // A corrected tile shows the new animal on every reload, by either name: the
+            // correction renamed the row fully (#181). The species filter is `o.species_id`, so
+            // filtering for the new species returns a tile labelled as it.
             expect(row.species_comname).toBe(to.comname);
-            expect(row.comname).toBe(before.comname);
-            expect(row.species_comname).not.toBe(row.comname);
+            expect(row.comname).toBe(to.comname);
         });
 
         it('serves a null species name where the observation has no species', async () => {

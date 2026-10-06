@@ -1562,22 +1562,20 @@ export const actions = {
     clearFailure();
 
     /**
-     * The corrected name is `species_comname`, **never `comname`** (F6).
+     * The corrected name is `species_comname` (F6).
      *
-     * This read `res.observation.comname`, and the contract is that `comname` is unchanged
-     * by a correction, always — it is the annotator's frozen label, and keeping it frozen
-     * is what makes the drift auditable. So `to:` was the *old* name, `from` and `to` came
-     * out equal, and the "was X" indicator said the species had changed from X to X.
-     * Nothing failed and nothing logged.
+     * Since #181 a correction renames fully, so `comname` is the new name too; this read
+     * `species_comname` back when `comname` stayed frozen, and it is still the field that
+     * names the species the row now is. The replaced name is kept in the review log.
      */
     const to = res.observation.species_comname;
     state.changed.set(id, { from, to });
 
-    /* The row on screen is the one the reviewer is looking at, and the tile draws the
-       current name — so it has to carry what the correction actually did. `comname` is
-       deliberately left alone here too, for the same reason the endpoint leaves it alone. */
+    /* The row on screen is the one the reviewer is looking at, so it carries what the
+       correction actually did: both names, as the endpoint wrote them. */
     before.species_id = res.observation.species_id;
     before.species_comname = to;
+    before.comname = res.observation.comname;
     before.version = res.observation.version;
 
     /**
