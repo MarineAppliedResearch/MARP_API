@@ -10,26 +10,50 @@
 const EDGE = 1e-6;
 
 /**
+ * How far from a keyframe's time a picture still counts as that keyframe's: half a frame, of
+ * the coarser of the video's rate and 25 (#181).
+ *
+ * A row without a GPU job counts its frames at 25 whatever the video's rate, so on a 29.97
+ * video its keyframe can sit up to half a 25-frame -- 20 ms -- from the picture it was drawn
+ * on. Within a millionth of a second, a box just added, or the last of a merged track, was not
+ * drawn on the very frame it was made on, depending on which frame that was.
+ */
+export function trackTolerance(frameRate) {
+  return 0.5 / Math.min(Number(frameRate) || 25, 25);
+}
+
+/**
  * The box of each observation whose track spans time `t`, interpolated between the
  * keyframes either side. Linear interpolation is what the keyframe reduction was built
  * to reproduce. A track is drawn only within its own span: before its first keyframe
  * or after its last, the animal is not in the record, and a box there would be a guess.
  */
-export function boxesAt(observations, t) {
+export function boxesAt(observations, t, tolerance = EDGE) {
   const out = [];
   for (const observation of observations || []) {
-    for (const track of tracksOf(observation.keyframes)) {
-      const box = boxOnTrack(track, t);
+    // Tracks sorted once when the keyframes arrived, where the caller has them: sorting
+    // on every frame was a cost paid for every observation held, every frame.
+    for (const track of observation.tracks || tracksOf(observation.keyframes)) {
+      const box = boxOnTrack(track, t, tolerance);
       if (box) {
-        out.push({ observation_id: observation.observation_id, comname: observation.comname, ...box });
+        // The track's subset and keyframes go with the box, so an edit knows which track
+        // it is on and whether the picture is on one of its keyframes.
+        out.push({
+          observation_id: observation.observation_id,
+          obs_id: observation.obs_id,
+          comname: observation.comname,
+          subset: track[0].subset == null ? null : String(track[0].subset),
+          keyframes: track,
+          ...box
+        });
       }
     }
   }
   return out;
 }
 
-/* One observation's keyframes as tracks, one per subset, each in time order. */
-function tracksOf(keyframes) {
+/** One observation's keyframes as tracks, one per subset, each in time order. */
+export function tracksOf(keyframes) {
   const bySubset = new Map();
   for (const keyframe of keyframes || []) {
     const key = keyframe.subset == null ? '' : String(keyframe.subset);
@@ -40,11 +64,11 @@ function tracksOf(keyframes) {
 }
 
 /* The box on one track at `t`, or null outside its span. */
-function boxOnTrack(track, t) {
-  if (!track.length || t < track[0].t - EDGE || t > track[track.length - 1].t + EDGE) return null;
+function boxOnTrack(track, t, tolerance) {
+  if (!track.length || t < track[0].t - tolerance || t > track[track.length - 1].t + tolerance) return null;
   for (let index = 0; index < track.length; index += 1) {
     const after = track[index];
-    if (after.t + EDGE < t) continue;
+    if (after.t < t && index < track.length - 1) continue;
     const before = index > 0 ? track[index - 1] : after;
     const span = after.t - before.t;
     const f = span > 0 ? Math.min(1, Math.max(0, (t - before.t) / span)) : 0;
@@ -104,4 +128,45 @@ export function playbackBlocker({ secureContext, hasVideoDecoder }) {
  */
 export function cacheBudgets({ desktop }) {
   return desktop ? null : { rawGiB: 0.125, decodedGiB: 0.25 };
+}
+
+/**
+ * The quality a video opens at, by device (#181), or null for the player's own choice.
+ *
+ * A desktop plays the original file, as it always has. Anything else opens a 720p
+ * transcode: the original is 1080p with a keyframe every ten seconds, and the player
+ * decodes a whole keyframe interval at a time -- about 742 MB a unit, three held at
+ * once -- which ran a phone out of memory and took its other apps down with it. The
+ * transcode starts every three-second segment on a keyframe, so a unit is a tenth of
+ * that. The name must be one of the player's own tiers: its quality menu matches on it.
+ * The menu is still there to choose another.
+ */
+export function openingQuality({ desktop }) {
+  return desktop ? null : { name: '720p, 4 Mbps', maxStreamingBitrate: 4_000_000, maxWidth: 1280, maxHeight: 720 };
+}
+
+/**
+ * When the picture on screen was really taken, from the player's frame metadata.
+ *
+ * A transcode's segment grid runs ahead of its pictures -- six seconds by ten minutes into
+ * one dive -- so `mediaTime` names a moment the picture is not from. `rawFrameTime` is the
+ * decoded frame's own timestamp, which the burned-in dive clock agrees with. On the
+ * original file the two are the same.
+ */
+export function pictureTime(metadata) {
+  return Number.isFinite(metadata.rawFrameTime) ? metadata.rawFrameTime : metadata.mediaTime;
+}
+
+/**
+ * Where the first seek goes: one frame short of the moment.
+ *
+ * The player opens on the moment and paints it before the page is watching, and it
+ * reports a frame only when it paints a new one -- so a seek to the moment itself
+ * paints nothing, reports nothing, and the page never learns what it is showing. That
+ * left the status reading "Seeking…" for good. A frame short always paints, and the
+ * landing correction then steps onto the moment.
+ */
+export function firstSeekTarget(moment, fps = 25) {
+  const frame = 1 / fps;
+  return moment >= frame ? moment - frame : moment + frame;
 }

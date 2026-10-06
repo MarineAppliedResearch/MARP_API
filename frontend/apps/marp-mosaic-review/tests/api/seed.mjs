@@ -377,3 +377,62 @@ function thumbnailStore() {
     return null;
   }
 }
+
+/**
+ * Hold an observation's keyframes so a check may edit them (#181), and put them back exactly.
+ *
+ * The video page's edits need a real observation in a real video, because the box is only
+ * drawn over a picture that plays -- a seeded row has no video. So the check edits one on
+ * the testing database and `restore()` returns its keyframes to what they were: rows the
+ * edit added are removed, and every row there before gets its kind, frame and box back.
+ *
+ * @param {number} observationId - The observation the check will edit.
+ * @returns {Promise<Object>} `{before, restore}`.
+ */
+export async function holdKeyframes(observationId) {
+  const client = await connect();
+  const read = async () => (await client.query(
+    `SELECT keyframe_id, type, framenum, x, y, width, height FROM keyframes
+      WHERE observation_id = $1 ORDER BY framenum, keyframe_id`, [observationId])).rows;
+  const before = await read();
+  return {
+    before,
+    async restore() {
+      try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM keyframes WHERE observation_id = $1 AND NOT (keyframe_id = ANY($2))',
+          [observationId, before.map((k) => k.keyframe_id)]);
+        for (const k of before) {
+          await client.query(
+            'UPDATE keyframes SET type = $2, framenum = $3, x = $4, y = $5, width = $6, height = $7 WHERE keyframe_id = $1',
+            [k.keyframe_id, k.type, k.framenum, k.x, k.y, k.width, k.height]);
+        }
+        await client.query('COMMIT');
+        // A restore that quietly did not apply is worse than none: the next run inherits it.
+        const after = await read();
+        if (JSON.stringify(after) !== JSON.stringify(before)) {
+          throw new Error(`observation ${observationId}'s keyframes were not put back: ${JSON.stringify(after)}`);
+        }
+      } finally {
+        await client.end();
+      }
+    }
+  };
+}
+
+/**
+ * Remove observations a check created through the page (#181) -- an added observation, or what
+ * a merge left -- with their keyframes, reviews and pictures' rows, which go by cascade.
+ *
+ * @param {Array<number>} ids - Observations this check made, and only those.
+ * @returns {Promise<void>}
+ */
+export async function removeObservations(ids) {
+  if (!ids.length) return;
+  const client = await connect();
+  try {
+    await client.query('DELETE FROM observations WHERE observation_id = ANY($1)', [ids]);
+  } finally {
+    await client.end();
+  }
+}

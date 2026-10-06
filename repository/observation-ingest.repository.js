@@ -480,6 +480,22 @@ class ObservationIngestRepository {
      * @param {Object} transaction - Transaction to read inside.
      * @returns {Promise<number>} The maximum plus one, or 1 when there is none.
      */
+    /**
+     * Take the advisory lock that serialises observation-key assignment, for the life of
+     * `transaction`. Every writer that assigns `obsID` or `PobsID` as max + 1 must hold it --
+     * the video page's create (#181) as much as this module's ingest.
+     *
+     * @async
+     * @param {Object} transaction - Transaction the lock is released with.
+     * @returns {Promise<void>}
+     */
+    async lockObservationKeys(transaction) {
+        await this.db.sequelize.query(
+            'SELECT pg_advisory_xact_lock(:key)',
+            { replacements: { key: OBSERVATION_KEY_LOCK }, type: QueryTypes.SELECT, transaction }
+        );
+    }
+
     async nextKey(sql, replacements, transaction) {
         const [row] = await this.db.sequelize.query(
             sql,

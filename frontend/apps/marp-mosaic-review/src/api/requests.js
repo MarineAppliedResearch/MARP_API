@@ -91,6 +91,84 @@ export function filtersBody(filters = {}) {
 }
 
 /**
+ * `POST /api/v2/mosaic/video/observations` (#181): the video page's observations -- every
+ * one in the opened observation's video that the query matches.
+ *
+ * The filters go exactly as the grid's own page request sends them, so "matches the query"
+ * cannot mean two things; the grid's exclusion set does not go, because it is paging
+ * bookkeeping rather than part of the question.
+ */
+export function videoObservationsBody({ observationId, filters }) {
+  if (!Number.isInteger(observationId)) {
+    throw new TypeError(`observationId must be an integer, not ${JSON.stringify(observationId)}`);
+  }
+  return { observation_id: observationId, filters: filtersBody(filters) };
+}
+
+/**
+ * `POST /api/v2/mosaic/video/keyframes` (#181): keyframes of some observations in one video,
+ * within a window in seconds.
+ */
+export function videoKeyframesBody({ observationIds, from, to }) {
+  if (!Number.isFinite(from) || !Number.isFinite(to)) {
+    throw new TypeError(`a keyframe window needs numbers, not ${JSON.stringify([from, to])}`);
+  }
+  return { observation_ids: idList(observationIds, 'observation_ids'), from_s: from, to_s: to };
+}
+
+/**
+ * A box as the edit routes take it (#181): centre and size, fractions of the picture.
+ * Plain numbers only -- a box read off a canvas can carry NaN, which JSON sends as null.
+ */
+export function keyframeBoxBody(box) {
+  const out = {};
+  for (const key of ['x', 'y', 'width', 'height']) {
+    const value = box && box[key];
+    if (!Number.isFinite(value)) {
+      throw new TypeError(`a box needs a number for ${key}, not ${JSON.stringify(value)}`);
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/** `POST /api/v2/mosaic/video/observation` (#181 R1): a new observation from a drawn box. */
+export function createObservationBody({ openedId, sessionId, speciesId, t, box }) {
+  for (const [name, value] of [['openedId', openedId], ['sessionId', sessionId], ['speciesId', speciesId]]) {
+    if (!Number.isInteger(value)) throw new TypeError(`${name} must be an integer, not ${JSON.stringify(value)}`);
+  }
+  if (!Number.isFinite(t)) throw new TypeError(`t must be a time in seconds, not ${JSON.stringify(t)}`);
+  return { observation_id: openedId, session_id: sessionId, species_id: speciesId, t, ...keyframeBoxBody(box) };
+}
+
+/** `PUT .../observation/:id/count` (#181 R5): a whole number of at least 1. */
+export function countBody(count) {
+  if (!Number.isInteger(count) || count < 1) {
+    throw new TypeError(`a count is a whole number of at least 1, not ${JSON.stringify(count)}`);
+  }
+  return { count };
+}
+
+/** `POST .../observation/:id/picture` (#181 R6): the frame and the box on it. */
+export function pictureBody({ t, subset, box }) {
+  if (!Number.isFinite(t)) throw new TypeError(`t must be a time in seconds, not ${JSON.stringify(t)}`);
+  const body = { t, ...keyframeBoxBody(box) };
+  if (subset != null) body.subset = String(subset);
+  return body;
+}
+
+/** `POST /api/v2/mosaic/video/keyframe` (#181): a middle keyframe at `t` seconds. */
+export function addKeyframeBody({ observationId, subset, t, box }) {
+  if (!Number.isInteger(observationId)) {
+    throw new TypeError(`observationId must be an integer, not ${JSON.stringify(observationId)}`);
+  }
+  if (!Number.isFinite(t)) throw new TypeError(`t must be a time in seconds, not ${JSON.stringify(t)}`);
+  const body = { observation_id: observationId, t, ...keyframeBoxBody(box) };
+  if (subset != null) body.subset = String(subset);
+  return body;
+}
+
+/**
  * `POST /api/v2/mosaic/observations/pages`.
  *
  * R3: a **visible** page is one call with `includeTotal: true`; a **prefetch** is one call

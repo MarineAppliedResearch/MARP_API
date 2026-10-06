@@ -27,7 +27,8 @@
 import { request, thumbnailUrl, fullFrameUrl } from './transport.js';
 import {
   pagesBody, countsBody, commitBody, correctionBody, retryBody, facetsBody, filtersBody,
-  idList
+  idList, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody,
+  createObservationBody, countBody, pictureBody
 } from './requests.js';
 import { sortTerms } from '../model/filters.js';
 
@@ -81,7 +82,9 @@ export const MarpApi = {
     return user && {
       user_id: user.user_id,
       name: user.name,
-      username: user.username
+      username: user.username,
+      /* What the video page may offer: box editing needs `keyframes:write` (#181). */
+      permissions: Array.isArray(user.permissions) ? user.permissions : []
     };
   },
 
@@ -182,6 +185,69 @@ export const MarpApi = {
     return request('/mosaic/observations/video-context', {
       method: 'POST', body: { observation_ids: idList(observationIds, 'observation_ids') }, signal
     });
+  },
+
+  /* The video page (#181): every observation in a video the query matches, once. */
+  async videoObservations({ observationId, filters }, { signal } = {}) {
+    return request('/mosaic/video/observations', {
+      method: 'POST', body: videoObservationsBody({ observationId, filters }), signal
+    });
+  },
+
+  /* The video page (#181): those observations' keyframes, a window of seconds at a time. */
+  async videoKeyframes({ observationIds, from, to }, { signal } = {}) {
+    return request('/mosaic/video/keyframes', {
+      method: 'POST', body: videoKeyframesBody({ observationIds, from, to }), signal
+    });
+  },
+
+  /* The video page's box edits (#181), the annotation GUI's controls. Each answers
+     `{ observation_id, changed, deleted }`, keyframes in seconds. */
+  async moveKeyframe(keyframeId, box, { signal } = {}) {
+    return request(`/mosaic/video/keyframe/${encodeURIComponent(keyframeId)}`, {
+      method: 'PUT', body: keyframeBoxBody(box), signal
+    });
+  },
+
+  async addKeyframe({ observationId, subset, t, box }, { signal } = {}) {
+    return request('/mosaic/video/keyframe', {
+      method: 'POST', body: addKeyframeBody({ observationId, subset, t, box }), signal
+    });
+  },
+
+  async setEndKeyframe(keyframeId, { signal } = {}) {
+    return request(`/mosaic/video/keyframe/${encodeURIComponent(keyframeId)}/end`, { method: 'POST', signal });
+  },
+
+  /* Annotating from the video page (#181): add, count, merge, the Mosaic picture. A rename is
+     `setSpecies`, the Mosaic's own correction, which renames fully. */
+  async createObservation({ openedId, sessionId, speciesId, t, box }, { signal } = {}) {
+    return request('/mosaic/video/observation', {
+      method: 'POST', body: createObservationBody({ openedId, sessionId, speciesId, t, box }), signal
+    });
+  },
+
+  async setCount(observationId, count, { signal } = {}) {
+    return request(`/mosaic/video/observation/${encodeURIComponent(observationId)}/count`, {
+      method: 'PUT', body: countBody(count), signal
+    });
+  },
+
+  async mergeObservations(intoId, fromId, { signal } = {}) {
+    if (!Number.isInteger(fromId)) throw new TypeError(`fromId must be an integer, not ${JSON.stringify(fromId)}`);
+    return request(`/mosaic/video/observation/${encodeURIComponent(intoId)}/merge`, {
+      method: 'POST', body: { from_observation_id: fromId }, signal
+    });
+  },
+
+  async usePicture(observationId, { t, subset, box }, { signal } = {}) {
+    return request(`/mosaic/video/observation/${encodeURIComponent(observationId)}/picture`, {
+      method: 'POST', body: pictureBody({ t, subset, box }), signal
+    });
+  },
+
+  async deleteKeyframe(keyframeId, { signal } = {}) {
+    return request(`/mosaic/video/keyframe/${encodeURIComponent(keyframeId)}`, { method: 'DELETE', signal });
   },
 
   fullFrameUrl: (row) => fullFrameUrl(row && row.observation_id),

@@ -63,10 +63,79 @@ body {
   overflow-y: auto;
 }
 
-/* Drawn over the player's picture and never in the way of its controls. */
+/* Drawn over the player's picture and never in the way of its controls. It sits inside the
+   player's own element, after the picture and before the controls, so it goes fullscreen
+   with the player and the controls stay on top of it. */
 .inspect-boxes {
   position: absolute;
   pointer-events: none;
+}
+
+/* Paused, the picture stays clear. The player's paused layer darkens the whole picture and
+   puts a large play symbol in the middle of it, which is where the reviewer is looking
+   while moving boxes (2026-10-06). The controls bar still has play. */
+.inspect-player .marp-center-overlay {
+  display: none !important;
+}
+
+/* What a press would do, as the annotation GUI shows it: move over a box, a resize arrow
+   over a grip of the selected one. On everything under the pointer, because the player's
+   layers set cursors of their own. */
+.inspect-stage.cursor-move,
+.inspect-stage.cursor-move * {
+  cursor: move !important;
+}
+
+.inspect-stage.cursor-nwse,
+.inspect-stage.cursor-nwse * {
+  cursor: nwse-resize !important;
+}
+
+.inspect-stage.cursor-nesw,
+.inspect-stage.cursor-nesw * {
+  cursor: nesw-resize !important;
+}
+
+/* With editing on, a finger on the picture drags a box rather than panning the page
+   (#181). Presses on no box still reach the player. */
+.inspect-stage.editing {
+  touch-action: none;
+}
+
+/* The annotation GUI's box menu. */
+.inspect-menu {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: calc(100% - 16px);
+  padding: 4px 0;
+  background: var(--navy-850);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.inspect-menu button {
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  color: var(--white);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inspect-menu button:hover:not(:disabled),
+.inspect-menu button:focus-visible {
+  background: var(--navy-700, rgba(255, 255, 255, 0.08));
+}
+
+.inspect-menu button:disabled {
+  color: var(--muted);
+  font-size: 0.85em;
+  cursor: default;
 }
 
 .inspect-status {
@@ -104,4 +173,180 @@ body {
 .inspect-error {
   margin: 0;
   color: var(--red-400);
+}
+
+/* Annotating (#181): the species popup beside a box just drawn, and the panel for the
+   selected box. Both live inside the player, so they go fullscreen with it. */
+.annotate-popup,
+.annotate-panel {
+  position: absolute;
+  z-index: 22;
+  box-sizing: border-box;
+  width: 270px;
+  max-width: calc(100% - 16px);
+  padding: 8px;
+  background: var(--navy-850);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  color: var(--white);
+  font-size: 14px;
+}
+
+.annotate-popup {
+  z-index: 25;
+}
+
+/* Top right, clear of the controls bar, scrolling inside itself on a short screen. */
+.annotate-panel {
+  top: 8px;
+  right: 8px;
+  max-height: calc(100% - 80px);
+  overflow-y: auto;
+}
+
+.annotate-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.annotate-head strong {
+  flex: 1;
+}
+
+.annotate-head .swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.annotate-popup button,
+.annotate-panel button {
+  font: inherit;
+  color: var(--white);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.annotate-close {
+  padding: 0 4px;
+  font-size: 18px !important;
+  color: var(--muted) !important;
+}
+
+.annotate-popup input,
+.annotate-popup select,
+.annotate-panel input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--white);
+  background: var(--navy-1000);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.annotate-session {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+
+.annotate-extend {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 8px !important;
+  text-align: left;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 4px;
+}
+
+.annotate-results {
+  margin-top: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.annotate-species {
+  display: block;
+  width: 100%;
+  padding: 7px 8px !important;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.annotate-species .sci {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85em;
+  font-style: italic;
+}
+
+.annotate-species.first,
+.annotate-species:hover,
+.annotate-species:focus-visible {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.annotate-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.panel-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  margin: 0 0 8px;
+}
+
+.panel-facts dt {
+  color: var(--muted);
+}
+
+.panel-facts dd {
+  margin: 0;
+}
+
+.panel-count {
+  width: 80px !important;
+}
+
+.panel-label {
+  color: var(--muted);
+}
+
+.panel-keyframes {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.panel-keyframes button {
+  padding: 2px 0 !important;
+  white-space: pre;
+}
+
+.panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.panel-actions button {
+  padding: 7px 8px !important;
+  text-align: left;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px;
+}
+
+.panel-actions button:disabled {
+  color: var(--muted) !important;
+  cursor: default;
 }
