@@ -59,7 +59,8 @@ their GUI-style editing.
   set of boxes. For the science data, when the model detected fewer individuals than there were.
 - **R6** — **Mosaic picture.** "Use for Mosaic picture" on a box makes the Mosaic's thumbnail be cut
   from that frame with that box. On a frame between keyframes, the box there is pinned as a
-  keyframe first. The choice survives later automatic extraction.
+  keyframe first. The picture is cut once and the choice is not recorded, so a later box edit
+  that re-cuts the picture replaces it (A9).
 - **R7** — **The panel.** Selecting a box opens a panel for its observation: species (changeable),
   count (changeable), obs ID, session, its keyframes, Merge, and Use for Mosaic picture.
 - **R8** — Every change is saved as it is made, through the API, and what the page shows
@@ -83,9 +84,9 @@ their GUI-style editing.
 - [x] **A7 · product/UI · blocking** — answered 2026-10-06: a panel for the selected box.
 - [x] **A8 · data-meaning · blocking** — answered 2026-10-06: the reviewer picks the session from
   this video's sessions, defaulting to the opened observation's.
-- [ ] **A9 · database/schema · non-blocking** — where the chosen Mosaic picture is recorded.
-  Proposed: two nullable columns on `observation_thumbnails` (`chosen_framenum`,
-  `chosen_subset`), read by the extraction before its candidate list; a migration with a `down`.
+- [x] **A9 · database/schema · non-blocking** — answered 2026-10-06: the chosen picture is cut
+  once and nothing records the choice; no schema change. A later box edit, which re-cuts the
+  picture automatically, replaces it.
 - [ ] **A10 · data-meaning · non-blocking** — a new observation's timecode columns (`tc`,
   `actualPosition`, `frame`) come from its `mediaPosition` by the GPU ingest's own derivation
   (`service/observation-ingest.service.js`), at 25 frames per second as GUI rows are.
