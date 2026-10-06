@@ -1,5 +1,5 @@
 ---
-task: MarineAppliedResearch/MARP_API#<issue needed>
+task: MarineAppliedResearch/MARP_API#181
 repos: [MARP_API]
 status: design
 needs: []
@@ -12,7 +12,7 @@ observation by drawing a box and picking its species, rename an observation's sp
 everywhere at once, merge two observations into one, correct an observation's count when the
 model missed individuals, and choose the frame the Mosaic's picture is cut from. Adding has to
 be as easy as it can be made (Isaac, 2026-10-06: "focus on usability and making this as easy as
-possible"). Stacked on #181 (`181-video-review`, pull request #246), which built the boxes and
+possible"). Part of #181, after pull request #246 (`181-video-review`), which built the boxes and
 their GUI-style editing.
 
 ## What investigation found
