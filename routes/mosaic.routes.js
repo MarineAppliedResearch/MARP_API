@@ -542,10 +542,12 @@ function registerMosaicRoutes(app) {
         method: 'post',
         permission: EDIT_PERMISSION,
         path: '/api/mosaic/video/keyframe',
-        summary: 'Add a middle keyframe to an observation\'s track at a time in seconds',
+        summary: 'Add a keyframe to an observation\'s track at a time in seconds',
         description:
-            'The annotation GUI\'s drag of an in-between box, or its pin: a `middle` keyframe at `t` seconds on the observation\'s '
-            + 'track (`subset`, default `1`), between its start and its end (#181). On a keyframe already, that one is moved instead. '
+            'The annotation GUI\'s drag of an in-between box, its pin, or its "Add To Obs": a keyframe at `t` seconds on the '
+            + 'observation\'s track (`subset`, default `1`) (#181). Between the start and the end it is a `middle`. Before the start it '
+            + 'is the new `start`, and after an `end` the new `end`, the one it replaces becoming a `middle`; after the last keyframe '
+            + 'of a track with no end it is a `middle`. On a keyframe already, that one is moved instead. '
             + '`t` becomes a frame number by the rule the reads use: 25 for an annotation-GUI row, the video\'s nominal rate for a GPU '
             + 'row. The observation\'s thumbnail is extracted again.',
         tags: [TAG],

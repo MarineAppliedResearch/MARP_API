@@ -108,15 +108,32 @@ describe('box edits from the video page (#181)', () => {
         expect((await track(gpu.id)).map((row) => row.framenum)).toEqual([300, Math.round(11 * NOMINAL), 400]);
     });
 
-    it('moves the keyframe already at that time rather than adding a second, and refuses outside the track', async () => {
+    it('moves the keyframe already at that time rather than adding a second', async () => {
         const { id, keyframes } = await addObservation({ frames: [250, 300, 350] });
         await global.api.post(ROUTE).send({ observation_id: id, t: 12, x: 0.1, y: 0.2, width: 0.3, height: 0.4 });
         const rows = await track(id);
         expect(rows).toHaveLength(3);
         expect(rows[1]).toMatchObject({ keyframe_id: keyframes[1], x: 0.1, y: 0.2 });
+    });
 
-        const outside = await global.api.post(ROUTE).send({ observation_id: id, t: 20, x: 0.1, y: 0.2, width: 0.3, height: 0.4 });
-        expect(outside.status).toBe(400);
+    it('extends the track: before the start is the new start, after the end the new end (R2)', async () => {
+        const { id } = await addObservation({ frames: [250, 300, 350] });
+        const box = { x: 0.1, y: 0.2, width: 0.3, height: 0.4 };
+        // 9.6 s at 25 is frame 240, before the start.
+        const before = await global.api.post(ROUTE).send({ observation_id: id, t: 9.6, ...box });
+        expect(before.status).toBe(200);
+        expect(before.body.changed.map((k) => k.type).sort()).toEqual(['middle', 'start']);
+        // 16 s is frame 400, after the end.
+        await global.api.post(ROUTE).send({ observation_id: id, t: 16, ...box });
+        expect((await track(id)).map((row) => [row.framenum, row.type])).toEqual([
+            [240, 'start'], [250, 'middle'], [300, 'middle'], [350, 'middle'], [400, 'end']
+        ]);
+    });
+
+    it('after the last keyframe of a track with no end yet, adds a middle (R2)', async () => {
+        const { id } = await addObservation({ frames: [250] });
+        await global.api.post(ROUTE).send({ observation_id: id, t: 12, x: 0.1, y: 0.2, width: 0.3, height: 0.4 });
+        expect((await track(id)).map((row) => [row.framenum, row.type])).toEqual([[250, 'start'], [300, 'middle']]);
     });
 
     it('sets the end, and the end that was becomes a middle', async () => {
