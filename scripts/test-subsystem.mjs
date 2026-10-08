@@ -98,7 +98,7 @@ const SUBSYSTEMS = {
     },
     species: {
         describe: 'the species list and its pictures',
-        suites: ['species', 'species-lists', 'species-pictures', 'v2_species'],
+        suites: ['species', 'species-lists', 'species-pictures', 'v2_species', 'habitat-stop-pull-items'],
     },
     auth: {
         describe: 'authentication, users, and service tokens',
