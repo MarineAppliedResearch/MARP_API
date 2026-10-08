@@ -105,6 +105,24 @@ describe('Observation lifecycle', () => {
   });
 
   /**
+   * A session's numbering starts at 1. The first used to be -1, the annotation
+   * GUI's placeholder obsID, which sent its ETC to the placeholder
+   * (VIDEO_PROCESSING_GUI#253). The second then came out as 0.
+   */
+  it('numbers a new session from 1', async () => {
+    expect(obsID).toBe(1);
+
+    const second = await global.api
+      .post('/api/v2/observation')
+      .send({ observation: { session_id: sessionId, comname: 'Jest Test Fish 2' } });
+
+    expect(second.status).toBe(200);
+    expect(second.body.obsID).toBe(2);
+
+    await global.api.delete(`/api/v2/observation/${second.body.observation_id}`);
+  });
+
+  /**
    * PUT /api/observation should update the observation's fields by
    * observation_id.
    */
