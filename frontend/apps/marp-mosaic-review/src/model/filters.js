@@ -1,0 +1,289 @@
+/**
+ * Building the query a mode asks for.
+ *
+ * No DOM, no network. Every mode filters on both status dimensions (#89); which of them
+ * the mode *owns* decides what arrives at a default and what arrives not filtering.
+ */
+import { statusDimensions } from './modes.js';
+import { DIMENSIONS, DIMENSION, KIND, isActive, emptyValue } from './dimensions.js';
+export { applyDimension, toggleValue } from './match.js';
+
+/**
+ * The rail's keys, in rail order.
+ *
+ * Read from the declaration rather than listed here: a dimension that existed in
+ * `DIMENSIONS` and was forgotten from this array would filter but not count towards the
+ * collapsed rail's badge, which is the kind of half-wired dimension the refactor removed.
+ */
+export const FILTER_KEYS = DIMENSIONS.map((d) => d.key);
+
+/** Nothing selected anywhere: every dimension starts not filtering. */
+export const DEFAULT_FILTERS = {
+  ...Object.fromEntries(DIMENSIONS.map((d) => [d.key, emptyValue(d)])),
+  /**
+   * **No species literal. A10(b), now built.**
+   *
+   * The mosaic's premise is that a page holds one predicted species, so opening on all of
+   * them is a wall of unrelated animals — but a *literal* here is worse, because it is
+   * wrong on every database except the one it was written for. It was `['Bat Star']`,
+   * which the endpoint rejects outright since the filter is `observations.species_id`;
+   * then `[41]`, the fixture's Bat Star key, which matches **nothing** in a real database
+   * and opens the app on an empty mosaic reading *"nothing to do"*. That is how it looks
+   * broken to somebody who has just logged in.
+   *
+   * So the honest value is **empty** — not filtering. The mosaic opens on every species,
+   * which is a mixed page rather than an empty one, and is right on any database.
+   *
+   * **A10(b)'s facets-derived default is NOT built here, and the reason is worth keeping**,
+   * because it looks like a small change and is not. Seeding the opening species from the
+   * facets answer needs the app to know whether the reviewer *chose* to see everything or
+   * simply has not chosen yet — and with no literal here those two are the same question,
+   * so they write the same address. `query-url`'s *clearing every filter is not the same
+   * address as the default question* exists to close exactly that trap, and its own
+   * comment names it: *"a reviewer who deliberately cleared the species filter would be
+   * handed it straight back on the next reload."* That test passed only because this
+   * literal made the two questions differ.
+   *
+   * So seeding from the facets requires first deciding **what a bare address means** once
+   * the default narrows nothing — which is a design question about the address, not a line
+   * of code here. Attempted 2026-09-10 and reverted for that reason.
+   */
+  species: [],
+  /* The status filters of the *default question*, which is Scientific's — so review status
+     opens at Scientific's default and training disposition opens **not filtering**.
+     `trainingDisposition: MODES.training.defaultStatus` was safe only while `queryFilters`
+     dropped the dimension the mode did not own. Now that it is sent, `['undecided']` here
+     would take every promoted and excluded row out of Scientific's opening page and write
+     itself into the address, so the default question would stop being the bare one. #89. */
+  ...Object.fromEntries(
+    statusDimensions('scientific').map((d) => [d.key, d.defaults.slice()]))
+};
+
+/**
+ * The default order, and the shape every sort has.
+ *
+ * `then` is the secondary term, applied where the primary ties, and it is null by default.
+ * That is not a preference: `model/query-url.js` requires a bare address to mean the
+ * default question, so a default secondary would have to be written into `defaultBare()`
+ * and every link anybody has already sent would stop round-tripping.
+ */
+export const DEFAULT_SORT = { field: 'confidence', dir: 'asc', then: null };
+
+/**
+ * What the mosaic can be ordered by, and what each direction means on that field.
+ *
+ * This was five fixed pairs of a field and a direction, which is what #81 M1 called not
+ * good enough: three of the four fields could only be read one way, and "Confidence (low
+ * first)" told you what was applied only if you read the whole phrase. Field and direction
+ * are two questions, so they are two choices, and each field names its own two directions
+ * -- "longest" says something about a track length that "descending" does not.
+ *
+ * A sort names one of these or two of them; `sortTerms` below is what turns a sort into
+ * the comparisons a query makes, and says what happens after them.
+ */
+export const SORT_FIELDS = [
+  { field: 'confidence', label: 'Confidence', asc: 'low first', desc: 'high first' },
+  { field: 'keyframe_count', label: 'Track length', asc: 'shortest first', desc: 'longest first' },
+  { field: 'updatedAt', label: 'Last updated', asc: 'oldest first', desc: 'newest first' },
+  { field: 'obsID', label: 'Observation number', asc: 'lowest first', desc: 'highest first' }
+];
+
+export const SORT_DIRS = ['asc', 'desc'];
+
+/** The declared field a sort names, or the default when it names nothing recognisable. */
+export const sortField = (sort) =>
+  SORT_FIELDS.find((s) => s.field === (sort && sort.field))
+  || SORT_FIELDS.find((s) => s.field === DEFAULT_SORT.field);
+
+/** Is this a sort the rail could have produced? What the address checks against. */
+export const isSort = (field, dir) =>
+  SORT_DIRS.includes(dir) && SORT_FIELDS.some((s) => s.field === field);
+
+/** Which way an arrow points for a direction. Ascending is up, everywhere. */
+export const sortArrow = (dir) => (dir === 'desc' ? '↓' : '↑');
+
+const dirOf = (term) =>
+  (term && SORT_DIRS.includes(term.dir)) ? term.dir : DEFAULT_SORT.dir;
+
+/**
+ * The comparisons a query makes, in order, and nothing else.
+ *
+ * One term, or two once a secondary is chosen. **`observation_id` is not in here**: it is
+ * appended by whatever does the comparing, always and unconditionally, because #68 makes
+ * page membership query-derived and a comparator that can return zero for two different
+ * rows means page one holds different observations on each visit. Declaring it as a term
+ * would make it something a caller could reorder or drop.
+ */
+export function sortTerms(sort) {
+  const primary = sortField(sort);
+  const terms = [{ field: primary.field, dir: dirOf(sort) }];
+
+  const then = sort && sort.then;
+  /* A second term on the same field can never be reached, so it is not a term. */
+  if (then && isSort(then.field, then.dir) && then.field !== primary.field) {
+    terms.push({ field: then.field, dir: then.dir });
+  }
+  return terms;
+}
+
+/** One term, in words: `Confidence ↑ low first`. */
+function termLabel(term) {
+  const s = sortField(term);
+  return `${s.label} ${sortArrow(term.dir)} ${s[term.dir]}`;
+}
+
+/**
+ * What is applied, in words, for the sub-bar.
+ *
+ * Every term, always. The whole complaint was that a single label made the applied order
+ * something to work out rather than something to read, and a secondary term nobody can
+ * see is the same complaint one level down.
+ */
+export function sortLabel(sort) {
+  const [primary, secondary] = sortTerms(sort);
+  return secondary
+    ? `${termLabel(primary)}, then ${termLabel(secondary)}`
+    : termLabel(primary);
+}
+
+/**
+ * Set the primary term, keeping the secondary unless it has become unreachable.
+ *
+ * Choosing a primary that is already the secondary clears the secondary rather than
+ * swapping the two. A swap changes an order the reviewer did not ask to change, and they
+ * are one click from setting it again.
+ */
+export function withSort(sort, field, dir) {
+  const then = sort && sort.then;
+  return {
+    field, dir,
+    then: then && then.field !== field ? { ...then } : null
+  };
+}
+
+/** Set or clear the secondary term. A null field means there is no secondary. */
+export function withSortThen(sort, field, dir) {
+  const primary = sortField(sort);
+  if (!field || field === primary.field) return { ...sort, then: null };
+  return { ...sort, then: { field, dir } };
+}
+
+/**
+ * The filters actually sent for a mode: the reviewer's choices, as they are.
+ *
+ * **Nothing is dropped for being the other workflow's dimension any more** (#89). This
+ * used to null out whichever status dimension the mode did not own, which is what made a
+ * borrowed filter impossible — the rail could have offered it and the query would have
+ * thrown it away.
+ *
+ * What stops a borrowed dimension narrowing anything is that it *holds nothing*:
+ * `statusDimensions` gives it `defaults: []`, and `filtersBody` sends a status dimension
+ * only when its array has a length. So an untouched borrowed dimension sends nothing,
+ * and a chosen one sends exactly what the reviewer chose.
+ *
+ * `mode` is kept in the signature deliberately: this is "the query this mode asks for", and
+ * it is the seam Phase 8 sends to the API. Nothing in the body needs it today.
+ */
+export function queryFilters(mode, filters, { excludeIds } = {}) {
+  const out = { ...filters };
+  const excluded = excludeIdList(excludeIds);
+  if (excluded.length) out.excludeIds = excluded;
+  return out;
+}
+
+/**
+ * The exclusion set as **an array of integers**, which is the only shape it may leave in.
+ *
+ * F2, and it is the one #68 calls the defect that costs an afternoon. `page.pinnedIds()`
+ * returns a `Set` because the cache and the scheduler ask it `.has()` questions — and
+ * `JSON.stringify(new Set([1, 2, 3]))` is `{}`. So the ids left the client as an empty
+ * object, the endpoint read no exclusion at all, and **every committed page reappeared**
+ * among the pages still to do. Nothing throws, nothing logs, and the arithmetic on screen
+ * stays plausible.
+ *
+ * Converting here rather than only at the transport is deliberate: this is where the Set
+ * gets in, so this is where it stops. `src/api/requests.js` converts and rejects again on
+ * the way to the wire, because R4 asks for it to be *impossible* to send one, and a single
+ * guard is a guard somebody routes around.
+ *
+ * Sorted, so two callers holding the same ids in a different order produce the same body.
+ *
+ * @param {Set<number>|Array<number>|null} ids - Whatever the caller is holding.
+ * @returns {Array<number>} The ids, ascending. Empty when there are none.
+ */
+export function excludeIdList(ids) {
+  if (!ids) return [];
+  if (!(ids instanceof Set) && !Array.isArray(ids)) return [];
+  return [...ids].filter((id) => Number.isInteger(id)).sort((a, b) => a - b);
+}
+
+/**
+ * Set one filter, and drop anything it invalidates.
+ *
+ * Delegates to `match.applyDimension`, which drops only what no longer applies rather
+ * than clearing every narrower dimension outright -- see the note there. Kept as a name
+ * because callers outside the model use it.
+ */
+export { applyDimension as applyFilter } from './match.js';
+
+/** Toggle one value of a multi-select status filter. */
+export function toggleStatus(filters, key, value) {
+  const cur = filters[key] || [];
+  return {
+    ...filters,
+    [key]: cur.includes(value) ? cur.filter((v) => v !== value) : cur.concat(value)
+  };
+}
+
+/**
+ * Entering a mode with nothing selected on a dimension falls back to its default.
+ *
+ * A borrowed dimension has no default, so it stays not filtering — which is the whole of
+ * #89's rule expressed through `statusDimensions`.
+ */
+export function ensureStatusFor(mode, filters) {
+  let out = filters;
+  for (const { key, defaults } of statusDimensions(mode)) {
+    if ((out[key] || []).length) continue;
+    out = { ...out, [key]: defaults.slice() };
+  }
+  return out;
+}
+
+/**
+ * Entering a mode puts every status dimension back to what that mode opens at: its own
+ * default for a dimension the mode owns, and **not filtering** for a borrowed one.
+ *
+ * Carrying a selection across is worse than it sounds, because the modes do not mean
+ * the same thing by a dimension. Training narrows training disposition to *undecided*
+ * so finished work leaves the view; Delete shows all three, because there it is
+ * context rather than a filter. Arriving in Delete straight from Training inherited
+ * the narrowing and hid every observation the reviewer had just promoted — exactly the
+ * rows most worth seeing before deleting something.
+ *
+ * That is also why the borrowed dimension must arrive empty rather than at the owning
+ * mode's default. Handing Scientific `trainingDisposition: ['undecided']` — which is what
+ * this function did before `statusDimensions` distinguished own from borrowed — would hide
+ * every promoted and excluded observation from the mode whose whole job is judging them.
+ *
+ * `setMode` already discards marks and take-backs, so a mode opening at its own default is
+ * the consistent behaviour rather than a new one; a borrowed selection does not survive a
+ * mode switch either.
+ */
+export function defaultStatusFor(mode, filters) {
+  let out = filters;
+  for (const { key, defaults } of statusDimensions(mode)) {
+    out = { ...out, [key]: defaults.slice() };
+  }
+  return out;
+}
+
+/**
+ * How many filters are narrowing the results, for the collapsed rail's badge.
+ *
+ * A status dimension counts when it holds a selection, which is what makes a borrowed
+ * dimension count only once the reviewer has narrowed it — it arrives holding nothing.
+ */
+export const activeFilterCount = (mode, filters) =>
+  DIMENSIONS.filter((d) => isActive(d, filters[d.key])).length
+  + statusDimensions(mode).filter((d) => (filters[d.key] || []).length).length;

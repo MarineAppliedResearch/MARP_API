@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MARP Entry</title>
+  <link rel="stylesheet" href="/shared/assets/css/shell.css" />
+  <style>
+    .entry-wrap {
+      max-width: 1150px;
+      margin: 1.5rem auto;
+      padding: 1rem;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 1rem;
+      align-items: stretch;
+    }
+
+    .panel {
+      background: var(--shell-panel);
+      border: 1px solid #d5e0e8;
+      border-radius: 16px;
+      box-shadow: 0 10px 24px rgba(9, 34, 50, 0.08);
+      padding: 1.2rem;
+    }
+
+    .title {
+      font-size: clamp(2rem, 1.6rem + 1.3vw, 3rem);
+      margin: 0;
+      line-height: 1.1;
+    }
+
+    .subtitle {
+      margin-top: 0.7rem;
+      color: var(--shell-muted);
+      max-width: 60ch;
+    }
+
+    .pill-row {
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+
+    .pill {
+      border: 1px solid #bad4dd;
+      background: #edf7f7;
+      border-radius: 999px;
+      padding: 0.35rem 0.7rem;
+      font-size: 0.86rem;
+    }
+
+    .login h2 {
+      margin-top: 0;
+    }
+
+    .field {
+      margin-bottom: 0.8rem;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 0.3rem;
+      font-size: 0.92rem;
+      color: var(--shell-muted);
+    }
+
+    .field input {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #b9cad6;
+      border-radius: 10px;
+      padding: 0.65rem 0.7rem;
+      font-size: 0.95rem;
+      background: #fff;
+    }
+
+    .cta {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      padding: 0.7rem;
+      font-size: 0.96rem;
+      font-weight: 600;
+      cursor: pointer;
+      color: #fff;
+      background: linear-gradient(90deg, #006d77, #2b9348);
+    }
+
+    .quick-links {
+      margin-top: 1rem;
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .quick-links a {
+      color: #0b4f68;
+      font-weight: 600;
+      text-decoration: none;
+      border: 1px solid #bed0da;
+      border-radius: 10px;
+      padding: 0.45rem 0.75rem;
+      background: #fff;
+    }
+
+    @media (max-width: 900px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div data-include="/shared/partials/header.html"></div>
+  <main class="entry-wrap">
+    <section class="hero">
+      <article class="panel">
+        <h1 class="title">MARP Platform Entry</h1>
+        <p class="subtitle">
+          Build, test, and operate MARP-connected applications from a single API-first workspace. This entry page is the launch point for admin interfaces, dashboards, and app experiments.
+        </p>
+        <div class="pill-row">
+          <span class="pill">API-driven development</span>
+          <span class="pill">OpenAPI + Swagger docs</span>
+          <span class="pill">Static frontend app prototypes</span>
+        </div>
+        <div class="quick-links">
+          <a href="/apps/dashboard/">Open Dashboard Dev App</a>
+          <a href="/api-docs">Open API Docs</a>
+          <a href="/developer-docs">Open Developer Docs</a>
+        </div>
+      </article>
+
+      <aside class="panel login">
+        <h2>Login</h2>
+        <p>Prototype login flow for routing into dashboard development.</p>
+        <form id="entryLoginForm">
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+          </div>
+          <button class="cta" type="submit">Continue to Dashboard Dev</button>
+        </form>
+      </aside>
+    </section>
+  </main>
+  <div data-include="/shared/partials/footer.html"></div>
+  <script src="/shared/assets/js/partials.js"></script>
+  <script>
+    document.getElementById('entryLoginForm').addEventListener('submit', function (event) {
+      event.preventDefault();
+      window.location.assign('/apps/dashboard/');
+    });
+  </script>
+</body>
+</html>

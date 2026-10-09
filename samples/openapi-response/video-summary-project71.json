@@ -1,0 +1,20 @@
+[
+  {
+    "video_source": "20251008_223757 Fwd.mp4",
+    "videoLocation": "C:\\CAMPA2025\\Dive 4\\FWD\\20251008_223757 Fwd.mp4",
+    "distinct_species_count": "2",
+    "session_count": "1",
+    "dive": "4",
+    "line": "650",
+    "session_type": "Fish"
+  },
+  {
+    "video_source": "22_2.mp4",
+    "videoLocation": "C:\\Users\\eurek\\Desktop\\MERCI 5 Transects\\Dive 22\\22_2.mp4",
+    "distinct_species_count": "3",
+    "session_count": "1",
+    "dive": "4325",
+    "line": "43",
+    "session_type": "Habitat"
+  }
+]

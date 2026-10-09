@@ -1,0 +1,32 @@
+{
+  "source": {
+    "include": [
+      "."
+    ],
+    "includePattern": ".+\\.js$",
+    "excludePattern": "(^|/|\\\\)(node_modules|docs|coverage|dist|build)(/|\\\\)"
+  },
+  "opts": {
+    "destination": "docs/developer",
+    "recurse": true,
+    "readme": "README.md",
+    "template": "docs/developer-theme"
+  },
+  "templates": {
+    "default": {
+      "includeDate": false
+    }
+  },
+  "docdash": {
+    "static": true,
+    "sort": true,
+    "search": true,
+    "collapse": true,
+    "typedefs": true,
+    "removeQuotes": "none",
+    "meta": {
+      "title": "MARP developer documentation",
+      "description": "Generated source documentation for the MARP API and application backend."
+    }
+  }
+}

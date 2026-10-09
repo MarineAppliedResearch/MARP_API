@@ -71,6 +71,9 @@ typings/
 # dotenv environment variables file
 .env
 .env.test
+# Backups too. A dated copy of .env is still credentials.
+.env.*
+!.env.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -81,6 +84,13 @@ typings/
 # Nuxt.js build / generate output
 .nuxt
 dist
+# Except the video player installed from its release (#181): it is the release's own
+# build, committed so a checkout serves it without a network, the way the GUI keeps its copy.
+!/frontend/shared/vendor/marp-video-player/dist/
+
+# Playwright test artifacts (traces, screenshots, HTML report) -- regenerated every E2E run
+test-results/
+playwright-report/
 
 # Gatsby files
 .cache/
@@ -102,3 +112,29 @@ dist
 
 # TernJS port file
 .tern-port
+
+# Runtime species picture storage -- populated by migration from seed-data/species/images/
+storage/
+
+# Playwright artifacts from the frontend app suites
+frontend/apps/*/test-results/
+frontend/apps/*/playwright-report/
+
+frontend/apps/*/demo/
+
+# Screenshots from `npm run shots` in a frontend app -- how whoever is drawing a
+# screen looks at what they drew. Regenerated on demand, never a build input.
+frontend/apps/*/shots/
+
+# --- Harness: machine-specific operational notes ---
+# Hosts, accounts and key paths for one developer. Repository files may say that a
+# credential exists and where it lives, never its value.
+.marp/local/
+
+# Walkthrough recordings. Megabytes of video, regenerated on demand by
+# `npm run demo:narrated`, and never a build input.
+/demo/
+.marp-agent.json
+
+# Isolated agent worktrees. Each is its own checkout of this repository.
+.claude/worktrees/

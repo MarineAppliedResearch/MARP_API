@@ -1,0 +1,361 @@
+/**
+ * One tile.
+ *
+ * A tile has to show three different things at once without confusing them: what
+ * the record already carries, what this reviewer marked but has not committed, and
+ * what the last commit did. Everything here is derived; nothing is stored.
+ */
+import { state, MODES } from '../store.js';
+import {
+  existingState, existingNote, reviewerInitialsFor, pendingTakeBack, borrowedTags,
+  acceptedValue, markKind, MARK_ACCEPT
+} from '../model/modes.js';
+import { currentSpeciesName } from '../model/row.js';
+import { isDestroyed } from '../model/page.js';
+import { MarpBackend } from '../backend.js';
+import { ICON } from './dom.js';
+
+export const markIcon = (mode = state.mode) =>
+  ({ scientific: ICON.flag, training: ICON.exc, delete: ICON.del }[mode]);
+
+export const markClass = (mode = state.mode) =>
+  ({ scientific: 'b-flag', training: 'b-exc', delete: 'b-del' }[mode]);
+
+/**
+ * The other half of the pair, for an **accept** mark (#126 A6).
+ *
+ * The same class and icon the mode's accepted value already wears wherever it appears --
+ * green REVIEWED for scientific, violet PROMOTED for training -- so a pending acceptance
+ * and a recorded one are the same colour, and what separates them is the mark's outline
+ * and the tile not stepping back. Delete has no accepted value and never reaches here.
+ */
+export const acceptClass = (mode = state.mode) =>
+  ({ reviewed: 'b-out', promoted: 'b-pro' }[acceptedValue(mode)] || 'b-out');
+
+export const acceptIcon = (mode = state.mode) =>
+  ({ reviewed: ICON.tick, promoted: ICON.pro }[acceptedValue(mode)] || ICON.tick);
+
+const noteIndicator = (note) => note
+  ? '<span class="note-indicator" title="Has a note" aria-label="Has a note">&#9679;</span>'
+  : '';
+
+const escapeText = (value) => String(value || '').replace(/[&<>"']/g, (character) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[character]));
+
+const initialsOfUsername = (username) => {
+  const parts = String(username || '').split(/[\s._-]+/u).filter(Boolean);
+  if (!parts.length) return null;
+  const firstPart = Array.from(parts[0]);
+  return (parts.length > 1
+    ? (firstPart[0] || '') + (Array.from(parts[parts.length - 1])[0] || '')
+    : firstPart.slice(0, 2).join('')).toUpperCase();
+};
+
+const attribution = (initials) => initials
+  ? `<span class="reviewer-attribution" title="Decision by ${escapeText(initials)}">${escapeText(initials)}</span>`
+  : '';
+
+/** A compact percentage on the image; the full value remains in the tile tooltip. */
+function confidenceChip(row) {
+  if (row.confidence == null || !Number.isFinite(Number(row.confidence))) return '';
+  const percent = Math.max(0, Math.min(100, Math.round(Number(row.confidence) * 100)));
+  const label = String(percent).padStart(2, '0');
+  return `<span class="confidence-chip" title="Confidence ${label}%" aria-label="Confidence ${label}%">${label}</span>`;
+}
+
+/** What the last commit did to this observation. */
+function outcomeBadge(outcome, row, id, initials) {
+  switch (outcome) {
+    case 'flagged':  return `<span class="badge b-flag" data-badge="${id}"
+      title="Flagged${row.flag_reason ? ' — ' + row.flag_reason : ''}">${ICON.flag}FLAGGED${attribution(initials)}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    case 'excluded': return `<span class="badge b-exc" data-badge="${id}"
+      title="Excluded${row.exclusion_reason ? ' — ' + row.exclusion_reason : ''}">${ICON.exc}EXCLUDED${attribution(initials)}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    case 'reverted': return `<span class="badge b-rev">${markIcon()}TAKEN BACK</span>`;
+    case 'deleted':  return `<span class="badge b-gone">${ICON.del}DELETED</span>`;
+    /* b-pro, not b-out: promotion is a training decision and wears training's
+       violet. Reusing the reviewed badge made the two read as the same answer. */
+    case 'promoted': return `<span class="badge b-pro" data-badge="${id}">${ICON.pro}PROMOTED${attribution(initials)}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    case 'reviewed': return `<span class="badge b-out" data-badge="${id}">${ICON.tick}REVIEWED${attribution(initials)}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    default: return '';
+  }
+}
+
+/** What the record already carried before this reviewer touched it. */
+function existingBadge(existing, row, id, initials) {
+  const who = attribution(initials);
+  switch (existing) {
+    case 'flagged':  return `<span class="badge b-flag" data-badge="${id}"
+      title="Flagged${row.flag_reason ? ' — ' + row.flag_reason : ''}">${ICON.flag}FLAGGED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    case 'excluded': return `<span class="badge b-exc" data-badge="${id}">${ICON.exc}EXCLUDED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    case 'promoted': return `<span class="badge b-pro" data-badge="${id}">${ICON.pro}PROMOTED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    default: return `<span class="badge b-out" data-badge="${id}">${ICON.tick}REVIEWED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
+  }
+}
+
+/* What a record tag looks like, whichever mode is reading it. The same class and icon
+   the owning workflow uses for its own badge, so PROMOTED is violet and a flag is amber
+   wherever they appear. */
+const TAG_CLASS = { flagged: 'b-flag', reviewed: 'b-out', promoted: 'b-pro', excluded: 'b-exc' };
+const TAG_ICON = { flagged: ICON.flag, reviewed: ICON.tick, promoted: ICON.pro, excluded: ICON.exc };
+
+/**
+ * The tags other workflows have put on this record (#85).
+ *
+ * Every mode shows them, because whenever somebody looks at an observation they should
+ * see what every workflow has said about it. They are drawn in their own slot below the
+ * primary badge's corner and never in it: `.badge` is what *this* mode says, and letting a
+ * record tag reach that slot would let it outrank a mark, which is how a click on a
+ * committed tile comes to look like it did nothing.
+ *
+ * No workflow label on the face of the tile: FLAGGED and REVIEWED can only be scientific,
+ * PROMOTED and EXCLUDED can only be training, and colour reinforces it. The tooltip names
+ * the workflow, the reason and the person. If that turns out to be unclear in use, the
+ * prefix form (`TRN · EXCLUDED`) is this one template string.
+ */
+function borrowed(row) {
+  const tags = borrowedTags(state.mode, row);
+  if (!tags.length) return '';
+  return `<span class="rtags">${tags.map((t) => {
+    /* The API supplies only derived initials, never the full username or display name. */
+    const title = [`${t.workflow}: ${t.value}`, t.reason,
+      t.reviewerInitials ? `by ${t.reviewerInitials}` : null]
+      .filter(Boolean).join(' — ');
+    return `<span class="rtag ${TAG_CLASS[t.value] || 'b-oth'}" data-rtag="${t.key}"
+      title="${title}">${TAG_ICON[t.value] || ''}${t.value.toUpperCase()}${attribution(t.reviewerInitials)}${noteIndicator(t.note)}</span>`;
+  }).join('')}</span>`;
+}
+
+/**
+ * The top-right corner: the reason or correction chip, and the track length.
+ *
+ * **Both, stacked, in every mode** (#206). This used to be a choice: training mode
+ * showed the track length *or* a reason, and the other modes never showed the length at
+ * all -- so a reviewer deciding whether a detection was scientifically sound had to switch
+ * to training mode to find out whether it had lasted one frame or ninety. Where training
+ * mode did have both to say, it put the count in the reason chip's `title`, which is a
+ * tooltip nobody hovers and a phone cannot show at all.
+ *
+ * The count is a property of the observation rather than a workflow's opinion of it --
+ * the same shape as `confidenceChip(row)`, drawn unconditionally two lines below -- so it
+ * is not conditioned on the mode.
+ *
+ * Returns the container even when only one chip is in it, so the stacking rule lives in
+ * one place in the stylesheet rather than as a second hard-coded offset here.
+ */
+function corner(row, id, { marked, changed, existing, outcome }) {
+  return `<span class="corner">${reasonChip(row, id, { marked, changed, existing, outcome })}
+    <span class="frames" title="${row.keyframe_count} keyframes in this track">${row.keyframe_count}f</span></span>`;
+}
+
+/** The reason, correction or exclusion chip, or nothing. */
+function reasonChip(row, id, { marked, changed, existing, outcome }) {
+  if (state.mode === 'training') {
+    const why = (marked && marked.reason) || (existing === 'excluded' && row.exclusion_reason)
+      || (outcome === 'excluded' && row.exclusion_reason);
+    return why ? `<span class="reason-chip">${why}</span>` : '';
+  }
+
+  if (marked && marked.reason) return `<span class="reason-chip">${marked.reason}</span>`;
+
+  /**
+   * A correction is clickable: it reopens the chooser on the tile it belongs to.
+   *
+   * **Only a correction made in this session** (A12, answered against the recommendation).
+   * `row.previous_comname` is gone: no row carries it, and the field this phase *could*
+   * have drawn instead — `comname` differing from `species_comname` — would have made the
+   * chip appear on every row that has ever been relabelled, including rows nobody in this
+   * session touched. That is a behaviour change rather than a port, and the human's call
+   * was to keep today's behaviour. `state.changed` is therefore the only source.
+   */
+  if (changed) {
+    return `<span class="reason-chip" data-changed="${id}"
+      title="Change the species again">was ${changed.from}</span>`;
+  }
+  if ((existing === 'flagged' || outcome === 'flagged') && row.flag_reason) {
+    return `<span class="reason-chip">${row.flag_reason}</span>`;
+  }
+  if ((existing === 'excluded' || outcome === 'excluded') && row.exclusion_reason) {
+    return `<span class="reason-chip">${row.exclusion_reason}</span>`;
+  }
+  return '';
+}
+
+/**
+ * An unavailable image is still an observation: it keeps its name and stays
+ * markable. It is only excluded from the bulk commit, which is a separate rule.
+ */
+function body(row) {
+  if (row.thumbnail_status === 'ready') {
+    /**
+     * The address comes from the seam (R10, F7, R1).
+     *
+     * This was `./fixtures/thumbs/${row.thumb}` — a URL written above `api/`, and a
+     * *fixture* URL at that, so it could never have drawn a real picture. The row
+     * deliberately carries no `thumb`: "the address is derivable from a key this row
+     * already carries, so no second field repeats a URL 45 times a page", and the
+     * row-shape tripwire asserts its absence. So the seam answers, and against the API
+     * that is a same-origin `<img>` carrying the session cookie — no signed URL, no token
+     * in a query string, and no blob fetch per tile.
+     *
+     * `onerror` is R10's second half: a 404 on a row that reported `ready` degrades to the
+     * no-image state rather than to a broken-image glyph. `storage/` is restored
+     * separately from the database, so a recorded thumbnail whose file is missing is a
+     * real and recoverable state.
+     */
+    return `<img draggable="false" src="${MarpBackend.thumbnailUrl(row)}" alt="${currentSpeciesName(row)}"
+      loading="lazy" onerror="this.closest('.tile').dataset.noimage='1';this.remove()">`;
+  }
+  if (row.thumbnail_status === 'queued') {
+    return `<span class="fallback"><span class="ph-t">PREPARING</span>
+      <span class="phbar"><i></i></span></span>`;
+  }
+  /**
+   * A failure that retrying cannot help says so, and offers no button (R13, F11).
+   *
+   * `thumbnail_permanent` is set from a retry answer, never from a row — the client had
+   * code for this state and no data had ever reached it, so it has never been rendered
+   * until now. The reason is the endpoint's own, e.g. "the observation has no keyframes,
+   * so it has no bounding box and can never have a cropped picture".
+   */
+  if (row.thumbnail_permanent) {
+    return `<span class="fallback"><span style="font-size:20px;color:#c07d85">&#9888;</span>
+      <span class="na-t">NO IMAGE &middot; PERMANENT</span></span>`;
+  }
+  return `<span class="fallback"><span style="font-size:20px;color:#c07d85">&#9888;</span>
+    <span class="na-t">NO IMAGE</span></span>`;
+}
+
+export function tile(row) {
+  const id = row.observation_id;
+  const marked = state.marks.get(id);
+  const detailNote = marked && Object.prototype.hasOwnProperty.call(marked, 'note')
+    ? marked.note : existingNote(state.mode, row);
+  const changed = state.changed.get(id);
+  const outcome = state.outcomes.get(id);
+  const existing = existingState(state.mode, row);
+  const showExisting = existing && !marked && !outcome;
+
+  /* The record still carries a decision, but the reviewer has taken the mark off and
+     nothing has been committed yet. Showing FLAGGED or PROMOTED there would deny the
+     click ever happened; showing nothing would hide a decision that is still on the
+     record. The rule is `model/`'s, because the commit button asks the same question and
+     the two must not disagree about which tiles are taking something back (#135). */
+  const takingBack = pendingTakeBack({
+    mode: state.mode, row, marks: state.marks, takenBack: state.takenBack,
+    outcomes: state.outcomes
+  });
+  /* Stored decisions carry derived initials. A commit made in this browser derives the
+     same presentation from the authenticated principal until the page is re-queried. */
+  const reviewerInitials = reviewerInitialsFor(state.mode, row);
+  const myInitials = initialsOfUsername(state.me && state.me.username);
+  const committedInitials = state.outcomes.has(id) ? myInitials : reviewerInitials;
+  const noImage = row.thumbnail_status !== 'ready';
+  /* The row is gone from the database, so every gesture the store offers is refused
+     (#138). The same rule the refusals ask, so the tile cannot look inert while still
+     acting, or act while looking inert. */
+  const gone = isDestroyed(state.outcomes, id);
+
+  /* Which of the two things this mark says (#126). It fits **inside** the existing
+     precedence rather than beside it: a mark still outranks an outcome, which still
+     outranks the record, and the kind only decides what the mark itself looks like. */
+  const accepted = Boolean(marked) && markKind(marked) === MARK_ACCEPT;
+  /* An accept mark survives its own commit by design (#126), so the tile keeps the mark
+     badge -- and its tooltip went on saying "Not committed yet" after the commit had
+     recorded it. "Committed" means *this sitting*: after a reload there is no accept mark
+     at all, so the tile falls to a badge with no tooltip and nothing false survives. */
+  const acceptRecorded = accepted && outcome === acceptedValue(state.mode);
+  /* One recorded state for both halves of the decision (#167). `outcomes` is authoritative
+     after a commit in this sitting, including a withdrawal; otherwise the row is the
+     record. A pending mark only agrees with that record when it names the same decision.
+     Taking back is always pending, even though the old value still exists underneath it. */
+  const recordedValue = state.outcomes.has(id) ? outcome : existing;
+  const markedValue = marked
+    ? (accepted ? acceptedValue(state.mode) : MODES[state.mode].marks)
+    : null;
+  const recorded = !takingBack
+    && (recordedValue === acceptedValue(state.mode) || recordedValue === MODES[state.mode].marks)
+    && (!marked || (markedValue === recordedValue
+      && (state.outcomes.has(id) || !state.touched.has(id))));
+  /* The one accept mark the reviewer just tried to make and could not (A4). */
+  const refused = state.refused && state.refused.id === id ? state.refused : null;
+
+  const cls = ['tile'];
+  if (row.thumbnail_status === 'queued') cls.push('queued');
+  if (row.thumbnail_status === 'failed') cls.push('failed');
+  if (row.thumbnail_permanent) cls.push('permanent');
+  if (marked) cls.push('marked');
+  if (accepted) cls.push('accept');
+  if (recorded) cls.push('recorded');
+  if (refused) cls.push('refused');
+  if (state.picker && state.picker.id === id) cls.push('active');
+  if (changed) cls.push('changed');
+  /* A mark outranks the last commit. Once the reviewer touches a committed tile
+     they are editing it, and the screen has to show the new intention rather than
+     the old answer — otherwise the click appears to do nothing at all. */
+  if (takingBack) cls.push('out-reverted');
+  else if (outcome && !marked) cls.push('out-' + outcome);
+  else if (showExisting) cls.push('has-' + existing);
+
+  /* The badge is its own control: tapping the tile marks, tapping the badge opens
+     the panel. That keeps marking a single uninterrupted gesture. */
+  const badge = takingBack
+    /* Mint, which is what a take-back looks like here and what the tile's own dashed
+       outline already is -- and the **icon of the decision being withdrawn** (A4), so
+       taking back a promotion does not wear the exclusion mark. Violet for the badge
+       itself was the recorded assumption and is not what landed: it is the colour of
+       PROMOTED, and a violet badge inside a mint outline would say the tile is promoted
+       in the one slot that is saying it is about to stop being.
+       What the next commit does depends on which button (#135 A2), so the tooltip says
+       both rather than the one that used to be true of the sweep alone. */
+      ? `<span class="badge b-rev" title="Taking back ${takingBack} — not committed yet. Commit Marked withdraws it; a page commit accepts it.">${takingBack === acceptedValue(state.mode) ? acceptIcon() : markIcon()}TAKING BACK</span>`
+    /* An accept mark, and **still exactly one `.badge`** (A6). It carries no `data-badge`:
+       the panel chooses a flag or exclusion reason, and an acceptance has nothing in that
+       vocabulary to say, so its badge is not a target rather than opening a panel that
+       cannot describe it. */
+    : accepted ? `<span class="badge ${acceptClass()}" data-badge="${id}"
+        title="${acceptRecorded
+          ? `Recorded as ${acceptedValue(state.mode)} — click to ${MODES[state.mode].verb.toLowerCase()} it instead`
+          : `Not committed yet — the next commit records this one as ${acceptedValue(state.mode)}`}">${acceptIcon()}${String(acceptedValue(state.mode)).toUpperCase()}${recorded ? attribution(committedInitials) : ''}${noteIndicator(detailNote)}</span>`
+    : marked ? `<span class="badge ${markClass()}" data-badge="${id}"
+        title="Open decision details">${markIcon()}${MODES[state.mode].mark.toUpperCase()}${recorded ? attribution(committedInitials) : ''}${noteIndicator(detailNote)}</span>`
+    /* A refused commit is its own state: the annotation moved underneath the page and
+       **nothing was written**, which is a different thing from a commit that did nothing.
+       The mark is kept, so the page can be re-read and committed again (R9). */
+    : outcome === 'conflicted'
+      ? `<span class="badge b-rev" title="The annotation moved while you were looking at it — nothing was written. Re-read the page and commit again.">${ICON.cross}MOVED</span>`
+    : outcome ? outcomeBadge(outcome, row, id, myInitials)
+    : showExisting ? existingBadge(existing, row, id, reviewerInitials)
+    /* A correction is not this mode's business, so it only claims the badge when
+       the mode has nothing of its own to say. It always keeps the corner chip. */
+    : changed ? `<span class="badge b-chg">${ICON.tick}CHANGED</span>`
+    : '';
+
+  /* The **current** species, not the annotator's frozen label (F6). `row.comname` here
+     showed the old animal for ever on any observation that had been corrected, while the
+     species filter -- which is `species_id` -- matched the new one. */
+  const name = currentSpeciesName(row);
+  /* Why the clicks do nothing, which is the reviewer's actual question. DELETED states
+     the fact; this states the consequence (#138). */
+  const tip = gone
+    ? `${name} · removed from the database — nothing more can be recorded about it`
+    : row.thumbnail_permanent
+      ? `${name} · no image, and retrying cannot help${row.thumbnail_reason ? ' — ' + row.thumbnail_reason : ''}`
+      : noImage
+        ? `${name} · no image — markable, but excluded from the page commit`
+        : `${name} · ${row.confidence} · ${row.dive} line ${row.line} · ${row.tc}`;
+
+  /* Its own slot, never the badge's (A4, A6). A refusal is an acknowledgement that a
+     gesture did not take, not a state the tile is in, and letting it reach `.badge` is
+     how a record tag comes to outrank a mark. It fades on its own. */
+  const refusal = refused
+    ? `<span class="refusal" data-refused="${id}">${ICON.cross}${refused.reason}</span>`
+    : '';
+
+  /* `aria-disabled`, never `disabled`: the tile stays a real button that a real click
+     still reaches, so "the click does nothing" is a thing the render tier can observe
+     rather than something the browser swallows before the app sees it. */
+  return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}"${gone ? ' aria-disabled="true"' : ''}>
+      ${body(row)}${badge}${corner(row, id, { marked, changed, existing, outcome })}
+      ${refusal}${borrowed(row)}${confidenceChip(row)}<span class="cap">${name}</span></button>`;
+}

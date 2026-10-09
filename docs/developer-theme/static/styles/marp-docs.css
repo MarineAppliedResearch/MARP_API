@@ -1,0 +1,626 @@
+/* ==========================================================================
+   MARP developer documentation
+   --------------------------------------------------------------------------
+   Everything MARP changes about the generated site is in this one file, so the
+   forked template stays a readable diff against docdash 2.0.2. It is linked
+   after `jsdoc.css` and `prettify.css` and wins on document order, which is why
+   almost nothing here needs a specificity fight or an `!important`.
+
+   The palette below is COPIED from `frontend/shared/assets/css/tokens.css`, not
+   linked to it. This site is built as files and has to work opened from disk,
+   so there is no server to resolve `/assets/...` against. A copy drifts, so it
+   is checked instead of trusted: `tests/docs-branding.test.js` fails when a
+   value here stops matching the one in `tokens.css`.
+
+   That check can only see this block, so there is no hex anywhere below it.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  --navy-1000: #01050d;
+  --navy-950: #020814;
+  --navy-900: #03101f;
+  --navy-850: #051828;
+  --navy-800: #07233a;
+
+  --cyan-300: #64f6f2;
+  --cyan-400: #22d7dc;
+  --cyan-500: #05b9c8;
+  --blue-400: #2d9cff;
+  --green-300: #c7ff62;
+  --green-400: #a7ec35;
+  --mint-300: #7ff0c0;
+  --violet-300: #c3b2f2;
+  --amber-300: #f6c453;
+  --red-400: #e0616b;
+  --grey-400: #8b93a0;
+
+  --white: #f7fbff;
+  --text: #c7d4dd;
+  --muted: #8198a8;
+  --faint: #587181;
+
+  --border: rgba(42, 214, 220, 0.28);
+  --border-strong: rgba(42, 214, 220, 0.52);
+  --line: rgba(42, 214, 220, 0.10);
+
+  --body-font: Inter, Aptos, "Segoe UI", Helvetica, Arial, sans-serif;
+  --display-font: "Arial Narrow", "Aptos Narrow", "Roboto Condensed", sans-serif;
+
+  /* Local. The bar height is referenced by the nav, the main column and the
+     mobile menu button, all of which have to agree with it. The scrim is the
+     one colour tokens.css cannot carry: navy-1000 at an alpha, which CSS has
+     no way to derive from a hex custom property. */
+  --bar-height: 52px;
+  --mono-font: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+  --scrim: rgba(1, 5, 13, 0.68);
+}
+
+/* --------------------------------------------------------------------------
+   1. The page
+   -------------------------------------------------------------------------- */
+
+html,
+body {
+  background: var(--navy-950);
+}
+
+body {
+  color: var(--text);
+  font-family: var(--body-font);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* docdash paints the article column white. It is the largest single surface on
+   the page, so it has to go before anything else reads as dark. */
+section,
+#main {
+  background-color: transparent;
+}
+
+#main {
+  margin-top: var(--bar-height);
+  padding-bottom: 64px;
+}
+
+::selection {
+  background: var(--cyan-500);
+  color: var(--navy-1000);
+}
+
+/* --------------------------------------------------------------------------
+   2. The MARP bar
+   --------------------------------------------------------------------------
+   Rendered in `layout.tmpl` rather than built by script, so a page arrived at
+   from a deep link carries the product name in its first paint. */
+
+.marp-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: var(--bar-height);
+  padding: 0 20px;
+  background: var(--navy-1000);
+  border-bottom: 1px solid var(--border);
+}
+
+.marp-bar__brand {
+  display: flex;
+  align-items: center;
+  border: 0;
+}
+
+.marp-bar__brand img {
+  display: block;
+  height: 26px;
+  width: auto;
+}
+
+.marp-bar__here {
+  font-family: var(--display-font);
+  font-size: 15px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
+.marp-bar__links {
+  display: flex;
+  gap: 22px;
+  margin-left: auto;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.marp-bar__links a {
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  padding-bottom: 2px;
+}
+
+.marp-bar__links a:hover,
+.marp-bar__links a:focus-visible {
+  color: var(--cyan-300);
+  border-bottom-color: var(--border-strong);
+}
+
+/* --------------------------------------------------------------------------
+   3. Type
+   -------------------------------------------------------------------------- */
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--white);
+  font-family: var(--display-font);
+  letter-spacing: 0.01em;
+}
+
+h1,
+h1.page-title {
+  font-size: 2.2rem;
+  letter-spacing: 0.02em;
+  color: var(--white);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
+}
+
+h2 {
+  font-size: 1.5rem;
+}
+
+h3 {
+  font-size: 1.25rem;
+  color: var(--cyan-300);
+}
+
+.usertext h1, .usertext h2, .usertext h3,
+.usertext h4, .usertext h5, .usertext h6 {
+  font-family: var(--display-font);
+  color: var(--white);
+}
+
+p, ul, ol, blockquote {
+  color: var(--text);
+}
+
+blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 16px;
+  color: var(--muted);
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+a,
+article a,
+.usertext a {
+  color: var(--cyan-300);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+}
+
+a:hover,
+a:active,
+article a:hover,
+article a:active {
+  color: var(--cyan-400);
+  border-bottom-color: var(--border-strong);
+}
+
+a:focus-visible {
+  outline: 2px solid var(--cyan-400);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   4. The navigation
+   -------------------------------------------------------------------------- */
+
+nav {
+  top: var(--bar-height);
+  height: calc(100% - var(--bar-height));
+  background: var(--navy-900);
+  border-right: 1px solid var(--line);
+  padding-bottom: 40px;
+  scrollbar-color: var(--navy-800) var(--navy-900);
+  scrollbar-width: thin;
+}
+
+nav #nav-search {
+  background: var(--navy-850);
+  border: 1px solid var(--border);
+  color: var(--white);
+  font-family: var(--body-font);
+}
+
+nav #nav-search::placeholder {
+  color: var(--faint);
+}
+
+nav #nav-search:focus {
+  outline: 0;
+  border-color: var(--border-strong);
+}
+
+/* The group headings down the sidebar: Modules, Classes, Global. Small, spaced
+   and quiet, so the member names under them are what the eye lands on. */
+nav h2,
+nav h3 {
+  font-family: var(--display-font);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+nav h3.collapsed_header {
+  color: var(--muted);
+}
+
+nav h3.collapsed_header:hover {
+  color: var(--cyan-300);
+}
+
+/* `nav > ul > li > a` is in the list because docdash declares the top-level
+   entries at that exact specificity, in a dark plum that is all but invisible
+   on a dark ground. A shorter selector loses to it silently. */
+nav ul a,
+nav ul a:active,
+nav > ul > li > a {
+  color: var(--text);
+  border-bottom: 0;
+}
+
+/* The indent rail down the nested entries is docdash's, set on the link rather
+   than on the list, and it is a near-white hairline. */
+nav ul ul a,
+nav ul ul a:active {
+  color: var(--muted);
+  border-bottom: 0;
+  border-left: 1px solid var(--line);
+}
+
+nav a:hover,
+nav a:active {
+  color: var(--cyan-300);
+}
+
+/* The two `!important` declarations in this file, and both are matching one.
+   docdash sets the Home link and the ancestor breadcrumb with `!important`, so
+   nothing weaker reaches them -- Home stayed plum on navy through three passes
+   of this stylesheet before that was noticed. */
+nav > h2 > a {
+  color: var(--cyan-300) !important;
+}
+
+.ancestors a {
+  color: var(--faint) !important;
+}
+
+/* --------------------------------------------------------------------------
+   5. A documented member
+   --------------------------------------------------------------------------
+   docdash banners each signature in plum on white. The signature is the thing
+   somebody scanning a long page is looking for, so it keeps the emphasis and
+   changes colour: a raised panel with a cyan edge down its left. */
+
+h4.name {
+  background: var(--navy-800);
+  color: var(--white);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--cyan-500);
+  border-radius: 3px;
+  box-shadow: none;
+  font-family: var(--mono-font);
+  font-size: 15px;
+  padding: 10px 14px;
+}
+
+h4.name a,
+h4.name a:hover {
+  color: var(--cyan-300);
+  border-bottom: 0;
+}
+
+.signature,
+.signature-attributes {
+  color: var(--muted);
+}
+
+.type-signature {
+  color: var(--mint-300);
+}
+
+.ancestors,
+.ancestors a,
+.ancestors a:active {
+  color: var(--faint);
+  border-bottom: 0;
+}
+
+.important {
+  color: var(--red-400);
+}
+
+.yes-def {
+  color: var(--amber-300);
+}
+
+.disabled {
+  color: var(--grey-400);
+}
+
+/* The metadata block under a member: Source, Since, Author. */
+.details {
+  border-left: 2px solid var(--line);
+  margin-left: 0;
+  padding-left: 14px;
+}
+
+.details dt {
+  color: var(--faint);
+  font-family: var(--display-font);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-left: 0;
+}
+
+.details dd {
+  color: var(--text);
+}
+
+.description,
+.class-description {
+  color: var(--text);
+}
+
+.code-caption {
+  color: var(--muted);
+  font-style: normal;
+}
+
+/* --------------------------------------------------------------------------
+   6. Parameter and property tables
+   -------------------------------------------------------------------------- */
+
+table {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  box-shadow: none;
+  background: var(--navy-900);
+}
+
+td, th {
+  border-color: var(--line);
+  color: var(--text);
+}
+
+thead tr {
+  background-color: var(--navy-850);
+  border-bottom: 1px solid var(--border);
+  color: var(--white);
+}
+
+th {
+  font-family: var(--display-font);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.params td,
+.params .name,
+.props .name,
+.name code {
+  color: var(--white);
+  font-family: var(--mono-font);
+}
+
+.params td {
+  border-top: 1px solid var(--line);
+}
+
+.params .type,
+span.param-type,
+.params td .param-type,
+.param-type dd {
+  color: var(--violet-300);
+}
+
+.params code,
+.props code {
+  color: var(--green-300);
+}
+
+/* --------------------------------------------------------------------------
+   7. Code
+   --------------------------------------------------------------------------
+   prettify already ships a dark source view. What it does not have is the MARP
+   palette, and its lisp and variable rules are still black and crimson on a
+   near-black ground, which is unreadable rather than merely off-brand. */
+
+tt, code, kbd, samp, pre {
+  font-family: var(--mono-font);
+}
+
+tt, code, kbd, samp {
+  background: var(--navy-850);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--green-300);
+  padding: 1px 5px;
+}
+
+pre {
+  background: var(--navy-1000);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+pre code,
+.prettyprint code,
+.prettyprint > code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.prettyprint,
+.prettyprint.source,
+.prettyprint code {
+  background-color: var(--navy-1000);
+  color: var(--text);
+}
+
+.prettyprint.linenums li {
+  border-left: 3px solid transparent;
+}
+
+.prettyprint.linenums li.selected,
+.prettyprint.linenums li.selected * {
+  background-color: var(--navy-800);
+}
+
+.prettyprint.linenums li.selected {
+  border-left-color: var(--cyan-500);
+}
+
+.prettyprint.linenums ol {
+  color: var(--faint);
+}
+
+.pln, .pun, .atv { color: var(--text); }
+.str { color: var(--green-300); }
+.kwd, .lit, .atn { color: var(--cyan-300); }
+.com { color: var(--faint); font-style: italic; }
+.typ, .tag { color: var(--violet-300); }
+.dec { color: var(--amber-300); }
+.var { color: var(--mint-300); }
+.fun { color: var(--blue-400); }
+.opn, .clo { color: var(--muted); }
+
+/* --------------------------------------------------------------------------
+   8. The footer
+   -------------------------------------------------------------------------- */
+
+footer {
+  color: var(--faint);
+  font-style: normal;
+  font-size: 12px;
+  border-top: 1px solid var(--line);
+  padding: 20px 30px;
+}
+
+footer strong {
+  font-family: var(--display-font);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------------------
+   9. The mobile menu
+   --------------------------------------------------------------------------
+   docdash draws the button as three black bars fixed to the top right of the
+   document, which lands on top of the MARP bar and is invisible against it. It
+   moves into the bar and takes the foreground colour of the bar. */
+
+.navicon,
+.navicon:before,
+.navicon:after {
+  background: var(--muted);
+}
+
+.nav-trigger:checked + label.x .navicon {
+  background: transparent;
+}
+
+.overlay {
+  background: var(--scrim);
+}
+
+@media only screen and (max-width: 680px) {
+  .marp-bar {
+    gap: 12px;
+    padding: 0 14px;
+  }
+
+  /* Two of the three bar elements give way before the logo does. The links are
+     reachable from the front page; the label is only ever confirmation. */
+  .marp-bar__here,
+  .marp-bar__links {
+    display: none;
+  }
+
+  /* docdash slides the drawer in from `top: 0`, which would put it over the
+     bar. It starts below the bar instead, so the logo stays visible with the
+     menu open and the overlay has something to close back to. */
+  nav {
+    top: var(--bar-height);
+    height: calc(100% - var(--bar-height));
+  }
+
+  .navicon-button {
+    top: 0;
+    right: 4px;
+    padding: 1.3rem 1rem;
+    z-index: 6;
+  }
+
+  #main {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  footer {
+    padding: 20px 16px;
+  }
+
+  /* The front page is the README, and a markdown table is as wide as its
+     widest row with no wrapper to scroll inside -- so three of them were
+     dragging the whole document 165px sideways at 390px. Making the table
+     itself the scroller is the only fix available without changing what jsdoc
+     emits from the markdown. */
+  #main table,
+  #main pre {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  /* An inline `code` span holding one long unbreakable token was the last 11px.
+     Breaking mid-token is ugly; a page that scrolls sideways is worse. */
+  #main code {
+    overflow-wrap: anywhere;
+  }
+}
+
+/* The front page is the repository README, which embeds images at widths meant
+   for the GitHub column. Nothing here may push the document sideways. */
+#main img {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  nav,
+  .navicon,
+  .navicon:before,
+  .navicon:after,
+  .navicon-button {
+    transition: none;
+  }
+}

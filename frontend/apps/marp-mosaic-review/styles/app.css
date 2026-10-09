@@ -1,0 +1,1008 @@
+/* ==========================================================================
+   MARP Mosaic Review
+   Palette comes from ../../../shared/assets/css/tokens.css — never restate it here.
+   ========================================================================== */
+
+:root {
+  /* Mode hue. Set on <body data-mode> so the chrome recolours and the image
+     field never does — see the mode legibility requirement in #68. */
+  --mode: var(--cyan-500);
+  --mode-line: var(--border);
+  --chrome: var(--navy-850);
+  --chrome-rail: var(--navy-900);
+
+  /* The image field is a quiet zone: flat, uniform, chromatically restrained. */
+  --field: #17191c;
+  --tile-bd: #2a2d32;
+
+  /* What this mode's commit does, and what a page it has already been run on looks
+     like afterwards. It follows the mode, because the three commits are not the same
+     act: scientific review and training review are independent decisions about the
+     same observation, and they were wearing the same green — so a promoted track and
+     a reviewed observation were indistinguishable at a glance. Training takes the
+     violet it already uses as its mode hue.
+
+     This was called `--accept` and was green everywhere, which made a page committed
+     in Delete Mode read as accepted when the commit had destroyed it — #93. Delete has
+     no accepted state, so the family is named for the commit rather than for
+     acceptance, and Delete takes the red it already wears elsewhere. */
+  --commit: var(--green-400);
+  --commit-pale: var(--green-300);
+  --commit-soft: rgba(167, 236, 53, .55);
+  --commit-line: rgba(167, 236, 53, .42);
+  --commit-ink: #0d1a02;
+}
+body[data-mode="training"] {
+  --commit: var(--violet-400);
+  --commit-pale: var(--violet-300);
+  --commit-soft: rgba(155, 124, 240, .55);
+  --commit-line: rgba(155, 124, 240, .42);
+  --commit-ink: #150c2b;
+  --mode: var(--violet-500);
+  --mode-line: rgba(155, 124, 240, .30);
+  --chrome: #17102b;
+  --chrome-rail: #120c22;
+}
+body[data-mode="delete"] {
+  /* Red, because a Delete commit destroys — the same red-500/red-400 pair the mode
+     already uses for its note, a marked tile's outline and its commit button. */
+  --commit: var(--red-500);
+  --commit-pale: var(--red-400);
+  --commit-soft: rgba(224, 97, 107, .55);
+  --commit-line: rgba(224, 97, 107, .42);
+  --commit-ink: var(--white);
+  --mode: var(--red-500);
+  --mode-line: rgba(224, 97, 107, .34);
+  --chrome: #1d0d12;
+  --chrome-rail: #170a0e;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+body {
+  margin: 0;
+  position: fixed; inset: 0;        /* mobile browsers otherwise scroll the page itself */
+  background: var(--navy-1000);
+  color: var(--text);
+  font-family: var(--body-font);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 2px; }
+
+/* 100dvh tracks the visible viewport as mobile browser chrome shows and hides;
+   100vh does not, which is what let the footer scroll away. */
+/* The four row heights are named because #151 has to remove two of them in either layout,
+   and a second copy of `44px 30px ... 46px` in the phone query is a copy that drifts. */
+.app { --hdr-h: 44px; --sub-h: 30px; --foot-h: 46px;
+       display: grid; grid-template-rows: var(--hdr-h) var(--sub-h) minmax(0, 1fr) var(--foot-h);
+       height: 100vh; height: 100dvh;
+       /* a grid item's automatic minimum is its content, so without these the
+          header's controls make the whole app wider than the screen */
+       width: 100%; max-width: 100vw; overflow: hidden; }
+.app > * { min-width: 0; }
+/* The top chrome, out of the way (#151 R1). `display: none` rather than a zero-height
+   track: a 0px `.hdr` with `overflow: hidden` still answers `isVisible` and still takes
+   the tab key, so a reviewer could land focus on a control nobody can see. With both gone
+   the remaining two children auto-place into the two tracks below. */
+body.top-hidden .app { grid-template-rows: minmax(0, 1fr) var(--foot-h); }
+body.top-hidden .sub { display: none; }
+/* Keep the account reachable when a short landscape phone starts with its top chrome
+   hidden. The zero-size fixed header stays out of the grid while its account sits in the
+   screen corner; every other header control remains part of the chrome being hidden. */
+body.top-hidden .hdr {
+  position: fixed;
+  inset: 8px 8px auto auto;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  display: block;
+}
+body.top-hidden .hdr > :not(.right) { display: none; }
+body.top-hidden .hdr .right { position: absolute; top: 0; right: 0; }
+.sub, .foot { overflow: hidden; }
+.body { min-width: 0; }
+.field { min-width: 0; }
+
+/* ---------------------------------------------------------------- header */
+.hdr { display: flex; align-items: center; gap: 11px; padding: 0 12px;
+       position: relative; z-index: 30; overflow: visible;
+       background: var(--chrome); border-bottom: 1px solid var(--mode-line); }
+.hdr img { height: 26px; width: auto; }
+.hdr .title { font-size: 13px; color: var(--white); font-weight: 600; }
+.seg { display: flex; margin-left: 16px; border: 1px solid var(--mode-line);
+       border-radius: 5px; overflow: hidden; }
+.seg button { padding: 4px 11px; font-size: 11.5px; color: var(--muted);
+              background: none; border: 0; border-right: 1px solid var(--mode-line); }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--mode); color: #02121a; font-weight: 700; }
+body[data-mode="training"] .seg button.on,
+body[data-mode="delete"]   .seg button.on { color: #fff; }
+.seg button.danger { color: #e9808a; }
+.mode-note { margin-left: 11px; font-size: 10.5px; font-weight: 500; color: var(--muted); }
+body[data-mode="delete"] .mode-note { color: var(--red-400); font-weight: 600; }
+.hdr .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+/* The avatar is the shared component's now (#151); all this app states is how big it is
+   here, because an operator console at 11px base wants a smaller one than a landing page.
+   The rules live in ../../shared/assets/css/account-menu.css. */
+.hdr .account { --account-size: 23px; }
+
+/* ---------------------------------------------------------------- sub bar */
+.sub { display: flex; align-items: center; gap: 16px; padding: 0 12px;
+       background: var(--chrome-rail); border-bottom: 1px solid var(--line);
+       font-size: 11.5px; font-weight: 500; }
+.sub b { color: var(--white); font-weight: 700; }
+.sub .sep { color: #2b3d4d; }
+.sortbox { margin-left: auto; border: 1px solid var(--mode-line); border-radius: 4px;
+           padding: 3px 9px; font-size: 11px; background: none; }
+/* Progress reads along the row now rather than down the rail (#91). What was a top border
+   over a stacked block is the `.sep` in front of it, which is how this row already divides
+   itself -- and which the phone layout already knows to drop. */
+.prog { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+/* Fixed width, never fluid. The bar had no width of its own in the rail, where a block
+   filling its column is what you want; in a row it would take whatever is left. And it
+   cannot be told to flex either way: `.sub` scrolls sideways on a phone rather than
+   fitting, so "what is left" is not a width -- it would grow without limit there and
+   collapse to nothing on the desktop row it was meant to share. */
+.bar { width: 116px; flex: none; height: 4px; border-radius: 2px;
+       background: var(--navy-800); overflow: hidden; }
+.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan-500), var(--commit)); }
+.small { font-size: 9.5px; color: var(--faint); }
+/* This row is 30px with `overflow: hidden`, so what runs past the right edge is clipped
+   and not scrolled -- and #sortBtn is what sits there. Carrying progress as well, the row
+   wants about 1100px once the sort label names two terms, so below that progress keeps
+   the bar and the percentage and drops the wording. Same trade the marked count already
+   makes on a phone, made earlier because the sort must stay reachable. */
+/* The progress block used to end the rail and carried its own top border, which was the
+   only thing keeping the last status box off the fold. With it gone to `.sub` (#91) the
+   pad has to be stated -- but only where the rail is a column. On a phone the rail is an
+   overlay with its own metrics, and padding it there moved the confidence control enough
+   to fail L4, so this stops at the phone breakpoint. */
+@media (min-width: 761px) { .rail-body { padding-bottom: 10px; } }
+
+@media (max-width: 1100px) {
+  .prog-word, .prog .small { display: none; }
+  .bar { width: 74px; }
+}
+
+/* ---------------------------------------------------------------- rail */
+.body { display: grid; grid-template-columns: 158px 1fr; min-height: 0; }
+body.rail-collapsed .body { grid-template-columns: 34px 1fr; }
+.rail { background: var(--chrome-rail); border-right: 1px solid var(--line);
+        padding: 10px; overflow: hidden;
+        /* The head stays put and the filters scroll under it. Without this the rail was
+           `overflow: hidden` over content taller than it, so at a 900px desktop the
+           status filters were drawn below the fold and could not be reached at all --
+           the sharpest form of #81 L7. The progress bar was the other casualty; it now
+           lives in `.sub`, which never scrolls out from under anything (#91). */
+        display: flex; flex-direction: column; }
+.rail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin;
+             /* Reserve it, so appearing does not shuffle the controls sideways. */
+             scrollbar-gutter: stable; }
+body.rail-collapsed .rail { padding: 8px 0; display: flex; flex-direction: column;
+                            align-items: center; gap: 9px; }
+body.rail-collapsed .rail-body { display: none; }
+.railhead { display: flex; align-items: center; justify-content: space-between; margin: -2px 0 8px; }
+.railhead .t { font-size: 9px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+body.rail-collapsed .railhead { display: block; margin: 0; }
+body.rail-collapsed .railhead .t { display: none; }
+/* An icon, not a word. It sits at the very top of the rail where #81 L6 wants it, and at
+   twenty pixels square it costs the same as the collapse button beside it -- "Reset" in
+   uppercase took twice the width for a control that is pressed rarely. */
+.railreset { width: 20px; height: 20px; display: grid; place-items: center;
+             border: 1px solid var(--mode-line); border-radius: 4px; background: none;
+             color: var(--muted); font-size: 12px; line-height: 1;
+             padding: 0; margin-left: auto; margin-right: 6px; }
+.railreset:hover { color: var(--cyan-300); border-color: var(--cyan-500); }
+body.rail-collapsed .railreset { display: none; }
+.railbtn { width: 20px; height: 20px; display: grid; place-items: center;
+           border: 1px solid var(--mode-line); border-radius: 4px; color: var(--cyan-300);
+           font-size: 10px; line-height: 1; background: none; }
+/* Same size and the same idiom as the rail's collapse, because it is the same gesture
+   pointed at the other piece of chrome -- and it sits beside it so there is one corner
+   where the screen is given back rather than two. It exists only where the screen is
+   short or narrow: on a desktop there is nothing here worth reclaiming (R6).
+
+   **`max-height`, not only `max-width`.** A phone in landscape is 915px wide, so the
+   narrow query never fires there -- and landscape is the case #151 was reported from. */
+.chromebtn { display: none; width: 20px; height: 20px; place-items: center;
+             border: 1px solid var(--mode-line); border-radius: 4px; color: var(--cyan-300);
+             font-size: 10px; line-height: 1; background: none; padding: 0; margin-right: 6px; }
+/* The glyph points at what the press will do: up to take the chrome away, down to bring
+   it back. In CSS rather than JavaScript so it cannot disagree with the class it reads. */
+.chromebtn::before { content: "\25B2"; }
+body.top-hidden .chromebtn::before { content: "\25BC"; }
+@media (max-width: 760px), (max-height: 600px) { .chromebtn { display: grid; } }
+/* In the collapsed strip the head is a block and the buttons stack, so the gap that
+   separates them in a row has to become a vertical one. */
+body.rail-collapsed .chromebtn { margin: 0 0 6px; }
+.vlabel { display: none; writing-mode: vertical-rl; font-size: 9px; letter-spacing: .11em;
+          text-transform: uppercase; color: var(--muted); }
+.fcount { display: none; min-width: 19px; height: 19px; place-items: center; border-radius: 10px;
+          background: var(--cyan-500); color: #02121a; font-size: 10px; font-weight: 700; }
+body.rail-collapsed .vlabel { display: block; }
+body.rail-collapsed .fcount { display: grid; }
+.lbl { font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+       color: var(--cyan-300); margin: 11px 0 4px; font-weight: 700; }
+.lbl:first-child { margin-top: 0; }
+.sel { display: flex; align-items: center; justify-content: space-between; gap: 4px;
+       background: var(--navy-850); border: 1px solid var(--mode-line); border-radius: 4px;
+       padding: 5px 7px; font-size: 11px; font-weight: 600; white-space: nowrap;
+       overflow: hidden; width: 100%; }
+.sel span:last-child { color: var(--faint); font-size: 9px; }
+.chk { display: flex; align-items: center; gap: 7px; padding: 3.5px 0; font-size: 11px; font-weight: 500;
+       background: none; border: 0; width: 100%; text-align: left; }
+.chk .n { margin-left: auto; color: var(--muted); font-size: 10px; }
+.box { width: 11px; height: 11px; border-radius: 2px; border: 1.5px solid var(--faint); flex: none; }
+.box.on { background: var(--cyan-400); border-color: var(--cyan-400); position: relative; }
+.box.on::after { content: ""; position: absolute; left: 2.8px; top: .2px; width: 3.4px; height: 6.6px;
+                 border: solid #02121a; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+/* ------------------------------------------------- confidence: one track, two handles */
+/* Two stacked sliders said the same thing in twice the height, and read as two
+   independent numbers rather than as one range. #81 L4. */
+.span-val { color: var(--cyan-300); font-weight: 700; margin-left: 4px; }
+.dual { position: relative; height: 20px; margin: 1px 0 2px; }
+.dual__track { position: absolute; left: 6px; right: 6px; top: 8px; height: 4px;
+               border-radius: 2px; background: var(--navy-800); }
+/* The two ends come from ui/rail.js as percentages, so nothing here has to measure. */
+.dual__fill { position: absolute; top: 0; bottom: 0; border-radius: 2px;
+              left: var(--from, 0%); right: calc(100% - var(--to, 100%));
+              background: var(--cyan-500); }
+.dual input[type="range"] {
+  position: absolute; inset: 0; width: 100%; height: 20px; margin: 0;
+  -webkit-appearance: none; appearance: none; background: none;
+  /* Both inputs cover the whole track, so only their thumbs may take the pointer --
+     otherwise the one drawn on top swallows every drag meant for the other. */
+  pointer-events: none;
+}
+.dual input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; pointer-events: auto;
+  width: 12px; height: 12px; border-radius: 50%; cursor: grab;
+  background: var(--cyan-300); border: 2px solid var(--chrome-rail);
+}
+.dual input[type="range"]::-moz-range-thumb {
+  pointer-events: auto; box-sizing: border-box;
+  width: 12px; height: 12px; border-radius: 50%; cursor: grab;
+  background: var(--cyan-300); border: 2px solid var(--chrome-rail);
+}
+/* The input itself is invisible, so the focus ring has to land on the thumb. */
+.dual input[type="range"]:focus-visible { outline: none; }
+.dual input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--cyan-300); outline-offset: 2px;
+}
+.dual input[type="range"]:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--cyan-300); outline-offset: 2px;
+}
+
+/* ------------------------------------------------- the two-ended filters, in a popover */
+.span { display: flex; align-items: center; gap: 6px; }
+.span .dash { color: var(--faint); }
+.span input { height: 26px; padding: 0 6px; border-radius: 4px; color: var(--white);
+              background: var(--navy-1000); border: 1px solid var(--border);
+              font: inherit; font-size: 12px; }
+/* 24-hour text rather than a native time input, which renders from the browser locale
+   and cannot be told otherwise -- #81 B3. Five characters, so it needs very little. */
+.span input.clock { width: 58px; text-align: center; letter-spacing: .04em; }
+.mnote { margin-top: 6px; font-size: 9.5px; color: var(--faint); line-height: 1.45; }
+/* Sits under the date button in the rail, and must stay visible with the popover shut:
+   a filter that silently omits looks complete and is not. */
+.span-note { margin-top: 4px; font-size: 9.5px; color: var(--amber-300); line-height: 1.45; }
+
+/* ---------------------------------------------------------------- field */
+.field { background: var(--field); padding: 4px; position: relative;
+         overflow-y: auto; overflow-x: hidden;
+         /* reserve the scrollbar always: without this the bar appearing narrows the
+            field, which shrinks the tiles, which fits another row, which overflows
+            again — the grid never settles */
+         scrollbar-gutter: stable;
+         overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+/* the mode tints the chrome around the field; the field itself never changes */
+.field { border-left: 2px solid var(--mode); box-shadow: inset 14px 0 26px -18px var(--mode); }
+/* CSS decides the column count from the space it actually has, so the grid can
+   never be wider than its container. JS only reads back how many fit. */
+.grid { display: grid; gap: 2px;
+        grid-template-columns: repeat(auto-fill, minmax(var(--min-tile, 132px), 1fr)); }
+.grid.drag-selecting, .grid.drag-selecting * { user-select: none; }
+.drag-select-band { position: absolute; z-index: 8; pointer-events: none;
+                    border: 2px solid var(--amber-300);
+                    background: color-mix(in srgb, var(--amber-300) 14%, transparent); }
+.drag-select-band[data-kind="accept"] { border-color: var(--commit);
+                                         background: color-mix(in srgb, var(--commit) 14%, transparent); }
+.tile.drag-preview { z-index: 7; box-shadow: inset 0 0 0 4px var(--amber-300); }
+.grid.drag-accept .tile.drag-preview { box-shadow: inset 0 0 0 4px var(--commit); }
+.touch-selection-choice { position: fixed; inset: 0; z-index: 100;
+                          display: grid; align-items: end; justify-items: center;
+                          background: rgba(0, 0, 0, .35); padding: 12px;
+                          padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.touch-selection-choice section { width: min(100%, 420px); padding: 14px;
+                                  background: var(--field); border: 1px solid var(--mode);
+                                  border-radius: 8px; box-shadow: 0 8px 30px rgba(0, 0, 0, .5); }
+.touch-selection-choice p { margin: 0 0 12px; text-align: center; }
+.touch-selection-choice section > div { display: flex; gap: 8px; flex-wrap: wrap;
+                                       justify-content: center; }
+.tile, .tile img { -webkit-touch-callout: none; }
+
+/* `touch-action: manipulation` turns off the browser's own double-tap-to-zoom, which is
+   what a double tap on a tile would otherwise do -- and #126 gives that gesture a job. It
+   also removes the legacy 300 ms wait before a tap becomes a click. */
+.tile { position: relative; aspect-ratio: 1; border-radius: 2px; overflow: hidden;
+        background: #101215; outline: 1px solid var(--tile-bd); outline-offset: -1px;
+        padding: 0; border: 0; display: block; touch-action: manipulation; user-select: none; }
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 28px 3.5px 5px;
+       background: transparent;
+       -webkit-backdrop-filter: none;
+       backdrop-filter: none;
+       border-top: 1px solid rgba(255, 255, 255, .16); font-size: 11.5px; color: #f7fafc;
+       font-weight: 600; letter-spacing: .005em;
+       line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+       text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, .65); }
+.badge { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 3px;
+         padding: 1.5px 5px 1.5px 4px; border-radius: 2px; font-size: 8.5px; font-weight: 700; }
+.badge svg { width: 8px; height: 8px; display: block; flex: none; }
+.note-indicator { color: currentColor; font-size: 7px; line-height: 1; margin-left: 1px; }
+.reviewer-attribution { width: 12px; height: 12px; margin-left: 1px; flex: none;
+                        display: inline-flex; align-items: center; justify-content: center;
+                        border: 1px solid currentColor; border-radius: 50%;
+                        font-size: 7px; line-height: 1; font-weight: 900; opacity: .9;
+                        white-space: nowrap; }
+/* The reason and the track length used to share one absolute position and so could never
+   both be shown (#206). The corner is the positioned thing now and the chips stack inside
+   it, which keeps "how far down the second chip goes" a consequence of the first chip's
+   own height rather than a number written here that a padding change would falsify. */
+.corner { position: absolute; top: 4px; right: 4px; z-index: 3;
+          display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+          max-width: calc(100% - 8px); }
+.frames { background: rgba(8, 9, 11, .30);
+          color: #c2cad3; font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600; }
+.reason-chip { background: rgba(8, 9, 11, .34);
+               border: 1px solid rgba(246, 196, 83, .55); color: var(--amber-300);
+               font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600;
+               max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.confidence-chip { position: absolute; right: 4px; bottom: 3px; z-index: 4;
+                   min-width: 18px; padding: 1.5px 4px; border-radius: 2px;
+                   background: rgba(8, 9, 11, .30); color: #f7fafc;
+                   font-size: 8px; line-height: 1.2; font-weight: 800;
+                   text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
+
+/* state treatments — always shape or pattern as well as hue */
+.b-flag { background: var(--amber-300); color: #241a02; }
+.b-chg  { background: var(--cyan-300);  color: #02181a; }
+.b-oth  { background: #414852;          color: #dfe6ec; }
+.b-del  { background: var(--red-400);   color: #2b0409; }
+.b-exc  { background: var(--grey-400);  color: #15181d; }
+.b-pro  { background: var(--violet-400); color: #150c2b; }
+.tile.marked  { outline: 3px solid var(--amber-300); }
+/**
+ * An accept mark (#126 A6).
+ *
+ * The mode's commit hue, because that is exactly what the next commit will record for it,
+ * and no image treatment. Border thickness says whether this choice is pending or recorded
+ * while the established colour says which choice it is (#167).
+ */
+.tile.marked.accept { outline: 3px solid var(--commit); }
+.tile.marked.accept img,
+body[data-mode="scientific"] .tile.marked.accept img,
+body[data-mode="training"] .tile.marked.accept img { filter: none; }
+body[data-mode="training"] .tile.marked.accept { outline: 3px solid var(--commit); }
+
+/**
+ * A refused accept mark, in its own slot (#126 A4).
+ *
+ * Never `.badge`, which stays exactly one element per tile -- a second element able to
+ * reach that slot is how a click on a committed tile comes to look like it did nothing.
+ * It fades on its own; the store clears it.
+ */
+.refusal { position: absolute; left: 4px; right: 4px; bottom: 24px; z-index: 3;
+           display: flex; align-items: center; justify-content: center; gap: 4px;
+           background: rgba(8, 9, 11, .92); border: 1px solid var(--red-400);
+           color: var(--red-400); font-size: 8.5px; font-weight: 700;
+           padding: 3px 4px; border-radius: 3px; text-align: center; line-height: 1.15; }
+.refusal svg { width: 9px; height: 9px; flex: none; }
+.tile.refused { outline: 2px solid var(--red-400); }
+.tile.changed { outline: 2px solid var(--cyan-300); }
+.tile.done    { outline: 2px solid #596270; }
+.tile.done img { filter: grayscale(.6) brightness(.7); }
+.tile.active  { outline: 3px solid var(--amber-300); z-index: 6;
+                box-shadow: 0 8px 26px rgba(0, 0, 0, .7); }
+body[data-mode="delete"] .tile.marked { outline-color: var(--red-400); }
+body[data-mode="delete"] .tile.marked img { filter: brightness(.55) saturate(.5); }
+body[data-mode="delete"] .tile.marked::before {
+  content: ""; position: absolute; inset: 0; z-index: 1;
+  background: repeating-linear-gradient(45deg, rgba(224,97,107,.10) 0 6px, transparent 6px 16px); }
+body[data-mode="training"] .tile.marked { outline: 3px dashed var(--grey-400); }
+/* Once a pending decision reaches the record, only its thickness steps back; the
+   photograph stays unchanged (#167). */
+.tile.marked.recorded,
+body[data-mode="scientific"] .tile.marked.recorded,
+body[data-mode="training"] .tile.marked.recorded { outline-width: 1px; }
+
+/* fallbacks hold their slot rather than reordering the mosaic */
+.tile.queued, .tile.failed { display: grid; place-items: center; gap: 7px; }
+.tile.queued { background: #131518; outline: 1px dashed #33383f; }
+.tile.failed { background: #171314; outline: 1px dashed #4a3338; }
+.tile.queued img { width: 22px; height: auto; opacity: .45; object-fit: contain; }
+.ph-t { font-size: 13px; font-weight: 800; color: #98a2ad; letter-spacing: .08em; }
+.na-t { font-size: 13px; font-weight: 800; color: #cf979d; letter-spacing: .08em; text-align: center; }
+.phbar { width: 52%; height: 3px; border-radius: 2px; background: #24282e; overflow: hidden; }
+.phbar i { display: block; height: 100%; width: 45%; background: var(--cyan-500); }
+
+/* loading: the grid keeps its geometry while a query is in flight */
+.skeleton { background: #121417; outline: 1px solid #24272c; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: .5 } 50% { opacity: .85 } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none } }
+
+/* ---------------------------------------------------------------- picker */
+.pick { position: absolute; z-index: 8; width: min(452px, calc(100% - 16px)); background: #0a1826;
+        border: 1px solid rgba(246, 196, 83, .45); border-radius: 8px;
+        box-shadow: 0 20px 54px rgba(0, 0, 0, .72); padding: 13px 14px 12px; }
+.pick h4 { margin: 0 0 2px; font-size: 13px; color: var(--white); font-weight: 600;
+           display: flex; align-items: center; gap: 8px; }
+.pick h4[data-picker-drag-handle] { cursor: grab; touch-action: none; user-select: none; }
+.pick h4[data-picker-drag-handle]:active { cursor: grabbing; }
+.pickgrip { width: 10px; height: 16px; color: var(--faint); display: flex; flex: none; }
+.pickgrip svg { width: 10px !important; height: 14px !important; fill: currentColor; }
+.pick h4 .fl { color: var(--amber-300); display: flex; }
+.pick h4 svg { width: 12px; height: 12px; }
+.opt { font-size: 11px; color: var(--faint); font-weight: 500; margin-left: auto; }
+.observation-identity { display: inline-flex; align-items: baseline; gap: 5px;
+                        margin: 3px 0 7px; color: var(--muted); }
+.observation-identity__label { font-size: 10px; }
+.observation-identity__value { color: var(--text); font: 600 10.5px/1.2 ui-monospace, monospace;
+                              user-select: text; }
+.pick p { margin: 0 0 11px; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+.chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.chip { height: 40px; display: flex; align-items: center; gap: 7px; padding: 0 15px;
+        border-radius: 6px; border: 1px solid rgba(42, 214, 220, .3); background: #0d2334;
+        color: var(--text); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.chip svg { width: 12px; height: 12px; }
+.chip.on { background: var(--amber-300); border-color: var(--amber-300); color: #241a02; }
+.note-label { display: flex; align-items: center; gap: 8px; margin-top: 12px;
+              padding-top: 11px; border-top: 1px solid var(--line); color: var(--white);
+              font-size: 12px; font-weight: 600; }
+.decision-note { width: 100%; margin-top: 7px; resize: vertical; min-height: 72px;
+                 padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border);
+                 background: #061523; color: var(--white); font: 12px/1.45 inherit; }
+.decision-note:focus { outline: 2px solid rgba(42, 214, 220, .45); outline-offset: 1px; }
+.correct { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
+.correct h5 { margin: 0 0 8px; font-size: 12px; color: var(--white); font-weight: 600;
+              display: flex; align-items: center; gap: 8px; }
+.search { height: 36px; width: 100%; padding: 0 11px; border-radius: 6px; background: #061523;
+          border: 1px solid var(--border); color: var(--white); font-size: 12px; font-family: inherit; }
+.sugghead { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase;
+            color: var(--faint); margin: 9px 0 5px; }
+.srow { height: 38px; width: 100%; display: flex; align-items: center; gap: 9px; padding: 0 11px;
+        border-radius: 5px; border: 1px solid transparent; font-size: 12.5px; background: none;
+        text-align: left; }
+.srow + .srow { margin-top: 3px; }
+.srow .sci { font-style: italic; color: var(--muted); font-size: 11.5px; }
+.srow:hover, .srow:focus-visible { background: #0d2334; border-color: rgba(42, 214, 220, .34);
+                                   color: var(--white); }
+.consq { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line);
+         font-size: 11px; color: var(--faint); line-height: 1.45; }
+.consq b { color: var(--amber-300); font-weight: 600; }
+.consq.ok b { color: var(--cyan-300); }
+.pickfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 12px; padding-top: 11px;
+            border-top: 1px solid var(--line); }
+.ghost { height: 34px; display: flex; align-items: center; padding: 0 14px; border-radius: 6px;
+         border: 1px solid var(--border); color: var(--muted); font-size: 12px;
+         background: none; flex: none; }
+.ghost.go { border-color: var(--commit-soft); color: var(--commit-pale); font-weight: 600; }
+
+/* ---------------------------------------------------------------- footer */
+.foot { display: flex; align-items: center; gap: 8px; padding: 0 12px;
+        background: var(--chrome); border-top: 1px solid var(--mode-line); }
+.btn { border: 1px solid var(--mode-line); border-radius: 4px; padding: 5px 10px;
+       font-size: 11px; font-weight: 600; color: var(--text); background: none; }
+.pager { display: flex; align-items: center; gap: 3px; }
+.pg { min-width: 25px; height: 25px; padding: 0 6px; display: grid; place-items: center;
+      border: 1px solid var(--mode-line); border-radius: 4px; font-size: 11px; font-weight: 600;
+      color: var(--text); background: none; }
+.pg.nav { padding: 0 9px; color: var(--muted); }
+.pg.done { color: var(--commit-pale); border-color: var(--commit-line);
+           box-shadow: inset 0 -3px 0 -1px var(--commit); }
+input.pg { width: 38px; padding: 0; background: var(--navy-1000); border: 1px solid var(--cyan-400);
+           color: var(--cyan-300); font-weight: 700; text-align: center; font-family: inherit;
+           font-size: 11.5px; }
+.gap { color: var(--faint); padding: 0 3px; font-size: 11px; }
+.legend { display: flex; align-items: center; gap: 6px; margin-left: 14px; white-space: nowrap; flex: none;
+          font-size: 10px; color: var(--faint); }
+.swatch { width: 16px; height: 4px; border-radius: 1px; background: var(--commit); }
+.markall { display: flex; gap: 5px; margin-left: 16px; padding-left: 16px;
+           border-left: 1px solid var(--line); }
+.count { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--amber-300); }
+/* The pair sits together and the gap that used to be on the button is now on the pair,
+   so the two of them read as one control with a main half and a lesser half (#126 R5). */
+.commits { display: flex; align-items: center; gap: 8px; margin-left: 26px; }
+.commit { background: var(--commit); color: var(--commit-ink); border: 0; border-radius: 5px;
+          padding: 7px 18px; font-size: 12px; font-weight: 700;
+          display: flex; align-items: center; gap: 7px; }
+/* The red now comes from `--commit` like every other mode's hue; the outline is the one
+   thing this rule still contributes, lifting a dark red button off the dark red chrome. */
+body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
+
+/* ---------------------------------------------------------------- action log */
+.logbtn { position: fixed; right: 12px; bottom: 56px; z-index: 20; border: 1px solid var(--border);
+          background: var(--navy-850); color: var(--muted); border-radius: 5px;
+          padding: 5px 11px; font-size: 11px; }
+.log { position: fixed; right: 12px; bottom: 90px; z-index: 20; width: 420px; max-height: 46vh;
+       overflow: auto; background: #030c16; border: 1px solid var(--border); border-radius: 6px;
+       padding: 9px 11px; box-shadow: 0 18px 44px rgba(0, 0, 0, .7); }
+.log[hidden] { display: none; }
+.log h6 { margin: 0 0 7px; font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase;
+          color: var(--cyan-300); }
+.log ol { margin: 0; padding: 0; list-style: none; font-size: 11px; line-height: 1.5; }
+.log li { display: flex; gap: 8px; padding: 2px 0; border-bottom: 1px solid rgba(42,214,220,.07); }
+.log .t { color: var(--faint); flex: none; }
+.log .n { color: var(--cyan-300); font-weight: 600; flex: none; }
+.log .d { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+
+/* ---------------------------------------------------------------- committed outcomes */
+/* After a commit the page stays loaded, so the result has to be visible on the tiles
+   themselves — otherwise a delete looks identical to a mark that never happened. */
+.tile.out-deleted  { outline: 2px solid var(--red-500); cursor: default; }
+.tile.out-deleted img { filter: grayscale(1) brightness(.28); }
+.tile.out-deleted::after {
+  content: ""; position: absolute; inset: 0; z-index: 2;
+  background: repeating-linear-gradient(45deg, rgba(224,97,107,.16) 0 6px, transparent 6px 14px); }
+.tile.out-reviewed { outline: 1px solid rgba(167, 236, 53, .55); }
+.tile.out-promoted { outline: 1px solid var(--violet-400); }
+.b-out { background: var(--green-400); color: #0d1a02; }
+.b-gone { background: var(--red-500); color: #fff; }
+
+/* ---------------------------------------------------------------- menus */
+.menuwrap { position: relative; }
+.menu { position: fixed; z-index: 30; min-width: 190px; background: #061523;
+        border: 1px solid var(--border); border-radius: 6px; padding: 5px;
+        box-shadow: 0 16px 40px rgba(0,0,0,.7); }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+               background: none; border: 0; border-radius: 4px; padding: 7px 9px;
+               font-size: 12px; font-weight: 600; color: var(--text); }
+.menu button:hover { background: #0d2334; color: var(--white); }
+.menu button.on { color: var(--cyan-300); }
+.menu button .tick { width: 12px; flex: none; color: var(--cyan-300); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+.menu .mhead { font-size: 9px; letter-spacing: .09em; text-transform: uppercase;
+               color: var(--faint); padding: 5px 9px 3px; }
+/* A panel of controls rather than a list of choices: the two ends of a time or date
+   window. Padded a little more, because inputs sitting flush to a border read as cramped. */
+.menu--panel { padding: 8px 10px 10px; }
+.sel, .sortbox { cursor: pointer; }
+.sel:hover, .sortbox:hover { border-color: var(--border-strong); }
+
+/* a distinct action inside the picker, separate from the reason chips */
+.chip.change { background: #12203a; border-color: rgba(155,124,240,.55); color: var(--violet-300); }
+.chip.change.on { background: var(--violet-500); border-color: var(--violet-400); color: #fff; }
+
+
+/* A tile with no image still carries its name and stays markable — the fallback
+   sits behind the caption rather than replacing the whole tile. */
+.tile .fallback { position: absolute; inset: 0 0 20px 0; display: grid;
+                  place-items: center; align-content: center; gap: 6px; }
+.tile.queued { background: #131518; outline: 1px dashed #33383f; }
+.tile.failed { background: #171314; outline: 1px dashed #4a3338; }
+.tile.queued .fallback img { width: 22px; height: auto; opacity: .45; object-fit: contain; }
+.tile.marked.queued, .tile.marked.failed { outline: 2px solid var(--amber-300); }
+.reason-chip[data-changed] { cursor: pointer; }
+.reason-chip[data-changed]:hover { border-color: var(--cyan-300); color: var(--cyan-300); }
+/* Taking back is heading towards accepted, so it is green rather than amber — but a
+   cooler green than the settled ones, and dashed, because nothing is written yet. */
+/* The second status dimension brings its own heading, so two groups never read as
+   one long list of unrelated boxes. */
+.lbl.sub { margin-top: 12px; }
+
+/* The commit is the slow, irreversible action, so the button reports on itself:
+   spinning while it works, then a tick or a cross that fades. The width is held
+   steady so the footer does not jump as the label changes. */
+.commit { min-width: 172px; justify-content: center; }
+/* The page sweep, once the main button took the primary slot (#126 R5). The same hue --
+   it is the same mode's commit and `--commit` is what that means -- but outlined rather
+   than filled, and smaller, so which one is the main button is legible before either
+   label has been read. Its success state fills in, because a tick has to be seen. */
+/* `display: flex` on `.commit` beats the user agent's `[hidden] { display: none }`, so
+   Delete's hidden main button was still on screen. Delete keeps one button (A2). */
+.commit[hidden] { display: none; }
+.commit.sweep { background: transparent; color: var(--commit-pale);
+                border: 1px solid var(--commit-line);
+                padding: 3px 10px; font-size: 11px; line-height: 1.35;
+                min-width: 0; font-weight: 600; }
+.commit.sweep.ok  { background: var(--commit); color: var(--commit-ink); }
+.commit.sweep.bad { background: var(--red-500); color: #fff; }
+/* The long wording by default; the phone query below swaps them. Both carry the count. */
+.commit .sw { display: none; }
+.commit svg { width: 13px; height: 13px; display: block; flex: none; }
+.commit[disabled] { cursor: progress; opacity: .92; }
+.commit.ok  { background: var(--commit); color: var(--commit-ink); }
+.commit.bad { background: var(--red-500); color: #fff; }
+.commit .spin {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: spin .62s linear infinite;
+}
+
+.full-frame-state { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin: 4px 0 10px; font-size: 11px; color: var(--muted); }
+.full-frame-state label { display: flex; align-items: center; gap: 5px; }
+.full-frame-state__reason { flex-basis: 100%; color: var(--amber-300); }
+
+#frameViewer[hidden] { display: none; }
+#frameViewer { position: fixed; inset: 0; z-index: 80; background: rgba(2, 9, 17, .94); }
+.frame-viewer { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; }
+.frame-viewer__bar { display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 8px; padding: 10px 14px; color: var(--white); background: #081522;
+  border-bottom: 1px solid var(--line); }
+.frame-viewer__controls { display: flex; align-items: center; gap: 7px; }
+.frame-viewer__controls button { min-height: 34px; padding: 5px 10px; border: 1px solid var(--line);
+  border-radius: 5px; color: var(--white); background: var(--panel); cursor: pointer; }
+.frame-viewer__controls output { min-width: 46px; text-align: center; color: var(--muted); }
+.frame-viewer__viewport { min-height: 0; overflow: auto; display: flex;
+  cursor: grab; touch-action: none; overscroll-behavior: contain; }
+.frame-viewer__viewport.dragging { cursor: grabbing; }
+.frame-viewer__image { position: relative; flex: none; margin: auto; transition: width 100ms ease; }
+.frame-viewer__image.pinching { transition: none; }
+.frame-viewer__image img { display: block; width: 100%; height: auto; user-select: none; pointer-events: none; }
+.frame-viewer__box { position: absolute; box-sizing: border-box;
+  container-type: inline-size; border: 2px solid #ffba3b;
+  pointer-events: none; }
+.frame-viewer__box-label { position: absolute; left: -2px;
+  box-sizing: border-box; width: calc(100% + 4px);
+  padding: clamp(1px, 1.5cqw, 3px) clamp(2px, 3cqw, 6px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: rgba(5, 12, 18, .28); color: rgba(255, 255, 255, .96);
+  font-size: clamp(7px, 9cqw, 15px); font-weight: 600; line-height: 1.2;
+  letter-spacing: .005em; text-shadow: 0 1px 2px rgba(0, 0, 0, .95);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.frame-viewer__box-label--species { bottom: 100%; }
+.frame-viewer__box-label--observation { top: 100%;
+  color: rgba(255, 255, 255, .82); font-size: clamp(7px, 7cqw, 12px); font-weight: 500; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .commit .spin { animation-duration: 2.4s; } }
+
+.tile.out-reverted { outline: 3px dashed var(--mint-400); }
+.b-rev { background: var(--mint-400); color: #052015; }
+
+/* These colours identify decisions, but they sit over the evidence being judged. Keep
+   the hue and text solid while letting the photograph remain visible underneath. Delete
+   retains its established treatment and is deliberately absent from this list. */
+.tile .b-flag { background: color-mix(in srgb, var(--amber-300) 32%, transparent); }
+.tile .b-chg  { background: color-mix(in srgb, var(--cyan-300) 32%, transparent); }
+.tile .b-oth  { background: rgba(65, 72, 82, .30); }
+.tile .b-exc  { background: color-mix(in srgb, var(--grey-400) 32%, transparent); }
+.tile .b-pro  { background: color-mix(in srgb, var(--violet-400) 32%, transparent); }
+.tile .b-out  { background: color-mix(in srgb, var(--green-400) 32%, transparent); }
+.tile .b-rev  { background: color-mix(in srgb, var(--mint-400) 32%, transparent); }
+
+.menu .msearch { width: 100%; height: 30px; margin-bottom: 5px; padding: 0 9px; border-radius: 4px;
+                 background: var(--navy-1000); border: 1px solid var(--border); color: var(--white);
+                 font: inherit; font-size: 12px; }
+.menu .mbody { max-height: 46vh; overflow-y: auto; }
+
+
+/* ---------------------------------------------------------------- narrow screens */
+/* On a phone the rail cannot take a third of the width, and the header cannot wrap.
+   The mosaic is the application, so everything else gets out of its way. */
+@media (max-width: 760px) {
+  /* Let a downward drag at the top of the mosaic reach the browser. The desktop field
+     contains overscroll so its wheel does not move surrounding chrome. The root was also
+     fixed with overflow hidden, which meant changing overscroll-behavior alone still gave
+     the browser no page to pull. On a phone the app remains one dynamic viewport tall, but
+     its root participates in native overscroll again. */
+  html { height: 100%; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: auto; }
+  body { position: static; inset: auto; height: auto; min-height: 100%;
+         overflow-x: hidden; overflow-y: visible; overscroll-behavior-y: auto; }
+  .field { overscroll-behavior-y: auto; }
+
+  /* The details panel becomes a viewport sheet while the phone keyboard is open. JS
+     supplies the visual viewport's live top and height because mobile browsers do not
+     agree that a fixed element or 100dvh should shrink with the keyboard. */
+  .pick { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
+  .grid { --min-tile: 96px; }
+  .app { --hdr-h: 40px; --sub-h: 26px; --foot-h: 44px; }
+  .hdr { gap: 8px; padding: 0 8px; }
+  .hdr img { height: 20px; }
+  .hdr .title { display: none; }
+  .mode-note { display: none; }
+  .hdr .right { display: flex; }
+  .seg { margin-left: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .seg::-webkit-scrollbar { display: none; }
+  .sub { overflow-x: auto; scrollbar-width: none; }
+  .foot { overflow-x: auto; scrollbar-width: none; }
+  .seg button { padding: 4px 8px; font-size: 11px; }
+
+  .sub { gap: 10px; padding: 0 8px; font-size: 11px; }
+  .sub .sep { display: none; }
+
+  /* Progress leaves the row entirely at this width. Below 1100px it had already shed
+     its wording, but even the bar and the percentage cost width the sort control has to
+     be hunted past -- and this row scrolls, so the cost is not a smaller control but a
+     control off the end of it, which M3 exists to refuse. Progress is the item this row
+     can do without; the sort is not. */
+  .prog { display: none; }
+
+  /* the rail collapses to its strip and opens over the mosaic rather than beside it */
+  .body { grid-template-columns: 30px minmax(0, 1fr); }
+  .rail { padding: 6px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .rail .rail-body { display: none; }
+  .railhead { display: block; margin: 0; }
+  .railhead .t { display: none; }
+  .vlabel, .fcount { display: block; }
+  .fcount { display: grid; }
+  body:not(.rail-collapsed) .rail { position: absolute; z-index: 25; inset: 70px auto 44px 0;
+    width: 190px; align-items: stretch; padding: 10px; overflow-y: auto;
+    box-shadow: 12px 0 40px rgba(0,0,0,.6); border-right: 1px solid var(--mode-line); }
+  body:not(.rail-collapsed) .rail .rail-body { display: block; }
+  body:not(.rail-collapsed) .railhead { display: flex; margin: -2px 0 8px; }
+  body:not(.rail-collapsed) .railhead .t { display: block; }
+  body:not(.rail-collapsed) .vlabel, body:not(.rail-collapsed) .fcount { display: none; }
+  /* The overlay is positioned against the viewport, not against `.body` -- nothing
+     between them is positioned -- so its 70px top is the header and sub-bar measured by
+     hand. With those gone it has to start at the top or it hangs 70px into the mosaic
+     with a 70px gap above it (R7). */
+  body.top-hidden:not(.rail-collapsed) .rail { inset: 0 auto 44px 0; }
+
+  /* Nothing in the bars may wrap: they are fixed-height rows, so a second line
+     is simply clipped. Anything that cannot fit is dropped instead. */
+  .hdr > *, .sub > *, .foot > * { white-space: nowrap; flex: none; }
+  /* Keep the account control fixed at the visible edge and let only the mode choices
+     consume the remaining width. */
+  .hdr > .seg { flex: 1 1 auto; min-width: 0; }
+  /* The sort is the same control here as anywhere else — same size, same menu. It was
+     hidden on a phone under a comment saying it lived in the rail instead; it never did,
+     so a phone had no way to reorder the mosaic at all. A shrunken variant was the next
+     wrong answer: sorting is not a lesser question on a smaller screen. The only thing
+     that changes is that it stops being pushed to the far right of a bar that scrolls,
+     so it is on screen without hunting for it. */
+  .sortbox { margin-left: 0; }
+  .sub .marked-word { display: none; }
+  /* "Page 2 of 24" is the item worth the room here, and it is short. The trailing words
+     of the count go instead — this row scrolls sideways, so anything it spends on width
+     is the sort control pushed past the end of it, which M3 forbids. The page size is
+     still set on the element and still readable on a wider screen. */
+  .sub .match-word, .sub .per-page { display: none; }
+  /* Progress is already down to the bar and the percentage by here -- see the 1100px
+     query beside `.prog`. Nothing more of it needs dropping. */
+
+  .foot { gap: 4px; padding: 0 6px; }
+  /* The legend now carries the pages-committed count, which is worth the room on a
+     phone. Only its trailing words go; the numbers and the swatch stay. */
+  .markall { display: none; }
+  .legend { margin-left: 8px; }
+  .legend .lw { display: none; }
+  /* The second commit button needs the room, and `.count` is what a phone can spare
+     (#126 R5): it repeats what both buttons now say, since each carries its own count.
+     **The legend stays**, because #91 put the pages-committed tally there deliberately and
+     called it worth the room on a phone -- so the width comes out of the buttons instead,
+     which is what the short wording above is for. */
+  .foot .count { display: none; }
+  /* Two buttons do not fit this footer at full length, and `.app` clips rather than
+     scrolls -- so the long wording did not become scrollable, it went off the end and took
+     the main button with it. The short wording keeps both on screen, with their counts. */
+  .commits { margin-left: auto; gap: 4px; min-width: 0; }
+  .commit { padding: 6px 8px; font-size: 11px; min-width: 0; }
+  .commit.sweep { padding: 3px 5px; font-size: 10px; }
+  .commit .lw { display: none; }
+  .commit .sw { display: inline; }
+  .count { font-size: 10.5px; margin-left: 4px; }
+  /* keep only prev / current / next — numbered pages do not fit */
+  .pager .pg:not(.nav):not(input) { display: none; }
+  .pager input.pg { width: 34px; }
+  .pager .gap { display: none; }
+  .pg { min-width: 20px; height: 22px; padding: 0 4px; font-size: 10.5px; }
+  .pg.nav { padding: 0 6px; }
+  .logbtn { display: none; }
+}
+
+/* a disposition the record already carries, distinct from a mark made just now */
+.tile.has-excluded { outline: 1px dashed var(--grey-400); }
+.tile.has-promoted { outline: 1px solid var(--violet-400); }
+.tile.has-reviewed { outline: 1px solid rgba(167, 236, 53, .5); }
+
+.tile.has-flagged { outline: 1px solid var(--amber-300); }
+.tile.out-flagged { outline: 1px solid var(--amber-300); }
+.tile.out-excluded { outline: 1px dashed var(--grey-400); }
+
+/* Tags another workflow put on the record, shown in every mode (#85).
+   Bottom left, above the caption and clear of the corner chip, so the top left keeps
+   meaning "what this mode says about this tile" and a record tag can never be mistaken
+   for -- or drawn over -- the mark. `column-reverse` grows a second tag upward into the
+   image rather than down through the caption. */
+.rtags { position: absolute; left: 4px; bottom: 22px; z-index: 3;
+         display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 3px; }
+/* The colour comes from the owning workflow's own badge class, so a flag is amber and a
+   promotion violet wherever it appears. A ring rather than a size change keeps it legible
+   over a photograph while still reading as secondary. The imagery itself is untouched:
+   dimming means *this* mode has judged the tile, and another workflow's opinion must not
+   grey out the picture somebody is judging. */
+.rtag { display: flex; align-items: center; gap: 3px; padding: 1.5px 5px 1.5px 4px;
+        border-radius: 2px; font-size: 8.5px; font-weight: 700; opacity: .92;
+        box-shadow: 0 0 0 1px rgba(6, 10, 16, .5); }
+.rtag svg { width: 8px; height: 8px; display: block; flex: none; }
+
+/* --- The delete confirmation ------------------------------------------------
+   The only modal here. Everything else is one gesture with no dialog, because a
+   reviewer repeats it thousands of times; this one is rare and irreversible, so
+   it stops the world. */
+#confirm { position: fixed; inset: 0; z-index: 60; }
+.confirm__scrim {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: rgba(3, 12, 24, .72); backdrop-filter: blur(2px);
+}
+.confirm__box {
+  width: min(440px, calc(100vw - 40px));
+  background: var(--panel, #0d1a2b);
+  border: 1px solid rgba(255, 120, 120, .38);
+  border-radius: 12px; padding: 22px 24px 18px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .62);
+  text-align: center;
+}
+.confirm__icon { color: #ff7b7b; }
+.confirm__icon svg { width: 26px; height: 26px; }
+.confirm__title { margin: 8px 0 12px; font-size: 17px; line-height: 1.35; }
+.confirm__also { margin: 0 0 8px; font-size: 13px; line-height: 1.5; opacity: .92; }
+.confirm__also strong { color: #ffcf7b; font-weight: 600; }
+/* The one line that has to be read even by somebody skimming. */
+.confirm__warn { margin: 0 0 18px; font-size: 12.5px; color: #ff9b9b; }
+.confirm__actions { display: flex; gap: 10px; justify-content: center; }
+.confirm__actions .btn { min-width: 116px; }
+.btn--danger {
+  background: #b4232b; border-color: #d2434b; color: #fff; font-weight: 600;
+}
+.btn--danger:hover { background: #c92a33; }
+
+/* --- The states the grid can reach that are not "here are some tiles" (#72) --- */
+.pagestate {
+  grid-column: 1 / -1; display: grid; place-items: center; gap: 10px;
+  padding: 56px 24px; text-align: center; color: var(--ink-dim, #93a7b4);
+}
+.pagestate__icon { font-size: 30px; opacity: .5; line-height: 1 }
+.pagestate h2 { margin: 0; font-size: 18px; color: #dceaf1; font-weight: 600 }
+.pagestate p { margin: 0; max-width: 46ch; line-height: 1.55; font-size: 14px }
+.pagestate .btn { margin-top: 6px }
+
+/* Drawn over the tiles, not instead of them: the observations are still there and still
+   flaggable, and hiding them would say they do not exist. */
+.pagestate--banner {
+  grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 12px 16px; text-align: left;
+  background: rgba(192, 125, 133, .10); border: 1px solid rgba(192, 125, 133, .35);
+  border-radius: 8px; margin-bottom: 2px;
+}
+.pagestate--banner b { color: #ffd9dd; display: block; font-size: 14px }
+.pagestate--banner span { font-size: 12.5px; line-height: 1.5 }
+
+.skip-note { font-size: 12px; color: #e0b063; margin-left: 10px }
+
+/* --- Keyboard shortcut hints (#74) ---------------------------------------
+   Drawn on the control they duplicate. A help screen is a place people visit
+   once; a badge on the button is where the question is actually asked. */
+[data-key]::after {
+  content: attr(data-key);
+  margin-left: 7px; padding: 1px 5px;
+  font: 500 10px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .02em; vertical-align: 1px;
+  color: rgba(255, 255, 255, .62);
+  background: rgba(255, 255, 255, .09);
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 4px;
+}
+.commit[data-key]::after { color: rgba(255, 255, 255, .78) }
+/* The badge is a hint, not a target: it must never swallow the click. */
+[data-key]::after { pointer-events: none }
+
+/* Ctrl+Enter on a page that cannot be committed. The disabled button already
+   carries the reason, so this points at it rather than repeating it. */
+@keyframes marp-nudge {
+  0%, 100% { transform: translateX(0) }
+  20%      { transform: translateX(-3px) }
+  60%      { transform: translateX(3px) }
+}
+.commit.nudge { animation: marp-nudge .28s ease-in-out 2 }
+@media (prefers-reduced-motion: reduce) {
+  .commit.nudge { animation: none; outline: 2px solid var(--red-400, #e2707a) }
+}
+
+/* --- The failure panel (#124, A4/R20) -------------------------------------
+   Expired, refused and failed are three states and they read differently. The
+   colour carries the difference the copy states: amber for a session that
+   lapsed and can be fixed, red for a refusal that cannot, and the ordinary
+   error red for a transport failure. Tokens only -- no hex here; see the app's
+   CLAUDE.md.
+
+   It interrupts, because a reviewer who does not notice a 401 goes on marking
+   a page that cannot be committed. It never covers the whole viewport: the
+   marks are still on screen behind it, and seeing them is the reassurance the
+   copy is making. */
+/**
+ * `display: none` first, and **that ordering is the whole of a defect worth recording.**
+ *
+ * `renderFailure` sets `host.hidden = true`, and the `hidden` attribute works by applying
+ * `display: none` from the browser's own stylesheet -- which any author rule carrying
+ * `display` beats. So `#failure { display: flex }` on its own left a **fixed,
+ * full-viewport, invisible** panel over the mosaic, and every click on a tile was
+ * swallowed by it: Playwright reported `<div hidden id="failure"> intercepts pointer
+ * events` on twenty-six tests at once, which reads as the tiles being broken rather than
+ * as one CSS rule.
+ *
+ * Anything positioned over the interface has to be hidden by the same property it is
+ * shown with. `#confirm` gets away without this because it has no `display` of its own.
+ */
+#failure { display: none }
+#failure:not([hidden]) {
+  /* Fixed rather than absolute: the rail's row is a flex container with no positioning of
+     its own, so an absolute panel would anchor to whatever ancestor happened to be
+     positioned. */
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--navy-1000) 72%, transparent);
+  backdrop-filter: blur(1.5px);
+}
+.fail {
+  max-width: 46ch; padding: 18px 20px; border-radius: 10px;
+  background: var(--navy-900); border: 1px solid var(--border);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .55);
+}
+.fail h3 {
+  margin: 0 0 8px; font-size: 14.5px; color: var(--white); font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+}
+.fail h3 svg { width: 15px; height: 15px; flex: none }
+.fail p { margin: 0 0 9px; font-size: 12.5px; line-height: 1.55; color: var(--text) }
+.fail code {
+  font: 500 11.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--cyan-300);
+}
+/* The one sentence every panel carries, because it is the one thing a reviewer
+   actually wants to know. Distinct from the body copy so it is read. */
+.fail .keep { color: var(--mint-300); font-weight: 500 }
+.fail .failmsg {
+  font: 400 11.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--muted); background: var(--navy-950);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+  max-height: 8em; overflow: auto; word-break: break-word;
+}
+.fail .failfoot { display: flex; gap: 8px; margin-top: 13px; align-items: center }
+.fail .failfoot .btn { text-decoration: none }
+.fail--expired { border-color: rgba(246, 196, 83, .5) }
+.fail--expired h3 { color: var(--amber-300) }
+.fail--refused { border-color: rgba(224, 97, 107, .55) }
+.fail--refused h3 { color: var(--red-400) }
+.fail--failed h3 { color: var(--red-400) }
+
+/* A commit the server refused because the rows moved (R9). Amber rather than
+   red: nothing was written and nothing is lost, so it is a "look again"
+   rather than a failure. */
+.pagestate--conflict {
+  background: rgba(246, 196, 83, .10); border-color: rgba(246, 196, 83, .38);
+}
+.pagestate--conflict b { color: var(--amber-300) }
+
+/* A thumbnail no retry can produce (F11, R13). Dimmer than an ordinary
+   failure, because the tile is not waiting for anything. */
+.tile.permanent .fallback .na-t { color: var(--faint) }
+.tile.permanent { opacity: .82 }
+
+/* The picker's widen action (A11). A quiet control: going off the
+   observation's own species list is a decision, not the normal path. */
+.sugghead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px }
+.widen {
+  border: 1px solid var(--line); background: none; color: var(--muted);
+  border-radius: 5px; padding: 1px 6px; font-size: 10.5px; cursor: pointer;
+}
+.widen:hover { color: var(--cyan-300); border-color: var(--border) }
+.widen.on { color: var(--cyan-300); border-color: var(--border-strong) }
+
+/* Which list a widened candidate is on (#130 A3). Pushed to the far end and drawn as a
+   tag rather than as more name: a common name is not unique across the seven lists, so
+   this is the only thing distinguishing two rows that otherwise read identically, and it
+   has to survive a glance. Absent on a scoped search, which is all one list already. */
+.srow .slist {
+  margin-left: auto; flex: none; font-size: 9.5px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--faint);
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+}

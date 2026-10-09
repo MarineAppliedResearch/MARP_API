@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP Mosaic Review</title>
+<link rel="icon" href="../../shared/assets/images/marp-mark.png">
+<link rel="stylesheet" href="../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
+<script src="../../shared/assets/js/account-menu.js" defer></script>
+<link rel="stylesheet" href="./styles/app.css">
+</head>
+<body data-mode="scientific">
+
+<div class="app">
+
+  <header class="hdr">
+    <img src="../../shared/assets/images/marp-logo-compact.png" alt="MARP">
+    <span class="title">Picture Mosaic Reviewer</span>
+    <nav class="seg" aria-label="Review mode">
+      <button data-mode="scientific" class="on">Scientific Data Review</button>
+      <button data-mode="training">Training Data Review</button>
+      <button data-mode="delete" class="danger">Delete</button>
+    </nav>
+    <span class="mode-note" id="modeNote"></span>
+    <!-- The account menu, shared with the landing page and the ML Dashboard (#151).
+         The markup is the component's; `../../shared/assets/js/account-menu.js` is the
+         behaviour. It carries the nobody state to begin with because this app renders
+         before `/api/v2/auth/me` has answered, and `ui/chrome.js` says who once it has.
+         `data-account-probe="no"` because the store already asked: one question, one
+         request. -->
+    <div class="right menuwrap account" data-account
+         data-account-probe="no" data-account-signed-out="show">
+      <button class="account__button" id="userBtn" type="button" data-account-button
+              data-account-nobody="yes" aria-haspopup="true" aria-expanded="false"
+              aria-label="Not signed in">&middot;</button>
+      <div class="account__menu" role="menu" data-account-menu hidden>
+        <p class="account__who" data-account-who>Not signed in</p>
+        <a class="account__item" role="menuitem" href="/apps/dashboard/index.html">Open the dashboard</a>
+        <hr class="account__rule">
+        <a class="account__item" role="menuitem" data-account-signin href="/">Sign in</a>
+        <button class="account__item" type="button" role="menuitem" data-account-signout hidden>Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="sub">
+    <span>Page <b id="pageNow">1</b> of <b id="pageTotal">1</b></span>
+    <span class="sep">|</span>
+    <span><b id="shown">0</b> of <b id="total">0</b><span class="match-word"> matching</span><span
+      class="per-page">, <b id="perPage">0</b> a page</span></span>
+    <span class="sep">|</span>
+    <span id="markedLabel"><span class="marked-word">Marked this page </span><b id="markedCount">0</b></span>
+    <span class="sep">|</span>
+    <!-- Progress is a property of the whole review, not of the filters, so it does not
+         belong in a panel that collapses, resets, and scrolls. In the rail it was drawn
+         below the fold at a 900px desktop and could not be reached at all — #91. -->
+    <span class="prog" title="How much of this question has been committed">
+      <span class="prog-word">Progress</span>
+      <span class="bar"><i id="progBar" style="width:0%"></i></span>
+      <b id="progPct">0%</b>
+      <span class="small" id="progText">&mdash;</span>
+    </span>
+    <span class="menuwrap" style="margin-left:auto"><button class="sortbox" id="sortBtn" title="Change the sort order">Sort: <span id="sortLabel">&hellip;</span> &#9662;</button></span>
+  </div>
+
+  <div class="body">
+    <aside class="rail">
+      <div class="railhead">
+        <span class="t">Filters</span>
+        <!-- Clearing ten filters one at a time is not a gesture. This restores the default
+             question without leaving the mode the reviewer is working in. -->
+        <button class="railreset" id="railReset" type="button" aria-label="Reset the filters"
+                title="Back to the default question, keeping the mode you are in">&#8635;</button>
+        <!-- The top chrome's toggle lives here rather than in the chrome it hides, which
+             is the whole of #151 R2: a control inside the header cannot bring the header
+             back. This strip is the only chrome on screen in both layouts, and it costs
+             the mosaic no tile area. Its label and icon are written by ui/chrome.js. -->
+        <button class="chromebtn" id="chromebtn" type="button" aria-expanded="true"
+                aria-label="Hide the header" title="Hide the header and the bar under it"></button>
+        <button class="railbtn" id="railbtn" aria-label="Collapse filters" title="Collapse the filter rail and give the mosaic the space">&#9664;</button>
+      </div>
+      <span class="vlabel">Filters</span>
+      <span class="fcount" id="fcount">0</span>
+
+      <div class="rail-body">
+        <!-- The dimensions are drawn from model/dimensions.js. Adding one is an entry
+             there and nothing here; that is the whole point of the declaration. -->
+        <div id="railDimensions"></div>
+
+        <div class="lbl" id="statusLbl">Review status</div>
+        <div id="statusFilters"></div>
+      </div>
+    </aside>
+
+    <main class="field" id="field">
+      <div class="grid" id="grid"></div>
+      <div id="picker"></div>
+    </main>
+
+    <div id="confirm" hidden></div>
+    <div id="frameViewer" hidden></div>
+    <!-- Expired, refused and failed, as three distinct states (A4, R20). Interrupting
+         rather than a toast, because a reviewer who does not notice a 401 goes on marking
+         a page that cannot be committed — and none of the three ever discards a mark. -->
+    <div id="failure" hidden></div>
+  </div>
+
+  <footer class="foot">
+    <div class="pager" id="pager"></div>
+    <span class="legend" id="legend"><span class="swatch"></span><span id="pagesDone">&mdash;</span></span>
+    <div class="markall">
+      <button class="btn" id="markAll" title="Apply this mode's mark to every tile on this page — the page only, never the whole query">Flag all on page</button>
+      <button class="btn" id="clearMarks" title="Remove every mark on this page">Clear</button>
+    </div>
+    <span class="count" id="footCount">0 flagged</span>
+    <!-- The one case where the number on the commit button is not the number of
+         tiles on screen. Saying so is R5. -->
+    <span class="skip-note" id="skipNote" hidden></span>
+    <!-- Two buttons, and which is which is the point (#126 R5). The main one commits
+         only what the reviewer marked, each tile by its own kind; the sweep beside it
+         is today's button, doing exactly what it has always done. Delete keeps one:
+         its existing button already acts only on the marked, so a second would be two
+         controls with one meaning. -->
+    <div class="commits">
+      <button class="commit" id="commitMarked">Commit Marked</button>
+      <button class="commit" id="commit">Mark Page Reviewed</button>
+    </div>
+  </footer>
+</div>
+
+<button class="logbtn" id="logbtn">Action log</button>
+<div class="log" id="log" hidden>
+  <h6>Actions fired &mdash; these become API calls</h6>
+  <ol id="logList"></ol>
+</div>
+
+<script type="module">
+  import { actions, state, subscribe } from './src/store.js';
+  import { mount } from './src/ui/mount.js';
+  import { backendName } from './src/backend.js';
+
+  /**
+   * Which backing this page is running on, stamped where a test can read it.
+   *
+   * **There is one, and it is the API.** `?backing=fixture` used to point the app at
+   * `src/data.js` and paint a permanent banner saying so; #157 deleted the fixture, so
+   * there is nothing left to select and no banner to paint.
+   *
+   * The stamp stays. Every check in `tests/api/` asserts it reads `api`, and a tier that
+   * cannot grade the wrong thing is worth keeping unable to even once the wrong thing is
+   * gone -- it is also how a run says which backing it graded rather than assuming.
+   */
+  document.documentElement.dataset.backing = backendName();
+
+  /* Surface failures rather than swallowing them — an async render error is
+     otherwise invisible, which cost real time during the first build. */
+  function surface(what, err) {
+    const msg = (err && (err.stack || err.message)) || String(err);
+    document.title = 'ERROR: ' + msg.split('\n')[0];
+    let bar = document.getElementById('errbar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'errbar';
+      bar.style.cssText = 'position:fixed;inset:auto 0 0 0;z-index:99;background:#2a1015;' +
+        'color:#f0b6bb;border-top:1px solid #e0616b;padding:8px 12px;font:12px/1.5 monospace;' +
+        'white-space:pre-wrap;max-height:30vh;overflow:auto';
+      document.body.appendChild(bar);
+    }
+    bar.textContent = `${what}: ${msg}`;
+  }
+  window.addEventListener('error', (e) => surface('error', e.error || e.message));
+  window.addEventListener('unhandledrejection', (e) => surface('unhandled rejection', e.reason));
+
+  mount();
+
+  /* progress is derived, not stored */
+  subscribe(() => {
+    const done = state.committedPages.size * state.pageSize;
+    const pct = state.total ? Math.min(100, Math.round((done / state.total) * 100)) : 0;
+    document.getElementById('progPct').textContent = pct + '%';
+    document.getElementById('progBar').style.width = pct + '%';
+    document.getElementById('progText').textContent =
+      `${done.toLocaleString()} of ${state.total.toLocaleString()}`;
+  });
+
+  /* Query params for quick looks and screenshots:
+     ?mode=training  ?status=excluded  ?demo=picker|correct|menu */
+  const params = new URLSearchParams(location.search);
+  const wantMode = params.get('mode');
+  const wantStatus = params.get('status');
+  if (wantMode) state.mode = wantMode;
+  if (wantStatus) {
+    state.filters[wantMode === 'training' ? 'trainingDisposition' : 'reviewStatus'] = [wantStatus];
+  }
+  const demo = params.get('demo');
+  if (demo) {
+    const unsub = subscribe(() => {
+      if (state.loading || !state.rows.length) return;
+      unsub();
+      const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+      const id = target.observation_id;
+      if (demo === 'menu') { document.querySelector('[data-dim=\"species\"]')?.click(); return; }
+      if (demo === 'persist') {
+        /* flag three with reasons, commit, leave, come back */
+        const three = state.rows.filter((r) => r.thumbnail_status === 'ready').slice(0, 3);
+        three.forEach((r, i) => {
+          actions.toggleMark(r.observation_id);
+          actions.setReason(r.observation_id, ['Wrong species', 'Bounding box', 'Duplicate'][i]);
+        });
+        setTimeout(async () => {
+          await actions.commitPage();
+          setTimeout(() => {
+            actions.goToPage(2);
+            setTimeout(() => actions.goToPage(1), 900);
+          }, 500);
+        }, 400);
+        return;
+      }
+      if (demo === 'roundtrip') {
+        /* mark three, leave the page, come back — exactly the reported sequence */
+        state.rows.slice(0, 3).forEach((r) => actions.toggleMark(r.observation_id));
+        setTimeout(() => {
+          actions.goToPage(2);
+          setTimeout(() => actions.goToPage(1), 900);
+        }, 400);
+        return;
+      }
+      actions.toggleMark(id);
+      actions.openPicker(id);
+      if (demo === 'correct') actions.toggleCorrecting(id);
+    });
+  }
+
+  actions.init().catch((err) => {
+    document.getElementById('grid').innerHTML =
+      `<div style="color:#e0616b;padding:20px;font-size:13px">Could not start: ${err.message}
+       <br><span style="color:#8198a8">This app uses ES modules and fetch, so it needs to be
+       served over HTTP rather than opened from the filesystem.</span></div>`;
+  });
+
+  /**
+   * The console handle.
+   *
+   * It carried the fixture's testing affordances too -- `failNextCommit`,
+   * `breakThumbnails`, `slowNextCommit`, `bumpVersion`. Those are gone with the fixture
+   * (#157): nothing fails on command against a real server, and `tests/api/` drives the
+   * real paths instead -- `page.route()` for the two that are about the network, and rows
+   * whose picture genuinely failed for the one that is about data.
+   */
+  window.MARP = { state, actions, backing: backendName() };
+</script>
+</body>
+</html>

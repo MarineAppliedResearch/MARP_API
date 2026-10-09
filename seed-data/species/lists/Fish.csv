@@ -1,0 +1,181 @@
+Old taxserial code,taxserial,COMNAME,GUI_MainTab,GUI_SubTab,GUI_HomeOrder,GUI_MainTabOrder,GUI_SubTabOrder,GUI_ItemOrder,GUI_DisplayName,species,Taxonomic_Level,Report_Group,Observation_Type,Depth_Min,Depth_Max,Region,Habitat_Preference,Likelihood,Max_Size,Record_Max,COMNAME0,species0
+,166771,Greenblotched Rockfish,Rockfish,Red Rockfish,,2,2,6,Greenblotched RF,Sebastes rosenblatti,species,Rockfish - Demersal,fish,55,491,NCA-Baja,Hard/Soft Mixed,Common,48,54,Greenblotched rockfish,Sebastes rosenblatti
+,166765,Honeycomb Rockfish,Rockfish,Red Rockfish,,2,2,7,Honeycomb RF,Sebastes umbrosus,species,Rockfish - Demersal,fish,18,270,CCA-Baja,Hard/Soft Mixed,No data,27,28,Honeycomb rockfish,Sebastes umbrosus
+,166755,Mexican Rockfish,Rockfish,Red Rockfish,,2,2,14,Mexican RF,Sebastes macdonaldi,species,Rockfish - Demersal,fish,76,350,CCA-Baja,Rocky,No data,66,66,Mexican rockfish,Sebastes macdonaldi
+,166747,Kelp Rockfish,Rockfish,Patterned,,2,3,2,Kelp RF,Sebastes atrovirens,species,Rockfish - Demersal,fish,0,82,NCA-Baja,Hard/Soft Mixed,Common,42,42,Kelp rockfish,Sebastes atrovirens
+,166773,Black-and-yellow Rockfish,Rockfish,Patterned,,2,3,4,Black-and-yellow RF,Sebastes chrysomelas,species,Rockfish - Demersal,fish,0,37,NCA-Baja,Rocky,Common,38,38,Black-and-yellow rockfish,Sebastes chrysomelas
+,166757,Speckled Rockfish,Rockfish,Patterned,,2,3,9,Speckled RF,Sebastes ovalis,species,Rockfish - Large Schooling,fish,30,366,WA-Baja,Rocky,Common,56,56,Speckled rockfish,Sebastes ovalis
+,166722,Chilipepper,Rockfish,Schooling,,2,4,5,Chilipepper,Sebastes goodei,species,Rockfish - Demersal,fish,0,515,WA-Baja,Hard/Soft Mixed,Common,56,59,Chilipepper rockfish,Sebastes goodei
+,166718,Puget Sound Rockfish,Rockfish,Schooling,,2,4,12,Puget Sound RF,Sebastes emphaeus,species,Rockfish - Demersal,fish,3,470,AK-CCA,Rocky,No data,18,19,Puget Sound rockfish,Sebastes emphaeus
+166700,89,Aurora/Splitnose Rockfish complex,Rockfish,Complexes,,2,5,1,Aurora/Splitnose RF,Sebastes aurora or diploproa,complex,Rockfish - Demersal,fish,,,AK-Baja,Hard/Soft Mixed,Common,,,Aurora/splitnose rockfish,S. aurora or S. diploproa
+,88,Black/Blue/Deacon Rockfish complex,Rockfish,Complexes,,2,5,3,Black/Blue/Deacon RF,Sebastes melanops or mystinus or diaconus,complex,Rockfish - Large Schooling,fish,0,549,Can-SCA,See specific species,Common,69,,Black/blue complex,S. melanops or S. mystinus
+,55,Copper/Gopher Rockfish complex,Rockfish,Complexes,,2,5,5,Copper/Gopher RF,Sebastes caurinus or carnatus,complex,Rockfish - Demersal,fish,0,408,AK-Baja,Rocky,Common,41,,Copper/gopher complex,S. caurinus or S. carnatus
+,51,Shortspine/Longspine Thornyhead complex,Rockfish,Complexes,,2,5,6,S/L Thornyhead,Sebastolobus alascanus or altivelis,complex,Rockfish - Demersal,fish,17,1756,AK-Baja,Hard/Soft Mixed,,83,,Thornyhead complex,Sebastolobus sp.
+,166709,Aurora Rockfish,Rockfish,Deep/Uncommon,,2,6,1,Aurora RF,Sebastes aurora,species,Rockfish - Demersal,fish,81,893,Can-Baja,Mud/Sand,Common,41,41,Aurora rockfish,Sebastes aurora
+116716,166716,Splitnose Rockfish,Rockfish,Deep/Uncommon,,2,6,2,Splitnose RF,Sebastes diploproa,species,Rockfish - Demersal,fish,45,924,AK-Baja,Hard/Soft Mixed,Common,46,46,Splitnose rockfish,Sebastes diploproa
+,166728,Blackgill Rockfish,Rockfish,Deep/Uncommon,,2,6,3,Blackgill RF,Sebastes melanostomus,species,Rockfish - Demersal,fish,88,768,Can-Baja,Rocky,Uncommon,61,61,Blackgill rockfish,Sebastes melanostomus
+,166712,Shortraker Rockfish,Rockfish,Deep/Uncommon,,2,6,5,Shortraker RF,Sebastes borealis,species,Rockfish - Demersal,fish,25,1200,AK-CCA,Hard/Soft Mixed,Uncommon,85,108,Shortraker rockfish,Sebastes borealis
+,166715,Darkblotched Rockfish,Rockfish,Deep/Uncommon,,2,6,6,Darkblotched RF,Sebastes crameri,species,Rockfish - Demersal,fish,29,915,AK-SCA,Hard/Soft Mixed,Uncommon,57,59,Darkblotched rockfish,Sebastes crameri
+,166741,Stripetail Rockfish,Rockfish,Deep/Uncommon,,2,6,7,Stripetail RF,Sebastes saxicola,species,Rockfish - Demersal,fish,25,547,Can-Baja,Hard/Soft Mixed,Common,39,41,Stripetail rockfish,Sebastes saxicola
+,166744,Sharpchin Rockfish,Rockfish,Deep/Uncommon,,2,6,8,Sharpchin RF,Sebastes zacentrus,species,Rockfish - Demersal,fish,25,610,AK-SCA,Hard/Soft Mixed,Uncommon,49,,Sharpchin rockfish,Sebastes zacentrus
+,166768,Swordspine Rockfish,Rockfish,Deep/Uncommon,,2,6,11,Swordspine RF,Sebastes ensifer,species,Rockfish - Demersal,fish,50,433,CCA-Baja,Rocky,Uncommon,30,30,Swordspine rockfish,Sebastes ensifer
+,166783,Shortspine Thornyhead,Rockfish,Deep/Uncommon,,2,6,12,Shortspine Thornyhead,Sebastolobus alascanus,species,Rockfish - Demersal,fish,17,1600,AK-Baja,Mud/Sand,Common,73,83,Shortspine thornyhead,Sebastolobus alascanus
+,166784,Longspine Thornyhead,Rockfish,Deep/Uncommon,,2,6,13,Longspine Thornyhead,Sebastolobus altivelis,species,Rockfish - Demersal,fish,163,1756,AK-Baja,Mud/Sand,No data,38,38,Longspine thornyhead,Sebastolobus altivelis
+,167832,Kelp Bass,Reef Fish,Home,,3,1,1,Kelp Bass,Paralabrax clathratus,species,Bass,fish,0,46,OR-Baja,Hard/Soft Interface,Common,72,72,Kelp bass,Paralabrax clathratus
+,167834,Barred Sand Bass,Reef Fish,Home,,3,1,2,Barred Sand Bass,Paralabrax nebulifer,species,Bass,fish,0,183,CCA-Baja,Hard/Soft Mixed,No data,65,67,Barred sand bass,Paralabrax nebulifer
+,167116,Lingcod,Reef Fish,Home,20,3,1,3,Lingcod,Ophiodon elongatus,species,Hexigrammid,fish,0,475,AK-Baja,Hard/Soft Mixed,Common,114,152,Lingcod,Ophiodon elongatus
+,167110,Kelp Greenling,Reef Fish,Home,21,3,1,4,Kelp Greenling,Hexagrammos decagrammus,species,Hexigrammid,fish,0,46,AK-SCA,Rocky,Common,53,61,Kelp greenling,Hexagrammos decagrammus
+,167111,Rock Greenling,Reef Fish,Home,,3,1,5,Rock Greenling,Hexagrammos lagocephalus,species,Hexigrammid,fish,0,596,AK-CCA,Rocky,Common,61,61,Rock greenling,Hexagrammos lagocephalus
+,167118,Painted Greenling,Reef Fish,Home,22,3,1,6,Painted Greenling,Oxylebius pictus,species,Hexigrammid,fish,0,49,AK-Baja,Rocky,Common,15,25,Painted greenling,Oxylebius pictus
+167108,167109,UI greenling,Reef Fish,Home,,3,1,7,UI greenling,Unidentified Hexagrammos sp.,genus,Hexigrammid,fish,,,,,,61,,UI hexagrammid,Hexagrammidae
+,167918,Giant Sea Bass,Reef Fish,Home,,3,1,8,Giant Sea Bass,Stereolepis gigas,species,Bass,fish,5,46,NCA-Baja,Hard/Soft Mixed,Common,213,250,Giant sea bass,Stereolepis gigas
+,167841,Threadfin Bass,Reef Fish,Home,,3,1,9,Threadfin Bass,Pronotogrammus multifasciatus,species,Bass,fish,40,200,SCA-Peru,Hard/Soft Mixed,No data,26,26,Threadfin bass,Pronotogrammus multifasciatus
+,170085,Blacksmith,Reef Fish,Home,23,3,1,10,Blacksmith,Chromis punctipinnis,species,Other Reef Fish,fish,0,46,SCA-Baja,Rocky,Common,25,31,Blacksmith,Chromis punctipinnis
+,169522,Halfmoon,Reef Fish,Home,,3,1,11,Halfmoon,Medialuna californiensis,species,Other Reef Fish,fish,0,40,Can-Baja,Hard/Soft Mixed,Common,48,48,Halfmoon,Medialuna californiensis
+,169515,Opaleye,Reef Fish,Home,,3,1,12,Opaleye,Girella nigricans,species,Other Reef Fish,fish,0,30,CCA-Baja,Hard/Soft Interface,Common,64,66,Opaleye,Girella nigricans
+,553364,Sargo,Reef Fish,Home,,3,1,13,Sargo,Anisotremus davidsonii,species,Other Reef Fish,fish,0,40,CCA-Baja,Hard/Soft Mixed,Common,58,58,Sargo,Anisotremus davidsonii
+,170120,Garibaldi,Reef Fish,Home,,3,1,14,Garibaldi,Hypsypops rubicundus,species,Other Reef Fish,fish,0,29,CCA-Baja,Rocky,Common,30,35,Garibaldi,Hypsypops rubicundus
+,168540,Ocean Whitefish,Reef Fish,Home,,3,1,15,Ocean Whitefish,Caulolatilus princeps,species,Other Reef Fish,fish,1,137,Can-Baja,Rocky,Common,102,102,Ocean whitefish,Caulolatilus princeps
+,171345,Wolf-eel,Reef Fish,Home,,3,1,16,Wolf-eel,Anarrhichthys ocellatus,species,Other Reef Fish,fish,0,225,AK-Baja,Rocky,Common,203,240,Wolf eel,Anarrhichthys ocellatus
+,161194,California Moray,Reef Fish,Home,,3,1,17,Ca Moray,Gymnothorax mordax,species,Other Reef Fish,fish,0,40,SCA-Baja,Rocky,Common,152,152,California moray,Gymnothorax mordax
+,170597,Senorita,Reef Fish,Home,25,3,1,20,Senorita,Oxyjulis californica,species,Wrasse,fish,0,101,NCA-Baja,Rocky,Common,25,25,Senorita,Oxyjulis californica
+,170511,Rock Wrasse,Reef Fish,Home,,3,1,21,Rock Wrasse,Halichoeres semicinctus,species,Wrasse,fish,0,24,CCA-Baja,Rocky,Common,33,38,Rock wrasse,Halichoeres semicinctus
+,170744,California Sheephead,Reef Fish,Home,24,3,1,22,Ca Sheephead,Semicossyphus pulcher,species,Wrasse,fish,0,88,CCA-Baja,Rocky,Common,91,91,California sheephead,Semicossyphus pulcher
+,169754,Pile Perch,Perch,Home,26,4,1,1,Pile Perch,Rhacochilus vacca,species,Perch,fish,0,46,AK-Baja,Rocky,Common,44,44,Pile perch,Rhacochilus vacca
+,169755,Rubberlip Seaperch,Perch,Home,,4,1,2,Rubberlip Seaperch,Rhacochilus toxotes,species,Perch,fish,0,46,NCA-Baja,Rocky,Common,47,47,Rubberlip surfperch,Rhacochilus toxotes
+,169744,Striped Seaperch,Perch,Home,,4,1,3,Striped Seaperch,Embiotoca lateralis,species,Perch,fish,0,21,AK-Baja,Hard/Soft Mixed,Common,38,38,Striped surfperch,Embiotoca lateralis
+,169761,Rainbow Seaperch,Perch,Home,,4,1,4,Rainbow Seaperch,Hypsurus caryi,species,Perch,fish,0,40,NCA-Baja,Hard/Soft Mixed,Common,30,30,Rainbow surfperch,Hypsurus caryi
+,169769,Pink Seaperch,Perch,Home,27,4,1,5,Pink Seaperch,Zalembius rosaceus,species,Perch,fish,0,229,NCA-Baja,See specific species,Uncommon,20,20,Pink surfperch,Zalembius rosaceus
+,169737,Kelp Perch,Perch,Home,,4,1,6,Kelp Perch,Brachyistius frenatus,species,Perch,fish,0,31,Can-SCA,Hard/Soft Mixed,Common,22,22,Kelp surfperch,Brachyistius frenatus
+,169739,Shiner Perch,Perch,Home,,4,1,7,Shiner Perch,Cymatogaster aggregata,species,Perch,fish,0,146,AK-Baja,Rocky,Common,11,20,Shiner surfperch,Cymatogaster aggregata
+,169751,White Seaperch,Perch,Home,,4,1,8,White Seaperch,Phanerodon furcatus,species,Perch,fish,0,43,Can-Baja,Hard/Soft Mixed,Common,31,32,White surfperch,Phanerodon furcatus
+,169747,Walleye Surfperch,Perch,Home,,4,1,9,Walleye Surfperch,Hyperprosopon argenteum,species,Perch,fish,0,20,Can-Baja,Hard/Soft Mixed,Common,30,30,Walleye surfperch,Hyperprosopon argenteum
+,169745,Black Perch,Perch,Home,,4,1,10,Black Perch,Embiotoca jacksoni,species,Perch,fish,0,46,NCA-Baja,Hard/Soft Mixed,Common,39,39,Black surfperch,Embiotoca jacksoni
+,169758,Barred Surfperch,Perch,Home,,4,1,11,Barred Surfperch,Amphistichus argenteus,species,Perch,fish,,,,,,,,,
+,169735,UI surfperch,Perch,Home,28,4,1,12,UI surfperch,Unidentified Embiotocidae,family,Perch,fish,,,,,,47,,UI surfperch,Embiotocidae
+,172716,Pacific Sanddab,Flatfish,Home,,5,1,1,Pacific Sanddab,Citharichthys sordidus,species,Flat Fish,fish,9,553,AK-Baja,Mud/Sand,Common,41,41,Pacific sand dab,Citharichthys sordidus
+,172717,Speckled Sanddab,Flatfish,Home,,5,1,2,Speckled Sanddab,Citharichthys stigmaeus,species,Flat Fish,fish,0,250,AK-Baja,Hard/Soft Mixed,Common,17,17,Speckled sanddab,Citharichthys stigmaeus
+,172715,UI sanddab,Flatfish,Home,,5,1,3,UI sanddab,Unidentified Citharichthys sp.,genus,Flat Fish,fish,3,553,AK-Baja,Mud/Sand,,41,,UI sanddab,Citharichthys sp.
+,172887,Dover Sole,Flatfish,Home,,5,1,4,Dover Sole,Microstomus pacificus,species,Flat Fish,fish,10,1370,AK-Baja,Mud/Sand,Common,40,76,Dover sole,Microstomus pacificus
+,172978,Rex Sole,Flatfish,Home,,5,1,5,Rex Sole,Glyptocephalus zachirus,species,Flat Fish,fish,18,640,AK-Baja,Mud/Sand,Common,36,60,Rex sole,Glyptocephalus zachirus
+,172921,English Sole,Flatfish,Home,,5,1,6,English Sole,Parophrys vetulus,species,Flat Fish,fish,0,548,AK-SCA,Mud/Sand,Common,33,57,English sole,Parophrys vetulus
+,172868,Petrale Sole,Flatfish,Home,,5,1,7,Petrale Sole,Eopsetta jordani,species,Flat Fish,fish,18,457,AK-Baja,Mud/Sand,Common,42,70,Petrale sole,Eopsetta jordani
+,172871,Slender Sole,Flatfish,Home,,5,1,8,Slender Sole,Lyopsetta exilis,species,Flat Fish,fish,18,512,AK-Baja,Mud/Sand,Uncommon,34,35,Slender sole,Lyopsetta exilis
+,172917,Rock Sole,Flatfish,Home,,5,1,9,Rock Sole,Lepidopsetta bilineata,species,Flat Fish,fish,0,575,AK-Baja,Mud/Sand,Common,57,60,Rock sole,Lepidopsetta bilineata
+,172866,Deepsea Sole,Flatfish,Home,,5,1,10,Deepsea Sole,Embassichthys bathybius,species,Flat Fish,fish,41,1800,AK-SCA,Hard/Soft Mixed,Uncommon,46,47,Deep sea sole,Embassichthys bathybius
+,172893,Starry Flounder,Flatfish,Home,,5,1,11,Starry Flounder,Platichthys stellatus,species,Flat Fish,fish,1,274,AK-SCA,Mud/Sand,Common,57,91,Starry flounder,Platichthys stellatus
+,172924,Curlfin Sole,Flatfish,Home,,5,1,12,Curlfin Sole,Pleuronichthys decurrens,species,Flat Fish,fish,18,350,AK-Baja,Mud/Sand,Uncommon,37,37,Curlfin turbot,Pleuronichthys decurrens
+,172925,Spotted Turbot,Flatfish,Home,,5,1,13,Spotted Turbot,Pleuronichthys ritteri,species,Flat Fish,fish,0,50,CCA-Baja,Mud/Sand,Uncommon,30,30,Spotted turbot,Pleuronichthys ritteri
+23,172859,UI flatfish,Flatfish,Home,,5,1,14,UI flatfish,Unidentified Pleuronectidae,family,Flat Fish,fish,,,,,,,,UI flatfish,Pleuronectidae
+,172743,California Halibut,Flatfish,Home,,5,1,15,California Halibut,Paralichthys californicus,species,Flat Fish,fish,0,182,Can-Baja,Sand,Common,152,152,California halibut,Paralichthys californicus
+,172932,Pacific Halibut,Flatfish,Home,,5,1,16,Pacific Halibut,Hippoglossus stenolepis,species,Flat Fish,fish,6,1200,AK-SCA,Mud/Sand,Uncommon,258,267,Pacific halibut,Hippoglossus stenolepis
+,172862,Arrowtooth Flounder,,,,,,,Arrowtooth Flounder,Atheresthes stomias,species,Flat Fish,fish,18,950,AK-SCA,Mud/Sand,Uncommon,50,84,Arrowtooth flounder,Atheresthes stomias
+,159819,Bluntnose Sixgill Shark,Cartilaginous,Home,,6,1,1,Bluntnose Sixgill Shark,Hexanchus griseus,species,Cartilaginous - Shark,fish,1,2500,AK-SCA,See specific species,Common,330,,Sixgill shark,Hexanchus griseus
+,159988,Brown Cat Shark,Cartilaginous,Home,,6,1,2,Brown Cat Shark,Apristurus brunneus,species,Cartilaginous - Shark,fish,33,1306,Can-Baja,Mud/Sand,Uncommon,68,69,Brown cat shark,Apristurus brunneus
+,159791,Horn Shark,Cartilaginous,Home,,6,1,3,Horn Shark,Heterodontus francisci,species,Cartilaginous - Shark,fish,2,150,CCA-SCA,Hard/Soft Mixed,Common,97,122,Horn shark,Heterodontus francisci
+,160089,Swell Shark,Cartilaginous,Home,,6,1,4,Swell Shark,Cephaloscyllium ventriosum,species,Cartilaginous - Shark,fish,0,421,CCA-Baja,Rocky,Common,102,110,Swell shark,Cephaloscyllium ventriosum
+,160617,Spiny Dogfish,Cartilaginous,Home,,6,1,5,Spiny Dogfish,Squalus acanthias,species,Cartilaginous - Shark,fish,0,1460,AK-Baja,Mud/Sand,Common,157,160,Spiny dogfish,Squalus acanthias
+,160785,Pacific Angel Shark,Cartilaginous,Home,,6,1,6,Pacific Angel Shark,Squatina californica,species,Cartilaginous - Shark,fish,0,182,AK-SCA,Mud/Sand,Common,152,152,Pacific angel shark,Squatina californica
+,160236,Brown Smoothhound,Cartilaginous,Home,,6,1,7,Brown Smoothhound,Mustelus henlei,species,Cartilaginous - Shark,fish,0,280,NCA-SCA,Hard/Soft Mixed,Common,94,100,Brown smoothhound shark,Mustelus henlei
+,160235,Gray Smoothhound,Cartilaginous,Home,,6,1,8,Gray Smoothhound,Mustelus californicus,species,Cartilaginous - Shark,fish,0,200,NCA-Baja,Mud/Sand,Common,116,163,Gray smoothhound shark,Mustelus californicus
+,25,UI shark,Cartilaginous,Home,,6,1,9,UI shark,Unidentified Elasmobranchii  (shark),class,Cartilaginous - Shark,fish,,,,,,,,UI shark,Unidentified shark
+,160981,Bat Ray,Cartilaginous,Home,,6,1,10,Bat Ray,Myliobatis californica,species,Cartilaginous,fish,0,180,OR-Baja,Mud/Sand,Common,100,180,Bat ray,Myliobatis californica
+,160848,Big Skate,Cartilaginous,Home,,6,1,11,Big Skate,Raja binoculata,species,Cartilaginous,fish,3,800,AK-Baja,Mud/Sand,Common,183,243,Big skate,Raja binoculata
+,160851,Longnose Skate,Cartilaginous,Home,,6,1,12,Longnose Skate,Raja rhina,species,Cartilaginous,fish,9,1069,AK-Baja,Mud/Sand,Common,137,180,Longnose skate,Raja rhina
+,160854,Starry Skate,Cartilaginous,Home,,6,1,13,Starry Skate,Raja stellulata,species,Cartilaginous,fish,18,732,AK-Baja,Mud/Sand,Uncommon,76,76,Starry skate,Raja stellulata
+,160833,Pacific Electric Ray,Cartilaginous,Home,,6,1,14,Pacific Electric Ray,Torpedo californica,species,Cartilaginous,fish,10,305,Can-Baja,Hard/Soft Mixed,Common,91,140,Pacific electric ray,Torpedo californica
+,160818,Shovelnose Guitarfish,Cartilaginous,Home,,6,1,15,Shovelnose Guitarfish,Rhinobatos productus,species,Cartilaginous,fish,0,18,CCA-Baja,Mud/Sand,Common,119,170,Shovelnose guitarfish,Rhinobatos productus
+,161015,Spotted Ratfish,Cartilaginous,Home,,6,1,16,Spotted Ratfish,Hydrolagus colliei,species,Cartilaginous,fish,0,913,AK-Baja,See specific species,Common,96,100,Spotted ratfish,Hydrolagus colliei
+161002,27,UI ray,Cartilaginous,Home,,6,1,17,UI ray,Unidentified Elasmobranchii (ray),class,Cartilaginous,fish,,,,Mud/Sand,,,,UI ray,Unidentified ray
+,160846,UI skate,Cartilaginous,Home,,6,1,18,UI skate,Unidentified Raja sp.,genus,Cartilaginous,fish,3,1372,AK-Baja,See specific species,,244,,UI skate,Raja sp.
+,28,UI ray/skate,Cartilaginous,Home,,6,1,19,UI ray/skate,Unidentified Elasmobranchii  (ray or skate),class,Cartilaginous,fish,,,,,,,,UI ray/skate,Unidentified ray or skate
+,160448,Leopard Shark,,,,,,,Leopard Shark,Triakis semifasciata,species,Cartilaginous - Shark,fish,0,90,Can-SCA,Hard/Soft Mixed,Common,160,198,Leopard shark,Triakis semifasciata
+,170954,Bluebanded Ronquil,Other Fish,Benthic,,7,1,1,Bluebanded Ronquil,Rathbunella hypoplecta,species,Other Benthic Fish,fish,15,92,NCA-SCA,Hard/Soft Mixed,Common,16,21,Stripedfin ronquil,Rathbunella hypoplecta
+,165215,UI eel pout,Other Fish,Benthic,,7,1,2,UI eel pout,Unidentified Zoarcidae,family,Other Benthic Fish,fish,,,AK-Baja,Mud/Sand,Common,25,,UI eel pout,Zoarcidae
+,167426,UI poacher,Other Fish,Benthic,,7,1,3,UI poacher,Unidentified Agonidae,family,Other Benthic Fish,fish,,,,,,20,,UI poacher,Agonidae
+,78,Shortspine/Longspine Combfish,Other Fish,Benthic,,7,1,4,S/L Combfish,Zaniolepis frenata or latipinnis,complex,Other Benthic Fish,fish,0,365,WA-Baja,See specific species,Uncommon,30,,Combfish complex,Z. frenata or Z. latipinnis
+,167128,Longspine Combfish,Other Fish,Benthic,,7,1,5,Longspine Combfish,Zaniolepis latipinnis,species,Other Benthic Fish,fish,,,,,,,,Longspine combfish,Zaniolepis latipinnis
+,167129,Shortspine Combfish,Other Fish,Benthic,,7,1,6,Shortspine Combfish,Zaniolepis frenata,species,Other Benthic Fish,fish,,,,,,,,Shortspine combfish,Zaniolepis frenata
+,167123,Sablefish,Other Fish,Benthic,,7,1,7,Sablefish,Anoplopoma fimbria,species,Other Benthic Fish,fish,175,2750,AK-Baja,Mud,Common,80,120,Sablefish,Anoplopoma fimbria
+,162378,California Lizardfish,Other Fish,Benthic,,7,1,8,Ca Lizardfish,Synodus lucioceps,species,Other Benthic Fish,fish,2,229,CCA-Baja,Mud/Sand,Common,30,64,California lizardfish,Synodus lucioceps
+,164711,Pacific Cod,Other Fish,Benthic,,7,1,10,Pacific Cod,Gadus macrocephalus,species,Other Benthic Fish,fish,13,1280,Japan-SCA,Mud/Sand,Uncommon,114,119,Pacific cod,Gadus macrocephalus
+,622244,Pacific Hagfish,Other Fish,Benthic,,7,1,11,Pacific Hagfish,Eptatretus stoutii,species,Other Benthic Fish,fish,6,966,AK-Baja,Mud/Sand,Common,63,63,Pacific hagfish,Eptatretus stoutii
+,171672,Pacific Sand Lance,Other Fish,Benthic,,7,1,12,Pacific Sand Lance,Ammodytes hexapterus,species,Other Benthic Fish,fish,0,80,Japan-SCA,Sand,Common,20,30,Pacific sand lance,Ammodytes hexapterus
+,164719,Pacific Tomcod,,,,,,,Pacific Tomcod,Microgadus proximus,species,Other Benthic Fish,fish,0,275,AK-CCA,Mud/Sand,Common,30,30,Pacific tomcod,Microgadus proximus
+,164414,Plainfin Midshipman,Other Fish,Benthic,,7,1,14,Plainfin Midshipman,Porichthys notatus,species,Other Benthic Fish,fish,0,366,AK-Baja,Hard/Soft Mixed,Common,38,38,Plainfin midshipman,Porichthys notatus
+22,164701,UI cod,Other Fish,Benthic,,7,1,16,UI cod,Unidentified Gadidae,family,Other Benthic Fish,fish,,,,,,114,,UI cod,Cod in shape
+,169237,UI croaker,Other Fish,Benthic,,7,1,17,UI croaker,Unidentified Sciaenidae,family,Other Benthic Fish,fish,0,100,Can-Baja,Hard/Soft Interface,Uncommon,152,,UI croaker,Sciaenidae
+,26,UI small benthic fish,Other Fish,Benthic,,7,1,18,UI small benthic,Unidentified small benthic fish,,Other Benthic Fish,fish,,,,,,,,UI small benthic fish,Unidentified small bottom fish
+,164792,Pacific Hake,Other Fish,Pelagic,,7,2,1,Pacific Hake,Merluccius productus,species,Schooling Pelagic,fish,0,1000,Can-Baja,See specific species,Common,60,91,Pacific hake,Merluccius productus
+,159699,Pacific Lamprey,Other Fish,Pelagic,,7,2,2,Pacific Lamprey,Entosphenus tridentatus,species,Other Fish,fish,0,1508,AK-Baja,Hard/Soft Mixed,Common,41,76,Pacific lamprey,Entosphenus tridentatus
+,173414,Ocean Sunfish,Other Fish,Pelagic,,7,2,3,Ocean Sunfish,Mola mola,species,Other Fish,fish,0,480,Can-Baja,See specific species,Common,333,399,Ocean sunfish,Mola mola
+,168696,Yellowtail Jack,Other Fish,Pelagic,,7,2,4,Yellowtail Jack,Seriola lalandi,species,schooling pelagic,fish,3,825,AK-Baja,Hard/Soft Mixed,Common,80,250,Yellowtail jack,Seriola dorsalis
+,166404,Tubesnout,Other Fish,Pelagic,,7,2,5,Tubesnout,Aulorhynchus flavidus,species,Schooling Pelagic,fish,0,30,AK-Baja,Hard/Soft Mixed,Uncommon,18,18,Tube-snout,Aulorhynchus flavidus
+,166424,Slender Snipefish,Other Fish,Pelagic,,7,2,6,Slender Snipefish,Macroramphosus gracilis,species,Schooling Pelagic,fish,50,500,Can-Baja,Hard/Soft Mixed,Common,11,15,Slender snipefish,Macrorhamphosus gracilis
+,161931,UI salmonid,Other Fish,Pelagic,,7,2,7,UI salmonid,Unidentified Salmonidae,family,Schooling Pelagic,fish,0,375,AK-Baja,,Uncommon,150,,UI salmonid,Salmonidae
+102,162028,UI smelt,Other Fish,Pelagic,,7,2,8,UI smelt,Unidentified Osmeridae,family,Schooling Pelagic,fish,0,225,AK-Baja,Hard/Soft Mixed,Common,,,UI smelt,Osmeridae
+79,172398,UI tuna,Other Fish,Pelagic,,7,2,9,UI tuna,Unidentified Scombridae,family,Schooling Pelagic,fish,,,,,,,,UI tuna,
+,33,UI schooling pelagic fish,Other Fish,Pelagic,,7,2,10,UI schooling pelagic fish,Unidentified schooling pelagic fish,,Schooling Pelagic,fish,,,,,,,,UI schooling pelagic,
+,35,UI large pelagic fish,,,,,,,UI large pelagic fish,Unidentified large pelagic fish,,Other Fish,fish,,,,,,,,UI large pelagic fish,
+165000,165332,UI grenadier,Other Fish,Pelagic,,7,2,12,UI grenadier,Unidentified Macrouridae,family,Other Fish,fish,,,,,,,,UI grenadier,Unidentified grenadier
+999997,999999,UI fish,Other Fish,Pelagic,,7,2,13,UI fish,Unidentified fish,,Other Fish,fish,,,,,,,,UI fish,Unidentified fish
+,166749,Starry Rockfish,Rockfish_Rockfish,Home_Red Rockfish,10,2_2,1_2,17_4,Starry RF,Sebastes constellatus,species,Rockfish - Demersal,fish,15,274,NCA-Baja,Rocky,Common,42,46,Starry rockfish,Sebastes constellatus
+,166717,Greenstriped Rockfish,Rockfish_Rockfish,Home_Red Rockfish,,2_2,1_2,21_13,Greenstriped RF,Sebastes elongatus,species,Rockfish - Demersal,fish,12,145,AK-Baja,Hard/Soft Mixed,Common,38,49,Greenstriped rockfish,Sebastes elongatus
+,166748,Greenspotted Rockfish,Rockfish_Rockfish,Home_Red Rockfish,,2_2,1_2,22_5,Greenspotted RF,Sebastes chlorostictus,species,Rockfish - Demersal,fish,30,379,Can-Baja,Hard/Soft Mixed,Common,50,53,Greenspotted rockfish,Sebastes chlorostictus
+,166740,Yelloweye Rockfish,Rockfish_Rockfish,Home_Red Rockfish,6,2_2,1_2,26_8,Yelloweye RF,Sebastes ruberrimus,species,Rockfish - Demersal,fish,11,549,AK-SCA,Hard/Soft Mixed,Common,91,91,Yelloweye rockfish,Sebastes ruberrimus
+,44,UI Sebastomus rockfish,Rockfish_Rockfish,Home_Red Rockfish,17,2_2,1_2,31_12,UI Sebastomus RF,Unidentified Sebastomus sp.,genus,Rockfish - Demersal,fish,,,,,,,,Sebastomus rockfish,Subgenus Sebastomus
+,166729,Vermilion Rockfish,Rockfish_Rockfish,Home_Red Rockfish,4,2_2,1_2,5_1,Vermilion RF,Sebastes miniatus,species,Rockfish - Demersal,fish,6,478,AK-Baja,Hard/Soft Mixed,Common,76,76,Vermilion rockfish,Sebastes miniatus
+,166734,Canary Rockfish,Rockfish_Rockfish,Home_Red Rockfish,5,2_2,1_2,7_2,Canary RF,Sebastes pinniger,species,Rockfish - Demersal,fish,18,839,AK-Baja,Rocky,Common,76,76,Canary rockfish,Sebastes pinniger
+,166738,Rosy Rockfish,Rockfish_Rockfish,Home_Red Rockfish,11,2_2,1_2,10_3,Rosy RF,Sebastes rosaceus,species,Rockfish - Demersal,fish,22,290,SCA-Baja,Rocky,Common,32,36,Rosy rockfish,Sebastes rosaceus
+,166767,Gopher Rockfish,Rockfish_Rockfish,Home_Patterned,13,2_2,1_3,12_11,Gopher RF,Sebastes carnatus,species,Rockfish - Demersal,fish,0,86,OR-Baja,Rocky,Common,39,39,Gopher rockfish,Sebastes carnatus
+,166750,Calico Rockfish,Rockfish_Rockfish,Home_Patterned,12,2_2,1_3,13_5,Calico RF,Sebastes dallii,species,Rockfish - Demersal,fish,0,305,CCA-Baja,Hard/Soft Interface,Common,20,25,Calico rockfish,Sebastes dalli
+,166754,Cowcod,Rockfish,Patterned,,2,3,7,Cowcod,Sebastes levis,species,Rockfish - Demersal,fish,20,491,OR-Baja,Rocky,Common,94,100,Cowcod,Sebastes levis
+,166726,Quillback Rockfish,Rockfish_Rockfish,Home_Patterned,8,2_2,1_3,16_6,Quillback RF,Sebastes maliger,species,Rockfish - Demersal,fish,0,274,AK-CCA,Rocky,Common,61,64,Quillback rockfish,Sebastes maliger
+,166708,Brown Rockfish,Rockfish_Rockfish,Home_Patterned,7,2_2,1_3,18_1,Brown RF,Sebastes auriculatus,species,Rockfish - Demersal,fish,0,294,Can-Baja,Hard/Soft Mixed,Common,54,56,Brown rockfish,Sebastes auriculatus
+,166764,Treefish,Rockfish_Rockfish,Home_Patterned,,2_2,1_3,19_15,Treefish,Sebastes serriceps,species,Rockfish - Demersal,fish,0,106,NCA-Baja,Rocky,Common,41,41,Treefish,Sebastes serriceps
+,166760,Flag Rockfish,Rockfish_Rockfish,Home_Patterned,,2_2,1_3,20_12,Flag RF,Sebastes rubrivinctus,species,Rockfish - Demersal,fish,30,431,OR-Baja,Rocky,Common,44,63,Flag rockfish,Sebastes rubrivinctus
+,166731,China Rockfish,Rockfish,Patterned,,2,3,3,China RF,Sebastes nebulosus,species,Rockfish - Demersal,fish,3,128,AK-SCA,Rocky,Common,43,45,China rockfish,Sebastes nebulosus
+,166732,Tiger Rockfish,Rockfish,Patterned,,2,3,13,Tiger RF,Sebastes nigrocinctus,species,Rockfish - Demersal,fish,9,298,AK-SCA,Rocky,Uncommon,61,61,Tiger rockfish,Sebastes nigrocinctus
+,166713,Copper Rockfish,Rockfish_Rockfish,Home_Patterned,14,2_2,1_3,8_10,Copper RF,Sebastes caurinus,species,Rockfish - Demersal,fish,0,408,AK-Baja,Rocky,Common,57,66,Copper rockfish,Sebastes caurinus
+,999996,YOY,Rockfish_Rockfish,Home_Schooling,1,2_2,1_4,1_11,YOY,Young of year (<10 cm Sebastes sp.),genus,Rockfish - Small Schooling,fish,,,,Hard/Soft Mixed,Common,9,,YOY,Young of year rockfish
+,166743,Pygmy Rockfish,Rockfish_Rockfish,Home_Schooling,,2_2,1_4,11_9,Pygmy RF,Sebastes wilsoni,species,Rockfish - Small Schooling,fish,30,270,AK-SCA,Hard/Soft Mixed,Uncommon,21,24,Pygmy rockfish,Sebastes wilsoni
+,166733,Bocaccio,Rockfish_Rockfish,Home_Schooling,,2_2,1_4,15_4,Bocaccio,Sebastes paucispinis,species,Rockfish - Large Schooling,fish,0,475,AK-Baja,Hard/Soft Mixed,Common,91,98,Bocaccio,Sebastes paucispinis
+,166762,Halfbanded Rockfish,Rockfish_Rockfish,Home_Schooling,9,2_2,1_4,2_8,Halfbanded RF,Sebastes semicinctus,species,Rockfish - Small Schooling,fish,15,402,WA-Baja,Hard/Soft Mixed,Common,25,25,Halfbanded rockfish,Sebastes semicinctus
+,166719,Widow Rockfish,Rockfish_Rockfish,Home_Schooling,16,2_2,1_4,27_7,Widow RF,Sebastes entomelas,species,Rockfish - Large Schooling,fish,0,400,AK-SCA,See specific species,Common,53,62,Widow rockfish,Sebastes entomelas
+,32,Small schooling rockfish,Rockfish_Rockfish,Home_Schooling,18,2_2,1_4,29_13,Small schooling RF,Schooling (10-15 cm Sebastes sp.),genus,Rockfish - Small Schooling,fish,,,,,,,,Small schooling rockfish,Schooling rockfish (10-15cm)
+,166730,Blue/Deacon Rockfish,Rockfish_Rockfish,Home_Schooling,2,2_2,1_4,3_1,Blue/Deacon RF,Sebastes mystinus or diaconus,complex,Rockfish - Large Schooling,fish,0,550,Can-Baja,Rocky,Common,53,53,Blue rockfish,Sebastes mystinus
+,166725,Shortbelly Rockfish,Rockfish_Rockfish,Home_Schooling,,2_2,1_4,30_10,Shortbelly RF,Sebastes jordani,species,Rockfish - Small Schooling,fish,10,491,AK-Baja,Hard/Soft Mixed,Common,30,35,Shortbelly rockfish,Sebastes jordani
+,166727,Black Rockfish,Rockfish_Rockfish,Home_Schooling,,2_2,1_4,4_2,Black RF,Sebastes melanops,species,Rockfish - Large Schooling,fish,0,366,AK-Baja,Hard/Soft Mixed,Common,60,69,Black rockfish,Sebastes melanops
+,30,Olive/Yellowtail Rockfish complex,Rockfish_Rockfish,Home_Schooling,3,2_2,1_4,6_3,Olive/Yellowtail RF,Sebastes serranoides or flavidus,complex,Rockfish - Large Schooling,fish,0,549,AK-Baja,Rocky,Common,66,,Olive/yellowtail complex,S. serranoides or S. flavidus
+,166753,Squarespot Rockfish,Rockfish_Rockfish,Home_Schooling,15,2_2,1_4,9_6,Squarespot RF,Sebastes hopkinsi,species,Rockfish - Large Schooling,fish,18,305,OR-Baja,Hard/Soft Mixed,Common,29,29,Squarespot rockfish,Sebastes hopkinsi
+,31,Canary/Vermillion Rockfish complex,Rockfish_Rockfish,Red Rockfish_Complexes,,2_2,2_5,9_2,Canary/Vermillion RF,Sebastes pinniger or miniatus,complex,Rockfish - Demersal,fish,,,,See specific species,Common,54,,Canary/vermilion complex,S. pinniger or S. miniatus
+,166751,Pink Rockfish,Rockfish_Rockfish,Red Rockfish_Deep/Uncommon,,2_2,2_6,10_9,Pink RF,Sebastes eos,species,Rockfish - Demersal,fish,45,366,OR-Baja,Rocky,Common,56,56,Pink rockfish,Sebastes eos
+,166770,Pinkrose Rockfish,Rockfish_Rockfish,Red Rockfish_Deep/Uncommon,,2_2,2_6,11_10,Pinkrose RF,Sebastes simulator,species,Rockfish - Demersal,fish,99,450,CCA-Baja,Rocky,Uncommon,30,42,Pinkrose rockfish,Sebastes simulator
+,166710,Redbanded Rockfish,Rockfish_Rockfish,Patterned_Deep/Uncommon,,2_2,3_6,14_4,Redbanded RF,Sebastes babcocki,species,Rockfish - Demersal,fish,31,1145,AK-SCA,Rocky,Common,55,71,Red banded rockfish,Sebastes babcocki
+,166761,Bank Rockfish,Rockfish_Rockfish,Red Rockfish_Patterned,,2_2,2_3,15_8,Bank RF,Sebastes rufus,species,Rockfish - Demersal,fish,31,512,Can-Baja,Hard/Soft Mixed,Common,51,55,Bank rockfish,Sebastes rufus
+66,166705,UI rockfish,Rockfish_Rockfish_Rockfish,Home_Patterned_Complexes,19,2_2_2,1_3_5,32_16_7,UI RF,Unidentified Sebastes sp.,genus,Rockfish - Demersal,fish,,,,,,97,,UI rockfish,Sebastes sp.
+,87,Squarespot/Widow Rockfish complex,Rockfish_Rockfish_Rockfish,Home_Schooling_Complexes,,2_2_2,1_4_5,28_14_4,Squarespot/Widow RF,Sebastes hopkinsi or entomelas,complex,Rockfish - Large Schooling,fish,0,400,AK-Baja,See specific species,Common,62,,Squarespot/widow Complex,S. hopkinsi or S. entomelas
+,167353,Cabezon,Reef Fish_Other Fish,Home_Benthic,,3_7,1_1,18_15,Cabezon,Scorpaenichthys marmoratus,species,Sculpin,fish,0,200,Can-Baja,Hard/Soft Mixed,Common,99,99,Cabezon,Scorpaenichthys marmoratus
+,166827,California Scorpionfish,Reef Fish_Other Fish,Home_Benthic,,3_7,1_1,19_9,Ca Scorpionfish,Scorpaena guttata,species,Other Benthic Fish,fish,30,190,CCA-Baja,Hard/Soft Mixed,Common,43,47,California scorpionfish,Scorpaena guttata
+,77,California Lizardfish/Lingcod complex,,,,,,,Ca Lizardfish/Lingcod,Synodus lucioceps or Ophiodon elongatus,complex,Other Benthic Fish,fish,0,475,AK-Baja,Hard/Soft Mixed,Common,114,,CA lizard fish/lingcod,S. lucioceps or O. elongatus
+,166704,UI Scorpaenid,,,,,,,UI Scorpaenid,Unidentified Scorpaenidae,family,Other Benthic Fish,fish,,,,,,,,,
+103,171746,UI goby,,,,,,,UI goby,Unidentified Gobiidae,family,Other Benthic Fish,fish,,,,Rocky,Common,24,,UI goby,Gobiidae
+,166462,Bay Pipefish,,,,,,,Bay Pipefish,Syngnathus leptorhynchus,species,Other Fish,fish,0,10,AK-Baja,Hard/Soft Mixed,Uncommon,18,33,Bay pipefish,Syngnathus leptorhynchus
+,167267,Buffalo Sculpin,,,,,,,Buffalo Sculpin,Enophrys bison,species,Sculpin,fish,0,20,AK-CCA,Rocky,Common,37,37,Buffalo sculpin,Enophrys bison
+,167302,Pacific Staghorn Sculpin,,,,,,,Pacific Staghorn Sculpin,Leptocottus armatus,species,Sculpin,fish,0,914,AK-Baja,Mud/Sand,Uncommon,46,,Staghorn sculpin,Leptocottus armatus
+,167196,UI sculpin,,,,,,,UI sculpin,Unidentified Cottidae,family,Sculpin,fish,,,,,,99,,UI sculpin,Cottidae
+,0,No fish,,,,,,,,No fish recorded for entire line,,,fish,,,,,,,,No fish,No fish recorded for entire line
+,171398,Striped Kelpfish,,,,,,,Striped Kelpfish,Gibbonsia metzi,species,Other Reef Fish,fish,0,57,Can-Baja,Rocky,Common,23,24,Striped kelpfish,Gibbonsia metzi
+,171476,Giant Kelpfish,,,,,,,Giant Kelpfish,Heterostichus rostratus,species,Other Reef Fish,fish,0,40,CCA-Baja,Rocky,Common,61,61,Giant kelpfish,Heterostichus rostratus
+,166752,Bronzespotted Rockfish,,,,,,,Bronzespotted RF,Sebastes gilli,species,Rockfish - Demersal,fish,130,293,WA-Baja,Rocky,Common,56,85,Bronzespotted rockfish,Sebastes gilli
+,166758,Chameleon Rockfish,,,,,,,Chameleon RF,Sebastes phillipsi,species,Rockfish - Demersal,fish,174,390,NCA-SCA,Rocky,Uncommon,43,52,Chameleon rockfish,Sebastes phillipsi
+,166772,Dwarf-red Rockfish,,,,,,,Dwarf-red RF,Sebastes rufinanus,species,Rockfish - Demersal,fish,58,220,SCA,Hard/Soft Mixed,Uncommon,17,17,Dwarf-red rockfish,Sebastes rufinanus
+,166769,Freckled Rockfish,,,,,,,Freckled RF,Sebastes lentiginosus,species,Rockfish - Demersal,fish,22,290,SCA-Baja,Hard/Soft Mixed,Uncommon,23,23,Freckled rockfish,Sebastes lentiginosus
+,166759,Grass Rockfish,,,,,,,Grass RF,Sebastes rastrelliger,species,Rockfish - Demersal,fish,0,46,Can-Baja,Rocky,Common,56,56,Grass rockfish,Sebastes rastrelliger
+,166723,Rosethorn Rockfish,,,,,,,Rosethorn RF,Sebastes helvomaculatus,species,Rockfish - Demersal,fish,16,1145,AK-Baja,Hard/Soft Mixed,Uncommon,41,43,Rosethorn rockfish,Sebastes helvomaculatus
+,105,Sunset Rockfish,,,,,,,Sunset RF,Sebastes crocotulus,species,Rockfish - Demersal,fish,,,,Similar to Vermillion,,53,57,Sunset rockfish,Sebastes crocotulus
+,166737,Yellowmouth Rockfish,,,,,,,Yellowmouth RF,Sebastes reedi,species,Rockfish - Demersal,fish,70,366,AK-NCA,Rocky,Uncommon,58,58,Yellowmouth rockfish,Sebastes reedi
+,166711,Silvergray Rockfish,,,,,,,Silvergray RF,Sebastes brevispinis,species,Rockfish - Large Schooling,fish,0,580,AK-Baja,Rocky,Uncommon,71,74,Silvergray rockfish,Sebastes brevispinis
+,166720,Yellowtail Rockfish,,,,,,,Yellowtail RF,Sebastes flavidus,species,Rockfish - Large Schooling,fish,0,549,AK-SCA,Rocky,Common,66,66,Yellowtail rockfish,Sebastes flavidus
+,166763,Olive Rockfish,,,,,,,Olive RF,Sebastes serranoides,species,Rockfish - Large Schooling,fish,0,172,NCA-Baja,Hard/Soft Mixed,Common,61,61,Olive rockfish,Sebastes serranoides
+,644590,Whitespotted Rockfish,,,,,,,Whitespotted RF,Sebastes moseri,species,Rockfish - Small Schooling,fish,50,274,CCA-Baja,Rocky,Common,21,21,Whitespeckled rockfish,Sebastes moseri

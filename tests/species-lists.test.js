@@ -1,0 +1,660 @@
+/**
+ * Endpoint tests for the annotation species lists and species pictures.
+ *
+ * These endpoints exist so the API can be the single source of truth for the
+ * species lists, which until now lived as seven CSV files inside the annotation
+ * GUI, and for the pictures, which lived as 663 files beside them (issue #52).
+ *
+ * Read-only throughout, so nothing needs cleaning up: the data under test is
+ * the imported list itself, put there by
+ * `migrations/20260901120200-import-species-lists.js` and
+ * `migrations/20260901120400-import-species-pictures.js`. Runs against the app
+ * exported by app.js via Supertest, in-process, against the real dev Postgres
+ * database (see jest.config.js).
+ *
+ * The assertions deliberately avoid pinning exact row counts, which would break
+ * the moment somebody edits a list -- exactly the thing this work is meant to
+ * make easy. They pin the structural facts instead.
+ *
+ * @fileoverview Endpoint tests for GET /api/species/lists and the list/picture routes.
+ * @author Isaac Travers
+ * @module tests/species-lists
+ */
+
+const request = require('supertest');
+const app = require('../app');
+const db = require('../model');
+
+/**
+ * The seven lists the annotation GUI shipped. Named explicitly because losing
+ * one to a bad import is exactly the kind of failure that would otherwise go
+ * unnoticed.
+ *
+ * **These seven are a floor, not the whole set.** A model vocabulary is a list
+ * of its own (`scripts/seed-morphotaxa-vocabulary.js`), so seeding a new model
+ * adds one -- six arrived on 2026-09-18 and broke the equality this used to
+ * assert. That is the failure AGENTS.md describes under *a test may not assume
+ * the database is otherwise empty*: an assertion over a whole table is green
+ * only until something real is in it.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const EXPECTED_LISTS = [
+  'Fish',
+  'GULF_Fish',
+  'GULF_Inverts',
+  'Habitat',
+  'Inverts',
+  'MarineDebris',
+  'Substrate_60Seconds',
+];
+
+describe('Annotation species lists', () => {
+
+  /**
+   * GET /api/species/lists should name every list and count its entries.
+   */
+  it('lists at least the seven annotation lists, each with entries', async () => {
+    const res = await global.api.get('/api/v2/species/lists');
+
+    expect(res.status).toBe(200);
+
+    const names = res.body.map((list) => list.species_list);
+
+    // Every one of the seven is still there, and they are still in order
+    // relative to each other. A list seeded since is allowed to sit between
+    // them; one of the seven going missing is not.
+    expect(names.filter((name) => EXPECTED_LISTS.includes(name))).toEqual(EXPECTED_LISTS);
+
+    for (const list of res.body) {
+      expect(list.entry_count).toEqual(expect.any(Number));
+      expect(list.entry_count).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * The two historical rows with no list ('No code', 'Line start taxserial')
+   * are kept because ML metrics reference them, but they are not on any list
+   * and must not be offered for annotation.
+   */
+  it('excludes entries that belong to no list', async () => {
+    const res = await global.api.get('/api/v2/species/lists');
+
+    expect(res.status).toBe(200);
+    expect(res.body.map((list) => list.species_list)).not.toContain(null);
+  });
+
+  /**
+   * GET /api/species/list/:list should return that list's entries, scoped to
+   * it, each carrying a pictures array.
+   */
+  it('returns one list, scoped to it, with pictures attached', async () => {
+    const res = await global.api.get('/api/v2/species/list/Fish');
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(100);
+    expect(res.body.every((entry) => entry.species_list === 'Fish')).toBe(true);
+    expect(res.body.every((entry) => Array.isArray(entry.pictures))).toBe(true);
+  });
+
+  /**
+   * The response has to be usable as-is for building a tab tree, which means a
+   * list's entries arrive grouped by main tab and sub-tab rather than
+   * interleaved.
+   */
+  it('groups a list by main tab then sub-tab', async () => {
+    const res = await global.api.get('/api/v2/species/list/Fish');
+
+    expect(res.status).toBe(200);
+
+    // A group is contiguous if the number of transitions between distinct
+    // tab/sub-tab pairs equals the number of distinct pairs.
+    // JSON rather than a joined string: a tab name may contain whatever
+    // characters somebody typed, so any separator could appear inside one.
+    const pairs = res.body.map((entry) => JSON.stringify([entry.gui_maintab, entry.gui_subtab]));
+    const transitions = pairs.filter((pair, index) => index === 0 || pair !== pairs[index - 1]);
+
+    expect(transitions.length).toBe(new Set(pairs).size);
+  });
+
+  /**
+   * A list that does not exist is an empty list, not an error -- the same shape
+   * a real but empty list would produce.
+   */
+  it('returns an empty array for an unknown list', async () => {
+    const res = await global.api.get('/api/v2/species/list/NoSuchList');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+});
+
+describe('Annotation species list search', () => {
+
+  /**
+   * Search should match on name, case-insensitively, and stay inside the list.
+   */
+  it('finds entries by name within one list', async () => {
+    const res = await global.api.get('/api/v2/species/list/Fish/search?q=rockfish');
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body.every((entry) => entry.species_list === 'Fish')).toBe(true);
+
+    for (const entry of res.body) {
+      const haystack = [entry.comname, entry.species, entry.gui_display_name]
+        .filter(Boolean).join(' ').toLowerCase();
+      expect(haystack).toContain('rockfish');
+    }
+  });
+
+  /**
+   * An empty q must be rejected rather than quietly returning the whole list,
+   * which would read as a working search.
+   */
+  it('rejects an empty search term', async () => {
+    const res = await global.api.get('/api/v2/species/list/Fish/search?q=');
+
+    expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * The cross-list search, added for MARP_API#130 R3.
+ *
+ * The mosaic's correction picker has always offered "search all lists" and there
+ * was no route behind it -- the button could not have returned anything. It is the
+ * only path to a picker at all for an observation whose session type names no
+ * list, and the deliberate way to make an off-list correction.
+ *
+ * Everything it asserts is seeded here rather than borrowed from the catalogue.
+ * The point of the route is that one common name can mean two organisms, and a
+ * check that waits for the real catalogue to happen to contain such a pair passes
+ * vacuously wherever it does not.
+ */
+describe('Cross-list species search', () => {
+
+  /** Distinguishes these fixtures from anything else in the catalogue. */
+  const TAG = `Jest Widen ${Date.now()}`;
+
+  /** @type {Array<number>} ids to remove afterwards. */
+  const created = [];
+
+  beforeAll(async () => {
+    const rows = await db.species.bulkCreate([
+      // The pair the route exists for: one name, two lists, two organisms.
+      { taxserial: 990001, species_list: 'Fish', comname: TAG, species: 'Testus fishus', gui_display_name: TAG, is_active: true },
+      { taxserial: 990002, species_list: 'GULF_Fish', comname: TAG, species: 'Testus gulfus', gui_display_name: TAG, is_active: true },
+      // Retired: widening a search does not make it offerable again.
+      { taxserial: 990003, species_list: 'Inverts', comname: `${TAG} retired`, species: 'Testus retiredus', gui_display_name: `${TAG} retired`, is_active: false },
+      // On no list: kept because ML metrics reference such rows, never offered.
+      { taxserial: 990004, species_list: null, comname: `${TAG} listless`, species: 'Testus listlessus', gui_display_name: `${TAG} listless`, is_active: true },
+    ], { returning: true });
+
+    created.push(...rows.map((row) => row.id));
+  });
+
+  afterAll(async () => {
+    if (created.length) {
+      await db.species.destroy({ where: { id: created } });
+    }
+  });
+
+  it('returns matches from more than one list, each saying which', async () => {
+    const res = await global.api.get(`/api/v2/species/search?q=${encodeURIComponent(TAG)}`);
+
+    expect(res.status).toBe(200);
+
+    const pair = res.body.filter((entry) => entry.comname === TAG);
+
+    expect(pair.map((entry) => entry.species_list).sort()).toEqual(['Fish', 'GULF_Fish']);
+    // Two ids, because they are two organisms. A client that drew the name
+    // without the list would offer these as one choice.
+    expect(new Set(pair.map((entry) => entry.id)).size).toBe(2);
+  });
+
+  it('keeps the is_active filter the scoped search applies', async () => {
+    const res = await global.api.get(`/api/v2/species/search?q=${encodeURIComponent(TAG)}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body.every((entry) => entry.is_active)).toBe(true);
+    expect(res.body.some((entry) => entry.comname === `${TAG} retired`)).toBe(false);
+  });
+
+  it('leaves out entries that belong to no list', async () => {
+    const res = await global.api.get(`/api/v2/species/search?q=${encodeURIComponent(TAG)}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.every((entry) => entry.species_list !== null)).toBe(true);
+    expect(res.body.some((entry) => entry.comname === `${TAG} listless`)).toBe(false);
+  });
+
+  it('matches scientific name as well as common name', async () => {
+    const res = await global.api.get('/api/v2/species/search?q=Testus%20gulfus');
+
+    expect(res.status).toBe(200);
+    expect(res.body.map((entry) => entry.species)).toContain('Testus gulfus');
+  });
+
+  it('rejects an empty search term rather than returning the catalogue', async () => {
+    const res = await global.api.get('/api/v2/species/search?q=');
+
+    expect(res.status).toBe(400);
+  });
+
+  /**
+   * `/api/v2/species/:id` sits on the same prefix, so an ordering mistake would
+   * make this route try to read `search` as an id -- which returns 404 or 500
+   * rather than an answer, and only under the real router.
+   */
+  it('is not shadowed by the by-id route', async () => {
+    const res = await global.api.get(`/api/v2/species/search?q=${encodeURIComponent(TAG)}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
+describe('Species identity is list plus taxserial', () => {
+
+  /**
+   * The reason `species_list` exists. ITIS serial 169237 is on two lists under
+   * two different common names, so a lookup by taxserial alone cannot say which
+   * entry is meant.
+   */
+  it('returns different entries for the same taxserial on different lists', async () => {
+    const fish = await global.api.get('/api/v2/species/list/Fish/taxserial/169237');
+    const gulf = await global.api.get('/api/v2/species/list/GULF_Fish/taxserial/169237');
+
+    expect(fish.status).toBe(200);
+    expect(gulf.status).toBe(200);
+
+    expect(fish.body.comname).toBe('UI croaker');
+    expect(gulf.body.comname).toBe('Drum');
+
+    // Same taxon underneath, which is what itis_tsn records.
+    expect(fish.body.itis_tsn).toBe(169237);
+    expect(gulf.body.itis_tsn).toBe(169237);
+
+    expect(fish.body.id).not.toBe(gulf.body.id);
+  });
+
+  /**
+   * Local codes below 10000 are invented per list and reused, so they must not
+   * be given an ITIS serial.
+   */
+  it('leaves itis_tsn null for a local per-list code', async () => {
+    const res = await global.api.get('/api/v2/species/list/Substrate_60Seconds/taxserial/1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.taxserial).toBe(1);
+    expect(res.body.itis_tsn).toBeNull();
+  });
+
+  /**
+   * Habitat's 666xxx values are six digits and look like ITIS serials, but are
+   * synthetic categories rather than taxa.
+   */
+  it('leaves itis_tsn null for a synthetic Habitat code', async () => {
+    const res = await global.api.get('/api/v2/species/list/Habitat/taxserial/666001');
+
+    expect(res.status).toBe(200);
+    expect(res.body.comname).toBe('Rock');
+    expect(res.body.itis_tsn).toBeNull();
+  });
+
+  /**
+   * A taxserial that is not on the named list is a 404, even when it exists on
+   * another list.
+   */
+  it('404s for a taxserial that is not on the named list', async () => {
+    const res = await global.api.get('/api/v2/species/list/Habitat/taxserial/169237');
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('Retired species entries', () => {
+
+  /**
+   * `Fish` taxserial 3030 is a real historical entry: machine-learning metrics
+   * reference it, so it cannot be deleted, but it is not on the current Fish
+   * list. It also carries gui_home_order 3, which collides with a live Fish
+   * entry -- so listing it would bump a real species off the home screen.
+   *
+   * @constant
+   * @type {number}
+   */
+  const RETIRED_FISH_TAXSERIAL = 3030;
+
+  /**
+   * Whether this suite had to create the entry itself.
+   *
+   * @type {boolean}
+   */
+  let seeded = false;
+
+  /**
+   * Guarantee the retired entry exists.
+   *
+   * These checks used to rely on the development server happening to hold
+   * taxserial 3030. Against a database built from the baseline and the
+   * migrations -- a fresh clone, or CI -- it does not, and the block failed in
+   * one place and passed *vacuously* in three: "excludes the retired entry from
+   * the list" is trivially true when the list is empty. That is worse than the
+   * failure, because it is silent.
+   *
+   * Created here and removed afterwards, so the suite proves the same thing
+   * wherever it runs.
+   */
+  beforeAll(async () => {
+    const existing = await db.species.findOne({
+      where: { taxserial: RETIRED_FISH_TAXSERIAL, species_list: 'Fish' },
+    });
+    if (existing) return;
+
+    await db.species.create({
+      taxserial: RETIRED_FISH_TAXSERIAL,
+      species_list: 'Fish',
+      comname: 'Retired test entry',
+      species: 'Testus retiredus',
+      gui_display_name: 'Retired test entry',
+      is_active: false,
+    });
+    seeded = true;
+  });
+
+  afterAll(async () => {
+    if (!seeded) return;
+    await db.species.destroy({
+      where: { taxserial: RETIRED_FISH_TAXSERIAL, species_list: 'Fish' },
+    });
+  });
+
+  /**
+   * A retired entry must not appear in a list, or it shows up as a duplicate
+   * button in the annotation GUI.
+   */
+  it('excludes retired entries from a list', async () => {
+    const res = await global.api.get('/api/v2/species/list/Fish');
+
+    expect(res.status).toBe(200);
+    expect(res.body.every((entry) => entry.is_active)).toBe(true);
+    expect(res.body.some((entry) => entry.taxserial === RETIRED_FISH_TAXSERIAL)).toBe(false);
+  });
+
+  /**
+   * Search is annotation-facing too, so it has to agree with the list.
+   */
+  it('excludes retired entries from search', async () => {
+    const res = await global.api.get('/api/v2/species/list/Fish/search?q=Olive');
+
+    expect(res.status).toBe(200);
+    expect(res.body.some((entry) => entry.taxserial === RETIRED_FISH_TAXSERIAL)).toBe(false);
+  });
+
+  /**
+   * A direct lookup must still resolve one. Observations recorded years ago
+   * point at these, and reporting needs their names -- excluding them here would
+   * make that history unreadable.
+   */
+  it('still resolves a retired entry by list and taxserial', async () => {
+    const res = await global.api.get(`/api/v2/species/list/Fish/taxserial/${RETIRED_FISH_TAXSERIAL}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.taxserial).toBe(RETIRED_FISH_TAXSERIAL);
+    expect(res.body.is_active).toBe(false);
+  });
+
+  /**
+   * The entry counts describe what can be annotated, so they have to agree with
+   * what the list endpoint actually returns.
+   *
+   * An invariant rather than fixed numbers: pinning "Fish: 180" would fail the
+   * first time somebody adds a species through the API, which is the thing this
+   * work exists to make possible. This still catches a retired entry being
+   * counted, since that would make the count exceed the list.
+   */
+  it('counts exactly what each list returns', async () => {
+    const lists = await global.api.get('/api/v2/species/lists');
+
+    expect(lists.status).toBe(200);
+
+    for (const list of lists.body) {
+      const entries = await global.api.get(`/api/v2/species/list/${list.species_list}`);
+
+      expect(entries.status).toBe(200);
+      expect(entries.body).toHaveLength(list.entry_count);
+    }
+  });
+});
+
+describe('Species pictures', () => {
+
+  /**
+   * The picture id used below, discovered rather than hardcoded so the suite
+   * does not depend on insertion order.
+   *
+   * @type {number|undefined}
+   */
+  let pictureId;
+
+  /**
+   * Finds a species that has at least one picture.
+   */
+  beforeAll(async () => {
+    const res = await global.api.get('/api/v2/species/list/Fish');
+    const withPicture = res.body.find((entry) => entry.pictures.length > 0);
+    pictureId = withPicture && withPicture.pictures[0].id;
+  });
+
+  /**
+   * A species' pictures should be listable, with the default first.
+   */
+  it('lists the pictures for a species, default first', async () => {
+    const list = await global.api.get('/api/v2/species/list/Fish');
+    const withPicture = list.body.find((entry) => entry.pictures.length > 0);
+
+    const res = await global.api.get(`/api/v2/species/${withPicture.id}/pictures`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body[0].is_default).toBe(true);
+    expect(res.body[0].species_id).toBe(withPicture.id);
+  });
+
+  /**
+   * At most one picture per species may be the default -- otherwise "the"
+   * picture is ambiguous, which is the bug the GUI had.
+   */
+  it('marks exactly one picture as default per species', async () => {
+    const res = await global.api.get('/api/v2/species/list/Inverts');
+
+    expect(res.status).toBe(200);
+
+    for (const entry of res.body) {
+      const defaults = entry.pictures.filter((picture) => picture.is_default);
+      expect(defaults.length).toBeLessThanOrEqual(1);
+      if (entry.pictures.length > 0) {
+        expect(defaults.length).toBe(1);
+      }
+    }
+  });
+
+  /**
+   * The bytes should come back with the recorded content type and a cache
+   * header, since a species grid requests hundreds at once.
+   */
+  it('serves the picture file with caching headers', async () => {
+    expect(pictureId).toEqual(expect.any(Number));
+
+    const res = await global.api.get(`/api/v2/species/pictures/${pictureId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/^image\//);
+    expect(res.headers['cache-control']).toContain('max-age');
+    expect(res.headers.etag).toBeTruthy();
+    expect(res.body.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * A matching ETag should short-circuit to 304, which is what stops a tab switch
+   * re-downloading every picture.
+   */
+  it('answers 304 when the client already has the picture', async () => {
+    const first = await global.api.get(`/api/v2/species/pictures/${pictureId}`);
+    const etag = first.headers.etag;
+
+    const second = await global.api
+      .get(`/api/v2/species/pictures/${pictureId}`)
+      .set('If-None-Match', etag);
+
+    expect(second.status).toBe(304);
+  });
+
+  /**
+   * An unknown picture is a 404 rather than a stack trace.
+   */
+  it('404s for an unknown picture id', async () => {
+    const res = await global.api.get('/api/v2/species/pictures/999999999');
+
+    expect(res.status).toBe(404);
+  });
+});
+
+/**
+ * Every model vocabulary needs a session type, or its observations go nowhere.
+ *
+ * `scripts/seed-morphotaxa-vocabulary.js` seeds an annotation list per
+ * FathomNet-family model, and `observation-ingest.service.js` resolves a
+ * session's type to a list through `db/species-lists.js`. Those are two files,
+ * and a vocabulary added to one and forgotten in the other fails in the worst
+ * way available: the job runs, the artifact is stored, the compute is spent, and
+ * nothing reaches the database. Nothing errors -- the ingest simply cannot say
+ * which list the session reads against.
+ *
+ * That happened: `MBARI_315k` was seeded with 499 classes and had no mapping, and
+ * ten queued jobs would each have completed and written nothing. Caught by hand
+ * rather than by anything, which is why this exists.
+ */
+describe('morphotaxa vocabularies and session types', () => {
+  const vocabularies = require('../scripts/data/morphotaxa-vocabularies.json');
+  const { speciesListForSessionType } = require('../db/species-lists');
+
+  /**
+   * Since #223 a vocabulary has two ways to resolve, and it needs one of them.
+   * Either the static map names its session type -- which is how a type whose
+   * list is called something else has to work -- or the type **is** the name of
+   * the list, which the database answers with no code change at all.
+   *
+   * The assertion is deliberately the weaker of the two. Requiring the map alone
+   * was the defect: it made adding a model an edit to a frozen object, and
+   * forgetting the edit was silent.
+   */
+  it('resolves every seeded vocabulary, by the map or by its own name', () => {
+    const unresolvable = vocabularies.filter(
+      (entry) => speciesListForSessionType(entry.sessionType) !== entry.list
+        && entry.sessionType !== entry.list
+    );
+
+    expect(unresolvable.map((entry) => `${entry.sessionType} -> ${entry.list}`)).toEqual([]);
+  });
+
+  /**
+   * The names are the contract. A detection is resolved by matching this text
+   * against `species.comname`, and the model-identity check (#216) compares it
+   * against the loaded weights exactly -- so a vocabulary with no classes, or a
+   * duplicate inside one, is a model that cannot run rather than one that runs
+   * imperfectly.
+   */
+  it('gives every vocabulary a non-empty set of distinct class names', () => {
+    for (const entry of vocabularies) {
+      expect(entry.classes.length).toBeGreaterThan(0);
+      expect(new Set(entry.classes).size).toBe(entry.classes.length);
+    }
+  });
+});
+
+/**
+ * A list seeded today is usable today, with no code change and no restart (#223).
+ *
+ * The defect this names cost two model runs in one day. `MBARI_315k` and
+ * `MBARI_Megalodon` were seeded, registered and queued; their jobs ran, stored
+ * artifacts and reported `succeeded`; and every observation was discarded,
+ * because `db/species-lists.js` had not been edited and the API had not been
+ * restarted. 133 observations were recovered by hand.
+ *
+ * So this runs against the database rather than against the map, because the
+ * map is exactly the thing that must stop being required.
+ */
+describe('a seeded species list resolves without a deploy', () => {
+  const { QueryTypes } = require('sequelize');
+  const db = require('../model');
+  const ingestService = require('../service/observation-ingest.service');
+  const { speciesListForSessionType } = require('../db/species-lists');
+
+  // A list no code anywhere names, which is the whole point of the test.
+  const LIST = 'Test_223_Vocabulary';
+
+  beforeAll(async () => {
+    await db.sequelize.query(
+      `INSERT INTO species
+           (taxserial, comname, gui_display_name, species_list, is_active,
+            notes, created_at, updated_at)
+       VALUES (1, :comname, :comname, :list, true, :notes, NOW(), NOW())`,
+      {
+        replacements: {
+          comname: 'Test 223 morphotaxon',
+          list: LIST,
+          notes: 'Seeded by tests/species-lists.test.js for #223. Removed afterwards.',
+        },
+      }
+    );
+  });
+
+  afterAll(async () => {
+    await db.sequelize.query('DELETE FROM species WHERE species_list = :list', {
+      replacements: { list: LIST },
+    });
+  });
+
+  it('resolves a session type that names a list the static map has never heard of', async () => {
+    expect(speciesListForSessionType(LIST)).toBeNull();
+    await expect(ingestService.speciesListForSession(LIST)).resolves.toBe(LIST);
+  });
+
+  /**
+   * The map wins first, and it has to. `Invert` reads `Inverts`, and a list that
+   * happened to be called `Invert` must not take that meaning away from it.
+   */
+  it('lets the static map answer first', async () => {
+    await expect(ingestService.speciesListForSession('Invert')).resolves.toBe('Inverts');
+  });
+
+  /**
+   * Null rather than a default, still. A type naming nothing is refused by the
+   * ingest, which is the behaviour that stops an observation being attributed to
+   * a list nobody chose.
+   */
+  it('still resolves nothing for a type that names nothing', async () => {
+    await expect(
+      ingestService.speciesListForSession('Type_That_Names_No_List_223')
+    ).resolves.toBeNull();
+  });
+
+  /**
+   * A name has to be a list somebody seeded, not merely a string. An empty list
+   * would send the mosaic's correction picker somewhere with nothing in it.
+   */
+  it('does not resolve a list with no species on it', async () => {
+    const [row] = await db.sequelize.query(
+      'SELECT count(*)::int AS n FROM species WHERE species_list = :list',
+      { replacements: { list: 'Never_Seeded_223' }, type: QueryTypes.SELECT }
+    );
+
+    expect(row.n).toBe(0);
+    await expect(ingestService.speciesListForSession('Never_Seeded_223')).resolves.toBeNull();
+  });
+});

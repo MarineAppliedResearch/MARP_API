@@ -1,27 +1,37 @@
+/**
+ * Seeds a single fixed-id development project (`project_id` 0, "Development
+ * Testing") used as the parent project for the development sessions and
+ * observations seeded elsewhere in this directory.
+ *
+ * @fileoverview Seed data for the `projects` table.
+ * @author Isaac Travers
+ * @module seeders/seed-projects-table
+ */
+
 'use strict';
 
-/** @type {import('sequelize-cli').Migration} */
+/** @type {Object} */
 module.exports = {
+  /**
+   * Applies this seed by inserting the development project row.
+   *
+   * @async
+   * @param {Object} queryInterface - Sequelize QueryInterface used to run the bulk insert.
+   * @param {Object} Sequelize - Sequelize library, exposing data types and query helpers.
+   * @returns {Promise<void>} Resolves once the transaction has been committed.
+   * @throws {Error} Re-throws after rolling back if the insert fails.
+   */
   async up (queryInterface, Sequelize) {
-    /**
-     * Add seed commands here.
-     *
-     * Example:
-     * await queryInterface.bulkInsert('People', [{
-     *   name: 'John Doe',
-     *   isBetaMember: false
-     * }], {});
-    */
     const transaction = await queryInterface.sequelize.transaction();
 
     try {
-      var creationTime =   new Date() 
+      var creationTime =   new Date()
 
       await queryInterface.bulkInsert('projects', [
         {project_id: 0, name: "Development Testing", createdAt:  creationTime, updatedAt:  creationTime }
       ], {});
-        
-      
+
+
 
       //Commit the transaction
       await transaction.commit();
@@ -32,17 +42,20 @@ module.exports = {
     }
   },
 
+  /**
+   * Reverts this seed by deleting every row from `projects`.
+   *
+   * @async
+   * @param {Object} queryInterface - Sequelize QueryInterface used to run the bulk delete.
+   * @param {Object} Sequelize - Sequelize library, exposing data types and query helpers.
+   * @returns {Promise<void>} Resolves once the transaction has been committed.
+   * @throws {Error} Re-throws after rolling back if the delete fails.
+   */
   async down (queryInterface, Sequelize) {
-    /**
-     * Add commands to revert seed here.
-     *
-     * Example:
-     * await queryInterface.bulkDelete('People', null, {});
-     */
     const transaction = await queryInterface.sequelize.transaction();
 
     try {
-      // Remove all people in the users
+      // Remove all seeded rows from projects
       await queryInterface.bulkDelete('projects', null, {});
 
       //Commit the transaction

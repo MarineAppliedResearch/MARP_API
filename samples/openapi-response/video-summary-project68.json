@@ -1,0 +1,29 @@
+[
+  {
+    "video_source": "15_1.mp4",
+    "videoLocation": "Y:\\AI_VIDEO\\15_1.mp4",
+    "distinct_species_count": "4",
+    "session_count": "1",
+    "dive": "15",
+    "line": "1",
+    "session_type": "GULF_Inverts"
+  },
+  {
+    "video_source": "16_1.mp4",
+    "videoLocation": "Y:\\AI_VIDEO\\GULF\\16_1.mp4",
+    "distinct_species_count": "2",
+    "session_count": "1",
+    "dive": "16",
+    "line": "1",
+    "session_type": "GULF_Inverts"
+  },
+  {
+    "video_source": "18_1.mp4",
+    "videoLocation": "\\\\ABYSS\\Videos\\AI_VIDEO\\GULF\\18_1.mp4",
+    "distinct_species_count": "2",
+    "session_count": "1",
+    "dive": "18",
+    "line": "1",
+    "session_type": "GULF_Inverts"
+  }
+]

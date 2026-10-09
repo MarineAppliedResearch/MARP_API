@@ -1,13 +1,48 @@
-const { connect } = require('../config/db.config');
+/**
+ * Repository module for metaInfo database operations.
+ *
+ * This file contains Sequelize queries used to retrieve miscellaneous named
+ * metadata records, such as the configured database display name.
+ *
+ * Repository functions should contain database-access logic only. Request
+ * handling belongs in controllers, while broader application behavior
+ * belongs in services.
+ *
+ * @fileoverview MetaInfo database queries.
+ * @author Isaac Travers
+ * @module repository/metaInfo
+ */
+
+/**
+ * Shared database registry containing the configured Sequelize connection,
+ * initialized models, and model associations.
+ *
+ * @constant
+ * @type {Object}
+ */
+const db = require('../model');
+
+/**
+ * Application logger used to record repository errors, warnings, and
+ * diagnostic information.
+ *
+ * @constant
+ * @type {Object}
+ */
 const logger = require('../logger/api.logger');
 
 
+/**
+ * Repository for metaInfo database operations.
+ *
+ * @class MetaInfoRepository
+ */
 class MetaInfoRepository {
 
     db = {};
 
     constructor() {
-        this.db = connect();
+        this.db = db;
         // For Development
         /*this.db.sequelize.sync({ force: true }).then(() => {
             console.log("Drop and re-sync db.");
@@ -15,8 +50,28 @@ class MetaInfoRepository {
     }
 
 
+    /**
+     * Fetch the configured database name metadata record.
+     *
+     * Reads all rows from the `metaInfo` table and uses the first row's
+     * `name` column as the database name. If the table has no rows, a
+     * placeholder `"NO DB Name Found"` name is returned instead (a
+     * successful-but-empty result, not an error).
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers can tell "no metadata row exists" (a non-empty
+     * placeholder array) apart from "the database query failed" (a true
+     * empty array), but cannot otherwise distinguish query failure from
+     * any other falsy outcome.
+     *
+     * @async
+     * @returns {Promise<Array<Object>>} A single-element array containing
+     * `{ name: <dbName> }` on success, `[{ name: "NO DB Name Found" }]`
+     * when no rows exist, or an empty array when the database query
+     * fails.
+     */
     async getDBName() {
-        
+
         try {
             const dbName = await this.db.metaInfo.findAll();
             var returnName = "";
@@ -28,12 +83,55 @@ class MetaInfoRepository {
                 //returnName = "NO DB Name Found";
                 returnName = [{"name": "NO DB Name Found"}]
             }
-            
+
             console.log('dbName:::', dbName);
             return returnName;
         } catch (err) {
             console.log(err);
             return [];
+        }
+    }
+
+    /**
+     * Set the configured database name metadata record.
+     *
+     * Upserts the singleton `metaInfo` row: if a row already exists, its
+     * `name` column is updated in place; if the table is empty, a new row
+     * is created with the supplied name.
+     *
+     * Unlike `getDBName`, this method does NOT swallow database errors to
+     * an empty array. This is a write path, so a silently-eaten failure
+     * would report a misleading HTTP 200 with no indication the update
+     * never happened. Errors are logged and rethrown instead, following
+     * the same non-swallowing pattern already used by
+     * {@link module:repository/observation~ObservationRepository#updateObservation}
+     * so the route's `asyncHandler` wrapper and the shared error-contract
+     * middleware can convert the failure into a proper error response.
+     *
+     * @async
+     * @param {string} name - New value to store in the metaInfo row's
+     * `name` column.
+     * @returns {Promise<Array<Object>>} A single-element array containing
+     * `{ name }` on success.
+     * @throws {Error} Rethrows any Sequelize/database error after logging it.
+     */
+    async setDBName(name) {
+
+        try {
+            const existing = await this.db.metaInfo.findOne();
+            let record;
+
+            if (existing) {
+                existing.name = name;
+                record = await existing.save();
+            } else {
+                record = await this.db.metaInfo.create({ name });
+            }
+
+            return [{ "name": record.name }];
+        } catch (err) {
+            logger.error('Error in setDBName::' + err);
+            throw err;
         }
     }
 }
