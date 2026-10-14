@@ -2766,3 +2766,7 @@ td.whb.quiet { color: var(--amber-300); }
 
 .dataset-build-progress .prog { flex: 1; }
 .dataset-build-progress .build-frames { color: var(--muted); white-space: nowrap; }
+
+/* A panel whose content is design data rather than API output says so in its
+   own header, beside the heading (#128). */
+.panel-hd .unbacked-note { margin: 4px 0 0; font-size: 12px; }

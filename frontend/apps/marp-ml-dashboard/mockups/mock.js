@@ -992,6 +992,241 @@ function applyJobsQuery() {
   applyTips();
 }
 
+/* ========================================================== training */
+
+/* Training is two different things on one page, and only one of them has an
+   API behind it.
+
+   A **training job** is a `gpu_jobs` row with `kind: 'training'`, and the job
+   list returns it like any other. A **training run** is the record of what that
+   job produced -- epochs, losses, mAP, the model it made -- and
+   `/v2/training_run` has only a `POST`. A run can be created and never listed,
+   so the Training runs table, every epoch count and every mAP on this screen
+   has no route to come from. Gap 28.
+
+   So the overview, the recent-jobs table and the setup form's choices are real;
+   the runs table stays fixture and says so. */
+
+/** Nothing lists these. Distinct from a run that has no epochs yet. */
+const NOT_LISTABLE = '<span class="dash" title="Training runs cannot be listed: /v2/training_run has only a POST, so epochs, losses and mAP exist in MARP but no route returns them (gap 28)">&mdash;</span>';
+
+/**
+ * Draws the Training overview and its recent jobs.
+ *
+ * @param {Object[]} jobs - Every job in the window.
+ */
+function renderTraining(jobs) {
+  const mine = jobs.filter((j) => j.kind === 'training');
+  const issues = batchesWithIssues(jobs);
+  const views = mine.map((job) => jobView(job, issues));
+
+  const newest = mine.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const today = newest - 86400000;
+
+  const running = views.filter((v) => v.state === 'running');
+  const queued = views.filter((v) => v.state === 'queued');
+  const done = views.filter((v) => v.state === 'done');
+  /* Scoped to the day, as on Inference and Jobs, so the four read as one
+     moment rather than three spans and a fortnight. */
+  const attention = views.filter((v) => ['failed', 'expired', 'issues'].includes(v.state)
+    && Date.parse(v.job.created_at) >= today);
+
+  const cards = $$('.stat');
+  const setCard = (card, num, parts) => {
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.textContent = String(num);
+    const sub = $('.stat-sub', card);
+    if (sub) sub.innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
+  };
+
+  /* The labels repeat across the two panels on this screen, so the cards are
+     taken in order rather than by name -- the first four are the overview. */
+  const weekAgo = newest - 7 * 86400000;
+  const doneThisWeek = done.filter((v) => Date.parse(v.job.created_at) >= weekAgo).length;
+
+  setCard(cards[0], running.length, [`${running.length} on GPUs`, 'in flight']);
+  setCard(cards[1], queued.length, ['waiting for a worker', `${queued.length} to start`]);
+  setCard(cards[2], done.length, [`${doneThisWeek} this week`, NOT_LISTABLE + ' versions']);
+  setCard(cards[3], attention.length, [
+    `${attention.filter((v) => v.state === 'failed').length} failed`,
+    `${attention.filter((v) => v.state === 'expired').length} expired`,
+  ]);
+
+  /* The second row of cards belongs to the runs panel. Three of them are the
+     same job counts; the fourth is a best mAP, which nothing serves. */
+  setCard(cards[4], running.length, ['workers busy']);
+  setCard(cards[5], done.length, [`${doneThisWeek} this week`]);
+  setCard(cards[6], views.filter((v) => v.state === 'failed').length, ['in the window']);
+  if (cards[7]) {
+    const n = $('.stat-num', cards[7]);
+    if (n) n.innerHTML = NOT_LISTABLE;
+    const sub = $('.stat-sub', cards[7]);
+    if (sub) sub.innerHTML = '<span>no route returns run metrics</span>';
+  }
+
+  const parts = [
+    ['running', running.length, 'Running'],
+    ['queued', queued.length, 'Queued'],
+    ['done', done.length, 'Completed'],
+    ['failed', attention.length, 'Need attention'],
+  ];
+  const total = parts.reduce((sum, [, value]) => sum + value, 0) || 1;
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const arcs = $$('.donut-part', donut);
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = parts[index] ? parts[index][1] : 0;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(total);
+  }
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = parts
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+
+  renderTrainingRecent(views);
+}
+
+/**
+ * The recent training jobs table.
+ *
+ * Four of its eight columns are run facts rather than job facts -- the dataset
+ * it trained on, the model it produces, how many epochs it reached and its best
+ * mAP -- and none of those can be fetched. They draw a dash with the reason.
+ *
+ * @param {Object[]} views - Training job views.
+ */
+function renderTrainingRecent(views) {
+  const table = $('.training-table');
+  if (!table) return;
+
+  const body = $('tbody', table);
+  const rank = { running: 0, issues: 1, failed: 2, expired: 3, queued: 4, cancelled: 5, done: 6 };
+  const shown = views
+    .slice()
+    .sort((a, b) => (rank[a.state] - rank[b.state])
+      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
+    .slice(0, 3);
+
+  const heading = $('.training-recent .panel-hd h2') || $$('.panel-hd h2').find((h) => /Recent training/.test(h.textContent));
+  if (heading) heading.textContent = `Recent training jobs (${views.length.toLocaleString()})`;
+
+  body.innerHTML = shown.map((view) => {
+    const { job } = view;
+    const started = new Date(job.created_at);
+    const tookMs = Math.max(0, Date.parse(job.updated_at) - Date.parse(job.created_at));
+    const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
+
+    return `<tr data-job="${job.id}">`
+      + `<td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
+      + `<td class="jdset">${NOT_LISTABLE}</td>`
+      + `<td class="jmakes">${NOT_LISTABLE}</td>`
+      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+      + `<td class="jepochs num">${NOT_LISTABLE}</td>`
+      + `<td class="jmap num">${NOT_LISTABLE}</td>`
+      + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
+      + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
+      + '</tr>';
+  }).join('');
+}
+
+/**
+ * Puts the real registry and the real datasets into the setup form.
+ *
+ * Every one of these selectors was written out by hand: base models that are
+ * not in `ml_models`, datasets that are not in `dataset`. A run configured from
+ * them names things MARP cannot resolve.
+ *
+ * @param {Object[]} models - From `GET /api/v2/ml_models`.
+ * @param {Object[]} datasets - From `GET /api/v2/dataset`.
+ */
+function fillTrainingChoices(models, datasets) {
+  const trained = models.filter((m) => m.status === 'trained');
+  const names = new Set(datasets.map((d) => d.name));
+
+  for (const select of $$('select')) {
+    const options = [...select.options].map((o) => o.text);
+
+    /* A base-model picker: the invented names all carry a version after a dash,
+       or name an upstream checkpoint. */
+    if (options.some((t) => /^MARP-[\w-]+ — |upstream/.test(t))) {
+      const upstream = options.filter((t) => /upstream/.test(t));
+      select.innerHTML = [
+        ...trained.map((m) => `<option value="${m.id}">${m.name}</option>`),
+        /* The upstream checkpoints stay: they are not MARP models and are not
+           meant to be in the registry. */
+        ...upstream.map((t) => `<option>${t}</option>`),
+      ].join('');
+      continue;
+    }
+
+    /* A dataset picker: every option names something that looks like a dataset
+       and none of them is in `dataset`. */
+    if (options.length && options.every((t) => /^[A-Z][A-Za-z0-9_]+$/.test(t)) && !options.some((t) => names.has(t))) {
+      select.innerHTML = datasets.length
+        ? datasets.map((d) => `<option value="${d.id}">${d.name}</option>`).join('')
+        : '<option>No dataset saved in MARP</option>';
+    }
+  }
+}
+
+/**
+ * Fills the Training screen from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderTrainingScreen() {
+  if (document.body.dataset.screen !== 'training' || !window.MarpApi) return;
+
+  try {
+    const [jobs, models, datasets] = await Promise.all([
+      window.MarpApi.listJobs({ limit: 500 }),
+      window.MarpApi.listModels(),
+      window.MarpApi.listDatasets(),
+    ]);
+
+    renderTraining(jobs.jobs);
+    fillTrainingChoices(models, datasets);
+    markTrainingRunsUnbacked();
+  } catch (error) {
+    const body = $('.training-table tbody');
+    if (body) {
+      body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="8">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
+    }
+  }
+}
+
+/**
+ * Says, on the Training runs panel itself, that nothing serves it.
+ *
+ * The table is left as it is -- it is the designed contract for a run record,
+ * and deleting it would lose that -- but a reader has to be able to tell it
+ * apart from the tables above it, which are real.
+ */
+function markTrainingRunsUnbacked() {
+  const heading = $$('.panel-hd h2').find((h) => /^Training runs/.test(h.textContent.trim()));
+  const header = heading && heading.closest('.panel-hd');
+  if (!header || $('.unbacked-note', header)) return;
+
+  const note = document.createElement('p');
+  note.className = 'unbacked-note muted';
+  note.textContent = 'Design data. /v2/training_run has only a POST, so no route returns a run, '
+    + 'its epochs or its metrics (gap 28).';
+  header.appendChild(note);
+}
+
+
 /* ========================================================= inference */
 
 /* Inference is the GPU job list seen through one kind. Its cards, its donut and
@@ -4898,7 +5133,7 @@ wireRowSelect();
 
    Off those screens each render resolves without doing anything, so this costs
    one microtask and no special case. */
-Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen(), renderModelsScreen(), renderInferenceScreen(), wireDatasetPage()]).then(() => {
+Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen(), renderModelsScreen(), renderInferenceScreen(), renderTrainingScreen(), wireDatasetPage()]).then(() => {
   /* `applyJobsQuery` and `applyWorkersQuery` rewire the rows they draw; these
      are the ones that bind once, to controls that outlive every redraw. */
   wireJobsControls();
