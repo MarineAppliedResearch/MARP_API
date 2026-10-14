@@ -131,6 +131,43 @@ their GUI-style editing.
 - Browser (`npm run test:app:mosaic-review:api`): add, rename, merge, count and Mosaic picture
   over real video, desktop and phone width.
 
+## Settled by using it (2026-10-14)
+
+Isaac worked through the page on real video and these came out of it. Each is a decision, not
+a tidy-up, and each has a test at the tier that can see it.
+
+- **A track with no end keyframe keeps drawing its last box forward**, as the annotation GUI
+  does (`VideoPlayer.xaml.cs`: `previous != null && next == null && previous.type != "end"`).
+  A4 said a new observation is a start only; drawing it for one instant made it impossible to
+  move or end. Asked whether unfinished boxes piling up to the end of a dive would get in the
+  way, Isaac: *"the user won't have unfinished observations, so it's okay if they pile up,
+  because having a keyframe with no end-keyframe is wrong. So they'll see that error easily,
+  and they will fix it."* The forward box is how the mistake shows itself.
+- **The species search can widen past the session's list.** A1 settled renaming; it did not
+  settle what can be chosen. An invert session offered only inverts, so a rockfish filed as a
+  sea cucumber could not be corrected at all. The popup names its scope and offers *Search all
+  lists*, showing each widened result's list, as the Mosaic's own correction panel does (#130).
+- **The halo marks the selected observation, not the opened one.** It was built as "the one
+  you came from" and read as the wrong animal once anything else was clicked. The opened one
+  starts selected, so it is marked before any click; deselecting leaves no halo.
+- **The opened observation gets no exemption from the query.** It used to be answered whatever
+  the filters said, so the reviewer was never stranded; the cost was a drawing that did not
+  match the question. Isaac chose the honest drawing.
+- **The page keeps only what is being typed into.** Blocking every key inside the panels (to
+  stop a species name reaching the player's shortcuts) killed `a` and `s` frame stepping until
+  the picture was clicked again. Only keys aimed at a field are held back, and anything of ours
+  that takes focus and goes away hands it back.
+- **A press on a box owns the click that follows it.** Removed on 2026-10-06 as redundant, with
+  no test to say otherwise; without it a click on a box ran the video and double-click pinned
+  nothing. The browser check now asserts the picture has not moved on, rather than reading a
+  `paused` flag that stayed true for a second after playback started.
+- **The Mosaic picture button reports on itself**, as the Mosaic's commit button does: it
+  really decodes a frame out of the video, which takes seconds, and silence read as a button
+  that did nothing. Its state is part of what the panel draws, so a redraw cannot lose it.
+
+Isaac on the styling, 2026-10-14: *"right now these look good"*. Phone is deliberately not
+covered yet; desktop was the target for this pass.
+
 ## Verification
 
 Run 2026-10-06 on `181-video-annotation`, testing database rebuilt from that day's dump and
