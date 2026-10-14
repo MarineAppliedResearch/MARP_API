@@ -99,7 +99,7 @@ async function videoObservations(body = {}) {
     }
 
     const [opened] = await db.sequelize.query(
-        'SELECT observation_id, video_source, "mediaPosition" AS media_position FROM observations WHERE observation_id = :id',
+        'SELECT observation_id, video_source, session_id, "mediaPosition" AS media_position FROM observations WHERE observation_id = :id',
         { replacements: { id }, type: QueryTypes.SELECT }
     );
     if (!opened) {
@@ -111,7 +111,7 @@ async function videoObservations(body = {}) {
     const answer = {
         jellyfin_server: jellyfinRepository.baseUrl ? PROXY_PATH : null,
         video,
-        opened: { observation_id: id, moment_s: ms === null ? null : ms / 1000 },
+        opened: { observation_id: id, session_id: opened.session_id, moment_s: ms === null ? null : ms / 1000 },
         observations: [],
         truncated: false,
     };
@@ -134,6 +134,7 @@ async function videoObservations(body = {}) {
 
     answer.truncated = rows.length > MAX_VIDEO_OBSERVATIONS;
     // GUI rows count at 25, GPU rows at the video's nominal rate (#231).
+    answer.sessions = opened.video_source ? await sessionsInVideo(opened.video_source) : [];
     answer.observations = rows.slice(0, MAX_VIDEO_OBSERVATIONS).map((row) => {
         const rate = row.machine ? nominal : ASSUMED_FPS;
         return {
@@ -141,9 +142,14 @@ async function videoObservations(body = {}) {
             species_id: row.species_id,
             comname: row.comname,
             obs_id: row.obs_id,
+            count: row.count,
+            session_id: row.session_id,
             version: row.version,
             start_s: Number(row.first_framenum) / rate,
             end_s: Number(row.last_framenum) / rate,
+            // No `end` keyframe: still being made, so the page draws its last box forward
+            // and every window from its start onwards wants its keyframes (2026-10-14).
+            open_ended: !row.has_end,
         };
     });
     return answer;
@@ -246,7 +252,29 @@ async function videoKeyframes(body = {}) {
     };
 }
 
+/**
+ * The sessions with observations in a video: the ones a new observation may join (#181 A8).
+ *
+ * @async
+ * @param {string} videoSource
+ * @param {Object} [transaction]
+ * @returns {Promise<Array<Object>>} `{ session_id, project_id, dive, line, type, observations, species_list }`.
+ */
+function sessionsInVideo(videoSource, transaction) {
+    return db.sequelize.query(
+        // The species list its type names, the same expression the Mosaic's rows carry, so a
+        // new observation's species is searched where its correction would be.
+        `SELECT s.session_id, s.project_id, s.dive, s.line, s.type, count(*)::int AS observations,
+                ${mosaicRepository.SPECIES_LIST_CASE} AS species_list
+           FROM observations o JOIN sessions s ON s.session_id = o.session_id
+          WHERE o.video_source = :videoSource
+          GROUP BY s.session_id ORDER BY s.session_id`,
+        { replacements: { videoSource }, type: QueryTypes.SELECT, transaction }
+    );
+}
+
 module.exports = {
+    sessionsInVideo,
     videoObservations,
     videoKeyframes,
     MAX_VIDEO_OBSERVATIONS,

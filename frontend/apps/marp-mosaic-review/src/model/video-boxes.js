@@ -10,18 +10,41 @@
 const EDGE = 1e-6;
 
 /**
+ * How far from a keyframe's time a picture still counts as that keyframe's: half a frame, of
+ * the coarser of the video's rate and 25 (#181).
+ *
+ * A row without a GPU job counts its frames at 25 whatever the video's rate, so on a 29.97
+ * video its keyframe can sit up to half a 25-frame -- 20 ms -- from the picture it was drawn
+ * on. Within a millionth of a second, a box just added, or the last of a merged track, was not
+ * drawn on the very frame it was made on, depending on which frame that was.
+ */
+export function trackTolerance(frameRate) {
+  return 0.5 / Math.min(Number(frameRate) || 25, 25);
+}
+
+/**
+ * Whether a track has no `end` keyframe, so it is still being made and is drawn forward.
+ *
+ * @param {Array<Object>} track - One track's keyframes.
+ * @returns {boolean}
+ */
+export function isUnfinished(track) {
+  return Boolean(track && track.length && track[track.length - 1].type !== 'end');
+}
+
+/**
  * The box of each observation whose track spans time `t`, interpolated between the
  * keyframes either side. Linear interpolation is what the keyframe reduction was built
  * to reproduce. A track is drawn only within its own span: before its first keyframe
  * or after its last, the animal is not in the record, and a box there would be a guess.
  */
-export function boxesAt(observations, t) {
+export function boxesAt(observations, t, tolerance = EDGE) {
   const out = [];
   for (const observation of observations || []) {
     // Tracks sorted once when the keyframes arrived, where the caller has them: sorting
     // on every frame was a cost paid for every observation held, every frame.
     for (const track of observation.tracks || tracksOf(observation.keyframes)) {
-      const box = boxOnTrack(track, t);
+      const box = boxOnTrack(track, t, tolerance);
       if (box) {
         // The track's subset and keyframes go with the box, so an edit knows which track
         // it is on and whether the picture is on one of its keyframes.
@@ -51,11 +74,22 @@ export function tracksOf(keyframes) {
 }
 
 /* The box on one track at `t`, or null outside its span. */
-function boxOnTrack(track, t) {
-  if (!track.length || t < track[0].t - EDGE || t > track[track.length - 1].t + EDGE) return null;
+function boxOnTrack(track, t, tolerance) {
+  if (!track.length || t < track[0].t - tolerance) return null;
+  const last = track[track.length - 1];
+  if (t > last.t + tolerance) {
+    // Past the last keyframe. A track with an `end` stops there -- after it the animal is
+    // not in the record. A track with no end yet is unfinished, and the annotation GUI goes
+    // on drawing its last box forward until somebody sets the end
+    // (`VideoPlayer.xaml.cs`: previous != null && next == null && previous.type != "end").
+    // Without this a new observation vanished on the next frame and could not be moved or
+    // ended at all (2026-10-14).
+    if (last.type === 'end') return null;
+    return { x: last.x, y: last.y, width: last.width, height: last.height, unfinished: true };
+  }
   for (let index = 0; index < track.length; index += 1) {
     const after = track[index];
-    if (after.t + EDGE < t) continue;
+    if (after.t < t && index < track.length - 1) continue;
     const before = index > 0 ? track[index - 1] : after;
     const span = after.t - before.t;
     const f = span > 0 ? Math.min(1, Math.max(0, (t - before.t) / span)) : 0;

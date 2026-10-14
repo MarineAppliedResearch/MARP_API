@@ -14,14 +14,14 @@
  * must never paint a tile as reviewed. The projection's `CHECK` enforces that
  * without having been changed at all, because it does not name the value.
  *
- * **`comname` is never rewritten, and neither is `taxserial`** (#111). `comname`
- * is the label the species list entry carried when the annotator pressed the
- * button, and roughly 50,000 observations already disagree with what their list
- * says today because lists were renamed and renumbered underneath records that
- * were correct when made. A correction changes `species_id` and nothing else,
- * which is what keeps the drift auditable. That is also why this does **not** go
- * through `updateObservation`, which propagates a submitted `comname` to every
- * keyframe (`observation.repository.js:690-712`).
+ * **A correction renames the observation fully** (#181, Isaac, 2026-10-06: "we want the
+ * system we are making to completely rename properly"): `species_id`, `comname`, `taxserial`
+ * and every keyframe's `comname`, from the catalogue's entry for the new species. Until then it
+ * changed `species_id` alone and kept `comname` frozen (#111), because on roughly 50,000 rows
+ * `comname` is the only record of the label the annotator pressed -- their lists were renamed and
+ * renumbered underneath records that were correct when made. **That record is not lost**: the
+ * log row below keeps the replaced `comname` and `taxserial` (`previous_comname`,
+ * `previous_taxserial`, A16), beside the replaced `species_id` it always kept.
  *
  * **It invalidates both purposes** (#111 A5), answered by the human on
  * 2026-09-09: *"yes if someone relabels something it needs to be reapproved."*
@@ -161,7 +161,7 @@ async function correctSpecies(request = {}, principal = {}, reviewerId = null) {
 
     return db.sequelize.transaction(async (transaction) => {
         const [live] = await db.sequelize.query(
-            `SELECT observation_id, version, species_id, comname
+            `SELECT observation_id, version, species_id, comname, taxserial
                FROM observations
               WHERE observation_id = $1
                 FOR NO KEY UPDATE`,
@@ -191,7 +191,7 @@ async function correctSpecies(request = {}, principal = {}, reviewerId = null) {
         // The catalogue's own label for both species, read before the write so a
         // correction naming a species that does not exist writes nothing.
         const catalogue = await db.sequelize.query(
-            'SELECT id, comname FROM species WHERE id = ANY($1::int[])',
+            'SELECT id, comname, taxserial FROM species WHERE id = ANY($1::int[])',
             {
                 bind: [[speciesId, live.species_id].filter((id) => id != null)],
                 type: QueryTypes.SELECT,
@@ -200,19 +200,24 @@ async function correctSpecies(request = {}, principal = {}, reviewerId = null) {
         );
 
         const byId = new Map(catalogue.map((row) => [row.id, row.comname]));
+        const entry = catalogue.find((row) => row.id === speciesId);
 
         if (!byId.has(speciesId)) {
             return { ok: false, error: REFUSED_NOT_FOUND };
         }
 
-        // `species_id` and nothing else. The trigger bumps `version` from OLD,
-        // so the row comes back at the version the client should send next.
+        // The whole name, from the catalogue's entry, and every keyframe's with it. The trigger
+        // bumps `version` from OLD, so the row comes back at the version the client sends next.
         const [updated] = await db.sequelize.query(
             `UPDATE observations
-                SET species_id = $2, "updatedAt" = NOW()
+                SET species_id = $2, comname = $3, taxserial = $4, "updatedAt" = NOW()
               WHERE observation_id = $1
           RETURNING observation_id, version, species_id, comname, taxserial`,
-            { bind: [observationId, speciesId], type: QueryTypes.SELECT, transaction }
+            { bind: [observationId, speciesId, entry.comname, entry.taxserial], type: QueryTypes.SELECT, transaction }
+        );
+        await db.sequelize.query(
+            'UPDATE keyframes SET comname = $2, "updatedAt" = NOW() WHERE observation_id = $1',
+            { bind: [observationId, entry.comname], transaction }
         );
 
         // The fingerprint is computed here, server-side, exactly as the commit
@@ -223,10 +228,12 @@ async function correctSpecies(request = {}, principal = {}, reviewerId = null) {
             `INSERT INTO observation_reviews (
                     observation_id, purpose, decision, reason, reviewer_id,
                     observation_version, previous_species_id, corrected_species_id,
+                    previous_comname, previous_taxserial,
                     reviewed_keyframe_count, reviewed_keyframe_max_updated_at,
                     representative_keyframe_id, decided_at, created_at, updated_at)
              SELECT $1, 'scientific', 'corrected', NULL, $2,
                     $3, $4, $5,
+                    $6, $7,
                     k.keyframe_count, k.max_updated_at,
                     NULL, NOW(), NOW(), NOW()
                FROM (SELECT count(*)::int    AS keyframe_count,
@@ -235,7 +242,7 @@ async function correctSpecies(request = {}, principal = {}, reviewerId = null) {
                       WHERE observation_id = $1) k
           RETURNING review_id, decided_at`,
             {
-                bind: [observationId, reviewerId, version, live.species_id, speciesId],
+                bind: [observationId, reviewerId, version, live.species_id, speciesId, live.comname, live.taxserial],
                 type: QueryTypes.SELECT,
                 transaction,
             }
@@ -256,10 +263,8 @@ async function correctSpecies(request = {}, principal = {}, reviewerId = null) {
                 observation_id: updated.observation_id,
                 version: updated.version,
                 species_id: updated.species_id,
-                // The catalogue's current name for the species the observation
-                // now *is*. A separate field from `comname` on purpose (A4):
-                // `comname` is the annotator's frozen label and is returned
-                // unchanged beside it, so nothing can mistake one for the other.
+                // The catalogue's name for the species the observation now is -- since #181 the
+                // same as `comname`, which the correction has just written from it.
                 species_comname: byId.get(speciesId),
                 comname: updated.comname,
                 taxserial: updated.taxserial,
@@ -267,6 +272,8 @@ async function correctSpecies(request = {}, principal = {}, reviewerId = null) {
             previous: {
                 species_id: live.species_id,
                 species_comname: live.species_id == null ? null : byId.get(live.species_id) || null,
+                comname: live.comname,
+                taxserial: live.taxserial,
             },
             review_id: logged.review_id,
             correctedAt: new Date(logged.decided_at).toISOString(),

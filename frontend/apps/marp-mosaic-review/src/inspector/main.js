@@ -19,11 +19,12 @@
  */
 import { MarpApi } from '../api/index.js';
 import { VIDEO_WINDOW } from '../ui/video-window.js';
-import { boxesAt, tracksOf, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
+import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
 import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour } from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
-import { toScreen, trackKey, withEdit, keyframeShown } from '../model/box-edit.js';
+import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '../model/box-edit.js';
+import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
 import { labelScale } from '../model/box-style.js';
 import { drawBox } from './draw-boxes.js';
 
@@ -42,6 +43,35 @@ const pictureCanvas = playerRoot.querySelector('.marp-canvas');
 if (pictureCanvas) pictureCanvas.insertAdjacentElement('afterend', $('boxes'));
 else playerRoot.appendChild($('boxes'));
 playerRoot.appendChild($('boxMenu'));
+// The add popup and the observation panel go fullscreen with the player too.
+playerRoot.appendChild($('addPopup'));
+playerRoot.appendChild($('obsPanel'));
+/* Typing is not the player's; everything else still is.
+   These panels sit inside the player's element, so a species name typed into the search used
+   to reach its keyboard shortcuts and change the playback speed (2026-10-06). Stopping every
+   key was too much: with focus on a panel button the arrow keys stopped stepping the video
+   until the reviewer clicked the picture again (2026-10-14). So only keys aimed at something
+   being typed into are held back. */
+const typingIn = (target) => Boolean(target && (target.matches('input, textarea, select') || target.isContentEditable));
+
+/* Give the keyboard back to the player, which is the element listening for its shortcuts.
+   Called whenever one of our own surfaces takes focus and then goes away -- not while the
+   reviewer is typing, which is theirs. */
+function returnKeyboard() {
+  if (!typingIn(document.activeElement)) playerRoot.focus({ preventScroll: true });
+}
+for (const id of ['addPopup', 'obsPanel', 'boxMenu']) {
+  for (const type of ['keydown', 'keyup', 'keypress']) {
+    $(id).addEventListener(type, (event) => { if (typingIn(event.target)) event.stopPropagation(); });
+  }
+}
+
+/* What the reviewer may do beyond moving boxes: add, rename, count, merge (observations:write). */
+let canAnnotate = false;
+let canDelete = false;
+
+/* A box drawn and not yet given a species: painted in the GUI's drawing colour, DeepPink. */
+const DRAWING = '#ff1493';
 
 /* What is on screen: the opened observation, the query, its video, and the observations
    the query matches in it. */
@@ -111,8 +141,8 @@ function fitOverlay(overlay, element) {
 }
 
 /* Draw every box at time `t` over a picture of the given intrinsic size, in the annotation
-   GUI's style (`model/box-style.js`), lowest first: the others, then the opened one with
-   its halo, then a box the reviewer has pressed. */
+   GUI's style (`model/box-style.js`), lowest first: the others, then the one the page was
+   opened from, then a box the reviewer has pressed. The halo marks the selected one. */
 function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   const started = performance.now();
   const { context, width, height } = fitOverlay(overlay, element);
@@ -121,12 +151,23 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   const area = contentRect(width, height, pictureWidth, pictureHeight);
   const scale = labelScale(area.height);
   const rate = showing.video.frame_rate || 25;
-  const entries = boxesAt(drawable, t).map((box) => {
+  const entries = boxesAt(drawable, t, trackTolerance(rate)).map((box) => {
     const key = trackKey(box);
     const opened = box.observation_id === showing.observationId;
     const preview = editor.previewFor(key);
     return { key, box, opened, rect: preview ? preview.rect : toScreen(box, area) };
   }).sort((a, b) => editor.rankOf(a.key, a.opened) - editor.rankOf(b.key, b.opened));
+
+  // The one the page was opened from starts selected, so the halo is on it before anything is
+  // clicked -- and then it follows whatever is clicked instead.
+  if (showing.selectOpened && !editor.selectedKey) {
+    const own = entries.find((entry) => entry.opened);
+    if (own) {
+      showing.selectOpened = false;
+      editor.select(own.key);
+      return;
+    }
+  }
 
   for (const entry of entries) {
     const keyframe = keyframeShown(entry.box.keyframes, t, rate);
@@ -137,6 +178,15 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
       pressed: editor.pressFor(entry.key),
       scale
     });
+  }
+  const draft = editor.draftRect();
+  if (draft) {
+    context.save();
+    context.strokeStyle = DRAWING;
+    context.lineWidth = 3.5 * scale;
+    context.setLineDash([6 * scale, 4 * scale]);
+    context.strokeRect(draft.left, draft.top, draft.width, draft.height);
+    context.restore();
   }
   drawnNow = { rects: entries, area };
   drawMs = performance.now() - started;
@@ -262,6 +312,7 @@ async function show(request) {
   const { video } = answer;
   const comname = rows.has(request.observationId) ? rows.get(request.observationId).comname : null;
   $('inspectTitle').textContent = `${comname || 'Observation'} · ${request.observationId}`;
+  openedTitle = $('inspectTitle').textContent;
   $('inspectDetail').textContent = video.video_source || '';
 
   if (!video.jellyfin_item_id) {
@@ -282,6 +333,9 @@ async function show(request) {
     observations: answer.observations,
     rows,
     moment: answer.opened.moment_s,
+    selectOpened: true,
+    sessions: answer.sessions || [],
+    openedSession: answer.opened.session_id,
     server
   };
   if (answer.truncated) status(`Only the first ${answer.observations.length} matching observations are drawn.`);
@@ -323,7 +377,10 @@ async function followQuery(filters) {
   }
   if (mine !== latest || !showing) return;
   forgetKeyframes();
-  showing = { ...showing, filters: filters || {}, observations: read.answer.observations, rows: read.rows };
+  showing = {
+    ...showing, filters: filters || {}, observations: read.answer.observations, rows: read.rows,
+    sessions: read.answer.sessions || showing.sessions
+  };
   followPlayhead(shownAt ?? (player.engine && player.engine.currentTime));
   redraw();
 }
@@ -393,7 +450,14 @@ const editor = createBoxEditor({
       const next = withEdit(held, answer);
       held.clear();
       for (const [index, keyframes] of next) held.set(index, keyframes);
+      // Whether the track still has no end decides both how it is drawn and whether later
+      // windows ask for it, so it is re-derived from the keyframes rather than assumed: an
+      // edit can have just added the end, or taken it away (2026-10-14).
+      refreshOpenEnded(answer.observation_id);
       rebuildDrawable();
+      // The panel lists the selected observation's keyframes, so an edit that adds or removes
+      // one has to redraw it or the list is a stale answer (2026-10-14).
+      updatePanel();
     },
     async deleteObservation(id) {
       const row = showing && showing.observations.find((o) => o.observation_id === id);
@@ -408,19 +472,248 @@ const editor = createBoxEditor({
         status(`Observation ${id} was not deleted: it changed since this page read it. Open it again from the Mosaic.`);
         return;
       }
-      showing = { ...showing, observations: showing.observations.filter((o) => o.observation_id !== id) };
-      for (const [index, keyframes] of held) held.set(index, keyframes.filter((k) => k.observation_id !== id));
-      rebuildDrawable();
-      redraw();
+      forgetObservation(id);
       status(`Observation ${id} deleted.`);
-    }
+    },
+    /* Keyboard stepping belongs to the player, so it is given focus back after a gesture of
+       ours -- except while something is being typed into, which is the reviewer's. */
+    focusPlayer: returnKeyboard,
+    usePicture,
+    canDraw: () => canAnnotate,
+    isPicture: (target) => target === pictureCanvas,
+    onDrawn: openAdd,
+    selectionChanged: () => updatePanel()
   }
 });
+
+/* An observation the page no longer holds: deleted, or merged into another. */
+function forgetObservation(id) {
+  showing = { ...showing, observations: showing.observations.filter((o) => o.observation_id !== id) };
+  showing.rows.delete(id);
+  const next = withObservation(held, id);
+  held.clear();
+  for (const [index, keyframes] of next) held.set(index, keyframes);
+  if (editor.selectedKey && editor.selectedKey.startsWith(`${id}_`)) editor.select(null);
+  rebuildDrawable();
+  redraw();
+  updatePanel();
+}
+
+/* The header names the observation the page was opened on until another is selected, and
+   then names that one: it read as the wrong animal otherwise (2026-10-14). */
+let openedTitle = '';
+
+/* What the Mosaic-picture button is saying: 'working', 'done', or nothing. Held here rather
+   than on the element, because the panel is redrawn from state and a re-render would
+   otherwise throw the message away mid-cut (2026-10-14). */
+let pictureState = null;
+
+function showTitle() {
+  const key = editor.selectedKey;
+  const id = key ? Number(key.split('_')[0]) : null;
+  const row = showing && id != null ? showing.rows.get(id) : null;
+  $('inspectTitle').textContent = row
+    ? `${row.comname || 'Observation'} · ${row.observation_id}`
+    : openedTitle;
+}
+
+/* Whether an observation's track still lacks an end keyframe, from what the page holds. An
+   unfinished one is drawn forward and is wanted by every window after its start. */
+function refreshOpenEnded(id) {
+  const row = showing && showing.rows.get(id);
+  if (!row) return;
+  const keyframes = [...held.values()].flat().filter((k) => k.observation_id === id);
+  if (!keyframes.length) return;
+  row.open_ended = !keyframes.some((k) => k.type === 'end');
+  const span = showing.observations.find((o) => o.observation_id === id);
+  if (span) span.open_ended = row.open_ended;
+}
+
+/* Widen an observation's span to cover a keyframe, so the windows still ask for it. */
+function cover(id, t) {
+  const row = showing.observations.find((o) => o.observation_id === id);
+  if (row) {
+    row.start_s = Math.min(row.start_s, t);
+    row.end_s = Math.max(row.end_s, t);
+  }
+}
+
+/* The box drawn on empty picture: a species makes it a new observation, or it joins the
+   selected one (R1, R2). */
+function openAdd({ rect, box, selectedKey }) {
+  const t = shownAt ?? player.engine.currentTime;
+  const overlay = $('boxes');
+  const at = { left: rect.left + overlay.offsetLeft, top: rect.top + overlay.offsetTop, width: rect.width, height: rect.height };
+  const selectedId = selectedKey ? Number(selectedKey.split('_')[0]) : null;
+  const selected = selectedId != null ? showing.rows.get(selectedId) : null;
+  const sessionId = showing.openedSession ?? (showing.sessions[0] && showing.sessions[0].session_id);
+  openSpeciesPopup({
+    popup: $('addPopup'),
+    at,
+    title: 'New observation',
+    sessions: showing.sessions,
+    sessionId,
+    extendLabel: selected ? `Add to ${selected.obs_id ?? '?'} · ${selected.comname || 'Unknown'}` : null,
+    onExtend: () => editor.save(async () => {
+      const answer = await MarpApi.addKeyframe({ observationId: selectedId, subset: selectedKey.split('_')[1] || null, t, box });
+      cover(selectedId, t);
+      editor.clearDraft();
+      return answer;
+    }),
+    onPick: ({ species, sessionId: chosen }) => editor.save(async () => {
+      const answer = await MarpApi.createObservation({ openedId: showing.observationId, sessionId: chosen, speciesId: species.id, t, box });
+      const row = answer.observation;
+      showing.observations.push(row);
+      showing.rows.set(row.observation_id, row);
+      editor.clearDraft();
+      status(`Added ${row.comname || 'an observation'}, obs ID ${row.obs_id}.`);
+      setTimeout(() => editor.select(`${row.observation_id}_${answer.keyframes[0].subset}`), 0);
+      return { observation_id: row.observation_id, changed: answer.keyframes, deleted: [] };
+    }),
+    onCancel: () => editor.clearDraft(),
+    restoreFocus: returnKeyboard
+  });
+}
+
+/* Cut the Mosaic picture from the box on this frame, saying so while it happens.
+   It really goes and decodes the frame out of the video, which takes seconds, and silence
+   there reads as a button that does nothing (2026-10-14). */
+function usePicture(entry, t) {
+  pictureState = 'working';
+  status('Cutting the Mosaic picture from this frame. This takes a few seconds…');
+  updatePanel();
+  return editor.save(async () => {
+    try {
+      const answer = await MarpApi.usePicture(entry.box.observation_id, { t, subset: entry.box.subset, box: entry.box });
+      status('The Mosaic picture is now cut from this frame. Reload the Mosaic to see it.');
+      pictureState = 'done';
+      setTimeout(() => { pictureState = null; updatePanel(); }, 2500);
+      return answer;
+    } catch (error) {
+      // Reported here rather than rethrown: the queue's own handler would replace this with
+      // a generic "the change was not saved", and the reason is the useful part.
+      status(`The Mosaic picture was not cut: ${error.message}`);
+      pictureState = null;
+      updatePanel();
+      return [];
+    }
+  });
+}
+
+/* The panel follows the selection: the selected observation, or nothing (R7). */
+function updatePanel() {
+  const key = editor.selectedKey;
+  const id = key ? Number(key.split('_')[0]) : null;
+  const row = showing && id != null ? showing.rows.get(id) : null;
+  if (!row || !editor.enabled) {
+    showTitle();
+    renderPanel($('obsPanel'), null);
+    return;
+  }
+  showTitle();
+  const drawnRow = drawable.find((o) => o.observation_id === id);
+  const keyframes = drawnRow ? drawnRow.tracks.flat().sort((a, b) => a.t - b.t) : [];
+  renderPanel($('obsPanel'), {
+    row,
+    colour: speciesColour(row.comname),
+    session: showing.sessions.find((s) => s.session_id === row.session_id),
+    keyframes,
+    canWrite: canAnnotate,
+    canDelete,
+    picture: pictureState
+  }, {
+    close: () => { editor.select(null); returnKeyboard(); },
+    seek: (t) => {
+      if (!player.engine) return;
+      player.engine.pause();
+      player.engine.currentTime = t;
+      returnKeyboard();
+    },
+    count: (count) => editor.save(async () => {
+      returnKeyboard();
+      const answer = await MarpApi.setCount(id, count);
+      row.count = answer.count;
+      row.version = answer.version;
+      status(`Count is ${answer.count}.`);
+      updatePanel();
+    }),
+    rename: () => {
+      const panel = $('obsPanel');
+      const session = showing.sessions.find((s) => s.session_id === row.session_id);
+      openSpeciesPopup({
+        popup: $('addPopup'),
+        at: { left: panel.offsetLeft - 8, top: panel.offsetTop, width: 0, height: 0 },
+        title: 'Change species',
+        list: session ? session.species_list : null,
+        onPick: ({ species }) => editor.save(async () => {
+          const answer = await MarpApi.setSpecies({ observationId: id, speciesId: species.id, version: row.version });
+          if (!answer.ok) {
+            status(answer.error === 'unchanged'
+              ? 'That is already its species.'
+              : 'Not renamed: it changed since this page read it. Open it again from the Mosaic.');
+            return;
+          }
+          // The whole name changes, here as in the database (R3).
+          row.comname = answer.observation.comname;
+          row.species_id = answer.observation.species_id;
+          row.version = answer.observation.version;
+          rebuildDrawable();
+          redraw();
+          updatePanel();
+          status(`Renamed to ${row.comname}.`);
+        }),
+        onCancel: () => {},
+        restoreFocus: returnKeyboard
+      });
+    },
+    picture: () => {
+      const entry = editor.selectedEntry();
+      if (!entry) {
+        status("Go to a frame where this observation's box is drawn, then choose its picture.");
+        return;
+      }
+      usePicture(entry, shownAt ?? player.engine.currentTime);
+    },
+    remove: () => editor.act('deleteObservation', editor.selectedEntry() || { box: { observation_id: id, comname: row.comname } }),
+    merge: () => {
+      const label = `${row.obs_id ?? '?'} · ${row.comname || 'Unknown'}`;
+      status(`Click the observation to merge into ${label}. Escape cancels.`);
+      editor.pick((entry) => {
+        const fromId = entry.box.observation_id;
+        const from = showing.rows.get(fromId);
+        if (fromId === id) {
+          status('Pick a different observation to merge into this one.');
+          return;
+        }
+        const fromLabel = `${(from && from.obs_id) ?? '?'} · ${(from && from.comname) || 'Unknown'}`;
+        if (!window.confirm(`Merge ${fromLabel} into ${label}? ${fromLabel} is deleted, and its boxes join ${label}.`)) {
+          status('');
+          return;
+        }
+        editor.save(async () => {
+          const answer = await MarpApi.mergeObservations(id, fromId);
+          forgetObservation(fromId);
+          const next = withObservation(held, id, answer.keyframes);
+          held.clear();
+          for (const [index, keyframes] of next) held.set(index, keyframes);
+          for (const keyframe of answer.keyframes) cover(id, keyframe.t);
+          rebuildDrawable();
+          // Paused, no new frame comes to draw it: the merged box is drawn now.
+          redraw();
+          updatePanel();
+          status(`Merged ${fromLabel} into ${label}.`);
+        });
+      });
+    }
+  });
+}
 
 MarpApi.whoami().then((user) => {
   const permissions = (user && user.permissions) || [];
   if (permissions.includes('keyframes:write')) {
-    editor.enable({ deleteObservations: permissions.includes('observations:write') });
+    canAnnotate = permissions.includes('observations:write');
+    canDelete = canAnnotate;
+    editor.enable({ deleteObservations: canDelete });
   }
 }).catch(() => {
   // Not signed in to MARP, or it could not say: the boxes are shown and not edited.
@@ -432,7 +725,7 @@ window.MARP_VIDEO = {
   get drawn() {
     const o = $('boxes').getBoundingClientRect();
     return drawnNow.rects.map(({ key, box, rect }) => ({
-      key, observation_id: box.observation_id,
+      key, observation_id: box.observation_id, comname: box.comname,
       rect: { left: rect.left + o.left, top: rect.top + o.top, width: rect.width, height: rect.height }
     }));
   },

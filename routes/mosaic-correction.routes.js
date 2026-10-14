@@ -108,11 +108,10 @@ function registerMosaicCorrectionRoutes(app) {
         path: '/api/mosaic/observations/species',
         summary: "Correct one observation's species",
         description:
-            'Changes `species_id` and **nothing else**. `comname` and `taxserial` are never rewritten: they are what the species list '
-            + 'entry was called when the annotator chose it, and roughly 50,000 observations already disagree with what their list says '
-            + 'today because lists were renamed underneath records that were correct when made -- which is exactly what makes the drift '
-            + 'auditable. The response carries `species_comname`, the catalogue\'s current name for the corrected species, as a **separate '
-            + 'field** so it cannot be mistaken for the annotator\'s frozen label.\n\n'
+            '**Renames the observation fully** (#181): `species_id`, `comname` and `taxserial` from the catalogue\'s entry for the new '
+            + 'species, and every keyframe\'s `comname`. Nothing else on the row changes. The replaced `comname` and `taxserial` -- on '
+            + 'roughly 50,000 legacy rows the only record of the label the annotator pressed, since their lists were renamed -- are kept '
+            + 'in the correction\'s `observation_reviews` row (`previous_comname`, `previous_taxserial`) and returned in `previous`.\n\n'
             + '**A correction invalidates every review decision on the observation, for both purposes.** The scientific review and the '
             + 'training disposition are removed regardless of who made them, and the observation returns to unreviewed and undecided for '
             + 'anyone to decide again -- a promoted training sample carrying the wrong label teaches the model the wrong thing. Their '

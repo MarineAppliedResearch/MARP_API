@@ -132,6 +132,31 @@ export function keyframeBoxBody(box) {
   return out;
 }
 
+/** `POST /api/v2/mosaic/video/observation` (#181 R1): a new observation from a drawn box. */
+export function createObservationBody({ openedId, sessionId, speciesId, t, box }) {
+  for (const [name, value] of [['openedId', openedId], ['sessionId', sessionId], ['speciesId', speciesId]]) {
+    if (!Number.isInteger(value)) throw new TypeError(`${name} must be an integer, not ${JSON.stringify(value)}`);
+  }
+  if (!Number.isFinite(t)) throw new TypeError(`t must be a time in seconds, not ${JSON.stringify(t)}`);
+  return { observation_id: openedId, session_id: sessionId, species_id: speciesId, t, ...keyframeBoxBody(box) };
+}
+
+/** `PUT .../observation/:id/count` (#181 R5): a whole number of at least 1. */
+export function countBody(count) {
+  if (!Number.isInteger(count) || count < 1) {
+    throw new TypeError(`a count is a whole number of at least 1, not ${JSON.stringify(count)}`);
+  }
+  return { count };
+}
+
+/** `POST .../observation/:id/picture` (#181 R6): the frame and the box on it. */
+export function pictureBody({ t, subset, box }) {
+  if (!Number.isFinite(t)) throw new TypeError(`t must be a time in seconds, not ${JSON.stringify(t)}`);
+  const body = { t, ...keyframeBoxBody(box) };
+  if (subset != null) body.subset = String(subset);
+  return body;
+}
+
 /** `POST /api/v2/mosaic/video/keyframe` (#181): a middle keyframe at `t` seconds. */
 export function addKeyframeBody({ observationId, subset, t, box }) {
   if (!Number.isInteger(observationId)) {

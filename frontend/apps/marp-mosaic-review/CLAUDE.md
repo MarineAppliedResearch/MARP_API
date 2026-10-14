@@ -161,15 +161,20 @@ change exists to remove one.
 
 `model/row.js` is the whole rule and it is worth reading before touching a caption:
 
-- **`comname`** is the label the species list entry carried **when the annotator chose
-  it**. A correction never rewrites it. Keeping it frozen is what makes the drift from
-  `species_id` auditable rather than silently tidied away.
+- **`comname`** is the name stored on the row: the label the species list entry carried when
+  the annotator chose it, until a correction renames it.
 - **`species_comname`** is the **current** catalogue name of whatever `species_id` now
   points at.
 
-So drawing `comname` shows the old animal for ever on any corrected observation, while the
-species *filter* — which is `species_id` — matches the new one. The tile draws
-`currentSpeciesName(row)`. The "was X" chip draws `state.changed`, and **only a correction
+**A correction renames fully, since #181** (2026-10-06: "we want the system we are making to
+completely rename properly"): `species_id`, `comname`, `taxserial` and every keyframe's name.
+It used to change `species_id` alone and keep `comname` frozen (#111), because on about 50,000
+legacy rows `comname` is the only record of the label the annotator pressed -- their lists were
+renamed since. That record is now kept in the correction's `observation_reviews` row
+(`previous_comname`, `previous_taxserial`) instead of on the observation.
+
+The two still differ on legacy rows nobody has corrected, which is why the tile draws
+`currentSpeciesName(row)` rather than `comname`. The species *filter* is `species_id`. The "was X" chip draws `state.changed`, and **only a correction
 made in this session**: making legacy drift visible is a behaviour change rather than a
 port, and that was decided against.
 

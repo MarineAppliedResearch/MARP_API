@@ -46,7 +46,9 @@ export function windowRange(index, size = WINDOW_SECONDS) {
  */
 export function observationsIn(observations, { from, to }) {
   return (observations || [])
-    .filter((observation) => observation.start_s < to && observation.end_s >= from)
+    // An observation with no end keyframe is unfinished and is drawn forward from its last
+    // box, so every window from its start onwards wants its keyframes (2026-10-14).
+    .filter((observation) => observation.start_s < to && (observation.open_ended || observation.end_s >= from))
     .map((observation) => observation.observation_id)
     .sort((a, b) => a - b);
 }
