@@ -305,6 +305,8 @@ and operable on desktop and phone before advancing beyond the Phase 0 design rev
 - **2026-09-14** — Removed the Inference sub-navigation. Multi-query work is part of the one run
   plan rather than a separate Batch mode; scheduling is not designed; job results are inspected on
   each expanded Jobs entry rather than duplicated on Inference.
+- **2026-10-14** — The human accepted the revised Models, Workers and History designs, which
+  closes the design review. Every screen has now been through it.
 
 ## Plan
 
@@ -355,8 +357,8 @@ needed for this static interaction change.
 
 ## Status
 
-- **Gate:** human review of the revised Models, Workers and History designs
-- **Notes:** Dashboard, Jobs, Inference, Training and Datasets have received the approved
-  operational hierarchy. Models, Workers and History now follow it; Workers is constrained to the
-  current API snapshot and labels historical utilization as a future telemetry requirement.
-  Formal verification still awaits G3.
+- **Gate:** G3 — the test plan for R19-R34, reviewed before anything is run
+- **Notes:** The design review is closed; every screen has been through it. Workers is
+  constrained to the current API snapshot and labels historical utilization as a future
+  telemetry requirement. `.marp/verification.md` covers R1-R18 only, so the sixteen Inference,
+  Training and Datasets requirements have no test plan yet. That is the next piece of work.
