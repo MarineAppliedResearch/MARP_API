@@ -592,8 +592,14 @@ class ObservationRepository {
                         maxOBSID = obsID[0].max;
                         maxOBSID = (parseInt(maxOBSID) + 1).toString();
                         //console.log("maxObsID: " + maxOBSID)
+                    } else {
+                        // A session's first observation is 1. Left at -1 it took the
+                        // same obsID as the annotation GUI's empty-session placeholder
+                        // row, and its ETC was saved to the placeholder instead
+                        // (VIDEO_PROCESSING_GUI#253).
+                        maxOBSID = 1;
                     }
-                    
+
                 });
                 //console.log('observations:::', max_obs);
                 

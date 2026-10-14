@@ -1451,10 +1451,37 @@
                   "type": "string",
                   "example": "20251007_164658 Fwd.mp4"
                 }
+              },
+              "models": {
+                "$ref": "#/components/schemas/SessionModels"
               }
             }
           }
         ]
+      },
+      "SessionWithModels": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Session"
+          },
+          {
+            "type": "object",
+            "description": "Session response carrying the models that wrote its observations. Served by GET /api/sessions/user/{userID}/project/{projectID}.",
+            "properties": {
+              "models": {
+                "$ref": "#/components/schemas/SessionModels"
+              }
+            }
+          }
+        ]
+      },
+      "SessionModels": {
+        "type": "array",
+        "description": "Distinct names of the models that wrote this session's observations, from observations.ml_model_id, sorted. Empty for a session whose observations were all entered by hand, or that has none.",
+        "items": {
+          "type": "string",
+          "example": "CAMPA_GR1_TEST6-mixed"
+        }
       },
       "SpeciesWithPictures": {
         "allOf": [
@@ -8099,7 +8126,7 @@
     "/v2/sessions/user/{userID}/project/{projectID}": {
       "get": {
         "summary": "Fetch sessions for a user within a project",
-        "description": "Returns sessions matching the given user and project, each including its associated user and project. Requires the `sessions:read` permission.",
+        "description": "Returns sessions matching the given user and project, each including its associated user and project, and the models that wrote its observations. Requires the `sessions:read` permission.",
         "tags": [
           "V2 · Sessions"
         ],
@@ -8131,7 +8158,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Session"
+                    "$ref": "#/components/schemas/SessionWithModels"
                   }
                 }
               }
@@ -8149,7 +8176,7 @@
     "/v2/sessions/project/{projectID}": {
       "get": {
         "summary": "Fetch every session in a project, with browser detail",
-        "description": "Returns every session in the project, ordered by dive, then line, then type, so a client can group them under their dive without sorting first. Each session carries its processor, how many observations were recorded against it, and the videos those observations name. Unlike GET /api/sessions/user/{userID}/project/{projectID} this does not require a processor to be chosen first, which is what lets a reviewer browse a dive whoever worked on it. Requires the `sessions:read` permission.",
+        "description": "Returns every session in the project, ordered by dive, then line, then type, so a client can group them under their dive without sorting first. Each session carries its processor, how many observations were recorded against it, the videos those observations name, and the models that wrote them. Unlike GET /api/sessions/user/{userID}/project/{projectID} this does not require a processor to be chosen first, which is what lets a reviewer browse a dive whoever worked on it. Requires the `sessions:read` permission.",
         "tags": [
           "V2 · Sessions"
         ],
