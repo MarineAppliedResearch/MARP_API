@@ -30,6 +30,7 @@
 'use strict';
 
 const { QueryTypes } = require('sequelize');
+const { inferenceProcessorId } = require('../db/inference-processor');
 
 /**
  * Shared database registry containing the configured Sequelize connection,
@@ -109,6 +110,19 @@ class ObservationIngestRepository {
         );
 
         return row ? row.n : 0;
+    }
+
+    /**
+     * The inference processor's `user_id`, which every session inference
+     * creates belongs to. See `db/inference-processor.js`.
+     *
+     * @async
+     * @param {Object} [transaction] - Transaction to read inside.
+     * @returns {Promise<number>} The account's `user_id`.
+     * @throws {Error} When the account is missing, meaning the migrations have not run.
+     */
+    async inferenceProcessorId(transaction) {
+        return inferenceProcessorId(this.db.sequelize, transaction);
     }
 
     /**

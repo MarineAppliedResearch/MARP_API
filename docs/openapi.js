@@ -1659,9 +1659,34 @@ const buildOpenApiSpec = () => {
                                             example: '20251007_164658 Fwd.mp4',
                                         },
                                     },
+                                    models: { $ref: '#/components/schemas/SessionModels' },
                                 },
                             },
                         ],
+                    },
+
+                    SessionWithModels: {
+                        allOf: [
+                            { $ref: '#/components/schemas/Session' },
+                            {
+                                type: 'object',
+                                description:
+                                    'Session response carrying the models that wrote its observations. Served by GET /api/sessions/user/{userID}/project/{projectID}.',
+                                properties: {
+                                    models: { $ref: '#/components/schemas/SessionModels' },
+                                },
+                            },
+                        ],
+                    },
+
+                    SessionModels: {
+                        type: 'array',
+                        description:
+                            "Distinct names of the models that wrote this session's observations, from observations.ml_model_id, sorted. Empty for a session whose observations were all entered by hand, or that has none.",
+                        items: {
+                            type: 'string',
+                            example: 'CAMPA_GR1_TEST6-mixed',
+                        },
                     },
 
                     /**

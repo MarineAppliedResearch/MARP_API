@@ -90,7 +90,7 @@ function registerSessionRoutes(app) {
         permission: 'sessions:read',
         path: '/api/sessions/user/:userID/project/:projectID',
         summary: 'Fetch sessions for a user within a project',
-        description: 'Returns sessions matching the given user and project, each including its associated user and project.',
+        description: 'Returns sessions matching the given user and project, each including its associated user and project, and the models that wrote its observations.',
         tags: ['V1 · Sessions'],
         parameters: [
             {
@@ -113,7 +113,7 @@ function registerSessionRoutes(app) {
                 description: 'Matching session records returned successfully.',
                 content: {
                     'application/json': {
-                        schema: { type: 'array', items: { $ref: '#/components/schemas/Session' } },
+                        schema: { type: 'array', items: { $ref: '#/components/schemas/SessionWithModels' } },
                     },
                 },
             },
@@ -130,7 +130,7 @@ function registerSessionRoutes(app) {
         path: '/api/sessions/project/:projectID',
         summary: 'Fetch every session in a project, with browser detail',
         description:
-            'Returns every session in the project, ordered by dive, then line, then type, so a client can group them under their dive without sorting first. Each session carries its processor, how many observations were recorded against it, and the videos those observations name. Unlike GET /api/sessions/user/{userID}/project/{projectID} this does not require a processor to be chosen first, which is what lets a reviewer browse a dive whoever worked on it.',
+            'Returns every session in the project, ordered by dive, then line, then type, so a client can group them under their dive without sorting first. Each session carries its processor, how many observations were recorded against it, the videos those observations name, and the models that wrote them. Unlike GET /api/sessions/user/{userID}/project/{projectID} this does not require a processor to be chosen first, which is what lets a reviewer browse a dive whoever worked on it.',
         tags: ['V1 · Sessions'],
         parameters: [
             {
