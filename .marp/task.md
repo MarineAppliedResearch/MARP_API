@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#128
 repos: [MARP_API]
-status: design
+status: implementing
 needs: []
 ---
 
@@ -59,24 +59,19 @@ are not read by any screen.
 
 ## Open assumptions
 
-- [ ] **A1 · API contract · blocking** — A job carries no progress. Progress lives on the
-  attempt as `progress_done`, `progress_total`, `progress_unit`, `progress_phase` and
-  `progress_elapsed_s`, all nullable, and attempts come back only from
-  `GET /gpu/jobs/:id`. The Jobs table shows a Progress column on every row. Does the data
-  layer's job list carry a progress summary — making this a new recorded gap, meaning the
-  real route will have to learn to, as gap 12 already says of worker paging — or does the
-  screen fetch detail per visible row, or does the list drop progress?
-- [ ] **A2 · API contract · blocking** — The mockup carries `progress` as a flat integer
-  percentage with `-1` meaning none. The real fields are a `done` and a `total` in a named
-  `unit`, with a `phase`. A percentage cannot render "1,240 of 3,000 frames" and discards
-  the phase, so the two are not the same shape. Which one does the data layer serve? This is
-  the same class of mismatch as recorded gap 16, which says such wiring is a mapping and not
-  a rename.
-- [ ] **A3 · product/UI · blocking** — R3 requires determinism and R6 requires latency and
-  failure. How is a failure or a slow response asked for — a seeded schedule that always
-  fails the same call, an explicit switch the screen or a query parameter sets, or injected
-  per call by the caller? This is the module's public surface, so a different answer is a
-  different interface.
+- [x] **A1 · API contract · blocking** — answered 2026-10-14: the job list carries a
+  progress summary. The real route will have to learn to, exactly as gap 12 already says of
+  worker paging, so this joins `DESIGN.md`'s gap list rather than being closed quietly. The
+  screen is not to make a detail call per visible row.
+- [x] **A2 · API contract · blocking** — answered 2026-10-14: serve the API's shape —
+  `progress_done`, `progress_total`, `progress_unit`, `progress_phase`,
+  `progress_elapsed_s` — and let the screen compute the percentage. It can then render
+  "1,240 of 3,000 frames" and keep the phase, and null before the first heartbeat still
+  draws a dash rather than a 0% bar. The mockup's flat percent with `-1` goes.
+- [x] **A3 · product/UI · blocking** — answered 2026-10-14: an explicit switch, set by query
+  parameter — `?mock=slow`, `?mock=fail:jobs`. The default path is instant, successful and
+  deterministic, so R3 is untouched and a failure is reproducible by URL and can be
+  demonstrated on purpose.
 - [ ] **A4 · architectural · non-blocking** — Where the module lives and what format it is.
   The app is served statically by `app.js` with no build step (R11), which rules out a
   bundler but leaves ES modules against plain scripts, and `mockups/` against a sibling
@@ -89,10 +84,22 @@ are not read by any screen.
 
 - **2026-10-14** — The surface is read out of the generated contract and the route files
   rather than out of #104's measurement comment.
+- **2026-10-14** — A1, A2 and A3 above, from Isaac. Together they settle that the data layer
+  serves the shape the API will have rather than the shape the mockup drew, and that the
+  distance between the two is recorded in `DESIGN.md` rather than hidden inside the module.
 
 ## Plan
 
-Written once the blocking assumptions are answered.
+1. Record the job-list progress gap as `DESIGN.md` gap 23, and correct gap 16's shape list
+   if the progress mismatch belongs beside it.
+2. The module: the three dashboard-facing routes, the seeded generator, and the `?mock=`
+   switch. Shapes exactly as measured above.
+3. The generator's scale and reachable states — 143 machines, a bounded window of hundreds
+   of jobs, `cancelling` and *completed with issues* among them.
+4. Screen by screen, move every value out of the markup and onto the module, starting with
+   Jobs because it carries the progress change.
+5. Filters, sorting, paging and search against the module rather than the DOM.
+6. Loading, empty and error states, proven by the switch.
 
 ## Acceptance criteria
 
@@ -108,7 +115,8 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** design — A1, A2 and A3 are open and blocking
-- **Notes:** The surface is measured and recorded above. The progress mismatch is not in
-  `DESIGN.md`'s 22-item gap list and will need to join it or be closed, whichever A1 and A2
-  settle.
+- **Gate:** implementing — the three blocking assumptions are answered
+- **Notes:** The surface is measured and recorded above. A4 and A5 remain open and are not
+  blocking: where the module lives, and whether it models the worker-protocol routes nobody
+  reads. The progress mismatch becomes `DESIGN.md` gap 23 rather than being closed, because
+  the route does not carry progress today and the screen is drawn as though it does.
