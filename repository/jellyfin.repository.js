@@ -90,21 +90,37 @@ class JellyfinRepository {
      * anonymous caller, since there would be nothing to distinguish it by.
      *
      * @param {Object} [clientIdentity] - Downstream client identity.
+     * @param {string} [clientIdentity.key] - Explicit stable key for a synthetic client.
      * @param {string} [clientIdentity.name] - Client name, e.g. from an X-Client-Name header.
      * @param {string} [clientIdentity.version] - Client version, e.g. from an X-Client-Version header.
      * @returns {string} Sanitized key, safe to embed in a Jellyfin DeviceId.
      */
     _buildClientKey(clientIdentity) {
+        const explicitKey = clientIdentity && clientIdentity.key ? String(clientIdentity.key).trim() : '';
         const name = clientIdentity && clientIdentity.name ? String(clientIdentity.name).trim() : '';
+        const sanitize = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+        if (explicitKey) {
+            return sanitize(explicitKey) || 'unknown';
+        }
 
         if (!name) {
             return 'unknown';
         }
 
         const version = clientIdentity && clientIdentity.version ? String(clientIdentity.version).trim() : '';
-        const sanitize = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
         return version ? `${sanitize(name)}-${sanitize(version)}` : sanitize(name);
+    }
+
+    /**
+     * Builds the Jellyfin DeviceId used by both login and session lookup.
+     *
+     * @param {Object} [clientIdentity] - Downstream client identity.
+     * @returns {string} Stable Jellyfin DeviceId.
+     */
+    _buildDeviceId(clientIdentity) {
+        return `marp-api-${this._buildClientKey(clientIdentity)}`;
     }
 
     /**
@@ -163,11 +179,14 @@ class JellyfinRepository {
      */
     _buildMediaBrowserAuthorizationHeader(clientIdentity) {
         const name = clientIdentity && clientIdentity.name ? String(clientIdentity.name).trim() : '';
+        const suppliedDeviceName = clientIdentity && clientIdentity.deviceName
+            ? String(clientIdentity.deviceName).trim()
+            : '';
         const version = clientIdentity && clientIdentity.version ? String(clientIdentity.version).trim() : '1.0.0';
 
         const clientName = name ? `MARP API/${name}` : 'MARP API';
-        const deviceName = name || (process.env.HOSTNAME || 'marp-api');
-        const deviceId = `marp-api-${this._buildClientKey(clientIdentity)}`;
+        const deviceName = suppliedDeviceName || name || (process.env.HOSTNAME || 'marp-api');
+        const deviceId = this._buildDeviceId(clientIdentity);
 
         return (
             'MediaBrowser ' +
@@ -439,6 +458,58 @@ class JellyfinRepository {
      * @returns {Promise<Object>} Parsed playback info (see {@link JellyfinRepository#_parsePlaybackInfo}).
      * @throws {ApiError} 400/VALIDATION_ERROR when itemId is missing; 404/RESOURCE_NOT_FOUND when the item does not exist.
      */
+    /**
+     * The frame rates Jellyfin reports for an item's video stream (#231).
+     *
+     * **Two rates, and they are not the same thing.** `AverageFrameRate` is what
+     * the stream delivers -- frames over duration -- and `RealFrameRate` is the
+     * nominal rate the container declares. On `20260611_161158_Fwd` they read
+     * 24.946007 and 25, and the worker measured 24.946 from the stream itself, so
+     * a caller converting frames to time wants `averageFrameRate`. Both are
+     * returned so the difference stays visible rather than decided here.
+     *
+     * Kept out of `_parseItem` on purpose: that shape is the public `JellyfinItem`
+     * schema, and this is an internal need.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id.
+     * @param {Object} [clientIdentity] - Client identity for the session.
+     * @returns {Promise<{averageFrameRate: number|null, realFrameRate: number|null}|null>}
+     *   The two rates, a field null where Jellyfin gives none, or null when the
+     *   item has no video stream.
+     * @throws {ApiError} When the item id is missing or Jellyfin cannot be reached.
+     */
+    async getVideoFrameRate(itemId, clientIdentity = {}) {
+        if (!itemId) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const url =
+            `${this.baseUrl}/Users/${encodeURIComponent(session.userId)}/Items` +
+            `?Ids=${encodeURIComponent(itemId)}` +
+            `&Fields=${encodeURIComponent('MediaSources')}`;
+
+        const data = await this._authenticatedRequest(session, 'GET', url);
+        const [rawItem] = (data && data.Items) || [];
+        const streams = (rawItem && rawItem.MediaSources && rawItem.MediaSources[0]
+            && rawItem.MediaSources[0].MediaStreams) || [];
+        const video = streams.find((stream) => stream.Type === 'Video');
+
+        if (!video) {
+            return null;
+        }
+
+        // A rate Jellyfin leaves out, or reports as zero, is no rate at all.
+        const rate = (value) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : null);
+
+        return {
+            averageFrameRate: rate(video.AverageFrameRate),
+            realFrameRate: rate(video.RealFrameRate),
+        };
+    }
+
     async getPlaybackInfo(itemId, options = {}, clientIdentity = {}) {
         if (!itemId) {
             throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
@@ -770,6 +841,44 @@ class JellyfinRepository {
      */
     async reportPlaybackStopped(itemId, report, clientIdentity) {
         await this._reportPlayback('/Sessions/Playing/Stopped', itemId, { ...report, isPaused: true }, clientIdentity);
+    }
+
+    /**
+     * Finds the active Jellyfin playback session for a stable client identity.
+     *
+     * Jellyfin owns playback state. Reading it here lets a restarted MARP API
+     * close the session without adding playback metadata to PostgreSQL.
+     *
+     * @async
+     * @param {Object} [clientIdentity] - Downstream client identity.
+     * @returns {Promise<Object|null>} Active playback fields, or null when idle.
+     */
+    async getPlaybackSession(clientIdentity = {}) {
+        const session = await this._ensureAuthenticated(clientIdentity);
+        const sessions = await this._authenticatedRequest(
+            session,
+            'GET',
+            `${this.baseUrl}/Sessions`
+        );
+        const deviceId = this._buildDeviceId(clientIdentity);
+        const active = Array.isArray(sessions)
+            ? sessions.find((candidate) => candidate.DeviceId === deviceId && candidate.NowPlayingItem)
+            : null;
+
+        if (!active) {
+            return null;
+        }
+
+        const playState = active.PlayState || {};
+
+        return {
+            itemId: String(active.NowPlayingItem.Id || ''),
+            positionTicks: Number.isFinite(Number(playState.PositionTicks))
+                ? Number(playState.PositionTicks)
+                : null,
+            mediaSourceId: String(playState.MediaSourceId || ''),
+            playSessionId: String(playState.PlaySessionId || active.PlaySessionId || ''),
+        };
     }
 
     /**

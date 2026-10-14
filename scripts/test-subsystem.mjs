@@ -38,7 +38,11 @@ const SUBSYSTEMS = {
             'gpu-lease-race',
             'gpu-abandoned-poll',
             'gpu-video-resolution',
+            'gpu-playback-reporting',
             'gpu-observation-ingest',
+            // #232: the settings an attempt ran with, reported on the event stream.
+            'gpu-attempt-settings',
+            'worker-provisioning',
         ],
     },
     mosaic: {
@@ -51,6 +55,16 @@ const SUBSYSTEMS = {
             // and the row's reviewer ids. Same group as the query it rides beside --
             // both are the read path the mosaic client joins to.
             'mosaic-facets',
+            // #181: the source-video inspector's read, which rides beside the query.
+            'mosaic-video-context',
+            'mosaic-video',
+            'mosaic-video-edit',
+            // #181: the Jellyfin proxy the video page plays through, and the one port
+            // that answers HTTPS beside HTTP so that page can be secure.
+            'jellyfin-proxy',
+            'listen',
+            // The player bundle the video page loads is in the checkout at all.
+            'video-player-vendor',
             // Phase 6 (#118). Here rather than in a group of their own: the
             // thumbnail is what a mosaic tile draws, and the row key, the
             // enqueue-on-page-fetch and the `no-imagery` skip are all changes to
@@ -86,7 +100,7 @@ const SUBSYSTEMS = {
     },
     species: {
         describe: 'the species list and its pictures',
-        suites: ['species', 'species-lists', 'species-pictures', 'v2_species'],
+        suites: ['species', 'species-lists', 'species-pictures', 'v2_species', 'habitat-stop-pull-items'],
     },
     auth: {
         describe: 'authentication, users, and service tokens',
@@ -98,6 +112,9 @@ const SUBSYSTEMS = {
             'project',
             'sessions',
             'sessions-by-project',
+            // Which processor inference sessions belong to, and the models
+            // the session lists name.
+            'inference-processor',
             'tasks',
             'schema',
             'readonly-endpoints',

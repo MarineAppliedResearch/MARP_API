@@ -1659,9 +1659,34 @@ const buildOpenApiSpec = () => {
                                             example: '20251007_164658 Fwd.mp4',
                                         },
                                     },
+                                    models: { $ref: '#/components/schemas/SessionModels' },
                                 },
                             },
                         ],
+                    },
+
+                    SessionWithModels: {
+                        allOf: [
+                            { $ref: '#/components/schemas/Session' },
+                            {
+                                type: 'object',
+                                description:
+                                    'Session response carrying the models that wrote its observations. Served by GET /api/sessions/user/{userID}/project/{projectID}.',
+                                properties: {
+                                    models: { $ref: '#/components/schemas/SessionModels' },
+                                },
+                            },
+                        ],
+                    },
+
+                    SessionModels: {
+                        type: 'array',
+                        description:
+                            "Distinct names of the models that wrote this session's observations, from observations.ml_model_id, sorted. Empty for a session whose observations were all entered by hand, or that has none.",
+                        items: {
+                            type: 'string',
+                            example: 'CAMPA_GR1_TEST6-mixed',
+                        },
                     },
 
                     /**
@@ -2374,6 +2399,8 @@ const buildOpenApiSpec = () => {
                                     done: { type: 'integer', nullable: true, example: 4210 },
                                     total: { type: 'integer', nullable: true, example: 9000 },
                                     unit: { type: 'string', nullable: true, example: 'frames' },
+                                    phase: { type: 'string', maxLength: 64, nullable: true, example: 'inferring', description: 'Worker-defined phase for this job type.' },
+                                    elapsed_s: { type: 'number', minimum: 0, nullable: true, example: 142.375 },
                                 },
                             },
                             job: {
@@ -2469,6 +2496,8 @@ const buildOpenApiSpec = () => {
                             progress_done: { type: 'integer', nullable: true, example: 4210 },
                             progress_total: { type: 'integer', nullable: true, example: 9000 },
                             progress_unit: { type: 'string', nullable: true, example: 'frames' },
+                            progress_phase: { type: 'string', maxLength: 64, nullable: true, example: 'inferring', description: 'Latest worker-defined phase for this job type.' },
+                            progress_elapsed_s: { type: 'number', minimum: 0, nullable: true, example: 142.375 },
                             capabilities_snapshot: {
                                 type: 'object',
                                 nullable: true,
@@ -2599,6 +2628,8 @@ const buildOpenApiSpec = () => {
                                     done: { type: 'integer', example: 4210 },
                                     total: { type: 'integer', example: 9000 },
                                     unit: { type: 'string', example: 'frames' },
+                                    phase: { type: 'string', maxLength: 64, example: 'inferring', description: 'Current worker-defined phase. Future job types may use their own vocabulary.' },
+                                    elapsed_s: { type: 'number', minimum: 0, example: 142.375 },
                                 },
                             },
                         },
@@ -2622,7 +2653,7 @@ const buildOpenApiSpec = () => {
                     GpuEventsRequest: {
                         type: 'object',
                         description:
-                            'A batch of durable metrics and log lines. Keyed `(attempt_id, seq)`, so resending a batch whose answer was never seen inserts nothing the second time.',
+                            'A batch of durable metrics, log lines and settings reports. Keyed `(attempt_id, seq)`, so resending a batch whose answer was never seen inserts nothing the second time.',
                         required: ['worker_id', 'lease_epoch', 'events'],
                         properties: {
                             worker_id: { type: 'integer', example: 3 },
@@ -2638,12 +2669,17 @@ const buildOpenApiSpec = () => {
                                         seq: { type: 'integer', minimum: 0, example: 17 },
                                         kind: {
                                             type: 'string',
-                                            enum: ['metric', 'log'],
+                                            enum: ['metric', 'log', 'settings'],
                                             example: 'metric',
-                                            description: 'A worker sends metrics and log lines. `note` is the coordinator\'s own kind and is refused here, so the record of why a lease was taken away stays trustworthy.',
+                                            description: 'A worker sends metrics, log lines, and one `settings` report per attempt before its first frame. `note` is the coordinator\'s own kind and is refused here, so the record of why a lease was taken away stays trustworthy.',
                                         },
                                         at: { type: 'string', format: 'date-time', description: 'When the worker says it happened. Evidence, not a clock anything is judged on.' },
-                                        payload: { type: 'object', additionalProperties: true, example: { frames_per_second: 41.2 } },
+                                        payload: {
+                                            type: 'object',
+                                            additionalProperties: true,
+                                            example: { frames_per_second: 41.2 },
+                                            description: 'Free-form for `metric` and `log`. For `settings` it has a fixed shape, checked whole before anything is written: `{engine, settings: {name: {value, type, source}}, ignored: {key: requested value}}`. `type` is one of `real`, `int`, `bool`, `text` and must match the catalogue for a known setting; `source` is `job`, `default` or `engine`; `value` may not be null, because a default is recorded as the value that was used. Example: `{"engine": "marp_tracking", "settings": {"confidence": {"value": 0.001, "type": "real", "source": "job"}, "imgsz": {"value": 640, "type": "int", "source": "default"}}, "ignored": {"track_threshh": 0.5}}`.',
+                                        },
                                     },
                                 },
                             },
@@ -2711,8 +2747,9 @@ const buildOpenApiSpec = () => {
                     GpuArtifactCheckRequest: {
                         type: 'object',
                         description: 'The first half of the hand-off: asking whether MARP already holds these bytes.',
-                        required: ['sha256'],
+                        required: ['worker_id', 'sha256'],
                         properties: {
+                            worker_id: { type: 'integer', example: 3 },
                             sha256: { type: 'string', example: 'd5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3', description: '64 lower-case hexadecimal characters. One spelling only, so two spellings of a hash cannot each get their own copy.' },
                             bytes: { type: 'integer', minimum: 0, example: 41205310, description: 'How large the file is, as the worker measures it.' },
                         },
@@ -2876,6 +2913,13 @@ const buildOpenApiSpec = () => {
                             keyframe_count: { type: 'integer', example: 8, description: 'How many keyframes the observation carries. Computed per returned row, not over the matching set, unless the sort names it.' },
                             first_framenum: { type: 'integer', nullable: true, example: 3457 },
                             thumbnail_status: { type: 'string', enum: ['queued', 'ready', 'failed'], example: 'ready', description: 'Whether the tile has a picture. **Never null**: an observation with no record at all reports `queued` rather than an absence the client has no rendering for. Two things make that honest rather than a promise nobody keeps -- a thumbnail is enqueued when its keyframes are written, and serving this page enqueues anything on it that still has no record. The picture itself is at /api/v2/observations/{observation_id}/thumbnail, which is derivable from a key this row already carries -- so no second field repeats a URL 45 times a page.' },
+                            full_frame_status: { type: 'string', nullable: true, enum: ['queued', 'ready', 'failed', null], description: 'Operational state of the optional native-size review frame. Null means it has not been requested or was evicted.' },
+                            full_frame_permanent: { type: 'boolean', example: false, description: 'Whether another request for the same source frame cannot succeed.' },
+                            full_frame_reason: { type: 'string', nullable: true, description: 'Failure explanation when full_frame_status is failed.' },
+                            full_frame_framenum: { type: 'integer', nullable: true, description: 'Exact video frame represented by the full-frame artifact.' },
+                            full_frame_width: { type: 'integer', nullable: true, description: 'Native stored frame width in pixels.' },
+                            full_frame_height: { type: 'integer', nullable: true, description: 'Native stored frame height in pixels.' },
+                            full_frame_box: { type: 'object', nullable: true, description: 'Normalised observation bounding box drawn by default in the full-frame viewer.' },
                         },
                     },
                     ThumbnailExtractorStatus: {

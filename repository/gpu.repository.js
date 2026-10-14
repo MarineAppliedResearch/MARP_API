@@ -57,9 +57,12 @@ const db = require('../model');
  */
 const logger = require('../logger/api.logger');
 
+const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
+
 const {
     LEASE_SECONDS,
     ATTEMPT_CAP_SECONDS,
+    WORKER_OFFLINE_SECONDS,
     ARTIFACT_PATH_PREFIX,
     LIVE_ATTEMPT_STATES,
     TERMINAL_JOB_STATES,
@@ -74,6 +77,61 @@ const {
  * @type {string}
  */
 const LIVE_ATTEMPT_STATES_SQL = LIVE_ATTEMPT_STATES.map((state) => `'${state}'`).join(', ');
+
+/**
+ * Outcomes that leave observations worth taking into the record.
+ *
+ * A stop is in here with a success, because the frames a volunteer got through
+ * before pressing stop are the same frames they would have got through without
+ * it. A failure and a cancel are not: one produced nothing trustworthy, the
+ * other was called off.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const INGESTABLE_OUTCOMES = ['succeeded', 'yielded'];
+
+/**
+ * Which value column on `gpu_attempt_settings` each catalogue type is stored in.
+ * Interpolated into SQL, so it is a constant here and never input.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const SETTING_VALUE_COLUMN = {
+    real: 'value_real',
+    int: 'value_int',
+    bool: 'value_bool',
+    text: 'value_text',
+};
+
+/**
+ * How much of a job's attempt budget is actually spent, as SQL.
+ *
+ * `attempts_made` counts every lease ever granted, because it doubles as the
+ * lease epoch and must never stand still. A deliberate stop is not a failed
+ * attempt, so it is subtracted here -- otherwise the jobs handed between the
+ * most volunteers would be the first to become unclaimable, which is backwards
+ * for a pool.
+ *
+ * @constant
+ * @type {string}
+ */
+const ATTEMPTS_SPENT_SQL = '(attempts_made - yields_made)';
+
+/**
+ * The same sum in JavaScript, for the paths that decide from a row already read.
+ *
+ * `yields_made` is defaulted rather than nullable, but a row read before this
+ * migration ran -- in a test fixture, say -- would carry undefined, and treating
+ * that as NaN would make every comparison false and quietly expire jobs.
+ *
+ * @param {Object} job - A `gpu_jobs` row.
+ * @returns {number} Attempts that count against `max_attempts`.
+ */
+function attemptsSpent(job) {
+    return Number(job.attempts_made) - Number(job.yields_made || 0);
+}
 
 /**
  * Why a call carrying `(attempt_id, worker_id, lease_epoch)` should be refused,
@@ -284,6 +342,68 @@ class GpuRepository {
     }
 
     /**
+     * Mark every machine that has stopped talking `offline`.
+     *
+     * The mirror of `markWorkerSeen`, which brings an `offline` worker back the
+     * moment it asks for work. Nothing was ever doing this half, so a worker
+     * that was switched off stayed `online` for ever -- one read `online` more
+     * than an hour after its process was killed, another with a `last_seen_at`
+     * six days old (#202).
+     *
+     * **`online` only.** A `paused` machine that is then shut down is both, and
+     * the pool should not forget that an operator parked it: `paused` is an
+     * intention about the machine, `offline` is an observation of it, and the
+     * intention outlives the observation. This is the same asymmetry
+     * `markWorkerSeen` already keeps in the other direction.
+     *
+     * `COALESCE(last_seen_at, enrolled_at)` because a null must not make a row
+     * immortal. A worker somehow never heard from is judged from when it
+     * enrolled, which is the only other moment MARP knows it existed.
+     *
+     * Judged on the coordinator's clock, like every other timeout here. A
+     * worker's own idea of the time never enters into it.
+     *
+     * **`SKIP LOCKED`, and it is load-bearing rather than a flourish.** A poll
+     * takes `SELECT ... FROM gpu_workers WHERE id = :workerId FOR UPDATE` inside
+     * the transaction that leases a job, and this sweep runs on every poll -- so
+     * a plain `UPDATE` across the table would sit waiting on a row some other
+     * machine's lease is holding, turning a sweep into a queue behind the
+     * busiest thing in the system. Skipping costs nothing here: a row locked by
+     * a live lease belongs to a machine that is demonstrably talking, so it is
+     * not stale, and anything genuinely dead is still there on the next poll.
+     * `expireStaleLeases` skips for the same reason.
+     *
+     * @async
+     * @returns {Promise<Array<Object>>} One entry per machine marked offline:
+     * `{id, name, last_seen_at}`.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async markStaleWorkersOffline() {
+        try {
+            return await this.db.sequelize.query(
+                `UPDATE gpu_workers
+                    SET state = 'offline'
+                  WHERE id IN (
+                        SELECT id
+                          FROM gpu_workers
+                         WHERE state = 'online'
+                           AND COALESCE(last_seen_at, enrolled_at)
+                               < NOW() - (:offlineSeconds * INTERVAL '1 second')
+                         ORDER BY id ASC
+                           FOR UPDATE SKIP LOCKED)
+              RETURNING id, name, last_seen_at`,
+                {
+                    replacements: { offlineSeconds: WORKER_OFFLINE_SECONDS },
+                    type: QueryTypes.SELECT,
+                }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
      * Fetch the pool: every worker, with whatever it is running right now.
      *
      * One row per worker per live attempt, and one row for an idle worker with
@@ -314,6 +434,8 @@ class GpuRepository {
                         a.progress_done,
                         a.progress_total,
                         a.progress_unit,
+                        a.progress_phase,
+                        a.progress_elapsed_s,
                         j.id               AS job_id,
                         j.kind             AS job_kind,
                         j.state            AS job_state,
@@ -417,6 +539,55 @@ class GpuRepository {
     }
 
     /**
+     * What a session is, in the terms a person would recognise it by.
+     *
+     * For the watch window: a worker putting inference on somebody's screen can
+     * say which survey, dive and line it is working through, rather than an id.
+     * Read at lease time rather than frozen onto the job, because a session can
+     * be renamed or retyped after a job is queued.
+     *
+     * Takes either form of `spec.session`. Given `{session_id}` it reads the
+     * row; given `{project_id, dive, line, type}` it answers from what it was
+     * handed and looks up only the project's name, because that form names a
+     * session that does not exist yet -- the ingest creates it afterwards.
+     *
+     * @async
+     * @param {Object} session - `spec.session`, either form.
+     * @returns {Promise<Object|null>} `{session_id, project, dive, line, type}`, or null.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async describeSession(session) {
+        if (session.session_id) {
+            const [row] = await this.db.sequelize.query(
+                `SELECT s.session_id, s.dive, s.line, s.type, p.name AS project
+                   FROM sessions s
+                   LEFT JOIN projects p ON p.project_id = s.project_id
+                  WHERE s.session_id = :sessionId`,
+                { replacements: { sessionId: session.session_id }, type: QueryTypes.SELECT }
+            );
+
+            return row || null;
+        }
+
+        if (!session.project_id) {
+            return null;
+        }
+
+        const [project] = await this.db.sequelize.query(
+            'SELECT name FROM projects WHERE project_id = :projectId',
+            { replacements: { projectId: session.project_id }, type: QueryTypes.SELECT }
+        );
+
+        return {
+            session_id: null,
+            project: project ? project.name : null,
+            dive: session.dive === undefined ? null : session.dive,
+            line: session.line === undefined ? null : session.line,
+            type: session.type === undefined ? null : session.type,
+        };
+    }
+
+    /**
      * Fetch one job with every attempt at it and every artifact it produced.
      *
      * @async
@@ -449,6 +620,43 @@ class GpuRepository {
                 attempts: attempts.map((attempt) => attempt.get({ plain: true })),
                 artifacts: artifacts.map((artifact) => artifact.get({ plain: true })),
             };
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * Fetch the existing orchestration fields needed for Jellyfin reporting.
+     *
+     * Playback state stays in Jellyfin. These rows reproduce a worker slot's
+     * stable device identity and the attempt's last accepted frame position.
+     *
+     * @async
+     * @param {number} attemptId - Attempt identifier.
+     * @returns {Promise<Object|null>} Playback context, or null when absent.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getAttemptPlaybackContext(attemptId) {
+        try {
+            const [context] = await this.db.sequelize.query(
+                `SELECT attempt.id AS attempt_id,
+                        attempt.slot_index,
+                        attempt.progress_done,
+                        attempt.progress_total,
+                        attempt.progress_unit,
+                        job.spec,
+                        worker.id AS worker_id,
+                        worker.name AS worker_name,
+                        worker.worker_version
+                   FROM gpu_job_attempts attempt
+                   JOIN gpu_jobs job ON job.id = attempt.job_id
+                   JOIN gpu_workers worker ON worker.id = attempt.worker_id
+                  WHERE attempt.id = :attemptId`,
+                { replacements: { attemptId }, type: QueryTypes.SELECT }
+            );
+
+            return context || null;
         } catch (error) {
             logger.error('Error::' + error);
             throw error;
@@ -543,7 +751,7 @@ class GpuRepository {
             `SELECT *
                FROM gpu_jobs
               WHERE state = 'queued'
-                AND attempts_made < max_attempts
+                AND ${ATTEMPTS_SPENT_SQL} < max_attempts
               ORDER BY priority DESC, created_at ASC, id ASC
               LIMIT 1
                 FOR UPDATE SKIP LOCKED`,
@@ -733,7 +941,7 @@ class GpuRepository {
                 let jobState = job.state;
 
                 if (job.state === 'leased') {
-                    jobState = Number(job.attempts_made) < Number(job.max_attempts) ? 'queued' : 'expired';
+                    jobState = attemptsSpent(job) < Number(job.max_attempts) ? 'queued' : 'expired';
 
                     await this.db.sequelize.query(
                         'UPDATE gpu_jobs SET state = :jobState, updated_at = NOW() WHERE id = :jobId',
@@ -776,7 +984,7 @@ class GpuRepository {
      * @param {number} params.workerId - Worker it believes it is.
      * @param {number} params.leaseEpoch - Lease epoch it believes it holds.
      * @param {string} [params.state] - Where it says it is: preparing, running, uploading.
-     * @param {Object} [params.progress] - `{done, total, unit}`, overwritten in place.
+     * @param {Object} [params.progress] - Latest counters, phase and elapsed seconds.
      * @returns {Promise<Object>} `{action, reason, lease_expires_at, heartbeat_seconds, attempt}`.
      * @throws {Error} Re-throws after rolling back if anything fails.
      */
@@ -848,7 +1056,9 @@ class GpuRepository {
                         lease_expires_at = NOW() + (:leaseSeconds * INTERVAL '1 second'),
                         progress_done = COALESCE(:progressDone, progress_done),
                         progress_total = COALESCE(:progressTotal, progress_total),
-                        progress_unit = COALESCE(:progressUnit, progress_unit)
+                        progress_unit = COALESCE(:progressUnit, progress_unit),
+                        progress_phase = COALESCE(:progressPhase, progress_phase),
+                        progress_elapsed_s = COALESCE(:progressElapsedSeconds, progress_elapsed_s)
                   WHERE id = :attemptId
                   RETURNING *`,
                 {
@@ -859,6 +1069,10 @@ class GpuRepository {
                         progressDone: progress && progress.done !== undefined ? progress.done : null,
                         progressTotal: progress && progress.total !== undefined ? progress.total : null,
                         progressUnit: progress && progress.unit !== undefined ? progress.unit : null,
+                        progressPhase: progress && progress.phase !== undefined ? progress.phase : null,
+                        progressElapsedSeconds: progress && progress.elapsed_s !== undefined
+                            ? progress.elapsed_s
+                            : null,
                     },
                     type: QueryTypes.SELECT,
                     transaction,
@@ -914,6 +1128,124 @@ class GpuRepository {
     }
 
     /**
+     * Record the inference settings an attempt ran with (#232).
+     *
+     * **The first report is the record.** An attempt resolves its settings once,
+     * before its first frame, so a second report for the same attempt is kept as
+     * an event but written nowhere else -- the same rule as
+     * `published_attempt_id`, which is set once and never overwritten.
+     *
+     * **A setting the catalogue does not know is registered, not refused.** A
+     * newer worker reporting a setting this database has not seen would otherwise
+     * lose exactly the record this exists to make. It arrives with the type the
+     * worker declared and no description.
+     *
+     * @async
+     * @param {number} attemptId - Attempt the settings belong to.
+     * @param {{engine: string, settings: Array<Object>, ignored: Array<Object>}} report - Parsed by the service.
+     * @param {Object} transaction - The events transaction, so the report and its event land together.
+     * @returns {Promise<void>} Resolves once the rows are written, or skipped as a repeat.
+     * @throws {ApiError} 400 when a value's type disagrees with its catalogue entry.
+     */
+    async recordAttemptSettings(attemptId, report, transaction) {
+        const [already] = await this.db.sequelize.query(
+            `SELECT 1 AS present FROM gpu_attempt_settings WHERE attempt_id = :attemptId
+             UNION ALL
+             SELECT 1 FROM gpu_attempt_ignored_params WHERE attempt_id = :attemptId
+             LIMIT 1`,
+            { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
+        );
+
+        if (already) {
+            logger.info(`attempt ${attemptId} reported its settings again; the first report stands`);
+            return;
+        }
+
+        for (const setting of report.settings) {
+            const entry = await this.catalogueEntry(report.engine, setting, transaction);
+
+            // The catalogue's type decides the column. A worker reporting a
+            // different one means the two disagree about what the setting is,
+            // and storing it anyway would put a value in the wrong column.
+            if (entry.value_type !== setting.type) {
+                throw new ApiError(
+                    400,
+                    ERROR_CODES.VALIDATION_ERROR,
+                    `setting ${report.engine}.${setting.name} is recorded as ${entry.value_type} `
+                    + `in the catalogue but was reported as ${setting.type}.`
+                );
+            }
+
+            const column = SETTING_VALUE_COLUMN[entry.value_type];
+
+            await this.db.sequelize.query(
+                `INSERT INTO gpu_attempt_settings (attempt_id, setting_id, ${column}, source)
+                 VALUES (:attemptId, :settingId, :value, :source)
+                 ON CONFLICT (attempt_id, setting_id) DO NOTHING`,
+                {
+                    replacements: {
+                        attemptId,
+                        settingId: entry.id,
+                        value: setting.value,
+                        source: setting.source,
+                    },
+                    transaction,
+                }
+            );
+        }
+
+        for (const item of report.ignored) {
+            await this.db.sequelize.query(
+                `INSERT INTO gpu_attempt_ignored_params (attempt_id, key, requested_value)
+                 VALUES (:attemptId, :key, :requestedValue)
+                 ON CONFLICT (attempt_id, key) DO NOTHING`,
+                {
+                    replacements: { attemptId, key: item.key, requestedValue: item.requestedValue },
+                    transaction,
+                }
+            );
+        }
+    }
+
+    /**
+     * Find a setting in the catalogue, registering it if it is not there.
+     *
+     * Insert-or-read rather than read-then-insert, so two attempts reporting the
+     * same new setting at once both end up pointing at one row.
+     *
+     * @async
+     * @param {string} engine - Engine the setting belongs to.
+     * @param {{name: string, type: string}} setting - The reported setting.
+     * @param {Object} transaction - Transaction to work inside.
+     * @returns {Promise<{id: number, value_type: string}>} The catalogue row.
+     */
+    async catalogueEntry(engine, setting, transaction) {
+        const [registered] = await this.db.sequelize.query(
+            `INSERT INTO inference_settings (engine, name, value_type)
+             VALUES (:engine, :name, :valueType)
+             ON CONFLICT (engine, name) DO NOTHING
+             RETURNING id, value_type`,
+            {
+                replacements: { engine, name: setting.name, valueType: setting.type },
+                type: QueryTypes.SELECT,
+                transaction,
+            }
+        );
+
+        if (registered) {
+            logger.info(`registered inference setting ${engine}.${setting.name} (${setting.type}) from a worker report`);
+            return registered;
+        }
+
+        const [existing] = await this.db.sequelize.query(
+            'SELECT id, value_type FROM inference_settings WHERE engine = :engine AND name = :name',
+            { replacements: { engine, name: setting.name }, type: QueryTypes.SELECT, transaction }
+        );
+
+        return existing;
+    }
+
+    /**
      * Append a batch of worker events, ignoring any the coordinator already has.
      *
      * `ON CONFLICT DO NOTHING` against the `(attempt_id, seq)` primary key is the
@@ -925,7 +1257,7 @@ class GpuRepository {
      * @param {number} params.attemptId - Attempt the events belong to.
      * @param {number} params.workerId - Worker sending them.
      * @param {number} params.leaseEpoch - Lease epoch it holds.
-     * @param {Array<Object>} params.events - `{seq, kind, at, payload}` entries.
+     * @param {Array<Object>} params.events - `{seq, kind, at, payload, settings}` entries; `settings` is the parsed report on a settings event.
      * @returns {Promise<Object>} `{action, reason, accepted, duplicates, next_seq}`.
      * @throws {Error} Re-throws after rolling back if anything fails.
      */
@@ -968,6 +1300,12 @@ class GpuRepository {
 
                 if (inserted.length > 0) {
                     accepted += 1;
+
+                    // Only a newly accepted report is written: a replayed batch
+                    // arrives with the same seq and must not be recorded twice.
+                    if (event.settings) {
+                        await this.recordAttemptSettings(attemptId, event.settings, transaction);
+                    }
                 }
             }
 
@@ -1019,7 +1357,7 @@ class GpuRepository {
      * @returns {Promise<Object>} The ack: `{action, accepted, idempotent, outcome, job_state, published, published_attempt_id, artifacts_recorded}`.
      * @throws {Error} Re-throws after rolling back if anything fails.
      */
-    async publishResult({ attemptId, workerId, leaseEpoch, outcome, failureReason, artifacts }) {
+    async publishResult({ attemptId, workerId, leaseEpoch, outcome, failureReason, artifacts, completedThroughFrame }) {
         const transaction = await this.db.sequelize.transaction();
 
         try {
@@ -1136,6 +1474,91 @@ class GpuRepository {
                 });
 
                 jobState = released.jobState;
+            } else if (outcome === 'yielded') {
+                // An operator stopped this run part-way. The frames behind it are
+                // real, so the attempt is kept and ingested like a success; the
+                // rest of the range goes back to the pool for another machine.
+                //
+                // **`completed_through_frame` is an exclusive bound**, despite
+                // the name: the worker computes `start_frame + frames_processed`,
+                // which is one past the last frame it finished. That is the same
+                // half-open convention as `spec.range.end_frame`, so it is
+                // already exactly the frame a resumed lease should start at and
+                // needs no adjustment here. Adding one would silently skip a
+                // frame on every hand-over.
+                await this.db.sequelize.query(
+                    `UPDATE gpu_job_attempts
+                        SET state = 'yielded',
+                            completed_through_frame = :completedThroughFrame,
+                            failure_reason = :failureReason,
+                            finished_at = NOW()
+                      WHERE id = :attemptId`,
+                    {
+                        replacements: {
+                            attemptId: attempt.id,
+                            completedThroughFrame: completedThroughFrame === undefined ? null : completedThroughFrame,
+                            failureReason: failureReason || null,
+                        },
+                        transaction,
+                    }
+                );
+
+                // A job that finished some other way while this attempt was
+                // stopping keeps whatever it finished as, exactly as the expiry
+                // path decides it.
+                if (!TERMINAL_JOB_STATES.includes(job.state)) {
+                    jobState = 'queued';
+
+                    // `yields_made` rather than leaving `attempts_made` alone.
+                    // `attempts_made` is also the lease epoch, so it has to go on
+                    // counting every lease or two of them would share an epoch and
+                    // the coordinator could not tell a stale worker from a current
+                    // one. Counting yields separately is what lets the budget
+                    // ignore them without touching that.
+                    //
+                    // `resume_from_frame` only moves forward. A worker that
+                    // stopped before reaching the point an earlier one had already
+                    // covered must not drag the job backwards and cause those
+                    // frames to be run twice.
+                    await this.db.sequelize.query(
+                        `UPDATE gpu_jobs
+                            SET state = 'queued',
+                                yields_made = yields_made + 1,
+                                resume_from_frame = GREATEST(
+                                    COALESCE(:completedThroughFrame, resume_from_frame, 0),
+                                    COALESCE(resume_from_frame, 0)
+                                ),
+                                updated_at = NOW()
+                          WHERE id = :jobId`,
+                        {
+                            replacements: {
+                                jobId: job.id,
+                                completedThroughFrame: completedThroughFrame === undefined ? null : completedThroughFrame,
+                            },
+                            transaction,
+                        }
+                    );
+                }
+
+                await this.appendCoordinatorNote(
+                    attempt.id,
+                    {
+                        note: 'attempt yielded',
+                        completed_through_frame: completedThroughFrame === undefined ? null : completedThroughFrame,
+                        job_state: jobState,
+                    },
+                    transaction
+                );
+
+                // The artifacts are recorded the same way a success's are: the
+                // bytes exist, they belong to this job, and the next attempt adds
+                // to them rather than replacing them.
+                artifactsRecorded = await this.recordJobArtifacts({
+                    job,
+                    attempt,
+                    artifacts: artifacts || [],
+                    transaction,
+                });
             } else {
                 // Cancelled. The job is cancelled whether or not the cancel came
                 // from a human -- a worker that stops of its own accord and calls
@@ -1174,6 +1597,13 @@ class GpuRepository {
                 published,
                 published_attempt_id: publishedAttemptId,
                 artifacts_recorded: artifactsRecorded,
+
+                // Which attempt to ingest, rather than whether the job is
+                // finished. A requeued job is finished by several attempts in
+                // sequence and each carries its own observations, so the job can
+                // no longer be the unit -- see `ingestAttempt`.
+                attempt_id: attempt.id,
+                ingestable: INGESTABLE_OUTCOMES.includes(outcome),
             };
         } catch (error) {
             await transaction.rollback();
@@ -1394,7 +1824,7 @@ class GpuRepository {
         let jobState = job.state;
 
         if (!TERMINAL_JOB_STATES.includes(job.state)) {
-            jobState = Number(job.attempts_made) < Number(job.max_attempts)
+            jobState = attemptsSpent(job) < Number(job.max_attempts)
                 ? 'queued'
                 : (finalState || 'expired');
 
@@ -1408,6 +1838,153 @@ class GpuRepository {
     }
 
     /**
+     * Undo a published success whose data never reached the database (#225).
+     *
+     * `publishResult` has already set the attempt `succeeded` and the job with
+     * it, because publishing and ingesting are two steps and only the first had
+     * happened. When the second fails, that success is not true: *"if a job is
+     * considered finished the api has actually ingested it's data, otherwise the
+     * job isn't finished"* -- Isaac, 2026-09-19.
+     *
+     * So this is deliberately not `endAttemptAndReleaseJob`. That one refuses to
+     * move a job already in a terminal state, which is right when a lease is
+     * taken back from a job somebody else finished, and wrong here: the terminal
+     * state it would be protecting is the very one being withdrawn.
+     *
+     * `published_attempt_id` is cleared for the same reason. It records which
+     * attempt finished the job, and a retry has to be able to publish.
+     *
+     * The job goes back to the queue while attempts remain. Re-running costs GPU
+     * time, and that is accepted rather than overlooked: an ingest that fails
+     * means MARP does not have data it was supposed to have, and a retry is how
+     * the system says so rather than filing the loss quietly.
+     *
+     * @async
+     * @param {number} attemptId - The attempt whose ingest failed.
+     * @param {string} reason - Why the ingest refused it.
+     * @returns {Promise<{attemptState: string, jobState: string}|null>} What the
+     * two are now, or null when the attempt has gone.
+     */
+    async failAttemptAfterIngest(attemptId, reason) {
+        const transaction = await this.db.sequelize.transaction();
+
+        try {
+            const [attempt] = await this.db.sequelize.query(
+                'SELECT * FROM gpu_job_attempts WHERE id = :attemptId FOR UPDATE',
+                { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
+            );
+
+            if (!attempt) {
+                await transaction.rollback();
+
+                return null;
+            }
+
+            const [job] = await this.db.sequelize.query(
+                'SELECT * FROM gpu_jobs WHERE id = :jobId FOR UPDATE',
+                { replacements: { jobId: attempt.job_id }, type: QueryTypes.SELECT, transaction }
+            );
+
+            await this.db.sequelize.query(
+                `UPDATE gpu_job_attempts
+                    SET state = 'failed',
+                        failure_reason = :reason,
+                        finished_at = NOW()
+                  WHERE id = :attemptId`,
+                { replacements: { attemptId, reason }, transaction }
+            );
+
+            // A cancelled job stays cancelled: somebody stopped it deliberately
+            // and a late ingest failure is not grounds to start it again.
+            let jobState = job ? job.state : null;
+
+            if (job && job.state !== 'cancelled') {
+                jobState = attemptsSpent(job) < Number(job.max_attempts) ? 'queued' : 'failed';
+
+                await this.db.sequelize.query(
+                    `UPDATE gpu_jobs
+                        SET state = :jobState,
+                            published_attempt_id = CASE
+                                WHEN published_attempt_id = :attemptId THEN NULL
+                                ELSE published_attempt_id END,
+                            updated_at = NOW()
+                      WHERE id = :jobId`,
+                    { replacements: { jobState, jobId: job.id, attemptId }, transaction }
+                );
+            }
+
+            await this.appendCoordinatorNote(
+                attemptId,
+                { note: 'attempt failed because its results were not ingested', reason, job_state: jobState },
+                transaction
+            );
+
+            await transaction.commit();
+
+            return { attemptState: 'failed', jobState };
+        } catch (error) {
+            await transaction.rollback();
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * Claim an attempt for ingest, or refuse because somebody already has.
+     *
+     * One statement, and the `IS NULL` is the whole mechanism: PostgreSQL takes
+     * a row lock for the `UPDATE`, so two results arriving for one attempt at the
+     * same instant cannot both find it null. The loser updates nothing and is
+     * told so by the row count.
+     *
+     * This replaces `gpu_jobs.published_attempt_id` as the ingest guard. That
+     * column names one attempt and is written once, which was right while a job
+     * had exactly one result and is wrong now that a stopped job is finished by
+     * several in sequence.
+     *
+     * @async
+     * @param {number} attemptId - The attempt to claim.
+     * @returns {Promise<boolean>} True when this caller took the claim.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async claimAttemptForIngest(attemptId) {
+        const [, result] = await this.db.sequelize.query(
+            `UPDATE gpu_job_attempts
+                SET ingested_at = NOW()
+              WHERE id = :attemptId
+                AND ingested_at IS NULL`,
+            { replacements: { attemptId } }
+        );
+
+        // `rowCount` on postgres; the array form is the fallback other dialects
+        // answer with, and this is the one place the difference would be silent.
+        const changed = result && result.rowCount !== undefined
+            ? result.rowCount
+            : (Array.isArray(result) ? result.length : 0);
+
+        return Number(changed) === 1;
+    }
+
+    /**
+     * Give a claim back, for an ingest that did not happen after all.
+     *
+     * An attempt whose ingest threw, or which had nothing to ingest, has not been
+     * ingested -- and leaving the stamp on it would make the recovery route
+     * refuse to try again, which is the one job that route has.
+     *
+     * @async
+     * @param {number} attemptId - The attempt to release.
+     * @returns {Promise<void>}
+     * @throws {Error} Re-throws any database failure.
+     */
+    async releaseAttemptIngestClaim(attemptId) {
+        await this.db.sequelize.query(
+            'UPDATE gpu_job_attempts SET ingested_at = NULL WHERE id = :attemptId',
+            { replacements: { attemptId } }
+        );
+    }
+
+    /**
      * Record the staged artifacts a successful attempt handed over, as rows in
      * the existing `artifacts` table.
      *
@@ -1415,8 +1992,17 @@ class GpuRepository {
      * and already has a `hash`. `training_run_id` is null here and `job_id` names
      * the job instead -- the pair that the migration made possible.
      *
-     * Skips a hash already recorded for this job under the same role, so a replay
-     * that somehow reaches this far still cannot double-record.
+     * Skips a hash **this attempt** already recorded under the same role, so a
+     * replay that somehow reaches this far still cannot double-record.
+     *
+     * **Per attempt, not per job (#230).** It used to skip a hash already recorded
+     * for the *job*, and a retry that reproduces its predecessor's output byte for
+     * byte names the same hash. So the retry got no row, the ingest -- which reads
+     * only the current attempt's artifacts -- found nothing, and a job whose first
+     * attempt had failed honestly ended `succeeded` with nothing in the database:
+     * 505 of them by 2026-09-20. A replay is the same attempt reporting twice; a
+     * retry is a different attempt handing over the same bytes, and gets its own
+     * row pointing at the same staged file.
      *
      * @async
      * @param {Object} params
@@ -1432,12 +2018,17 @@ class GpuRepository {
         for (const artifact of artifacts) {
             const role = artifact.role || 'result';
 
-            const existing = await this.db.artifacts.findOne({
+            const recorded = await this.db.artifacts.findAll({
                 where: { job_id: job.id, hash: artifact.sha256, artifact_type: role },
                 transaction,
             });
 
-            if (existing) {
+            // Only this attempt's own earlier row makes this a replay.
+            const replay = recorded.some(
+                (row) => row.metadata && Number(row.metadata.attempt_id) === Number(attempt.id)
+            );
+
+            if (replay) {
                 continue;
             }
 

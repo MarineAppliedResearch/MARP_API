@@ -341,6 +341,100 @@ test('#134 R1, R2, R9: requesting a replacement clears the pending flag and writ
     await expect(tile.locator('img')).toBeVisible();
   });
 
+/**
+ * #203 R1, R2, R4: the same ask, from training mode.
+ *
+ * **The tier matters here more than usual.** The defect was two gates on one rule -- the
+ * button was not rendered (`picker.js`) *and* the action returned early (`store.js`) --
+ * so a store-level check calling `actions.requestThumbnailReplacement` would have gone on
+ * passing after only one of them came out, on a popup with no button on it.
+ *
+ * **It stops at the queued state and does not wait for the picture**, which #134's
+ * scientific counterpart above does. That last step needs the extractor to leave the row
+ * alone, and it does not: the API under test starts its own thumbnail extraction, which
+ * claims the queued row and fails it -- there is no video behind a seeded observation --
+ * overwriting the `ready` the helper wrote. #134 fails on that line on `develop` today for
+ * the same reason. What #203 R2 is about is the ask reaching the endpoint from this mode,
+ * and that is settled by the assertions above.
+ */
+test('#203 R1, R2, R4: a replacement image can be asked for in training mode',
+  async ({ page }) => {
+    const seeded = await seedFor({ count: 1, thumbnail: 'ready' });
+    const id = seeded.ids[0];
+
+    await open(page, `${seeded.address}&mode=training`);
+    const tile = page.locator(`.tile[data-id="${id}"]`);
+
+    await tile.click();
+    await tile.locator('[data-badge]').click();
+    await page.locator('.pick .chip', { hasText: 'Occluded' }).click();
+
+    const replace = page.locator('.pick [data-act="replace-thumbnail"]');
+    await expect(replace).toBeVisible();
+    /* R4: it names the mark of the mode it is shown in. The title said "flag" in both. */
+    await expect(replace).toHaveAttribute('title', /exclusion/i);
+    await replace.click();
+
+    await expect(page.locator('.pick')).toHaveCount(0);
+    await expect(tile).toHaveClass(/queued/);
+
+    await page.evaluate(async (observationId) => {
+      const { state, ok, eq, MarpBackend } = await import('./tests/api/check-kit.mjs');
+      const row = state.rows.find((candidate) => candidate.observation_id === observationId);
+
+      eq(row.thumbnail_status, 'queued', 'the accepted replacement paints PREPARING');
+      ok(!state.marks.has(observationId), 'the pending exclusion and its details are gone');
+      ok(!state.touched.has(observationId),
+        'the cleared exclusion cannot enter a later selective commit');
+
+      /* The training counterpart of #134 R9: asking for a picture is not a decision about
+         the track, so nothing may have been written to either workflow. */
+      const back = await MarpBackend.query({
+        filters: { ...state.filters, trainingDisposition: ['excluded'] }, page: 1, pageSize: 500,
+      });
+      ok(!back.rows.some((candidate) => candidate.observation_id === observationId),
+        'requesting extraction must not append or project a training decision');
+    }, id);
+  });
+
+/**
+ * #203 R3: the refusal path, in training mode.
+ *
+ * A permanent failure is refused by the endpoint rather than re-queued, and the client
+ * learns that from the answer. What the reviewer must get back is the state they were in:
+ * the exclusion they had staged, the popup they had open, and the reason it was refused.
+ */
+test('#203 R3: a refused replacement in training mode restores the mark and says why',
+  async ({ page }) => {
+    const beyondHelp = await seedFor({ count: 1, thumbnail: 'failed', permanent: true });
+    const id = beyondHelp.ids[0];
+    await recordThumbnailError(beyondHelp.ids, 'no keyframes: nothing to crop');
+
+    await open(page, `${beyondHelp.address}&mode=training`);
+    const tile = page.locator(`.tile[data-id="${id}"]`);
+
+    await tile.click();
+    await tile.locator('[data-badge]').click();
+    await page.locator('.pick .chip', { hasText: 'Occluded' }).click();
+    await page.locator('.pick [data-act="replace-thumbnail"]').click();
+
+    /* The popup comes back rather than staying shut, because the decision it was holding
+       was never recorded anywhere else. */
+    await expect(page.locator('.pick')).toBeVisible();
+    await expect(page.locator('.pick .chip.on', { hasText: 'Occluded' })).toBeVisible();
+    await expect(tile).not.toHaveClass(/queued/);
+
+    await page.evaluate(async (observationId) => {
+      const { state, ok, eq } = await import('./tests/api/check-kit.mjs');
+      const row = state.rows.find((candidate) => candidate.observation_id === observationId);
+
+      eq(row.thumbnail_status, 'failed', 'a refusal leaves the row exactly as it was');
+      eq(row.thumbnail_permanent, true, 'and the row now carries the refusal');
+      ok(row.thumbnail_reason, 'with the reason the endpoint gave');
+      ok(state.marks.has(observationId), 'the staged exclusion is given back');
+    }, id);
+  });
+
 test('The states never rendered: R8: an unmarked row with no imagery is skipped, never silently accepted',
   async ({ page }) => {
     /**

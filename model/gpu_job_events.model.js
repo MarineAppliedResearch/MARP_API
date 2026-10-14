@@ -75,7 +75,7 @@ module.exports = (sequelize, DataTypes) => {
             kind: {
                 type: DataTypes.STRING(16),
                 allowNull: false,
-                comment: 'One of metric, log, note.',
+                comment: 'One of metric, log, note, settings.',
             },
 
             payload: {

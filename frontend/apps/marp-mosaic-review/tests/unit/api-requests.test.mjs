@@ -25,7 +25,7 @@ import assert from 'node:assert/strict';
 
 import {
   idList, filtersBody, pagesBody, countsBody, commitBody, correctionBody, retryBody,
-  facetsBody
+  facetsBody, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody
 } from '../../src/api/requests.js';
 import { sortTerms } from '../../src/model/filters.js';
 
@@ -423,4 +423,32 @@ test('R2: naming no sort sends the default terms, not nothing', async () => {
   assert.ok(bare.sort.length, 'the default is terms rather than an empty array');
   assert.ok(!bare.sort.some((t) => t.field === 'observation_id'),
     'and observation_id is still never one of them');
+});
+
+/* ------------------------------------------------------------------ #181 */
+
+test('#181: the video page asks with the grid\'s own filters, and not its exclusion set', () => {
+  const filters = { species: new Set([41]), reviewStatus: ['unreviewed', 'flagged'], excludeIds: new Set([7]) };
+  const wire = onWire(videoObservationsBody({ observationId: 33236, filters }));
+  assert.deepEqual(wire, { observation_id: 33236, filters: onWire(filtersBody(filters)) });
+  assert.deepEqual(wire.filters.species, [41]);
+  assert.equal('exclude' in wire, false);
+  assert.throws(() => videoObservationsBody({ observationId: '33236', filters: {} }), /integer/);
+});
+
+test('#181: a keyframe window is ids and seconds on the wire', () => {
+  const wire = onWire(videoKeyframesBody({ observationIds: new Set([3, 1, 2]), from: 280, to: 300 }));
+  assert.deepEqual(wire, { observation_ids: [1, 2, 3], from_s: 280, to_s: 300 });
+  assert.throws(() => videoKeyframesBody({ observationIds: [1], from: NaN, to: 3 }), /numbers/);
+});
+
+test('#181: a box edit sends plain numbers, and refuses a box that is not one', () => {
+  assert.deepEqual(onWire(keyframeBoxBody({ x: 0.5, y: 0.25, width: 0.1, height: 0.2, extra: 1 })),
+    { x: 0.5, y: 0.25, width: 0.1, height: 0.2 });
+  assert.throws(() => keyframeBoxBody({ x: NaN, y: 0, width: 0.1, height: 0.1 }), /number for x/);
+  assert.deepEqual(
+    onWire(addKeyframeBody({ observationId: 7, subset: 2, t: 12.48, box: { x: 0.5, y: 0.5, width: 0.1, height: 0.1 } })),
+    { observation_id: 7, t: 12.48, x: 0.5, y: 0.5, width: 0.1, height: 0.1, subset: '2' }
+  );
+  assert.throws(() => addKeyframeBody({ observationId: '7', t: 1, box: { x: 0, y: 0, width: 1, height: 1 } }), /integer/);
 });

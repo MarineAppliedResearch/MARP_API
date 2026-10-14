@@ -55,7 +55,15 @@ module.exports = {
         }
       ], {});
 
-
+      // Every observation_id above is pinned, which leaves the sequence behind the
+      // table. That was harmless while the repository assigned its own ids and is
+      // not any more (#62): the next ordinary create takes nextval, gets a number
+      // that already exists, and fails.
+      await queryInterface.sequelize.query(
+        `SELECT setval(pg_get_serial_sequence('observations', 'observation_id'),
+                       GREATEST((SELECT COALESCE(MAX(observation_id), 0) FROM observations), 1))`,
+        { transaction }
+      );
 
       //Commit the transaction
       await transaction.commit();

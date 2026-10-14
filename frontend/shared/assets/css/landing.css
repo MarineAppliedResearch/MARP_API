@@ -1349,8 +1349,12 @@ h3 {
 .login-dialog {
   width: min(920px, calc(100% - 34px));
   max-height: calc(100svh - 34px);
+  max-height: calc(100dvh - 34px);
   padding: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border-strong);
   border-radius: 24px;
   color: var(--text);
@@ -1964,6 +1968,30 @@ h3 {
      push the call to action off a 568px screen by about 25px. */
   .hero__actions .button {
     min-height: 46px;
+  }
+}
+
+/* On a short phone the image panel is decoration competing with the controls for the
+   keyboard-sized viewport. The dialog itself owns the scroll so its form cannot be clipped
+   and a touch gesture cannot leak through to the landing page underneath. */
+@media (max-width: 900px) and (max-height: 640px) {
+  .login-dialog__layout {
+    display: block;
+    min-height: 0;
+  }
+
+  .login-dialog__visual {
+    display: none;
+  }
+
+  .login-dialog__content {
+    padding: 56px 24px 20px;
+    overflow: visible;
+  }
+
+  .login-dialog__close {
+    top: 12px;
+    right: 12px;
   }
 }
 

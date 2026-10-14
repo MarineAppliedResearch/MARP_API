@@ -33,6 +33,7 @@ const METHODS = [
   'query', 'queryPages', 'counts', 'facets',
   'commitPage', 'setSpecies',
   'retryThumbnails', 'requestThumbnailReplacement', 'thumbnailUrl',
+  'requestFullFrame', 'fullFrameUrl',
   'searchSpecies'
 ];
 

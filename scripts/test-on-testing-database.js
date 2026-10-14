@@ -265,6 +265,16 @@ async function main() {
                 // conflict case. Named rather than assumed, so a test that uses it
                 // cannot silently reach the development database instead.
                 MARP_TESTING_DB_NAME: stamp.database,
+                // And the pictures that go with that database, for the same reason
+                // and against a sharper failure. `dotenv` above puts the *development*
+                // `THUMBNAIL_STORAGE_DIR` into this process, the seeder prefers that
+                // variable over the stamp file, and it runs here rather than in the
+                // API -- so without this line every seeded thumbnail is written into
+                // the development corpus's directory while the API under test serves
+                // from the testing one. Nothing errors: the row says `ready`, the file
+                // is simply somewhere else, so seeded tiles render with no imagery and
+                // 48 checks fail for reasons that look nothing like this.
+                THUMBNAIL_STORAGE_DIR: stamp.thumbnails,
             },
         });
     } finally {

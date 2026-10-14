@@ -48,6 +48,8 @@ const fs = require('fs');
 const path = require('path');
 
 const ingestRepository = require('../repository/observation-ingest.repository');
+const jellyfinRepository = require('../repository/jellyfin.repository');
+const logger = require('../logger/api.logger');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const {
     ARTIFACT_DIRECTORY,
@@ -98,6 +100,20 @@ function invalid(message) {
 
 
 /**
+ * Whether a video's average frame rate says its timestamps jump (#231).
+ *
+ * An average below the nominal rate means time passed with no frames in it. The
+ * tolerance allows for a nominal rate Jellyfin rounds, such as 29.97 for 30000/1001.
+ *
+ * @param {number} average - Jellyfin's `AverageFrameRate`.
+ * @param {number} nominal - Jellyfin's `RealFrameRate`.
+ * @returns {boolean} True when the two differ by more than 0.05%.
+ */
+function hasTimestampGap(average, nominal) {
+    return Math.abs(average - nominal) / nominal > 0.0005;
+}
+
+/**
  * Application behaviour for turning a job's result into observations.
  *
  * @class ObservationIngestService
@@ -130,7 +146,20 @@ class ObservationIngestService {
             );
         }
 
-        if (job.state !== 'succeeded') {
+        // **A named attempt carries its own result, whatever the job is.**
+        //
+        // This used to require the job to have succeeded, which was right while
+        // a job had exactly one result: anything else genuinely had nothing to
+        // read. A job an operator stopped is back to `queued` with its
+        // remaining range, and the attempt that stopped still produced real
+        // observations for the frames it did -- so refusing on the job's state
+        // threw away the work this whole feature exists to keep, and reported
+        // it as a failure to ingest rather than as a refusal.
+        //
+        // Without an attempt the old rule stands: the manual re-ingest route
+        // reads whatever the job published, and a job that has not finished has
+        // not published anything.
+        if (!job.attempt_id && job.state !== 'succeeded') {
             invalid(
                 `Job ${job.id} is ${job.state}. Observations are ingested from a job that succeeded, `
                 + 'because anything else has no published result to read.'
@@ -151,16 +180,24 @@ class ObservationIngestService {
 
         // The check outside the write transaction is the cheap one; the write
         // takes it again under the advisory lock, where it actually holds.
-        const already = await ingestRepository.countObservationsForJob(job.id);
+        //
+        // **Skipped when an attempt is named.** A stopped job is finished by
+        // several attempts in sequence and each brings its own observations, so
+        // asking "does this job already have any" would see the first
+        // attempt's rows and refuse every one after it. `gpu_job_attempts.
+        // ingested_at`, claimed by the caller, is the guard there.
+        if (job.attempt_id === undefined || job.attempt_id === null) {
+            const already = await ingestRepository.countObservationsForJob(job.id);
 
-        if (already > 0) {
-            return {
-                job_id: job.id,
-                ingested: false,
-                already_ingested: already,
-                observations: 0,
-                keyframes: 0,
-            };
+            if (already > 0) {
+                return {
+                    job_id: job.id,
+                    ingested: false,
+                    already_ingested: already,
+                    observations: 0,
+                    keyframes: 0,
+                };
+            }
         }
 
         const rows = this.readObservationArtifact(job);
@@ -177,6 +214,9 @@ class ObservationIngestService {
 
         await this.checkSessionTypeAgainstModel(sessionRow, model);
 
+        // Once per ingest: every line of a job comes from one video (#231).
+        const frameRate = await this.frameRateForSpec(spec, job);
+
         const built = [];
         const speciesByName = new Map();
 
@@ -187,12 +227,14 @@ class ObservationIngestService {
                     model,
                     sessionRow,
                     speciesByName,
+                    frameRate,
                 })
             );
         }
 
         const written = await ingestRepository.writeJobObservations({
             jobId: job.id,
+            attemptId: job.attempt_id,
             sessionId: sessionRow.session_id,
             projectId: sessionRow.project_id,
             sessionType: sessionRow.type,
@@ -209,7 +251,70 @@ class ObservationIngestService {
             observations: written.observations,
             keyframes: written.keyframes,
             observation_ids: written.observation_ids,
+            frame_rate: frameRate.fps,
+            frame_rate_source: frameRate.source,
         };
+    }
+
+    /**
+     * The frame rate a job's video runs at, for deriving its timecodes (#231).
+     *
+     * **Jellyfin's `RealFrameRate`, the nominal rate.** A frame number is playback
+     * time times the nominal rate, so that is the rate that turns one back into a
+     * time. The average is not a rate the video runs at: on `20260611_161158_Fwd`
+     * it reads 24.946 because the timestamps jump 2.4 s after the twelfth frame,
+     * and the video is 25 fps on either side of the jump.
+     *
+     * **`gapped` when the average is below the nominal rate.** That is a jump in
+     * the timestamps, and a worker that numbers frames by counting them numbers
+     * every frame after it early. `ingestJob` stores such a result and logs it,
+     * unless it says its frames are on the playback clock.
+     *
+     * **25 when no rate can be read**, which is what every ingest did before --
+     * a bare `video.url`, Jellyfin unreachable, or no rate reported. It is safe
+     * because `deriveTimecodes` checks every line against the worker's own
+     * report: at 25 a 25 fps video still ingests, and any other is refused as
+     * it always was, never stored wrong.
+     *
+     * @async
+     * @param {Object} spec - The job's spec.
+     * @param {Object} job - The job, for the log line.
+     * @returns {Promise<{fps: number, source: string, gapped: boolean}>} The rate,
+     *   where it came from, and whether the video's timestamps jump.
+     */
+    async frameRateForSpec(spec, job) {
+        const itemId = spec.video && spec.video.jellyfin_item_id;
+
+        if (!itemId) {
+            return { fps: ASSUMED_FPS, source: 'assumed: the job names no Jellyfin item', gapped: false };
+        }
+
+        let reported = null;
+        let reason;
+
+        try {
+            reported = await jellyfinRepository.getVideoFrameRate(itemId);
+        } catch (error) {
+            reason = `Jellyfin could not be read: ${error.message}`;
+        }
+
+        if (reported && reported.realFrameRate) {
+            const average = reported.averageFrameRate;
+
+            return {
+                fps: reported.realFrameRate,
+                source: 'jellyfin RealFrameRate',
+                gapped: Boolean(average) && hasTimestampGap(average, reported.realFrameRate),
+            };
+        }
+
+        reason = reason || 'Jellyfin reported no RealFrameRate for the video';
+        logger.info(
+            `job ${job.id}: ${reason}; deriving timecodes at the assumed ${ASSUMED_FPS} fps. `
+            + 'A video at any other rate will be refused by the consistency check, not stored wrong.'
+        );
+
+        return { fps: ASSUMED_FPS, source: `assumed: ${reason}`, gapped: false };
     }
 
     /**
@@ -470,15 +575,41 @@ class ObservationIngestService {
             return { ...row, created: false };
         }
 
+        // A session inference creates belongs to the inference processor, not to
+        // whoever submitted the job -- that is what puts it on the GUI's opening
+        // screen. The submitter is still recorded on each observation.
         const { session: row, created } = await ingestRepository.findOrCreateSession({
             projectId: session.project_id,
             dive: session.dive,
             line: session.line,
             type: session.type,
-            userId: job.created_by === undefined ? null : job.created_by,
+            userId: await ingestRepository.inferenceProcessorId(),
         });
 
         return { ...row, created };
+    }
+
+    /**
+     * The annotation list a session type reads against, static map or database.
+     *
+     * Two sources, in this order, and the order is the point. The static map in
+     * `db/species-lists.js` names every type whose list is called something else
+     * -- `Invert` reads `Inverts` -- so it has to win, or those types would stop
+     * resolving the moment a list happened to share their name.
+     *
+     * Failing that, a type that **is** the name of a seeded list resolves to it.
+     * That is #223: registering a new model was a seeder run plus an edit to a
+     * frozen object plus a restart, and forgetting the last two was silent --
+     * the job succeeded and its observations went nowhere. Now the seeder is
+     * enough.
+     *
+     * @async
+     * @param {string} sessionType - A `sessions.type` value.
+     * @returns {Promise<string|null>} The species list, or null when nothing says.
+     */
+    async speciesListForSession(sessionType) {
+        return speciesListForSessionType(sessionType)
+            || ingestRepository.speciesListNamed(sessionType);
     }
 
     /**
@@ -506,13 +637,14 @@ class ObservationIngestService {
             return;
         }
 
-        const sessionList = speciesListForSessionType(sessionRow.type);
+        const sessionList = await this.speciesListForSession(sessionRow.type);
 
         if (!sessionList) {
             unreconcilable(
                 `Session ${sessionRow.session_id} has type "${sessionRow.type}", which does not say which `
                 + 'species list its observations are recorded against, so it cannot be checked against '
-                + `model ${model.id}.`
+                + `model ${model.id}. Seed the list with scripts/seed-morphotaxa-vocabulary.js, or name `
+                + 'the session type after an existing list.'
             );
         }
 
@@ -591,11 +723,12 @@ class ObservationIngestService {
      * @async
      * @param {Object} row - One parsed line of the worker's result file.
      * @param {number} index - Its position in the file, for messages.
-     * @param {Object} context - `{job, model, sessionRow, speciesByName}`.
+     * @param {Object} context - `{job, model, sessionRow, speciesByName, frameRate}`.
+     *   `frameRate` is `frameRateForSpec`'s answer; without one, 25 as before.
      * @returns {Promise<Object>} `{row, keyframes}` ready to write.
      * @throws {ApiError} 409 when the line cannot be reconciled.
      */
-    async buildObservation(row, index, { job, model, sessionRow, speciesByName }) {
+    async buildObservation(row, index, { job, model, sessionRow, speciesByName, frameRate }) {
         const where = `line ${index + 1} of job ${job.id}'s result file`;
 
         if (!Number.isInteger(row.observation_frame)) {
@@ -605,7 +738,18 @@ class ObservationIngestService {
         }
 
         const species = await this.resolveSpecies(row.comname, model, speciesByName);
-        const timecodes = this.deriveTimecodes(row, where);
+        // A worker that counts frames numbers everything after a timestamp jump
+        // early, by the length of the jump. Stored anyway, by the human's
+        // decision (2026-09-24), and said in the log so it can be found later.
+        if (frameRate && frameRate.gapped && row.frame_clock !== 'playback') {
+            logger.info(
+                `job ${job.id}: ${where} numbers its frames by counting them, and this video's timestamps `
+                + `jump (average rate below its nominal ${frameRate.fps} fps). Stored as reported; frames `
+                + 'after the jump are early by the length of the jump.'
+            );
+        }
+
+        const timecodes = this.deriveTimecodes(row, where, frameRate ? frameRate.fps : ASSUMED_FPS);
         const confidence = this.readConfidence(row, where);
 
         return {
@@ -618,12 +762,12 @@ class ObservationIngestService {
                 comname: species.comname,
                 count: Number.isInteger(row.count) ? row.count : 1,
                 video_source: typeof row.video_source === 'string' ? row.video_source : null,
-                // Null deliberately. In the legacy pipeline this was the
-                // operator's own local path to the file, which on a distributed
-                // worker does not exist; the resolved stream URL is per-lease and
-                // will carry an expiring token. `video_source` and
-                // `jellyfin_item_id` carry the identity instead.
-                videoLocation: null,
+                // The file's name on disk, the same as video_source and the same
+                // as the annotation GUI writes: video is found in Jellyfin by
+                // filename. Not the stream URL, which is per-lease and carries an
+                // expiring token, and not the item id, which changes when items
+                // change on the Jellyfin server.
+                videoLocation: typeof row.video_source === 'string' ? row.video_source : null,
                 mediaPosition: timecodes.mediaPosition,
                 actualPosition: timecodes.actualPosition,
                 confidence,
@@ -641,30 +785,38 @@ class ObservationIngestService {
      * reported. See rule 3 in this module's header for why copying is wrong, and
      * R8 for why the check is the only signal that the 25 fps assumption broke.
      *
+     * **At the video's rate, since #231.** It was 25 always, and a video at 24.946
+     * fps was refused whole. The check below is unchanged: it still compares every
+     * line against the worker's own `tc` and `frame`, so a result that genuinely
+     * disagrees with itself is refused at any rate.
+     *
      * @param {Object} row - One parsed result line.
      * @param {string} where - Where it came from, for messages.
+     * @param {number} [fps] - The video's frame rate. Defaults to 25.
      * @returns {Object} `{tc, frame, mediaPosition, actualPosition}`.
      * @throws {ApiError} 409 when the derivation disagrees with the worker.
      */
-    deriveTimecodes(row, where) {
-        const milliseconds = (row.observation_frame * 1000) / ASSUMED_FPS;
+    deriveTimecodes(row, where, fps = ASSUMED_FPS) {
+        // Truncated, as ticks are and as the worker truncates seconds. Rounding put a
+        // frame 0.09 ms before a second into the next one. At 25 every frame is whole ms.
+        const milliseconds = Math.floor((row.observation_frame * 1000) / fps);
         const position = formatTimeSpan(milliseconds);
         const tc = deriveTc(milliseconds);
-        const frame = deriveFrame(milliseconds);
+        const frame = deriveFrame(milliseconds, fps);
 
         if (typeof row.tc === 'string' && row.tc !== tc) {
             unreconcilable(
-                `${where} reports tc "${row.tc}" at frame ${row.observation_frame}, but ${ASSUMED_FPS} fps `
-                + `puts that frame at "${tc}". MARP assumes ${ASSUMED_FPS} fps in every timecode column, `
-                + 'so a disagreement means the video is not 25 fps and its observations cannot be stored '
-                + 'correctly. Nothing was ingested.'
+                `${where} reports tc "${row.tc}" at frame ${row.observation_frame}, but ${fps} fps `
+                + `puts that frame at "${tc}". The timecode columns are derived at the video's frame rate, `
+                + 'so a disagreement means the result and the video do not agree about when this frame is, '
+                + 'and its observations cannot be stored correctly. Nothing was ingested.'
             );
         }
 
         if (row.frame !== undefined && row.frame !== null && String(row.frame) !== frame) {
             unreconcilable(
                 `${where} reports frame "${row.frame}" at absolute frame ${row.observation_frame}, but `
-                + `${ASSUMED_FPS} fps makes the sub-second index "${frame}". Nothing was ingested.`
+                + `${fps} fps makes the sub-second index "${frame}". Nothing was ingested.`
             );
         }
 

@@ -152,6 +152,29 @@ describe('deriveFrame and absoluteFrame', () => {
         expect(frame).toBeGreaterThanOrEqual(0);
         expect(frame).toBeLessThan(ASSUMED_FPS);
     });
+
+    /**
+     * #231. The frame rate is an argument now, for the GPU ingest, and every
+     * caller that gives none must get exactly the arithmetic it always had --
+     * most rows in the database were derived that way.
+     */
+    it('converts at a rate it is given, and at 25 when it is given none', () => {
+        const twelveFiftyNine = parseTimeSpan('00:12:59.0000000');
+
+        expect(absoluteFrame(twelveFiftyNine)).toBe(absoluteFrame(twelveFiftyNine, ASSUMED_FPS));
+        expect(deriveFrame(612.3)).toBe(deriveFrame(612.3, ASSUMED_FPS));
+
+        // The refused CAMPA2026 video: frame 19444 sits at 12:59 there, not 12:57.
+        expect(absoluteFrame(twelveFiftyNine, 24.946007)).toBe(19432);
+        expect(absoluteFrame(twelveFiftyNine)).toBe(19475);
+    });
+
+    it('keeps the sub-second index within 0 to 24 at a rate a little under 25', () => {
+        const last = Number(deriveFrame(999, 24.946007));
+
+        expect(last).toBe(24);
+        expect(Number(deriveFrame(0, 24.946007))).toBe(0);
+    });
 });
 
 describe('shiftTruncated', () => {

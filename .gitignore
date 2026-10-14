@@ -84,6 +84,9 @@ typings/
 # Nuxt.js build / generate output
 .nuxt
 dist
+# Except the video player installed from its release (#181): it is the release's own
+# build, committed so a checkout serves it without a network, the way the GUI keeps its copy.
+!/frontend/shared/vendor/marp-video-player/dist/
 
 # Playwright test artifacts (traces, screenshots, HTML report) -- regenerated every E2E run
 test-results/

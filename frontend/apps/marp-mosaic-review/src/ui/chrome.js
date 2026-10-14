@@ -83,10 +83,13 @@ export function renderChrome() {
   const outcome = commitOutcome({ mode: state.mode, rows: state.rows, marks: state.marks });
   const skipNote = $('#skipNote');
   if (skipNote) {
-    skipNote.hidden = !outcome.skips || state.mode === 'delete';
-    skipNote.textContent = outcome.skips
-      ? `${outcome.skips} without imagery will be skipped — flag one to record that.`
-      : '';
+    const drag = state.dragSummary;
+    skipNote.hidden = !drag && (!outcome.skips || state.mode === 'delete');
+    skipNote.textContent = drag
+      ? `${drag.applied} marked ${acceptedValue(state.mode)} · ${drag.skipped} without imagery skipped.`
+      : outcome.skips
+        ? `${outcome.skips} without imagery will be skipped — flag one to record that.`
+        : '';
   }
 
   /* `textContent`, so the separator is the character rather than the entity. Both kinds

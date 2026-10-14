@@ -287,6 +287,16 @@ const STORAGE_DIR = path.resolve(ROOT, storage.setting);
 const STORAGE_SOURCE = storage.source;
 
 /**
+ * Full frames belong to the same disposable corpus as their thumbnails. Derive
+ * the default from the resolved thumbnail directory so a testing database cannot
+ * accidentally share full-frame bytes with development; deployments may still
+ * place the larger cache on another volume explicitly.
+ */
+const FULL_FRAME_STORAGE_DIR = path.resolve(
+    process.env.FULL_FRAME_STORAGE_DIR || `${STORAGE_DIR}-full-frames`
+);
+
+/**
  * The ffmpeg binary, located through configuration (A9).
  *
  * Answered by the human: a system binary the deployment provides, not
@@ -373,6 +383,7 @@ module.exports = {
     STORAGE_SOURCE,
     testingStorageFor,
     storageSettingFor,
+    FULL_FRAME_STORAGE_DIR,
     FFMPEG_PATH,
     FFPROBE_PATH,
     MEDIA_CLIENT_IDENTITY,

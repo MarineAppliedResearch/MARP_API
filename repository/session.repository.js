@@ -189,8 +189,9 @@ class SessionRepository {
      * @param {number|string} project_id - Identifier of the project to list.
      * @returns {Promise<Array<Object>>} Session records ordered by dive,
      * then line, then type. Each carries its associated `user`, an
-     * `observationCount`, and a `video_sources` array. Returns an empty
-     * array when the project has no sessions or the query fails.
+     * `observationCount`, a `video_sources` array, and a `models` array of
+     * the models that wrote its observations. Returns an empty array when
+     * the project has no sessions or the query fails.
      */
     async getSessionsWithDetailByProjectID(project_id) {
         try {
@@ -254,15 +255,53 @@ class SessionRepository {
                 sourcesBySession.get(row.session_id).push(row.video_source);
             }
 
+            const modelsBySession = await this.getModelNamesBySession(sessionIds);
+
             return sessions.map(session => ({
                 ...session.toJSON(),
                 observationCount: countBySession.get(session.session_id) || 0,
-                video_sources: sourcesBySession.get(session.session_id) || []
+                video_sources: sourcesBySession.get(session.session_id) || [],
+                models: modelsBySession.get(session.session_id) || []
             }));
         } catch (err) {
             logger.error('Error::' + err);
             return [];
         }
+    }
+
+    /**
+     * The models that wrote observations in each of the given sessions.
+     *
+     * Derived from `observations.ml_model_id`, like `observationCount` and
+     * `video_sources`, so nothing new is stored. One grouped query for the
+     * whole list rather than one per session.
+     *
+     * @async
+     * @param {Array<number>} sessionIds - Sessions to look at.
+     * @returns {Promise<Map<number, Array<string>>>} session_id to the distinct
+     * model names, sorted. A session no model wrote in is absent from the map.
+     */
+    async getModelNamesBySession(sessionIds) {
+        const modelsBySession = new Map();
+        if (sessionIds.length === 0) return modelsBySession;
+
+        const rows = await this.db.sequelize.query(
+            `SELECT DISTINCT o.session_id, m.name
+               FROM observations o
+               JOIN ml_models m ON m.id = o.ml_model_id
+              WHERE o.session_id IN (:sessionIds)
+              ORDER BY m.name`,
+            { replacements: { sessionIds }, type: Sequelize.QueryTypes.SELECT }
+        );
+
+        for (const row of rows) {
+            if (!modelsBySession.has(row.session_id)) {
+                modelsBySession.set(row.session_id, []);
+            }
+            modelsBySession.get(row.session_id).push(row.name);
+        }
+
+        return modelsBySession;
     }
 
     /**
@@ -276,8 +315,9 @@ class SessionRepository {
      * @param {number|string} userID - Identifier of the user whose sessions should be fetched.
      * @param {number|string} projectID - Identifier of the project to scope the sessions to.
      * @returns {Promise<Array<Object>>} Sessions matching the user and
-     * project, each including its associated `user` and `project`. Returns
-     * an empty array when none exist or when the database query fails.
+     * project, each including its associated `user` and `project`, and a
+     * `models` array of the models that wrote its observations. Returns an
+     * empty array when none exist or when the database query fails.
      */
     // THIS LOOKS LIKE WE ARE NOT LOOKING FOR USERID AND PROJECTID LIKE WE ARE SUPPOSED TO
     async getSessionsByUserIdAndProjectId(userID, projectID) {
@@ -301,7 +341,16 @@ class SessionRepository {
                 }
               });
             //console.log('projects:::', sessions);
-            return sessions;
+
+            // The opening screen lists inference sessions too, so it shows
+            // which model wrote each one, as the By Dive list does.
+            const modelsBySession = await this.getModelNamesBySession(
+                sessions.map(session => session.session_id)
+            );
+            return sessions.map(session => ({
+                ...session.toJSON(),
+                models: modelsBySession.get(session.session_id) || []
+            }));
         } catch (err) {
             console.log(err);
             return [];

@@ -47,12 +47,12 @@ export default defineConfig({
   },
 
   projects: [
-    { name: 'desktop', testDir: './tests/e2e', use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 } } },
+    { name: 'desktop', testDir: './tests/e2e', testIgnore: 'login-modal.spec.mjs', use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 } } },
     /* 390px is the narrowest width worth holding: it is the iPhone 12/13/14 and
        the floor most of the remaining phones sit at. Pixel 7's own 412 would let
        a layout that breaks at 390 through, and headless Chrome clamps a viewport
        set any other way -- Playwright honours this one. */
-    { name: 'phone', testDir: './tests/e2e', use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } } },
+    { name: 'phone', testDir: './tests/e2e', testIgnore: 'login-modal.spec.mjs', use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } } },
     /* A phone held sideways. Worth its own project because the failure it
        catches is keyed on HEIGHT, which neither of the other two can see: the
        hero carried a 760px floor, so on a 340px-tall screen the whole first
@@ -68,7 +68,17 @@ export default defineConfig({
     {
       name: 'phone-landscape',
       testDir: './tests/e2e',
+      testIgnore: 'login-modal.spec.mjs',
       use: { ...devices['Pixel 7 landscape'], viewport: { width: 750, height: 340 } }
+    },
+    /* Its one focused test starts at the ordinary phone size, contracts to a small phone,
+       and contracts again to the space left by a keyboard. Keeping that defect in its own
+       project avoids running the whole landing-page render catalogue a fourth time. */
+    {
+      name: 'phone-short',
+      testDir: './tests/e2e',
+      testMatch: 'login-modal.spec.mjs',
+      use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } }
     }
   ],
 

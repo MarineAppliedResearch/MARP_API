@@ -36,6 +36,7 @@ const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 
 const gpuController = require('../controller/gpu.controller');
+const workerProvisioningController = require('../controller/worker_provisioning.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
 const {
@@ -224,6 +225,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeEnrol(req.body && req.body.local_id, req.principal);
             const data = await gpuController.enrolWorker(req.body || {});
             res.json(data);
         }),
@@ -252,6 +254,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeWorker(req.body && req.body.worker_id, req.principal);
             // Whether the worker is still there to receive an answer.
             //
             // A long poll can outlive its client -- a worker stopped or a
@@ -307,6 +310,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeWorker(req.body && req.body.worker_id, req.principal);
             const data = await gpuController.heartbeat(req.params.id, req.body || {});
             res.json(data);
         }),
@@ -316,9 +320,9 @@ function registerGpuRoutes(app) {
         method: 'post',
         permission: 'jobs:write',
         path: '/api/gpu/attempts/:id/events',
-        summary: 'Append a batch of metrics and log lines',
+        summary: 'Append a batch of metrics, log lines and settings reports',
         description:
-            'Records durable numbers and log lines against an attempt. Keyed `(attempt_id, seq)`, so a worker that resends a batch it never saw the answer to inserts nothing the second time and is told how many were duplicates -- which is the expected answer to a replay rather than an error. Per-frame detections never come through here; they are handed over as a hashed artifact, because a stream of events is the wrong shape for hundreds of megabytes. `note` is not an accepted kind: it is the coordinator\'s own, used for recording why a lease was taken away, and a worker able to write one could muddy that record.',
+            'Records durable numbers, log lines and the settings report of an attempt against it. A `settings` event is the worker saying, before its first frame, exactly what it ran with -- every setting as `{value, type, source}` and every key the job set that it did not honour -- and it is written to `gpu_attempt_settings` and `gpu_attempt_ignored_params` as well as kept as the event. The first settings report for an attempt is the record; a later one is kept as an event and changes nothing. A setting the catalogue does not know is registered rather than refused. Keyed `(attempt_id, seq)`, so a worker that resends a batch it never saw the answer to inserts nothing the second time and is told how many were duplicates -- which is the expected answer to a replay rather than an error. Per-frame detections never come through here; they are handed over as a hashed artifact, because a stream of events is the wrong shape for hundreds of megabytes. `note` is not an accepted kind: it is the coordinator\'s own, used for recording why a lease was taken away, and a worker able to write one could muddy that record.',
         tags: [GPU_TAG],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'Attempt the events belong to.' },
@@ -336,6 +340,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeWorker(req.body && req.body.worker_id, req.principal);
             const data = await gpuController.recordEvents(req.params.id, req.body || {});
             res.json(data);
         }),
@@ -366,6 +371,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeWorker(req.body && req.body.worker_id, req.principal);
             const data = await gpuController.recordResult(req.params.id, req.body || {});
             res.json(data);
         }),
@@ -396,6 +402,7 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
+            await workerProvisioningController.authorizeWorker(req.body && req.body.worker_id, req.principal);
             const data = await gpuController.checkArtifact(req.body || {});
             res.json(data);
         }),
@@ -451,6 +458,13 @@ function registerGpuRoutes(app) {
 
             if (attemptId !== undefined && !Number.isInteger(attemptId)) {
                 throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'attempt_id must be an integer.');
+            }
+
+            if (req.principal && req.principal.type === 'service' && attemptId === undefined) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'attempt_id is required for a worker upload.');
+            }
+            if (attemptId !== undefined) {
+                await workerProvisioningController.authorizeAttempt(attemptId, req.principal);
             }
 
             const { bytes } = await receiveArtifact(req, sha256);

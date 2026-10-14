@@ -1,11 +1,26 @@
 /**
  * Jest configuration for the MARP API test suite.
  *
- * Tests run against the real dev Postgres database via Supertest (see
- * tests/), rather than an isolated test database, so testTimeout is raised
- * above Jest's 5s default to give real DB round-trips room, and `npm test`
- * runs Jest with --runInBand (see package.json) to avoid parallel workers
- * racing on shared dev data.
+ * Tests run against a real PostgreSQL via Supertest (see tests/) rather than
+ * against mocks, so testTimeout is raised above Jest's 5s default to give real
+ * round-trips room, and `npm test` runs Jest with --runInBand (see
+ * package.json) to avoid parallel workers racing each other over one database.
+ *
+ * **That database is a copy, not a master.** `marp setup` and `marp agent start`
+ * build every workspace database by loading the published test corpus, so the
+ * one these tests write to is reproducible from a dump -- which is what makes it
+ * safe for them to write at all. This file used to say the suite ran against
+ * "the real dev Postgres database" as a design choice; it was a description of
+ * a workspace that had nowhere else to point, and a test deleting a row nobody
+ * could put back was the cost of it.
+ *
+ * Two guards still stand, and neither is softened by the above.
+ * `tests/setup/local-database-guard.js` refuses a DB_HOST that is not this
+ * machine, because the development database carries production's name and only
+ * the host tells them apart. `tests/setup/corpus-guard.js` fails a file that
+ * changed a row it did not create: a copy is cheap to rebuild, but a suite that
+ * quietly rewrites rows underneath the next one is still a suite nobody can
+ * trust.
  *
  * @fileoverview Jest configuration for MARP API endpoint tests.
  * @author Isaac Travers

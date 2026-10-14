@@ -27,6 +27,10 @@ const { QueryTypes } = require('sequelize');
 
 const db = require('../model');
 
+/* Read rather than restated: the threshold is the coordinator's to choose, and a
+   literal here would go on passing after somebody changed it. */
+const { WORKER_OFFLINE_SECONDS } = require('../config/gpu-orchestration');
+
 /**
  * Where the API stores staged artifact bytes. The suite removes the files it
  * uploads, so a run leaves nothing behind on disk.
@@ -435,7 +439,7 @@ describe('GPU job submission and leasing', () => {
         expect(response.body.error.message).toMatch(/must be greater than/);
     });
 
-    it('refuses a submission with no frame range, even for a whole video', async () => {
+    it('refuses a submission with no frame range when the video is a bare url', async () => {
         const spec = specFor({ start_frame: 0, end_frame: 10 });
         delete spec.range;
 
@@ -443,8 +447,16 @@ describe('GPU job submission and leasing', () => {
             .post('/api/v2/gpu/jobs')
             .send({ kind: 'inference', spec });
 
+        // A range used to be required for every submission. It is now worked
+        // out from the video's own duration (#199) -- but only for a Jellyfin
+        // item, because that is the only kind of video MARP can ask the length
+        // of. It never opens the file, so an arbitrary url tells it nothing and
+        // the range stays required there. The message says which case this is,
+        // rather than leaving somebody to guess why the same spec works for one
+        // video and not another.
         expect(response.status).toBe(400);
-        expect(response.body.error.message).toMatch(/spec.range is required/);
+        expect(response.body.error.message).toMatch(/bare url/);
+        expect(response.body.error.message).toMatch(/jellyfin_item_id/);
     });
 
     it('refuses a job of an unknown kind', async () => {
@@ -550,7 +562,13 @@ describe('GPU heartbeat', () => {
                 worker_id: workerId,
                 lease_epoch: lease.lease_epoch,
                 state: 'running',
-                progress: { done: 40, total: 100, unit: 'frames' },
+                progress: {
+                    done: 40,
+                    total: 100,
+                    unit: 'frames',
+                    phase: 'inferring',
+                    elapsed_s: 12.375,
+                },
             });
 
         expect(beat.status).toBe(200);
@@ -559,7 +577,9 @@ describe('GPU heartbeat', () => {
             .toBeGreaterThan(new Date(lease.lease_expires_at).getTime() - 1000);
 
         const [attempt] = await query(
-            'SELECT state, progress_done, progress_total, progress_unit, last_heartbeat_at FROM gpu_job_attempts WHERE id = :id',
+            `SELECT state, progress_done, progress_total, progress_unit,
+                    progress_phase, progress_elapsed_s, last_heartbeat_at
+               FROM gpu_job_attempts WHERE id = :id`,
             { id: lease.attempt_id }
         );
 
@@ -567,7 +587,43 @@ describe('GPU heartbeat', () => {
         expect(attempt.progress_done).toBe(40);
         expect(attempt.progress_total).toBe(100);
         expect(attempt.progress_unit).toBe('frames');
+        expect(attempt.progress_phase).toBe('inferring');
+        expect(attempt.progress_elapsed_s).toBe(12.375);
         expect(attempt.last_heartbeat_at).not.toBeNull();
+    });
+
+    it('accepts a bounded worker-defined phase and rejects invalid progress metadata', async () => {
+        const { lease } = await submitAndLease();
+
+        const futurePhase = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                progress: { phase: 'training_validation', elapsed_s: 0 },
+            });
+
+        expect(futurePhase.status).toBe(200);
+
+        const tooLong = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                progress: { phase: 'p'.repeat(65) },
+            });
+        expect(tooLong.status).toBe(400);
+        expect(tooLong.body.error.message).toMatch(/64 characters/);
+
+        const negativeElapsed = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                progress: { elapsed_s: -0.1 },
+            });
+        expect(negativeElapsed.status).toBe(400);
+        expect(negativeElapsed.body.error.message).toMatch(/non-negative finite number/);
     });
 
     it('refuses a worker that claims a stale lease epoch, and writes nothing', async () => {
@@ -575,7 +631,11 @@ describe('GPU heartbeat', () => {
 
         const beat = await global.api
             .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
-            .send({ worker_id: workerId, lease_epoch: lease.lease_epoch + 7, progress: { done: 999 } });
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch + 7,
+                progress: { done: 999, phase: 'stale-phase', elapsed_s: 999 },
+            });
 
         expect(beat.status).toBe(200);
         expect(beat.body.action).toBe('abandon');
@@ -583,12 +643,15 @@ describe('GPU heartbeat', () => {
         expect(beat.body.lease_expires_at).toBeNull();
 
         const [attempt] = await query(
-            'SELECT progress_done, last_heartbeat_at FROM gpu_job_attempts WHERE id = :id',
+            `SELECT progress_done, progress_phase, progress_elapsed_s, last_heartbeat_at
+               FROM gpu_job_attempts WHERE id = :id`,
             { id: lease.attempt_id }
         );
 
         // The point of the refusal: a stale caller cannot move a job's progress.
         expect(attempt.progress_done).toBeNull();
+        expect(attempt.progress_phase).toBeNull();
+        expect(attempt.progress_elapsed_s).toBeNull();
         expect(attempt.last_heartbeat_at).toBeNull();
     });
 
@@ -697,7 +760,12 @@ describe('GPU attempt events', () => {
             worker_id: workerId,
             lease_epoch: lease.lease_epoch,
             events: [
-                { seq: 0, kind: 'log', at: new Date().toISOString(), payload: { line: 'starting' } },
+                {
+                    seq: 0,
+                    kind: 'log',
+                    at: new Date().toISOString(),
+                    payload: { level: 'info', message: 'entered phase: starting', phase: 'starting' },
+                },
                 { seq: 1, kind: 'metric', payload: { frames_per_second: 41.2 } },
             ],
         };
@@ -722,6 +790,13 @@ describe('GPU attempt events', () => {
         );
 
         expect(counted.n).toBe(2);
+
+        const [transition] = await query(
+            'SELECT kind, payload FROM gpu_job_events WHERE attempt_id = :id AND seq = 0',
+            { id: lease.attempt_id }
+        );
+        expect(transition.kind).toBe('log');
+        expect(transition.payload.phase).toBe('starting');
     });
 
     it('refuses a batch from a stale lease, and writes none of it', async () => {
@@ -773,6 +848,34 @@ describe('GPU attempt events', () => {
 });
 
 /**
+ * Mark an artifact for cleanup, but only if this run is what creates it (#225).
+ *
+ * Artifacts are content-addressed, so an artifact these tests upload can be the
+ * same file a real job produced -- most sharply the empty results file, which
+ * every job that detected nothing produces byte for byte. Deleting one of those
+ * afterwards destroys the corpus's copy and every later ingest of it fails with
+ * "recorded but its bytes are not on disk".
+ *
+ * The file is asked before the upload, because `recordStagedArtifact` upserts
+ * and so the row cannot tell a first hand-over from a repeat.
+ *
+ * @async
+ * @param {string} sha256 - The artifact's hash.
+ * @returns {Promise<string>} The same hash, for chaining.
+ */
+async function stageForCleanup(sha256) {
+    const [staged] = await query(
+        'SELECT sha256 FROM gpu_artifacts_staging WHERE sha256 = :sha256', { sha256 }
+    );
+
+    if (!staged && !fs.existsSync(path.join(ARTIFACT_DIRECTORY, sha256))) {
+        stagedHashes.push(sha256);
+    }
+
+    return sha256;
+}
+
+/**
  * The artifact hand-off, which is addressed by content rather than by sender.
  */
 describe('GPU artifact hand-off', () => {
@@ -781,7 +884,7 @@ describe('GPU artifact hand-off', () => {
 
         const bytes = Buffer.from(JSON.stringify({ detections: [{ frame: 0, boxes: [] }] }));
         const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-        stagedHashes.push(sha256);
+        await stageForCleanup(sha256);
 
         const before = await global.api
             .post('/api/v2/gpu/artifacts/check')
@@ -858,12 +961,27 @@ describe('GPU attempt result', () => {
 
         const bytes = Buffer.from(`detections for job ${job.id}`);
         const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-        stagedHashes.push(sha256);
+        await stageForCleanup(sha256);
 
         await global.api
             .post(`/api/v2/gpu/artifacts/upload/${sha256}?attempt_id=${lease.attempt_id}`)
             .set('Content-Type', 'application/octet-stream')
             .send(bytes);
+
+        await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                state: 'uploading',
+                progress: {
+                    done: 100,
+                    total: 100,
+                    unit: 'frames',
+                    phase: 'publishing',
+                    elapsed_s: 22.5,
+                },
+            });
 
         const reported = await global.api
             .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
@@ -891,6 +1009,8 @@ describe('GPU attempt result', () => {
         expect(detail.body.artifacts[0].job_id).toBe(job.id);
         expect(detail.body.artifacts[0].hash).toBe(sha256);
         expect(detail.body.artifacts[0].artifact_type).toBe('detections');
+        expect(detail.body.attempts[0].progress_phase).toBe('publishing');
+        expect(detail.body.attempts[0].progress_elapsed_s).toBe(22.5);
     });
 
     it('answers a replayed terminal report from the stored rows, without a second result', async () => {
@@ -1003,6 +1123,271 @@ describe('GPU attempt result', () => {
 });
 
 /**
+ * A stopped run: the operator pressed stop, part of the range is done, and the
+ * rest has to be finishable by somebody else.
+ *
+ * This whole block exists because the worker reported `yielded` for months while
+ * MARP's vocabulary held three words, so every stop was answered 400 and thrown
+ * away -- and neither repository's suite noticed, because each was testing
+ * against its own idea of the contract. The assertions here are deliberately
+ * about the *coordinator's rows* rather than about the response body: a reply
+ * saying the right thing over a job that was actually cancelled is the exact
+ * failure this replaces (MARP_API#197,
+ * MarineAppliedResearch/marp-inference-worker#20).
+ */
+describe('GPU attempt yielded', () => {
+    /**
+     * Stop a leased job part-way, as an operator does.
+     *
+     * @param {number} completedThroughFrame - Exclusive bound on frames finished.
+     * @param {Object} [overrides] - Fields to merge into the submission body.
+     * @returns {Promise<Object>} `{job, lease, reported}`.
+     */
+    async function leaseAndYield(completedThroughFrame, overrides = {}) {
+        const { job, lease } = await submitAndLease(overrides);
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'yielded',
+                completed_through_frame: completedThroughFrame,
+            });
+
+        return { job, lease, reported };
+    }
+
+    it('accepts yielded as an outcome rather than refusing it', async () => {
+        const { reported } = await leaseAndYield(40);
+
+        // The literal failure this issue is about: 400, "outcome must be one of:
+        // succeeded, failed, cancelled".
+        expect(reported.status).toBe(200);
+        expect(reported.body.accepted).toBe(true);
+        expect(reported.body.outcome).toBe('yielded');
+    });
+
+    it('records the attempt as yielded, distinguishable from a cancel', async () => {
+        const { lease } = await leaseAndYield(40);
+
+        const [attempt] = await query(
+            'SELECT state FROM gpu_job_attempts WHERE id = :id', { id: lease.attempt_id }
+        );
+
+        // Not `cancelled`. Before the explicit branch existed, a yield fell into
+        // the trailing else and was written as a cancel -- which looked like it
+        // worked and erased the one distinction the word exists to make.
+        expect(attempt.state).toBe('yielded');
+    });
+
+    it('stores how far the worker got', async () => {
+        const { lease } = await leaseAndYield(40);
+
+        const [attempt] = await query(
+            'SELECT completed_through_frame FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        expect(attempt.completed_through_frame).toBe(40);
+    });
+
+    it('returns the job to the queue rather than cancelling it', async () => {
+        const { job } = await leaseAndYield(40);
+
+        const [row] = await query(
+            'SELECT state, resume_from_frame FROM gpu_jobs WHERE id = :id', { id: job.id }
+        );
+
+        expect(row.state).toBe('queued');
+        expect(row.resume_from_frame).toBe(40);
+    });
+
+    it('hands the next worker a lease that starts where the last one stopped', async () => {
+        const { job } = await leaseAndYield(40);
+
+        const resumed = await pollOnce();
+
+        expect(resumed.status).toBe(200);
+        expect(resumed.body.job_id).toBe(job.id);
+
+        // The frames covered must tile exactly: 40..100 and not 0..100, or every
+        // hand-over reprocesses everything already done. `completed_through_frame`
+        // is an exclusive bound, so it is the next start_frame unmodified --
+        // adding one "to be safe" would skip frame 40 and nothing would notice.
+        expect(resumed.body.spec.range.start_frame).toBe(40);
+        expect(resumed.body.spec.range.end_frame).toBe(100);
+    });
+
+    it('does not rewrite the stored spec when it resumes', async () => {
+        const { job } = await leaseAndYield(40);
+
+        await pollOnce();
+
+        const [row] = await query('SELECT spec FROM gpu_jobs WHERE id = :id', { id: job.id });
+
+        // What was submitted stays what was submitted. The resume point is a
+        // column beside the spec, not an edit to it.
+        expect(row.spec.range.start_frame).toBe(0);
+    });
+
+    it('does not spend the job\'s attempt budget', async () => {
+        const { job } = await leaseAndYield(40);
+
+        const [row] = await query(
+            'SELECT attempts_made, yields_made, max_attempts FROM gpu_jobs WHERE id = :id',
+            { id: job.id }
+        );
+
+        // `attempts_made` still counts the lease, because it doubles as the lease
+        // epoch and two leases sharing one epoch would be indistinguishable. The
+        // budget ignores it by subtracting the yield instead.
+        expect(row.attempts_made).toBe(1);
+        expect(row.yields_made).toBe(1);
+        expect(row.attempts_made - row.yields_made).toBe(0);
+    });
+
+    it('stays claimable after being yielded more times than max_attempts', async () => {
+        const { job, lease } = await leaseAndYield(10, { max_attempts: 2 });
+
+        let held = lease;
+
+        // Three more stops, one past the cap. A job handed between volunteers is
+        // the normal case in a pool, and it must not be the first thing to die.
+        for (let i = 0; i < 3; i += 1) {
+            const polled = await pollOnce();
+
+            expect(polled.status).toBe(200);
+            expect(polled.body.job_id).toBe(job.id);
+
+            held = polled.body;
+
+            await global.api
+                .post(`/api/v2/gpu/attempts/${held.attempt_id}/result`)
+                .send({
+                    worker_id: workerId,
+                    lease_epoch: held.lease_epoch,
+                    outcome: 'yielded',
+                    completed_through_frame: 10 + (i + 1) * 10,
+                });
+        }
+
+        const [row] = await query(
+            'SELECT state, attempts_made, yields_made FROM gpu_jobs WHERE id = :id', { id: job.id }
+        );
+
+        expect(row.attempts_made).toBe(4);
+        expect(row.yields_made).toBe(4);
+        expect(row.state).toBe('queued');
+
+        // The point of all of it: still claimable.
+        const again = await pollOnce();
+
+        expect(again.status).toBe(200);
+        expect(again.body.job_id).toBe(job.id);
+    });
+
+    it('never moves the resume point backwards', async () => {
+        const { job } = await leaseAndYield(60);
+
+        const second = await pollOnce();
+
+        expect(second.body.spec.range.start_frame).toBe(60);
+
+        // A worker that stopped earlier than one before it must not drag the job
+        // back and cause those frames to run twice. `completed_through_frame` is
+        // this attempt's own count, so a short second attempt reports a low
+        // number honestly and the job has to be the one that refuses it.
+        await global.api
+            .post(`/api/v2/gpu/attempts/${second.body.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: second.body.lease_epoch,
+                outcome: 'yielded',
+                completed_through_frame: 20,
+            });
+
+        const [row] = await query(
+            'SELECT resume_from_frame FROM gpu_jobs WHERE id = :id', { id: job.id }
+        );
+
+        expect(row.resume_from_frame).toBe(60);
+    });
+
+    it('leaves a cancelled result cancelling the job, exactly as before', async () => {
+        const { job, lease } = await submitAndLease();
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'cancelled',
+            });
+
+        expect(reported.status).toBe(200);
+        expect(reported.body.job_state).toBe('cancelled');
+
+        const [row] = await query(
+            'SELECT state, yields_made FROM gpu_jobs WHERE id = :id', { id: job.id }
+        );
+
+        // The regression guard for the whole change: adding a fourth word must
+        // not quietly turn the third one into it.
+        expect(row.state).toBe('cancelled');
+        expect(row.yields_made).toBe(0);
+    });
+
+    it('refuses a negative completed_through_frame', async () => {
+        const { lease } = await submitAndLease();
+
+        const response = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'yielded',
+                completed_through_frame: -1,
+            });
+
+        expect(response.status).toBe(400);
+    });
+
+    it('keeps a yielded job out of the queue if it was already cancelled', async () => {
+        const { job, lease } = await submitAndLease();
+
+        await global.api.post(`/api/v2/gpu/jobs/${job.id}/cancel`);
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'yielded',
+                completed_through_frame: 30,
+            });
+
+        expect(reported.status).toBe(200);
+
+        const [row] = await query('SELECT state FROM gpu_jobs WHERE id = :id', { id: job.id });
+
+        // A human said stop to the whole job. A worker stopping a moment later
+        // does not put it back in the queue -- the job's state is the
+        // coordinator's decision, not a race between the two.
+        expect(row.state).toBe('cancelled');
+
+        // The attempt still records what the machine actually did.
+        const [attempt] = await query(
+            'SELECT state, completed_through_frame FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        expect(attempt.state).toBe('yielded');
+        expect(attempt.completed_through_frame).toBe(30);
+    });
+});
+
+/**
  * Expiry, which is judged on the coordinator's clock and nothing else.
  */
 describe('GPU lease expiry', () => {
@@ -1082,7 +1467,13 @@ describe('GPU pool view', () => {
                 worker_id: workerId,
                 lease_epoch: lease.lease_epoch,
                 state: 'running',
-                progress: { done: 12, total: 100, unit: 'frames' },
+                progress: {
+                    done: 12,
+                    total: 100,
+                    unit: 'frames',
+                    phase: 'loading_model',
+                    elapsed_s: 4.25,
+                },
             });
 
         const pool = await global.api.get('/api/v2/gpu/workers');
@@ -1102,7 +1493,13 @@ describe('GPU pool view', () => {
 
         expect(running).toBeDefined();
         expect(running.state).toBe('running');
-        expect(running.progress).toEqual({ done: 12, total: 100, unit: 'frames' });
+        expect(running.progress).toEqual({
+            done: 12,
+            total: 100,
+            unit: 'frames',
+            phase: 'loading_model',
+            elapsed_s: 4.25,
+        });
 
         // Nothing in the pool view can say where a machine is, because nothing
         // in the schema can. This is the assertion that would fail if somebody
@@ -1119,6 +1516,179 @@ describe('GPU pool view', () => {
         // worker reports back, which is exactly what "the coordinator's row is
         // the truth about the job, not about the machine" means.
         expect(idle.body.find((worker) => worker.worker_id === workerId).activity).toBe('busy');
+    });
+});
+
+/**
+ * A machine that stops is taken out of the pool (#202).
+ *
+ * `gpu_workers.last_seen_at` has always carried the information -- it is written
+ * on enrolment, on every poll and on every heartbeat -- and nothing read it to
+ * decide `state`, so a worker that was switched off stayed `online` for ever.
+ * One was observed reading `online` more than an hour after its process was
+ * killed, and another with a `last_seen_at` six days old.
+ *
+ * Every check here moves the coordinator's clock rather than waiting, the way
+ * the lease-expiry and attempt-cap checks above already do. Three minutes of
+ * real time per assertion would make the suite unusable, and the thing under
+ * test is a comparison against `NOW()`, which an `UPDATE` exercises exactly as a
+ * passing three minutes would.
+ */
+describe('GPU stale workers', () => {
+    /**
+     * Enrol a machine of this block's own, and remember it for teardown.
+     *
+     * Its own rather than the suite's, because these checks make a machine look
+     * dead and the suite's machine is the one every other test polls with.
+     *
+     * @param {string} suffix - Distinguishes it within this block.
+     * @returns {Promise<number>} Its worker id.
+     */
+    async function enrolOwn(suffix) {
+        const response = await global.api
+            .post('/api/v2/gpu/workers/enrol')
+            .send({
+                local_id: `jest-stale-${suffix}-${runId}`,
+                name: `jest-stale-${suffix}-${runId}`,
+                slot_count: 1,
+            });
+
+        expect(response.status).toBe(200);
+        extraWorkerIds.push(response.body.worker_id);
+
+        return response.body.worker_id;
+    }
+
+    /**
+     * Move a machine's last contact into the past.
+     *
+     * @param {number} id - Worker id.
+     * @param {number} seconds - How long ago it was last heard from.
+     * @returns {Promise<void>} Resolves when written.
+     */
+    async function lastSeenSecondsAgo(id, seconds) {
+        await db.sequelize.query(
+            `UPDATE gpu_workers
+                SET last_seen_at = NOW() - (:seconds * INTERVAL '1 second')
+              WHERE id = :id`,
+            { replacements: { id, seconds } }
+        );
+    }
+
+    /**
+     * Poll once as a named machine, with no waiting.
+     *
+     * `pollOnce` above is hard-wired to the suite's own worker; these checks
+     * need the poll to come from a machine of this block's making.
+     *
+     * @param {number} id - Worker id to poll as.
+     * @returns {Promise<Object>} The Supertest response.
+     */
+    function pollAs(id) {
+        return global.api
+            .post('/api/v2/gpu/poll')
+            .send({ worker_id: id, slot_indexes: [0], wait_seconds: 0, capabilities: { gpus: [] } });
+    }
+
+    /**
+     * What the pool view says about one machine.
+     *
+     * Read through `GET /gpu/workers` rather than from the table, because the
+     * pool view is the surface the requirement is about -- a person asking what
+     * is running -- and it is also what triggers the sweep.
+     *
+     * @param {number} id - Worker id.
+     * @returns {Promise<string|undefined>} Its reported state.
+     */
+    async function pooledState(id) {
+        const pool = await global.api.get('/api/v2/gpu/workers');
+
+        expect(pool.status).toBe(200);
+
+        const mine = pool.body.find((worker) => worker.worker_id === id);
+
+        expect(mine).toBeDefined();
+
+        return mine.state;
+    }
+
+    it('R1: a machine that has stopped talking reads offline', async () => {
+        const id = await enrolOwn('gone');
+
+        // Enrolment writes `last_seen_at`, so it starts out demonstrably alive.
+        expect(await pooledState(id)).toBe('online');
+
+        await lastSeenSecondsAgo(id, WORKER_OFFLINE_SECONDS + 60);
+
+        expect(await pooledState(id)).toBe('offline');
+    });
+
+    it('R2: a machine heard from inside the threshold stays online', async () => {
+        const id = await enrolOwn('quiet');
+
+        // Comfortably stale to the eye and deliberately inside the threshold:
+        // an idle worker long-polls, so going quiet for a minute is what a
+        // healthy machine between jobs looks like, not a dead one.
+        await lastSeenSecondsAgo(id, WORKER_OFFLINE_SECONDS - 60);
+
+        expect(await pooledState(id)).toBe('online');
+    });
+
+    it('R3: a paused machine that goes quiet stays paused', async () => {
+        const id = await enrolOwn('parked');
+
+        await db.sequelize.query(
+            "UPDATE gpu_workers SET state = 'paused' WHERE id = :id",
+            { replacements: { id } }
+        );
+
+        await lastSeenSecondsAgo(id, WORKER_OFFLINE_SECONDS * 10);
+
+        // `paused` is an intention about the machine and `offline` an
+        // observation of it, and the intention outlives the observation: an
+        // operator who parked a machine and then switched it off has not
+        // un-parked it, and should not have to say so again when it comes back.
+        expect(await pooledState(id)).toBe('paused');
+    });
+
+    it('R4: a machine that comes back is online again, with nothing done to it', async () => {
+        const id = await enrolOwn('returning');
+
+        await lastSeenSecondsAgo(id, WORKER_OFFLINE_SECONDS + 60);
+
+        expect(await pooledState(id)).toBe('offline');
+
+        // One poll. A machine asking for work is by definition not offline, and
+        // this is the transition `markWorkerSeen` has always had -- the check is
+        // that the new sweep did not take it away.
+        //
+        // Either answer will do, and the looseness is deliberate: whether there
+        // is work is not what this is about, and earlier tests in this file
+        // leave jobs queued, so pinning 204 would make this check depend on the
+        // order the suite runs in. `markWorkerSeen` runs before the poll decides
+        // anything, so both answers mean the machine was heard from.
+        const poll = await pollAs(id);
+
+        expect([200, 204]).toContain(poll.status);
+        expect(await pooledState(id)).toBe('online');
+    });
+
+    it('R6: one machine polling retires another that has stopped', async () => {
+        const gone = await enrolOwn('swept-by-another');
+        const alive = await enrolOwn('sweeper');
+
+        await lastSeenSecondsAgo(gone, WORKER_OFFLINE_SECONDS + 60);
+
+        // No pool read anywhere in this check: the sweep has to happen on the
+        // poll as well, or a pool nobody has opened stays wrong until somebody
+        // opens it -- and the dashboards that matter are the ones left open.
+        const poll = await pollAs(alive);
+
+        expect([200, 204]).toContain(poll.status);
+
+        const [row] = await query('SELECT state FROM gpu_workers WHERE id = :id', { id: gone });
+
+        expect(row.state).toBe('offline');
     });
 });
 

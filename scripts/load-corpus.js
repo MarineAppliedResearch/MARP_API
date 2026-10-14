@@ -61,6 +61,7 @@ const {
     CORPUS_TABLES,
     locateTool,
     countCorpus,
+    advanceSequences,
     countThumbnailFiles,
     holdsCorpus,
     compareCounts,
@@ -333,6 +334,18 @@ async function main() {
     console.log(`==> thumbnails <- ${thumbnailSource}`);
     const files = replaceThumbnails(thumbnailSource);
     console.log(`    ${files} files`);
+
+    // Half a restore otherwise: every id counter still points at a row that
+    // already exists, so the first new observation collides (#62).
+    console.log('==> id counters');
+    const counters = await connect();
+    let advanced;
+    try {
+        advanced = await advanceSequences(counters);
+    } finally {
+        await counters.end();
+    }
+    console.log(`    ${advanced.length} advanced past the restored rows`);
 
     const after = await connect();
     let counts;

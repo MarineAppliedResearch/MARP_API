@@ -24,10 +24,10 @@
  * than it was going to be.
  */
 
-import { request, thumbnailUrl } from './transport.js';
+import { request, thumbnailUrl, fullFrameUrl } from './transport.js';
 import {
   pagesBody, countsBody, commitBody, correctionBody, retryBody, facetsBody, filtersBody,
-  idList
+  idList, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody
 } from './requests.js';
 import { sortTerms } from '../model/filters.js';
 
@@ -81,7 +81,9 @@ export const MarpApi = {
     return user && {
       user_id: user.user_id,
       name: user.name,
-      username: user.username
+      username: user.username,
+      /* What the video page may offer: box editing needs `keyframes:write` (#181). */
+      permissions: Array.isArray(user.permissions) ? user.permissions : []
     };
   },
 
@@ -169,6 +171,58 @@ export const MarpApi = {
       method: 'POST', signal
     });
   },
+
+  /** Queue or reuse the complete native frame behind the current thumbnail. */
+  async requestFullFrame(observationId, { signal } = {}) {
+    return request(`/observations/${encodeURIComponent(observationId)}/full-frame`, {
+      method: 'POST', signal
+    });
+  },
+
+  /* The source-video inspector's read (#181): a page's observations, grouped by video. */
+  async videoContext(observationIds = [], { signal } = {}) {
+    return request('/mosaic/observations/video-context', {
+      method: 'POST', body: { observation_ids: idList(observationIds, 'observation_ids') }, signal
+    });
+  },
+
+  /* The video page (#181): every observation in a video the query matches, once. */
+  async videoObservations({ observationId, filters }, { signal } = {}) {
+    return request('/mosaic/video/observations', {
+      method: 'POST', body: videoObservationsBody({ observationId, filters }), signal
+    });
+  },
+
+  /* The video page (#181): those observations' keyframes, a window of seconds at a time. */
+  async videoKeyframes({ observationIds, from, to }, { signal } = {}) {
+    return request('/mosaic/video/keyframes', {
+      method: 'POST', body: videoKeyframesBody({ observationIds, from, to }), signal
+    });
+  },
+
+  /* The video page's box edits (#181), the annotation GUI's controls. Each answers
+     `{ observation_id, changed, deleted }`, keyframes in seconds. */
+  async moveKeyframe(keyframeId, box, { signal } = {}) {
+    return request(`/mosaic/video/keyframe/${encodeURIComponent(keyframeId)}`, {
+      method: 'PUT', body: keyframeBoxBody(box), signal
+    });
+  },
+
+  async addKeyframe({ observationId, subset, t, box }, { signal } = {}) {
+    return request('/mosaic/video/keyframe', {
+      method: 'POST', body: addKeyframeBody({ observationId, subset, t, box }), signal
+    });
+  },
+
+  async setEndKeyframe(keyframeId, { signal } = {}) {
+    return request(`/mosaic/video/keyframe/${encodeURIComponent(keyframeId)}/end`, { method: 'POST', signal });
+  },
+
+  async deleteKeyframe(keyframeId, { signal } = {}) {
+    return request(`/mosaic/video/keyframe/${encodeURIComponent(keyframeId)}`, { method: 'DELETE', signal });
+  },
+
+  fullFrameUrl: (row) => fullFrameUrl(row && row.observation_id),
 
   /**
    * Where a tile's picture is (R10, F7). A URL, not a fetch — see `transport.js`.

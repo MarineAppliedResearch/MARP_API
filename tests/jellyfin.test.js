@@ -139,6 +139,19 @@ function buildJellyfinFetchMock() {
             return textResponse(204, '');
         }
 
+        if (path === '/Sessions' && method === 'GET') {
+            return jsonResponse(200, [
+                {
+                    DeviceId: 'marp-api-gpu-worker-42-slot-3',
+                    NowPlayingItem: { Id: 'video1' },
+                    PlayState: {
+                        PositionTicks: 75_000_000,
+                        MediaSourceId: 'video1',
+                    },
+                },
+            ]);
+        }
+
         if (/\/Users\/[^/]+\/Items\/[^/]+$/.test(path) && method === 'GET') {
             const requestedId = path.substring(path.lastIndexOf('/') + 1);
 
@@ -331,5 +344,28 @@ describe('Jellyfin (V2) routes', () => {
         expect(jellyfinRepository.sessions.has('testclienta')).toBe(true);
         expect(jellyfinRepository.sessions.has('testclientb')).toBe(true);
         expect(jellyfinRepository.sessions.has('unknown')).toBe(true);
+    });
+
+    it('finds active playback by a stable explicit device key', async () => {
+        const identity = {
+            key: 'gpu-worker-42-slot-3',
+            name: 'MARP GPU worker',
+            deviceName: 'deck worker - slot 3',
+            version: '0.9.0',
+        };
+        const session = await jellyfinRepository.getPlaybackSession(identity);
+
+        expect(session).toEqual({
+            itemId: 'video1',
+            positionTicks: 75_000_000,
+            mediaSourceId: 'video1',
+            playSessionId: '',
+        });
+        expect(jellyfinRepository.sessions.has('gpu-worker-42-slot-3')).toBe(true);
+
+        const login = global.fetch.mock.calls.find(([url]) => String(url).endsWith('/Users/AuthenticateByName'));
+
+        expect(login[1].headers.Authorization).toContain('Device="deck worker - slot 3"');
+        expect(login[1].headers.Authorization).toContain('DeviceId="marp-api-gpu-worker-42-slot-3"');
     });
 });

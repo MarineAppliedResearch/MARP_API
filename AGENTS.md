@@ -209,13 +209,28 @@ clone, check out the branch, and it is already isolated.
 
 ```bash
 marp agent start marp-api 72-unrendered-states   # when you need the isolation
-marp agent list                                  # what is set up, and on which ports
+marp agent list                                  # what is set up, and which are running
+marp agent stop 72-unrendered-states             # keeps the working copy and the branch
+marp agent stop --all                            # every one, when you do not know whose
 marp agent remove 72-unrendered-states           # keeps the branch
 ```
 
-**Stop what you start.** A server outliving its work is not untidiness — one left running
-in another checkout was adopted by a different workspace's browser tests, which then graded
-that checkout's code for an hour without saying so.
+**Stop what you start, and stop it in the message where you report.** A server outliving
+its work is not untidiness — one left running in another checkout was adopted by a
+different workspace's browser tests, which then graded that checkout's code for an hour
+without saying so.
+
+The per-branch form is the one nobody runs, because whoever finds the leftovers does not
+know which branch owns them — so `marp agent stop --all` exists and is the right thing to
+type when in doubt. It stops servers only: working copies, databases and branches all
+survive, and `marp agent start` on the same branch picks up where it left off. `marp agent
+list` marks what is still listening and says so at the end, which is the place this gets
+noticed.
+
+**A stale `postmaster.pid` is not a running server.** A database killed without a clean
+shutdown leaves the lock file behind, so anything that counts those files over-reports
+badly — this workspace once looked like eleven live servers when three were up. Count what
+is listening on a port.
 
 `marp harness check` reports when two workspaces collide: the same port is a failure, an
 exclusive resource named twice in `needs:` is a failure, and two agents on one repository
@@ -376,6 +391,39 @@ The human is the programmer; the agent is the assistant.
 <!-- marp:shared end -->
 
 
+## NEVER file a GitHub issue
+
+**Do not create an issue in this repository, or any MARP repository, unless Isaac has
+explicitly told you to file one in that conversation.** This is the rule agents break
+most often and it does the most damage.
+
+He has filed roughly a dozen issues. The tracker holds over a hundred. **He can no longer
+find his own work in it, and his other agents pick up agent-filed issues instead of the
+ones he actually wants done.** In his words, on 2026-09-19:
+
+> *"for weeks I've been trying to get something basic done, and I can't even track what
+> I'm getting done because you keep filing issues and pulling my other agents off of the
+> actual issues that I'm filing. And then I can't remember which ones I filed. I filed
+> issue, like, 13, and suddenly I look at GitHub, and there's 138 fucking issues."*
+
+**There is no case where filing is the safe choice:**
+
+- **Not** a data-losing or urgent defect. That is a reason to raise it in the conversation
+  immediately, not a reason to file it.
+- **Not** because the branch name or `Refs #NN` seems to need a number. Use a descriptive
+  branch name and say that an issue is needed.
+- **Not** to stop a finding being lost. The conversation is the record.
+- **Not** by asking another agent to file it. Routing it through a teammate is still
+  filing it.
+- **Not** when you have been given broad permission to fix something. Authorisation to fix
+  is never authorisation to file.
+
+**What to do instead:** name the defect in your reply, say what it would take, and let him
+decide whether it is fixed now, tracked, or ignored. If it should be tracked, he files it.
+
+The shared block above says *"do not open an issue for it unless you were asked to"*. Read
+that as absolute rather than as a default.
+
 ## This repository
 
 ## Running anything
@@ -515,10 +563,17 @@ Two consequences that look like bugs and are not:
   the missing per-database storage; now that storage belongs to a database, files beside
   an empty one are that database's orphans. The count is still in the load's report and
   still compared against the manifest -- it stopped being a refusal, not evidence.
-- **`marp db load` does not know about this variable.** The umbrella sets `DB_*` as real
-  environment variables and not `THUMBNAIL_STORAGE_DIR`, so a load reached with `-Port`
-  writes into whichever directory `.env` names. Use `npm run testing-db` for a testing
-  database; `marp db load` is still right for the development one.
+- **`marp db load` takes `--thumbnail-dir`, and needs it for any database but this
+  checkout's own.** It sets `THUMBNAIL_STORAGE_DIR` from that flag beside the five `DB_*`
+  ones, and refuses a load aimed at a `--data-dir` database without it, because a load
+  replaces the directory wholesale and the default one belongs to somebody else.
+
+  The flag reached `db.ps1` from the start and was never declared on the `marp` wrapper,
+  so every `marp db load` into a second database refused while this file said to run
+  exactly that command. Fixed in the umbrella. `npm run testing-db` remains the right way
+  to fill a *testing* database, because it also creates the reviewer login and records
+  which dump it came from; `marp db load` is for the development one and for any database
+  you are pointing at by hand.
 
 **It is still not CI.** The API tier needs a server, a database and a login, and a missing
 one of those fails rather than skips -- so it runs here and nowhere else, exactly as the

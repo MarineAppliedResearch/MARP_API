@@ -27,6 +27,7 @@
 require('dotenv').config();
 
 const db = require('../model');
+const { inferenceProcessorId } = require('../db/inference-processor');
 
 const { QueryTypes } = db.Sequelize;
 
@@ -63,12 +64,30 @@ const PROJECT = { project_id: 43, name: 'CAMPA2024' };
 const PROJECT_2026 = { project_id: 44, name: 'CAMPA2026' };
 
 /**
+ * The project the CAMPA 2021 survey is recorded under.
+ *
+ * The 2021 footage is in Jellyfin and has been since before any of this
+ * pipeline existed, but nothing in the database referred to it: there was no
+ * project, and every session was `Invert`. It gets a project here for the same
+ * reason CAMPA2026 does -- a survey year is pipeline context, not something a
+ * per-dive script should invent on first use.
+ *
+ * Added when the rockfish model was first run, which is also the first `Fish`
+ * work in this corpus. No sessions are pinned for it, for the same reason as
+ * CAMPA2026: they are created per dive and their ids are not facts about MARP.
+ *
+ * @constant
+ * @type {Object}
+ */
+const PROJECT_2021 = { project_id: 45, name: 'CAMPA2021' };
+
+/**
  * Every project this seeds, in id order.
  *
  * @constant
  * @type {Array<Object>}
  */
-const PROJECTS = [PROJECT, PROJECT_2026];
+const PROJECTS = [PROJECT, PROJECT_2026, PROJECT_2021];
 
 /**
  * The session the pipeline's observations land in.
@@ -92,8 +111,8 @@ const SESSION = {
 /**
  * The registered model the worker runs.
  *
- * `storage_path` is the weights the worker loads. It is a path on the machine that
- * holds them, not a value anything here dereferences.
+ * `storage_path` is relative to MODEL_STORAGE_ROOT on the API host. Workers receive
+ * an authenticated API URL rather than this host-local path.
  *
  * @constant
  * @type {Object}
@@ -236,16 +255,19 @@ async function seed(apply) {
         );
     }
 
+    // Owned by the inference processor so the GUI's opening screen can reach it.
+    // COALESCE on conflict: a session that already has a processor keeps it.
     console.log(`session  ${SESSION.session_id}  ${SESSION.dive} / line ${SESSION.line} / ${SESSION.type}`);
     await write(
         apply,
-        `INSERT INTO sessions (session_id, project_id, dive, line, "lineId", type, "createdAt", "updatedAt")
-         VALUES (:session_id, :project_id, :dive, :line, :lineId, :type, NOW(), NOW())
+        `INSERT INTO sessions (session_id, project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+         VALUES (:session_id, :project_id, :user_id, :dive, :line, :lineId, :type, NOW(), NOW())
          ON CONFLICT (session_id) DO UPDATE
             SET project_id = EXCLUDED.project_id, dive = EXCLUDED.dive, line = EXCLUDED.line,
-                "lineId" = EXCLUDED."lineId", type = EXCLUDED.type, "updatedAt" = NOW()
+                "lineId" = EXCLUDED."lineId", type = EXCLUDED.type,
+                user_id = COALESCE(sessions.user_id, EXCLUDED.user_id), "updatedAt" = NOW()
          RETURNING session_id`,
-        SESSION
+        { ...SESSION, user_id: await inferenceProcessorId(db.sequelize) }
     );
 
     console.log(`model    ${MODEL.id}  ${MODEL.name}`);

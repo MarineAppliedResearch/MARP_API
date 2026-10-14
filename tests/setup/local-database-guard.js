@@ -40,6 +40,10 @@ const LOCAL_HOSTS = ['127.0.0.1', 'localhost', '::1', '[::1]'];
  */
 const OVERRIDE = 'MARP_TEST_ALLOW_REMOTE_DB';
 
+/* The coordinator's own threshold, read rather than restated: a literal here
+   would go on agreeing with itself after somebody changed the real one. */
+const { WORKER_OFFLINE_SECONDS } = require('../../config/gpu-orchestration');
+
 /**
  * Throws unless `DB_HOST` names this machine or the override is set.
  *
@@ -85,6 +89,51 @@ async function globalSetup() {
     require('dotenv').config();
 
     assertLocalDatabase(process.env);
+    await settleStaleWorkers();
+}
+
+/**
+ * Take the pool's own housekeeping before anything is measured.
+ *
+ * A poll and a pool read both retire workers that have stopped heartbeating
+ * (#202), which means a suite that polls changes `gpu_workers.state` on machines
+ * it never created -- and `tests/setup/corpus-guard.js` fails a file for exactly
+ * that, correctly. The rows are not the suite's to touch.
+ *
+ * So the sweep is taken **here**, in `globalSetup`, which runs before any file's
+ * opening snapshot. Anything the coordinator was going to retire is already
+ * retired when the guard looks, and the in-suite sweeps become no-ops rather
+ * than changes. The alternative was exempting `gpu_workers.state` from the
+ * guard, and that is a blind spot in precisely the column #202 exists to make
+ * trustworthy -- a test that flipped a worker's state for the wrong reason would
+ * stop being caught.
+ *
+ * It is idempotent and self-correcting: a machine that is actually alive is
+ * brought straight back to `online` by its next poll.
+ *
+ * Silent on failure. This is housekeeping, and a database that cannot do it --
+ * an older schema without the column, say -- must not stop the suite running.
+ *
+ * @returns {Promise<void>} Resolves once the sweep has been attempted.
+ */
+async function settleStaleWorkers() {
+    let db;
+
+    try {
+        db = require('../../model');
+        await db.sequelize.query(
+            `UPDATE gpu_workers
+                SET state = 'offline'
+              WHERE state = 'online'
+                AND COALESCE(last_seen_at, enrolled_at)
+                    < NOW() - (:seconds * INTERVAL '1 second')`,
+            { replacements: { seconds: WORKER_OFFLINE_SECONDS } }
+        );
+    } catch {
+        // Deliberately ignored; see above.
+    } finally {
+        if (db) { await db.sequelize.close().catch(() => {}); }
+    }
 }
 
 module.exports = globalSetup;

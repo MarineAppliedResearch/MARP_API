@@ -162,6 +162,13 @@ const SPECIES_LIST_CASE = [
     'CASE btrim(s.type)',
     ...Object.entries(SESSION_TYPE_TO_SPECIES_LIST)
         .map(([type, list]) => `            WHEN '${type}' THEN '${list}'`),
+    // A type the map does not name may still *be* the name of a seeded list --
+    // that is #223, and it is what lets a new model's sessions be reviewed
+    // without a deploy. The subquery rather than a bare `btrim(s.type)` because
+    // the list has to exist: naming a list that has no species on it would send
+    // the correction picker somewhere with nothing in it.
+    '            ELSE (SELECT sl.species_list FROM species sl',
+    '                   WHERE sl.species_list = btrim(s.type) LIMIT 1)',
     '        END',
 ].join('\n');
 
@@ -262,7 +269,14 @@ const ROW_COLUMNS = `
         training_user.username AS training_reviewer_username,
         k.keyframe_count,
         k.first_framenum,
-        coalesce(th.status, 'queued') AS thumbnail_status`;
+        coalesce(th.status, 'queued') AS thumbnail_status,
+        th.full_frame_status,
+        coalesce(th.full_frame_permanent, false) AS full_frame_permanent,
+        th.full_frame_last_error AS full_frame_reason,
+        th.full_frame_framenum,
+        th.full_frame_width,
+        th.full_frame_height,
+        th.full_frame_box`;
 
 /**
  * Time of day, in `interval`, from the `tc` a row carries.
@@ -378,6 +392,51 @@ function clockEnd(value, label) {
         text: `${String(hh).padStart(2, '0')}:${m[2]}:${String(ss).padStart(2, '0')}`,
         seconds: (hh * 3600) + (mm * 60) + ss,
     };
+}
+
+/**
+ * Every observation in one video that the Mosaic's query matches, with the span of its
+ * keyframes (#181).
+ *
+ * The same predicates as the grid's own pages, plus the video, so "matches the query" means
+ * exactly what it means on the page. Status filters included: what the reviewer is looking
+ * at is the question. `exclude` is not applied -- it is the grid's paging bookkeeping, not
+ * part of the question. An observation with no keyframes is never in the Mosaic, and is not
+ * here either. `include` is always answered, filters or not: it is the one the reviewer
+ * opened.
+ *
+ * @param {Object} request
+ * @param {Object} [request.filters] - The Mosaic's filters body.
+ * @param {string} request.videoSource - The video, as observations record it.
+ * @param {number} request.include - The observation that was opened.
+ * @param {number} request.limit - How many rows at most; one more is asked for, to tell.
+ * @returns {{sql: string, bind: Array}} The statement and its parameters.
+ */
+function buildVideoObservationsQuery({ filters = {}, videoSource, include, limit }) {
+    const bind = binder();
+    const where = predicates(filters, bind);
+    const video = bind.add(videoSource);
+    const opened = bind.add(include);
+    const matching = where.length ? `(${where.join('\n       AND ')})` : 'true';
+
+    const sql = `
+SELECT o.observation_id, o.species_id, coalesce(sp.comname, o.comname) AS comname,
+       o."obsID" AS obs_id, o.version, (o.gpu_job_id IS NOT NULL) AS machine, o."mediaPosition" AS media_position,
+       ks.first_framenum, ks.last_framenum
+  FROM observations o
+  LEFT JOIN sessions s ON s.session_id = o.session_id
+  LEFT JOIN projects p ON p.project_id = o.project_id
+  LEFT JOIN species sp ON sp.id = o.species_id
+  JOIN LATERAL (
+        SELECT min(framenum) AS first_framenum, max(framenum) AS last_framenum, count(*) AS n
+          FROM keyframes
+         WHERE observation_id = o.observation_id) ks ON ks.n > 0
+ WHERE o.video_source = ${video}
+   AND (o.observation_id = ${opened} OR ${matching})
+ ORDER BY o.observation_id
+ LIMIT ${bind.add(limit + 1)}`;
+
+    return { sql, bind: bind.values };
 }
 
 /**
@@ -1138,6 +1197,7 @@ module.exports = {
     buildCountsQuery,
     buildFacetQuery,
     buildPageSetQuery,
+    buildVideoObservationsQuery,
     counts,
     facets,
     queryPages,

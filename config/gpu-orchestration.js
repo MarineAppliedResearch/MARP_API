@@ -61,6 +61,28 @@ const ATTEMPT_CAP_SECONDS = 24 * 60 * 60;
 const POLL_MAX_WAIT_SECONDS = 60;
 
 /**
+ * How long a worker may go unheard before the pool reports it `offline`, in
+ * seconds.
+ *
+ * Derived from the poll ceiling above rather than from the heartbeat, because
+ * the *idle* cadence is the slow one: a machine between jobs long-polls and only
+ * touches `last_seen_at` when that poll returns, so it can legitimately be
+ * quiet for a whole `POLL_MAX_WAIT_SECONDS`. A running machine beats every
+ * `HEARTBEAT_SECONDS`, so this is eighteen missed heartbeats for it and three
+ * missed polls for the other -- and a single threshold fits both because it is
+ * sized for the slower one.
+ *
+ * Three rather than one for the reason `LEASE_SECONDS` is six: a worker on a
+ * home connection loses a beat now and then, and flapping a row between
+ * `online` and `offline` makes the pool view exactly as hard to read as leaving
+ * a ghost in it.
+ *
+ * @constant
+ * @type {number}
+ */
+const WORKER_OFFLINE_SECONDS = 3 * POLL_MAX_WAIT_SECONDS;
+
+/**
  * How often a waiting poll looks again, in milliseconds.
  *
  * Repeated looking rather than `LISTEN`/`NOTIFY`: a job appears every few
@@ -109,6 +131,15 @@ const MAX_WORKER_NAME_LENGTH = 255;
  * @type {number}
  */
 const MAX_WORKER_LOCAL_ID_LENGTH = 128;
+
+/**
+ * Longest phase name a worker may report. Phase vocabularies belong to each job
+ * type, so the coordinator bounds the string without closing the vocabulary.
+ *
+ * @constant
+ * @type {number}
+ */
+const MAX_PROGRESS_PHASE_LENGTH = 64;
 
 /**
  * Most events one batch may carry. A worker with more than this to say sends two
@@ -242,7 +273,7 @@ const TERMINAL_JOB_STATES = ['succeeded', 'failed', 'cancelled', 'expired'];
  */
 const ATTEMPT_STATES = [
     'assigned', 'preparing', 'running', 'uploading',
-    'succeeded', 'failed', 'cancelled', 'preempted', 'abandoned',
+    'succeeded', 'failed', 'cancelled', 'preempted', 'abandoned', 'yielded',
 ];
 
 /**
@@ -266,12 +297,13 @@ const LIVE_ATTEMPT_STATES = ['assigned', 'preparing', 'running', 'uploading'];
 const REPORTABLE_ATTEMPT_STATES = ['preparing', 'running', 'uploading'];
 
 /**
- * Event kinds. `note` is the coordinator's own; a worker sends `metric` or `log`.
+ * Event kinds. `note` is the coordinator's own; a worker sends `metric`, `log`,
+ * or `settings` -- its report of the inference settings it applied (#232).
  *
  * @constant
  * @type {Array<string>}
  */
-const EVENT_KINDS = ['metric', 'log', 'note'];
+const EVENT_KINDS = ['metric', 'log', 'note', 'settings'];
 
 /**
  * The kinds a worker may send. `note` is absent on purpose: it is the
@@ -281,15 +313,40 @@ const EVENT_KINDS = ['metric', 'log', 'note'];
  * @constant
  * @type {Array<string>}
  */
-const WORKER_EVENT_KINDS = ['metric', 'log'];
+const WORKER_EVENT_KINDS = ['metric', 'log', 'settings'];
 
 /**
- * What a worker may report as the outcome of an attempt.
+ * How a recorded setting's value is stored, one value column each on
+ * `gpu_attempt_settings`. Matches the table's check constraint.
  *
  * @constant
  * @type {Array<string>}
  */
-const RESULT_OUTCOMES = ['succeeded', 'failed', 'cancelled'];
+const SETTING_VALUE_TYPES = ['real', 'int', 'bool', 'text'];
+
+/**
+ * Where a recorded setting's value came from: the job spec, a default, or an
+ * engine constant no job can set. Matches the table's check constraint.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const SETTING_SOURCES = ['job', 'default', 'engine'];
+
+/**
+ * What a worker may report as the outcome of an attempt.
+ *
+ * `yielded` is a stop, not a cancel, and the distinction earns its place: the
+ * operator pressed stop, the frames already processed are real and are kept, and
+ * the rest of the range goes back to the pool for somebody else to finish.
+ * `cancelled` means the opposite -- called off, with nothing to keep -- so
+ * overloading it would make the ingest condition depend on whether a frame
+ * number happened to be null rather than on what actually happened.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const RESULT_OUTCOMES = ['succeeded', 'failed', 'cancelled', 'yielded'];
 
 /**
  * What a heartbeat can answer.
@@ -308,10 +365,12 @@ module.exports = {
     LEASE_SECONDS,
     ATTEMPT_CAP_SECONDS,
     POLL_MAX_WAIT_SECONDS,
+    WORKER_OFFLINE_SECONDS,
     POLL_RETRY_INTERVAL_MS,
     JSON_BODY_LIMIT,
     MAX_WORKER_NAME_LENGTH,
     MAX_WORKER_LOCAL_ID_LENGTH,
+    MAX_PROGRESS_PHASE_LENGTH,
     MAX_EVENTS_PER_BATCH,
     MAX_ARTIFACT_BYTES,
     ARTIFACT_DIRECTORY,
@@ -328,6 +387,8 @@ module.exports = {
     REPORTABLE_ATTEMPT_STATES,
     EVENT_KINDS,
     WORKER_EVENT_KINDS,
+    SETTING_VALUE_TYPES,
+    SETTING_SOURCES,
     RESULT_OUTCOMES,
     CONTROL_ACTIONS,
 };

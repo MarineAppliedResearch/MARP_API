@@ -1,0 +1,176 @@
+/* The Mosaic's source-video inspector (#181). */
+
+/* `hidden` has to win over the display each panel sets below, or a hidden panel stays
+   on screen: the sign-in form did, whether or not anyone was signed in. */
+[hidden] {
+  display: none !important;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--navy-1000);
+  color: var(--text);
+  font-family: var(--body-font, system-ui, sans-serif);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.inspect-head {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 12px;
+  background: var(--navy-850);
+  border-bottom: 1px solid var(--border);
+}
+
+.inspect-head strong {
+  color: var(--white);
+}
+
+.inspect-detail {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+/* The player and the boxes over it share one box, so the boxes can line up. */
+.inspect-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.inspect-player {
+  position: absolute;
+  inset: 0;
+}
+
+/* The player fills the stage: the picture letterboxes in the middle and its controls sit
+   at the bottom, over the bars rather than over the animal. */
+.inspect-player > .marp-player {
+  width: 100%;
+  height: 100%;
+}
+
+/* The settings menu opens upward from the gear; on a short screen it scrolls inside the
+   player instead of running off the top of it. */
+.inspect-player .marp-settings-menu {
+  max-height: calc(100% - 64px);
+  overflow-y: auto;
+}
+
+/* Drawn over the player's picture and never in the way of its controls. It sits inside the
+   player's own element, after the picture and before the controls, so it goes fullscreen
+   with the player and the controls stay on top of it. */
+.inspect-boxes {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Paused, the picture stays clear. The player's paused layer darkens the whole picture and
+   puts a large play symbol in the middle of it, which is where the reviewer is looking
+   while moving boxes (2026-10-06). The controls bar still has play. */
+.inspect-player .marp-center-overlay {
+  display: none !important;
+}
+
+/* What a press would do, as the annotation GUI shows it: move over a box, a resize arrow
+   over a grip of the selected one. On everything under the pointer, because the player's
+   layers set cursors of their own. */
+.inspect-stage.cursor-move,
+.inspect-stage.cursor-move * {
+  cursor: move !important;
+}
+
+.inspect-stage.cursor-nwse,
+.inspect-stage.cursor-nwse * {
+  cursor: nwse-resize !important;
+}
+
+.inspect-stage.cursor-nesw,
+.inspect-stage.cursor-nesw * {
+  cursor: nesw-resize !important;
+}
+
+/* With editing on, a finger on the picture drags a box rather than panning the page
+   (#181). Presses on no box still reach the player. */
+.inspect-stage.editing {
+  touch-action: none;
+}
+
+/* The annotation GUI's box menu. */
+.inspect-menu {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: calc(100% - 16px);
+  padding: 4px 0;
+  background: var(--navy-850);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.inspect-menu button {
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  color: var(--white);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inspect-menu button:hover:not(:disabled),
+.inspect-menu button:focus-visible {
+  background: var(--navy-700, rgba(255, 255, 255, 0.08));
+}
+
+.inspect-menu button:disabled {
+  color: var(--muted);
+  font-size: 0.85em;
+  cursor: default;
+}
+
+.inspect-status {
+  position: absolute;
+  left: 12px;
+  bottom: 56px;
+  margin: 0;
+  padding: 4px 8px;
+  background: rgba(1, 5, 13, 0.75);
+  color: var(--white);
+  pointer-events: none;
+}
+
+.inspect-status:empty {
+  display: none;
+}
+
+.inspect-signin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  background: var(--navy-850);
+  border: 1px solid var(--border-strong);
+}
+
+.inspect-signin label {
+  display: grid;
+  gap: 4px;
+}
+
+.inspect-error {
+  margin: 0;
+  color: var(--red-400);
+}

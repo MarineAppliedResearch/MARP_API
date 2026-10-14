@@ -99,6 +99,7 @@ async function queueJob() {
                 // A bare url, so leasing needs nothing from the media server.
                 video: { url: `http://jest.invalid/media/jest-abandoned-${runId}.mp4`, source_name: 'jest-abandoned.mp4' },
                 range: { start_frame: 0, end_frame: 100 },
+                reduction: { name: 'v3_dirpad', version: 1 },
             },
         });
 

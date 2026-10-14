@@ -140,6 +140,18 @@ module.exports = (sequelize, DataTypes) => {
                 comment: 'What a unit is, e.g. "frames".',
             },
 
+            progress_phase: {
+                type: DataTypes.STRING(64),
+                allowNull: true,
+                comment: 'Current worker-defined phase within this job type.',
+            },
+
+            progress_elapsed_s: {
+                type: DataTypes.DOUBLE,
+                allowNull: true,
+                comment: 'Worker-reported seconds elapsed since this attempt started.',
+            },
+
             capabilities_snapshot: {
                 type: DataTypes.JSONB,
                 allowNull: true,
@@ -156,6 +168,18 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.DATE,
                 allowNull: true,
                 comment: 'When the attempt reached a terminal state, on the coordinator\'s clock.',
+            },
+
+            completed_through_frame: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                comment: 'Exclusive upper bound on the frames this attempt finished, half-open like spec.range.end_frame. Set when an operator stopped the run part-way; null otherwise.',
+            },
+
+            ingested_at: {
+                type: DataTypes.DATE,
+                allowNull: true,
+                comment: 'When this attempt\'s observations were taken into the record. The ingest guard: a job resumed by several volunteers has one of these per segment.',
             },
         },
         {

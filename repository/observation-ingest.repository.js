@@ -7,17 +7,17 @@
  *
  * **Three things here are deliberate and each was a trap first.**
  *
- * 1. *The keys are assigned by hand, and the sequence is not used.*
- *    `observations.observation_id` has a sequence that has never been advanced by
- *    the annotation GUI's writes, so it sits far behind the table and `nextval`
- *    would collide immediately. `repository/observation.repository.js` assigns
- *    `max + 1`; so does this, because two conventions for one column is worse
- *    than one awkward convention. Tracked in #62.
- * 2. *An advisory lock covers the whole assignment.* `max + 1` computed by two
- *    transactions at once yields the same number twice, and two workers finishing
- *    within a second of each other is the normal case, not the unlucky one. The
- *    lock is transaction-scoped, so it is released by the commit or the rollback
- *    and cannot be leaked.
+ * 1. *`observation_id` comes from its sequence, as every other create's does* (#62).
+ *    This path used to assign `max + 1` and never advance the sequence. Once
+ *    `observation.repository.js` moved to the sequence, every GPU run left it
+ *    further behind, and every create through the API or the GUI collided -- 96,670
+ *    behind on the development database on 2026-09-24. Two conventions for one
+ *    column is the bug.
+ * 2. *An advisory lock covers the whole assignment.* `obsID` and `PobsID` are still
+ *    `max + 1`, and `max + 1` computed by two transactions at once yields the same
+ *    number twice, and two workers finishing within a second of each other is the
+ *    normal case, not the unlucky one. The lock is transaction-scoped, so it is
+ *    released by the commit or the rollback and cannot be leaked.
  * 3. *Rows are inserted with SQL rather than `db.observations.create`.* The model
  *    declares `observation_id` as a primary key that Sequelize believes is
  *    generated, so `create()` sends an explicit null for it and the insert fails.
@@ -30,6 +30,7 @@
 'use strict';
 
 const { QueryTypes } = require('sequelize');
+const { inferenceProcessorId } = require('../db/inference-processor');
 
 /**
  * Shared database registry containing the configured Sequelize connection,
@@ -71,7 +72,7 @@ const OBSERVATION_COLUMNS = [
     'observation_id', 'obsID', 'PobsID', 'project_id', 'session_id', 'user_id',
     'tc', 'frame', 'taxserial', 'species_id', 'comname', 'count',
     'video_source', 'videoLocation', 'mediaPosition', 'actualPosition',
-    'confidence', 'ml_model_id', 'gpu_job_id', 'jellyfin_item_id',
+    'confidence', 'ml_model_id', 'gpu_job_id', 'gpu_attempt_id', 'jellyfin_item_id',
     'createdAt', 'updatedAt',
 ];
 
@@ -109,6 +110,19 @@ class ObservationIngestRepository {
         );
 
         return row ? row.n : 0;
+    }
+
+    /**
+     * The inference processor's `user_id`, which every session inference
+     * creates belongs to. See `db/inference-processor.js`.
+     *
+     * @async
+     * @param {Object} [transaction] - Transaction to read inside.
+     * @returns {Promise<number>} The account's `user_id`.
+     * @throws {Error} When the account is missing, meaning the migrations have not run.
+     */
+    async inferenceProcessorId(transaction) {
+        return inferenceProcessorId(this.db.sequelize, transaction);
     }
 
     /**
@@ -212,6 +226,42 @@ class ObservationIngestRepository {
     }
 
     /**
+     * Every common name a model was trained with, for the worker to check
+     * against the weights it actually loaded (#214).
+     *
+     * A job spec names a model and carries its sha256, and the worker verifies
+     * that hash against the *file*. Nothing then checks that the file it loaded
+     * is the model the job meant -- `species_names` comes from the loaded
+     * weights and the window's footer comes from the spec, and the two are
+     * never reconciled. A run using weights nobody asked for therefore produces
+     * confident, plausible, wrong species and the only thing that catches it is
+     * a person looking at a screen. That happened on 2026-09-18.
+     *
+     * These names are the same ones the ingest resolves detections against, so
+     * a model whose loaded classes do not match this list could not have its
+     * output ingested anyway -- the check just moves the discovery from after
+     * the run to before it.
+     *
+     * @async
+     * @param {number} mlModelId - Registered model identifier.
+     * @returns {Promise<Array<string>>} Trained common names, sorted.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async trainedSpeciesNames(mlModelId) {
+        const rows = await this.db.sequelize.query(
+            `SELECT DISTINCT s.comname
+               FROM model_species ms
+               JOIN species s ON s.id = ms.species_id
+              WHERE ms.model_id = :mlModelId
+                AND s.comname IS NOT NULL
+              ORDER BY s.comname`,
+            { replacements: { mlModelId }, type: QueryTypes.SELECT }
+        );
+
+        return rows.map((row) => row.comname);
+    }
+
+    /**
      * Every species row carrying a common name, whatever list it is on.
      *
      * The fallback for a model whose trained-species list does not name the
@@ -255,6 +305,44 @@ class ObservationIngestRepository {
         );
 
         return rows.map((row) => row.species_list);
+    }
+
+    /**
+     * The species list of this exact name, if any species are on it.
+     *
+     * This is what lets a **new** model work without a deploy (#223). Seeding a
+     * vocabulary is a script and takes effect at once; `db/species-lists.js` is
+     * code and takes effect on the next restart. Between the two a job ran,
+     * stored its artifact, reported `succeeded` and wrote nothing -- twice in one
+     * day, on `MBARI_315k` and `MBARI_Megalodon`.
+     *
+     * So a session type that **is** the name of a list resolves to it. That is
+     * already how most of the catalogue reads (`Fish` -> `Fish`,
+     * `Habitat` -> `Habitat`), and it is a lookup rather than a guess: the list
+     * has to exist, with species on it, or this returns null and the caller
+     * refuses. The static map still answers first, which is what keeps
+     * `Invert` -> `Inverts` and `MBARI_Benthic` -> `MBARI_Benthic_Supercategory`
+     * meaning what they have always meant.
+     *
+     * @async
+     * @param {string} name - A candidate `species.species_list` value.
+     * @param {Object} [transaction] - Transaction to read inside.
+     * @returns {Promise<string|null>} The list name as stored, or null.
+     */
+    async speciesListNamed(name, transaction) {
+        if (typeof name !== 'string' || name.trim() === '') {
+            return null;
+        }
+
+        const [row] = await this.db.sequelize.query(
+            `SELECT species_list
+               FROM species
+              WHERE species_list = :name
+              LIMIT 1`,
+            { replacements: { name: name.trim() }, type: QueryTypes.SELECT, transaction }
+        );
+
+        return row ? row.species_list : null;
     }
 
     /**
@@ -303,7 +391,7 @@ class ObservationIngestRepository {
      * @returns {Promise<Object>} `{observations, keyframes, observation_ids}`.
      * @throws {Error} Re-throws after rolling back if any statement fails.
      */
-    async writeJobObservations({ jobId, sessionId, projectId, sessionType, observations }) {
+    async writeJobObservations({ jobId, sessionId, projectId, sessionType, observations, attemptId }) {
         const transaction = await this.db.sequelize.transaction();
 
         try {
@@ -317,24 +405,29 @@ class ObservationIngestRepository {
             // Taken again inside the lock, because the check the service made
             // before calling was outside it and two replays could both have
             // passed it.
-            const already = await this.countObservationsForJob(jobId, transaction);
+            //
+            // **Only when this is the job's one and only ingest.** A job that
+            // an operator stopped and somebody else finished is ingested once
+            // per attempt, and counting the job's observations would see the
+            // first attempt's rows and refuse the second -- silently, reported
+            // as `already_ingested`, which reads like success while the second
+            // volunteer's work is dropped. The attempt's own `ingested_at` is
+            // the guard in that case, claimed before this is called, and it
+            // closes the same race this check exists for.
+            if (attemptId === undefined || attemptId === null) {
+                const already = await this.countObservationsForJob(jobId, transaction);
 
-            if (already > 0) {
-                await transaction.commit();
+                if (already > 0) {
+                    await transaction.commit();
 
-                return {
-                    observations: 0,
-                    keyframes: 0,
-                    observation_ids: [],
-                    already_ingested: already,
-                };
+                    return {
+                        observations: 0,
+                        keyframes: 0,
+                        observation_ids: [],
+                        already_ingested: already,
+                    };
+                }
             }
-
-            const nextObservationId = await this.nextKey(
-                'SELECT COALESCE(MAX(observation_id), 0)::int AS m FROM observations',
-                {},
-                transaction
-            );
 
             const nextObsId = await this.nextKey(
                 'SELECT COALESCE(MAX("obsID"), 0)::int AS m FROM observations WHERE session_id = :sessionId',
@@ -358,7 +451,7 @@ class ObservationIngestRepository {
 
             for (let index = 0; index < observations.length; index += 1) {
                 const { row, keyframes } = observations[index];
-                const observationId = nextObservationId + index;
+                const observationId = await this.nextObservationId(transaction);
 
                 await this.insertObservation({
                     ...row,
@@ -368,6 +461,9 @@ class ObservationIngestRepository {
                     session_id: sessionId,
                     project_id: projectId,
                     gpu_job_id: jobId,
+                    // The attempt whose settings produced this row (#232). Null
+                    // on the path with no attempt, as it has no settings either.
+                    gpu_attempt_id: attemptId ?? null,
                 }, transaction);
 
                 keyframesWritten += await this.insertKeyframes(observationId, keyframes, transaction);
@@ -405,6 +501,25 @@ class ObservationIngestRepository {
         );
 
         return (row && row.m ? Number(row.m) : 0) + 1;
+    }
+
+    /**
+     * Take the next `observation_id` from the column's own sequence.
+     *
+     * One at a time rather than a range: a sequence promises distinct numbers, not
+     * consecutive ones, and nothing reads these ids as a run.
+     *
+     * @async
+     * @param {Object} transaction - Transaction to write inside.
+     * @returns {Promise<number>} An id no other insert has been or will be given.
+     */
+    async nextObservationId(transaction) {
+        const [row] = await this.db.sequelize.query(
+            "SELECT nextval('observations_observation_id_seq')::int AS id",
+            { type: QueryTypes.SELECT, transaction }
+        );
+
+        return Number(row.id);
     }
 
     /**

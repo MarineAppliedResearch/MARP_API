@@ -14,6 +14,14 @@ export const MODES = {
     /** What a tap records. */
     mark: 'Flagged',
     verb: 'Flag',
+    /**
+     * The staged mark as a noun, for prose that has to name what will be cleared.
+     *
+     * `mark` and `verb` both read wrong in that sentence — "clear this pending Flagged",
+     * "clear this pending Flag" — so #203 added a third form rather than bending one of
+     * the two. The replacement-image button is the only thing using it so far.
+     */
+    pending: 'flag',
     /** What the page commit is called, and what it does to unmarked tiles. */
     commit: 'Mark Page Reviewed',
     /**
@@ -42,6 +50,7 @@ export const MODES = {
     label: 'Training Data Review',
     mark: 'Excluded',
     verb: 'Exclude',
+    pending: 'exclusion',
     commit: 'Promote Page',
     sweep: 'Promote page',
     accepts: 'promoted',
@@ -57,6 +66,7 @@ export const MODES = {
     label: 'Delete',
     mark: 'Delete',
     verb: 'Mark',
+    pending: 'deletion',
     commit: 'Delete Marked',
     /* Delete keeps one button, so this label is never the secondary one (A2). */
     sweep: null,

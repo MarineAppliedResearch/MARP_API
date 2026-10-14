@@ -45,6 +45,7 @@ const gpuService = require('../service/gpu.service');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const { MEDIA_CLIENT_IDENTITY, FFPROBE_PATH, FPS_TOLERANCE } = require('../config/thumbnails');
 const { ASSUMED_FPS } = require('../db/timecode');
+const { inferenceProcessorId } = require('../db/inference-processor');
 
 const { QueryTypes } = db.Sequelize;
 
@@ -121,9 +122,8 @@ const TICKS_PER_SECOND = 10000000;
  * The registered model the run uses, as the job spec names it.
  *
  * `ml_model_id` must be the row `scripts/seed-inference-context.js` seeds, or the
- * ingest cannot attribute the observations. `url` is a path on the machine
- * holding the weights and nothing here dereferences it; override both from the
- * environment on a machine that keeps them elsewhere.
+ * ingest cannot attribute the observations. The relative URL is resolved by the
+ * worker against its coordinator and downloaded with its service credential.
  *
  * @constant
  * @type {Object}
@@ -132,10 +132,9 @@ const MODEL = {
     name: process.env.MARP_MODEL_NAME || 'CAMPA_GR1_TEST6-mixed',
     sha256: process.env.MARP_MODEL_SHA256
         || '9283b8ee1d1ac22ddfe5e8394a95c950cf65e1dfce3c772a1559c0408f52cff8',
-    url: process.env.MARP_MODEL_WEIGHTS
-        || 'C:/Users/isaac/Documents/Workspace/marp-inference-worker/models/CAMPA_GR1_TEST6/mixed/weights/best.pt',
     ml_model_id: Number(process.env.MARP_ML_MODEL_ID || 91),
 };
+MODEL.url = process.env.MARP_MODEL_URL || `/api/v2/model/${MODEL.ml_model_id}/artifact`;
 
 /**
  * Session type, and so which species list the ingest reads class names against.
@@ -507,8 +506,10 @@ async function findOrCreateSession(project, dive, line, apply) {
     // Through the model, so the application's own defaults and timestamps are
     // what wrote the row. `session_id` is autoIncrement on this model, unlike
     // `observations` -- see AGENTS.md, *Primary keys are assigned inconsistently*.
+    // Owned by the inference processor, so the GUI's opening screen can reach it.
     const created = await db.sessions.create({
         project_id: project.project_id,
+        user_id: await inferenceProcessorId(db.sequelize),
         dive,
         line: String(line),
         lineId: String(line),

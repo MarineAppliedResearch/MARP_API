@@ -266,6 +266,68 @@ function compareCounts(expected, actual) {
     return differences;
 }
 
+/**
+ * Move every restored table's id counter past the rows that came back.
+ *
+ * A restore writes each row with the id it had in the backup and never touches the
+ * counter PostgreSQL uses to hand out the *next* id, so after a load every counter
+ * points at a number that already exists.
+ *
+ * **That was invisible until the database started assigning ids** (#62). The API
+ * used to pick them itself, so the counter was never read. Now it is, and the first
+ * observation created after a load collides on the primary key -- a database that
+ * restores cleanly, passes its own manifest check, and cannot take a new annotation.
+ * Which defeats the point, since the whole reason this database exists is so the
+ * automated tests can run against it.
+ *
+ * Done for every table rather than for `observations` alone: the same is true of all
+ * of them, and observations is only the one that had a writer relying on it.
+ * `pg_get_serial_sequence` returns null for a key that is not a serial, and those are
+ * skipped rather than guessed at.
+ *
+ * `GREATEST(max, 1)` because `setval` rejects zero, and an empty table's counter is
+ * already correct.
+ *
+ * @async
+ * @param {Object} client - A connected `pg` client.
+ * @returns {Promise<Array<string>>} The tables whose counter was advanced.
+ */
+async function advanceSequences(client) {
+    const advanced = [];
+
+    for (const table of CORPUS_TABLES) {
+        const { rows } = await client.query(
+            `select c.column_name,
+                    pg_get_serial_sequence($1, c.column_name) as sequence
+               from information_schema.columns c
+               join information_schema.key_column_usage k
+                 on k.table_name = c.table_name and k.column_name = c.column_name
+               join information_schema.table_constraints t
+                 on t.constraint_name = k.constraint_name
+                and t.constraint_type = 'PRIMARY KEY'
+              where c.table_name = $1`,
+            [table]
+        );
+
+        for (const row of rows) {
+            if (!row.sequence) {
+                continue;
+            }
+
+            // The identifiers come from CORPUS_TABLES and from the catalogue, never
+            // from input, which is the same rule countCorpus follows.
+            await client.query(
+                `select setval($1, greatest(
+                     (select coalesce(max("${row.column_name}"), 0) from "${table}"), 1))`,
+                [row.sequence]
+            );
+            advanced.push(table);
+        }
+    }
+
+    return advanced;
+}
+
 module.exports = {
     CORPUS_TABLES,
     FLAG,
@@ -275,6 +337,7 @@ module.exports = {
     THUMBNAIL_STORAGE_DIR,
     locateTool,
     countCorpus,
+    advanceSequences,
     countThumbnailFiles,
     holdsCorpus,
     compareCounts,

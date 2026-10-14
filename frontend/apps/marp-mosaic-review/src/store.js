@@ -17,6 +17,8 @@ import { currentSpeciesName } from './model/row.js';
 import { toQuery, fromQuery } from './model/query-url.js';
 import { plan } from './model/schedule.js';
 import { createCache, keyFor } from './model/cache.js';
+import { clampZoom } from './model/frame-viewer.js';
+import { setMarks } from './model/drag-selection.js';
 
 export { MODES };
 
@@ -51,6 +53,7 @@ const cache = createCache();
 const PREFETCH_IDLE = 250;
 const MAX_PAGES = 12;
 const MAX_ROWS = 600;
+const FULL_FRAME_HISTORY_KEY = 'marpFullFrameObservationId';
 
 let prefetchBusy = false;      // at most one prefetch in flight, ever
 let prefetchWait = null;       // the pending yield, recomputed on every page change
@@ -185,7 +188,8 @@ export const state = {
    * instead, so the isolation holds and the work survives.
    */
   parked: new Map(),       // mode -> { pageMembers, committedPages, outcomes }
-  picker: null,            // { id, correcting }
+  picker: null,            // { id, correcting, position?: { x, y } }
+  frameViewer: null,       // { id, overlay, zoom }
   lastCommit: null,
   /* What the commit button is doing. A page commit is the one action here that can
      take real time and can fail, and it is also the irreversible one, so it says so
@@ -210,7 +214,9 @@ export const state = {
    * It is an acknowledgement rather than a state, so it fades the way the commit tick
    * does. One at a time: a second refusal replaces the first.
    */
-  refused: null            // null | { id, reason }
+  refused: null,           // null | { id, reason }
+  /* One acknowledgement for a whole drag, never one refusal painted on every tile. */
+  dragSummary: null        // null | { kind, applied, skipped }
 };
 
 /* ---------------------------------------------------------------- plumbing */
@@ -250,6 +256,15 @@ function clearRefusal(after = 2600) {
   clearTimeout(refusalTimer);
   refusalTimer = setTimeout(() => {
     state.refused = null;
+    notify();
+  }, after);
+}
+
+let dragSummaryTimer = null;
+function clearDragSummary(after = 2600) {
+  clearTimeout(dragSummaryTimer);
+  dragSummaryTimer = setTimeout(() => {
+    state.dragSummary = null;
     notify();
   }, after);
 }
@@ -371,7 +386,7 @@ const pollDelay = () => Math.min(POLL_MAX, POLL_START * (2 ** pollRound));
 /**
  * One round: re-read the visible page, fold the statuses in, notify **once**.
  *
- * Only `thumbnail_status` is taken from the answer. That is deliberate: the reviewer may
+ * Only imagery state is taken from the answer. That is deliberate: the reviewer may
  * have marked, corrected or committed since the page was drawn, and replacing the rows
  * would throw that away — the poll is about pictures arriving, not about re-reading the
  * record.
@@ -405,12 +420,21 @@ async function pollRoundOnce() {
   let moved = 0;
   for (const row of state.rows) {
     const fresh = byId.get(row.observation_id);
-    if (!fresh || fresh.thumbnail_status === row.thumbnail_status) continue;
-    row.thumbnail_status = fresh.thumbnail_status;
-    moved++;
+    if (!fresh) continue;
+    const fields = [
+      'thumbnail_status', 'full_frame_status', 'full_frame_permanent',
+      'full_frame_reason', 'full_frame_framenum', 'full_frame_width',
+      'full_frame_height', 'full_frame_box'
+    ];
+    let changed = false;
+    for (const field of fields) {
+      if (fresh[field] !== row[field]) { row[field] = fresh[field]; changed = true; }
+    }
+    if (changed) moved++;
   }
 
-  const stillQueued = state.rows.filter((r) => r.thumbnail_status === 'queued').length;
+  const stillQueued = state.rows.filter((r) =>
+    r.thumbnail_status === 'queued' || r.full_frame_status === 'queued').length;
   fire('thumbnail:polled', { round: pollRound + 1, moved, queued: stillQueued });
 
   /**
@@ -520,7 +544,32 @@ function rememberQuery() {
   });
   const here = window.location.pathname + window.location.search + window.location.hash;
   const next = window.location.pathname + search + window.location.hash;
-  if (next !== here) window.history.replaceState(null, '', next);
+  if (next !== here) window.history.replaceState(window.history.state, '', next);
+}
+
+function fullFrameHistoryId(historyState) {
+  if (!historyState || !Object.hasOwn(historyState, FULL_FRAME_HISTORY_KEY)) return null;
+  const id = Number(historyState[FULL_FRAME_HISTORY_KEY]);
+  return Number.isInteger(id) ? id : null;
+}
+
+function showFullFrame(id, { remember = true } = {}) {
+  state.frameViewer = { id, overlay: true, zoom: 1 };
+  if (!remember || typeof window === 'undefined' || !window.history) return;
+  const historyState = window.history.state || {};
+  const nextState = { ...historyState, [FULL_FRAME_HISTORY_KEY]: id };
+  if (fullFrameHistoryId(historyState) === null) {
+    window.history.pushState(nextState, '', window.location.href);
+  } else {
+    window.history.replaceState(nextState, '', window.location.href);
+  }
+}
+
+function closeFullFrameState() {
+  if (!state.frameViewer) return;
+  state.frameViewer = null;
+  fire('full-frame:close');
+  notify();
 }
 
 /**
@@ -844,11 +893,23 @@ export const actions = {
     state.ready = true;
     fire('init');
 
-    /* Nothing here pushes history, but the reviewer can still arrive by the back button
-       from somewhere else, or edit the address by hand. Read it again when that happens
-       rather than showing a screen the address no longer describes. */
+    /* The full-frame viewer pushes one same-address entry so a phone's Back gesture closes
+       it before leaving the Mosaic. Other history movement still restores the question. */
     if (typeof window !== 'undefined') {
-      window.addEventListener('popstate', () => {
+      window.addEventListener('popstate', (event) => {
+        const frameId = fullFrameHistoryId(event.state);
+        const frameRow = frameId === null ? null
+          : state.rows.find((row) => row.observation_id === frameId);
+        if (frameRow && frameRow.full_frame_status === 'ready') {
+          showFullFrame(frameId, { remember: false });
+          fire('full-frame:open', { id: frameId, history: true });
+          notify();
+          return;
+        }
+        if (state.frameViewer) {
+          closeFullFrameState();
+          return;
+        }
         adoptQuery(fromQuery(window.location.search));
         fire('restoreQuery', { page: state.page, mode: state.mode });
         notify();
@@ -1186,7 +1247,8 @@ export const actions = {
    */
   _chaseQueuedThumbnails() {
     cancelPoll();
-    if (!state.rows.some((r) => r.thumbnail_status === 'queued')) return;
+    if (!state.rows.some((r) =>
+      r.thumbnail_status === 'queued' || r.full_frame_status === 'queued')) return;
     pollRound = 0;
     schedulePoll();
   },
@@ -1212,6 +1274,7 @@ export const actions = {
     state.marks.clear();
     state.picker = null;
     state.refused = null;
+    state.dragSummary = null;
     state.page = 1;
     state.touched = new Set();
     state.takenBack = new Set();
@@ -1294,6 +1357,45 @@ export const actions = {
     if (had) state.picker = null;
     fire(had ? 'unmark' : 'mark',
       { id, mode: state.mode, kind: MARK_EXCEPT, mark: MODES[state.mode].mark });
+    notify();
+  },
+
+  /**
+   * Stage one rectangle as one action (#136).
+   *
+   * Unlike an individual click, a drag always sets the requested decision directly. It
+   * therefore removes a pending take-back and never calls `recordTakeBack`, including for
+   * observations that already carry a committed decision.
+   */
+  dragMark(ids, kind) {
+    if (kind !== MARK_EXCEPT && kind !== MARK_ACCEPT) return;
+    if (kind === MARK_ACCEPT && !acceptedValue(state.mode)) return;
+
+    const wanted = new Set(ids);
+    const eligible = [];
+    let skipped = 0;
+    for (const row of state.rows) {
+      const id = row.observation_id;
+      if (!wanted.has(id) || destroyed(id)) continue;
+      if (kind === MARK_ACCEPT && !acceptRefusal(state.mode, row).ok) {
+        skipped += 1;
+        continue;
+      }
+      eligible.push(id);
+    }
+    if (!eligible.length && !skipped) return;
+
+    state.marks = setMarks(state.marks, eligible, kind);
+    for (const id of eligible) {
+      state.touched.add(id);
+      state.takenBack.delete(id);
+    }
+    state.picker = null;
+    state.refused = null;
+    clearTimeout(dragSummaryTimer);
+    state.dragSummary = skipped ? { kind, applied: eligible.length, skipped } : null;
+    if (skipped) clearDragSummary();
+    fire('dragMark', { mode: state.mode, kind, ids: eligible, skipped });
     notify();
   },
 
@@ -1412,6 +1514,14 @@ export const actions = {
     }
     state.picker = { id, correcting: true };
     fire('openCorrection', { id });
+    notify();
+  },
+
+  /** Remember one completed drag while this observation's details remain open. */
+  movePicker(id, position) {
+    if (!state.picker || state.picker.id !== id) return;
+    state.picker.position = { x: position.x, y: position.y };
+    fire('movePicker', { id, position: state.picker.position });
     notify();
   },
 
@@ -1580,16 +1690,22 @@ export const actions = {
   },
 
   /**
-   * Clear this tile's pending scientific flag and ask for a different crop.
+   * Clear this tile's pending mark and ask for a different crop.
    *
    * This is deliberately separate from `_retry`: a replacement is allowed for a ready
-   * image and must never turn the temporary flag used to open the panel into review data.
+   * image and must never turn the temporary mark used to open the panel into review data.
    * The optimistic clear happens before the request, so no fast extractor can finish
-   * while the panel still presents the flag as pending. A refusal or transport failure
+   * while the panel still presents the mark as pending. A refusal or transport failure
    * restores the reviewer's unsaved work because no replacement was accepted.
+   *
+   * **Every mode, not only scientific** (#203). This returned early anywhere but
+   * scientific, matching a render condition in `picker.js` that hid the button -- two
+   * gates on one rule, so removing either alone leaves a button that does nothing or an
+   * action nothing can reach. Nothing below reads the mode: the request takes an
+   * observation id, and the rollback restores whatever was staged, whichever workflow
+   * staged it.
    */
   async requestThumbnailReplacement(id) {
-    if (state.mode !== 'scientific') return;
     const row = state.rows.find((r) => r.observation_id === id);
     if (!row) return;
 
@@ -1649,6 +1765,73 @@ export const actions = {
     fire('thumbnail:replacement-queued', { id });
     notify();
     actions._chaseQueuedThumbnails();
+  },
+
+  /** Request the native frame without disturbing the pending review decision. */
+  async requestFullFrame(id) {
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row || row.thumbnail_status !== 'ready') return;
+    const previous = {
+      status: row.full_frame_status,
+      permanent: row.full_frame_permanent,
+      reason: row.full_frame_reason
+    };
+    row.full_frame_status = 'queued';
+    row.full_frame_permanent = false;
+    row.full_frame_reason = null;
+    fire('full-frame:request', { id });
+    notify();
+    try {
+      const res = await MarpBackend.requestFullFrame(id);
+      const answer = res.fullFrame;
+      row.full_frame_status = answer.status;
+      row.full_frame_permanent = Boolean(answer.permanent);
+      row.full_frame_reason = answer.reason || null;
+      row.full_frame_framenum = answer.framenum;
+      row.full_frame_width = answer.width;
+      row.full_frame_height = answer.height;
+      row.full_frame_box = answer.box;
+      clearFailure();
+      if (answer.available) showFullFrame(id);
+      fire('full-frame:requested', { id, status: answer.status });
+      notify();
+      if (answer.status === 'queued') actions._chaseQueuedThumbnails();
+    } catch (err) {
+      row.full_frame_status = previous.status;
+      row.full_frame_permanent = previous.permanent;
+      row.full_frame_reason = previous.reason;
+      if (recordFailure(err, 'full-frame:request')) notify();
+    }
+  },
+
+  openFullFrame(id) {
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row || row.full_frame_status !== 'ready') return;
+    showFullFrame(id);
+    fire('full-frame:open', { id });
+    notify();
+  },
+
+  closeFullFrame() {
+    if (!state.frameViewer) return;
+    if (typeof window !== 'undefined' && window.history
+      && fullFrameHistoryId(window.history.state) === state.frameViewer.id) {
+      window.history.back();
+      return;
+    }
+    closeFullFrameState();
+  },
+
+  toggleFullFrameBox() {
+    if (!state.frameViewer) return;
+    state.frameViewer.overlay = !state.frameViewer.overlay;
+    notify();
+  },
+
+  setFullFrameZoom(zoom) {
+    if (!state.frameViewer) return;
+    state.frameViewer.zoom = clampZoom(zoom);
+    notify();
   },
 
   /**
@@ -1997,5 +2180,6 @@ export const actions = {
     return actions.refresh();
   },
 
-  openVideo(id) { fire('openVideo', { id }); }   // deliberately unimplemented
+  /* The window itself is ui/video-window.js's (#181); this records that it was asked for. */
+  openVideo(id) { fire('openVideo', { id }); }
 };

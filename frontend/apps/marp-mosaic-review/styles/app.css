@@ -305,13 +305,32 @@ body.rail-collapsed .fcount { display: grid; }
    never be wider than its container. JS only reads back how many fit. */
 .grid { display: grid; gap: 2px;
         grid-template-columns: repeat(auto-fill, minmax(var(--min-tile, 132px), 1fr)); }
+.grid.drag-selecting, .grid.drag-selecting * { user-select: none; }
+.drag-select-band { position: absolute; z-index: 8; pointer-events: none;
+                    border: 2px solid var(--amber-300);
+                    background: color-mix(in srgb, var(--amber-300) 14%, transparent); }
+.drag-select-band[data-kind="accept"] { border-color: var(--commit);
+                                         background: color-mix(in srgb, var(--commit) 14%, transparent); }
+.tile.drag-preview { z-index: 7; box-shadow: inset 0 0 0 4px var(--amber-300); }
+.grid.drag-accept .tile.drag-preview { box-shadow: inset 0 0 0 4px var(--commit); }
+.touch-selection-choice { position: fixed; inset: 0; z-index: 100;
+                          display: grid; align-items: end; justify-items: center;
+                          background: rgba(0, 0, 0, .35); padding: 12px;
+                          padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.touch-selection-choice section { width: min(100%, 420px); padding: 14px;
+                                  background: var(--field); border: 1px solid var(--mode);
+                                  border-radius: 8px; box-shadow: 0 8px 30px rgba(0, 0, 0, .5); }
+.touch-selection-choice p { margin: 0 0 12px; text-align: center; }
+.touch-selection-choice section > div { display: flex; gap: 8px; flex-wrap: wrap;
+                                       justify-content: center; }
+.tile, .tile img { -webkit-touch-callout: none; }
 
 /* `touch-action: manipulation` turns off the browser's own double-tap-to-zoom, which is
    what a double tap on a tile would otherwise do -- and #126 gives that gesture a job. It
    also removes the legacy 300 ms wait before a tap becomes a click. */
 .tile { position: relative; aspect-ratio: 1; border-radius: 2px; overflow: hidden;
         background: #101215; outline: 1px solid var(--tile-bd); outline-offset: -1px;
-        padding: 0; border: 0; display: block; touch-action: manipulation; }
+        padding: 0; border: 0; display: block; touch-action: manipulation; user-select: none; }
 .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 28px 3.5px 5px;
        background: transparent;
@@ -330,11 +349,19 @@ body.rail-collapsed .fcount { display: grid; }
                         border: 1px solid currentColor; border-radius: 50%;
                         font-size: 7px; line-height: 1; font-weight: 900; opacity: .9;
                         white-space: nowrap; }
-.frames { position: absolute; top: 4px; right: 4px; background: rgba(8, 9, 11, .30);
+/* The reason and the track length used to share one absolute position and so could never
+   both be shown (#206). The corner is the positioned thing now and the chips stack inside
+   it, which keeps "how far down the second chip goes" a consequence of the first chip's
+   own height rather than a number written here that a padding change would falsify. */
+.corner { position: absolute; top: 4px; right: 4px; z-index: 3;
+          display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+          max-width: calc(100% - 8px); }
+.frames { background: rgba(8, 9, 11, .30);
           color: #c2cad3; font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600; }
-.reason-chip { position: absolute; top: 4px; right: 4px; background: rgba(8, 9, 11, .34);
+.reason-chip { background: rgba(8, 9, 11, .34);
                border: 1px solid rgba(246, 196, 83, .55); color: var(--amber-300);
-               font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600; }
+               font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600;
+               max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .confidence-chip { position: absolute; right: 4px; bottom: 3px; z-index: 4;
                    min-width: 18px; padding: 1.5px 4px; border-radius: 2px;
                    background: rgba(8, 9, 11, .30); color: #f7fafc;
@@ -414,9 +441,18 @@ body[data-mode="training"] .tile.marked.recorded { outline-width: 1px; }
         box-shadow: 0 20px 54px rgba(0, 0, 0, .72); padding: 13px 14px 12px; }
 .pick h4 { margin: 0 0 2px; font-size: 13px; color: var(--white); font-weight: 600;
            display: flex; align-items: center; gap: 8px; }
+.pick h4[data-picker-drag-handle] { cursor: grab; touch-action: none; user-select: none; }
+.pick h4[data-picker-drag-handle]:active { cursor: grabbing; }
+.pickgrip { width: 10px; height: 16px; color: var(--faint); display: flex; flex: none; }
+.pickgrip svg { width: 10px !important; height: 14px !important; fill: currentColor; }
 .pick h4 .fl { color: var(--amber-300); display: flex; }
 .pick h4 svg { width: 12px; height: 12px; }
 .opt { font-size: 11px; color: var(--faint); font-weight: 500; margin-left: auto; }
+.observation-identity { display: inline-flex; align-items: baseline; gap: 5px;
+                        margin: 3px 0 7px; color: var(--muted); }
+.observation-identity__label { font-size: 10px; }
+.observation-identity__value { color: var(--text); font: 600 10.5px/1.2 ui-monospace, monospace;
+                              user-select: text; }
 .pick p { margin: 0 0 11px; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
 .chips { display: flex; flex-wrap: wrap; gap: 7px; }
 .chip { height: 40px; display: flex; align-items: center; gap: 7px; padding: 0 15px;
@@ -587,6 +623,42 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
   border: 2px solid currentColor; border-right-color: transparent;
   animation: spin .62s linear infinite;
 }
+
+.full-frame-state { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin: 4px 0 10px; font-size: 11px; color: var(--muted); }
+.full-frame-state label { display: flex; align-items: center; gap: 5px; }
+.full-frame-state__reason { flex-basis: 100%; color: var(--amber-300); }
+
+#frameViewer[hidden] { display: none; }
+#frameViewer { position: fixed; inset: 0; z-index: 80; background: rgba(2, 9, 17, .94); }
+.frame-viewer { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; }
+.frame-viewer__bar { display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 8px; padding: 10px 14px; color: var(--white); background: #081522;
+  border-bottom: 1px solid var(--line); }
+.frame-viewer__controls { display: flex; align-items: center; gap: 7px; }
+.frame-viewer__controls button { min-height: 34px; padding: 5px 10px; border: 1px solid var(--line);
+  border-radius: 5px; color: var(--white); background: var(--panel); cursor: pointer; }
+.frame-viewer__controls output { min-width: 46px; text-align: center; color: var(--muted); }
+.frame-viewer__viewport { min-height: 0; overflow: auto; display: flex;
+  cursor: grab; touch-action: none; overscroll-behavior: contain; }
+.frame-viewer__viewport.dragging { cursor: grabbing; }
+.frame-viewer__image { position: relative; flex: none; margin: auto; transition: width 100ms ease; }
+.frame-viewer__image.pinching { transition: none; }
+.frame-viewer__image img { display: block; width: 100%; height: auto; user-select: none; pointer-events: none; }
+.frame-viewer__box { position: absolute; box-sizing: border-box;
+  container-type: inline-size; border: 2px solid #ffba3b;
+  pointer-events: none; }
+.frame-viewer__box-label { position: absolute; left: -2px;
+  box-sizing: border-box; width: calc(100% + 4px);
+  padding: clamp(1px, 1.5cqw, 3px) clamp(2px, 3cqw, 6px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: rgba(5, 12, 18, .28); color: rgba(255, 255, 255, .96);
+  font-size: clamp(7px, 9cqw, 15px); font-weight: 600; line-height: 1.2;
+  letter-spacing: .005em; text-shadow: 0 1px 2px rgba(0, 0, 0, .95);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.frame-viewer__box-label--species { bottom: 100%; }
+.frame-viewer__box-label--observation { top: 100%;
+  color: rgba(255, 255, 255, .82); font-size: clamp(7px, 7cqw, 12px); font-weight: 500; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .commit .spin { animation-duration: 2.4s; } }
 
