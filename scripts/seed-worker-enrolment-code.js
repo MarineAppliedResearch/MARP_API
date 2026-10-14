@@ -65,7 +65,11 @@ const LABEL = 'Standing volunteer enrolment code';
  * expected has no way to tell that from a broken build, and will not try twice.
  * `revoked_at` is the control that is meant to be used.
  */
-const MAX_USES = 10000;
+/** No limit. A build of the worker has to keep working; revoking is the control (#208). */
+const MAX_USES = null;
+
+/** How the limit reads in what this prints. */
+const USES = MAX_USES === null ? 'no use limit' : `${MAX_USES} uses`;
 
 /** Ten years. Long enough that expiry is never the reason a volunteer is turned away. */
 const YEARS = 10;
@@ -105,9 +109,8 @@ async function main() {
     if (!apply) {
         console.log(existing
             ? `Would refresh the existing standing code (id ${existing.id}, used `
-              + `${existing.use_count} of ${existing.max_uses}) to ${MAX_USES} uses and a `
-              + `${YEARS}-year expiry.`
-            : `Would create a standing enrolment code, ${MAX_USES} uses, ${YEARS}-year expiry.`);
+              + `${existing.use_count} times) to ${USES} and a ${YEARS}-year expiry.`
+            : `Would create a standing enrolment code, ${USES}, ${YEARS}-year expiry.`);
         if (generated) {
             console.log('A code would be generated. Re-run with --apply to see it, once.');
         }

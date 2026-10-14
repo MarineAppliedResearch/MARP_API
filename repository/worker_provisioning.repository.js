@@ -54,7 +54,10 @@ class WorkerProvisioningRepository {
                 transaction,
                 lock: transaction.LOCK.UPDATE,
             });
-            if (!code || code.revoked_at || code.use_count >= code.max_uses || new Date(code.expires_at) <= new Date()) return null;
+            // `max_uses` null means no limit (#208): the code in the volunteer installer must
+            // not stop working at a number nobody is watching. Revoking is the control.
+            const spent = code && code.max_uses != null && code.use_count >= code.max_uses;
+            if (!code || code.revoked_at || spent || new Date(code.expires_at) <= new Date()) return null;
 
             let client = await db.service_clients.findOne({
                 where: { name: WORKER_APP_NAME },
@@ -73,7 +76,13 @@ class WorkerProvisioningRepository {
                 transaction,
                 lock: transaction.LOCK.UPDATE,
             });
-            if (worker && worker.service_token_id) return { conflict: true };
+            // A machine that already activated is issued a fresh credential and its old one is
+            // revoked, rather than being refused (#217). Activation spends the code before the
+            // worker writes what it was given, so any failure in that window -- a bad write, a
+            // full disk, a process killed -- used to leave a machine the coordinator believed
+            // was enrolled and that could authenticate as nobody, with no way back without an
+            // administrator. Unattended volunteer enrolment has no administrator.
+            const previousTokenId = worker ? worker.service_token_id : null;
             if (!worker) {
                 worker = await db.gpu_workers.create({
                     local_id: localId,
@@ -112,6 +121,14 @@ class WorkerProvisioningRepository {
                 compute_runtime,
                 worker_version: workerVersion || worker.worker_version,
             }, { transaction });
+            // The credential this machine held before is revoked as the new one is issued, so a
+            // re-enrolment never leaves two live credentials for one machine (#217).
+            if (previousTokenId) {
+                await db.service_tokens.update(
+                    { revoked_at: new Date() },
+                    { where: { service_token_id: previousTokenId }, transaction }
+                );
+            }
             await code.update({
                 use_count: code.use_count + 1,
                 consumed_at: new Date(),
