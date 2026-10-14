@@ -573,13 +573,21 @@ are #104's measurement comment and its two decision comments.
     intended contract; their progress, worker, ETA and series values are deterministic review
     fixtures in Phase 0.
 
-    **A dataset build is not a Job, settled 2026-10-14 in #128.** This used to read "not *yet*
-    a first-class shared Job kind", which left the Jobs screen showing six hand-written Dataset
-    Build rows against the day MARP grew the kind. It is not growing one: building a dataset is
-    the Datasets screen's work, not the job queue's. The rows are gone, and with them the
-    headline cards disagreeing with the table beneath them. MARP's job kinds are inference,
-    tracking, training and diagnostic, and `tools/api-contract-check.mjs` fails if the dashboard
-    starts believing in a fifth.
+    **A dataset build is not a GPU job, settled 2026-10-14 in #128.** The ML Dashboard still
+    builds datasets — that work is real, it is tracked, and the Datasets screen owns it. What
+    it is not is a `gpu_jobs` row: it is not leased through `POST /gpu/poll`, not run by the
+    inference worker, and not one of MARP's job kinds, which are inference, tracking, training
+    and diagnostic.
+
+    This gap used to read "not *yet* a first-class shared Job kind". That "yet" is what did the
+    damage: it left the **Jobs** screen — the GPU queue — showing six hand-written Dataset Build
+    rows against a day that is not coming, and those rows made its headline cards disagree with
+    the table beneath them, 18 running against 20. They are gone from that screen only.
+    `tools/api-contract-check.mjs` fails if the dashboard starts believing in a fifth GPU job
+    kind.
+
+    What dataset builds run *on* is a separate question this did not settle — the Datasets
+    fixtures name a `gpu-build-02` worker, and nothing in the API backs that yet.
 20. **Model-registry trend and cache-coverage history** — current model and worker snapshots can
     supply present totals, but no sampled registry/cache series exists. The Models graph is
     deterministic Phase 0 design data.
