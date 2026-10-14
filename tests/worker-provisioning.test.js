@@ -109,6 +109,68 @@ describe('worker activation and operator-selected updates', () => {
         }
     });
 
+    it('a code with no use limit keeps working, and a machine can enrol again (#208, #217)', async () => {
+        // The code the volunteer installer carries must not stop working at a number nobody is
+        // watching: a build of the worker has to keep working (Isaac, 2026-10-14).
+        const code = `jest-standing-${runId}`;
+        const [row] = await db.sequelize.query(
+            `INSERT INTO worker_activation_codes (code_prefix, code_hash, label, expires_at, max_uses, use_count, "createdAt", "updatedAt")
+             VALUES ('jest', :hash, :label, NOW() + INTERVAL '1 day', NULL, 0, NOW(), NOW())
+             RETURNING id`,
+            {
+                // Hashed the way the repository hashes it; only the hash is ever stored.
+                replacements: { hash: require('crypto').createHash('sha256').update(code).digest('hex'), label: `standing-${runId}` },
+                type: db.Sequelize.QueryTypes.SELECT,
+            }
+        );
+        const machines = [];
+        const issuedTokens = [];
+        const enrol = (suffix) => request(app).post('/api/v2/gpu/workers/activate').send({
+            activation_code: code,
+            local_id: `standing-${runId}-${suffix}`,
+            name: `standing-worker-${runId}-${suffix}`,
+            platform: 'linux',
+            architecture: 'x86_64',
+            compute_runtime: 'cuda12.8',
+        });
+        try {
+            // More machines than any cap this used to carry would be tested with; the point is
+            // that nothing counts down to zero.
+            for (const suffix of ['a', 'b', 'c']) {
+                const response = await enrol(suffix);
+                expect(response.status).toBe(201);
+                machines.push(Number(response.body.worker_id));
+            }
+
+            // The same machine again: activation spends the code before the worker writes the
+            // credential, so a failed write used to leave it enrolled, unable to authenticate,
+            // and refused for ever. It is issued a fresh credential instead (#217).
+            const first = await db.gpu_workers.findOne({ where: { local_id: `standing-${runId}-a` } });
+            // Kept for the cleanup: re-enrolling leaves the old credential revoked but present,
+            // and a test removes every row it created.
+            issuedTokens.push(first.service_token_id);
+            const again = await enrol('a');
+            expect(again.status).toBe(201);
+            expect(Number(again.body.worker_id)).toBe(machines[0]);
+
+            const after = await db.gpu_workers.findOne({ where: { local_id: `standing-${runId}-a` } });
+            expect(after.service_token_id).not.toBe(first.service_token_id);
+            // And the credential it held before is dead, so one machine never has two.
+            const old = await db.service_tokens.findOne({ where: { service_token_id: first.service_token_id } });
+            expect(old.revoked_at).not.toBeNull();
+        } finally {
+            const workers = await db.gpu_workers.findAll({ where: { id: machines } });
+            const tokenIds = [...new Set(workers.map((worker) => worker.service_token_id)
+                .concat(issuedTokens).filter(Boolean))];
+            await db.gpu_workers.destroy({ where: { id: machines } });
+            if (tokenIds.length) {
+                await db.service_token_permissions.destroy({ where: { service_token_id: tokenIds } });
+                await db.service_tokens.destroy({ where: { service_token_id: tokenIds } });
+            }
+            await db.worker_activation_codes.destroy({ where: { id: row.id } });
+        }
+    });
+
     it('binds a revocable credential to one worker and keeps failed updates terminal', async () => {
         const code = await global.api
             .post('/api/v2/gpu/worker-activation-codes')
