@@ -476,24 +476,61 @@
 
     const TYPES = ['detection', 'classification', 'segmentation'];
 
-    for (let i = 1; i <= 28; i++) {
-      const type = pick(r, TYPES);
-      const family = pick(r, ['fish', 'inverts', 'habitat', 'rockfish']);
-      const version = int(r, 1, 7);
+    /* **Built as chains, not as 28 independent rows.** Picking a family, a
+       version and a parent separately produced a model called `-v5` whose
+       `parent_model_id` walk said it was the third generation, and a reader
+       comparing the name with the Version column would have been right to
+       distrust both. A family is now generated in order: generation k is named
+       for k and its parent is generation k-1, so the name and the self-join
+       cannot disagree. */
+    const FAMILIES = [
+      ['fish', 'detection'], ['inverts', 'detection'], ['rockfish', 'detection'],
+      ['habitat', 'classification'], ['substrate', 'classification'],
+      ['coral-masks', 'segmentation'], ['sponge-masks', 'segmentation'],
+    ];
 
-      models.push({
-        id: i,
-        name: `marp-${family}-v${version}`,
-        /* A version chain is a self-join, not a `versions` array -- gap 16. */
-        parent_model_id: version > 1 && r() < 0.7 ? Math.max(1, i - 1) : null,
-        model_type: type,
-        architecture_version: `yolov8${pick(r, ['n', 's', 'm', 'l'])}`,
-        storage_path: `models/marp-${family}-v${version}/weights/best.pt`,
-        status: r() < 0.72 ? 'trained' : pick(r, MODEL_STATUSES.filter((x) => x !== 'trained')),
-        notes: null,
-        created_at: ago(int(r, 1440, 300000)),
-        updated_at: ago(int(r, 60, 1440)),
-      });
+    let modelId = 0;
+    for (const [family, type] of FAMILIES) {
+      const generations = int(r, 2, 6);
+      let parent = null;
+      /* The oldest generation is the oldest row; each one follows its parent. */
+      let bornMinutes = int(r, 200000, 320000);
+
+      for (let version = 1; version <= generations; version++) {
+        modelId += 1;
+        /* The newest generation is the live one; older ones are archived, which
+           is what a registry actually looks like after a year. */
+        /* The newest generation is the live one. Older ones mostly retire, but
+           not all of them: archiving every ancestor left a registry that was
+           four fifths archived, which is a graveyard rather than a registry. */
+        const newest = version === generations;
+        const status = newest
+          ? (r() < 0.78 ? 'trained' : pick(r, ['training', 'draft']))
+          : (r() < 0.55 ? 'archived' : 'trained');
+
+        models.push({
+          id: modelId,
+          name: `marp-${family}-v${version}`,
+          /* A version chain is a self-join, not a `versions` array -- gap 16. */
+          parent_model_id: parent,
+          model_type: type,
+          architecture_version: `yolov8${pick(r, ['n', 's', 'm', 'l'])}`,
+          storage_path: `models/marp-${family}-v${version}/weights/best.pt`,
+          status,
+          notes: null,
+          created_at: ago(bornMinutes),
+          /* The live generation was touched this week; its ancestors were last
+             touched around when they were superseded. All of them updated
+             within a day made "recently trained" mean "every model", and all
+             of them old made it mean none. */
+          updated_at: newest
+            ? ago(int(r, 60, 7 * 1440))
+            : ago(Math.max(1440, bornMinutes - int(r, 500, 40000))),
+        });
+
+        parent = modelId;
+        bornMinutes = Math.max(2000, bornMinutes - int(r, 20000, 60000));
+      }
     }
 
     for (let i = 1; i <= 38; i++) {

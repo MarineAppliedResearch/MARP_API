@@ -328,13 +328,17 @@ function wireSelection() {
  */
 function wireSorting() {
   $$('table.tbl').forEach((table) => {
-    /* Jobs, Workers and History sort their *data* and re-render, not their
-       DOM. Sorting rows here would only ever reorder the page you can see,
-       which is a different answer from the one the column promises once the
-       list is paged -- and with both handlers bound the two sorts fought,
-       leaving the arrow saying ascending over descending rows. That happened
-       twice, which is why this is a list rather than three separate guards. */
-    if (['jobs', 'workers', 'history'].includes(table.id)) return;
+    /* **A table that sorts its own data says so, and is left alone here.**
+       Sorting rows in the DOM only ever reorders the page you can see, which
+       is a different answer from the one the column promises once a list is
+       paged -- and with both handlers bound the two sorts fight, leaving the
+       arrow claiming ascending over descending rows.
+
+       This was a list of table ids and it was forgotten three times, once per
+       screen, each time producing the same silent wrong order. Now the screen
+       that takes over sorting marks the table as it draws it, so forgetting is
+       not possible: whoever owns the data owns the sort. */
+    if (table.dataset.sortsItsOwnData === 'true') return;
 
     const heads = $$('th.sortable', table);
     const body = $('tbody', table);
@@ -936,6 +940,7 @@ let jobsWindow = null;
  */
 function applyJobsQuery() {
   const table = $('#jobs');
+  if (table) table.dataset.sortsItsOwnData = 'true';
   if (!table || !jobsWindow) return;
 
   const body = $('tbody', table);
@@ -981,6 +986,378 @@ function applyJobsQuery() {
   wireSelection();
   applyTips();
 }
+
+/* ============================================================ models */
+
+/* `GET /api/v2/ml_models` is the whole of what the registry knows: id, name,
+   parent_model_id, model_type, architecture_version, storage_path, status,
+   notes and the two timestamps. Three of the table's columns ask for more than
+   that -- the training dataset, key metrics and how many workers hold a model
+   -- and none of the three is anywhere in MARP. Gap 28. */
+
+/** The registry does not carry this. Distinct from "not measured yet". */
+const NOT_IN_REGISTRY = '<span class="dash" title="Not carried by ml_models: the dataset link lives on a training run, which cannot be listed, and nothing records metrics, cache placement or a preferred model (gap 28)">&mdash;</span>';
+
+/** MARP's `ml_models.status`, in the design's own state words. @type {Object} */
+const MODEL_STATE = {
+  trained: ['done', 'Trained'],
+  training: ['running', 'Training'],
+  draft: ['queued', 'Draft'],
+  archived: ['cancelled', 'Archived'],
+};
+
+/** What the Models screen is asking for. The route takes no parameters. */
+const modelsQuery = {
+  task: '', status: '', base: '', search: '',
+  sort: { key: 'hupd', dir: 'descending' },
+  page: 1, perPage: 8,
+};
+
+/** How each sortable column orders. Keyed by the header's class. */
+const MODELS_SORT_KEYS = {
+  hname: (v) => v.model.name.toLowerCase(),
+  htask: (v) => v.model.model_type,
+  hver: (v) => v.version,
+  hstatus: (v) => ['training', 'draft', 'trained', 'archived'].indexOf(v.model.status),
+  hbase: (v) => (v.model.architecture_version || '').toLowerCase(),
+  hupd: (v) => v.model.updated_at,
+};
+
+/** The registry, as fetched. */
+let modelsRegistry = null;
+
+/**
+ * Which generation a model is, by walking `parent_model_id`.
+ *
+ * **A version chain is a self-join** (gap 16): `ml_models` has no `versions`
+ * array and no version number, so "v3" is a position in a chain rather than a
+ * field. Walking it here is honest and cheap at registry size; it is also
+ * exactly the work a route would do if one ever returned a chain.
+ *
+ * @param {Object} model - The model.
+ * @param {Map<number,Object>} byId - Every model, by id.
+ * @returns {number} 1 for a root model.
+ */
+function modelGeneration(model, byId) {
+  let depth = 1;
+  let current = model;
+  const seen = new Set([model.id]);
+
+  while (current.parent_model_id && byId.has(current.parent_model_id)) {
+    /* A cycle would hang this. Self-joins are not guaranteed acyclic by
+       anything in the schema, so the walk refuses to revisit. */
+    if (seen.has(current.parent_model_id)) break;
+    seen.add(current.parent_model_id);
+    current = byId.get(current.parent_model_id);
+    depth += 1;
+  }
+  return depth;
+}
+
+/**
+ * One model, reduced to what the table shows and sorts on.
+ *
+ * @param {Object} model - From `GET /api/v2/ml_models`.
+ * @param {Map<number,Object>} byId - Every model, by id.
+ * @returns {Object}
+ */
+function modelView(model, byId) {
+  const [state, label] = MODEL_STATE[model.status] || ['queued', model.status];
+  return {
+    model, state, label,
+    version: modelGeneration(model, byId),
+    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status}`.toLowerCase(),
+  };
+}
+
+/**
+ * A model, as its row and its expanded detail.
+ *
+ * @param {Object} view - From `modelView`.
+ * @param {Map<number,Object>} byId - Every model, by id.
+ * @returns {string} Two `<tr>`s.
+ */
+function modelRows(view, byId) {
+  const { model } = view;
+  const parent = model.parent_model_id && byId.get(model.parent_model_id);
+
+  const head = `<tr class="runrow-head" data-model="${model.id}" aria-expanded="false">`
+    + `<td class="ex"><button class="exbtn" type="button" aria-label="Show ${model.name} details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
+    + `<td class="hname"><span class="name"><svg class="ico models"><use href="#i-models"/></svg><span class="t">${model.name}</span></span></td>`
+    + `<td class="htask"><span class="tag">${model.model_type}</span></td>`
+    + `<td class="hver">v${view.version}</td>`
+    + `<td class="hstatus" data-sort="${MODELS_SORT_KEYS.hstatus(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+    + `<td class="hbase">${model.architecture_version || NOT_REPORTED}</td>`
+    + `<td class="hdset">${NOT_IN_REGISTRY}</td>`
+    + `<td class="hmodel">${NOT_IN_REGISTRY}</td>`
+    + `<td class="hcache num">${NOT_IN_REGISTRY}</td>`
+    + `<td class="hupd">${sinceText(model.updated_at)}</td>`
+    + '<td class="hacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
+    + '</tr>';
+
+  const body = '<tr class="runrow-body"><td colspan="11"><div class="rundetail">'
+    + `<div class="wdhead"><span class="name"><svg class="ico models"><use href="#i-models"/></svg><span class="t">${model.name}</span></span>`
+    + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
+    + `<span class="wid mono" title="Model id as the registry reports it">ml_${model.id}</span></div>`
+    + '<div class="grid" data-cols="2">'
+    + '<div class="sect"><h3>In the registry</h3><dl class="kv">'
+    + `<dt>Task</dt><dd>${model.model_type}</dd>`
+    + `<dt>Architecture</dt><dd>${model.architecture_version || NOT_REPORTED}</dd>`
+    + `<dt>Generation</dt><dd>v${view.version}${parent ? ` &middot; from ${parent.name}` : ' &middot; root model'}</dd>`
+    + `<dt>Weights</dt><dd class="mono">${model.storage_path || NOT_REPORTED}</dd>`
+    + `<dt>Registered</dt><dd>${new Date(model.created_at).toISOString().slice(0, 10)}</dd>`
+    + `<dt>Updated</dt><dd>${sinceText(model.updated_at)}</dd>`
+    + '</dl></div>'
+    + '<div class="sect"><h3>Not in the registry</h3>'
+    + '<p class="muted">Which dataset trained this model, how it scored, and how many workers hold it '
+    + 'are all absent from <code>ml_models</code>. The link to a dataset exists on a training run, and '
+    + '<code>/v2/training_run</code> has only a <code>POST</code> — a run can be created and never '
+    + 'listed. Nothing marks a model preferred. Gap 28.</p></div>'
+    + '</div></div></td></tr>';
+
+  return head + body;
+}
+
+/** Narrows, sorts and pages the registry, then draws it. */
+function applyModelsQuery() {
+  const table = $('#models');
+  if (table) table.dataset.sortsItsOwnData = 'true';
+  if (!table || !modelsRegistry) return;
+
+  const body = $('tbody', table);
+  const byId = new Map(modelsRegistry.map((m) => [m.id, m]));
+  let views = modelsRegistry.map((m) => modelView(m, byId));
+
+  renderModelsSummary(views);
+
+  if (modelsQuery.task) views = views.filter((v) => v.model.model_type === modelsQuery.task);
+  if (modelsQuery.status) views = views.filter((v) => v.model.status === modelsQuery.status);
+  if (modelsQuery.base) views = views.filter((v) => v.model.architecture_version === modelsQuery.base);
+  if (modelsQuery.search) views = views.filter((v) => v.haystack.includes(modelsQuery.search));
+
+  const key = MODELS_SORT_KEYS[modelsQuery.sort.key] || MODELS_SORT_KEYS.hupd;
+  const sign = modelsQuery.sort.dir === 'ascending' ? 1 : -1;
+  views.sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    if (left < right) return -1 * sign;
+    if (left > right) return 1 * sign;
+    return a.model.id - b.model.id;
+  });
+
+  const total = views.length;
+  const pages = Math.max(1, Math.ceil(total / modelsQuery.perPage));
+  if (modelsQuery.page > pages) modelsQuery.page = pages;
+  const from = (modelsQuery.page - 1) * modelsQuery.perPage;
+  const shown = views.slice(from, from + modelsQuery.perPage);
+
+  const columns = $$('thead th', table).length;
+  body.innerHTML = shown.length
+    ? shown.map((view) => modelRows(view, byId)).join('')
+    : `<tr class="tblmsg"><td class="empty" colspan="${columns}">No models match these filters.</td></tr>`;
+
+  const heading = $('#model-registry .panel-hd h2');
+  if (heading) heading.textContent = `Model registry (${total.toLocaleString()})`;
+
+  const showing = $('#model-registry .panel-ft > span');
+  if (showing) {
+    showing.innerHTML = shown.length
+      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} models`
+      : 'No models match these filters';
+  }
+
+  const pager = $('#model-registry .panel-ft .pager');
+  if (pager) {
+    const buttons = [`<button aria-label="Previous page" data-models-page="${modelsQuery.page - 1}"${modelsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
+    const first = Math.max(1, Math.min(modelsQuery.page - 2, pages - 4));
+    for (let p = first; p <= Math.min(pages, first + 4); p++) {
+      buttons.push(`<button data-models-page="${p}"${p === modelsQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
+    }
+    buttons.push(`<button aria-label="Next page" data-models-page="${modelsQuery.page + 1}"${modelsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
+    pager.innerHTML = buttons.join('');
+  }
+
+  for (const th of $$('#models thead th.sortable')) {
+    const sortKey = [...th.classList].find((c) => MODELS_SORT_KEYS[c]);
+    if (!sortKey) continue;
+    if (sortKey === modelsQuery.sort.key) th.setAttribute('aria-sort', modelsQuery.sort.dir);
+    else th.removeAttribute('aria-sort');
+  }
+
+  wireAccordions();
+}
+
+/**
+ * The four cards and the registry-status donut.
+ *
+ * Two of the four cards ask for things `ml_models` does not carry, and they say
+ * so rather than showing a number nothing produced.
+ *
+ * @param {Object[]} views - Every model.
+ */
+function renderModelsSummary(views) {
+  const count = (status) => views.filter((v) => v.model.status === status).length;
+  const trained = count('trained');
+  const training = count('training');
+  const draft = count('draft');
+  const archived = count('archived');
+  const total = views.length || 1;
+
+  const newest = views.reduce((max, v) => Math.max(max, Date.parse(v.model.updated_at)), 0);
+  const recent = views.filter((v) => v.model.status === 'trained'
+    && Date.parse(v.model.updated_at) >= newest - 7 * 86400000).length;
+
+  const byLabel = {};
+  for (const card of $$('.stat')) {
+    const label = $('.stat-lab', card);
+    if (label) byLabel[label.textContent.trim()] = card;
+  }
+  const set = (label, num, sub) => {
+    const card = byLabel[label];
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.innerHTML = num;
+    const s = $('.stat-sub', card);
+    if (s) s.innerHTML = `<span>${sub}</span>`;
+  };
+
+  set('Registered models', String(views.length), `${trained} trained &middot; ${training} training`);
+  set('Preferred models', NOT_IN_REGISTRY, 'nothing marks a model preferred');
+  set('Cached on workers', NOT_IN_REGISTRY, 'no worker reports what it holds');
+  set('Recently trained', String(recent), 'updated in the last 7 days');
+
+  const parts = [['done', trained, 'Trained'], ['running', training, 'Training'], ['queued', draft, 'Draft'], ['cancelled', archived, 'Archived']];
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const arcs = $$('.donut-part', donut);
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = parts[index] ? parts[index][1] : 0;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(views.length);
+  }
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = parts
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+}
+
+/**
+ * Fills the Models screen from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderModelsScreen() {
+  const table = $('#models');
+  if (!table || !window.MarpApi) return;
+
+  const body = $('tbody', table);
+  const columns = $$('thead th', table).length;
+  body.innerHTML = `<tr class="tblmsg"><td class="loading" colspan="${columns}">Loading the registry&hellip;</td></tr>`;
+
+  try {
+    modelsRegistry = await window.MarpApi.listModels();
+    fillModelsFilterOptions();
+    applyModelsQuery();
+  } catch (error) {
+    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="${columns}">Could not load the registry (${error.status || 'no answer'}). `
+      + '<button class="btn sm" type="button" id="modelsRetry">Try again</button></td></tr>';
+    $('#modelsRetry')?.addEventListener('click', renderModelsScreen);
+  }
+}
+
+/**
+ * Fills the Task and Base model selectors from what is there.
+ *
+ * The Dataset selector is left alone and disabled: `ml_models` has no dataset
+ * link, so every choice it could offer would match nothing.
+ */
+function fillModelsFilterOptions() {
+  const selects = {};
+  for (const select of $$('select')) selects[select.getAttribute('aria-label')] = select;
+
+  const tasks = [...new Set(modelsRegistry.map((m) => m.model_type))].sort();
+  const bases = [...new Set(modelsRegistry.map((m) => m.architecture_version).filter(Boolean))].sort();
+
+  if (selects.Task) {
+    selects.Task.innerHTML = ['<option>All tasks</option>', ...tasks.map((t) => `<option>${t}</option>`)].join('');
+  }
+  if (selects['Base model']) {
+    selects['Base model'].innerHTML = ['<option>All base models</option>', ...bases.map((b) => `<option>${b}</option>`)].join('');
+  }
+  if (selects.Dataset) {
+    selects.Dataset.innerHTML = '<option>Not linked in the registry</option>';
+    selects.Dataset.disabled = true;
+    selects.Dataset.title = 'ml_models carries no dataset link; the connection lives on a training run, which cannot be listed (gap 28)';
+  }
+}
+
+/** The Models filters, sort headers and pager. Bound once. */
+function wireModelsControls() {
+  const panel = $('#model-registry');
+  if (!panel) return;
+
+  const renarrow = () => { modelsQuery.page = 1; applyModelsQuery(); };
+  const selects = {};
+  for (const select of $$('select')) selects[select.getAttribute('aria-label')] = select;
+
+  selects.Task?.addEventListener('change', () => {
+    modelsQuery.task = selects.Task.value.startsWith('All') ? '' : selects.Task.value;
+    renarrow();
+  });
+  selects.Status?.addEventListener('change', () => {
+    modelsQuery.status = {
+      Trained: 'trained', Training: 'training', Draft: 'draft', Archived: 'archived',
+    }[selects.Status.value] || '';
+    renarrow();
+  });
+  selects['Base model']?.addEventListener('change', () => {
+    modelsQuery.base = selects['Base model'].value.startsWith('All') ? '' : selects['Base model'].value;
+    renarrow();
+  });
+
+  const search = $('.search input', panel) || $('#filters input[type="search"]');
+  if (search) {
+    search.addEventListener('input', () => {
+      modelsQuery.search = search.value.trim().toLowerCase();
+      renarrow();
+    });
+  }
+
+  for (const th of $$('#models thead th.sortable')) {
+    const key = [...th.classList].find((c) => MODELS_SORT_KEYS[c]);
+    if (!key) continue;
+    th.addEventListener('click', () => {
+      if (modelsQuery.sort.key === key) {
+        modelsQuery.sort.dir = modelsQuery.sort.dir === 'ascending' ? 'descending' : 'ascending';
+      } else {
+        modelsQuery.sort = { key, dir: 'ascending' };
+      }
+      modelsQuery.page = 1;
+      applyModelsQuery();
+    });
+  }
+
+  const pager = $('.panel-ft .pager', panel);
+  if (pager) {
+    pager.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-models-page]');
+      if (!button || button.disabled) return;
+      modelsQuery.page = Number(button.dataset.modelsPage);
+      applyModelsQuery();
+    });
+  }
+}
+
 
 /* =========================================================== history */
 
@@ -1055,6 +1432,7 @@ function tookText(ms) {
 /** Narrows, sorts and pages the finished work, then draws it. */
 function applyHistoryQuery() {
   const table = $('#history');
+  if (table) table.dataset.sortsItsOwnData = 'true';
   if (!table || !historyData) return;
 
   const body = $('tbody', table);
@@ -1713,6 +2091,7 @@ function workerRows(view) {
 /** Narrows, sorts and pages the pool, then draws it. */
 function applyWorkersQuery() {
   const table = $('#workers');
+  if (table) table.dataset.sortsItsOwnData = 'true';
   if (!table || !workersPool) return;
 
   const body = $('tbody', table);
@@ -4169,12 +4548,13 @@ wireRowSelect();
 
    Off those screens each render resolves without doing anything, so this costs
    one microtask and no special case. */
-Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen()]).then(() => {
+Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen(), renderModelsScreen()]).then(() => {
   /* `applyJobsQuery` and `applyWorkersQuery` rewire the rows they draw; these
      are the ones that bind once, to controls that outlive every redraw. */
   wireJobsControls();
   wireWorkersControls();
   wireHistoryControls();
+  wireModelsControls();
   wireSorting();
   wireJobsOverview();
   wireSelection();

@@ -57,17 +57,40 @@ function arrayFrom(name) {
         .filter(Boolean);
 }
 
-/* Each pair is a list the data layer copies and the server owns. `name` is what
-   the data layer calls it; `theirs` is the server's export. */
+/* Not every enum the dashboard copies belongs to the GPU orchestrator. A
+   model's lifecycle is declared on the model itself and reaches the outside
+   world through the generated contract, so that is where it is read from --
+   and it has to be read from somewhere, because the Models screen was built
+   against "Ready / Testing / Error", three words MARP has never used. */
+const contract = JSON.parse(readFileSync(join(repo, 'docs', 'openapi.generated.json'), 'utf8'));
+
+/**
+ * One property's `enum` out of the generated contract.
+ *
+ * @param {string} schema - Schema name, e.g. `MlModel`.
+ * @param {string} property - Property name, e.g. `status`.
+ * @returns {?string[]} Its values, or null when the contract does not declare one.
+ */
+function enumFromContract(schema, property) {
+    const node = contract.components
+        && contract.components.schemas
+        && contract.components.schemas[schema];
+    const field = node && node.properties && node.properties[property];
+    return field && Array.isArray(field.enum) ? field.enum : null;
+}
+
+/* Each pair is a list the data layer copies and MARP owns. `name` is what the
+   data layer calls it; `theirs` is where the real definition lives. */
 const PAIRS = [
-    { name: 'JOB_KINDS', theirs: orchestration.JOB_KINDS },
-    { name: 'JOB_STATES', theirs: orchestration.JOB_STATES },
-    { name: 'WORKER_STATES', theirs: orchestration.WORKER_STATES },
+    { name: 'JOB_KINDS', theirs: orchestration.JOB_KINDS, from: 'config/gpu-orchestration.js' },
+    { name: 'JOB_STATES', theirs: orchestration.JOB_STATES, from: 'config/gpu-orchestration.js' },
+    { name: 'WORKER_STATES', theirs: orchestration.WORKER_STATES, from: 'config/gpu-orchestration.js' },
+    { name: 'MODEL_STATUSES', theirs: enumFromContract('MlModel', 'status'), from: 'docs/openapi.generated.json (MlModel.status)' },
 ];
 
 const problems = [];
 
-for (const { name, theirs } of PAIRS) {
+for (const { name, theirs, from } of PAIRS) {
     const ours = arrayFrom(name);
 
     if (!ours) {
@@ -75,7 +98,7 @@ for (const { name, theirs } of PAIRS) {
         continue;
     }
     if (!Array.isArray(theirs)) {
-        problems.push(`${name} is not exported by config/gpu-orchestration.js.`);
+        problems.push(`${name} is not declared by ${from}.`);
         continue;
     }
 
@@ -85,7 +108,7 @@ for (const { name, theirs } of PAIRS) {
         problems.push(
             `${name} has drifted.\n`
             + `      api.js: ${ours.join(', ')}\n`
-            + `      MARP:   ${theirs.join(', ')}`
+            + `      MARP:   ${theirs.join(', ')}   (${from})`
         );
     }
 }
@@ -103,9 +126,10 @@ if (invented.length) {
 
 if (problems.length) {
     for (const problem of problems) console.error(`[x] ${problem}`);
-    console.error(`\n${problems.length} contract problem${problems.length === 1 ? '' : 's'} between `
-        + `${relative(repo, join(app, 'mockups', 'api.js'))} and config/gpu-orchestration.js.`);
+    console.error(`\n${problems.length} contract problem${problems.length === 1 ? '' : 's'} in `
+        + `${relative(repo, join(app, 'mockups', 'api.js'))}. Each line above says where MARP `
+        + 'declares the real list.');
     process.exit(1);
 }
 
-console.log(`ok  ${PAIRS.length + 1} enums agree with config/gpu-orchestration.js`);
+console.log(`ok  ${PAIRS.length + 1} enums agree with MARP (orchestrator config and the generated contract)`);
