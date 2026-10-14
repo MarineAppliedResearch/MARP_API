@@ -595,6 +595,18 @@ are #104's measurement comment and its two decision comments.
     the screen computes the percentage, so it can say "1,240 of 3,000 frames" and keep the phase.
     Null before the first heartbeat still draws a dash and never a 0% bar.
 
+24. **The job list cannot be asked a question about time** — `GET /gpu/jobs` filters on
+    `state`, `kind` and `batch_id`, and nothing else. *Completed today* on the Jobs screen is
+    therefore not a query: the dashboard pulls a window of rows back and counts them here.
+    That is fine at a few hundred jobs and is not fine at the scale #104 assumes, where the
+    card would be counting over a page that no longer contains yesterday. The route needs a
+    date range, or a counts endpoint. Found 2026-10-14 while wiring the cards in #128.
+25. **A job has no name** — `GpuJobSpec` carries `engine`, `model`, `video`, `session`,
+    `range`, `params` and `reduction`. Nothing names the job. The titles the screens show are
+    composed from `spec.video.source_name`, which is why they read "SALT 2025 D0895 L4"
+    rather than anything a person chose. A submitted job cannot be given a label and found
+    again by it. Found 2026-10-14 in #128.
+
 ## Running it
 
 ```bash

@@ -74,6 +74,23 @@
   /** An ISO instant `minutes` before the corpus's present. @returns {string} */
   const ago = (minutes) => new Date(NOW - minutes * 60000).toISOString();
 
+  /**
+   * `length` lower-case hexadecimal characters.
+   *
+   * Weights and videos are addressed by hash and by Jellyfin item id, and a
+   * screen that only ever sees `abc123` will not reveal that it has nowhere to
+   * put sixty-four characters.
+   *
+   * @param {function(): number} r - The generator.
+   * @param {number} length - How many characters.
+   * @returns {string}
+   */
+  function hex(r, length) {
+    let out = '';
+    while (out.length < length) out += Math.floor(r() * 16).toString(16);
+    return out;
+  }
+
   /* ============================================================ the real enums */
 
   /* Straight out of config/gpu-orchestration.js. Written here rather than
@@ -103,10 +120,20 @@
     { name: 'NVIDIA RTX 3090', vram: 24576 },
   ];
 
-  const MODELS = [
-    'marp-fish-v7', 'marp-fish-v6', 'marp-inverts-v4', 'marp-inverts-v3',
-    'marp-habitat-v2', 'marp-rockfish-v1',
-  ];
+  /**
+   * Models by the session type they are trained for.
+   *
+   * Keyed rather than listed because the pairing is a rule MARP enforces:
+   * `checkSessionTypeAgainstModel` refuses an inverts model writing into a Fish
+   * session. Picking a model and a session type independently produced jobs the
+   * real API would have rejected at submission -- a corpus full of work that
+   * could not exist, which teaches a screen to draw something it will never see.
+   */
+  const MODELS = {
+    Fish: ['marp-fish-v7', 'marp-fish-v6', 'marp-rockfish-v1'],
+    Invert: ['marp-inverts-v4', 'marp-inverts-v3'],
+    Habitat: ['marp-habitat-v2'],
+  };
 
   const SURVEYS = ['CAMPA 2024', 'GULF 2025', 'PACIFIC 2023', 'SALT 2025'];
 
@@ -188,6 +215,12 @@
         batchPlan.set(start + k, {
           batchId,
           forced: mixed ? (k === 0 || k === 2 ? 'failed' : 'succeeded') : null,
+          /* One mixed batch is made recent on purpose. The list is newest
+             first, so a batch scattered through a fortnight is reachable in the
+             data and still invisible on the first page -- and a state nobody
+             can see on the screen they open is not a state the design has been
+             shown to handle. */
+          recent: b === 0,
         });
       }
     }
@@ -216,17 +249,57 @@
       /* Live work is minutes old; everything terminal is spread over the window
          the History screen is drawn for. */
       const live = state === 'leased' || state === 'queued';
-      const createdMinutes = live ? int(r, 0, 240) : int(r, 60, 60 * 24 * 14);
+      const createdMinutes = (live || (plan && plan.recent))
+        ? int(r, 0, 240)
+        : int(r, 60, 60 * 24 * 14);
+
+      /* Drawn once here because the spec below and the title the screen
+         composes from it have to agree -- a dive on the job and a different
+         dive in its name is the kind of thing nobody notices for weeks. */
+      const dive = String(int(r, 100, 999)).padStart(4, '0');
+      const line = int(r, 1, 24);
+      const survey = pick(r, SURVEYS);
+      const sessionType = pick(r, ['Fish', 'Invert', 'Habitat']);
+      const modelName = pick(r, MODELS[sessionType]);
+      const endFrame = int(r, 1200, 48000);
 
       const job = {
         id: 9000 + i,
         batch_id: plan ? plan.batchId : null,
         kind,
+        /* The real `GpuJobSpec`, not a convenient flattening of it. It has no
+           `name` field -- the job titles the screens show are composed from
+           `session` and `model`, which is why they read
+           "CAMPA_2024_D0305_L15_...". A spec with a `name` on it would be a
+           field MARP does not have, invented here and then expected later. */
         spec: {
-          model: pick(r, MODELS),
-          survey: pick(r, SURVEYS),
-          video: `dive-${int(r, 100, 999)}-cam${int(r, 1, 2)}.mp4`,
-          frame_range: [0, int(r, 1200, 48000)],
+          engine: 'ultralytics',
+          model: {
+            name: modelName,
+            sha256: hex(r, 64),
+            ml_model_id: int(r, 1, 15),
+          },
+          video: {
+            url: `https://jellyfin.local/Items/${hex(r, 32)}/Download`,
+            jellyfin_item_id: hex(r, 32),
+            source_name: `${survey} D${dive} L${line}.mp4`,
+          },
+          session: {
+            session_id: int(r, 1, 127),
+            project_id: int(r, 1, 13),
+            dive,
+            line: String(line),
+            type: sessionType,
+          },
+          range: { start_frame: 0, end_frame: endFrame },
+          params: {
+            conf: Number((0.2 + r() * 0.3).toFixed(2)),
+            iou: 0.7,
+            imgsz: pick(r, [640, 960, 1280]),
+            tracker: 'bytetrack',
+            data_type: sessionType,
+          },
+          reduction: { name: 'bytetrack', version: 1 },
         },
         state,
         priority: int(r, 0, 9),
@@ -251,7 +324,7 @@
          two halves of the corpus are tied together. */
       if (state === 'leased') {
         const worker = workers[int(r, 0, workers.length - 1)];
-        const total = job.spec.frame_range[1];
+        const total = job.spec.range.end_frame;
         const done = int(r, 0, total);
         const attempt = {
           id: ++attemptId,
@@ -298,7 +371,7 @@
 
       if (state === 'succeeded' || state === 'failed') {
         job.attempts_made = state === 'failed' ? int(r, 1, 3) : 1;
-        const total = job.spec.frame_range[1];
+        const total = job.spec.range.end_frame;
         const attempt = {
           id: ++attemptId,
           job_id: job.id,
@@ -346,7 +419,7 @@
           lease_expires_at: ago(-int(r, 1, 20)),
           last_heartbeat_at: ago(0),
           progress_done: int(r, 1, 1000),
-          progress_total: job.spec.frame_range[1],
+          progress_total: job.spec.range.end_frame,
           progress_unit: 'frames',
           progress_phase: 'infer',
           progress_elapsed_s: int(r, 30, 900),

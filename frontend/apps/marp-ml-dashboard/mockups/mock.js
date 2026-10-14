@@ -602,6 +602,253 @@ function wirePoolUtilization() {
   }
 }
 
+/* ============================================================== jobs table */
+
+/* The Jobs table is drawn from the data layer and no longer from its markup.
+   What follows turns one `GET /gpu/jobs` row into one table row, so it is also
+   the seam where the API's vocabulary stops and the design's begins. */
+
+/** `leased` is a lease; `running` is what an operator calls it. @type {Object} */
+const JOB_STATE_LABEL = {
+  queued: ['queued', 'Queued'],
+  leased: ['running', 'Running'],
+  succeeded: ['done', 'Done'],
+  failed: ['failed', 'Failed'],
+  cancelled: ['cancelled', 'Cancelled'],
+  expired: ['expired', 'Expired'],
+};
+
+/** Sort rank for the Status column: what needs attention first. @type {Object} */
+const JOB_STATE_RANK = { running: 0, queued: 1, issues: 2, failed: 3, expired: 4, cancelled: 5, done: 6 };
+
+/** Kind to its icon and its label. @type {Object} */
+const JOB_KIND_LABEL = {
+  inference: ['inference', 'Inference'],
+  training: ['training', 'Training'],
+  tracking: ['inference', 'Tracking'],
+  diagnostic: ['jobs', 'Diagnostic'],
+};
+
+/**
+ * Which batches finished with some of their pieces failed.
+ *
+ * This is where `issues` comes from, and it is the only place it can: a single
+ * job is never succeeded-with-problems, because #225 settled that a job whose
+ * results did not reach the database is *failed*. A batch -- one video cut into
+ * frame ranges -- routinely finishes with some ranges failed, and that is what
+ * the design has always meant by the word.
+ *
+ * **Scoped to the page, which is a real limit and not a shortcut.** A batch has
+ * no row of its own to fetch (gap 1), so this sees only the pieces in this
+ * response; a batch straddling a page boundary looks clean on one of them. The
+ * fix is a batch object, not a larger page.
+ *
+ * @param {Object[]} jobs - The page of jobs.
+ * @returns {Set<string>} Batch ids holding both a success and a failure.
+ */
+function batchesWithIssues(jobs) {
+  const seen = new Map();
+
+  for (const job of jobs) {
+    if (!job.batch_id) continue;
+    const found = seen.get(job.batch_id) || { ok: false, bad: false };
+    if (job.state === 'succeeded') found.ok = true;
+    if (job.state === 'failed' || job.state === 'expired') found.bad = true;
+    seen.set(job.batch_id, found);
+  }
+
+  const issues = new Set();
+  for (const [id, { ok, bad }] of seen) if (ok && bad) issues.add(id);
+  return issues;
+}
+
+/**
+ * The Progress cell.
+ *
+ * **Null is not zero.** A job with no heartbeat yet has no measurement, and a
+ * 0% bar would claim one, so it draws a dash. Required by `DESIGN.md` since
+ * #104 measured that progress is legitimately null before the first heartbeat.
+ *
+ * @param {Object} job - A job row.
+ * @param {string} state - The design state, which colours the fill.
+ * @returns {{html: string, sort: number}}
+ */
+function progressCell(job, state) {
+  if (job.progress_done === null || !job.progress_total) {
+    return { html: '<span class="dash">&mdash;</span>', sort: -1 };
+  }
+
+  const pct = Math.round((job.progress_done / job.progress_total) * 100);
+  const counts = `${job.progress_done.toLocaleString()} of ${job.progress_total.toLocaleString()} ${job.progress_unit || ''}`.trim();
+
+  return {
+    sort: pct,
+    html: `<span class="prog" data-state="${state}" title="${counts}">`
+      + `<span class="bar" role="progressbar" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span>`
+      + `<span class="pct">${pct}%</span></span>`,
+  };
+}
+
+/**
+ * One job, as a table row.
+ *
+ * @param {Object} job - A job from `GET /gpu/jobs`.
+ * @param {Set<string>} issueBatches - Batches that finished with issues.
+ * @returns {string} A `<tr>`.
+ */
+function jobRow(job, issueBatches) {
+  const spec = job.spec || {};
+  const session = spec.session || {};
+  const [kindIcon, kindLabel] = JOB_KIND_LABEL[job.kind] || JOB_KIND_LABEL.inference;
+
+  let [state, label] = JOB_STATE_LABEL[job.state] || ['queued', job.state];
+
+  /* A succeeded piece of a batch that did not all succeed is drawn as the
+     batch's state, because the batch is the thing an operator acts on. */
+  if (job.state === 'succeeded' && job.batch_id && issueBatches.has(job.batch_id)) {
+    state = 'issues';
+    label = 'Issues';
+  }
+
+  /* MARP has no name for a job: `GpuJobSpec` carries engine, model, video,
+     session, range, params and reduction and nothing else. The title is
+     composed from the video being processed, which is the one human-readable
+     thing in there. */
+  const title = ((spec.video && spec.video.source_name) || `Job ${job.id}`).replace(/\.[a-z0-9]+$/i, '');
+
+  const scope = session.dive ? `Dive ${session.dive} &middot; Line ${session.line}` : 'No session';
+  const frames = spec.range
+    ? `${session.type || 'Unassigned'} &middot; frames ${spec.range.start_frame.toLocaleString()}-${spec.range.end_frame.toLocaleString()}`
+    : '';
+
+  const model = (spec.model && spec.model.name) || 'No model';
+  const reduction = spec.reduction ? `${spec.reduction.name} v${spec.reduction.version}` : '';
+
+  const progress = progressCell(job, state);
+  const when = new Date(job.created_at);
+  const hhmm = when.toTimeString().slice(0, 5);
+  const date = when.toISOString().slice(0, 10);
+
+  const live = job.state === 'queued' || job.state === 'leased';
+  const actions = live
+    ? '<button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
+    : '<button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button>';
+
+  return `<tr data-job="${job.id}">`
+    + `<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job ${job.id}"></td>`
+    + `<td class="jname"><span class="name"><svg class="ico ${kindIcon}"><use href="#i-${kindIcon}"/></svg><span class="t">${title}</span></span></td>`
+    + `<td class="jtype"><span class="tag ${kindIcon}">${kindLabel}</span></td>`
+    + `<td class="jscope"><span class="two"><span class="a">${scope}</span><span class="b">${frames}</span></span></td>`
+    + `<td class="jmodel"><span class="two"><span class="a">${model}</span><span class="b">${reduction}</span></span></td>`
+    + `<td class="jstatus" data-sort="${JOB_STATE_RANK[state]}"><span class="st" data-state="${state}"><span class="dot"></span>${label}</span></td>`
+    + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
+    + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${hhmm}</span><span class="b">${date}</span></span></td>`
+    + `<td class="jacts"><span>${actions}</span></td>`
+    + '</tr>';
+}
+
+/**
+ * The four headline cards, counted from the same data as the table.
+ *
+ * **Counted over a fetched window, because the route cannot be asked.**
+ * `GET /gpu/jobs` filters on `state`, `kind` and `batch_id` and nothing else;
+ * there is no date parameter, so *Completed today* cannot be a query and has to
+ * be a count of rows pulled back and filtered here. Fine at 420 jobs, not fine
+ * at the scale #104 assumes. Recorded as gap 24.
+ *
+ * Drawn from one fetch with the table, because cards disagreeing with the rows
+ * beneath them is worse than either of them being wrong.
+ *
+ * @param {Object[]} jobs - The window of jobs to count over.
+ */
+function renderJobsSummary(jobs) {
+  const issues = batchesWithIssues(jobs);
+
+  const isIssue = (job) => job.state === 'succeeded' && job.batch_id && issues.has(job.batch_id);
+  const running = jobs.filter((j) => j.state === 'leased');
+  const queued = jobs.filter((j) => j.state === 'queued');
+
+  /* "Today" is measured against the newest job in the corpus rather than the
+     reader's clock: the data layer's present is fixed so that two people see
+     the same screen, and a card reading the wall clock would undo that. */
+  const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const done = jobs.filter((j) => j.state === 'succeeded' && Date.parse(j.created_at) >= newest - 86400000);
+  const attention = jobs.filter((j) => j.state === 'failed' || j.state === 'expired' || isIssue(j));
+
+  const byKind = (rows, kind) => rows.filter((j) => j.kind === kind).length;
+
+  const cards = {
+    running: [running.length, [[byKind(running, 'inference'), 'inference'], [byKind(running, 'training'), 'training']]],
+    queued: [queued.length, [[byKind(queued, 'inference'), 'inference'], [byKind(queued, 'training'), 'training']]],
+    done: [done.length, [[done.filter((j) => !isIssue(j)).length, 'clean'], [done.filter(isIssue).length, 'with issues']]],
+    attention: [attention.length, [[attention.filter((j) => !isIssue(j)).length, 'failed or expired'], [attention.filter(isIssue).length, 'with issues']]],
+  };
+
+  for (const [priority, [total, parts]] of Object.entries(cards)) {
+    const card = $(`.stat[data-job-priority="${priority}"]`);
+    if (!card) continue;
+
+    const num = $('.stat-num', card);
+    if (num) num.textContent = String(total);
+
+    /* The breakdown is rebuilt rather than patched. A card keeping a stale
+       "3 builds" beside a fresh total would be the most believable kind of
+       wrong -- and dataset builds are gap 19, not a MARP job kind at all, so
+       that sub-count is gone rather than zero. */
+    const sub = $('.stat-sub', card);
+    if (sub) sub.innerHTML = parts.map(([n, label]) => `<span><b>${n}</b> ${label}</span>`).join('');
+  }
+}
+
+/**
+ * Fills the Jobs table from the data layer.
+ *
+ * Resolves immediately and does nothing anywhere but the Jobs screen, so the
+ * boot sequence can wait on it unconditionally.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderJobsTable() {
+  const table = $('#jobs');
+  if (!table || !window.MarpApi) return;
+
+  const body = $('tbody', table);
+  const columns = $$('thead th', table).length;
+  const fill = (cls, text) => `<tr class="tblmsg"><td class="${cls}" colspan="${columns}">${text}</td></tr>`;
+
+  /* Drawn before the await, so a slow answer reads as loading rather than as an
+     empty table somebody reloads. `?mock=slow` is how to see it. */
+  body.innerHTML = fill('loading', 'Loading jobs&hellip;');
+
+  try {
+    /* Two calls, for two different questions. The table wants a page; the cards
+       want totals the route cannot be asked for (gap 24), so they are counted
+       over a window. The page is a slice of the same ordering, so the two
+       always agree about any job they both contain. */
+    const window_ = await window.MarpApi.listJobs({ limit: 500 });
+    const page = { jobs: window_.jobs.slice(0, 50), total: window_.total };
+
+    renderJobsSummary(window_.jobs);
+
+    if (!page.jobs.length) {
+      body.innerHTML = fill('empty', 'No jobs match these filters.');
+      return;
+    }
+
+    /* Issues is derived over the counting window rather than the page, so a
+       batch split across the page boundary is still seen. */
+    const issues = batchesWithIssues(window_.jobs);
+    body.innerHTML = page.jobs.map((job) => jobRow(job, issues)).join('');
+  } catch (error) {
+    /* A real state, and the reason the layer can be made to fail on purpose.
+       `?mock=fail:jobs` is how to see it. */
+    body.innerHTML = fill('error', `Could not load jobs (${error.status || 'no answer'}). `
+      + '<button class="btn sm" type="button" id="jobsRetry">Try again</button>');
+    const retry = $('#jobsRetry');
+    if (retry) retry.addEventListener('click', renderJobsTable);
+  }
+}
+
 /**
  * Jobs keeps its complete list visible while the headline cards prioritize one
  * state. The overview history is a deterministic moving seam for later API data.
@@ -2610,10 +2857,8 @@ mountTopbar();
 wireTopbarAutohide();
 wireRailSheet();
 wireDrawer();
-wireSelection();
 wireSwitchers();
 wirePoolUtilization();
-wireJobsOverview();
 wireInferenceActivity();
 wireTrainingActivity();
 wireDatasetActivity();
@@ -2622,10 +2867,23 @@ wireModelRegistration();
 wireSliders();
 wireInferenceForm();
 wireDatasetPage();
-wireSorting();
 wireAccordions();
 wireDatasetBuilder();
 wireSplit();
 wireLineage();
 wireRowSelect();
-applyTips();
+
+/* **Rows first, then the wiring that needs rows.** The Jobs table is filled
+   from the data layer, which is asynchronous because it has to be -- swapping
+   it for real `fetch` calls is meant to be the whole of the wiring work, and a
+   synchronous layer could not be swapped for one. So the four that bind to rows
+   wait, and everything above, which does not care, has already run.
+
+   Off the Jobs screen `renderJobsTable` resolves without doing anything, so
+   this costs one microtask and no special case. */
+renderJobsTable().then(() => {
+  wireJobsOverview();
+  wireSorting();
+  wireSelection();
+  applyTips();
+});
