@@ -813,8 +813,13 @@ function renderJobsSummary(jobs) {
      reader's clock: the data layer's present is fixed so that two people see
      the same screen, and a card reading the wall clock would undo that. */
   const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
-  const done = jobs.filter((j) => j.state === 'succeeded' && Date.parse(j.created_at) >= newest - 86400000);
-  const attention = jobs.filter((j) => j.state === 'failed' || j.state === 'expired' || isIssue(j));
+  const today = newest - 86400000;
+  const done = jobs.filter((j) => j.state === 'succeeded' && Date.parse(j.created_at) >= today);
+
+  /* Scoped to the same day as Completed. Counting every failure in the window
+     put 107 beside 22 completed, which compares a fortnight against a day. */
+  const attention = jobs.filter((j) => (j.state === 'failed' || j.state === 'expired' || isIssue(j))
+    && Date.parse(j.created_at) >= today);
 
   const byKind = (rows, kind) => rows.filter((j) => j.kind === kind).length;
 
@@ -986,6 +991,204 @@ function applyJobsQuery() {
   wireSelection();
   applyTips();
 }
+
+/* ========================================================= inference */
+
+/* Inference is the GPU job list seen through one kind. Its cards, its donut and
+   its recent-jobs table are all `GET /gpu/jobs` narrowed to `inference` and
+   `tracking` -- tracking belongs here because it is the same pipeline with the
+   reduction left on, which is why the submission form offers one choice (R30).
+
+   Two columns on this table have no source and already said so before anything
+   was wired: **Detections** is gap 11 -- the ingest writes observations and
+   nothing rolls the count back up to the job -- and the throughput graph is
+   gap 18. */
+
+/** The job kinds this screen is about. @type {string[]} */
+const INFERENCE_KINDS = ['inference', 'tracking'];
+
+/**
+ * Draws the Inference overview and its recent jobs.
+ *
+ * @param {Object[]} jobs - Every job in the window.
+ */
+function renderInference(jobs) {
+  const mine = jobs.filter((j) => INFERENCE_KINDS.includes(j.kind));
+  const issues = batchesWithIssues(jobs);
+  const views = mine.map((job) => jobView(job, issues));
+
+  const running = views.filter((v) => v.state === 'running');
+  const queued = views.filter((v) => v.state === 'queued');
+  const newest = mine.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const today = newest - 86400000;
+  const done = views.filter((v) => v.state === 'done' && Date.parse(v.job.created_at) >= today);
+
+  /* **Scoped to the same day as Completed.** Unscoped this counted every
+     failure in the fortnight -- 85 against 13 completed -- and the donut below
+     then composed four numbers measured over different spans, which makes a
+     shape rather than a fact. A job that failed last week has not stopped
+     needing attention; this card is about today, beside the other three. */
+  const attention = views.filter((v) => ['failed', 'expired', 'issues'].includes(v.state)
+    && Date.parse(v.job.created_at) >= today);
+
+  const byLabel = {};
+  for (const card of $$('.stat')) {
+    const label = $('.stat-lab', card);
+    if (label) byLabel[label.textContent.trim()] = card;
+  }
+  const set = (label, num, parts) => {
+    const card = byLabel[label];
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.textContent = String(num);
+    const sub = $('.stat-sub', card);
+    if (sub) sub.innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
+  };
+
+  /* How many machines are carrying this work, counted from the jobs rather
+     than guessed: a job in flight names the worker holding it only on its
+     detail, but the pool view and the job list agree on how many are running. */
+  const frames = (rows) => rows.reduce((sum, v) => sum + (v.job.spec.range ? v.job.spec.range.end_frame : 0), 0);
+  const big = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M frames` : `${Math.round(n / 1000)}k frames`);
+
+  set('Running inference', running.length, [big(frames(running)), 'in flight']);
+  set('Queued inference', queued.length, [big(frames(queued)), 'waiting']);
+  set('Completed today', done.length, [big(frames(done)), `${done.filter((v) => v.state === 'done').length} clean`]);
+  set('Needs attention', attention.length, [
+    `${attention.filter((v) => v.state === 'failed').length} failed`,
+    `${attention.filter((v) => v.state === 'issues').length} with issues`,
+  ]);
+
+  const parts = [
+    ['running', running.length, 'Running'],
+    ['queued', queued.length, 'Queued'],
+    ['done', done.length, 'Completed today'],
+    ['failed', attention.length, 'Need attention'],
+  ];
+  const total = parts.reduce((sum, [, value]) => sum + value, 0) || 1;
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const arcs = $$('.donut-part', donut);
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = parts[index] ? parts[index][1] : 0;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(total);
+  }
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = parts
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+
+  renderInferenceRecent(views);
+}
+
+/**
+ * The recent inference jobs table.
+ *
+ * Running work first, then anything needing attention, then the most recently
+ * finished -- the same ordering the Dashboard preview uses, for the same
+ * reason: a short list is only useful if it leads with what is live.
+ *
+ * @param {Object[]} views - Inference job views.
+ */
+function renderInferenceRecent(views) {
+  const table = $('.inference-table');
+  if (!table) return;
+
+  const body = $('tbody', table);
+  const rank = { running: 0, issues: 1, failed: 2, expired: 3, queued: 4, cancelled: 5, done: 6 };
+  const shown = views
+    .slice()
+    .sort((a, b) => (rank[a.state] - rank[b.state])
+      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
+    .slice(0, 6);
+
+  const heading = $('.inference-recent .panel-hd h2');
+  if (heading) heading.textContent = `Recent inference jobs (${views.length.toLocaleString()})`;
+
+  body.innerHTML = shown.map((view) => {
+    const { job, session } = view;
+    const started = new Date(job.created_at);
+    const tookMs = Math.max(0, Date.parse(job.updated_at) - Date.parse(job.created_at));
+    const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
+
+    return `<tr data-job="${job.id}">`
+      + `<td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">${view.title}</span></span></td>`
+      + `<td class="jscope"><span class="two"><span class="a">Dive ${session.dive || '?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
+      + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
+      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+      /* Detections is gap 11: the ingest writes observations and nothing counts
+         them back onto the job. A dash, not a zero. */
+      + `<td class="jdet">${NOT_COUNTED}</td>`
+      + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
+      + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
+      + `<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
+      + '</tr>';
+  }).join('');
+}
+
+/** Nothing counts these. Distinct from zero of them. */
+const NOT_COUNTED = '<span class="dash" title="Nothing rolls detections up to a job: the ingest writes observations and the count is not recorded anywhere (gap 11)">&mdash;</span>';
+
+/**
+ * Puts the real registry into the submission form's model selectors.
+ *
+ * They offered "Gorgonian Detector", "Starfish Detector" and "MARP General
+ * Benthic" -- none of which is in `ml_models`, so a run planned against any of
+ * them names a model MARP could not resolve.
+ *
+ * @param {Object[]} models - From `GET /api/v2/ml_models`.
+ */
+function fillInferenceModels(models) {
+  /* Only models that could actually run: a draft has no weights worth sending
+     and an archived one is retired. */
+  const usable = models.filter((m) => m.status === 'trained');
+
+  for (const select of $$('select')) {
+    const options = [...select.options].map((o) => o.text);
+    /* The two model pickers are the ones offering the invented names. */
+    if (!options.some((text) => /Detector|Benthic/.test(text))) continue;
+
+    select.innerHTML = usable
+      .map((m) => `<option value="${m.id}">${m.name}</option>`)
+      .join('') || '<option>No trained model in the registry</option>';
+  }
+}
+
+/**
+ * Fills the Inference screen from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderInferenceScreen() {
+  if (document.body.dataset.screen !== 'inference' || !window.MarpApi) return;
+
+  try {
+    const [jobs, models] = await Promise.all([
+      window.MarpApi.listJobs({ limit: 500 }),
+      window.MarpApi.listModels(),
+    ]);
+
+    renderInference(jobs.jobs);
+    fillInferenceModels(models);
+  } catch (error) {
+    const table = $('.inference-table tbody');
+    if (table) {
+      table.innerHTML = `<tr class="tblmsg"><td class="error" colspan="8">Could not load inference jobs (${error.status || 'no answer'}).</td></tr>`;
+    }
+  }
+}
+
 
 /* ============================================================ models */
 
@@ -4695,7 +4898,7 @@ wireRowSelect();
 
    Off those screens each render resolves without doing anything, so this costs
    one microtask and no special case. */
-Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen(), renderModelsScreen(), wireDatasetPage()]).then(() => {
+Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen(), renderModelsScreen(), renderInferenceScreen(), wireDatasetPage()]).then(() => {
   /* `applyJobsQuery` and `applyWorkersQuery` rewire the rows they draw; these
      are the ones that bind once, to controls that outlive every redraw. */
   wireJobsControls();
