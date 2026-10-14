@@ -1923,9 +1923,9 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .subsets li.g1::before { background: var(--cyan-400); }
 .subsets li.g2::before { background: var(--mint-400); }
 .subsets li.g3::before { background: var(--amber-300); }
-.subsets li.g4::before { background: #c18cff; }
-.subsets li.g5::before { background: #ff8f70; }
-.subsets li.g6::before { background: #65c9d9; }
+.subsets li.g4::before { background: var(--violet-300); }
+.subsets li.g5::before { background: var(--green-400); }
+.subsets li.g6::before { background: var(--blue-400); }
 .subsets .s1 { grid-area: 1 / 1; color: var(--white); font-size: 12px; font-weight: 600; }
 .subsets .s2 { grid-area: 2 / 1; color: var(--faint); font-size: 10.5px; }
 .subsets .s3 { grid-area: 1 / 2 / -1 / 3; text-align: right; color: var(--white);
@@ -1959,7 +1959,7 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
   text-transform: uppercase; vertical-align: 1px;
 }
 .subset-split.train { color: var(--cyan-300); background: rgba(45, 156, 255, .08); }
-.subset-split.validation { color: #c18cff; background: rgba(193, 140, 255, .08); }
+.subset-split.validation { color: var(--violet-300); background: rgba(155, 124, 240, .08); }
 .subset-split.test { color: var(--amber-300); background: rgba(240, 183, 90, .08); }
 
 .split-assignment-cards {
@@ -1976,7 +1976,7 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
   border-radius: 0 3px 3px 0; background: currentColor;
 }
 .split-assignment-cards article.train { color: var(--cyan-300); }
-.split-assignment-cards article.validation { color: #c18cff; }
+.split-assignment-cards article.validation { color: var(--violet-300); }
 .split-assignment-cards article.test { color: var(--amber-300); }
 .split-assignment-cards span {
   font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
