@@ -3353,10 +3353,124 @@ function wireInferenceForm() {
  * wants one run's curves beside the row above rather than in a drawer that
  * hides the list.
  */
-function wireDatasetPage() {
+/** `Dataset` does not carry this. Distinct from "not measured yet". */
+const NOT_IN_DATASET = '<span class="dash" title="Not carried by the dataset record: it has name, description, location, num_samples, num_classes, source and timestamps, and nothing else (gap 16)">&mdash;</span>';
+
+/**
+ * Puts the saved datasets from `GET /api/v2/dataset` into the lifecycle table.
+ *
+ * The five that were written into the markup are replaced. The *builds* above
+ * them are not: a build in flight has no API behind it at all (gap 19), so
+ * those rows stay fixture and say so in their own detail.
+ *
+ * @param {Element} body - The table body.
+ * @returns {Promise<void>}
+ */
+async function fillSavedDatasets(body) {
+  if (!window.MarpApi) return;
+
+  let datasets;
+  try {
+    datasets = await window.MarpApi.listDatasets();
+  } catch (error) {
+    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load datasets (${error.status || 'no answer'}).</td></tr>`;
+    return 0;
+  }
+
+  const stamp = (iso) => {
+    const d = new Date(iso);
+    return `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
+  };
+
+  const written = datasets.length;
+  body.innerHTML = datasets.map((set) => '<tr>'
+    + `<td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">${set.name}</span></span></td>`
+    + `<td class="jscope">${set.description || ''}</td>`
+    + `<td class="num" data-sort="${set.num_samples}">${set.num_samples.toLocaleString()}</td>`
+    /* Frames is not a column on `Dataset`. `num_samples` is the only count it
+       has, and calling it frames as well would be one number pretending to be
+       two different measurements. */
+    + `<td class="num" data-sort="-1">${NOT_IN_DATASET}</td>`
+    + `<td class="num" data-sort="${set.num_classes}">${set.num_classes}</td>`
+    + `<td class="jtime" data-sort="${set.created_at}">${stamp(set.created_at)}</td>`
+    + `<td class="jtime" data-sort="${set.updated_at}">${stamp(set.updated_at)}</td>`
+    + '<td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button></span></td>'
+    + '</tr>').join('');
+  return written;
+}
+
+/**
+ * The four cards and the status donut.
+ *
+ * **Only one of the four numbers is an API fact.** Ready datasets is a count of
+ * `GET /api/v2/dataset`. Building, queued and needing attention are builds in
+ * flight, and MARP records none of them — a dataset build is not a GPU job and
+ * `Dataset` has no status column — so those three are counted from the fixture
+ * rows, and the cards say where they come from. Gap 19.
+ *
+ * @param {number} ready - Saved datasets, from the API.
+ * @param {Object[]} builds - The in-flight build fixtures.
+ */
+function renderDatasetsSummary(ready, builds) {
+  const count = (status) => builds.filter((b) => b.status === status).length;
+  const building = count('building');
+  const queued = count('queued');
+  const attention = count('attention');
+  const total = ready + builds.length;
+
+  const byLabel = {};
+  for (const card of $$('.stat')) {
+    const label = $('.stat-lab', card);
+    if (label) byLabel[label.textContent.trim()] = card;
+  }
+  const set = (label, num, sub) => {
+    const card = byLabel[label];
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.textContent = String(num);
+    const s = $('.stat-sub', card);
+    if (s) s.innerHTML = `<span>${sub}</span>`;
+  };
+
+  set('Building now', building, 'builds are not tracked by the API');
+  set('Queued builds', queued, 'builds are not tracked by the API');
+  set('Ready datasets', ready, 'saved in MARP');
+  set('Needs attention', attention, 'builds are not tracked by the API');
+
+  const parts = [['running', building, 'Building'], ['queued', queued, 'Queued'], ['done', ready, 'Ready'], ['failed', attention, 'Needs attention']];
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const arcs = $$('.donut-part', donut);
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = parts[index] ? parts[index][1] : 0;
+      arc.setAttribute('pathLength', String(total || 1));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, (total || 1) - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(total);
+  }
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = parts
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+}
+
+async function wireDatasetPage() {
   const table = $('#saved-datasets');
   if (!table) return;
   const body = $('tbody', table);
+
+  /* The saved rows come from the API before anything decorates them, so the
+     Task, Status and expander cells are added to real rows rather than to the
+     five that used to be typed into the markup. */
+  const savedCount = await fillSavedDatasets(body);
   const samples = [
     ['/api/v2/jellyfin/items/9f66020c16c80d2800560a76d4417080/images/Primary', 'CAMPA2024 Dive 1 · 141923'],
     ['/api/v2/jellyfin/items/847c5f1034d01cf3a7aa2427fa7af4b4/images/Primary', 'CAMPA2024 Dive 1 · 154643'],
@@ -3394,11 +3508,36 @@ function wireDatasetPage() {
       + '<td class="jacts"><button class="btn sm dataset-build-open" type="button" aria-label="Show build detail for ' + item.name + '" title="Show build progress, worker and diagnostics"><svg class="ico sm"><use href="#i-right"/></svg>Build detail</button></td>';
     body.prepend(row);
   });
+  renderDatasetsSummary(savedCount || 0, buildJobs);
+
   const heads = $$(':scope > tr', body);
   heads.forEach((head) => {
     const original = [...head.children];
     const name = $('.jname .t', head)?.textContent.trim() || 'Saved dataset';
-    const cfg = fixtures[name] || fixtures.CAMPA_2024_Rockfish_v3;
+    /* **A row from the API gets the API's own blanks, not another dataset's
+       fixture.** This used to fall back to `CAMPA_2024_Rockfish_v3`, so any
+       dataset the fixtures did not name borrowed that one's task, project,
+       queries, overlap groups and split -- five invented facts per row, each
+       of them plausible and none of them true. A `Dataset` carries `name`,
+       `description`, `location`, `num_samples`, `num_classes`, `source` and
+       the timestamps; everything else on this panel is gap 16. */
+    const cfg = fixtures[name] || {
+      task: 'Unassigned',
+      fromApi: true,
+      status: head.dataset.datasetStatus || 'ready',
+      format: NOT_IN_DATASET,
+      project: NOT_IN_DATASET,
+      queries: NOT_IN_DATASET,
+      groups: NOT_IN_DATASET,
+      split: NOT_IN_DATASET,
+      build: NOT_IN_DATASET,
+      size: NOT_IN_DATASET,
+      fingerprint: NOT_IN_DATASET,
+      worker: NOT_IN_DATASET,
+      eta: NOT_IN_DATASET,
+      progress: -1,
+      job: null,
+    };
     const description = original[1]?.textContent.trim() || '';
     const observations = original[2]?.textContent.trim() || '';
     const frames = original[3]?.textContent.trim() || '';
@@ -3524,9 +3663,18 @@ function wireDatasetPage() {
       if (detail) detail.hidden = !match || head.getAttribute('aria-expanded') !== 'true';
       if (match) shown += 1;
     });
-    count.textContent = `(${shown} shown of 20)`;
-    if (footer) footer.innerHTML = `Showing <b class="strong">${shown}</b> of 20 builds and datasets`;
+    /* `heads.length`, not 20. The total was written in when there were twenty
+       rows in the markup; the saved datasets come from the API now and there
+       are as many as MARP holds. */
+    count.textContent = `(${shown} shown of ${heads.length})`;
+    if (footer) footer.innerHTML = `Showing <b class="strong">${shown}</b> of ${heads.length} builds and datasets`;
   };
+  /* **Bound here, not in the boot list.** `wireAccordions` runs before this
+     function resolves -- these rows come from the API, so they did not exist
+     when it swept the page -- and without this the expander on every dataset
+     did nothing at all. */
+  wireAccordions();
+
   search.addEventListener('input', filter);
   task.addEventListener('change', filter);
   status.addEventListener('change', filter);
@@ -4533,7 +4681,6 @@ wireOperationalActivity();
 wireModelRegistration();
 wireSliders();
 wireInferenceForm();
-wireDatasetPage();
 wireAccordions();
 wireDatasetBuilder();
 wireSplit();
@@ -4548,7 +4695,7 @@ wireRowSelect();
 
    Off those screens each render resolves without doing anything, so this costs
    one microtask and no special case. */
-Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen(), renderModelsScreen()]).then(() => {
+Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen(), renderModelsScreen(), wireDatasetPage()]).then(() => {
   /* `applyJobsQuery` and `applyWorkersQuery` rewire the rows they draw; these
      are the ones that bind once, to controls that outlive every redraw. */
   wireJobsControls();

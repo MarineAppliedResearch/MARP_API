@@ -22,7 +22,7 @@
  * @module tools/api-contract-check
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -113,6 +113,22 @@ for (const { name, theirs, from } of PAIRS) {
     }
 }
 
+/* **Every screen has to load the data layer, and load it before `mock.js`.**
+   A page that forgets leaves `window.MarpApi` undefined, and the renderers all
+   begin `if (!window.MarpApi) return` -- so the screen draws nothing and says
+   nothing, which is the worst of both. That happened on Datasets: the wiring
+   was written, the page never loaded the module, and the only symptom was an
+   empty table. The order matters too, because `mock.js` reads the global while
+   it runs rather than on an event. */
+for (const page of readdirSync(join(app, 'mockups')).filter((f) => f.endsWith('.html'))) {
+    const html = readFileSync(join(app, 'mockups', page), 'utf8');
+    const api = html.indexOf('api.js');
+    const mock = html.indexOf('mock.js');
+
+    if (api === -1) problems.push(`mockups/${page} never loads api.js, so window.MarpApi is undefined and every renderer silently returns.`);
+    else if (mock !== -1 && api > mock) problems.push(`mockups/${page} loads api.js after mock.js; the global has to exist before mock.js runs.`);
+}
+
 /* The live attempt states are a subset rather than a copy: the pool view only
    ever shows an attempt that has not finished, so this fails on a state the
    data layer invented and not on one it leaves out. */
@@ -126,9 +142,9 @@ if (invented.length) {
 
 if (problems.length) {
     for (const problem of problems) console.error(`[x] ${problem}`);
-    console.error(`\n${problems.length} contract problem${problems.length === 1 ? '' : 's'} in `
-        + `${relative(repo, join(app, 'mockups', 'api.js'))}. Each line above says where MARP `
-        + 'declares the real list.');
+    console.error(`\n${problems.length} contract problem${problems.length === 1 ? '' : 's'} between `
+        + `${relative(repo, app)} and MARP. Each line above says what is wrong and where the `
+        + 'truth lives.');
     process.exit(1);
 }
 
