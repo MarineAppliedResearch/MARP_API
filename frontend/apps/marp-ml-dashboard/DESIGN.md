@@ -659,6 +659,16 @@ are #104's measurement comment and its two decision comments.
     the age of the enrolment under a column headed *Uptime* would be a wrong number rather than
     a missing one. Found 2026-10-14 in #128.
 
+28. **The model registry is thinner than the screens assume** — `GET /api/v2/ml_models` does
+    list the registry, so the counts are real. What is not on an `MlModel`: anything marking a
+    model **preferred**, any count of **how many workers hold it cached**, and any `versions`
+    array — a version chain is `parent_model_id` and has to be walked. `GET /api/v2/dataset`
+    likewise has no status, so nothing in the API says a dataset is building.
+
+    Worth knowing alongside it: `/v2/training_run` has **only a `POST`**. A training run can
+    be created and never listed, so no screen can show training history from the API at all.
+    Found 2026-10-14 in #128, after looking outside the `/gpu/` group for the first time.
+
 ## Running it
 
 ```bash

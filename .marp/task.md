@@ -44,9 +44,16 @@ Read from `docs/openapi.generated.json` and `routes/gpu.routes.js` on `develop`,
 #104's measurement comment, which is a year of assumptions ahead of anything else written
 down and is a comment rather than a contract.
 
-Fourteen routes are registered, not the twelve #128 names. Three are dashboard-facing; the
-rest are the worker protocol (poll, heartbeat, events, result, the artifact hand-off) and
-are not read by any screen.
+Fourteen **GPU** routes are registered, not the twelve #128 names. Three of those are
+dashboard-facing; the rest are the worker protocol (poll, heartbeat, events, result, the
+artifact hand-off) and are not read by any screen.
+
+**Corrected 2026-10-14, while wiring the Dashboard:** counting only the `/gpu/` group was
+the wrong frame. MARP publishes 147 routes, and the screens also read
+`GET /api/v2/ml_models` and `GET /api/v2/dataset`, which are not GPU routes at all. The
+Models and Datasets counts were very nearly recorded as having no API behind them on the
+strength of that mistake. `/v2/training_run` really does have only a `POST`, so training
+history is the thing with no route — `DESIGN.md` gap 28.
 
 - `GET /api/v2/gpu/workers` → an array, unpaged. `worker_id`, `name`, `state`, `slot_count`,
   `enrolled_at`, `activity` (derived, never stored), `attempts[]`; nullable `worker_version`,

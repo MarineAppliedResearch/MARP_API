@@ -308,7 +308,10 @@
         published_attempt_id: null,
         created_by: r() < 0.8 ? int(r, 1, 6) : null,
         created_at: ago(createdMinutes),
-        updated_at: ago(Math.max(0, createdMinutes - int(r, 0, 120))),
+        /* Never exactly the corpus present: clamping to zero put most live
+           work at the same instant, which reads as synthetic in an Updated
+           column. A running job is touched within the last few minutes. */
+        updated_at: ago(live ? int(r, 0, 6) : Math.max(1, createdMinutes - int(r, 0, 120))),
         /* Gap 23. The attempt's own field names, so the route learning to carry
            this renames nothing. Null is not zero: a job with no heartbeat yet
            has no measurement, and the screen draws a dash rather than a 0% bar. */
@@ -448,7 +451,67 @@
     return { workers, jobs, attempts };
   }
 
+  /**
+   * The registry and the saved datasets.
+   *
+   * **These are not GPU routes**, which is why they were missed at first: the
+   * dashboard reads `GET /api/v2/ml_models` and `GET /api/v2/dataset`, outside
+   * the `/gpu/` group entirely. Both are plain arrays and neither pages.
+   *
+   * `training_run` is *not* here, and that is a fact rather than an omission:
+   * `/v2/training_run` has only a `POST`. A run can be created and never
+   * listed, so no screen can show training history from the API.
+   *
+   * @returns {{models: Object[], datasets: Object[]}}
+   */
+  function buildRegistry() {
+    const r = rng(SEED ^ 0x5eed);
+    const models = [];
+    const datasets = [];
+
+    const TYPES = ['detection', 'classification', 'segmentation'];
+
+    for (let i = 1; i <= 28; i++) {
+      const type = pick(r, TYPES);
+      const family = pick(r, ['fish', 'inverts', 'habitat', 'rockfish']);
+      const version = int(r, 1, 7);
+
+      models.push({
+        id: i,
+        name: `marp-${family}-v${version}`,
+        /* A version chain is a self-join, not a `versions` array -- gap 16. */
+        parent_model_id: version > 1 && r() < 0.7 ? Math.max(1, i - 1) : null,
+        model_type: type,
+        architecture_version: `yolov8${pick(r, ['n', 's', 'm', 'l'])}`,
+        storage_path: `models/marp-${family}-v${version}/weights/best.pt`,
+        status: r() < 0.72 ? 'ready' : pick(r, ['training', 'archived']),
+        notes: null,
+        created_at: ago(int(r, 1440, 300000)),
+        updated_at: ago(int(r, 60, 1440)),
+      });
+    }
+
+    for (let i = 1; i <= 38; i++) {
+      const classes = int(r, 4, 24);
+      datasets.push({
+        id: i,
+        name: `${pick(r, SURVEYS).replace(' ', '_')}_${pick(r, ['Fish', 'Inverts', 'Habitat'])}_v${int(r, 1, 5)}`,
+        description: 'Training corpus built from reviewed observations',
+        location: `datasets/${i}/`,
+        num_samples: int(r, 2000, 60000),
+        num_classes: classes,
+        source: 'mosaic review',
+        notes: null,
+        created_at: ago(int(r, 1440, 300000)),
+        updated_at: ago(int(r, 60, 20000)),
+      });
+    }
+
+    return { models, datasets };
+  }
+
   const CORPUS = build();
+  const REGISTRY = buildRegistry();
 
   /* ============================================================== the switch */
 
@@ -638,10 +701,36 @@
     });
   }
 
+  /**
+   * `GET /api/v2/ml_models` -- the registry, as a plain array.
+   *
+   * Note what is *not* on an `MlModel`: anything marking one as preferred, any
+   * count of how many workers hold it, and any `versions` array. A version
+   * chain is `parent_model_id` and has to be walked.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listModels() {
+    return serve('models', () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.models)));
+  }
+
+  /**
+   * `GET /api/v2/dataset` -- saved datasets, as a plain array.
+   *
+   * A `Dataset` has no status, so nothing here says whether one is building.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listDatasets() {
+    return serve('datasets', () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.datasets)));
+  }
+
   window.MarpApi = {
     listWorkers,
     listJobs,
     getJob,
+    listModels,
+    listDatasets,
     submitJob,
     cancelJob,
     renameWorker,

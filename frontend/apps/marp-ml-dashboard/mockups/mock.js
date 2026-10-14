@@ -981,6 +981,219 @@ function applyJobsQuery() {
   applyTips();
 }
 
+/* ========================================================= dashboard */
+
+/* The landing screen summarises every other one, so it reads four routes:
+   jobs, workers, ml_models and dataset. Three of its six cards are counts the
+   routes can give; the sub-lines underneath them are where this screen runs
+   out of API, and each of those is a recorded gap rather than a number. */
+
+/**
+ * The Dashboard's six overview cards, the worker pool panel and the short
+ * current-and-recent-jobs preview.
+ *
+ * @param {Object} data - `{ jobs, workers, models, datasets }`.
+ */
+function renderDashboard(data) {
+  const { jobs, workers, models, datasets } = data;
+
+  const running = jobs.filter((j) => j.state === 'leased');
+  const queued = jobs.filter((j) => j.state === 'queued');
+  const kindOf = (rows, kind) => rows.filter((j) => j.kind === kind).length;
+
+  const byLabel = {};
+  for (const card of $$('.stat')) {
+    const label = $('.stat-lab', card);
+    if (label) byLabel[label.textContent.trim()] = card;
+  }
+
+  const set = (label, num, parts) => {
+    const card = byLabel[label];
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.textContent = String(num);
+    const sub = $('.stat-sub', card);
+    if (sub) sub.innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
+  };
+
+  set('Jobs', running.length + queued.length, [`${running.length} running`, `${queued.length} queued`]);
+
+  set('Inference', kindOf(running, 'inference') + kindOf(running, 'tracking'), [
+    'running now',
+    `${kindOf(queued, 'inference') + kindOf(queued, 'tracking')} queued`,
+  ]);
+
+  set('Training', kindOf(running, 'training'), ['running now', `${kindOf(queued, 'training')} queued`]);
+
+  /* A `Dataset` has no status column, so "building" cannot be counted -- the
+     builds the Datasets screen shows are its own, not the API's. Gap 19. */
+  set('Datasets', datasets.length, ['saved', 'builds not tracked by the API']);
+
+  /* Nothing on an `MlModel` marks one preferred, and nothing counts how many
+     workers hold it. Gap 28. */
+  set('Models', models.length, ['registered', 'no preferred flag in the API']);
+
+  /* History is the terminal states over the same window the screen is drawn
+     for, which the route can answer only by being handed everything. Gap 24. */
+  const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const finished = jobs.filter((j) => ['succeeded', 'failed', 'cancelled', 'expired'].includes(j.state)
+    && Date.parse(j.created_at) >= newest - 7 * 86400000);
+  set('History', finished.length, ['finished', 'last 7 days']);
+
+  renderDashboardPool(workers);
+  renderDashboardActivity(jobs);
+}
+
+/**
+ * The Worker pool panel's figures.
+ *
+ * The utilization percentages it was drawn with are not available (gap 27), so
+ * what is shown is what the pool really reports: machines, reachability and
+ * slots in use against capacity.
+ *
+ * @param {Object[]} workers - The pool.
+ */
+function renderDashboardPool(workers) {
+  const panel = $('#worker-pool');
+  if (!panel) return;
+
+  const total = workers.length || 1;
+  const counts = ['busy', 'idle', 'paused', 'offline']
+    .map((activity) => [activity, workers.filter((w) => w.activity === activity).length]);
+
+  /* The donut's arcs are measured in circumference rather than `pathLength`
+     here, so each share has to be converted. r=54. */
+  const circumference = 2 * Math.PI * 54;
+  const arcs = $$('.pool .donut circle', panel).slice(1);
+  let offset = 0;
+  counts.forEach(([, value], index) => {
+    const arc = arcs[index];
+    if (!arc) return;
+    const length = (value / total) * circumference;
+    arc.setAttribute('stroke-dasharray', `${length.toFixed(1)} ${(circumference - length).toFixed(1)}`);
+    arc.setAttribute('stroke-dashoffset', `${(-offset).toFixed(1)}`);
+    offset += length;
+  });
+
+  /* The count lives in `.mid > b`, beside its caption. Targeting `.n` here
+     silently did nothing and still read 143, which was right by luck -- the
+     kind of wiring that looks finished and is not. */
+  const enrolled = $('.pool .donut .mid b', panel);
+  if (enrolled) enrolled.textContent = String(workers.length);
+
+  /* The legend is a flat run of dot/key/value/percent, four to a state. */
+  const legend = $('.pool .legend', panel);
+  if (legend) {
+    legend.innerHTML = counts.map(([activity, value]) => {
+      const label = activity[0].toUpperCase() + activity.slice(1);
+      return `<span class="dot" data-state="${activity}"></span><span class="k">${label}</span>`
+        + `<span class="v">${value}</span><span class="p">${Math.round((value / total) * 100)}%</span>`;
+    }).join('');
+  }
+
+  const slots = workers.reduce((sum, w) => sum + w.slot_count, 0);
+  const used = workers.reduce((sum, w) => sum + (w.attempts || []).length, 0);
+  const pct = (n) => `${Math.round((n / Math.max(1, slots)) * 100)}%`;
+
+  const capacity = $('.slots .big .n', panel);
+  if (capacity) capacity.textContent = String(slots);
+
+  const write = (selector, value) => {
+    const node = $(selector, panel);
+    if (node) node.textContent = value;
+  };
+  write('[data-pool-used-summary]', String(used));
+  write('[data-pool-used-summary-percent]', pct(used));
+  write('[data-pool-available]', String(slots - used));
+  write('[data-pool-available-percent]', pct(slots - used));
+}
+
+/**
+ * The short Current and recent jobs preview.
+ *
+ * Deliberately not the Jobs list: running work first, then anything needing
+ * attention, then the most recently finished. Every column still sorts, and the
+ * complete list, filters and paging stay on Jobs.
+ *
+ * @param {Object[]} jobs - The window of jobs.
+ */
+function renderDashboardActivity(jobs) {
+  const table = $('#current-activity table') || $('#current-activity .tbl');
+  if (!table) return;
+
+  const body = $('tbody', table);
+  if (!body) return;
+
+  const issues = batchesWithIssues(jobs);
+  const views = jobs.map((job) => jobView(job, issues));
+
+  /* **Three groups, not one sorted list** (R3). Ranking by state and taking the
+     top five filled the preview with running work and nothing else: eighteen
+     jobs were running, so work needing attention and recently finished work
+     never appeared, and a panel whose whole purpose is the mix showed a third
+     of it. Each group is drawn from separately; leftovers top it back up. */
+  const newest = (rows) => rows.sort((a, b) => Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at));
+  const running = newest(views.filter((v) => v.state === 'running'));
+  const attention = newest(views.filter((v) => ['issues', 'failed', 'expired'].includes(v.state)));
+  const finished = newest(views.filter((v) => v.state === 'done'));
+
+  const shown = [...running.slice(0, 2), ...attention.slice(0, 2), ...finished.slice(0, 1)];
+
+  for (const pool of [running.slice(2), attention.slice(2), finished.slice(1)]) {
+    for (const view of pool) {
+      if (shown.length >= 5) break;
+      shown.push(view);
+    }
+  }
+
+  body.innerHTML = shown.map((view) => {
+    const progress = progressCell(view.job, view.state);
+    const updated = new Date(view.job.updated_at);
+    return `<tr data-job="${view.job.id}">`
+      + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+      + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
+      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+      + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
+      + `<td class="jtime" data-sort="${view.job.updated_at}">${updated.toTimeString().slice(0, 5)}</td>`
+      + '</tr>';
+  }).join('');
+}
+
+/**
+ * Fills the Dashboard from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderDashboardScreen() {
+  if (document.body.dataset.screen !== 'dashboard' || !window.MarpApi) return;
+
+  try {
+    const [jobs, workers, models, datasets] = await Promise.all([
+      window.MarpApi.listJobs({ limit: 500 }),
+      window.MarpApi.listWorkers(),
+      window.MarpApi.listModels(),
+      window.MarpApi.listDatasets(),
+    ]);
+
+    renderDashboard({ jobs: jobs.jobs, workers, models, datasets });
+  } catch (error) {
+    /* One banner, not six broken cards. A landing screen that half-loaded is
+       worse than one that says it could not. */
+    const content = $('.content');
+    if (!content) return;
+    const warning = document.createElement('div');
+    warning.className = 'tblmsg-banner';
+    warning.innerHTML = `<p class="error">The dashboard could not be loaded (${error.status || 'no answer'}). `
+      + '<button class="btn sm" type="button" id="dashRetry">Try again</button></p>';
+    content.prepend(warning);
+    $('#dashRetry')?.addEventListener('click', () => {
+      warning.remove();
+      renderDashboardScreen();
+    });
+  }
+}
+
+
 /* ============================================================ workers table */
 
 /* `GET /gpu/workers` returns every machine, unpaged (gap 12). What it does
@@ -3578,7 +3791,7 @@ wireRowSelect();
 
    Off those screens each render resolves without doing anything, so this costs
    one microtask and no special case. */
-Promise.all([renderJobsTable(), renderWorkersTable()]).then(() => {
+Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen()]).then(() => {
   /* `applyJobsQuery` and `applyWorkersQuery` rewire the rows they draw; these
      are the ones that bind once, to controls that outlive every redraw. */
   wireJobsControls();
