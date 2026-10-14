@@ -16,7 +16,9 @@ module.exports = (sequelize, DataTypes) => {
         code_hash: { type: DataTypes.STRING(64), allowNull: false },
         label: { type: DataTypes.STRING(255), allowNull: true },
         expires_at: { type: DataTypes.DATE, allowNull: false },
-        max_uses: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+        // Null means no limit (#208): the code a volunteer installer carries must not stop
+        // working at a number nobody is watching. A code minted for one machine still has 1.
+        max_uses: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 1 },
         use_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
         revoked_at: { type: DataTypes.DATE, allowNull: true },
         consumed_at: { type: DataTypes.DATE, allowNull: true },
