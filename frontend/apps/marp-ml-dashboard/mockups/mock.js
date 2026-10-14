@@ -328,6 +328,12 @@ function wireSelection() {
  */
 function wireSorting() {
   $$('table.tbl').forEach((table) => {
+    /* The Jobs table sorts its *data* and re-renders, not its DOM. Sorting rows
+       here would only ever reorder the page you can see, which is a different
+       answer from the one the column promises once the list is paged. See
+       `applyJobsQuery`. */
+    if (table.id === 'jobs') return;
+
     const heads = $$('th.sortable', table);
     const body = $('tbody', table);
     if (!heads.length || !body) return;
@@ -690,13 +696,17 @@ function progressCell(job, state) {
 }
 
 /**
- * One job, as a table row.
+ * One job, reduced to what the table shows and sorts on.
+ *
+ * Separate from the rendering because sorting compares *values*: a sort that
+ * reads rendered cells can only order the page it can see, and this screen
+ * pages.
  *
  * @param {Object} job - A job from `GET /gpu/jobs`.
  * @param {Set<string>} issueBatches - Batches that finished with issues.
- * @returns {string} A `<tr>`.
+ * @returns {Object} The view model.
  */
-function jobRow(job, issueBatches) {
+function jobView(job, issueBatches) {
   const spec = job.spec || {};
   const session = spec.session || {};
   const [kindIcon, kindLabel] = JOB_KIND_LABEL[job.kind] || JOB_KIND_LABEL.inference;
@@ -714,15 +724,40 @@ function jobRow(job, issueBatches) {
      session, range, params and reduction and nothing else. The title is
      composed from the video being processed, which is the one human-readable
      thing in there. */
-  const title = ((spec.video && spec.video.source_name) || `Job ${job.id}`).replace(/\.[a-z0-9]+$/i, '');
+  const title = ((spec.video && spec.video.source_name) || `Job ${job.id}`).replace(/.[a-z0-9]+$/i, '');
+
+  const measured = job.progress_done !== null && job.progress_total;
+
+  return {
+    job,
+    spec,
+    session,
+    state,
+    label,
+    title,
+    kindIcon,
+    kindLabel,
+    model: (spec.model && spec.model.name) || 'No model',
+    reduction: spec.reduction ? `${spec.reduction.name} v${spec.reduction.version}` : '',
+    /* -1 rather than 0 for "never measured", so an unstarted job sorts below a
+       job genuinely sitting at zero instead of tying with it. */
+    pct: measured ? Math.round((job.progress_done / job.progress_total) * 100) : -1,
+  };
+}
+
+/**
+ * A view model, as a table row.
+ *
+ * @param {Object} view - From `jobView`.
+ * @returns {string} A `<tr>`.
+ */
+function rowFor(view) {
+  const { job, spec, session, state } = view;
 
   const scope = session.dive ? `Dive ${session.dive} &middot; Line ${session.line}` : 'No session';
   const frames = spec.range
     ? `${session.type || 'Unassigned'} &middot; frames ${spec.range.start_frame.toLocaleString()}-${spec.range.end_frame.toLocaleString()}`
     : '';
-
-  const model = (spec.model && spec.model.name) || 'No model';
-  const reduction = spec.reduction ? `${spec.reduction.name} v${spec.reduction.version}` : '';
 
   const progress = progressCell(job, state);
   const when = new Date(job.created_at);
@@ -736,11 +771,11 @@ function jobRow(job, issueBatches) {
 
   return `<tr data-job="${job.id}">`
     + `<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job ${job.id}"></td>`
-    + `<td class="jname"><span class="name"><svg class="ico ${kindIcon}"><use href="#i-${kindIcon}"/></svg><span class="t">${title}</span></span></td>`
-    + `<td class="jtype"><span class="tag ${kindIcon}">${kindLabel}</span></td>`
+    + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+    + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
     + `<td class="jscope"><span class="two"><span class="a">${scope}</span><span class="b">${frames}</span></span></td>`
-    + `<td class="jmodel"><span class="two"><span class="a">${model}</span><span class="b">${reduction}</span></span></td>`
-    + `<td class="jstatus" data-sort="${JOB_STATE_RANK[state]}"><span class="st" data-state="${state}"><span class="dot"></span>${label}</span></td>`
+    + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
+    + `<td class="jstatus" data-sort="${JOB_STATE_RANK[state]}"><span class="st" data-state="${state}"><span class="dot"></span>${view.label}</span></td>`
     + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
     + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${hhmm}</span><span class="b">${date}</span></span></td>`
     + `<td class="jacts"><span>${actions}</span></td>`
@@ -801,6 +836,246 @@ function renderJobsSummary(jobs) {
 }
 
 /**
+ * The count, the "showing" line, the pager and the sort arrows.
+ *
+ * Every number here was written into the markup — `(69)`, `1-18 of 69`, a fixed
+ * run of five page buttons — and every one of them was wrong the moment the
+ * table stopped being those twenty rows.
+ *
+ * @param {number} total - Matching jobs.
+ * @param {number} from - Zero-based index of the first row shown.
+ * @param {number} shown - How many rows are on this page.
+ * @param {number} pages - How many pages there are.
+ */
+function renderJobsHeaderState(total, from, shown, pages) {
+  const count = $('.panel-hd .count');
+  if (count) count.textContent = `(${total.toLocaleString()})`;
+
+  const showing = $('.panel-ft > span');
+  if (showing) {
+    showing.innerHTML = shown
+      ? `Showing <b class="strong">${(from + 1).toLocaleString()}&ndash;${(from + shown).toLocaleString()}</b> of ${total.toLocaleString()} jobs`
+      : 'No jobs match these filters';
+  }
+
+  const pager = $('.panel-ft .pager');
+  if (pager) {
+    /* Rebuilt rather than patched: the markup held a fixed run of five, which
+       is a lie about any list that is not exactly five pages long. */
+    const buttons = [`<button aria-label="Previous page" data-jobs-page="${jobsQuery.page - 1}"${jobsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
+
+    /* A window around the current page, so a hundred pages do not become a
+       hundred buttons. */
+    const first = Math.max(1, Math.min(jobsQuery.page - 2, pages - 4));
+    for (let p = first; p <= Math.min(pages, first + 4); p++) {
+      buttons.push(`<button data-jobs-page="${p}"${p === jobsQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
+    }
+
+    buttons.push(`<button aria-label="Next page" data-jobs-page="${jobsQuery.page + 1}"${jobsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
+    pager.innerHTML = buttons.join('');
+  }
+
+  /* The arrow is drawn from `aria-sort`, so the accessible state and the drawn
+     state cannot disagree -- `DESIGN.md`, Tables. */
+  for (const th of $$('#jobs thead th.sortable')) {
+    const key = [...th.classList].find((c) => JOBS_SORT_KEYS[c]);
+    if (!key) continue;
+    if (key === jobsQuery.sort.key) th.setAttribute('aria-sort', jobsQuery.sort.dir);
+    else th.removeAttribute('aria-sort');
+  }
+}
+
+/**
+ * What the Jobs screen is currently asking for.
+ *
+ * **Two of these are real query parameters and four are not**, which is the
+ * whole shape of this screen's relationship with the API. `kind` and `state`
+ * are sent to `GET /gpu/jobs`. Search, the time window, the sort column and the
+ * derived *Issues* filter have no parameter to be sent in -- the route takes
+ * `state`, `kind`, `batch_id`, `limit` and `offset` and nothing else -- so they
+ * are applied here, over a window the route *can* be asked for. Gap 26 records
+ * what that costs.
+ *
+ * @type {Object}
+ */
+const jobsQuery = {
+  kind: '',
+  state: '',
+  issuesOnly: false,
+  search: '',
+  windowDays: 7,
+  sort: { key: 'created_at', dir: 'descending' },
+  page: 1,
+  perPage: 18,
+};
+
+/** How each sortable column is ordered. Keyed by the header's class. */
+const JOBS_SORT_KEYS = {
+  hjob: (view) => view.title.toLowerCase(),
+  htype: (view) => view.job.kind,
+  hscope: (view) => `${view.session.dive || ''}${view.session.line || ''}`,
+  hmodel: (view) => ((view.job.spec.model && view.job.spec.model.name) || '').toLowerCase(),
+  hstatus: (view) => JOB_STATE_RANK[view.state],
+  hprog: (view) => view.pct,
+  hupd: (view) => view.job.created_at,
+};
+
+/** The column order the phone's sort strip uses. @type {string[]} */
+const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hprog', 'hupd'];
+
+/** The window the whole screen is drawn from, refetched only when the API query changes. */
+let jobsWindow = null;
+
+/**
+ * Narrows, sorts and pages what came back, then draws it.
+ *
+ * Everything here happens after the fetch on purpose: the parts the route
+ * cannot express are done in one place, so it stays obvious which is which.
+ */
+function applyJobsQuery() {
+  const table = $('#jobs');
+  if (!table || !jobsWindow) return;
+
+  const body = $('tbody', table);
+  const columns = $$('thead th', table).length;
+  const issues = batchesWithIssues(jobsWindow.jobs);
+  const newest = jobsWindow.jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const since = newest - jobsQuery.windowDays * 86400000;
+
+  /* One view per job, so sorting compares values rather than rendered cells.
+     A sort that reads the DOM can only ever order the page it can see. */
+  let views = jobsWindow.jobs.map((job) => {
+    const view = jobView(job, issues);
+    view.haystack = `${view.title} ${view.model} ${view.job.kind} ${view.label} ${view.session.dive || ''} ${view.session.line || ''}`.toLowerCase();
+    return view;
+  });
+
+  if (jobsQuery.issuesOnly) views = views.filter((v) => v.state === 'issues');
+  if (jobsQuery.search) views = views.filter((v) => v.haystack.includes(jobsQuery.search));
+  views = views.filter((v) => Date.parse(v.job.created_at) >= since);
+
+  const key = JOBS_SORT_KEYS[jobsQuery.sort.key] || JOBS_SORT_KEYS.hupd;
+  const sign = jobsQuery.sort.dir === 'ascending' ? 1 : -1;
+  views.sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    if (left < right) return -1 * sign;
+    if (left > right) return 1 * sign;
+    return b.job.id - a.job.id;  /* the same id tie-breaker the route uses */
+  });
+
+  const total = views.length;
+  const pages = Math.max(1, Math.ceil(total / jobsQuery.perPage));
+  if (jobsQuery.page > pages) jobsQuery.page = pages;
+  const from = (jobsQuery.page - 1) * jobsQuery.perPage;
+  const shown = views.slice(from, from + jobsQuery.perPage);
+
+  body.innerHTML = shown.length
+    ? shown.map(rowFor).join('')
+    : `<tr class="tblmsg"><td class="empty" colspan="${columns}">No jobs match these filters.</td></tr>`;
+
+  renderJobsHeaderState(total, from, shown.length, pages);
+  wireJobsOverview();
+  wireSelection();
+  applyTips();
+}
+
+/**
+ * The filters, the sort headers and the pager.
+ *
+ * Bound once. A control that changes `kind` or `state` refetches, because those
+ * are the two the route can answer; everything else only re-narrows what is
+ * already in hand.
+ */
+function wireJobsControls() {
+  const panel = $('#jobs')?.closest('.panel');
+  if (!panel) return;
+
+  const refetch = () => { jobsQuery.page = 1; renderJobsTable(); };
+  const renarrow = () => { jobsQuery.page = 1; applyJobsQuery(); };
+
+  const search = $('#filters input[type="search"]', panel);
+  if (search) {
+    search.addEventListener('input', () => {
+      jobsQuery.search = search.value.trim().toLowerCase();
+      renarrow();
+    });
+  }
+
+  const [kindSel, stateSel, windowSel] = $$('#filters select', panel);
+
+  if (kindSel) {
+    kindSel.addEventListener('change', () => {
+      jobsQuery.kind = { Inference: 'inference', Tracking: 'tracking', Training: 'training', Diagnostic: 'diagnostic' }[kindSel.value] || '';
+      refetch();
+    });
+  }
+
+  if (stateSel) {
+    stateSel.addEventListener('change', () => {
+      /* *Issues* is the odd one: it is derived from a batch's pieces and is not
+         a state the route knows, so it cannot be a `state=` and is narrowed
+         here instead. */
+      const choice = stateSel.value;
+      jobsQuery.issuesOnly = choice === 'Issues';
+      jobsQuery.state = jobsQuery.issuesOnly ? '' : ({
+        Running: 'leased', Queued: 'queued', Done: 'succeeded',
+        Failed: 'failed', Cancelled: 'cancelled', Expired: 'expired',
+      }[choice] || '');
+      refetch();
+    });
+  }
+
+  if (windowSel) {
+    windowSel.addEventListener('change', () => {
+      jobsQuery.windowDays = { 'Last 24 hours': 1, 'Last 7 days': 7, 'Last 30 days': 30 }[windowSel.value] || 7;
+      renarrow();
+    });
+  }
+
+  /* Sorting: the header and the phone strip drive the same query. */
+  const sortBy = (key) => {
+    if (jobsQuery.sort.key === key) {
+      jobsQuery.sort.dir = jobsQuery.sort.dir === 'ascending' ? 'descending' : 'ascending';
+    } else {
+      jobsQuery.sort = { key, dir: key === 'hupd' ? 'descending' : 'ascending' };
+    }
+    jobsQuery.page = 1;
+    applyJobsQuery();
+  };
+
+  for (const th of $$('#jobs thead th.sortable', panel)) {
+    const key = [...th.classList].find((c) => JOBS_SORT_KEYS[c]);
+    if (key) th.addEventListener('click', () => sortBy(key));
+  }
+
+  for (const button of $$('[data-sort-column]', panel)) {
+    const key = JOBS_SORT_COLUMNS[Number(button.dataset.sortColumn)];
+    if (key) button.addEventListener('click', () => sortBy(key));
+  }
+
+  /* The pager is rebuilt on every draw, so its clicks are taken by delegation
+     rather than bound to buttons that will not exist by the time they fire. */
+  const pager = $('.panel-ft .pager', panel);
+  if (pager) {
+    pager.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-jobs-page]');
+      if (!button || button.disabled) return;
+      jobsQuery.page = Number(button.dataset.jobsPage);
+      applyJobsQuery();
+    });
+  }
+
+  const perPage = $('.panel-ft .rpp select', panel);
+  if (perPage) {
+    perPage.addEventListener('change', () => {
+      jobsQuery.perPage = Number(perPage.value) || 18;
+      renarrow();
+    });
+  }
+}
+
+/**
  * Fills the Jobs table from the data layer.
  *
  * Resolves immediately and does nothing anywhere but the Jobs screen, so the
@@ -821,24 +1096,18 @@ async function renderJobsTable() {
   body.innerHTML = fill('loading', 'Loading jobs&hellip;');
 
   try {
-    /* Two calls, for two different questions. The table wants a page; the cards
-       want totals the route cannot be asked for (gap 24), so they are counted
-       over a window. The page is a slice of the same ordering, so the two
-       always agree about any job they both contain. */
-    const window_ = await window.MarpApi.listJobs({ limit: 500 });
-    const page = { jobs: window_.jobs.slice(0, 50), total: window_.total };
+    /* The two things the route *can* be asked. Everything else the screen
+       offers is narrowed after this, because there is no parameter for it. */
+    const ask = { limit: 500 };
+    if (jobsQuery.kind) ask.kind = jobsQuery.kind;
+    if (jobsQuery.state) ask.state = jobsQuery.state;
 
-    renderJobsSummary(window_.jobs);
+    jobsWindow = await window.MarpApi.listJobs(ask);
 
-    if (!page.jobs.length) {
-      body.innerHTML = fill('empty', 'No jobs match these filters.');
-      return;
-    }
-
-    /* Issues is derived over the counting window rather than the page, so a
-       batch split across the page boundary is still seen. */
-    const issues = batchesWithIssues(window_.jobs);
-    body.innerHTML = page.jobs.map((job) => jobRow(job, issues)).join('');
+    /* The cards count the window, not the page: they are about the queue, not
+       about what happens to be on screen. */
+    renderJobsSummary(jobsWindow.jobs);
+    applyJobsQuery();
   } catch (error) {
     /* A real state, and the reason the layer can be made to fail on purpose.
        `?mock=fail:jobs` is how to see it. */
@@ -2919,8 +3188,11 @@ wireRowSelect();
    Off the Jobs screen `renderJobsTable` resolves without doing anything, so
    this costs one microtask and no special case. */
 renderJobsTable().then(() => {
-  wireJobsOverview();
+  /* `applyJobsQuery` already rewires the rows it draws; these are the ones that
+     bind once, to controls that outlive every redraw. */
+  wireJobsControls();
   wireSorting();
+  wireJobsOverview();
   wireSelection();
   applyTips();
 });

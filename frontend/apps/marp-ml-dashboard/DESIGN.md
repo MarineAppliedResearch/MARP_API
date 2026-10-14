@@ -627,6 +627,18 @@ are #104's measurement comment and its two decision comments.
     composed from `spec.video.source_name`, which is why they read "SALT 2025 D0895 L4"
     rather than anything a person chose. A submitted job cannot be given a label and found
     again by it. Found 2026-10-14 in #128.
+26. **Four of the Jobs screen's six controls cannot be asked of the route** — `GET /gpu/jobs`
+    takes `state`, `kind`, `batch_id`, `limit` and `offset`. The Type and Status selectors are
+    therefore real queries. **Search, the time window, every sort column and the derived
+    *Issues* filter are not**, so the screen fetches a window the route *can* answer and
+    narrows, sorts and pages it in the browser.
+
+    That is correct at a few hundred jobs and wrong at the scale #104 assumes, and it fails in
+    a way worth naming: sorting and paging are only honest together while the whole matching
+    set is in hand. Sort by Progress over a window and page 4 follows page 3; sort by Progress
+    over a *page* and the column means nothing. The route needs sort parameters and a search
+    before this list can be paged server-side, which is also what gap 24 needs for the cards.
+    Found 2026-10-14 in #128.
 
 ## Running it
 
