@@ -522,6 +522,14 @@ Every item here is drawn in the mockup and cannot be fetched today. Recorded bec
 mockup that quietly invents an API is how the implementation agent gets misled. Sources
 are #104's measurement comment and its two decision comments.
 
+**These are closed after the dashboard settles, not as they are found** — Isaac,
+2026-10-14. That ordering is deliberate and it is the reason the list keeps growing rather
+than shrinking: wiring a screen is what reveals what the API is missing, and closing each
+one the moment it appears would mean changing routes and schema against a design still
+being argued with. So the list is the backlog, written while the evidence is in front of
+us, and the API work is one pass afterwards. A gap found here is recorded, drawn honestly
+on the screen, and left. Do not open API work off the back of this list without asking.
+
 1. **A logical job over a MARP selection** — a job named for a project, dive or transect,
    with its own state and progress rollup. `batch_id` has no row of its own, and a batch
    is one video cut into frame ranges and cannot span videos. Milestone 2.

@@ -112,6 +112,16 @@ history is the thing with no route — `DESIGN.md` gap 28.
 - **2026-10-14** — A1, A2 and A3 above, from Isaac. Together they settle that the data layer
   serves the shape the API will have rather than the shape the mockup drew, and that the
   distance between the two is recorded in `DESIGN.md` rather than hidden inside the module.
+- **2026-10-14** — **The API gaps are closed after the dashboard settles, not as they are
+  found.** Isaac: *"the api gaps are something we will close and fill in after we settle all
+  this."* So wiring a screen records what the API is missing and moves on; it does not open
+  route or schema work. Six gaps were added during this task (23 to 28) and all six stay
+  open on purpose. The ordering is the point: wiring is what reveals the missing surface,
+  and closing each one on sight would mean changing MARP against a design still being
+  argued with.
+- **2026-10-14** — A dataset build is not a GPU job, and the Datasets screen owns a build's
+  progress and diagnostics rather than linking into the GPU queue. Settled after the Jobs
+  screen's cards disagreed with its own table over six hand-written rows.
 
 ## Plan
 
@@ -140,12 +150,21 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** implementing — A6 answered; expired added to the state vocabulary
-- **Notes:** Steps 1 to 3 of the plan are done. `DESIGN.md` carries gap 23; `mockups/api.js`
-  serves the three read routes and the three mutations from a seeded corpus of 143 machines
-  and 420 jobs, with the `?mock=` switch; `tools/api-contract-check.mjs` fails when the
-  enums drift from `config/gpu-orchestration.js`, and was proved to fail before it was
-  believed. Verified in a browser: byte-identical across reloads, every API job state
-  reachable, `cancelling` derivable, `fail:jobs` returning 500 while workers stay up, `slow`
-  at 2003ms. Step 4 — moving Jobs onto the module — is where *completed with issues* has to
-  be drawn, so A6 blocks it rather than the whole task.
+- **Gate:** your review of the eight wired screens
+- **Notes:** All eight read from `mockups/api.js` — Dashboard, Jobs, Workers, History,
+  Models, Datasets, Inference and Training. The layer serves the three GPU routes plus
+  `ml_models`, `dataset`, `projects` and `users`, in MARP's own shapes, from one seeded
+  corpus: 143 machines, 420 jobs, 29 models, 38 datasets. `?mock=slow` and
+  `?mock=fail:<route>` produce the loading and error states; the default path is instant
+  and byte-identical across reloads.
+
+  `npm run lint` covers four things: every file parses, no raw colours and no state outside
+  the vocabulary, the enums match MARP (the GPU ones from `config/gpu-orchestration.js` and
+  `MlModel.status` from the generated contract), and every page loads the data layer. Each
+  check was proved to fail before it was believed.
+
+  **Not done.** The Inference submission form's deeper surfaces (R19-R29) are still design
+  data, as are the five sampled-series graphs, which have no telemetry behind them. Gaps 23
+  to 28 are recorded and deliberately open. No verification has been written or run, so G3
+  and G4 are both untouched — nothing here has been tested beyond the fast checks and
+  browser inspection.
