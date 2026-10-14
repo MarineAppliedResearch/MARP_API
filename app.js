@@ -31,6 +31,7 @@
  * @constant
  */
 const express = require('express');
+const workerReleases = require('./config/worker-releases');
 
 
 /**
@@ -520,6 +521,22 @@ const frontendSharedDirectory = path.join(frontendDirectory, 'shared');
 app.use('/assets', express.static(path.join(frontendSharedDirectory, 'assets'), { index: false }));
 
 app.use('/shared', express.static(frontendSharedDirectory, { index: false }));
+
+/**
+ * Worker release archives MARP publishes itself (#253).
+ *
+ * **Unauthenticated, deliberately.** A worker downloading an update has a credential, but a
+ * release is a public build artifact and the thing that makes it safe to install is the
+ * SHA-256 the coordinator already told the worker to expect -- not who asked for the bytes.
+ * Requiring the credential here would also mean the updater could not be a plain download.
+ *
+ * `index: false` so the directory cannot be listed: what exists is answered by the releases
+ * table, not by reading a folder.
+ */
+app.use(
+    workerReleases.SERVE_PATH,
+    express.static(workerReleases.STORAGE_DIR, { index: false, fallthrough: false })
+);
 
 // The admin page needs the stricter admin-only check, registered before
 // the broader dashboard guard below so it runs first for this one file.
