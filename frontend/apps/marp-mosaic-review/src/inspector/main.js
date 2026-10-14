@@ -141,8 +141,8 @@ function fitOverlay(overlay, element) {
 }
 
 /* Draw every box at time `t` over a picture of the given intrinsic size, in the annotation
-   GUI's style (`model/box-style.js`), lowest first: the others, then the opened one with
-   its halo, then a box the reviewer has pressed. */
+   GUI's style (`model/box-style.js`), lowest first: the others, then the one the page was
+   opened from, then a box the reviewer has pressed. The halo marks the selected one. */
 function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   const started = performance.now();
   const { context, width, height } = fitOverlay(overlay, element);
@@ -157,6 +157,17 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
     const preview = editor.previewFor(key);
     return { key, box, opened, rect: preview ? preview.rect : toScreen(box, area) };
   }).sort((a, b) => editor.rankOf(a.key, a.opened) - editor.rankOf(b.key, b.opened));
+
+  // The one the page was opened from starts selected, so the halo is on it before anything is
+  // clicked -- and then it follows whatever is clicked instead.
+  if (showing.selectOpened && !editor.selectedKey) {
+    const own = entries.find((entry) => entry.opened);
+    if (own) {
+      showing.selectOpened = false;
+      editor.select(own.key);
+      return;
+    }
+  }
 
   for (const entry of entries) {
     const keyframe = keyframeShown(entry.box.keyframes, t, rate);
@@ -322,6 +333,7 @@ async function show(request) {
     observations: answer.observations,
     rows,
     moment: answer.opened.moment_s,
+    selectOpened: true,
     sessions: answer.sessions || [],
     openedSession: answer.opened.session_id,
     server
