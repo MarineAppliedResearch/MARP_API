@@ -3104,7 +3104,13 @@ function wireDatasetPage() {
     head.setAttribute('aria-expanded', 'false');
     expand.innerHTML = `<button class="exbtn" type="button" aria-label="Expand ${name}" title="Show provenance, composition, split and sample images"><svg class="ico sm"><use href="#i-right"/></svg></button>`;
     head.prepend(expand);
-    const thumbs = samples.map(([src, alt]) => `<figure><img src="${src}" alt="Opening source frame from ${alt}" loading="lazy"><figcaption>${alt}</figcaption></figure>`).join('');
+    /* **Not `loading="lazy"`.** These sit inside a row that is collapsed until
+       somebody opens it, and a lazy image revealed that way is never fetched:
+       the load is deferred and the deferral never resolves, so the strip stays
+       blank with no error anywhere -- the browser simply never asked. Twenty-six
+       thumbnails on a page is a cost worth paying over a panel that silently
+       shows nothing. */
+    const thumbs = samples.map(([src, alt]) => `<figure><img src="${src}" alt="Opening source frame from ${alt}"><figcaption>${alt}</figcaption></figure>`).join('');
     const detail = document.createElement('tr');
     detail.className = 'runrow-body dataset-row-detail';
     detail.hidden = true;

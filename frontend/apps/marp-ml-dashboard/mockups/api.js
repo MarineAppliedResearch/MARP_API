@@ -110,6 +110,11 @@
   /** @type {string[]} */
   const LIVE_ATTEMPT_STATES = ['assigned', 'preparing', 'running', 'uploading'];
 
+  /* `ml_models.status`. Not a GPU enum -- it is declared on the model itself --
+     so `api-contract-check` reads it out of the generated contract. */
+  /** @type {string[]} */
+  const MODEL_STATUSES = ['draft', 'training', 'trained', 'archived'];
+
   /* ================================================================= the corpus */
 
   const GPUS = [
@@ -484,7 +489,7 @@
         model_type: type,
         architecture_version: `yolov8${pick(r, ['n', 's', 'm', 'l'])}`,
         storage_path: `models/marp-${family}-v${version}/weights/best.pt`,
-        status: r() < 0.72 ? 'ready' : pick(r, ['training', 'archived']),
+        status: r() < 0.72 ? 'trained' : pick(r, MODEL_STATUSES.filter((x) => x !== 'trained')),
         notes: null,
         created_at: ago(int(r, 1440, 300000)),
         updated_at: ago(int(r, 60, 1440)),
