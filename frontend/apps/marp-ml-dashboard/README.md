@@ -17,14 +17,21 @@ every surface that no API can answer yet.
 
 ## Running it
 
+Review the dashboard through the main MARP API server. From the repository root:
+
 ```bash
-npm install
-npm run serve        # then open the address it prints
+npm start
 ```
 
-Served in place by the API as well: `app.js` serves any folder under
-`frontend/apps/` by name, so `/apps/marp-ml-dashboard/` opens the Dashboard, and
-the Machine Learning Dashboard card on the MARP landing page links to it.
+Then open `/apps/marp-ml-dashboard/` on that API origin. `app.js` serves the
+application, the MARP front page, authentication, route guards and the API itself;
+reviewing through one origin is what exposes the integrated behavior a person will
+actually use.
+
+Do **not** use `npm run serve` for manual design or functional review. Its standalone
+static server does not reproduce the site root, session authentication, route guards or
+API behavior. It exists only for narrowly scoped automated rendering checks, where those
+omissions are deliberate.
 
 ## The loop
 
@@ -53,7 +60,7 @@ node tools/mock-shots.mjs jobs desktop    # one screen, one width
 | | |
 | --- | --- |
 | `dashboard` | What the pool is running, queued, and struggling with |
-| `jobs` | One queue for training and inference, with the job drawer |
+| `jobs` | One queue for inference, training and dataset-build work, with expandable job detail |
 | `inference` | Running a model over MARP data |
 | `training` | Fine-tuning from a registered model over one saved dataset |
 | `datasets` | Building a training set, and the train/validation/test split |
