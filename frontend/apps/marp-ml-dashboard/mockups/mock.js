@@ -328,11 +328,12 @@ function wireSelection() {
  */
 function wireSorting() {
   $$('table.tbl').forEach((table) => {
-    /* The Jobs table sorts its *data* and re-renders, not its DOM. Sorting rows
-       here would only ever reorder the page you can see, which is a different
-       answer from the one the column promises once the list is paged. See
-       `applyJobsQuery`. */
-    if (table.id === 'jobs') return;
+    /* Jobs and Workers sort their *data* and re-render, not their DOM. Sorting
+       rows here would only ever reorder the page you can see, which is a
+       different answer from the one the column promises once the list is paged
+       -- and with both handlers bound the two sorts fought, which is how this
+       was found. See `applyJobsQuery` and `applyWorkersQuery`. */
+    if (table.id === 'jobs' || table.id === 'workers') return;
 
     const heads = $$('th.sortable', table);
     const body = $('tbody', table);
@@ -979,6 +980,396 @@ function applyJobsQuery() {
   wireSelection();
   applyTips();
 }
+
+/* ============================================================ workers table */
+
+/* `GET /gpu/workers` returns every machine, unpaged (gap 12). What it does
+   *not* return is any live machine telemetry: `capabilities` is the static blob
+   a worker sent at enrolment -- "GPUs and VRAM, driver, disk, engines" -- and a
+   heartbeat carries the attempt's progress and nothing about the machine. So
+   GPU load, VRAM load, temperature, power, clocks, CPU, system RAM, disk and
+   process uptime have no source at all, and are drawn as not reported rather
+   than invented. Gap 27. */
+
+/** Not measured is not zero. One dash, one explanation, used everywhere. */
+const NOT_REPORTED = '<span class="dash" title="MARP records no live machine telemetry: a worker reports its capabilities at enrolment and its attempt progress on heartbeat">&mdash;</span>';
+
+/** Activity to the design's state word. The API derives `activity` already. */
+const WORKER_ACTIVITY = {
+  busy: ['busy', 'Busy'],
+  idle: ['idle', 'Idle'],
+  paused: ['paused', 'Paused'],
+  offline: ['offline', 'Offline'],
+};
+
+/** What the Workers screen is asking for. The route takes no parameters at all. */
+const workersQuery = {
+  activity: '', gpu: '', search: '',
+  sort: { key: 'whb', dir: 'ascending' },
+  page: 1, perPage: 5,
+};
+
+/** How each sortable column orders. Keyed by the header's class. */
+const WORKERS_SORT_KEYS = {
+  wname: (v) => v.worker.name.toLowerCase(),
+  wstate: (v) => ['busy', 'idle', 'paused', 'offline'].indexOf(v.activity),
+  wver: (v) => v.worker.worker_version || '',
+  wgpu: (v) => v.gpu.toLowerCase(),
+  wjobs: (v) => v.used / Math.max(1, v.worker.slot_count),
+  whb: (v) => (v.worker.last_seen_at ? -Date.parse(v.worker.last_seen_at) : Infinity),
+};
+
+/** The pool, as fetched. The route does not page, so this is all of it. */
+let workersPool = null;
+
+/**
+ * How long ago, in the units an operator reads.
+ *
+ * Measured against the data layer's fixed present rather than the wall clock,
+ * so the column says the same thing to two people looking at one screen.
+ *
+ * @param {?string} iso - An instant, or null.
+ * @returns {string}
+ */
+function sinceText(iso) {
+  if (!iso) return 'never';
+  const seconds = Math.max(0, Math.round((window.MarpApi._meta.NOW - Date.parse(iso)) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
+}
+
+/**
+ * One worker, reduced to what the table shows and sorts on.
+ *
+ * @param {Object} worker - A worker from `GET /gpu/workers`.
+ * @returns {Object}
+ */
+function workerView(worker) {
+  const caps = worker.capabilities || {};
+  const [state, label] = WORKER_ACTIVITY[worker.activity] || WORKER_ACTIVITY.idle;
+  const vramGb = caps.vram_mb ? Math.round(caps.vram_mb / 1024) : null;
+
+  return {
+    worker, caps, state, label,
+    activity: worker.activity,
+    gpu: caps.gpu || 'Not reported',
+    vram: vramGb ? `${vramGb} GB` : '',
+    used: (worker.attempts || []).length,
+    haystack: `${worker.name} ${worker.worker_id} ${caps.gpu || ''} ${worker.worker_version || ''}`.toLowerCase(),
+  };
+}
+
+/**
+ * A worker, as its row and its expanded detail.
+ *
+ * @param {Object} view - From `workerView`.
+ * @returns {string} Two `<tr>`s, the head and its body.
+ */
+function workerRows(view) {
+  const { worker, caps } = view;
+  const attempt = (worker.attempts || [])[0] || null;
+
+  const head = `<tr class="runrow-head" data-worker="${worker.worker_id}" aria-expanded="false">`
+    + `<td class="ex"><button class="exbtn" type="button" aria-label="Show ${worker.name} details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
+    + `<td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">${worker.name}</span></span></td>`
+    + `<td class="jstatus" data-sort="${WORKERS_SORT_KEYS.wstate(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+    + `<td class="wver">${worker.worker_version || NOT_REPORTED}</td>`
+    + `<td class="wgpu"><span class="two"><span class="a">${view.gpu}</span><span class="b">${view.vram}</span></span></td>`
+    + `<td class="wcpu" data-sort="-1">${NOT_REPORTED}</td>`
+    + `<td class="wmem" data-sort="-1">${NOT_REPORTED}</td>`
+    + `<td class="wmodel">${NOT_REPORTED}</td>`
+    + `<td class="num" data-sort="${view.used}">${view.used} / ${worker.slot_count}</td>`
+    + `<td class="wup">${NOT_REPORTED}</td>`
+    + `<td class="whb" data-sort="${WORKERS_SORT_KEYS.whb(view)}">${sinceText(worker.last_seen_at)}</td>`
+    + '</tr>';
+
+  const progress = attempt && attempt.progress_done !== null
+    ? `${attempt.progress_done.toLocaleString()} / ${attempt.progress_total.toLocaleString()} ${attempt.progress_unit}`
+    : 'No heartbeat yet';
+
+  const live = attempt
+    ? '<div class="sect"><h3>Live attempt</h3><dl class="kv">'
+      + `<dt>Attempt</dt><dd>${attempt.id} &middot; job ${attempt.job_id}</dd>`
+      + `<dt>State</dt><dd>${attempt.state}</dd>`
+      + `<dt>Progress</dt><dd>${progress}</dd>`
+      + `<dt>Slot</dt><dd>${attempt.slot_index} of ${worker.slot_count}</dd>`
+      + `<dt>Heartbeat</dt><dd>${sinceText(attempt.last_heartbeat_at)}</dd>`
+      + '</dl></div>'
+    : '<div class="sect"><h3>Live attempt</h3><p class="muted">No attempt on this machine right now.</p></div>';
+
+  const body = '<tr class="runrow-body"><td colspan="11"><div class="rundetail">'
+    + `<div class="wdhead"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">${worker.name}</span></span>`
+    + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
+    + `<span class="wid mono" title="Worker id as the pool reports it">wk_${worker.worker_id}</span>`
+    + '<span class="wdacts"><button class="btn sm" title="Rename is the one worker mutation the API has"><svg class="ico sm"><use href="#i-pencil"/></svg>Rename</button></span></div>'
+    + '<div class="grid" data-cols="2">'
+    + '<div class="sect"><h3>Reported at enrolment</h3><dl class="kv">'
+    + `<dt>GPU</dt><dd>${caps.gpu || NOT_REPORTED}</dd>`
+    + `<dt>VRAM</dt><dd>${view.vram || NOT_REPORTED}</dd>`
+    + `<dt>Driver / CUDA</dt><dd>${caps.driver || '?'} / ${caps.cuda || '?'}</dd>`
+    + `<dt>Worker version</dt><dd>${worker.worker_version || NOT_REPORTED}</dd>`
+    + `<dt>Slots</dt><dd>${view.used} of ${worker.slot_count} in use</dd>`
+    + `<dt>Enrolled</dt><dd>${new Date(worker.enrolled_at).toISOString().slice(0, 10)}</dd>`
+    + `<dt>Last heard</dt><dd>${sinceText(worker.last_seen_at)}</dd>`
+    + '</dl>'
+    /* Said once, here, rather than left to be inferred from a column of dashes:
+       this machine is not instrumented and MARP is not asking it to be. */
+    + '<p class="muted">Live load, temperature, power, clocks, CPU, system RAM and disk are not reported. '
+    + 'A worker sends its capabilities once at enrolment and its attempt progress on heartbeat (gap 27).</p>'
+    + '</div>'
+    + live
+    + '</div></div></td></tr>';
+
+  return head + body;
+}
+
+/** Narrows, sorts and pages the pool, then draws it. */
+function applyWorkersQuery() {
+  const table = $('#workers');
+  if (!table || !workersPool) return;
+
+  const body = $('tbody', table);
+  let views = workersPool.map(workerView);
+
+  if (workersQuery.activity) views = views.filter((v) => v.activity === workersQuery.activity);
+  if (workersQuery.gpu) views = views.filter((v) => v.gpu.toLowerCase().includes(workersQuery.gpu));
+  if (workersQuery.search) views = views.filter((v) => v.haystack.includes(workersQuery.search));
+
+  const key = WORKERS_SORT_KEYS[workersQuery.sort.key] || WORKERS_SORT_KEYS.whb;
+  const sign = workersQuery.sort.dir === 'ascending' ? 1 : -1;
+  views.sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    if (left < right) return -1 * sign;
+    if (left > right) return 1 * sign;
+    return a.worker.worker_id - b.worker.worker_id;
+  });
+
+  const total = views.length;
+  const pages = Math.max(1, Math.ceil(total / workersQuery.perPage));
+  if (workersQuery.page > pages) workersQuery.page = pages;
+  const from = (workersQuery.page - 1) * workersQuery.perPage;
+  const shown = views.slice(from, from + workersQuery.perPage);
+
+  body.innerHTML = shown.length
+    ? shown.map(workerRows).join('')
+    : '<tr class="tblmsg"><td class="empty" colspan="11">No workers match these filters.</td></tr>';
+
+  const count = $('#worker-pool .panel-hd .count');
+  if (count) count.textContent = `(${total.toLocaleString()})`;
+
+  const showing = $('#worker-pool .panel-ft > span');
+  if (showing) {
+    showing.innerHTML = shown.length
+      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} workers`
+      : 'No workers match these filters';
+  }
+
+  const pager = $('#worker-pool .panel-ft .pager');
+  if (pager) {
+    const buttons = [`<button aria-label="Previous page" data-workers-page="${workersQuery.page - 1}"${workersQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
+    const first = Math.max(1, Math.min(workersQuery.page - 2, pages - 4));
+    for (let p = first; p <= Math.min(pages, first + 4); p++) {
+      buttons.push(`<button data-workers-page="${p}"${p === workersQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
+    }
+    buttons.push(`<button aria-label="Next page" data-workers-page="${workersQuery.page + 1}"${workersQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
+    pager.innerHTML = buttons.join('');
+  }
+
+  for (const th of $$('#workers thead th.sortable')) {
+    const sortKey = [...th.classList].find((c) => WORKERS_SORT_KEYS[c]);
+    if (!sortKey) continue;
+    if (sortKey === workersQuery.sort.key) th.setAttribute('aria-sort', workersQuery.sort.dir);
+    else th.removeAttribute('aria-sort');
+  }
+
+  wireAccordions();
+}
+
+/**
+ * The four headline cards, the donut and its key.
+ *
+ * Drawn from the same fetch as the table, because a card reading 98 busy over a
+ * table holding 22 is the failure this screen already had once.
+ *
+ * Two of the four are about *jobs* rather than machines, so this takes both.
+ *
+ * @param {Object[]} workers - The pool.
+ * @param {Object[]} jobs - A window of jobs, for the two queue cards.
+ */
+function renderWorkersSummary(workers, jobs) {
+  const by = (activity) => workers.filter((w) => w.activity === activity).length;
+  const busy = by('busy');
+  const idle = by('idle');
+  const paused = by('paused');
+  const offline = by('offline');
+  const total = workers.length;
+
+  /* Reachable is everything the scheduler could still talk to, which includes a
+     paused machine: paused is a decision, offline is a silence. */
+  const reachable = total - offline;
+  const slots = workers.reduce((sum, w) => sum + w.slot_count, 0);
+  const used = workers.reduce((sum, w) => sum + (w.attempts || []).length, 0);
+
+  const running = jobs.filter((j) => j.state === 'leased');
+  const queued = jobs.filter((j) => j.state === 'queued');
+  const oldestQueued = queued.reduce((oldest, j) => Math.min(oldest, Date.parse(j.created_at)), Infinity);
+  const waitingMinutes = Number.isFinite(oldestQueued)
+    ? Math.round((window.MarpApi._meta.NOW - oldestQueued) / 60000) : 0;
+
+  const cards = $$('.workers-stats .stat');
+  const set = (card, num, parts) => {
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.innerHTML = num;
+    const sub = $('.stat-sub', card);
+    if (sub) sub.innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
+  };
+
+  set(cards[0], `${reachable}<small>/ ${total}</small>`, [`${busy} busy`, `${idle} idle`, `${paused} paused`]);
+  set(cards[1], `${used}<small>/ ${slots}</small>`, [`${Math.round((used / Math.max(1, slots)) * 100)}% used`, `${slots - used} free`]);
+  /* The breakdown has to add up to the number above it. MARP has four job
+     kinds and this card named two, so a diagnostic run quietly went missing
+     from a sum a reader can do in their head. */
+  const inferenceish = running.filter((j) => j.kind === 'inference' || j.kind === 'tracking').length;
+  const trainingish = running.filter((j) => j.kind === 'training').length;
+  const others = running.length - inferenceish - trainingish;
+  set(cards[2], String(running.length), [
+    `${inferenceish} inference`,
+    `${trainingish} training`,
+    ...(others ? [`${others} diagnostic`] : []),
+  ]);
+  set(cards[3], String(queued.length), [queued.length ? `longest waiting ${waitingMinutes}m` : 'nothing waiting']);
+
+  /* The donut's `pathLength` is the total, so each arc's dash is simply its own
+     count and nothing has to be converted into a percentage first. */
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const parts = [['inference', busy], ['done', idle], ['queued', paused], ['attention', offline]];
+    let offset = 0;
+    for (const [cls, value] of parts) {
+      const arc = $(`.donut-part.${cls}`, donut);
+      if (!arc) continue;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    }
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(total);
+    const label = $('.job-donut');
+    if (label) label.setAttribute('aria-label', `${total} workers: ${busy} busy, ${idle} idle, ${paused} paused and ${offline} offline`);
+  }
+
+  const key = $('.job-mix-key');
+  if (key) {
+    key.innerHTML = [['inference', busy, 'Busy'], ['done', idle, 'Idle'], ['queued', paused, 'Paused'], ['attention', offline, 'Offline']]
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+}
+
+/**
+ * Fills the Workers table from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderWorkersTable() {
+  const table = $('#workers');
+  if (!table || !window.MarpApi) return;
+
+  const body = $('tbody', table);
+  body.innerHTML = '<tr class="tblmsg"><td class="loading" colspan="11">Loading the pool&hellip;</td></tr>';
+
+  try {
+    /* Both routes, because two of the four headline cards are about the queue
+       rather than the machines. One failure state covers them: a screen that
+       half-loaded would be worse than one that says it could not. */
+    const [pool, jobs] = await Promise.all([
+      window.MarpApi.listWorkers(),
+      window.MarpApi.listJobs({ limit: 500 }),
+    ]);
+
+    workersPool = pool;
+    renderWorkersSummary(pool, jobs.jobs);
+    applyWorkersQuery();
+  } catch (error) {
+    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load the pool (${error.status || 'no answer'}). `
+      + '<button class="btn sm" type="button" id="workersRetry">Try again</button></td></tr>';
+    const retry = $('#workersRetry');
+    if (retry) retry.addEventListener('click', renderWorkersTable);
+  }
+}
+
+/**
+ * The pool's filters, sort headers and pager. Bound once.
+ *
+ * Nothing here refetches: `GET /gpu/workers` takes no parameters at all, so
+ * every control narrows what is already in hand.
+ */
+function wireWorkersControls() {
+  const panel = $('#worker-pool');
+  if (!panel) return;
+
+  const renarrow = () => { workersQuery.page = 1; applyWorkersQuery(); };
+
+  const search = $('.search input', panel);
+  if (search) {
+    search.addEventListener('input', () => {
+      workersQuery.search = search.value.trim().toLowerCase();
+      renarrow();
+    });
+  }
+
+  const [activitySel, gpuSel] = $$('.panel-tools select', panel);
+  if (activitySel) {
+    activitySel.addEventListener('change', () => {
+      workersQuery.activity = { Busy: 'busy', Idle: 'idle', Paused: 'paused', Offline: 'offline' }[activitySel.value] || '';
+      renarrow();
+    });
+  }
+  if (gpuSel) {
+    gpuSel.addEventListener('change', () => {
+      workersQuery.gpu = gpuSel.value.startsWith('All') ? '' : gpuSel.value.toLowerCase();
+      renarrow();
+    });
+  }
+
+  for (const th of $$('#workers thead th.sortable', panel)) {
+    const key = [...th.classList].find((c) => WORKERS_SORT_KEYS[c]);
+    if (!key) continue;
+    th.addEventListener('click', () => {
+      if (workersQuery.sort.key === key) {
+        workersQuery.sort.dir = workersQuery.sort.dir === 'ascending' ? 'descending' : 'ascending';
+      } else {
+        workersQuery.sort = { key, dir: 'ascending' };
+      }
+      workersQuery.page = 1;
+      applyWorkersQuery();
+    });
+  }
+
+  const pager = $('.panel-ft .pager', panel);
+  if (pager) {
+    pager.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-workers-page]');
+      if (!button || button.disabled) return;
+      workersQuery.page = Number(button.dataset.workersPage);
+      applyWorkersQuery();
+    });
+  }
+
+  const perPage = $('.panel-ft .rpp select', panel);
+  if (perPage) {
+    perPage.addEventListener('change', () => {
+      workersQuery.perPage = Number(perPage.value) || 5;
+      renarrow();
+    });
+  }
+}
+
 
 /**
  * The filters, the sort headers and the pager.
@@ -3185,12 +3576,13 @@ wireRowSelect();
    synchronous layer could not be swapped for one. So the four that bind to rows
    wait, and everything above, which does not care, has already run.
 
-   Off the Jobs screen `renderJobsTable` resolves without doing anything, so
-   this costs one microtask and no special case. */
-renderJobsTable().then(() => {
-  /* `applyJobsQuery` already rewires the rows it draws; these are the ones that
-     bind once, to controls that outlive every redraw. */
+   Off those screens each render resolves without doing anything, so this costs
+   one microtask and no special case. */
+Promise.all([renderJobsTable(), renderWorkersTable()]).then(() => {
+  /* `applyJobsQuery` and `applyWorkersQuery` rewire the rows they draw; these
+     are the ones that bind once, to controls that outlive every redraw. */
   wireJobsControls();
+  wireWorkersControls();
   wireSorting();
   wireJobsOverview();
   wireSelection();

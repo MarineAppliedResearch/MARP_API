@@ -640,6 +640,25 @@ are #104's measurement comment and its two decision comments.
     before this list can be paged server-side, which is also what gap 24 needs for the cards.
     Found 2026-10-14 in #128.
 
+27. **A worker reports nothing about itself while it runs** — the Workers table has columns
+    for GPU load, VRAM load and temperature/power, and the expanded row had a *Live machine
+    telemetry* section listing utilization, temperature, fan, power, clocks, CPU, system RAM,
+    disk and process uptime. **None of it exists.** `capabilities` is a blob sent once at
+    enrolment — the schema calls it "GPUs and VRAM, driver, disk, engines, ranges supported" —
+    and `POST /gpu/attempts/:id/heartbeat` carries the *attempt's* progress and nothing about
+    the machine. There is no route, no column and no field anywhere that holds a live reading.
+
+    So those cells draw a dash with an explanation rather than a number, the same rule progress
+    follows before its first heartbeat, and the expanded row says plainly what is not reported
+    instead of leaving it to be inferred from a column of dashes. What *is* real there: name,
+    activity (derived by the route), version, the enrolment capabilities, slots in use against
+    slot count, when it enrolled, when it was last heard from, and its live attempt.
+
+    Uptime is in the same position for a subtler reason: `local_id` is durable across restarts,
+    so `enrolled_at` is when the machine first appeared, not when its process started. Showing
+    the age of the enrolment under a column headed *Uptime* would be a wrong number rather than
+    a missing one. Found 2026-10-14 in #128.
+
 ## Running it
 
 ```bash
