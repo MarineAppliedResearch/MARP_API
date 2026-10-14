@@ -328,12 +328,13 @@ function wireSelection() {
  */
 function wireSorting() {
   $$('table.tbl').forEach((table) => {
-    /* Jobs and Workers sort their *data* and re-render, not their DOM. Sorting
-       rows here would only ever reorder the page you can see, which is a
-       different answer from the one the column promises once the list is paged
-       -- and with both handlers bound the two sorts fought, which is how this
-       was found. See `applyJobsQuery` and `applyWorkersQuery`. */
-    if (table.id === 'jobs' || table.id === 'workers') return;
+    /* Jobs, Workers and History sort their *data* and re-render, not their
+       DOM. Sorting rows here would only ever reorder the page you can see,
+       which is a different answer from the one the column promises once the
+       list is paged -- and with both handlers bound the two sorts fought,
+       leaving the arrow saying ascending over descending rows. That happened
+       twice, which is why this is a list rather than three separate guards. */
+    if (['jobs', 'workers', 'history'].includes(table.id)) return;
 
     const heads = $$('th.sortable', table);
     const body = $('tbody', table);
@@ -980,6 +981,377 @@ function applyJobsQuery() {
   wireSelection();
   applyTips();
 }
+
+/* =========================================================== history */
+
+/* History is the terminal states over a window, which is the one question
+   `GET /gpu/jobs` cannot be asked (gap 24): there is no date parameter, so the
+   window is applied here over everything the route will hand back. It also
+   resolves two ids the job carries bare -- `session.project_id` and
+   `created_by` -- against `GET /api/v2/projects` and `GET /api/v2/users`. */
+
+/** What the History screen is asking for. None of it is a query parameter. */
+const historyQuery = {
+  project: '', kind: '', state: '', model: '', windowDays: 30,
+  sort: { key: 'hend', dir: 'descending' },
+  page: 1, perPage: 10,
+};
+
+/** How each sortable column orders. Keyed by the header's class. */
+const HISTORY_SORT_KEYS = {
+  hjob: (v) => v.title.toLowerCase(),
+  htype: (v) => v.job.kind,
+  hstatus: (v) => JOB_STATE_RANK[v.state],
+  hscope: (v) => v.projectName.toLowerCase(),
+  hmodel: (v) => v.model.toLowerCase(),
+  hdata: (v) => v.frames,
+  hstart: (v) => v.job.created_at,
+  hend: (v) => v.job.updated_at,
+  hdur: (v) => v.tookMs,
+  hwho: (v) => v.byName.toLowerCase(),
+};
+
+/** Everything History draws from, fetched once. */
+let historyData = null;
+
+/**
+ * A finished job, reduced to what History shows.
+ *
+ * @param {Object} job - A terminal job.
+ * @param {Set<string>} issues - Batches that finished with issues.
+ * @param {Map<number,string>} projects - project_id to name.
+ * @param {Map<number,string>} users - user_id to name.
+ * @returns {Object}
+ */
+function historyView(job, issues, projects, users) {
+  const view = jobView(job, issues);
+  const session = view.session;
+  const started = Date.parse(job.created_at);
+  const completed = Date.parse(job.updated_at);
+
+  view.projectName = projects.get(session.project_id) || 'Unknown project';
+  view.byName = users.get(job.created_by) || 'Unattributed';
+  view.frames = job.spec.range ? job.spec.range.end_frame - job.spec.range.start_frame : 0;
+  /* `updated_at` is the closest thing the list route has to a finish time: the
+     attempt's `finished_at` is real but only `GET /gpu/jobs/:id` returns it,
+     and one detail call per row is what gap 23 already rejected. */
+  view.tookMs = Math.max(0, completed - started);
+  return view;
+}
+
+/**
+ * How long something took, in the units an operator reads.
+ *
+ * @param {number} ms - Duration.
+ * @returns {string}
+ */
+function tookText(ms) {
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+/** Narrows, sorts and pages the finished work, then draws it. */
+function applyHistoryQuery() {
+  const table = $('#history');
+  if (!table || !historyData) return;
+
+  const body = $('tbody', table);
+  const { jobs, projects, users } = historyData;
+
+  const issues = batchesWithIssues(jobs);
+  const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const since = newest - historyQuery.windowDays * 86400000;
+
+  const terminal = ['succeeded', 'failed', 'cancelled', 'expired'];
+  let views = jobs
+    .filter((j) => terminal.includes(j.state) && Date.parse(j.created_at) >= since)
+    .map((job) => historyView(job, issues, projects, users));
+
+  /* The window drives the cards as well as the table, so they are counted
+     before the other filters narrow anything. */
+  renderHistoryOutcomes(views, jobs, since, newest);
+
+  if (historyQuery.project) views = views.filter((v) => v.projectName === historyQuery.project);
+  if (historyQuery.kind) views = views.filter((v) => v.job.kind === historyQuery.kind);
+  if (historyQuery.model) views = views.filter((v) => v.model === historyQuery.model);
+  if (historyQuery.state) {
+    views = historyQuery.state === 'issues'
+      ? views.filter((v) => v.state === 'issues')
+      : views.filter((v) => v.state === historyQuery.state);
+  }
+
+  const key = HISTORY_SORT_KEYS[historyQuery.sort.key] || HISTORY_SORT_KEYS.hend;
+  const sign = historyQuery.sort.dir === 'ascending' ? 1 : -1;
+  views.sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    if (left < right) return -1 * sign;
+    if (left > right) return 1 * sign;
+    return b.job.id - a.job.id;
+  });
+
+  const total = views.length;
+  const pages = Math.max(1, Math.ceil(total / historyQuery.perPage));
+  if (historyQuery.page > pages) historyQuery.page = pages;
+  const from = (historyQuery.page - 1) * historyQuery.perPage;
+  const shown = views.slice(from, from + historyQuery.perPage);
+
+  const columns = $$('thead th', table).length;
+  body.innerHTML = shown.length
+    ? shown.map(historyRow).join('')
+    : `<tr class="tblmsg"><td class="empty" colspan="${columns}">No finished work matches these filters.</td></tr>`;
+
+  const heading = $('#history-panel .panel-hd h2');
+  if (heading) heading.textContent = `Job history (${total.toLocaleString()})`;
+
+  const showing = $('#history-panel .panel-ft > span');
+  if (showing) {
+    const windowText = historyQuery.windowDays === 365 ? 'this year' : `the last ${historyQuery.windowDays} days`;
+    showing.innerHTML = shown.length
+      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} jobs in ${windowText}`
+      : `Nothing finished in ${windowText} matches these filters`;
+  }
+
+  const pager = $('#history-panel .panel-ft .pager');
+  if (pager) {
+    const buttons = [`<button aria-label="Previous page" data-history-page="${historyQuery.page - 1}"${historyQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
+    const first = Math.max(1, Math.min(historyQuery.page - 2, pages - 4));
+    for (let p = first; p <= Math.min(pages, first + 4); p++) {
+      buttons.push(`<button data-history-page="${p}"${p === historyQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
+    }
+    buttons.push(`<button aria-label="Next page" data-history-page="${historyQuery.page + 1}"${historyQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
+    pager.innerHTML = buttons.join('');
+  }
+
+  for (const th of $$('#history thead th.sortable')) {
+    const sortKey = [...th.classList].find((c) => HISTORY_SORT_KEYS[c]);
+    if (!sortKey) continue;
+    if (sortKey === historyQuery.sort.key) th.setAttribute('aria-sort', historyQuery.sort.dir);
+    else th.removeAttribute('aria-sort');
+  }
+}
+
+/**
+ * The four outcome cards and the outcomes donut.
+ *
+ * @param {Object[]} views - Finished work inside the window.
+ * @param {Object[]} jobs - Every job, for the previous window's comparison.
+ * @param {number} since - Start of the window.
+ * @param {number} newest - The corpus's latest job.
+ */
+function renderHistoryOutcomes(views, jobs, since, newest) {
+  const done = views.filter((v) => v.state === 'done').length;
+  const issues = views.filter((v) => v.state === 'issues').length;
+  const bad = views.filter((v) => ['failed', 'cancelled', 'expired'].includes(v.state)).length;
+  const total = views.length || 1;
+
+  /* The first card compares against the window before this one, which is a
+     real question the data can answer -- it is only the *route* that cannot. */
+  const span = newest - since;
+  const previous = jobs.filter((j) => {
+    const at = Date.parse(j.created_at);
+    return at >= since - span && at < since
+      && ['succeeded', 'failed', 'cancelled', 'expired'].includes(j.state);
+  }).length;
+  const change = previous ? Math.round(((views.length - previous) / previous) * 100) : 0;
+
+  const byLabel = {};
+  for (const card of $$('.stat')) {
+    const label = $('.stat-lab', card);
+    if (label) byLabel[label.textContent.trim()] = card;
+  }
+  const set = (label, num, sub) => {
+    const card = byLabel[label];
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.textContent = String(num);
+    const s = $('.stat-sub', card);
+    if (s) s.innerHTML = `<span>${sub}</span>`;
+  };
+  const share = (n) => `${Math.round((n / total) * 100)}% of the window`;
+
+  set('Jobs in this window', views.length, previous
+    ? `${change >= 0 ? '+' : ''}${change}% against the window before`
+    : 'no earlier window to compare');
+  set('Completed', done, share(done));
+  set('Completed with issues', issues, share(issues));
+  set('Failed or cancelled', bad, share(bad));
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = [['done', done, 'Completed'], ['issues', issues, 'With issues'], ['failed', bad, 'Failed / cancelled']]
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const arcs = $$('.donut-part', donut);
+    const parts = [done, issues, bad];
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = parts[index] || 0;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(views.length);
+  }
+}
+
+/**
+ * One finished job, as a table row.
+ *
+ * @param {Object} view - From `historyView`.
+ * @returns {string} A `<tr>`.
+ */
+function historyRow(view) {
+  const { job } = view;
+  const started = new Date(job.created_at);
+  const completed = new Date(job.updated_at);
+  const stamp = (d) => `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
+
+  return `<tr data-job="${job.id}">`
+    + '<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select ' + view.title + '"></td>'
+    + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+    + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
+    + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+    + `<td class="hscope"><span class="two"><span class="a">${view.projectName}</span><span class="b">Dive ${view.session.dive || '?'} &middot; Line ${view.session.line || '?'}</span></span></td>`
+    + `<td class="hmodel">${view.model}</td>`
+    + `<td class="hdata num" data-sort="${view.frames}">${view.frames.toLocaleString()}</td>`
+    + `<td class="hstart" data-sort="${job.created_at}">${stamp(started)}</td>`
+    + `<td class="hend" data-sort="${job.updated_at}">${stamp(completed)}</td>`
+    + `<td class="hdur num" data-sort="${view.tookMs}">${tookText(view.tookMs)}</td>`
+    + `<td class="hwho">${view.byName}</td>`
+    + '<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
+    + '</tr>';
+}
+
+/**
+ * Fills the History screen from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderHistoryScreen() {
+  const table = $('#history');
+  if (!table || !window.MarpApi) return;
+
+  const body = $('tbody', table);
+  const columns = $$('thead th', table).length;
+  body.innerHTML = `<tr class="tblmsg"><td class="loading" colspan="${columns}">Loading history&hellip;</td></tr>`;
+
+  try {
+    const [jobs, projects, users] = await Promise.all([
+      window.MarpApi.listJobs({ limit: 500 }),
+      window.MarpApi.listProjects(),
+      window.MarpApi.listUsers(),
+    ]);
+
+    historyData = {
+      jobs: jobs.jobs,
+      projects: new Map(projects.map((p) => [p.project_id, p.name])),
+      users: new Map(users.map((u) => [u.user_id, u.name])),
+    };
+
+    fillHistoryFilterOptions();
+    applyHistoryQuery();
+  } catch (error) {
+    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="${columns}">Could not load history (${error.status || 'no answer'}). `
+      + '<button class="btn sm" type="button" id="historyRetry">Try again</button></td></tr>';
+    $('#historyRetry')?.addEventListener('click', renderHistoryScreen);
+  }
+}
+
+/**
+ * Fills the Project and Model selectors from what is actually there.
+ *
+ * They were written out by hand and listed six projects and two models, none of
+ * which need match the data: a filter offering a choice that matches nothing is
+ * worse than no filter.
+ */
+function fillHistoryFilterOptions() {
+  const selects = $$('#history-panel select, .panel-tools select');
+  const byLabel = {};
+  for (const select of selects) byLabel[select.getAttribute('aria-label')] = select;
+
+  const projects = [...new Set(historyData.jobs.map((j) => historyData.projects.get(j.spec.session.project_id)).filter(Boolean))].sort();
+  const models = [...new Set(historyData.jobs.map((j) => j.spec.model && j.spec.model.name).filter(Boolean))].sort();
+
+  if (byLabel.Project) {
+    byLabel.Project.innerHTML = ['<option>All projects</option>', ...projects.map((p) => `<option>${p}</option>`)].join('');
+  }
+  if (byLabel.Model) {
+    byLabel.Model.innerHTML = ['<option>All models</option>', ...models.map((m) => `<option>${m}</option>`)].join('');
+  }
+}
+
+/** The History filters, sort headers and pager. Bound once. */
+function wireHistoryControls() {
+  const panel = $('#history-panel') || $('#history')?.closest('.panel');
+  if (!panel) return;
+
+  const renarrow = () => { historyQuery.page = 1; applyHistoryQuery(); };
+  const selects = {};
+  for (const select of $$('select')) selects[select.getAttribute('aria-label')] = select;
+
+  selects.Project?.addEventListener('change', () => {
+    historyQuery.project = selects.Project.value.startsWith('All') ? '' : selects.Project.value;
+    renarrow();
+  });
+  selects['Job type']?.addEventListener('change', () => {
+    historyQuery.kind = { Inference: 'inference', Training: 'training' }[selects['Job type'].value] || '';
+    renarrow();
+  });
+  selects.Status?.addEventListener('change', () => {
+    historyQuery.state = {
+      Completed: 'done', 'Completed with issues': 'issues', Failed: 'failed', Cancelled: 'cancelled',
+    }[selects.Status.value] || '';
+    renarrow();
+  });
+  selects.Window?.addEventListener('change', () => {
+    historyQuery.windowDays = {
+      'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'This year': 365,
+    }[selects.Window.value] || 30;
+    renarrow();
+  });
+  selects.Model?.addEventListener('change', () => {
+    historyQuery.model = selects.Model.value.startsWith('All') ? '' : selects.Model.value;
+    renarrow();
+  });
+  selects['Rows per page']?.addEventListener('change', () => {
+    historyQuery.perPage = Number(selects['Rows per page'].value) || 10;
+    renarrow();
+  });
+
+  for (const th of $$('#history thead th.sortable')) {
+    const key = [...th.classList].find((c) => HISTORY_SORT_KEYS[c]);
+    if (!key) continue;
+    th.addEventListener('click', () => {
+      if (historyQuery.sort.key === key) {
+        historyQuery.sort.dir = historyQuery.sort.dir === 'ascending' ? 'descending' : 'ascending';
+      } else {
+        historyQuery.sort = { key, dir: 'ascending' };
+      }
+      historyQuery.page = 1;
+      applyHistoryQuery();
+    });
+  }
+
+  const pager = $('.panel-ft .pager', panel);
+  if (pager) {
+    pager.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-history-page]');
+      if (!button || button.disabled) return;
+      historyQuery.page = Number(button.dataset.historyPage);
+      applyHistoryQuery();
+    });
+  }
+}
+
 
 /* ========================================================= dashboard */
 
@@ -3791,11 +4163,12 @@ wireRowSelect();
 
    Off those screens each render resolves without doing anything, so this costs
    one microtask and no special case. */
-Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen()]).then(() => {
+Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen()]).then(() => {
   /* `applyJobsQuery` and `applyWorkersQuery` rewire the rows they draw; these
      are the ones that bind once, to controls that outlive every redraw. */
   wireJobsControls();
   wireWorkersControls();
+  wireHistoryControls();
   wireSorting();
   wireJobsOverview();
   wireSelection();

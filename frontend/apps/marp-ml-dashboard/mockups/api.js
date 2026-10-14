@@ -507,7 +507,41 @@
       });
     }
 
-    return { models, datasets };
+    /* Projects and the people who submit jobs. Both are real list routes --
+       `GET /api/v2/projects` and `GET /api/v2/users` -- which is worth saying
+       because a job carries `created_by` and `session.project_id` as bare
+       integers, and a screen that shows "6" where a name belongs looks like a
+       missing feature rather than an unresolved id. */
+    const projects = [];
+    const PROJECT_NAMES = [
+      'CAMPA 2024', 'GULF 2025', 'PACIFIC 2023', 'SALT 2025', 'VENTS 2025',
+      'ARCTIC 2024', 'CAMPA 2025', 'GULF 2024', 'PACIFIC 2024', 'SALT 2024',
+      'VENTS 2024', 'ARCTIC 2025', 'CAMPA 2023',
+    ];
+    PROJECT_NAMES.forEach((name, index) => {
+      projects.push({
+        project_id: index + 1,
+        name,
+        createdAt: ago(int(r, 100000, 400000)),
+        updatedAt: ago(int(r, 1440, 90000)),
+      });
+    });
+
+    const users = [];
+    const PEOPLE = ['A. Travers', 'J. Okafor', 'M. Lindqvist', 'R. Nakamura', 'S. Oyelaran', 'T. Brennan'];
+    PEOPLE.forEach((name, index) => {
+      users.push({
+        user_id: index + 1,
+        name,
+        username: name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, ''),
+        status: 'active',
+        last_login_at: ago(int(r, 0, 10000)),
+        createdAt: ago(int(r, 100000, 400000)),
+        updatedAt: ago(int(r, 1440, 90000)),
+      });
+    });
+
+    return { models, datasets, projects, users };
   }
 
   const CORPUS = build();
@@ -725,12 +759,38 @@
     return serve('datasets', () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.datasets)));
   }
 
+  /**
+   * `GET /api/v2/projects` -- every project, as a plain array.
+   *
+   * A job carries `session.project_id` as a bare integer, so this is what turns
+   * a 4 into "SALT 2025" anywhere a screen names a project.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listProjects() {
+    return serve('projects', () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.projects)));
+  }
+
+  /**
+   * `GET /api/v2/users` -- the people, as a plain array.
+   *
+   * `created_by` on a job is a user id and nothing more, so a History column
+   * headed *By* needs this to say a name instead of a number.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listUsers() {
+    return serve('users', () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.users)));
+  }
+
   window.MarpApi = {
     listWorkers,
     listJobs,
     getJob,
     listModels,
     listDatasets,
+    listProjects,
+    listUsers,
     submitJob,
     cancelJob,
     renameWorker,
