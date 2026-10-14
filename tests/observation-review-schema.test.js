@@ -183,7 +183,10 @@ describe('#103 schema objects', () => {
                 'note',
                 'observation_id',
                 'observation_version',
+                // The name a full rename replaced (#181, A16).
+                'previous_comname',
                 'previous_species_id',
+                'previous_taxserial',
                 'purpose',
                 'reason',
                 'representative_keyframe_id',

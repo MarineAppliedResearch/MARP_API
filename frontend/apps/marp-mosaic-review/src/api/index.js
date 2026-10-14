@@ -27,7 +27,8 @@
 import { request, thumbnailUrl, fullFrameUrl } from './transport.js';
 import {
   pagesBody, countsBody, commitBody, correctionBody, retryBody, facetsBody, filtersBody,
-  idList, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody
+  idList, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody,
+  createObservationBody, countBody, pictureBody
 } from './requests.js';
 import { sortTerms } from '../model/filters.js';
 
@@ -216,6 +217,33 @@ export const MarpApi = {
 
   async setEndKeyframe(keyframeId, { signal } = {}) {
     return request(`/mosaic/video/keyframe/${encodeURIComponent(keyframeId)}/end`, { method: 'POST', signal });
+  },
+
+  /* Annotating from the video page (#181): add, count, merge, the Mosaic picture. A rename is
+     `setSpecies`, the Mosaic's own correction, which renames fully. */
+  async createObservation({ openedId, sessionId, speciesId, t, box }, { signal } = {}) {
+    return request('/mosaic/video/observation', {
+      method: 'POST', body: createObservationBody({ openedId, sessionId, speciesId, t, box }), signal
+    });
+  },
+
+  async setCount(observationId, count, { signal } = {}) {
+    return request(`/mosaic/video/observation/${encodeURIComponent(observationId)}/count`, {
+      method: 'PUT', body: countBody(count), signal
+    });
+  },
+
+  async mergeObservations(intoId, fromId, { signal } = {}) {
+    if (!Number.isInteger(fromId)) throw new TypeError(`fromId must be an integer, not ${JSON.stringify(fromId)}`);
+    return request(`/mosaic/video/observation/${encodeURIComponent(intoId)}/merge`, {
+      method: 'POST', body: { from_observation_id: fromId }, signal
+    });
+  },
+
+  async usePicture(observationId, { t, subset, box }, { signal } = {}) {
+    return request(`/mosaic/video/observation/${encodeURIComponent(observationId)}/picture`, {
+      method: 'POST', body: pictureBody({ t, subset, box }), signal
+    });
   },
 
   async deleteKeyframe(keyframeId, { signal } = {}) {

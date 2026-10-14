@@ -10,7 +10,7 @@ import { gripsOf, GRIP_RADIUS } from '../model/box-edit.js';
 
 const FONT = '"Segoe UI", system-ui, sans-serif';
 
-/* The opened observation's halo, so it stands out while keeping its species' colour. */
+/* The selected observation's halo, so it stands out while keeping its species' colour. */
 const HIGHLIGHT = '#c7ff62';
 
 const widths = new Map();
@@ -69,17 +69,18 @@ function marker(context, type, x, middle, size) {
  * Paint one box.
  *
  * @param {CanvasRenderingContext2D} context
- * @param {Object} entry - `{ box, rect, opened }`: the box, where it is on screen, and
- *   whether it is the observation the reviewer opened.
+ * @param {Object} entry - `{ box, rect }`: the box and where it is on screen.
  * @param {Object} state - `{ colour, type, selected, pressed, scale }`: its species'
  *   colour, the kind of keyframe on this picture, whether it is selected, the part being
  *   pressed if any, and the label scale.
  */
-export function drawBox(context, { box, rect, opened }, { colour, type, selected, pressed, scale }) {
+export function drawBox(context, { box, rect }, { colour, type, selected, pressed, scale }) {
   // Pressed, it is the GUI's state colour: the outline and the tab both.
   const tone = pressed ? (pressed === 'body' ? DRAGGING : RESIZING) : colour;
 
-  if (opened) {
+  // The halo says "this is the one you are working on", so it follows the selection rather
+  // than staying on whatever the page was opened from (Isaac, 2026-10-14).
+  if (selected) {
     // Outside the outline, so the box keeps the colour every box of its species has.
     const gap = 4 * scale;
     context.save();

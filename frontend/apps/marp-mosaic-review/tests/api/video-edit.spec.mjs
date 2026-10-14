@@ -14,60 +14,8 @@
  */
 import { test, expect } from '@playwright/test';
 import { holdKeyframes } from './seed.mjs';
-import { pageOf } from './support.mjs';
+import { editableObservation, openAndPlay, boxOf, centre, isEdit, mouseDrag } from './video-page.mjs';
 
-/* An observation in a video Jellyfin has, whose own box is on the picture it opens at. */
-async function editableObservation(request) {
-  const { rows } = await pageOf(request, {}, { pageSize: 50 });
-  const res = await request.post('/api/v2/mosaic/observations/video-context', {
-    data: { observation_ids: rows.map((row) => row.observation_id) }
-  });
-  expect(res.ok(), `the video-context read was refused: ${res.status()}`).toBeTruthy();
-  for (const video of (await res.json()).videos.filter((entry) => entry.jellyfin_item_id)) {
-    for (const { observation_id: id } of video.observations) {
-      const read = await (await request.post('/api/v2/mosaic/video/observations', {
-        data: { observation_id: id, filters: {} }
-      })).json();
-      const own = read.observations.find((row) => row.observation_id === id);
-      const moment = read.opened.moment_s;
-      if (own && moment != null && own.start_s + 0.2 < moment && moment < own.end_s - 0.2) return id;
-    }
-  }
-  throw new Error('no observation on the first page has its moment inside its own track, '
-    + 'in a video Jellyfin has. `npm run testing-db reset` rebuilds the testing database.');
-}
-
-/* Open the page on an observation and sign in to Jellyfin, then wait for its box. */
-async function openAndPlay(page, id) {
-  const username = process.env.JELLYFIN_USERNAME;
-  const password = process.env.JELLYFIN_PASSWORD;
-  expect(username && password, 'JELLYFIN_USERNAME and JELLYFIN_PASSWORD must be in .env for this check').toBeTruthy();
-
-  const hash = encodeURIComponent(JSON.stringify({ type: 'show', observationId: id, filters: {} }));
-  await page.goto(`inspect.html#${hash}`);
-  // Every check starts in a fresh browser with no Jellyfin session, so the form always comes
-  // -- after the video's observations are read, which on a busy video takes a while.
-  const form = page.locator('#signIn');
-  await expect(form).toBeVisible({ timeout: 60_000 });
-  await form.getByLabel('User').fill(username);
-  await form.getByLabel('Password').fill(password);
-  await form.getByRole('button', { name: 'Sign in' }).click();
-  await expect(form).toBeHidden();
-  await expect.poll(() => page.evaluate(() => window.MARP_VIDEO.editing), { timeout: 15_000 }).toBe(true);
-  await expect.poll(() => page.evaluate((own) => window.MARP_VIDEO.drawn.some((d) => d.observation_id === own), id),
-    { message: 'the opened observation\'s box was never drawn', timeout: 120_000 }).toBe(true);
-}
-
-const boxOf = (page, id) => page.evaluate((own) => window.MARP_VIDEO.drawn.find((d) => d.observation_id === own), id);
-const centre = (rect) => ({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-const isEdit = (r) => /\/mosaic\/video\/keyframe(\/|$)/.test(new URL(r.url()).pathname) && r.request().method() !== 'GET';
-
-async function mouseDrag(page, from, dx, dy) {
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  for (let step = 1; step <= 6; step += 1) await page.mouse.move(from.x + (dx * step) / 6, from.y + (dy * step) / 6);
-  await page.mouse.up();
-}
 
 test('#181 dragging a box saves it where it was dropped, a corner resizes it, and the menu is the GUI\'s',
   async ({ page, request }) => {
@@ -118,7 +66,7 @@ test('#181 dragging a box saves it where it was dropped, a corner resizes it, an
       await expect(menu.locator('button')).toHaveText([
         new RegExp(`keyframe ${resized.keyframe_id} · ${resized.type}`),
         ...(resized.type === 'middle' ? ['Set As End Keyframe'] : []),
-        'Send To Back', 'Delete Entire Observation', 'Delete Keyframe'
+        'Send To Back', 'Use for Mosaic picture', 'Delete Entire Observation', 'Delete Keyframe'
       ]);
       await page.keyboard.press('Escape');
       await expect(menu).toBeHidden();
@@ -178,11 +126,16 @@ test('#181 the boxes go fullscreen with the player, in the GUI\'s style, over a 
       // A click selects it, saves nothing, and does not start the video.
       let edits = 0;
       page.on('request', (r) => { if (/\/mosaic\/video\/keyframe(\/|$)/.test(new URL(r.url()).pathname)) edits += 1; });
+      const before = await page.evaluate(() => window.MARP_VIDEO.time);
       await page.mouse.click(middle.x, middle.y);
       await page.waitForTimeout(600);
       expect(await page.evaluate(() => window.MARP_VIDEO.selected)).toMatch(new RegExp(`^${id}_`));
-      expect(await page.evaluate(() => window.MARP_VIDEO.paused)).toBe(true);
       expect(edits).toBe(0);
+      // The picture has not moved on. Asserted on the time rather than on `paused` alone,
+      // which stayed true for a second after a click started playback and so let a real
+      // defect through: clicking a box ran the video (2026-10-14).
+      expect(await page.evaluate(() => window.MARP_VIDEO.time)).toBe(before);
+      expect(await page.evaluate(() => window.MARP_VIDEO.paused)).toBe(true);
 
       // Over a grip of the selected box, a resize arrow.
       const corner = { x: rect.left + rect.width, y: rect.top + rect.height };

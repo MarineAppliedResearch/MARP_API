@@ -155,9 +155,11 @@ async function setType(keyframeId, type, transaction) {
  *
  * @async
  */
-async function edit(work) {
+async function edit(work, { refresh = true } = {}) {
     const result = await db.sequelize.transaction(work);
-    await thumbnails.requestRefresh(result.observation_id);
+    // Not when the caller cuts the picture itself (#181 R6): a queued refresh would be
+    // claimed by the extractor and cut the automatic picture over the chosen one.
+    if (refresh) await thumbnails.requestRefresh(result.observation_id);
     return result;
 }
 
@@ -176,8 +178,9 @@ function moveBox(keyframeId, body) {
     });
 }
 
-/** Add a middle keyframe at `t` on an observation's track -- a pinned or dragged in-between box. */
-function addKeyframe(body = {}) {
+/** Add a keyframe at `t` on an observation's track: a pinned or dragged in-between box, or one
+    drawn before its start or after its end, which extends it (R2). */
+function addKeyframe(body = {}, { refresh = true } = {}) {
     const box = boxOf(body);
     const observationId = body.observation_id;
     const subset = body.subset == null ? '1' : String(body.subset);
@@ -205,19 +208,33 @@ function addKeyframe(body = {}) {
             );
             return { observation_id: observationId, changed: [asSeconds(rows[0], rate)], deleted: [] };
         }
+        // Before the start, the box is the new start; after an end, the new end -- the one it
+        // replaces becomes a middle, so the track keeps one of each. After the last keyframe of
+        // a track with no end yet it is a middle, as the GUI's "Add To Obs" does (R2).
         const first = Number(track[0].framenum);
         const last = Number(track[track.length - 1].framenum);
-        if (framenum < first || framenum > last) {
-            throw invalid('A keyframe is added between the track\'s start and its end.');
+        let type = 'middle';
+        let replaced = null;
+        if (framenum < first) {
+            type = 'start';
+            replaced = 'start';
+        } else if (framenum > last && track.some((row) => row.type === 'end')) {
+            type = 'end';
+            replaced = 'end';
+        }
+        const changed = [];
+        for (const row of track.filter((k) => replaced && k.type === replaced)) {
+            changed.push(asSeconds(await setType(row.keyframe_id, 'middle', transaction), rate));
         }
         const [rows] = await db.sequelize.query(
             `INSERT INTO keyframes (observation_id, subset, comname, type, framenum, x, y, width, height, "createdAt", "updatedAt")
-             VALUES (:observationId, :subset, :comname, 'middle', :framenum, :x, :y, :width, :height, NOW(), NOW())
+             VALUES (:observationId, :subset, :comname, :type, :framenum, :x, :y, :width, :height, NOW(), NOW())
              RETURNING ${KEYFRAME_COLUMNS}`,
-            { replacements: { observationId, subset, comname: observation.comname || '', framenum, ...box }, transaction }
+            { replacements: { observationId, subset, comname: observation.comname || '', type, framenum, ...box }, transaction }
         );
-        return { observation_id: observationId, changed: [asSeconds(rows[0], rate)], deleted: [] };
-    });
+        changed.push(asSeconds(rows[0], rate));
+        return { observation_id: observationId, changed, deleted: [] };
+    }, { refresh });
 }
 
 /** Make a keyframe its track's end; the one that was becomes a middle. */
@@ -264,4 +281,8 @@ function deleteKeyframe(keyframeId) {
     });
 }
 
-module.exports = { moveBox, addKeyframe, setEnd, deleteKeyframe };
+module.exports = {
+    moveBox, addKeyframe, setEnd, deleteKeyframe,
+    // Shared with the annotation service, which counts frames and checks boxes the same way.
+    boxOf, rateOf, asSeconds, invalid, notFound, KEYFRAME_COLUMNS
+};

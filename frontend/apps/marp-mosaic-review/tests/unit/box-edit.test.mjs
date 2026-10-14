@@ -3,7 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  toScreen, toRecord, hitTest, dragged, keyframeShown, menuFor, withEdit, trackKey, MINIMUM_SIZE
+  toScreen, toRecord, hitTest, dragged, keyframeShown, menuFor, withEdit, trackKey, MINIMUM_SIZE,
+  withObservation, withRecent
 } from '../../src/model/box-edit.js';
 import { boxesAt } from '../../src/model/video-boxes.js';
 
@@ -66,14 +67,14 @@ test('the keyframe on the shown picture is found within half of the video\'s fra
 
 test('the menu is the GUI\'s, offering only what applies to the box', () => {
   const actions = (box) => menuFor({ observation_id: 7, subset: '1', t: 3, ...box }).map((item) => item.action);
-  assert.deepEqual(actions({ keyframe: null }), ['info', 'pin', 'end', 'back', 'deleteObservation']);
+  assert.deepEqual(actions({ keyframe: null }), ['info', 'pin', 'end', 'back', 'picture', 'deleteObservation']);
   assert.deepEqual(actions({ keyframe: { keyframe_id: 5, type: 'middle' } }),
-    ['info', 'end', 'back', 'deleteObservation', 'deleteKeyframe']);
+    ['info', 'end', 'back', 'picture', 'deleteObservation', 'deleteKeyframe']);
   assert.deepEqual(actions({ keyframe: { keyframe_id: 5, type: 'end' } }),
-    ['info', 'back', 'deleteObservation', 'deleteKeyframe']);
+    ['info', 'back', 'picture', 'deleteObservation', 'deleteKeyframe']);
   // A start set as the end would leave the observation with no start.
   assert.deepEqual(actions({ keyframe: { keyframe_id: 5, type: 'start' } }),
-    ['info', 'back', 'deleteObservation', 'deleteKeyframe']);
+    ['info', 'back', 'picture', 'deleteObservation', 'deleteKeyframe']);
   assert.equal(menuFor({ observation_id: 7, subset: '1', t: 3, keyframe: null })[0].disabled, true);
 });
 
@@ -105,4 +106,23 @@ test('a drawn box carries its track, so an edit knows its subset and keyframes',
   assert.equal(box.subset, '2');
   assert.deepEqual(box.keyframes.map((k) => k.keyframe_id), [1, 2]);
   assert.equal(trackKey(box), '9_2');
+});
+
+test('a merge replaces the survivor keyframes and takes the merged one out of every window', () => {
+  const held = new Map([
+    [0, [{ keyframe_id: 1, observation_id: 7, t: 5 }, { keyframe_id: 2, observation_id: 8, t: 6 }]],
+    [1, [{ keyframe_id: 3, observation_id: 8, t: 25 }]]
+  ]);
+  const merged = withObservation(withObservation(held, 8), 7, [{ keyframe_id: 1, observation_id: 7, t: 5 }, { keyframe_id: 2, observation_id: 7, t: 6 }]);
+  assert.deepEqual(merged.get(0).map((k) => [k.keyframe_id, k.observation_id]), [[1, 7], [2, 7]]);
+  // Nothing of the merged-away observation is held anywhere; window 1 holds the survivor's
+  // keyframes as the window after theirs, as every window holds its neighbours'.
+  for (const list of merged.values()) assert.ok(list.every((k) => k.observation_id === 7));
+});
+
+test('the recent species list puts the newest first, once, and keeps eight', () => {
+  let recent = [];
+  for (let id = 1; id <= 10; id += 1) recent = withRecent(recent, { id, comname: `s${id}` });
+  assert.deepEqual(recent.map((s) => s.id), [10, 9, 8, 7, 6, 5, 4, 3]);
+  assert.deepEqual(withRecent(recent, { id: 5, comname: 's5' }).map((s) => s.id), [5, 10, 9, 8, 7, 6, 4, 3]);
 });
