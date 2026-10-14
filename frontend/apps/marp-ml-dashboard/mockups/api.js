@@ -159,6 +159,39 @@
        something. Newest last here; the route reverses. */
     let attemptId = 1000;
 
+    /**
+     * Batches, planned rather than sprinkled.
+     *
+     * A batch is one video cut into frame ranges, and the screens' `issues`
+     * state is *derived* from it: a batch with both `succeeded` and `failed`
+     * pieces is "completed with issues", which is the one place that state can
+     * come from -- a single job is never succeeded-with-problems, because #225
+     * settled that a job whose results did not reach the database is failed.
+     *
+     * Sprinkling a `batch_id` at random left that state reachable only by
+     * luck, which is not the same as reachable. Five batches are therefore
+     * built to finish mixed, so the screen always has one to draw.
+     */
+    const batchPlan = new Map();
+
+    for (let b = 0; b < 12; b++) {
+      const batchId = `b${String(b + 1).padStart(4, '0')}-a7c1-4e55-9f32-0d81cc0e91aa`;
+      const size = int(r, 4, 8);
+      const start = int(r, 1, 400);
+      const mixed = b < 5;
+
+      for (let k = 0; k < size; k++) {
+        if (batchPlan.has(start + k)) continue;
+        /* In a mixed batch two pieces fail and the rest land, which is what
+           "usable work is preserved; only failed work needs to run again"
+           describes on the screen. */
+        batchPlan.set(start + k, {
+          batchId,
+          forced: mixed ? (k === 0 || k === 2 ? 'failed' : 'succeeded') : null,
+        });
+      }
+    }
+
     for (let i = 1; i <= 420; i++) {
       const kind = r() < 0.62 ? 'inference' : pick(r, JOB_KINDS);
 
@@ -168,9 +201,12 @@
          flight, with no work in flight. A state is chosen from a weighted table
          and the timestamp is then made to agree with it, so live work is recent
          and finished work is spread back through the window. */
+      const plan = batchPlan.get(i) || null;
+
       let state;
       const roll = r();
-      if (roll < 0.05) state = 'leased';
+      if (plan && plan.forced) state = plan.forced;
+      else if (roll < 0.05) state = 'leased';
       else if (roll < 0.11) state = 'queued';
       else if (roll < 0.74) state = 'succeeded';
       else if (roll < 0.86) state = 'failed';
@@ -184,7 +220,7 @@
 
       const job = {
         id: 9000 + i,
-        batch_id: r() < 0.3 ? `b${String(int(r, 1, 40)).padStart(4, '0')}-a7c1-4e55-9f32-0d81cc0e91aa` : null,
+        batch_id: plan ? plan.batchId : null,
         kind,
         spec: {
           model: pick(r, MODELS),

@@ -379,8 +379,21 @@ History does not become another live queue.
 
 One vocabulary for every state in the app, on every element that carries one:
 
-`data-state="running | queued | done | issues | failed | cancelled | cancelling | paused |
-online | idle | busy | offline | draining"`
+`data-state="running | queued | done | issues | failed | cancelled | cancelling | expired |
+paused | online | idle | busy | offline | draining"`
+
+Two of these are not what they look like, and both were nearly got wrong:
+
+- **`issues` is about a batch, never about one job.** It means *finished, but some videos
+  or ranges failed* — so the action on it is **Retry failed work**, and the usable work is
+  kept. A single MARP job cannot be in this state: #225 settled that a job whose results did
+  not reach the database is *failed*, not succeeded-with-problems. It is derived by grouping
+  jobs on `batch_id` and finding both `succeeded` and `failed` pieces among them. Gap 1 still
+  stands — a batch has no row of its own — so the dashboard computes this from the pieces
+  rather than fetching it.
+- **`expired` is amber, not grey.** The lease ran out and the work went back to the pool.
+  Nothing is wrong with the model or the data and nobody chose to stop it, so it is neither
+  `failed` nor `cancelled`; somebody has to resubmit, which is why it is not grey.
 
 - `.dot` — a 7px disc. Always accompanied by text; colour is never the only cue.
 - `.st` — the dot plus its label, as one inline unit. This is what a table cell holds.
@@ -508,7 +521,11 @@ are #104's measurement comment and its two decision comments.
    with its own state and progress rollup. `batch_id` has no row of its own, and a batch
    is one video cut into frame ranges and cannot span videos. Milestone 2.
 2. **Completed with issues** — not in the job state enum, and there is no parent object to
-   hang it on. Milestone 2.
+   hang it on. Milestone 2. **Partly closed 2026-10-14 in #128:** the dashboard derives it by
+   grouping jobs on `batch_id` and finding both `succeeded` and `failed` pieces, which needs
+   no schema change and no new route. What is still missing is the parent — a batch cannot be
+   fetched, named, or given a state of its own, so this is computed from a page of pieces and
+   is only as complete as that page. The rollup belongs with gap 1.
 3. **Reprioritising queued work** — `priority` is write-once at submit; there is no update
    route. Milestone 2.
 4. **Retry, retry-failed-only, duplicate, run again** — no routes.

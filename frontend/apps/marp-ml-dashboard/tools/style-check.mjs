@@ -25,7 +25,7 @@ const SKIP = new Set(['node_modules', 'test-results', 'demo', 'shots', '.git', '
    that adding one in a tab is not. */
 const STATES = new Set([
   'running', 'queued', 'done', 'succeeded', 'issues', 'failed', 'cancelled',
-  'cancelling', 'paused', 'online', 'idle', 'busy', 'offline', 'draining',
+  'cancelling', 'expired', 'paused', 'online', 'idle', 'busy', 'offline', 'draining',
   /* a model's own lifecycle: usable, being evaluated, artifact unusable */
   'ready', 'testing', 'error',
 ]);

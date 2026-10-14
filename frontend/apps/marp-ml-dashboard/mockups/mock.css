@@ -16,6 +16,10 @@
   --st-done: var(--green-400);
   --st-issues: var(--amber-300);
   --st-failed: var(--red-400);
+  /* Amber and not grey: an expired lease is work MARP lost, and somebody has to
+     resubmit it. Cancelled is work somebody stopped on purpose and needs
+     nothing, which is what grey says. */
+  --st-expired: var(--amber-300);
   --st-cancelled: var(--grey-400);
   --st-cancelling: var(--amber-300);
   --st-paused: var(--violet-300);
@@ -878,6 +882,7 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 [data-state="done"]       { --s: var(--st-done); }
 [data-state="issues"]     { --s: var(--st-issues); }
 [data-state="failed"]     { --s: var(--st-failed); }
+[data-state="expired"]    { --s: var(--st-expired); }
 [data-state="cancelled"]  { --s: var(--st-cancelled); }
 [data-state="cancelling"] { --s: var(--st-cancelling); }
 [data-state="paused"]     { --s: var(--st-paused); }

@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#128
 repos: [MARP_API]
-status: design
+status: implementing
 needs: []
 ---
 
@@ -80,13 +80,23 @@ are not read by any screen.
   routes plus the three mutations a screen performs (submit, cancel, rename). The worker
   protocol — poll, heartbeat, events, result, the artifact hand-off — is not modelled,
   because no screen reads it and a fixture nothing exercises is a fixture that rots.
-- [ ] **A6 · product/UI · blocking** — *Found during G2.* R5 requires *completed with issues*
-  to be reachable, and gap 2 records that it has no enum value and no parent object to hang
-  it on. So the layer has to derive it from something, and which something is a real choice:
-  a job that succeeded after earlier attempts failed; one that succeeded with `progress_done`
-  short of `progress_total`; or a warnings field that exists on no table today and would make
-  this a schema request rather than a derivation. Each tells the operator a different thing,
-  and the first two are already distinguishable in the data while the third is not.
+- [x] **A6 · product/UI · blocking** — *Found during G2*, answered 2026-10-14: *completed with
+  issues* is a property of a **batch**, never of one job, and is derived by grouping jobs on
+  `batch_id` and finding both `succeeded` and `failed` pieces. It needs no schema change and
+  no new route.
+
+  Worth recording how nearly this went the other way. It was first proposed that the state
+  be dropped altogether, on the grounds that #225 settled that a job whose results did not
+  reach the database is *failed* rather than succeeded-with-problems — true of one job, and
+  irrelevant here, because the design's own words are *"finished, but some videos or ranges
+  failed"* and its action is *"Retry failed work"*. The mockup's `Retry 2` means two failed
+  ranges, not two retries. Reading the state's definition before its implications would have
+  settled it; reading a single row did not.
+
+  Two consequences, both taken: `expired` joins the state vocabulary, because it is a real
+  job state the design had no word for and an expired job could not be drawn at all; and gap
+  2 is now *partly* closed rather than closed, since the derivation works but a batch still
+  has no row of its own to be fetched, named or given a state.
 
 ## Decisions
 
@@ -123,7 +133,7 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** design — A6 appeared during G2 and is blocking
+- **Gate:** implementing — A6 answered; expired added to the state vocabulary
 - **Notes:** Steps 1 to 3 of the plan are done. `DESIGN.md` carries gap 23; `mockups/api.js`
   serves the three read routes and the three mutations from a seeded corpus of 143 machines
   and 420 jobs, with the `?mock=` switch; `tools/api-contract-check.mjs` fails when the
