@@ -109,6 +109,35 @@ describe('worker activation and operator-selected updates', () => {
         }
     });
 
+    it('accepts a release from a source MARP publishes from, and refuses anywhere else (#253)', async () => {
+        const version = `253-${runId}`;
+        const body = {
+            version,
+            platform: 'windows',
+            architecture: 'x86_64',
+            compute_runtime: 'cuda12.6',
+            size_bytes: 1234,
+            sha256: 'b'.repeat(64),
+        };
+        // Somewhere else entirely, and another repository's assets: a worker runs whatever this
+        // names, so the host is what says the publisher is ours.
+        for (const url of [
+            'https://files.example.com/worker.zip',
+            'https://github.com/someone-else/marp-inference-worker/releases/download/v1/worker.zip',
+        ]) {
+            const refused = await global.api.post('/api/v2/gpu/worker-releases').send({ ...body, download_url: url });
+            expect(refused.status).toBe(400);
+            expect(refused.body.error.message).toMatch(/release sources MARP publishes from/);
+        }
+
+        // The GitHub path it has always accepted still works, configuration or not.
+        const accepted = await global.api.post('/api/v2/gpu/worker-releases').send({
+            ...body,
+            download_url: `https://github.com/MarineAppliedResearch/marp-inference-worker/releases/download/v${version}/worker.zip`,
+        });
+        expect(accepted.status).toBe(201);
+        await db.worker_releases.destroy({ where: { id: accepted.body.id } });
+    });
     it('a code with no use limit keeps working, and a machine can enrol again (#208, #217)', async () => {
         // The code the volunteer installer carries must not stop working at a number nobody is
         // watching: a build of the worker has to keep working (Isaac, 2026-10-14).
