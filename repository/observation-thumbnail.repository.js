@@ -256,6 +256,47 @@ async function requestReplacement(observationId) {
 }
 
 /**
+ * Queues an observation's thumbnail to be extracted again because its keyframes changed (#181).
+ *
+ * Unlike {@link requestReplacement}, which moves on to a different candidate because the
+ * reviewer did not like the crop, this starts again from the first: the keyframes the crop
+ * is cut from are what changed, so the same choice now gives the edited box. A permanent
+ * failure is reconsidered too, for the same reason -- what made it permanent may be what was
+ * edited.
+ *
+ * @async
+ * @param {number} observationId - Observation whose keyframes were edited.
+ * @returns {Promise<void>}
+ */
+async function requestRefresh(observationId) {
+    await db.sequelize.transaction(async (transaction) => {
+        await db.sequelize.query(
+            `INSERT INTO observation_thumbnails
+                 (observation_id, status, permanent, generation, attempts, request_priority,
+                  candidate_index, requested_at, created_at, updated_at)
+             SELECT o.observation_id, 'queued', false, 1, 0, 1, 0, NOW(), NOW(), NOW()
+               FROM observations o
+              WHERE o.observation_id = :observationId
+             ON CONFLICT (observation_id) DO NOTHING`,
+            { replacements: { observationId }, type: QueryTypes.INSERT, transaction }
+        );
+        await db.sequelize.query(
+            `UPDATE observation_thumbnails
+                SET status = 'queued',
+                    request_priority = 1,
+                    candidate_index = 0,
+                    permanent = false,
+                    claimed_at = NULL,
+                    completed_at = NULL,
+                    requested_at = NOW(),
+                    updated_at = NOW()
+              WHERE observation_id = :observationId`,
+            { replacements: { observationId }, type: QueryTypes.UPDATE, transaction }
+        );
+    });
+}
+
+/**
  * Claims a batch of queued work for one extraction pass (R18).
  *
  * One statement, so two API processes -- or one restarted next to itself -- cannot
@@ -798,6 +839,7 @@ module.exports = {
     recordReady,
     releaseClaims,
     requestReplacement,
+    requestRefresh,
     requestFullFrame,
     requeue,
     statusCounts,

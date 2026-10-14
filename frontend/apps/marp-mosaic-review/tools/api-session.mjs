@@ -53,11 +53,13 @@ export default async function signIn() {
      rather than as an unexplained empty mosaic twenty seconds into a recording. */
   const { user } = await res.json();
   const held = new Set((user && user.permissions) || []);
-  const needed = ['observations:read', 'observations:write', 'species:read'];
+  // keyframes:write is the video page's box editing (#181).
+  const needed = ['observations:read', 'observations:write', 'species:read', 'keyframes:write'];
   const missing = needed.filter((key) => !held.has(key));
   if (missing.length) {
     throw new Error(`'${username}' cannot use the reviewer: missing ${missing.join(', ')}.\n`
-      + 'Grant them with: node scripts/create-review-user.js --username ' + username);
+      + 'Grant them with: node scripts/create-review-user.js --username ' + username
+      + ' --permissions ' + needed.join(',') + ', or rebuild with npm run testing-db reset');
   }
 
   mkdirSync(dirname(SESSION_FILE), { recursive: true });

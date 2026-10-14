@@ -10,6 +10,7 @@ import { acceptedValue, existingNote, existingReason, existingState, markKind, M
 import { observationIdText } from '../model/observation-id.js';
 import { fullFrameActionState } from '../model/frame-viewer.js';
 import { openVideoWindow } from './video-window.js';
+import { queryFilters } from '../model/filters.js';
 import { clampPickerPosition, draggedPosition } from '../model/picker-position.js';
 import { $, el, ICON } from './dom.js';
 import { acceptIcon, markIcon } from './tile.js';
@@ -336,8 +337,8 @@ export async function renderPicker() {
   const openFrame = panel.querySelector('[data-act="open-full-frame"]');
   if (openFrame) openFrame.addEventListener('click', () => actions.openFullFrame(id));
   panel.querySelector('[data-act="video"]').addEventListener('click', () => {
-    // The page's other observations go too, so their boxes are drawn beside this one.
-    openVideoWindow(id, state.rows.map((r) => r.observation_id));
+    // The query goes too: every observation in this video it matches is drawn beside this one.
+    openVideoWindow(id, queryFilters(state.mode, state.filters));
     actions.openVideo(id);
   });
   const resolve = panel.querySelector('[data-act="resolve"]');
