@@ -565,6 +565,18 @@ are #104's measurement comment and its two decision comments.
 22. **Finished-job outcome and turnaround history** — the current job records can be queried for
     terminal states, but `completed with issues` and the sampled rollup used by the History graph
     are not served as an operational series. Those chart values are deterministic review fixtures.
+23. **Progress on the job list** — `GET /gpu/jobs` returns no progress of any kind. Progress is
+    recorded on the *attempt* (`progress_done`, `progress_total`, `progress_unit`,
+    `progress_phase`, `progress_elapsed_s`, every one nullable) and attempts come back only from
+    `GET /gpu/jobs/:id`. The Jobs table draws a Progress column on every row, so it is drawn as
+    if the list carries it and **the route will have to learn to** — the same shape of gap as
+    item 12. A detail call per visible row was the alternative and was rejected: fifty-one
+    requests to draw one page. Settled 2026-10-14 in #128.
+
+    The two shapes differ as well, which is item 16's warning again. The mockup carried a flat
+    integer percentage with `-1` meaning none. The data layer serves the attempt's own fields and
+    the screen computes the percentage, so it can say "1,240 of 3,000 frames" and keep the phase.
+    Null before the first heartbeat still draws a dash and never a 0% bar.
 
 ## Running it
 

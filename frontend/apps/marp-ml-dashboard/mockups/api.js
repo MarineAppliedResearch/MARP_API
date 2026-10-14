@@ -1,0 +1,544 @@
+/**
+ * The data layer. One module, shaped like the real API, and the only thing the
+ * screens read from (#128, R1).
+ *
+ * **This is not a second implementation of MARP.** It is a local module with no
+ * server, no database and no build step (R11). Its whole purpose is that the
+ * screens stop carrying values in their markup, so that wiring MARP in later is
+ * a change of source and not a change of vocabulary.
+ *
+ * Three things about it are deliberate and are the reason it looks like this:
+ *
+ * - **The shapes are the real ones, awkwardness included.** `GET /gpu/jobs`
+ *   pages and `GET /gpu/workers` does not; `POST /gpu/jobs` answers `200` and
+ *   not `201`. Those were measured out of `docs/openapi.generated.json` and
+ *   `routes/gpu.routes.js` rather than taken from #104's measurement comment,
+ *   which is a comment and not a contract.
+ * - **The states are the API's, not the design's.** A job is `leased`, never
+ *   `running`; `succeeded`, never `done`. The design vocabulary in `DESIGN.md`
+ *   is a *rendering* of these, and the mapping belongs to the screen. A layer
+ *   that served `running` would be inventing a route, which is exactly what
+ *   `DESIGN.md`'s gap list exists to prevent.
+ * - **Progress is on the job, and that is a known lie.** The real list route
+ *   returns no progress at all -- it is on the attempt, and only the detail
+ *   route returns attempts. Recorded as gap 23: the screen is drawn as if the
+ *   list carries it and the route will have to learn to. The field *names* here
+ *   are the attempt's own, so when the route learns, nothing is renamed.
+ *
+ * Everything is deterministic from one seed (R3). Nothing here reads the wall
+ * clock -- `NOW` below is a fixed instant, because a corpus that drifts with
+ * the clock is not byte-identical between two people looking at one screen.
+ *
+ * @fileoverview Deterministic data layer shaped like the GPU routes.
+ * @module mockups/api
+ */
+
+(function () {
+  'use strict';
+
+  /* ============================================================== determinism */
+
+  /** The corpus's present. Fixed, so two people see the same relative times. */
+  const NOW = Date.parse('2026-10-14T12:00:00Z');
+
+  /** One seed for the whole corpus. Changing it changes every generated value. */
+  const SEED = 0x4d415250; // "MARP"
+
+  /**
+   * mulberry32: small, fast, and good enough for fixture data.
+   *
+   * Seeded rather than `Math.random` because R3 is the requirement that makes
+   * the rest trustworthy -- a regenerated fixture has to be byte-identical, and
+   * a screenshot check comparing against a corpus that reshuffles every reload
+   * is a check that can only ever be flaky.
+   *
+   * @param {number} seed - Any 32-bit integer.
+   * @returns {function(): number} A generator returning [0, 1).
+   */
+  function rng(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /** An integer in [lo, hi]. @returns {number} */
+  const int = (r, lo, hi) => lo + Math.floor(r() * (hi - lo + 1));
+
+  /** One of the given values. @returns {*} */
+  const pick = (r, list) => list[Math.floor(r() * list.length)];
+
+  /** An ISO instant `minutes` before the corpus's present. @returns {string} */
+  const ago = (minutes) => new Date(NOW - minutes * 60000).toISOString();
+
+  /* ============================================================ the real enums */
+
+  /* Straight out of config/gpu-orchestration.js. Written here rather than
+     imported because this file is a plain script served to a browser and that
+     module is CommonJS on the server -- so they are checked against each other
+     by tools/api-contract-check.mjs instead, which fails when they drift. */
+
+  /** @type {string[]} */
+  const JOB_KINDS = ['inference', 'tracking', 'training', 'diagnostic'];
+
+  /** @type {string[]} */
+  const JOB_STATES = ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'expired'];
+
+  /** @type {string[]} */
+  const WORKER_STATES = ['online', 'offline', 'paused'];
+
+  /** @type {string[]} */
+  const LIVE_ATTEMPT_STATES = ['assigned', 'preparing', 'running', 'uploading'];
+
+  /* ================================================================= the corpus */
+
+  const GPUS = [
+    { name: 'NVIDIA RTX 4090', vram: 24576 },
+    { name: 'NVIDIA RTX A6000', vram: 49152 },
+    { name: 'NVIDIA L40S', vram: 46068 },
+    { name: 'NVIDIA A100 80GB', vram: 81920 },
+    { name: 'NVIDIA RTX 3090', vram: 24576 },
+  ];
+
+  const MODELS = [
+    'marp-fish-v7', 'marp-fish-v6', 'marp-inverts-v4', 'marp-inverts-v3',
+    'marp-habitat-v2', 'marp-rockfish-v1',
+  ];
+
+  const SURVEYS = ['CAMPA 2024', 'GULF 2025', 'PACIFIC 2023', 'SALT 2025'];
+
+  /**
+   * Builds the whole corpus once, from the seed.
+   *
+   * Built eagerly rather than per call so that every route sees one consistent
+   * world: a job's `published_attempt_id` has to name an attempt that exists,
+   * and a worker's live attempts have to be the same attempts the job detail
+   * reports. Generating per request produced two worlds that disagreed, which
+   * looked like a UI bug.
+   *
+   * @returns {{workers: Object[], jobs: Object[], attempts: Object[]}}
+   */
+  function build() {
+    const r = rng(SEED);
+    const workers = [];
+    const jobs = [];
+    const attempts = [];
+
+    /* 143 machines, because #128 asks for the Workers screen to be drawn at a
+       scale that exercises it. Twelve rows of anything proves nothing. */
+    for (let i = 1; i <= 143; i++) {
+      const gpu = pick(r, GPUS);
+      const state = r() < 0.82 ? 'online' : pick(r, WORKER_STATES);
+      const slots = int(r, 1, 4);
+
+      workers.push({
+        worker_id: i,
+        name: `gpu-${String(i).padStart(3, '0')}`,
+        state,
+        slot_count: slots,
+        worker_version: r() < 0.9 ? `0.1.${int(r, 0, 9)}` : null,
+        capabilities: {
+          gpu: gpu.name,
+          vram_mb: gpu.vram,
+          driver: `${int(r, 550, 580)}.${int(r, 10, 99)}`,
+          cuda: '12.4',
+        },
+        enrolled_at: ago(int(r, 1440, 200000)),
+        /* Null is the honest value for a machine that has never checked in, and
+           the pool view has to survive it. */
+        last_seen_at: state === 'offline' ? ago(int(r, 120, 10000)) : ago(int(r, 0, 4)),
+        activity: 'idle',
+        attempts: [],
+      });
+    }
+
+    /* Jobs: a bounded window of several hundred, so History is drawn over
+       something. Newest last here; the route reverses. */
+    let attemptId = 1000;
+
+    for (let i = 1; i <= 420; i++) {
+      const kind = r() < 0.62 ? 'inference' : pick(r, JOB_KINDS);
+
+      /* **State first, then when it happened** -- not the other way round. The
+         first cut of this drew a time and then let the time decide the state,
+         which left two jobs `leased` out of 420: a pool screen about work in
+         flight, with no work in flight. A state is chosen from a weighted table
+         and the timestamp is then made to agree with it, so live work is recent
+         and finished work is spread back through the window. */
+      let state;
+      const roll = r();
+      if (roll < 0.05) state = 'leased';
+      else if (roll < 0.11) state = 'queued';
+      else if (roll < 0.74) state = 'succeeded';
+      else if (roll < 0.86) state = 'failed';
+      else if (roll < 0.94) state = 'cancelled';
+      else state = 'expired';
+
+      /* Live work is minutes old; everything terminal is spread over the window
+         the History screen is drawn for. */
+      const live = state === 'leased' || state === 'queued';
+      const createdMinutes = live ? int(r, 0, 240) : int(r, 60, 60 * 24 * 14);
+
+      const job = {
+        id: 9000 + i,
+        batch_id: r() < 0.3 ? `b${String(int(r, 1, 40)).padStart(4, '0')}-a7c1-4e55-9f32-0d81cc0e91aa` : null,
+        kind,
+        spec: {
+          model: pick(r, MODELS),
+          survey: pick(r, SURVEYS),
+          video: `dive-${int(r, 100, 999)}-cam${int(r, 1, 2)}.mp4`,
+          frame_range: [0, int(r, 1200, 48000)],
+        },
+        state,
+        priority: int(r, 0, 9),
+        attempts_made: 0,
+        max_attempts: 3,
+        published_attempt_id: null,
+        created_by: r() < 0.8 ? int(r, 1, 6) : null,
+        created_at: ago(createdMinutes),
+        updated_at: ago(Math.max(0, createdMinutes - int(r, 0, 120))),
+        /* Gap 23. The attempt's own field names, so the route learning to carry
+           this renames nothing. Null is not zero: a job with no heartbeat yet
+           has no measurement, and the screen draws a dash rather than a 0% bar. */
+        progress_done: null,
+        progress_total: null,
+        progress_unit: null,
+        progress_phase: null,
+        progress_elapsed_s: null,
+      };
+
+      /* A leased job is being worked on right now: it holds a live attempt on a
+         machine, and that machine is therefore busy. This is the one place the
+         two halves of the corpus are tied together. */
+      if (state === 'leased') {
+        const worker = workers[int(r, 0, workers.length - 1)];
+        const total = job.spec.frame_range[1];
+        const done = int(r, 0, total);
+        const attempt = {
+          id: ++attemptId,
+          job_id: job.id,
+          worker_id: worker.worker_id,
+          slot_index: int(r, 0, worker.slot_count - 1),
+          lease_epoch: 1,
+          state: pick(r, LIVE_ATTEMPT_STATES),
+          leased_at: ago(int(r, 1, 120)),
+          lease_expires_at: ago(-int(r, 1, 30)),
+          last_heartbeat_at: ago(int(r, 0, 2)),
+          progress_done: done,
+          progress_total: total,
+          progress_unit: 'frames',
+          progress_phase: kind === 'training' ? 'train' : 'infer',
+          progress_elapsed_s: int(r, 30, 7200),
+          capabilities_snapshot: worker.capabilities,
+          failure_reason: null,
+          finished_at: null,
+          worker: { worker_id: worker.worker_id, name: worker.name },
+        };
+
+        /* A heartbeat may not have landed yet, and that is a real state the
+           screen has to draw. Leave the whole measurement null when it has not. */
+        if (r() < 0.12) {
+          attempt.last_heartbeat_at = null;
+          attempt.progress_done = null;
+          attempt.progress_total = null;
+          attempt.progress_unit = null;
+          attempt.progress_phase = null;
+          attempt.progress_elapsed_s = null;
+        }
+
+        attempts.push(attempt);
+        worker.attempts.push(attempt);
+        worker.activity = 'busy';
+        job.attempts_made = 1;
+        job.progress_done = attempt.progress_done;
+        job.progress_total = attempt.progress_total;
+        job.progress_unit = attempt.progress_unit;
+        job.progress_phase = attempt.progress_phase;
+        job.progress_elapsed_s = attempt.progress_elapsed_s;
+      }
+
+      if (state === 'succeeded' || state === 'failed') {
+        job.attempts_made = state === 'failed' ? int(r, 1, 3) : 1;
+        const total = job.spec.frame_range[1];
+        const attempt = {
+          id: ++attemptId,
+          job_id: job.id,
+          worker_id: workers[int(r, 0, workers.length - 1)].worker_id,
+          slot_index: 0,
+          lease_epoch: 1,
+          state: state === 'succeeded' ? 'succeeded' : 'failed',
+          leased_at: ago(createdMinutes - 1),
+          lease_expires_at: ago(createdMinutes - 30),
+          last_heartbeat_at: ago(createdMinutes - 20),
+          progress_done: state === 'succeeded' ? total : int(r, 0, total),
+          progress_total: total,
+          progress_unit: 'frames',
+          progress_phase: 'done',
+          progress_elapsed_s: int(r, 120, 14400),
+          capabilities_snapshot: null,
+          failure_reason: state === 'failed'
+            ? pick(r, ['CUDA out of memory', 'worker lost', 'model load failed', 'video unreadable'])
+            : null,
+          finished_at: ago(Math.max(0, createdMinutes - int(r, 10, 200))),
+          worker: null,
+        };
+        attempts.push(attempt);
+        if (state === 'succeeded') job.published_attempt_id = attempt.id;
+        job.progress_done = attempt.progress_done;
+        job.progress_total = attempt.progress_total;
+        job.progress_unit = attempt.progress_unit;
+        job.progress_phase = attempt.progress_phase;
+        job.progress_elapsed_s = attempt.progress_elapsed_s;
+      }
+
+      /* `cancelling` is derived and not stored: a cancelled job that still holds
+         a live attempt, which #104 measured at 18-20 seconds. The screen derives
+         it; the layer's job is to make the state reachable at all. */
+      if (state === 'cancelled' && r() < 0.25) {
+        const worker = workers[int(r, 0, workers.length - 1)];
+        const attempt = {
+          id: ++attemptId,
+          job_id: job.id,
+          worker_id: worker.worker_id,
+          slot_index: 0,
+          lease_epoch: 1,
+          state: 'running',
+          leased_at: ago(int(r, 1, 60)),
+          lease_expires_at: ago(-int(r, 1, 20)),
+          last_heartbeat_at: ago(0),
+          progress_done: int(r, 1, 1000),
+          progress_total: job.spec.frame_range[1],
+          progress_unit: 'frames',
+          progress_phase: 'infer',
+          progress_elapsed_s: int(r, 30, 900),
+          capabilities_snapshot: null,
+          failure_reason: null,
+          finished_at: null,
+          worker: { worker_id: worker.worker_id, name: worker.name },
+        };
+        attempts.push(attempt);
+        worker.attempts.push(attempt);
+        worker.activity = 'busy';
+        job.attempts_made = 1;
+      }
+
+      jobs.push(job);
+    }
+
+    /* Activity is derived in the real route and never stored, so it is derived
+       here too -- a machine is busy exactly while it holds a live attempt. */
+    for (const w of workers) {
+      if (w.state === 'offline') w.activity = 'offline';
+      else if (w.state === 'paused') w.activity = 'paused';
+      else w.activity = w.attempts.length ? 'busy' : 'idle';
+    }
+
+    return { workers, jobs, attempts };
+  }
+
+  const CORPUS = build();
+
+  /* ============================================================== the switch */
+
+  /**
+   * Latency and failure, asked for explicitly (#128, A3).
+   *
+   * `?mock=slow` makes every call take two seconds; `?mock=fail:jobs` makes the
+   * job routes answer 500. The default path is instant and successful, so R3's
+   * determinism is untouched and nobody meets a failure by accident -- and a
+   * failure is reproducible by URL, which is what makes it demonstrable.
+   */
+  const SWITCH = (function () {
+    const raw = new URLSearchParams(location.search).get('mock') || '';
+    const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    const fail = new Set();
+    let slow = false;
+
+    for (const part of parts) {
+      if (part === 'slow') slow = true;
+      else if (part.startsWith('fail:')) fail.add(part.slice(5));
+      else if (part === 'fail') fail.add('*');
+      else if (part === 'empty') fail.add('@empty');
+    }
+    return { slow, fail, raw };
+  })();
+
+  /** An error carrying a status, so a screen can tell 500 from 404. */
+  class ApiError extends Error {
+    constructor(status, message) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+    }
+  }
+
+  /**
+   * Every route goes through here, so latency and failure are one decision
+   * rather than something each route remembers to do.
+   *
+   * @param {string} route - Short name the `fail:` switch matches on.
+   * @param {function(): *} produce - Builds the answer.
+   * @returns {Promise<*>}
+   */
+  async function serve(route, produce) {
+    if (SWITCH.slow) await new Promise((done) => setTimeout(done, 2000));
+    if (SWITCH.fail.has(route) || SWITCH.fail.has('*')) {
+      throw new ApiError(500, `Mock failure for ${route}`);
+    }
+    return produce();
+  }
+
+  /** Deep copy, so a caller cannot edit the corpus by editing what it got. */
+  const copy = (value) => JSON.parse(JSON.stringify(value));
+
+  /* ================================================================= routes */
+
+  /**
+   * `GET /api/v2/gpu/workers` -- every machine, **unpaged**.
+   *
+   * Unpaged because the real route is, and `DESIGN.md` gap 12 is the record of
+   * that being a problem at scale rather than a licence to fix it here.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listWorkers() {
+    return serve('workers', () => {
+      if (SWITCH.fail.has('@empty')) return [];
+      return copy(CORPUS.workers);
+    });
+  }
+
+  /**
+   * `GET /api/v2/gpu/jobs` -- a page, newest first.
+   *
+   * Ordered by `created_at` then `id`. The tie-breaker is not decoration: a
+   * batch's pieces are inserted in one statement and share a timestamp, and
+   * without it two pages of the same list can show one piece twice and miss
+   * another.
+   *
+   * @param {Object} [query] - `state`, `kind`, `batch_id`, `limit`, `offset`.
+   * @returns {Promise<{jobs: Object[], total: number, limit: number, offset: number}>}
+   */
+  function listJobs(query) {
+    const q = query || {};
+    return serve('jobs', () => {
+      if (SWITCH.fail.has('@empty')) return { jobs: [], total: 0, limit: 50, offset: 0 };
+
+      let rows = CORPUS.jobs.slice();
+      if (q.state) rows = rows.filter((j) => j.state === q.state);
+      if (q.kind) rows = rows.filter((j) => j.kind === q.kind);
+      if (q.batch_id) rows = rows.filter((j) => j.batch_id === q.batch_id);
+
+      rows.sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : b.id - a.id));
+
+      const limit = Math.min(Number(q.limit) || 50, 500);
+      const offset = Number(q.offset) || 0;
+      return { jobs: copy(rows.slice(offset, offset + limit)), total: rows.length, limit, offset };
+    });
+  }
+
+  /**
+   * `GET /api/v2/gpu/jobs/:id` -- the job, its attempts, its artifacts.
+   *
+   * @param {number} id - Job id.
+   * @returns {Promise<{job: Object, attempts: Object[], artifacts: Object[]}>}
+   */
+  function getJob(id) {
+    return serve('jobs', () => {
+      const job = CORPUS.jobs.find((j) => j.id === Number(id));
+      if (!job) throw new ApiError(404, `No job ${id}`);
+      const mine = CORPUS.attempts.filter((a) => a.job_id === job.id);
+      /* `artifacts.path` is recorded and nothing serves the bytes -- gap 6. The
+         rows exist so the screen can list them; there is nowhere to download. */
+      const artifacts = job.published_attempt_id
+        ? [{ artifact_id: job.published_attempt_id, kind: 'observations', path: `artifacts/${job.id}/observations.json`, byte_size: 1048576 + job.id }]
+        : [];
+      return { job: copy(job), attempts: copy(mine), artifacts };
+    });
+  }
+
+  /**
+   * `POST /api/v2/gpu/jobs` -- answers **200**, not 201.
+   *
+   * Kept wrong-looking on purpose: R2 says the shapes match the real routes
+   * including the awkward ones, and a layer that quietly corrected this would
+   * teach the screen an answer the API does not give.
+   *
+   * @param {Object} spec - The job spec.
+   * @returns {Promise<{status: number, job: Object}>}
+   */
+  function submitJob(spec) {
+    return serve('jobs', () => {
+      const job = {
+        id: 9000 + CORPUS.jobs.length + 1,
+        batch_id: null,
+        kind: (spec && spec.kind) || 'inference',
+        spec: copy(spec || {}),
+        state: 'queued',
+        priority: (spec && spec.priority) || 5,
+        attempts_made: 0,
+        max_attempts: 3,
+        published_attempt_id: null,
+        created_by: 1,
+        created_at: new Date(NOW).toISOString(),
+        updated_at: new Date(NOW).toISOString(),
+        progress_done: null,
+        progress_total: null,
+        progress_unit: null,
+        progress_phase: null,
+        progress_elapsed_s: null,
+      };
+      CORPUS.jobs.push(job);
+      return { status: 200, job: copy(job) };
+    });
+  }
+
+  /**
+   * `POST /api/v2/gpu/jobs/:id/cancel`.
+   *
+   * @param {number} id - Job id.
+   * @returns {Promise<Object>}
+   */
+  function cancelJob(id) {
+    return serve('jobs', () => {
+      const job = CORPUS.jobs.find((j) => j.id === Number(id));
+      if (!job) throw new ApiError(404, `No job ${id}`);
+      job.state = 'cancelled';
+      job.updated_at = new Date(NOW).toISOString();
+      return copy(job);
+    });
+  }
+
+  /**
+   * `POST /api/v2/gpu/workers/:id/rename` -- the one worker mutation that
+   * exists. Pause, drain, retire and the rest are gap 7.
+   *
+   * @param {number} id - Worker id.
+   * @param {string} name - The new name.
+   * @returns {Promise<Object>}
+   */
+  function renameWorker(id, name) {
+    return serve('workers', () => {
+      const worker = CORPUS.workers.find((w) => w.worker_id === Number(id));
+      if (!worker) throw new ApiError(404, `No worker ${id}`);
+      worker.name = String(name);
+      return copy(worker);
+    });
+  }
+
+  window.MarpApi = {
+    listWorkers,
+    listJobs,
+    getJob,
+    submitJob,
+    cancelJob,
+    renameWorker,
+    ApiError,
+    /* Exposed for the checks, not for the screens. A screen reading these is a
+       screen that has learned something the real API will not tell it. */
+    _meta: { NOW, SEED, SWITCH, JOB_STATES, JOB_KINDS, WORKER_STATES },
+  };
+})();

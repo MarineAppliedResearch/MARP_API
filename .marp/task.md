@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#128
 repos: [MARP_API]
-status: implementing
+status: design
 needs: []
 ---
 
@@ -72,13 +72,21 @@ are not read by any screen.
   parameter — `?mock=slow`, `?mock=fail:jobs`. The default path is instant, successful and
   deterministic, so R3 is untouched and a failure is reproducible by URL and can be
   demonstrated on purpose.
-- [ ] **A4 · architectural · non-blocking** — Where the module lives and what format it is.
-  The app is served statically by `app.js` with no build step (R11), which rules out a
-  bundler but leaves ES modules against plain scripts, and `mockups/` against a sibling
-  directory, open.
-- [ ] **A5 · API contract · non-blocking** — Whether the layer models only the three
-  dashboard-facing routes plus the mutations a screen performs, or all fourteen. The screens
-  settle it unless something is meant to exercise the worker protocol.
+- [x] **A4 · architectural · non-blocking** — answered 2026-10-14 by following the pattern
+  already in the repository: `mockups/api.js`, a plain script loaded before `mock.js` and
+  exposing one global. `mock.js` is a plain script and cannot `import` without becoming a
+  module, and converting it is a change this task did not ask for.
+- [x] **A5 · API contract · non-blocking** — answered 2026-10-14: the three dashboard-facing
+  routes plus the three mutations a screen performs (submit, cancel, rename). The worker
+  protocol — poll, heartbeat, events, result, the artifact hand-off — is not modelled,
+  because no screen reads it and a fixture nothing exercises is a fixture that rots.
+- [ ] **A6 · product/UI · blocking** — *Found during G2.* R5 requires *completed with issues*
+  to be reachable, and gap 2 records that it has no enum value and no parent object to hang
+  it on. So the layer has to derive it from something, and which something is a real choice:
+  a job that succeeded after earlier attempts failed; one that succeeded with `progress_done`
+  short of `progress_total`; or a warnings field that exists on no table today and would make
+  this a schema request rather than a derivation. Each tells the operator a different thing,
+  and the first two are already distinguishable in the data while the third is not.
 
 ## Decisions
 
@@ -115,8 +123,12 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** implementing — the three blocking assumptions are answered
-- **Notes:** The surface is measured and recorded above. A4 and A5 remain open and are not
-  blocking: where the module lives, and whether it models the worker-protocol routes nobody
-  reads. The progress mismatch becomes `DESIGN.md` gap 23 rather than being closed, because
-  the route does not carry progress today and the screen is drawn as though it does.
+- **Gate:** design — A6 appeared during G2 and is blocking
+- **Notes:** Steps 1 to 3 of the plan are done. `DESIGN.md` carries gap 23; `mockups/api.js`
+  serves the three read routes and the three mutations from a seeded corpus of 143 machines
+  and 420 jobs, with the `?mock=` switch; `tools/api-contract-check.mjs` fails when the
+  enums drift from `config/gpu-orchestration.js`, and was proved to fail before it was
+  believed. Verified in a browser: byte-identical across reloads, every API job state
+  reachable, `cancelling` derivable, `fail:jobs` returning 500 while workers stay up, `slow`
+  at 2003ms. Step 4 — moving Jobs onto the module — is where *completed with issues* has to
+  be drawn, so A6 blocks it rather than the whole task.
