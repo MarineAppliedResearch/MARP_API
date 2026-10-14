@@ -103,7 +103,7 @@ const NAV = [
   { id: 'dashboard', label: 'Dashboard',
     tip: 'What the GPU pool is running, queued and struggling with' },
   { id: 'jobs', label: 'Jobs', badge: 8, tone: 'attn',
-    tip: 'One queue for inference, training and dataset builds \u2014 8 need attention' },
+    tip: 'The GPU queue: inference, tracking and training. Dataset builds live on Datasets' },
   { id: 'inference', label: 'Inference', badge: 4, tone: 'run',
     tip: 'Run a model over MARP data \u2014 4 running now' },
   { id: 'training', label: 'Training', badge: 2, tone: 'run',
@@ -1757,14 +1757,17 @@ function wireDatasetPage() {
   buildJobs.slice().reverse().forEach((item) => {
     fixtures[item.name] = item;
     const row = document.createElement('tr');
-    row.innerHTML = '<td class="jname"><a class="name dataset-job-name" href="./jobs.html?job=' + item.job + '" title="Open ' + item.job + ' in Jobs"><svg class="ico"><use href="#i-jobs"/></svg><span class="t">' + item.name + '</span></a></td>'
+    /* No link into Jobs: a dataset build is not in that queue, and its detail
+       is this row's own expansion. The icon is the Datasets one for the same
+       reason -- the jobs icon claimed a home it does not have. */
+    row.innerHTML = '<td class="jname"><span class="name dataset-build-name"><svg class="ico datasets"><use href="#i-datasets"/></svg><span class="t">' + item.name + '</span></span></td>'
       + '<td class="jscope">' + item.description + '</td>'
       + '<td class="num" data-sort="' + item.observations.replaceAll(',', '') + '">' + item.observations + '</td>'
       + '<td class="num" data-sort="' + item.frameSort + '">' + item.frames + '</td>'
       + '<td class="num" data-sort="' + item.classes + '">' + item.classes + '</td>'
       + '<td class="jtime" data-sort="' + item.created + '"><span class="two"><span class="a">' + item.created.slice(11) + '</span><span class="b">' + item.created.slice(0, 10) + '</span></span></td>'
       + '<td class="jtime" data-sort="' + item.updated + '"><span class="two"><span class="a">' + item.updated + '</span></span></td>'
-      + '<td class="jacts"><a class="btn sm dataset-job-link" href="./jobs.html?job=' + item.job + '" aria-label="Open ' + item.job + ' in Jobs" title="Open this Dataset Build job in the shared Jobs list"><svg class="ico sm"><use href="#i-arrow"/></svg>View job</a></td>';
+      + '<td class="jacts"><button class="btn sm dataset-build-open" type="button" aria-label="Show build detail for ' + item.name + '" title="Show build progress, worker and diagnostics"><svg class="ico sm"><use href="#i-right"/></svg>Build detail</button></td>';
     body.prepend(row);
   });
   const heads = $$(':scope > tr', body);
@@ -1796,10 +1799,61 @@ function wireDatasetPage() {
     task.after(state);
     const expand = document.createElement('td');
     expand.className = 'ex';
+    /* **A build expands here, on Datasets.** It used to carry a mark linking
+       into Jobs, because a dataset build was drawn as a job in the GPU queue.
+       It is not one -- settled 2026-10-14 in #128 -- so its progress, its
+       worker and its diagnostics have to live where the build does, which is
+       this row. The structure is deliberately the same as a Ready row's, a
+       `runrow-head` with a `runrow-body` after it, so the existing expander
+       wires it without knowing the difference. */
     if (isBuild) {
-      head.classList.add('dataset-job-row');
-      expand.innerHTML = `<a class="dataset-job-mark" href="./jobs.html?job=${cfg.job}" aria-label="Open ${cfg.job} in Jobs" title="This is a Dataset Build job; open it in Jobs"><svg class="ico sm"><use href="#i-jobs"/></svg></a>`;
+      head.classList.add('dataset-build-row');
+      head.setAttribute('aria-expanded', 'false');
+      expand.innerHTML = `<button class="exbtn" type="button" aria-label="Expand ${name}" title="Show build progress, worker and diagnostics"><svg class="ico sm"><use href="#i-right"/></svg></button>`;
       head.prepend(expand);
+
+      const failed = status === 'attention';
+      const pct = Math.max(0, cfg.progress || 0);
+      const tone = { building: 'running', queued: 'queued', attention: 'failed' }[status];
+
+      /* Queued work has not measured anything, so it draws a dash rather than
+         a 0% bar -- the same rule the Jobs table follows. */
+      const bar = status === 'queued'
+        ? '<span class="dash">Not started</span>'
+        : `<span class="prog" data-state="${tone}"><span class="bar" role="progressbar" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span><span class="pct">${pct}%</span></span>`;
+
+      const fact = (label, value) => `<div class="jobmetric"><span>${label}</span><b>${value}</b></div>`;
+      const note = failed
+        ? `<div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${cfg.description}</h4><p>Materialized frames are kept; only the unread remainder needs to run again.</p></div></div>`
+        : '';
+      const actions = failed
+        ? '<button class="btn sm" type="button">Retry build</button><button class="btn sm ghost" type="button">Discard</button>'
+        : status === 'queued'
+          ? '<button class="btn sm" type="button">Start now</button><button class="btn sm ghost" type="button">Cancel build</button>'
+          : '<button class="btn sm ghost" type="button">Cancel build</button>';
+
+      const detail = document.createElement('tr');
+      detail.className = 'runrow-body dataset-row-detail';
+      detail.hidden = true;
+      detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}">`
+        + `<header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${tone}">${stateLabel}</span></header>`
+        + `<div class="dataset-build-progress">${bar}<span class="build-frames">${frames} frames</span></div>`
+        + note
+        + `<div class="jobmetrics">${fact('Worker', cfg.worker)}${fact('Elapsed', cfg.build)}${fact('Remaining', cfg.eta)}${fact('Materialized', cfg.size)}${fact('Split', cfg.split)}${fact('Fingerprint', cfg.fingerprint)}</div>`
+        + `<dl class="kv"><dt>Project</dt><dd>${cfg.project}</dd><dt>Queries</dt><dd>${cfg.queries}</dd><dt>Overlap groups</dt><dd>${cfg.groups}</dd><dt>Output format</dt><dd>${cfg.format}</dd></dl>`
+        + `<div class="jobstate-actions">${actions}</div>`
+        + '</div></td>';
+      head.after(detail);
+
+      /* The row's own click handler ignores buttons, so the action has to ask
+         the expander itself -- the same arrangement a Ready row uses. */
+      const open = $('.dataset-build-open', head);
+      if (open) {
+        open.addEventListener('click', (event) => {
+          event.stopPropagation();
+          $('.exbtn', head)?.click();
+        });
+      }
       return;
     }
     head.setAttribute('aria-expanded', 'false');

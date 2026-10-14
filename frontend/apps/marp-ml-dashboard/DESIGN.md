@@ -305,10 +305,13 @@ queued job counts and completed-build markers. Legend labels isolate each series
 values are deterministic design fixtures until sampled dataset-build telemetry is stored and served.
 
 Materializing images, labels, thumbnails, a manifest and an immutable split may take hours, so
-`Queue dataset build` creates a first-class job in the same Jobs system used by inference and
-training. Queued, building and failed dataset entries remain visible on Datasets and link to their
-complete Jobs expansion. A saved dataset becomes available only after the build succeeds; partial
-output never masquerades as a usable dataset.
+`Queue dataset build` starts tracked work with its own progress, worker and diagnostics — **but
+not a job in the GPU queue.** Settled 2026-10-14 in #128: a dataset build is not a `gpu_jobs`
+row, is never leased through `POST /gpu/poll`, and is not run by the inference worker. Queued,
+building and failed entries stay on Datasets and **expand in place**, which is where their
+progress, worker, elapsed time, remaining estimate and failure detail belong. A saved dataset
+becomes available only after the build succeeds; partial output never masquerades as a usable
+dataset.
 
 The builder holds a union of query snapshots rather than one mutable query. `Run query` refreshes
 the visible match count and class distribution. Before `Add all matching` is used, the operator
@@ -323,10 +326,12 @@ does not trap touch scrolling inside a narrow nested region.
 
 The combined lifecycle table searches names, descriptions, projects and job ids; filters by task
 and build status; and sorts every meaningful column. Its rows deliberately represent two different
-objects. Queued, building and failed rows are Dataset Build jobs: they do not expand on Datasets and
-their name, job marker and `View job` action all open the matching first-class entry in Jobs, where
-progress, workers, retry state and diagnostics belong. Only a successfully materialized `Ready`
-dataset expands inline on Datasets, showing provenance, fingerprint, composition, split, archive
+objects. Queued, building and failed rows are builds in flight: they expand in place, showing
+progress against frames, the worker, elapsed and remaining time, how much has been materialized,
+the split and the fingerprint — plus the failure and a `Retry build` where one is needed. They used
+to link into Jobs instead; #128 removed that, because the queue they pointed at never held them.
+A successfully materialized `Ready` dataset expands inline too, showing provenance, fingerprint,
+composition, split, archive
 size and representative imagery, followed by duplicate, training and export actions. `Expand all
 ready` ignores build-job rows. At tablet and phone widths each row becomes a card before the desktop
 columns crowd, and expanded ready-dataset content stacks without hiding scientific provenance or

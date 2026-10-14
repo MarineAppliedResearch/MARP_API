@@ -1889,10 +1889,6 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .dataset-build-progress span, .dataset-build-progress small { color: var(--muted); font-size: 10px; }
 .dataset-build-progress .bar { width: 100%; }
 .dataset-detail[data-status="attention"] .dataset-build-progress { border-color: rgba(224, 97, 107, .3); background: rgba(224, 97, 107, .06); }
-.dataset-job-row .dataset-job-name { color: var(--white); text-decoration: none; }
-.dataset-job-row .dataset-job-name:hover .t { color: var(--cyan-300); text-decoration: underline; }
-.dataset-job-mark { display: inline-grid; place-items: center; width: 24px; height: 24px; color: var(--cyan-300); border: 1px solid var(--hairline-2); border-radius: 5px; background: var(--sunk); }
-.dataset-job-link { white-space: nowrap; text-decoration: none; }
 
 /* A condition that is not a choice. It looks like a setting because a person
    will look for one, and says it is fixed. */
@@ -2755,3 +2751,18 @@ td.whb.quiet { color: var(--amber-300); }
 .tbl .tblmsg td.error { color: var(--st-failed); }
 
 .tbl .tblmsg td .btn { margin-left: 10px; }
+
+/* ---- a dataset build, expanded on Datasets ------------------------------
+   Its detail used to be a link into Jobs. A dataset build is not a GPU job
+   (#128), so the build's own row is where its progress and diagnostics live. */
+.dataset-build-name { display: inline-flex; align-items: center; gap: 8px; }
+
+.dataset-build-progress {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px 0 4px;
+}
+
+.dataset-build-progress .prog { flex: 1; }
+.dataset-build-progress .build-frames { color: var(--muted); white-space: nowrap; }
