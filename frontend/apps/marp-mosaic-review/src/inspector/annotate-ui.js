@@ -228,8 +228,9 @@ export function openSpeciesPopup({ popup, at, title, sessions = [], sessionId, l
  * Fill the panel for the selected observation, or hide it.
  *
  * @param {HTMLElement} panel
- * @param {Object|null} model - `{ row, colour, session, keyframes, canWrite, canDelete }`, or
- *   null for no selection.
+ * @param {Object|null} model - `{ row, colour, session, keyframes, canWrite, canDelete,
+ *   picture }`, or null for no selection. `picture` is 'working', 'done' or absent: cutting
+ *   the Mosaic picture takes seconds, and what the button says has to survive a re-render.
  * @param {Object} on - `{ rename, count, merge, picture, remove, seek, close }`.
  */
 export function renderPanel(panel, model, on) {
@@ -238,7 +239,7 @@ export function renderPanel(panel, model, on) {
     panel.replaceChildren();
     return;
   }
-  const { row, colour, session, keyframes, canWrite, canDelete } = model;
+  const { row, colour, session, keyframes, canWrite, canDelete, picture } = model;
   const head = element('div', 'annotate-head');
   const swatch = element('span', 'swatch');
   swatch.style.background = colour;
@@ -293,7 +294,9 @@ export function renderPanel(panel, model, on) {
     actions.append(button);
   };
   action('Change species…', 'rename', on.rename, canWrite);
-  action('Use this frame for the Mosaic picture', 'picture', on.picture);
+  action(picture === 'working' ? 'Cutting the picture from this frame…'
+    : picture === 'done' ? 'Mosaic picture updated ✓'
+      : 'Use this frame for the Mosaic picture', 'picture', on.picture, picture !== 'working');
   action('Merge another observation into this one…', 'merge', on.merge, canWrite);
   if (canDelete) action('Delete observation…', 'remove', on.remove);
 

@@ -125,6 +125,24 @@ test('#181 a drawn box and one Enter add an observation, and its panel renames, 
       await page.locator('#boxMenu button[data-action="end"]').click();
       await ended;
       await expectKeyboardSteps(page, 'after a choice from the box menu');
+
+      // Double-click pins a keyframe where there is none, and takes one off where there is --
+      // the annotation GUI's gesture. It played the video instead, because the click under it
+      // reached the picture (2026-10-14).
+      for (let n = 0; n < 2; n += 1) await step(page, 'back');
+      const between = await boxOf(page, id);
+      const at = centre(between.rect);
+      const pinned = page.waitForResponse(isPath('/mosaic/video/keyframe', 'POST'));
+      await page.mouse.dblclick(at.x, at.y);
+      expect((await (await pinned).json()).changed.some((k) => k.type === 'middle')).toBe(true);
+      expect(await page.evaluate(() => window.MARP_VIDEO.paused), 'a double-click started the video').toBe(true);
+      await expect(panel.locator('.panel-keyframes li')).toHaveCount(3);
+
+      const removed = page.waitForResponse((r) => /\/mosaic\/video\/keyframe\/\d+$/.test(new URL(r.url()).pathname)
+        && r.request().method() === 'DELETE');
+      await page.mouse.dblclick(at.x, at.y);
+      await removed;
+      await expect(panel.locator('.panel-keyframes li')).toHaveCount(2);
       await expect.poll(async () => Boolean(await boxOf(page, id))).toBe(true);
       // Past the end there is nothing: the record stops there now.
       for (let n = 0; n < 3; n += 1) await step(page, 'forward');

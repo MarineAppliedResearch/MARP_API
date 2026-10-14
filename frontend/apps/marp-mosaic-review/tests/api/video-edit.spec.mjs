@@ -126,11 +126,16 @@ test('#181 the boxes go fullscreen with the player, in the GUI\'s style, over a 
       // A click selects it, saves nothing, and does not start the video.
       let edits = 0;
       page.on('request', (r) => { if (/\/mosaic\/video\/keyframe(\/|$)/.test(new URL(r.url()).pathname)) edits += 1; });
+      const before = await page.evaluate(() => window.MARP_VIDEO.time);
       await page.mouse.click(middle.x, middle.y);
       await page.waitForTimeout(600);
       expect(await page.evaluate(() => window.MARP_VIDEO.selected)).toMatch(new RegExp(`^${id}_`));
-      expect(await page.evaluate(() => window.MARP_VIDEO.paused)).toBe(true);
       expect(edits).toBe(0);
+      // The picture has not moved on. Asserted on the time rather than on `paused` alone,
+      // which stayed true for a second after a click started playback and so let a real
+      // defect through: clicking a box ran the video (2026-10-14).
+      expect(await page.evaluate(() => window.MARP_VIDEO.time)).toBe(before);
+      expect(await page.evaluate(() => window.MARP_VIDEO.paused)).toBe(true);
 
       // Over a grip of the selected box, a resize arrow.
       const corner = { x: rect.left + rect.width, y: rect.top + rect.height };

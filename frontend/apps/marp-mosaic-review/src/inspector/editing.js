@@ -50,6 +50,13 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   let lastPress = null;
   let longPress = null;
 
+  /* A press on a box is followed by a `click`, and the player plays or pauses on a click on
+     its picture -- so clicking a box started the video, and double-clicking one played it
+     instead of pinning a keyframe. Stopping the pointer events is not enough: the click is a
+     separate event that still reaches the canvas underneath (2026-10-14, and 2026-10-06
+     before it, when this guard was removed as redundant without a test to say otherwise). */
+  let swallowClick = false;
+
   /* A box being drawn on empty picture, for a new observation or to extend the selected one
      (R1, R2), and the one drawn and waiting for the popup's answer. */
   let draft = null;
@@ -209,6 +216,9 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
     if (!menu.hidden) closeMenu();
     const point = pointIn(event);
     const hit = hitTest(host.drawn().rects, point, selectedKey);
+    // Each press decides whether the click after it is the editor's or the player's, so both
+    // clicks of a double-click are covered.
+    swallowClick = Boolean(hit);
     if (!hit) {
       // The picture, not a box. A drag on it draws a box (R1); left alone it stays the
       // player's -- a click still plays or pauses -- until it has moved far enough to be one.
@@ -364,6 +374,13 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   stage.addEventListener('pointerup', onPointerUp, true);
   stage.addEventListener('pointercancel', onPointerUp, true);
   stage.addEventListener('contextmenu', onContextMenu, true);
+  for (const type of ['click', 'dblclick']) {
+    stage.addEventListener(type, (event) => {
+      if (!swallowClick || menu.contains(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+  }
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;

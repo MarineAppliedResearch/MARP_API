@@ -301,6 +301,7 @@ async function show(request) {
   const { video } = answer;
   const comname = rows.has(request.observationId) ? rows.get(request.observationId).comname : null;
   $('inspectTitle').textContent = `${comname || 'Observation'} · ${request.observationId}`;
+  openedTitle = $('inspectTitle').textContent;
   $('inspectDetail').textContent = video.video_source || '';
 
   if (!video.jellyfin_item_id) {
@@ -442,6 +443,9 @@ const editor = createBoxEditor({
       // edit can have just added the end, or taken it away (2026-10-14).
       refreshOpenEnded(answer.observation_id);
       rebuildDrawable();
+      // The panel lists the selected observation's keyframes, so an edit that adds or removes
+      // one has to redraw it or the list is a stale answer (2026-10-14).
+      updatePanel();
     },
     async deleteObservation(id) {
       const row = showing && showing.observations.find((o) => o.observation_id === id);
@@ -481,6 +485,24 @@ function forgetObservation(id) {
   rebuildDrawable();
   redraw();
   updatePanel();
+}
+
+/* The header names the observation the page was opened on until another is selected, and
+   then names that one: it read as the wrong animal otherwise (2026-10-14). */
+let openedTitle = '';
+
+/* What the Mosaic-picture button is saying: 'working', 'done', or nothing. Held here rather
+   than on the element, because the panel is redrawn from state and a re-render would
+   otherwise throw the message away mid-cut (2026-10-14). */
+let pictureState = null;
+
+function showTitle() {
+  const key = editor.selectedKey;
+  const id = key ? Number(key.split('_')[0]) : null;
+  const row = showing && id != null ? showing.rows.get(id) : null;
+  $('inspectTitle').textContent = row
+    ? `${row.comname || 'Observation'} · ${row.observation_id}`
+    : openedTitle;
 }
 
 /* Whether an observation's track still lacks an end keyframe, from what the page holds. An
@@ -545,30 +567,22 @@ function openAdd({ rect, box, selectedKey }) {
    It really goes and decodes the frame out of the video, which takes seconds, and silence
    there reads as a button that does nothing (2026-10-14). */
 function usePicture(entry, t) {
-  const button = $('obsPanel').querySelector('[data-action="picture"]');
-  const label = button && button.textContent;
-  if (button) {
-    button.disabled = true;
-    button.textContent = 'Cutting the picture from this frame…';
-  }
+  pictureState = 'working';
   status('Cutting the Mosaic picture from this frame. This takes a few seconds…');
+  updatePanel();
   return editor.save(async () => {
     try {
       const answer = await MarpApi.usePicture(entry.box.observation_id, { t, subset: entry.box.subset, box: entry.box });
       status('The Mosaic picture is now cut from this frame. Reload the Mosaic to see it.');
-      if (button && button.isConnected) {
-        button.textContent = 'Mosaic picture updated ✓';
-        setTimeout(() => { if (button.isConnected) { button.textContent = label; button.disabled = false; } }, 2500);
-      }
+      pictureState = 'done';
+      setTimeout(() => { pictureState = null; updatePanel(); }, 2500);
       return answer;
     } catch (error) {
       // Reported here rather than rethrown: the queue's own handler would replace this with
       // a generic "the change was not saved", and the reason is the useful part.
       status(`The Mosaic picture was not cut: ${error.message}`);
-      if (button && button.isConnected) {
-        button.textContent = label;
-        button.disabled = false;
-      }
+      pictureState = null;
+      updatePanel();
       return [];
     }
   });
@@ -580,9 +594,11 @@ function updatePanel() {
   const id = key ? Number(key.split('_')[0]) : null;
   const row = showing && id != null ? showing.rows.get(id) : null;
   if (!row || !editor.enabled) {
+    showTitle();
     renderPanel($('obsPanel'), null);
     return;
   }
+  showTitle();
   const drawnRow = drawable.find((o) => o.observation_id === id);
   const keyframes = drawnRow ? drawnRow.tracks.flat().sort((a, b) => a.t - b.t) : [];
   renderPanel($('obsPanel'), {
@@ -591,7 +607,8 @@ function updatePanel() {
     session: showing.sessions.find((s) => s.session_id === row.session_id),
     keyframes,
     canWrite: canAnnotate,
-    canDelete
+    canDelete,
+    picture: pictureState
   }, {
     close: () => { editor.select(null); returnKeyboard(); },
     seek: (t) => {
