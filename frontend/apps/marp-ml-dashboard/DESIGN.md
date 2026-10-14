@@ -568,10 +568,18 @@ are #104's measurement comment and its two decision comments.
     aggregated into a present snapshot, but there is no sampled time series or queued-frame
     rollup for the Inference activity graph. Its moving values remain deterministic design data
     until a later phase defines and serves those measurements.
-19. **Dataset build jobs and build telemetry** — dataset materialization is not yet a first-class
-    shared Job kind, and no sampled frames-per-minute, build concurrency, queue-depth or completion
-    series exists. The Datasets lifecycle rows and activity chart define the intended contract;
-    their progress, worker, ETA and series values are deterministic review fixtures in Phase 0.
+19. **Dataset build telemetry** — no sampled frames-per-minute, build concurrency, queue-depth
+    or completion series exists. The Datasets lifecycle rows and activity chart define the
+    intended contract; their progress, worker, ETA and series values are deterministic review
+    fixtures in Phase 0.
+
+    **A dataset build is not a Job, settled 2026-10-14 in #128.** This used to read "not *yet*
+    a first-class shared Job kind", which left the Jobs screen showing six hand-written Dataset
+    Build rows against the day MARP grew the kind. It is not growing one: building a dataset is
+    the Datasets screen's work, not the job queue's. The rows are gone, and with them the
+    headline cards disagreeing with the table beneath them. MARP's job kinds are inference,
+    tracking, training and diagnostic, and `tools/api-contract-check.mjs` fails if the dashboard
+    starts believing in a fifth.
 20. **Model-registry trend and cache-coverage history** — current model and worker snapshots can
     supply present totals, but no sampled registry/cache series exists. The Models graph is
     deterministic Phase 0 design data.
