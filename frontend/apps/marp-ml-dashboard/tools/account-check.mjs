@@ -132,6 +132,9 @@ const session = (page) => page.route('**/api/v2/auth/me', (route) => route.fulfi
   const items = await page.getByRole('menuitem').allTextContents();
   check(items.join('|') === 'Open the dashboard|Sign in',
     `signed out, the ML menu has the wrong items: ${items.join(', ')}`);
+  const signInHref = await page.locator('[data-account-signin]').getAttribute('href');
+  check(signInHref === '/?login=1',
+    `signed out, Sign in should open the front-page dialog, href is "${signInHref}"`);
   await page.close();
 }
 

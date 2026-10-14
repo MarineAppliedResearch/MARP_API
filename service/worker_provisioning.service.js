@@ -76,7 +76,6 @@ class WorkerProvisioningService {
             workerVersion: body.worker_version ? requiredString(body.worker_version, 'worker_version', 64) : null,
         });
         if (!result) throw new ApiError(401, ERROR_CODES.UNAUTHORIZED, 'Activation code is invalid, expired, or already used.');
-        if (result.conflict) throw new ApiError(409, ERROR_CODES.CONFLICT, 'This worker identity is already activated.');
         return result;
     }
 

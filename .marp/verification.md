@@ -1,80 +1,69 @@
-# Verification — MARP_API#181: watch an observation in its source video
+# Verification — MarineAppliedResearch/MARP_API#180 Dashboard revision
 
 ## What each test proves
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1, R4 | `tests/api/video-window.spec.mjs` › *Open video shows the observation in its own window, and reuses that window* | browser, API tier, desktop and phone | the button opens `inspect.html` in a window of its own, answered by the real read; a second observation goes to the same window, no new page |
-| R5 | same | browser | the Mosaic is still showing its tile after the window opens |
-| R2 | `tests/mosaic-video-context.test.js` › *groups observations by video, and puts each keyframe at the time its writer meant* | API + DB | a GUI row's keyframes at `framenum / 25`, a GPU row's at `framenum / nominal`, on one video whose nominal rate is not 25 |
-| R2 | › *reports a weak match as unresolved rather than opening the wrong dive* | API + DB | a match below the thumbnail pass's score is not opened |
-| — | › *refuses a request that names no observations*, › *requires a signed-in reader* | API | the request is validated, and gated like the other Mosaic reads |
-| R2 | `tests/unit/video-boxes.test.mjs` (6 tests) | unit | interpolation between keyframes, nothing outside a track's span, several observations and subsets at once, and where a letterboxed picture sits |
+| R1, R2, R3 | `node tools/mock-shots.mjs dashboard` from `frontend/apps/marp-ml-dashboard` | render | The former general job list is absent; all functional destinations are represented; the short activity preview includes running, needs-attention and completed states; every header sorts. |
+| R4 | The same Dashboard render check at its desktop, tablet, phone and phone-fold viewports | render | Overview, Worker pool and Current and recent jobs appear in order at full content width; no clipping or container overflow is present. |
+| R5, R6 | `node tools/account-check.mjs` from `frontend/apps/marp-ml-dashboard` | browser | Dashboard navigation uses real links, and the signed-out account menu targets the front-page login instruction. |
+| R6 | `npx playwright test tests/e2e/render.spec.mjs --project=desktop -g "an application Sign in"` from `frontend/apps/entry` | browser | Arrival from an application opens and focuses the existing landing-page dialog, then removes the one-time URL instruction. |
+| R7 | `npm run lint` from `frontend/apps/marp-ml-dashboard`, plus `git diff --check` | parse/contract | JavaScript parses, the design vocabulary remains valid, and the changed documentation and source have no malformed diff whitespace. |
+| R8 | The Dashboard render check at all four viewports | render | One dual-scale graph shows stacked training/inference compute, available compute, VRAM pressure and queued training/inference jobs; offers 24h/5h/1h with 5h default; highlights each selected series and restores the full graph on a second selection; keeps high-contrast marks and labels; sits right of worker status on wide desktop; and stacks below it without overflow or wasted side-column space on narrower screens. |
+| R9 | `npx jest tests/thumbnail-storage.test.js --runInBand` | unit | A stamped testing database overrides a development thumbnail directory with its paired testing directory, while a different database retains its own configured storage. |
+| R10, R11 | `node tools/mock-shots.mjs jobs` from `frontend/apps/marp-ml-dashboard` | render/browser | More filters is absent; Search, Type, Status and Window remain; all seven desktop headers sort; and the same sorts remain operable after the list becomes cards. |
+| R12, R13 | The Jobs render check at desktop, tablet, phone and phone-fold widths | render | The status donut separates running inference/training, queued, completed and needs-attention jobs; the moving history graph offers 24h/5h/1h with 5h default and stays legible without overflow. |
+| R14 | The Jobs render check at all four widths | browser/render | Each visible job expands inline with common identity plus state-specific active, queued, attention, completed or cancelled content and its own folded Diagnostics section; Expand all / Collapse all operates on the current page. |
+| R15 | The Jobs render check at all four widths | browser/render | Begun inference jobs show class counts, confidence summaries and cumulative findings; begun training jobs show loss, precision, recall and mAP curves; queued jobs show a no-metrics-yet state; every graph legend can isolate and restore one series. |
+| R16 | The Jobs render check at all four widths | browser/render | A completed eight-class training example separates loss and quality history; provides split-aware per-class metrics; exposes PR, confidence, confusion and balance views; identifies best and last checkpoints; scopes legend highlighting per graph; opens mutually exclusive Artifacts and Run configuration drawers with honest file availability; and contains dense content on phone. |
+| R17 | The Jobs interaction check | browser | Headline cards, filters, table concepts, expanded-job metrics, graph legends, evaluation tabs, artifact entries and run-configuration rows expose concise hover help on their useful target area without replacing more specific existing titles. |
+| R18 | `node tools/mock-shots.mjs inference` from `frontend/apps/marp-ml-dashboard`, plus the Inference interaction check | render/browser | Linked cards reach their named destinations; the inference-only donut and 24h/5h/1h throughput-versus-backlog graph are legible and truthful about fixture data; graph legends isolate either series; the submission flow remains primary after the overview; and all seven recent-job sorts and direct job links remain usable when the table becomes phone cards. |
 
-## Requirements with no automated test
+## Requirements with no test
 
-- **R3 (the full frame at once) and R6 (a slow connection)** are wired, but no test watches
-  a real video load. Playback needs WebCodecs, a real Jellyfin, and a reviewer signed in to
-  Jellyfin with their own account, and Claude does not type passwords.
+None.
+
+## Edge cases
+
+- A phone has no hover state, so summary destinations retain a visible arrow and a keyboard focus state.
+- Worker pool and Current and recent jobs are measured against the content width rather than only against the viewport; this catches narrow panels that technically remain on screen.
+- The one-time `login=1` instruction is removed after opening the dialog so refreshing the landing page does not reopen it indefinitely.
+- Activity rows remain concise links; the complete list, filters, paging and controls stay on Jobs.
+- Reduced-motion users see the utilization series without its repeating live-preview animation.
+- Jobs summary cards reorder matching states first without hiding unrelated rows or claiming an active column sort.
+- At 1050px, Jobs has already changed from crowded columns to cards and preserves all seven sorts in the compact strip.
+
+## Regression coverage
+
+- The Dashboard render check names the reported phone regression: Worker pool and Current and recent jobs must remain readable at full width.
+- The entry-app check names the reported Sign In failure: an application arrival must open the real front-page dialog.
+- The Dashboard check fails if the removed Active and recent jobs table returns.
+- The Dashboard check fails if the GPU range controls, 5h default or plotted series disappear.
+- The thumbnail-storage check fails if selecting the testing database can silently retain the development corpus directory.
+
+## Known gaps
+
+- The dashboard still uses fixture values; these checks do not claim an API response or live update exists.
+- The summary values and job names are review content, not an API contract.
+- This does not verify authentication credentials or write to any database.
+- No other ML Dashboard screen is visually approved by this run.
 
 ## Manual steps
 
-1. From the Mosaic, open a tile's details and press **Open video**. A window opens.
-2. Sign in with your Jellyfin account in that window. Expect the video at the observation's
-   moment, paused, with its box marked in green and the page's other boxes in cyan.
-3. Open another tile's video. Expect the same window, a seek rather than a reload.
-
-Observation 115874 (Fish-eating anemone, `20260611_161158_Fwd`, 19.6 s) is a good first
-case: its box was checked against the decoded frame pixel for pixel during #236.
+1. Through the running main API origin, open `/apps/marp-ml-dashboard/` on a desktop and confirm the six overview cards, Worker pool with GPU utilization history, and short Current and recent jobs preview form a concise overview without reproducing the complete Jobs page.
+2. In the single GPU graph, confirm 5h is initially selected and the dual axes and compact key make compute used/free, stacked training/inference demand, VRAM pressure, queued training/inference jobs and the largest current load legible without separate cards or rankings. Switch among 24h, 5h and 1h and confirm the plotted history and time labels change. Confirm there is no moving marker.
+3. Open the same URL on a phone. Confirm the overview comes first, Worker pool second and Current and recent jobs third, with both panels and the chart readable at full content width.
+4. Sort the activity preview by Job, Type, Status, Progress and Updated; confirm each header reverses direction on a second click and the row order follows the selected column.
+5. Activate each overview card and the Worker pool link, then return; confirm each opens the screen named by the summary.
+6. While signed out, open the account menu and select Sign in. Confirm the public MARP front page loads with its sign-in dialog already open and the username field focused.
+7. Open `/apps/marp-ml-dashboard/mockups/jobs.html` at desktop, 1050px, and phone widths. Confirm the donut and activity graph are legible; 5h is initially selected; and no More filters control is present.
+8. Activate each headline card and confirm matching jobs move first while every other job remains visible. Sort all seven columns from the desktop headers, then repeat from the compact sort strip at 1050px or narrower.
+9. Expand several individual jobs, including Diagnostics, then use Expand all and Collapse all. Confirm each detail stays paired with its job after sorting and the card layout is not crowded at narrow-tablet width.
+10. Compare an inference, training and queued expansion. Confirm inference exposes per-class counts and confidence with cumulative findings, training exposes distinguishable loss/precision/recall/mAP curves, and queued work does not invent results. Select every legend label in both graphs; confirm only its line remains emphasized, then select it again and press Escape to restore all lines.
+11. Expand the completed eight-class training example. Confirm box/class/DFL losses and validation quality are separate plots; the per-class table exposes support/P/R/F1/AP; Train, Validation and Test update the metrics; the four evaluation tabs expose per-class PR, threshold P/R/F1, raw/normalized confusion and class balance; best and last checkpoints remain visible; and dense tables/matrices are contained rather than shrinking labels or overflowing the phone page.
 
 ---
 
 ## Results
 
-**2026-09-24, branch `181-inspect-source-video`.**
-
-- `tests/mosaic-video-context.test.js`: 4 passed.
-- `test:mosaic`: 280 passed in 8 suites. `test:subsystems`: every suite in exactly one group.
-- Mosaic `test:unit`: 302 passed.
-- `tests/api/video-window.spec.mjs`: 2 passed (desktop and phone). **Red first:** with the
-  picker's old handler, which only fired the `openVideo` event, both fail waiting for a window.
-- The real read against the development database, for observation 115874: the right
-  Jellyfin item, nominal 25 fps, moment 19.6 s, 9 keyframes from 18.52 s to 20.76 s.
-- **The whole browser tier, once:** one failure, `render-filters.spec.mjs` › *R2: the
-  confidence slider narrows the mosaic*, at phone width (*"the mosaic said 1944 before and
-  1944 after, with the store applying {"confidence":null}"*). Nothing in this change touches
-  the rail. Run alone it passed twice at both widths, so it is intermittent in a full run.
-  Left as found, not fixed here.
-
----
-
-**2026-09-24, after first use: `181-video-page-on-an-insecure-address`.**
-
-Isaac's first use failed: *"crypto.randomUUID is not a function"* on signing in. MARP is
-reached at `http://47.208.203.78:3000`, which a browser does not treat as secure, and there
-it offers neither `crypto.randomUUID` nor WebCodecs. Every test above ran on localhost, which
-it does treat as secure, so none of them could see it. Fixed by serving HTTPS beside HTTP on
-port 3000 with a certificate for the address, and by reaching Jellyfin through MARP at
-`/jellyfin`, because a secure page cannot fetch from plain-http Jellyfin.
-
-Measured at the public address with Chromium, certificate warning accepted:
-
-```
-https://47.208.203.78:3000/ {"secure":true,"VideoDecoder":"function","randomUUID":"function"}
-http://47.208.203.78:3000/  {"secure":false,"VideoDecoder":"undefined","randomUUID":"undefined"}
-```
-
-A second defect, found by the new sign-in test: the sign-in form was never hidden, because
-its `display: grid` beat the `hidden` attribute. Red before the style fix, green after.
-
-- `tests/listen.test.js` 5, `tests/jellyfin-proxy.test.js` 6: both protocols on one port,
-  the page redirect and its localhost exception, and the proxy's pass-through, cookie
-  stripping, Range, sign-in body, redirect rewriting and gate.
-- `tests/api/video-window.spec.mjs` 6 (3 × 2 widths): the window, the real Jellyfin reached
-  through `/jellyfin`, and signing in with Jellyfin's answer stood in.
-- `test:mosaic` 288, `test:core` 245, `test:auth` 36, `test:gpu` 187; Mosaic unit 303.
-- Whole browser tier: 596 passed, 1 failed, 21 skipped. The failure was *A4: an accept mark
-  on a tile with no picture is refused* at phone width; alone it passed twice at both widths.
-  The run before, a different phone-width test failed the same way. Intermittent, not fixed here.
-
-Still not by a test: playback after a real Jellyfin sign-in. That step is Isaac's.
+Not run. Awaiting human approval of this plan.

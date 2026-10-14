@@ -24,34 +24,43 @@
 
     <main class="content">
 
-      <div class="stats">
-        <div class="stat" data-state="idle" title="Jobs that finished inside the chosen window">
+      <nav class="stats inference-stats history-stats" aria-label="History destinations">
+        <a class="stat stat-link" data-state="idle" href="#history-panel" title="Jump to every job in the selected history window">
           <span class="stat-ico"><svg class="ico"><use href="#i-history"/></svg></span>
           <span class="stat-lab">Jobs in this window</span>
           <b class="stat-num">247</b>
           <span class="stat-sub"><span><b>12%</b> more than the 30 before</span></span>
-        </div>
-        <div class="stat" data-state="done" title="Finished with every piece succeeding">
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="stat stat-link" data-state="done" href="./history.html?status=completed#history-panel" title="Show completed jobs first in the history table">
           <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
           <span class="stat-lab">Completed</span>
           <b class="stat-num">198</b>
           <span class="stat-sub"><span><b>80%</b> of the window</span></span>
-        </div>
-        <div class="stat" data-state="issues" title="Finished, but some videos or ranges failed">
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="stat stat-link" data-state="issues" href="./history.html?status=issues#history-panel" title="Show completed jobs with partial failures first">
           <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
           <span class="stat-lab">Completed with issues</span>
           <b class="stat-num">28</b>
           <span class="stat-sub"><span><b>11%</b> of the window</span></span>
-        </div>
-        <div class="stat" data-state="failed" title="Stopped without finishing, or cancelled by a person">
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="stat stat-link" data-state="failed" href="./history.html?status=failed#history-panel" title="Show failed and cancelled jobs first">
           <span class="stat-ico"><svg class="ico"><use href="#i-x"/></svg></span>
           <span class="stat-lab">Failed or cancelled</span>
           <b class="stat-num">21</b>
           <span class="stat-sub"><span><b>9%</b> of the window</span></span>
-        </div>
-      </div>
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+      </nav>
 
-      <section class="panel">
+      <section class="inference-overview ops-overview" aria-label="History at a glance">
+        <article class="panel"><header class="panel-hd"><div><h2>Outcomes</h2><p>How work ended inside the selected window</p></div></header><div class="panel-bd jobs-mix-bd"><div class="job-donut" role="img" aria-label="247 jobs represented: 198 completed, 28 completed with issues and 21 failed or cancelled"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="donut-track" cx="60" cy="60" r="43"/><circle class="donut-part done" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="198 49"/><circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="28 219" stroke-dashoffset="-198"/><circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="21 226" stroke-dashoffset="-226"/></svg><span><b>247</b><small>finished jobs</small></span></div><div class="job-mix-key"><span class="done"><i></i><b>198</b> Completed</span><span class="queued"><i></i><b>28</b> With issues</span><span class="attention"><i></i><b>21</b> Failed / cancelled</span></div></div></article>
+        <article class="panel inference-flow ops-activity" data-ops-activity="history"><header class="panel-hd inference-flow-hd"><div><h2>Completion activity</h2><p>Finished work, issue rate and median turnaround</p></div><div class="seg" aria-label="History activity range"><button type="button" data-ops-range="7d">7d</button><button type="button" class="on" data-ops-range="30d" aria-pressed="true">30d</button><button type="button" data-ops-range="90d">90d</button></div></header><div class="panel-bd inference-flow-bd"><div class="inference-chart ops-chart" role="img" aria-label="Completion activity over 30 days"><svg viewBox="0 0 780 248" aria-hidden="true"><g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g><g class="inference-axis left"><text x="46" y="32">16</text><text x="46" y="88">12</text><text x="46" y="144">6</text><text x="46" y="200">0</text><text x="54" y="225" data-ops-time>30d ago</text><text x="390" y="225" data-ops-time>15d ago</text><text x="726" y="225" data-ops-time>Now</text><text class="axis-title" x="54" y="15">JOBS / DAY</text></g><g class="inference-axis right"><text x="734" y="32">4h</text><text x="734" y="88">3h</text><text x="734" y="144">1.5h</text><text x="734" y="200">0</text><text class="axis-title" x="726" y="15">MEDIAN TURNAROUND</text></g><path class="ops-area completed" data-ops-area="completed"/><path class="ops-line completed" data-ops-line="completed"/><path class="ops-line issues" data-ops-line="issues"/><path class="ops-line turnaround" data-ops-line="turnaround"/></svg></div><div class="inference-flow-foot"><div class="inference-chart-key result-legend"><button class="completed" data-ops-highlight="completed">Completed jobs</button><button class="issues" data-ops-highlight="issues">Issue / failure rate</button><button class="turnaround" data-ops-highlight="turnaround">Median turnaround</button></div><div class="inference-current"><span><b data-ops-current="completed">9</b> completed today</span><span><b data-ops-current="issues">12%</b> issue rate</span><span><b data-ops-current="turnaround">1h 18m</b> median</span><span class="live"><i class="dot"></i>Design preview</span></div></div></div></article>
+      </section>
+
+      <section class="panel" id="history-panel">
         <header class="panel-hd">
           <h2>Job history <span class="count">(247)</span></h2>
           <div class="panel-tools" id="filters">
@@ -76,17 +85,13 @@
               <option>All models</option><option>MARP-Multiclass-Det-XL</option>
               <option>MARP-Det-v3</option>
             </select>
-            <button class="btn" title="Filter by worker, submitter or dataset">
-              <svg class="ico"><use href="#i-filter"/></svg>More filters</button>
             <button class="btn" title="Download this window as CSV">
-              <svg class="ico"><use href="#i-download"/></svg>Export
-              <span class="later">Later</span></button>
+              <svg class="ico"><use href="#i-download"/></svg>Export</button>
           </div>
           <div class="bulk" id="bulk" hidden>
             <span><span class="n" id="bulkN">0</span> selected</span>
             <button class="btn sm" title="Start new jobs with the same configuration">Run again</button>
-            <button class="btn sm" title="Download the selected rows as CSV">Export
-              <span class="later">Later</span></button>
+            <button class="btn sm" title="Download the selected rows as CSV">Export</button>
             <button class="btn sm ghost sp" id="bulkClear">Clear selection</button>
           </div>
         </header>
@@ -284,8 +289,7 @@
             <button class="btn" title="Review the observations in the Picture Mosaic Reviewer">
               <svg class="ico"><use href="#i-eye"/></svg>Review in Mosaic</button>
             <button class="btn" title="Download the run's output">
-              <svg class="ico"><use href="#i-download"/></svg>Output
-              <span class="later">Later</span></button>
+              <svg class="ico"><use href="#i-download"/></svg>Output</button>
           </div>
         </header>
         <div class="panel-bd">
@@ -333,7 +337,7 @@
                 <dt>Final val loss</dt><dd>0.1043</dd>
                 <dt>Epochs</dt><dd>100 of 100</dd>
                 <dt>Observations</dt><dd>12,846 <span class="faint">in 1,204 groups</span></dd>
-                <dt>Artifact</dt><dd>138 MB <span class="later">No download route</span></dd>
+                <dt>Artifact</dt><dd>138 MB</dd>
               </dl>
             </div>
 

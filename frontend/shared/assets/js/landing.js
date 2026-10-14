@@ -134,6 +134,20 @@ function initializeLoginDialog() {
     button.addEventListener("click", openDialog);
   });
 
+  // An application sends a signed-out person back to the one MARP login surface.
+  // Open it on arrival, then remove the instruction so a refresh does not reopen it.
+  const locationParameters = new URLSearchParams(window.location.search);
+  if (locationParameters.get("login") === "1") {
+    openDialog();
+    locationParameters.delete("login");
+    const remainingQuery = locationParameters.toString();
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + (remainingQuery ? `?${remainingQuery}` : "") + window.location.hash
+    );
+  }
+
   closeButton?.addEventListener("click", closeDialog);
 
   // Clicking the shaded backdrop closes the modal without interfering with

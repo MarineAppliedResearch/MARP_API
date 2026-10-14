@@ -22,7 +22,56 @@
 
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
+
+const ROOT = path.join(__dirname, '..');
+
+/**
+ * A testing database stamp names both halves of its disposable corpus. When a
+ * process selects that database, the stamp wins over a development value left
+ * in `.env`; otherwise a manual test-server launch can read testing rows while
+ * serving or replacing development images.
+ *
+ * The checkout containing the code and the working directory are both checked:
+ * review worktrees deliberately run code from one while inheriting the local
+ * corpus configuration of the other.
+ *
+ * @param {string} database - Selected DB_NAME.
+ * @param {Array<string>} stampFiles - Candidate testing-database stamps.
+ * @returns {?string} The stamped thumbnail directory for this database.
+ */
+function testingStorageFor(database, stampFiles) {
+    if (!database) { return null; }
+
+    for (const stampFile of stampFiles) {
+        try {
+            if (!fs.existsSync(stampFile)) { continue; }
+            const stamp = JSON.parse(fs.readFileSync(stampFile, 'utf8'));
+
+            if (stamp.database === database && stamp.thumbnails) {
+                return path.resolve(stamp.thumbnails);
+            }
+        } catch (_error) {
+            // A malformed or half-written local stamp does not get to redirect
+            // storage. The testing-database command will report that stamp.
+        }
+    }
+
+    return null;
+}
+
+/** Resolve the directory and name which source made the decision. */
+function storageSettingFor({ database, environmentStorage, defaultStorage, stampFiles }) {
+    const stamped = testingStorageFor(database, stampFiles);
+
+    if (stamped) { return { setting: stamped, source: 'testing-database stamp' }; }
+    if (environmentStorage) {
+        return { setting: environmentStorage, source: 'THUMBNAIL_STORAGE_DIR' };
+    }
+
+    return { setting: defaultStorage, source: 'default' };
+}
 
 /**
  * How many Jellyfin streams extraction may hold open at once (A7, R16).
@@ -225,10 +274,17 @@ const DEFAULT_STORAGE_DIR = path.join('storage', 'observation-thumbnails');
  * @constant
  * @type {string}
  */
-const STORAGE_DIR = path.resolve(
-    path.join(__dirname, '..'),
-    process.env.THUMBNAIL_STORAGE_DIR || DEFAULT_STORAGE_DIR
-);
+const storage = storageSettingFor({
+    database: process.env.DB_NAME,
+    environmentStorage: process.env.THUMBNAIL_STORAGE_DIR,
+    defaultStorage: DEFAULT_STORAGE_DIR,
+    stampFiles: [
+        path.join(ROOT, '.marp', 'local', 'testing-database.json'),
+        path.join(process.cwd(), '.marp', 'local', 'testing-database.json'),
+    ],
+});
+const STORAGE_DIR = path.resolve(ROOT, storage.setting);
+const STORAGE_SOURCE = storage.source;
 
 /**
  * Full frames belong to the same disposable corpus as their thumbnails. Derive
@@ -324,6 +380,9 @@ module.exports = {
     SEEK_LEAD_SECONDS,
     FFMPEG_TIMEOUT_MS,
     STORAGE_DIR,
+    STORAGE_SOURCE,
+    testingStorageFor,
+    storageSettingFor,
     FULL_FRAME_STORAGE_DIR,
     FFMPEG_PATH,
     FFPROBE_PATH,
