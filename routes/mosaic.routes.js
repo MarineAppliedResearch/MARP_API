@@ -357,7 +357,7 @@ function registerMosaicRoutes(app) {
         description:
             'The video the named observation is in, and every observation in that video that `filters` -- the Mosaic\'s own '
             + 'filters body, the one `/mosaic/observations/pages` takes -- matches, across all pages (#181). The named one is '
-            + 'always included. Each carries the span its keyframes cover **in seconds**, which tells the page which are on screen '
+            + 'drawn only when the query matches it, like any other (2026-10-14). Each carries the span its keyframes cover **in seconds**, which tells the page which are on screen '
             + 'when; the keyframes themselves come from `/mosaic/video/keyframes`, a window at a time. Times follow the rule '
             + '`/mosaic/observations/video-context` states: an annotation-GUI row counts at 25, a GPU row at the video\'s nominal '
             + 'rate. Observations with no keyframes are never in the Mosaic, and are not here.',

@@ -402,13 +402,16 @@ function clockEnd(value, label) {
  * exactly what it means on the page. Status filters included: what the reviewer is looking
  * at is the question. `exclude` is not applied -- it is the grid's paging bookkeeping, not
  * part of the question. An observation with no keyframes is never in the Mosaic, and is not
- * here either. `include` is always answered, filters or not: it is the one the reviewer
- * opened.
+ * **The opened observation gets no exemption** (Isaac, 2026-10-14). It used to be answered
+ * whatever the filters said, so the reviewer could still work on the one they came for; the
+ * cost was a drawing that did not match the question, and that is the half that matters. A
+ * query that excludes it draws it nowhere, like any other.
  *
  * @param {Object} request
  * @param {Object} [request.filters] - The Mosaic's filters body.
  * @param {string} request.videoSource - The video, as observations record it.
- * @param {number} request.include - The observation that was opened.
+ * @param {number} request.include - The observation that was opened. Named so the page can
+ *   be told whether its own observation is among the matches, not to exempt it.
  * @param {number} request.limit - How many rows at most; one more is asked for, to tell.
  * @returns {{sql: string, bind: Array}} The statement and its parameters.
  */
@@ -416,7 +419,6 @@ function buildVideoObservationsQuery({ filters = {}, videoSource, include, limit
     const bind = binder();
     const where = predicates(filters, bind);
     const video = bind.add(videoSource);
-    const opened = bind.add(include);
     const matching = where.length ? `(${where.join('\n       AND ')})` : 'true';
 
     const sql = `
@@ -433,7 +435,7 @@ SELECT o.observation_id, o.species_id, coalesce(sp.comname, o.comname) AS comnam
           FROM keyframes
          WHERE observation_id = o.observation_id) ks ON ks.n > 0
  WHERE o.video_source = ${video}
-   AND (o.observation_id = ${opened} OR ${matching})
+   AND ${matching}
  ORDER BY o.observation_id
  LIMIT ${bind.add(limit + 1)}`;
 

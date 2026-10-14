@@ -126,15 +126,20 @@ describe('the video page\'s observations (#181)', () => {
         expect(response.body.truncated).toBe(false);
     });
 
-    it('applies the Mosaic\'s filters, and always includes the observation that was opened', async () => {
+    it('applies the Mosaic\'s filters, and gives the opened observation no exemption', async () => {
         const [, second] = seeded.species;
         const response = await global.api.post(OBSERVATIONS).send({ observation_id: ids.gui, filters: { species: [second] } });
         expect(response.status).toBe(200);
-        // The opened one is the first species, so the filter alone would drop it.
-        expect(response.body.observations.map((row) => row.observation_id).sort()).toEqual([ids.gui, ids.gpu, ids.long].sort());
+        // The opened one is the first species, so the filter drops it: the drawing answers the
+        // question that was asked, and exempting it answered a different one (2026-10-14).
+        expect(response.body.observations.map((row) => row.observation_id).sort()).toEqual([ids.gpu, ids.long].sort());
+        // It is still named as the one that was opened, which is what sets the video's moment.
+        expect(response.body.opened.observation_id).toBe(ids.gui);
 
+        // And the other way round: opening the GPU row while filtering to the first species
+        // draws only that species, the opened one among the absent.
         const narrower = await global.api.post(OBSERVATIONS).send({ observation_id: ids.gpu, filters: { species: [seeded.species[0]] } });
-        expect(narrower.body.observations.map((row) => row.observation_id).sort()).toEqual([ids.gui, ids.gpu].sort());
+        expect(narrower.body.observations.map((row) => row.observation_id)).toEqual([ids.gui]);
     });
 
     it('refuses a filter it cannot answer, and an observation that does not exist', async () => {
