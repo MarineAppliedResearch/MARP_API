@@ -217,6 +217,18 @@ describe('annotating from the video page (#181)', () => {
         expect(thumbnail.status).toBe('ready');
     });
 
+    it('the video read says which tracks have no end yet, so the page draws them forward (2026-10-14)', async () => {
+        const opened = await addObservation({ keyframes: [[250, 'start'], [350, 'end']] });
+        // A new observation is a start only until somebody sets its end, and its box has to go
+        // on being drawn or it cannot be moved or ended at all.
+        const unfinished = await addObservation({ keyframes: [[300, 'start']] });
+        const read = await global.api.post('/api/v2/mosaic/video/observations').send({ observation_id: opened, filters: {} });
+        expect(read.status).toBe(200);
+        const byId = new Map(read.body.observations.map((row) => [row.observation_id, row]));
+        expect(byId.get(opened).open_ended).toBe(false);
+        expect(byId.get(unfinished).open_ended).toBe(true);
+    });
+
     it('the video read lists the sessions in this video, each with its species list, for a new observation (A8)', async () => {
         const opened = await addObservation({ sessionIndex: 0, keyframes: [[250, 'start']] });
         await addObservation({ sessionIndex: 1, keyframes: [[260, 'start']] });

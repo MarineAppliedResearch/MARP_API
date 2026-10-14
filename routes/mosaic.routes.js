@@ -414,6 +414,7 @@ function registerMosaicRoutes(app) {
                                             version: { type: 'integer', description: 'The row version a delete must name.' },
                                             count: { type: 'integer', nullable: true },
                                             session_id: { type: 'integer', nullable: true },
+                                            open_ended: { type: 'boolean', description: 'The track has no end keyframe yet, so its last box is drawn forward until one is set.' },
                                             start_s: { type: 'number' },
                                             end_s: { type: 'number' },
                                         },

@@ -61,24 +61,33 @@ export function rememberSpecies(list, species) {
  * @param {Function} options.onPick - `({ species, sessionId })`.
  * @param {Function} [options.onExtend]
  * @param {Function} options.onCancel
+ * @param {Function} [options.restoreFocus] - Called once it closes, to give the keyboard back.
  */
-export function openSpeciesPopup({ popup, at, title, sessions = [], sessionId, list, extendLabel, onPick, onExtend, onCancel }) {
+export function openSpeciesPopup({ popup, at, title, sessions = [], sessionId, list, extendLabel, onPick, onExtend, onCancel, restoreFocus }) {
   let chosenSession = sessionId;
   let results = [];
   let searchToken = 0;
-  const listOf = () => {
+  /* Searching the whole taxonomy rather than the session's list. A session's list is the
+     right default -- it is what the annotator was working from -- but it is not a fence: an
+     invert session holds misidentified fish, and without this the only names offered were
+     inverts (2026-10-14). The Mosaic's own correction panel has had this since #130. */
+  let widen = false;
+  const scopeOf = () => {
     const session = sessions.find((s) => s.session_id === chosenSession);
     return session ? session.species_list : list;
   };
+  const listOf = () => (widen ? null : scopeOf());
 
   const close = () => {
     popup.hidden = true;
     popup.replaceChildren();
     document.removeEventListener('keydown', onKey, true);
+    // Back to the player, or the keyboard is dead until the picture is clicked (2026-10-14).
+    if (restoreFocus) restoreFocus();
   };
   const cancel = () => { close(); onCancel(); };
   const pick = (species) => {
-    rememberSpecies(listOf(), species);
+    rememberSpecies(scopeOf(), species);
     close();
     onPick({ species, sessionId: chosenSession });
   };
@@ -117,6 +126,29 @@ export function openSpeciesPopup({ popup, at, title, sessions = [], sessionId, l
     popup.append(label);
   }
 
+  /* Which names are being searched, and the way to widen it. Named rather than implied: the
+     heading is the only place the reviewer can read what they are looking at. */
+  const scope = element('div', 'annotate-scope');
+  const scopeText = element('span', 'scope-text');
+  const widener = element('button', 'widen');
+  widener.type = 'button';
+  widener.dataset.action = 'widen';
+  const drawScope = () => {
+    const named = scopeOf();
+    scopeText.textContent = widen ? 'Searching every species'
+      : named ? `Searching ${named}` : 'This session type names no species list';
+    widener.textContent = widen ? `Back to ${named || 'this session'}` : 'Search all lists';
+
+  };
+  widener.addEventListener('click', () => {
+    widen = !widen;
+    drawScope();
+    show(input.value);
+    input.focus();
+  });
+  scope.append(scopeText, widener);
+  popup.append(scope);
+
   const input = document.createElement('input');
   input.type = 'search';
   input.placeholder = 'Species…';
@@ -135,6 +167,9 @@ export function openSpeciesPopup({ popup, at, title, sessions = [], sessionId, l
       button.setAttribute('role', 'option');
       button.append(element('span', 'name', species.comname || `Species ${species.id}`));
       if (species.species) button.append(element('span', 'sci', species.species));
+      // Which list a widened result came from: a common name identifies a species only
+      // within a list, so choosing one blind can label it onto the wrong list.
+      if (widen && species.species_list) button.append(element('span', 'slist', species.species_list));
       if (index === 0) button.classList.add('first');
       button.addEventListener('click', () => pick(species));
       return button;
@@ -146,8 +181,12 @@ export function openSpeciesPopup({ popup, at, title, sessions = [], sessionId, l
     const mine = ++searchToken;
     const q = String(term || '').trim();
     if (q.length < MIN_TERM) {
-      const recent = recentSpecies(listOf());
+      const recent = recentSpecies(scopeOf());
       render(recent, recent.length ? null : 'Type a species name.');
+      return;
+    }
+    if (!widen && !scopeOf()) {
+      render([], 'This session type names no species list. Use "Search all lists".');
       return;
     }
     try {
@@ -157,6 +196,8 @@ export function openSpeciesPopup({ popup, at, title, sessions = [], sessionId, l
       if (mine === searchToken) render([], `The search failed: ${error.message}`);
     }
   }
+
+  drawScope();
 
   function onKey(event) {
     if (event.key === 'Escape') {

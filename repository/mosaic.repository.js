@@ -422,13 +422,14 @@ function buildVideoObservationsQuery({ filters = {}, videoSource, include, limit
     const sql = `
 SELECT o.observation_id, o.species_id, coalesce(sp.comname, o.comname) AS comname,
        o."obsID" AS obs_id, o.version, o.count, o.session_id, (o.gpu_job_id IS NOT NULL) AS machine, o."mediaPosition" AS media_position,
-       ks.first_framenum, ks.last_framenum
+       ks.first_framenum, ks.last_framenum, ks.has_end
   FROM observations o
   LEFT JOIN sessions s ON s.session_id = o.session_id
   LEFT JOIN projects p ON p.project_id = o.project_id
   LEFT JOIN species sp ON sp.id = o.species_id
   JOIN LATERAL (
-        SELECT min(framenum) AS first_framenum, max(framenum) AS last_framenum, count(*) AS n
+        SELECT min(framenum) AS first_framenum, max(framenum) AS last_framenum, count(*) AS n,
+               bool_or(type = 'end') AS has_end
           FROM keyframes
          WHERE observation_id = o.observation_id) ks ON ks.n > 0
  WHERE o.video_source = ${video}

@@ -133,7 +133,9 @@ async function createObservation(body = {}, userId = null) {
 
     const t = framenum / ASSUMED_FPS;
     return {
-        observation: { ...created.row, start_s: t, end_s: t },
+        // Start only, so it is unfinished: the page draws its box forward and goes on asking
+        // for its keyframes in later windows until an end is set (2026-10-14).
+        observation: { ...created.row, start_s: t, end_s: t, open_ended: true },
         keyframes: created.keyframes.map((k) => asSeconds(k, ASSUMED_FPS)),
     };
 }

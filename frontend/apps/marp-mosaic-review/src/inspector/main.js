@@ -46,10 +46,24 @@ playerRoot.appendChild($('boxMenu'));
 // The add popup and the observation panel go fullscreen with the player too.
 playerRoot.appendChild($('addPopup'));
 playerRoot.appendChild($('obsPanel'));
-// Typing in them is not the player's: inside its element, a species name typed into the
-// search reached its keyboard shortcuts and changed the playback speed instead (2026-10-06).
+/* Typing is not the player's; everything else still is.
+   These panels sit inside the player's element, so a species name typed into the search used
+   to reach its keyboard shortcuts and change the playback speed (2026-10-06). Stopping every
+   key was too much: with focus on a panel button the arrow keys stopped stepping the video
+   until the reviewer clicked the picture again (2026-10-14). So only keys aimed at something
+   being typed into are held back. */
+const typingIn = (target) => Boolean(target && (target.matches('input, textarea, select') || target.isContentEditable));
+
+/* Give the keyboard back to the player, which is the element listening for its shortcuts.
+   Called whenever one of our own surfaces takes focus and then goes away -- not while the
+   reviewer is typing, which is theirs. */
+function returnKeyboard() {
+  if (!typingIn(document.activeElement)) playerRoot.focus({ preventScroll: true });
+}
 for (const id of ['addPopup', 'obsPanel', 'boxMenu']) {
-  for (const type of ['keydown', 'keyup', 'keypress']) $(id).addEventListener(type, (event) => event.stopPropagation());
+  for (const type of ['keydown', 'keyup', 'keypress']) {
+    $(id).addEventListener(type, (event) => { if (typingIn(event.target)) event.stopPropagation(); });
+  }
 }
 
 /* What the reviewer may do beyond moving boxes: add, rename, count, merge (observations:write). */
@@ -423,6 +437,10 @@ const editor = createBoxEditor({
       const next = withEdit(held, answer);
       held.clear();
       for (const [index, keyframes] of next) held.set(index, keyframes);
+      // Whether the track still has no end decides both how it is drawn and whether later
+      // windows ask for it, so it is re-derived from the keyframes rather than assumed: an
+      // edit can have just added the end, or taken it away (2026-10-14).
+      refreshOpenEnded(answer.observation_id);
       rebuildDrawable();
     },
     async deleteObservation(id) {
@@ -441,6 +459,10 @@ const editor = createBoxEditor({
       forgetObservation(id);
       status(`Observation ${id} deleted.`);
     },
+    /* Keyboard stepping belongs to the player, so it is given focus back after a gesture of
+       ours -- except while something is being typed into, which is the reviewer's. */
+    focusPlayer: returnKeyboard,
+    usePicture,
     canDraw: () => canAnnotate,
     isPicture: (target) => target === pictureCanvas,
     onDrawn: openAdd,
@@ -459,6 +481,18 @@ function forgetObservation(id) {
   rebuildDrawable();
   redraw();
   updatePanel();
+}
+
+/* Whether an observation's track still lacks an end keyframe, from what the page holds. An
+   unfinished one is drawn forward and is wanted by every window after its start. */
+function refreshOpenEnded(id) {
+  const row = showing && showing.rows.get(id);
+  if (!row) return;
+  const keyframes = [...held.values()].flat().filter((k) => k.observation_id === id);
+  if (!keyframes.length) return;
+  row.open_ended = !keyframes.some((k) => k.type === 'end');
+  const span = showing.observations.find((o) => o.observation_id === id);
+  if (span) span.open_ended = row.open_ended;
 }
 
 /* Widen an observation's span to cover a keyframe, so the windows still ask for it. */
@@ -502,7 +536,41 @@ function openAdd({ rect, box, selectedKey }) {
       setTimeout(() => editor.select(`${row.observation_id}_${answer.keyframes[0].subset}`), 0);
       return { observation_id: row.observation_id, changed: answer.keyframes, deleted: [] };
     }),
-    onCancel: () => editor.clearDraft()
+    onCancel: () => editor.clearDraft(),
+    restoreFocus: returnKeyboard
+  });
+}
+
+/* Cut the Mosaic picture from the box on this frame, saying so while it happens.
+   It really goes and decodes the frame out of the video, which takes seconds, and silence
+   there reads as a button that does nothing (2026-10-14). */
+function usePicture(entry, t) {
+  const button = $('obsPanel').querySelector('[data-action="picture"]');
+  const label = button && button.textContent;
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Cutting the picture from this frame…';
+  }
+  status('Cutting the Mosaic picture from this frame. This takes a few seconds…');
+  return editor.save(async () => {
+    try {
+      const answer = await MarpApi.usePicture(entry.box.observation_id, { t, subset: entry.box.subset, box: entry.box });
+      status('The Mosaic picture is now cut from this frame. Reload the Mosaic to see it.');
+      if (button && button.isConnected) {
+        button.textContent = 'Mosaic picture updated ✓';
+        setTimeout(() => { if (button.isConnected) { button.textContent = label; button.disabled = false; } }, 2500);
+      }
+      return answer;
+    } catch (error) {
+      // Reported here rather than rethrown: the queue's own handler would replace this with
+      // a generic "the change was not saved", and the reason is the useful part.
+      status(`The Mosaic picture was not cut: ${error.message}`);
+      if (button && button.isConnected) {
+        button.textContent = label;
+        button.disabled = false;
+      }
+      return [];
+    }
   });
 }
 
@@ -525,13 +593,15 @@ function updatePanel() {
     canWrite: canAnnotate,
     canDelete
   }, {
-    close: () => editor.select(null),
+    close: () => { editor.select(null); returnKeyboard(); },
     seek: (t) => {
       if (!player.engine) return;
       player.engine.pause();
       player.engine.currentTime = t;
+      returnKeyboard();
     },
     count: (count) => editor.save(async () => {
+      returnKeyboard();
       const answer = await MarpApi.setCount(id, count);
       row.count = answer.count;
       row.version = answer.version;
@@ -563,7 +633,8 @@ function updatePanel() {
           updatePanel();
           status(`Renamed to ${row.comname}.`);
         }),
-        onCancel: () => {}
+        onCancel: () => {},
+        restoreFocus: returnKeyboard
       });
     },
     picture: () => {
@@ -572,7 +643,7 @@ function updatePanel() {
         status("Go to a frame where this observation's box is drawn, then choose its picture.");
         return;
       }
-      editor.act('picture', entry);
+      usePicture(entry, shownAt ?? player.engine.currentTime);
     },
     remove: () => editor.act('deleteObservation', editor.selectedEntry() || { box: { observation_id: id, comname: row.comname } }),
     merge: () => {

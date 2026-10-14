@@ -147,6 +147,9 @@ async function videoObservations(body = {}) {
             version: row.version,
             start_s: Number(row.first_framenum) / rate,
             end_s: Number(row.last_framenum) / rate,
+            // No `end` keyframe: still being made, so the page draws its last box forward
+            // and every window from its start onwards wants its keyframes (2026-10-14).
+            open_ended: !row.has_end,
         };
     });
     return answer;

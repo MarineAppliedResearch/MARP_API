@@ -73,6 +73,10 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   function closeMenu() {
     menu.hidden = true;
     menu.replaceChildren();
+    // The button just clicked is being removed, and focus would fall to the page body, where
+    // the player cannot hear the keyboard: stepping went dead after any menu choice until the
+    // picture was clicked again (2026-10-14).
+    host.focusPlayer();
   }
 
   function cancelLongPress() {
@@ -132,6 +136,7 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   }
 
   function act(action, entry) {
+    host.focusPlayer();
     const { t, keyframe } = boxHere(entry);
     if (action === 'pin') return save(() => addAt(entry, t, entry.box));
     if (action === 'end') {
@@ -143,13 +148,9 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
       });
     }
     if (action === 'deleteKeyframe' && keyframe) return save(() => MarpApi.deleteKeyframe(keyframe.keyframe_id));
-    if (action === 'picture') {
-      return save(async () => {
-        const answer = await MarpApi.usePicture(entry.box.observation_id, { t, subset: entry.box.subset, box: entry.box });
-        host.status('The Mosaic picture is now cut from this frame.');
-        return answer;
-      });
-    }
+    // The page owns this one: it takes seconds -- a real decode of a real frame -- so it has
+    // to say so while it runs (2026-10-14).
+    if (action === 'picture') return host.usePicture(entry, t);
     if (action === 'back') {
       rank.set(entry.key, --back);
       host.redraw();
@@ -230,11 +231,16 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
       // the observation to merge started the video playing (2026-10-06).
       stage.setPointerCapture(event.pointerId);
       host.pause();
+      host.focusPlayer();
       handler(entryFor(hit.key));
       return;
     }
 
     host.pause();
+    // The press is the editor's, so the browser does not move focus itself -- and without
+    // this the player kept whatever focus it had, or lost it to a panel button, and its
+    // keyboard stepping went dead until the picture was clicked again (2026-10-14).
+    host.focusPlayer();
     select(hit.key);
     const entry = entryFor(hit.key);
     const now = performance.now();

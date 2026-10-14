@@ -9,7 +9,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { holdKeyframes, removeObservations } from './seed.mjs';
-import { editableObservation, openAndPlay, boxOf, mouseDrag } from './video-page.mjs';
+import { editableObservation, openAndPlay, boxOf, centre, mouseDrag } from './video-page.mjs';
 
 const isPath = (suffix, method) => (r) => new URL(r.url()).pathname.endsWith(suffix) && r.request().method() === method;
 
@@ -66,6 +66,18 @@ async function searchTerm(request, id) {
   return read.observations.find((row) => row.observation_id === id).comname.slice(0, 4);
 }
 
+/* The video still steps from the keyboard. `a` and `s` are the player's frame steps, the
+   annotation GUI's own keys, and the player's element is what listens for them -- so anything
+   of ours that takes focus and then goes away has to give it back (2026-10-14). */
+async function expectKeyboardSteps(page, where) {
+  const at = await page.evaluate(() => window.MARP_VIDEO.time);
+  await page.keyboard.press('s');
+  await expect.poll(() => page.evaluate(() => window.MARP_VIDEO.time),
+    { message: `the keyboard could not step the video ${where}` }).not.toBe(at);
+  await page.keyboard.press('a');
+  await expect.poll(() => page.evaluate(() => window.MARP_VIDEO.time)).toBe(at);
+}
+
 async function step(page, button) {
   const before = await page.evaluate(() => window.MARP_VIDEO.time);
   await page.locator(`#player .marp-step-${button}`).click();
@@ -93,6 +105,33 @@ test('#181 a drawn box and one Enter add an observation, and its panel renames, 
       await expect(panel).toBeVisible();
       await expect(panel.locator('.panel-name')).toHaveText(name);
 
+      // It has only a start keyframe, so it is unfinished and its box is held forward until
+      // somebody sets the end -- as the annotation GUI does. Before this it vanished on the
+      // very next frame and could then be neither moved nor ended (2026-10-14).
+      for (let n = 0; n < 5; n += 1) await step(page, 'forward');
+      const held = await boxOf(page, id);
+      expect(held, 'the box vanished a few frames after it was drawn').toBeTruthy();
+      expect(Math.abs(held.rect.left - box.rect.left)).toBeLessThan(2);
+
+      // Selecting a box leaves the video steppable from the keyboard. It is the player's
+      // element that listens, and a press on a box used to leave focus on a panel button, so
+      // the arrow keys went dead until the picture itself was clicked (2026-10-14).
+      await page.mouse.click(centre(held.rect).x, centre(held.rect).y);
+      await expectKeyboardSteps(page, 'after a box was selected');
+
+      // And it can still be ended from there, which is what being drawn is for.
+      const ended = page.waitForResponse(isPath('/mosaic/video/keyframe', 'POST'));
+      await page.mouse.click(centre(held.rect).x, centre(held.rect).y, { button: 'right' });
+      await page.locator('#boxMenu button[data-action="end"]').click();
+      await ended;
+      await expectKeyboardSteps(page, 'after a choice from the box menu');
+      await expect.poll(async () => Boolean(await boxOf(page, id))).toBe(true);
+      // Past the end there is nothing: the record stops there now.
+      for (let n = 0; n < 3; n += 1) await step(page, 'forward');
+      await expect.poll(async () => (await boxOf(page, id)) || null).toBeNull();
+      for (let n = 0; n < 3; n += 1) await step(page, 'back');
+      await expect.poll(async () => Boolean(await boxOf(page, id))).toBe(true);
+
       // Rename (R3): the whole name, on the box as in the database.
       await panel.locator('[data-action="rename"]').click();
       const popup = page.locator('#addPopup');
@@ -105,6 +144,7 @@ test('#181 a drawn box and one Enter add an observation, and its panel renames, 
       expect((await (await renamed).json()).observation.comname).toBe(newName);
       await expect.poll(async () => (await boxOf(page, id)).comname).toBe(newName);
       await expect(panel.locator('.panel-name')).toHaveText(newName);
+      await expectKeyboardSteps(page, 'after changing the species');
 
       // Count (R5).
       const counted = page.waitForResponse(isPath(`/observation/${id}/count`, 'PUT'));
@@ -113,9 +153,15 @@ test('#181 a drawn box and one Enter add an observation, and its panel renames, 
       expect((await (await counted).json()).count).toBe(3);
 
       // The Mosaic picture (R6), cut now from this frame, by the real extractor.
+      const pictureButton = panel.locator('[data-action="picture"]');
       const pictured = page.waitForResponse(isPath(`/observation/${id}/picture`, 'POST'), { timeout: 120_000 });
-      await panel.locator('[data-action="picture"]').click();
+      await pictureButton.click();
+      // It decodes a real frame out of the video, which takes seconds, so it says so while it
+      // runs: silence there reads as a button that does nothing (2026-10-14).
+      await expect(pictureButton).toHaveText(/Cutting the picture/);
+      await expect(pictureButton).toBeDisabled();
       const picture = await pictured;
+      await expect(pictureButton).toHaveText(/updated/);
       expect(picture.status()).toBe(200);
       expect((await picture.json()).picture.filename).toBeTruthy();
 

@@ -2,12 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { boxesAt, contentRect } from '../../src/model/video-boxes.js';
 
-const box = (t, x, extra = {}) => ({ t, x, y: 0.5, width: 0.1, height: 0.2, subset: '1', ...extra });
+/* A keyframe. `type` matters: a track whose last keyframe is not an `end` is unfinished, and
+   its last box is drawn forward until somebody sets one, as the annotation GUI does. */
+const box = (t, x, extra = {}) => ({ t, x, y: 0.5, width: 0.1, height: 0.2, subset: '1', type: 'middle', ...extra });
+const done = (t, x, extra = {}) => box(t, x, { type: 'end', ...extra });
 
 const anemone = {
   observation_id: 1,
   comname: 'Fish-eating anemone',
-  keyframes: [box(10, 0.2), box(12, 0.6)]
+  keyframes: [box(10, 0.2, { type: 'start' }), done(12, 0.6)]
 };
 
 test('#181: a box between two keyframes is interpolated, not snapped to either', () => {
@@ -27,15 +30,36 @@ test('#181: nothing is drawn outside a track\'s span, where the record says noth
   assert.deepEqual(boxesAt([anemone], 12.1), []);
 });
 
+test('#181: a track with no end keyframe keeps drawing its last box forward (2026-10-14)', () => {
+  // What the annotation GUI does while an annotation is being made, and what makes a box just
+  // added editable on the next frame: before this it vanished there and could not be moved or
+  // ended at all.
+  const making = { observation_id: 9, comname: 'Rockfish', keyframes: [box(10, 0.2, { type: 'start' })] };
+  assert.deepEqual(boxesAt([making], 9.9), [], 'nothing before its start');
+  assert.equal(boxesAt([making], 10)[0].x, 0.2);
+  const later = boxesAt([making], 40)[0];
+  assert.equal(later.x, 0.2, 'the last box held, not interpolated away');
+  assert.equal(later.unfinished, true);
+
+  // Setting the end stops it there.
+  const ended = { ...making, keyframes: [box(10, 0.2, { type: 'start' }), done(12, 0.6)] };
+  assert.deepEqual(boxesAt([ended], 40), []);
+});
+
 test('#181: every observation spanning the moment is drawn, each on its own track', () => {
-  const rockfish = { observation_id: 2, comname: 'Rockfish', keyframes: [box(11, 0.9), box(14, 0.9)] };
+  const rockfish = { observation_id: 2, comname: 'Rockfish', keyframes: [box(11, 0.9, { type: 'start' }), done(14, 0.9)] };
   const split = {
     observation_id: 3,
     comname: 'Two subsets',
-    keyframes: [box(10, 0.1, { subset: '1' }), box(13, 0.1, { subset: '1' }), box(10.5, 0.3, { subset: '2' })]
+    keyframes: [
+      box(10, 0.1, { subset: '1', type: 'start' }), done(13, 0.1, { subset: '1' }),
+      box(10.5, 0.3, { subset: '2', type: 'start' }), done(12, 0.3, { subset: '2' })
+    ]
   };
   const drawn = boxesAt([anemone, rockfish, split], 11);
-  assert.deepEqual(drawn.map((d) => d.observation_id), [1, 2, 3]);
+  // Observation 3 twice: a box per track, which is what a subset is.
+  assert.deepEqual(drawn.map((d) => d.observation_id), [1, 2, 3, 3]);
+  assert.deepEqual(drawn.filter((d) => d.observation_id === 3).map((d) => d.subset), ['1', '2']);
 });
 
 test('#181: keyframes out of order are still read in time order', () => {
@@ -91,11 +115,12 @@ test('#181 the first seek is one frame short of the moment, so the player paints
 test('#181: a box drawn at 25 on a 29.97 video is drawn on the picture it was made on', async () => {
   const { trackTolerance } = await import('../../src/model/video-boxes.js');
   // Drawn on the picture at 12.5792 s; stored as 25-frame 314, which is 12.56 s -- 19 ms early.
-  const added = { observation_id: 1, comname: 'x', keyframes: [{ keyframe_id: 1, subset: '1', type: 'start', t: 12.56, x: 0.5, y: 0.5, width: 0.1, height: 0.1 }] };
+  // Just *before* its own time is where the tolerance decides: the picture at 12.5792 is the
+  // one the box was drawn on, and a 25-frame stores it as 12.56. Ended here, so the forward
+  // rule above cannot be what draws it.
+  const added = { observation_id: 1, comname: 'x', keyframes: [{ keyframe_id: 1, subset: '1', type: 'end', t: 12.56, x: 0.5, y: 0.5, width: 0.1, height: 0.1 }] };
   assert.equal(boxesAt([added], 12.5792).length, 0, 'with no tolerance the box vanished');
   assert.equal(boxesAt([added], 12.5792, trackTolerance(29.97)).length, 1);
-  // Two pictures away it is not drawn: a start-only observation is one moment.
-  assert.equal(boxesAt([added], 12.6459, trackTolerance(29.97)).length, 0);
   // Between keyframes it interpolates as before, and past the last within the tolerance it is the last box.
   const track = { observation_id: 2, comname: 'y', keyframes: [
     { keyframe_id: 2, subset: '1', type: 'start', t: 10, x: 0.2, y: 0.5, width: 0.1, height: 0.1 },
