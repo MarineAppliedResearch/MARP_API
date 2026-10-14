@@ -27,20 +27,20 @@
       <div class="grid dataset-overview-shell">
         <nav class="stats dataset-stats" aria-label="Dataset build destinations">
           <a class="stat stat-link" data-state="running" href="#saved-datasets-panel" title="Jump to the builds running now">
-            <span class="stat-ico"><svg class="ico"><use href="#i-split"/></svg></span><span class="stat-lab">Building now</span><b class="stat-num">2</b>
-            <span class="stat-sub"><span>42,816 / 68,400 frames</span><span>~1h 18m left</span></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+            <span class="stat-ico"><svg class="ico"><use href="#i-split"/></svg></span><span class="stat-lab">Building now</span><b class="stat-num"></b>
+            <span class="stat-sub"></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
           </a>
           <a class="stat stat-link" data-state="queued" href="#saved-datasets-panel" title="Jump to the queued builds">
-            <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span><span class="stat-lab">Queued builds</span><b class="stat-num">3</b>
-            <span class="stat-sub"><span>96,200 frames</span><span>~3h 40m work</span></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+            <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span><span class="stat-lab">Queued builds</span><b class="stat-num"></b>
+            <span class="stat-sub"></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
           </a>
           <a class="stat stat-link" data-state="done" href="#saved-datasets-panel" title="Jump to the ready saved datasets below">
-            <span class="stat-ico"><svg class="ico"><use href="#i-datasets"/></svg></span><span class="stat-lab">Ready datasets</span><b class="stat-num">14</b>
-            <span class="stat-sub"><span>5 detection</span><span>6 classification &middot; 3 masks</span></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+            <span class="stat-ico"><svg class="ico"><use href="#i-datasets"/></svg></span><span class="stat-lab">Ready datasets</span><b class="stat-num"></b>
+            <span class="stat-sub"></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
           </a>
           <a class="stat stat-link" data-state="failed" href="#saved-datasets-panel" title="Jump to the build that needs attention">
-            <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span><span class="stat-lab">Needs attention</span><b class="stat-num">1</b>
-            <span class="stat-sub"><span>Thumbnail read failed</span><span>retry available</span></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+            <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span><span class="stat-lab">Needs attention</span><b class="stat-num"></b>
+            <span class="stat-sub"></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
           </a>
         </nav>
 
@@ -52,7 +52,7 @@
                 <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="donut-track" cx="60" cy="60" r="43"/><circle class="donut-part training" cx="60" cy="60" r="43" pathLength="20" stroke-dasharray="2 18"/><circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="20" stroke-dasharray="3 17" stroke-dashoffset="-2"/><circle class="donut-part done" cx="60" cy="60" r="43" pathLength="20" stroke-dasharray="14 6" stroke-dashoffset="-5"/><circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="20" stroke-dasharray="1 19" stroke-dashoffset="-19"/></svg>
                 <span><b>20</b><small>datasets</small></span>
               </div>
-              <div class="job-mix-key dataset-mix-key"><span class="training"><i></i><b>2</b> Building</span><span class="queued"><i></i><b>3</b> Queued</span><span class="done"><i></i><b>14</b> Ready</span><span class="attention"><i></i><b>1</b> Needs attention</span></div>
+              <div class="job-mix-key dataset-mix-key"></div>
             </div>
           </article>
 
@@ -261,7 +261,7 @@
               <div class="totalrow" title="The union of the subsets above, each observation counted once">
                 <span class="k">Total (deduplicated)</span>
                 <span class="v" data-dataset-total data-total="11982">11,982</span>
-                <span class="n">observations</span>
+                <span class="n"></span>
               </div>
               <p class="okline"><svg class="ico sm"><use href="#i-check"/></svg>
                 Duplicates are ignored when adding from several queries</p>
@@ -321,7 +321,7 @@
         <!-- saved, in brief ---------------------------------------------- -->
         <section class="panel dataset-brief-obsolete" aria-hidden="true">
           <header class="panel-hd">
-            <h2>Saved datasets <span class="count">(14)</span></h2>
+            <h2>Saved datasets <span class="count"></span></h2>
             <button class="more" title="Every saved dataset">All datasets
               <svg class="ico sm"><use href="#i-arrow"/></svg></button>
           </header>
@@ -403,7 +403,7 @@
       <div class="grid dataset-saved">
         <section class="panel" id="saved-datasets-panel">
           <header class="panel-hd">
-            <h2>Build jobs &amp; ready datasets <span class="count" data-dataset-count>(20)</span></h2>
+            <h2>Build jobs &amp; ready datasets <span class="count" data-dataset-count></span></h2>
             <div class="panel-tools">
               <span class="search">
                 <svg class="ico sm"><use href="#i-search"/></svg>
@@ -439,59 +439,7 @@
                     <th class="hacts"><span class="vh">Actions</span></th>
                   </tr>
                 </thead>
-                <tbody>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">CAMPA_2024_Rockfish_v3</span></span></td>
-                    <td class="jscope">Rockfish training set, high confidence</td>
-                    <td class="num" data-sort="11982">11,982</td>
-                    <td class="num" data-sort="24103">24,103</td>
-                    <td class="num" data-sort="12">12</td>
-                    <td class="jtime" data-sort="2026-09-10 10:24"><span class="two"><span class="a">10:24</span><span class="b">2026-09-10</span></span></td>
-                    <td class="jtime" data-sort="2026-09-10 10:24"><span class="two"><span class="a">10:24</span><span class="b">2026-09-10</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
-                  </tr>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">GULF_Invertebrates_v2</span></span></td>
-                    <td class="jscope">Invertebrate validation set</td>
-                    <td class="num" data-sort="5672">5,672</td>
-                    <td class="num" data-sort="11340">11,340</td>
-                    <td class="num" data-sort="8">8</td>
-                    <td class="jtime" data-sort="2026-09-08 16:12"><span class="two"><span class="a">16:12</span><span class="b">2026-09-08</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09 09:41"><span class="two"><span class="a">09:41</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
-                  </tr>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">Baja_Seamount_Test</span></span></td>
-                    <td class="jscope">Model test set from the Gulf survey</td>
-                    <td class="num" data-sort="4218">4,218</td>
-                    <td class="num" data-sort="8436">8,436</td>
-                    <td class="num" data-sort="7">7</td>
-                    <td class="jtime" data-sort="2026-08-25 16:03"><span class="two"><span class="a">16:03</span><span class="b">2026-08-25</span></span></td>
-                    <td class="jtime" data-sort="2026-08-28 11:17"><span class="two"><span class="a">11:17</span><span class="b">2026-08-28</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
-                  </tr>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">ALL_Projects_Inverts_v5</span></span></td>
-                    <td class="jscope">Multi-species training dataset</td>
-                    <td class="num" data-sort="15734">15,734</td>
-                    <td class="num" data-sort="31892">31,892</td>
-                    <td class="num" data-sort="24">24</td>
-                    <td class="jtime" data-sort="2026-08-20 09:12"><span class="two"><span class="a">09:12</span><span class="b">2026-08-20</span></span></td>
-                    <td class="jtime" data-sort="2026-08-21 14:55"><span class="two"><span class="a">14:55</span><span class="b">2026-08-21</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
-                  </tr>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">SALT_2024_Habitat_v2</span></span></td>
-                    <td class="jscope">Substrate and habitat classes</td>
-                    <td class="num" data-sort="6204">6,204</td>
-                    <td class="num" data-sort="12880">12,880</td>
-                    <td class="num" data-sort="7">7</td>
-                    <td class="jtime" data-sort="2026-06-28 08:40"><span class="two"><span class="a">08:40</span><span class="b">2026-06-28</span></span></td>
-                    <td class="jtime" data-sort="2026-07-02 15:09"><span class="two"><span class="a">15:09</span><span class="b">2026-07-02</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
-                  </tr>
-
-                </tbody>
+                <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
               </table>
             </div>
           </div>

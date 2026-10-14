@@ -32,32 +32,32 @@
              title="Open Jobs with running inference work prioritized">
             <span class="stat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
             <span class="stat-lab">Running inference</span>
-            <b class="stat-num">4</b>
-            <span class="stat-sub"><span><b>3</b> workers</span><span>78k/min</span></span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
             <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
           </a>
           <a class="stat stat-link" data-state="queued" href="./jobs.html?type=inference&amp;status=queued"
              title="Open Jobs with queued inference work prioritized">
             <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span>
             <span class="stat-lab">Queued inference</span>
-            <b class="stat-num">5</b>
-            <span class="stat-sub"><span>5.8M frames</span><span>1h 14m</span></span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
             <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
           </a>
           <a class="stat stat-link" data-state="done" href="./history.html?type=inference&amp;window=today"
              title="Open today's completed inference work in History">
             <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
             <span class="stat-lab">Completed today</span>
-            <b class="stat-num">18</b>
-            <span class="stat-sub"><span>12.4M frames</span><span>15 clean</span></span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
             <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
           </a>
           <a class="stat stat-link" data-state="failed" href="./jobs.html?type=inference&amp;status=attention"
              title="Open Jobs with inference failures and partial results prioritized">
             <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
             <span class="stat-lab">Needs attention</span>
-            <b class="stat-num">3</b>
-            <span class="stat-sub"><span><b>1</b> failed</span><span><b>2</b> partial</span></span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
             <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
           </a>
         </nav>
@@ -76,12 +76,7 @@
                 </svg>
                 <span><b>30</b><small>inference jobs</small></span>
               </div>
-              <div class="job-mix-key inference-mix-key">
-                <span class="inference"><i></i><b>4</b> Running</span>
-                <span class="queued"><i></i><b>5</b> Queued</span>
-                <span class="done"><i></i><b>18</b> Completed today</span>
-                <span class="attention"><i></i><b>3</b> Need attention</span>
-              </div>
+              <div class="job-mix-key inference-mix-key"></div>
             </div>
           </article>
 
@@ -507,7 +502,7 @@
 
         <section class="panel inference-recent">
           <header class="panel-hd">
-            <h2>Recent inference jobs <span class="count">(6)</span></h2>
+            <h2>Recent inference jobs <span class="count"></span></h2>
             <a class="more" href="./jobs.html?type=inference">All jobs <svg class="ico sm"><use href="#i-arrow"/></svg></a>
             <div class="jobs-sort-mobile" aria-label="Sort recent inference jobs">
               <span>Sort</span>
@@ -532,86 +527,7 @@
                     <th class="hacts"><span class="vh">Actions</span></th>
                   </tr>
                 </thead>
-                <tbody>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><a class="t row-destination" href="./jobs.html?job=1736">ARCTIC_2024_Dive_0449_Inverts</a></span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0449 &middot; Line 08</span><span class="b">ARCTIC 2024</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Det-v3</span><span class="b">v2.0.0</span></span></td>
-                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="jprog" data-sort="-1"><span class="dash">&mdash;</span></td>
-                    <td class="jtime" data-sort="2026-09-09T12:28"><span class="two"><span class="a">12:28</span><span class="b">2026-09-09</span></span></td>
-                    <td data-sort="-1"><span class="dash">&mdash;</span></td>
-                    <td class="jacts"><span>
-                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
-                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
-                    </span></td>
-                  </tr>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><a class="t row-destination" href="./jobs.html?job=1728">CAMPA_2024_D0305_L15_Invertebrate_Detect</a></span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0305 &middot; Line 15</span><span class="b">CAMPA 2024</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Det-v3</span><span class="b">v1.0.4</span></span></td>
-                    <td class="jstatus" data-sort="4"><span class="st" data-state="issues"><span class="dot"></span>Issues</span></td>
-                    <td class="jprog" data-sort="8856">8,856</td>
-                    <td class="jtime" data-sort="2026-09-09T11:04"><span class="two"><span class="a">11:04</span><span class="b">2026-09-09</span></span></td>
-                    <td data-sort="4680">1h 18m</td>
-                    <td class="jacts"><span>
-                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
-                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
-                    </span></td>
-                  </tr>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><a class="t row-destination" href="./jobs.html?job=1722">VENTS_2025_Line_32_Benthic_All</a></span></td>
-                    <td class="jscope"><span class="two"><span class="a">Line 32 &middot; 24 videos</span><span class="b">VENTS 2025</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Multiclass-Det-XL</span><span class="b">v1.0.2</span></span></td>
-                    <td class="jstatus" data-sort="7"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
-                    <td class="jprog" data-sort="125432">125,432</td>
-                    <td class="jtime" data-sort="2026-09-09T08:12"><span class="two"><span class="a">08:12</span><span class="b">2026-09-09</span></span></td>
-                    <td data-sort="22440">6h 14m</td>
-                    <td class="jacts"><span>
-                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
-                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
-                    </span></td>
-                  </tr>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><a class="t row-destination" href="./jobs.html?job=1724">GULF_2025_D0212_L04_Fish_Count</a></span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0212 &middot; Line 04</span><span class="b">GULF 2025</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Fish-Det</span><span class="b">v1.1.1</span></span></td>
-                    <td class="jstatus" data-sort="6"><span class="st" data-state="cancelled"><span class="dot"></span>Cancelled</span></td>
-                    <td class="jprog" data-sort="-1"><span class="dash">&mdash;</span></td>
-                    <td class="jtime" data-sort="2026-09-09T08:41"><span class="two"><span class="a">08:41</span><span class="b">2026-09-09</span></span></td>
-                    <td data-sort="132">2m 12s</td>
-                    <td class="jacts"><span>
-                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
-                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
-                    </span></td>
-                  </tr>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><a class="t row-destination" href="./jobs.html?job=1741">CAMPA_2024_D0103_L30_Crab_Count</a></span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0103 &middot; Line 30</span><span class="b">CAMPA 2024</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Crab-Det</span><span class="b">v1.1.4</span></span></td>
-                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="jprog" data-sort="-1"><span class="dash">&mdash;</span></td>
-                    <td class="jtime" data-sort="2026-09-09T16:20"><span class="two"><span class="a">16:20</span><span class="b">2026-09-09</span></span></td>
-                    <td data-sort="-1"><span class="dash">&mdash;</span></td>
-                    <td class="jacts"><span>
-                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
-                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
-                    </span></td>
-                  </tr>
-                  <tr>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><a class="t row-destination" href="./jobs.html?job=1733">PACIFIC_2023_D0070_L23_Crab_Count</a></span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0070 &middot; Line 23</span><span class="b">PACIFIC 2023</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Crab-Det</span><span class="b">v1.1.4</span></span></td>
-                    <td class="jstatus" data-sort="2"><span class="st" data-state="paused"><span class="dot"></span>Paused</span></td>
-                    <td class="jprog" data-sort="-1"><span class="dash">&mdash;</span></td>
-                    <td class="jtime" data-sort="2026-09-09T14:35"><span class="two"><span class="a">14:35</span><span class="b">2026-09-09</span></span></td>
-                    <td data-sort="-1"><span class="dash">&mdash;</span></td>
-                    <td class="jacts"><span>
-                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
-                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
-                    </span></td>
-                  </tr>
-                </tbody>
+                <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
               </table>
             </div>
           </div>

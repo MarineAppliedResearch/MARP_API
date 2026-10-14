@@ -6,12 +6,13 @@
   "description": "MARP Machine Learning Dashboard — the design mockups and their data layer. See DESIGN.md.",
   "scripts": {
     "serve": "node tools/serve.mjs",
-    "lint": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/api-contract-check.mjs",
+    "lint": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/api-contract-check.mjs && node tools/markup-check.mjs",
     "shots": "node tools/mock-shots.mjs",
     "check:scroll": "node tools/scroll-check.mjs",
     "check:account": "node tools/account-check.mjs",
-    "test": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/api-contract-check.mjs && node tools/scroll-check.mjs && node tools/account-check.mjs && node tools/mock-shots.mjs",
-    "check:contract": "node tools/api-contract-check.mjs"
+    "test": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/api-contract-check.mjs && node tools/markup-check.mjs && node tools/scroll-check.mjs && node tools/account-check.mjs && node tools/mock-shots.mjs",
+    "check:contract": "node tools/api-contract-check.mjs",
+    "check:markup": "node tools/markup-check.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"

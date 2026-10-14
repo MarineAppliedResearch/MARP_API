@@ -30,26 +30,26 @@
         <button class="stat stat-sort" type="button" data-state="running" data-job-priority="running" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
           <span class="stat-lab">Running jobs</span>
-          <b class="stat-num">8</b>
-          <span class="stat-sub"><span><b>4</b> inference</span><span><b>2</b> training</span><span><b>2</b> builds</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
         </button>
         <button class="stat stat-sort" type="button" data-state="queued" data-job-priority="queued" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span>
           <span class="stat-lab">Queued jobs</span>
-          <b class="stat-num">11</b>
-          <span class="stat-sub"><span><b>5</b> inference</span><span><b>3</b> training</span><span><b>3</b> builds</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
         </button>
         <button class="stat stat-sort" type="button" data-state="done" data-job-priority="done" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
           <span class="stat-lab">Completed today</span>
-          <b class="stat-num">18</b>
-          <span class="stat-sub"><span><b>15</b> clean</span><span><b>3</b> with issues</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
         </button>
         <button class="stat stat-sort" type="button" data-state="failed" data-job-priority="attention" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
           <span class="stat-lab">Needs attention</span>
-          <b class="stat-num">8</b>
-          <span class="stat-sub"><span><b>5</b> failed</span><span><b>3</b> with issues</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
         </button>
       </div>
 
@@ -62,21 +62,13 @@
                 <circle class="donut-track" cx="60" cy="60" r="43"/>
                 <circle class="donut-part inference" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="4 41" stroke-dashoffset="0"/>
                 <circle class="donut-part training" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="2 43" stroke-dashoffset="-4"/>
-                <circle class="donut-part datasets" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="2 43" stroke-dashoffset="-6"/>
                 <circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="11 34" stroke-dashoffset="-8"/>
                 <circle class="donut-part done" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="18 27" stroke-dashoffset="-19"/>
                 <circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="8 37" stroke-dashoffset="-37"/>
               </svg>
               <span><b>45</b><small>jobs</small></span>
             </div>
-            <div class="job-mix-key">
-              <span class="inference"><i></i><b>4</b> Running inference</span>
-              <span class="training"><i></i><b>2</b> Running training</span>
-              <span class="datasets"><i></i><b>2</b> Building datasets</span>
-              <span class="queued"><i></i><b>11</b> Queued</span>
-              <span class="done"><i></i><b>18</b> Completed today</span>
-              <span class="attention"><i></i><b>8</b> Need attention</span>
-            </div>
+            <div class="job-mix-key"></div>
           </div>
         </article>
 
@@ -123,7 +115,7 @@
             <button type="button" data-sort-column="6">Submitted</button>
           </div>
           <div class="bulk" id="bulk" hidden>
-            <span><span class="n" id="bulkN">0</span> selected</span>
+            <span><span class="n" id="bulkN"></span> selected</span>
             <button class="btn sm">Reprioritize</button>
             <button class="btn sm">Retry failed</button>
             <button class="btn sm">Cancel</button>
@@ -143,10 +135,7 @@
                   <th class="hacts"><span class="vh">Actions</span></th>
                 </tr>
               </thead>
-              <tbody>
-                <!-- Filled by renderJobsTable() from the data layer. No job is written here: a
-                     value in this markup is a value no filter can filter and no sort can sort. -->
-              </tbody>
+              <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
             </table>
           </div>
         </div>
@@ -217,38 +206,7 @@
       <div class="tblwrap">
         <table class="tbl">
           <thead><tr><th>Frames</th><th>Worker</th><th>State</th><th class="num">Done</th></tr></thead>
-          <tbody>
-                  <tr>
-                    <td class="mono">16 200 &ndash; 17 100</td><td>campa-lab-04</td>
-                    <td><span class="st" data-state="done"><span class="dot"></span>Done</span></td>
-                    <td class="num">100%</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">17 100 &ndash; 18 000</td><td>campa-lab-07</td>
-                    <td><span class="st" data-state="done"><span class="dot"></span>Done</span></td>
-                    <td class="num">100%</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">18 000 &ndash; 18 900</td><td>bergstrom-4090</td>
-                    <td><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="num">62%</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">18 900 &ndash; 19 800</td><td>campa-lab-02</td>
-                    <td><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="num">18%</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">19 800 &ndash; 20 700</td><td>&mdash;</td>
-                    <td><span class="st" data-state="queued"><span class="dot"></span>Queued</span></td>
-                    <td class="num"><span class="dash">&mdash;</span></td>
-                  </tr>
-                  <tr>
-                    <td class="mono">20 700 &ndash; 21 600</td><td>&mdash;</td>
-                    <td><span class="st" data-state="queued"><span class="dot"></span>Queued</span></td>
-                    <td class="num"><span class="dash">&mdash;</span></td>
-                  </tr>
-          </tbody>
+          <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
         </table>
       </div>
     </div>

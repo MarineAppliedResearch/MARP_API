@@ -28,29 +28,29 @@
         <a class="stat stat-link" data-state="idle" href="#model-registry" title="Jump to every registered model version">
           <span class="stat-ico"><svg class="ico"><use href="#i-models"/></svg></span>
           <span class="stat-lab">Registered models</span>
-          <b class="stat-num">28</b>
-          <span class="stat-sub"><span><b>4</b> this month</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
         <a class="stat stat-link" data-state="done" href="#model-registry" title="Jump to preferred model versions in the registry">
           <span class="stat-ico"><svg class="ico"><use href="#i-star"/></svg></span>
           <span class="stat-lab">Preferred models</span>
-          <b class="stat-num">6</b>
-          <span class="stat-sub"><span>for inference and training</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
         <a class="stat stat-link" data-state="busy" href="./workers.html?view=cache" title="Open Workers to inspect reported model availability">
           <span class="stat-ico"><svg class="ico"><use href="#i-slots"/></svg></span>
           <span class="stat-lab">Cached on workers</span>
-          <b class="stat-num">84</b>
-          <span class="stat-sub"><span>across <b>12</b> models</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
         <a class="stat stat-link" data-state="running" href="./history.html?type=training&amp;window=week" title="Open recent training work that registered versions">
           <span class="stat-ico"><svg class="ico"><use href="#i-clock"/></svg></span>
           <span class="stat-lab">Recently trained</span>
-          <b class="stat-num">3</b>
-          <span class="stat-sub"><span>in the last 7 days</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
       </nav>
@@ -68,7 +68,7 @@
               </svg>
               <span><b>28</b><small>model versions</small></span>
             </div>
-            <div class="job-mix-key"><span class="done"><i></i><b>23</b> Ready</span><span class="queued"><i></i><b>3</b> Testing</span><span class="attention"><i></i><b>2</b> Need attention</span></div>
+            <div class="job-mix-key"></div>
           </div>
         </article>
 
@@ -83,7 +83,7 @@
 
       <section class="panel" id="model-registry">
         <header class="panel-hd">
-          <h2>Model registry <span class="count">(28)</span></h2>
+          <h2>Model registry <span class="count"></span></h2>
           <div class="panel-tools">
             <span class="search">
               <svg class="ico sm"><use href="#i-search"/></svg>
@@ -129,9 +129,7 @@
                   <th class="hacts"><span class="vh">Actions</span></th>
                 </tr>
               </thead>
-              <tbody>
-<!-- Filled by renderModelsScreen() from GET /api/v2/ml_models. -->
-</tbody>
+              <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
             </table>
           </div>
         </div>

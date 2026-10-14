@@ -844,6 +844,41 @@ function renderJobsSummary(jobs) {
     const sub = $('.stat-sub', card);
     if (sub) sub.innerHTML = parts.map(([n, label]) => `<span><b>${n}</b> ${label}</span>`).join('');
   }
+
+  /* The Job status donut. Five arcs, not six: the sixth was *building datasets*
+     and a dataset build is not a job (gap 19), so the arc is gone from the
+     markup rather than drawn at zero, which would leave a segment that can
+     never grow. */
+  const donutParts = [
+    ['inference', byKind(running, 'inference') + byKind(running, 'tracking'), 'Running inference'],
+    ['training', byKind(running, 'training'), 'Running training'],
+    ['queued', queued.length, 'Queued'],
+    ['done', done.length, 'Completed today'],
+    ['attention', attention.length, 'Need attention'],
+  ];
+  const donutTotal = donutParts.reduce((sum, [, value]) => sum + value, 0) || 1;
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    let offset = 0;
+    for (const [cls, value] of donutParts) {
+      const arc = $(`.donut-part.${cls}`, donut);
+      if (!arc) continue;
+      arc.setAttribute('pathLength', String(donutTotal));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, donutTotal - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    }
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(donutTotal);
+  }
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = donutParts
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
 }
 
 /**
