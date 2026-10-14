@@ -14729,7 +14729,7 @@
     "/v2/mosaic/video/observations": {
       "post": {
         "summary": "Every observation in an observation's video that the Mosaic's query matches, for the video page",
-        "description": "The video the named observation is in, and every observation in that video that `filters` -- the Mosaic's own filters body, the one `/mosaic/observations/pages` takes -- matches, across all pages (#181). The named one is always included. Each carries the span its keyframes cover **in seconds**, which tells the page which are on screen when; the keyframes themselves come from `/mosaic/video/keyframes`, a window at a time. Times follow the rule `/mosaic/observations/video-context` states: an annotation-GUI row counts at 25, a GPU row at the video's nominal rate. Observations with no keyframes are never in the Mosaic, and are not here. Requires the `observations:read` permission.",
+        "description": "The video the named observation is in, and every observation in that video that `filters` -- the Mosaic's own filters body, the one `/mosaic/observations/pages` takes -- matches, across all pages (#181). The named one is drawn only when the query matches it, like any other (2026-10-14). Each carries the span its keyframes cover **in seconds**, which tells the page which are on screen when; the keyframes themselves come from `/mosaic/video/keyframes`, a window at a time. Times follow the rule `/mosaic/observations/video-context` states: an annotation-GUI row counts at 25, a GPU row at the video's nominal rate. Observations with no keyframes are never in the Mosaic, and are not here. Requires the `observations:read` permission.",
         "tags": [
           "V2 · Mosaic"
         ],
@@ -14833,6 +14833,10 @@
                           "session_id": {
                             "type": "integer",
                             "nullable": true
+                          },
+                          "open_ended": {
+                            "type": "boolean",
+                            "description": "The track has no end keyframe yet, so its last box is drawn forward until one is set."
                           },
                           "start_s": {
                             "type": "number"
