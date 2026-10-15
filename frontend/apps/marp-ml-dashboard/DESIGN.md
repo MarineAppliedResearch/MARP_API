@@ -648,19 +648,38 @@ on the screen, and left. Do not open API work off the back of this list without 
     before this list can be paged server-side, which is also what gap 24 needs for the cards.
     Found 2026-10-14 in #128.
 
-27. **A worker reports nothing about itself while it runs** — the Workers table has columns
-    for GPU load, VRAM load and temperature/power, and the expanded row had a *Live machine
-    telemetry* section listing utilization, temperature, fan, power, clocks, CPU, system RAM,
-    disk and process uptime. **None of it exists.** `capabilities` is a blob sent once at
-    enrolment — the schema calls it "GPUs and VRAM, driver, disk, engines, ranges supported" —
-    and `POST /gpu/attempts/:id/heartbeat` carries the *attempt's* progress and nothing about
-    the machine. There is no route, no column and no field anywhere that holds a live reading.
+27. **The pool view cannot reach the machine telemetry MARP already has** — the Workers table
+    has columns for GPU load, VRAM load and temperature/power, and they draw a dash.
 
-    So those cells draw a dash with an explanation rather than a number, the same rule progress
-    follows before its first heartbeat, and the expanded row says plainly what is not reported
-    instead of leaving it to be inferred from a column of dashes. What *is* real there: name,
-    activity (derived by the route), version, the enrolment capabilities, slots in use against
-    slot count, when it enrolled, when it was last heard from, and its live attempt.
+    **Corrected 2026-10-15.** This said "a worker reports nothing about itself while it runs"
+    and that none of it exists. That was wrong, and wrong in the direction that invents work:
+    `marp-inference-worker`'s `system/resource_monitor.py` reads NVML and reports GPU and
+    memory `utilization`, `temperature_c`, `power_usage_watts` and `power_limit_watts` per
+    device; those travel inside `capabilities` on **every** `POST /gpu/poll` — the schema calls
+    that field "Current hardware, snapshotted onto whatever attempt this poll opens" — and
+    MARP stores it as `capabilities_snapshot` on the attempt. The mistake was checking the
+    enrol and heartbeat bodies and never the poll.
+
+    What is actually missing is narrower and cheaper:
+
+    - **`GET /gpu/workers` does not return it.** `GpuPoolAttempt` carries `attempt_id`,
+      `state`, `slot_index`, `lease_epoch`, `lease_expires_at`, `last_heartbeat_at`,
+      `progress` and `job` — no `capabilities_snapshot`. `GET /gpu/jobs/:id` does return it,
+      so the pool view is the only thing standing between this screen and the numbers.
+    - **It is a lease-time snapshot, not a live reading.** The heartbeat carries the attempt's
+      progress and nothing about the machine, so the figures are as of when the job started.
+      A column headed *GPU load* implying "now" would be overstating what is known.
+    - **An idle machine has no reading at all**, because the snapshot lives on an attempt and
+      an idle machine has none.
+
+    So the cells still draw a dash today, but for a reason worth one line of route change
+    rather than a telemetry pipeline. **#214 owns the power-draw feature** — idle baseline,
+    delta above idle, pool totals — and carries six open assumptions of Isaac's that are
+    unanswered, so it is blocked at its own design gate rather than waiting on this.
+
+    What is real on the screen now: name, activity (derived by the route), version, the
+    enrolment capabilities, slots in use against slot count, when it enrolled, when it was
+    last heard from, and its live attempt.
 
     Uptime is in the same position for a subtler reason: `local_id` is durable across restarts,
     so `enrolled_at` is when the machine first appeared, not when its process started. Showing
