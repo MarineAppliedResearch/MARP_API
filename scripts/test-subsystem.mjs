@@ -47,6 +47,7 @@ const SUBSYSTEMS = {
             'gpu-finished-at',
             'gpu-job-list',
             'gpu-pool-telemetry',
+            'gpu-telemetry-series',
             'worker-provisioning',
         ],
     },

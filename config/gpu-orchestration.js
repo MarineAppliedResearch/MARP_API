@@ -143,6 +143,19 @@ const MAX_WORKER_LOCAL_ID_LENGTH = 128;
 const MAX_JOB_NAME_LENGTH = 255;
 
 /**
+ * How long a per-minute GPU reading is kept.
+ *
+ * `gpu_worker_samples` grows at one row per working machine per minute, which is
+ * small and unbounded. Thirty days is what the dashboard's utilization chart can
+ * look back over; past that the rows answer no question anybody asks, and the
+ * pool read sweeps them.
+ *
+ * @constant
+ * @type {number}
+ */
+const SAMPLE_RETENTION_DAYS = 30;
+
+/**
  * Longest phase name a worker may report. Phase vocabularies belong to each job
  * type, so the coordinator bounds the string without closing the vocabulary.
  *
@@ -380,6 +393,7 @@ module.exports = {
     JSON_BODY_LIMIT,
     MAX_WORKER_NAME_LENGTH,
     MAX_JOB_NAME_LENGTH,
+    SAMPLE_RETENTION_DAYS,
     MAX_WORKER_LOCAL_ID_LENGTH,
     MAX_PROGRESS_PHASE_LENGTH,
     MAX_EVENTS_PER_BATCH,

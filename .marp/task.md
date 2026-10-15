@@ -7,192 +7,152 @@ needs: []
 
 ## Goal
 
-Close the six API gaps the ML Dashboard found while it was being wired, so the columns,
-filters and cards the screens already draw are answered by MARP rather than computed in the
-browser or drawn as a dash. After this the Jobs list carries progress and can be asked about
-time, sorted and searched; a job can be given a name and found by it; the pool view reaches
-the machine telemetry the workers already report; and the model registry can say which model
-is preferred and which dataset is still building.
+Make the ML Dashboard show MARP's own data. Today every figure on all eight screens comes
+out of a seeded random generator in `mockups/api.js` — the file has twelve references to
+`/api/v2/...` routes and all twelve are doc comments, with no `fetch()` anywhere. The API
+those comments name now answers, so this replaces the generator with real requests and
+leaves the screens reading from the same one place they already read from.
 
-These are items 23 to 28 of `DESIGN.md`'s *What has no API behind it*, written down while
-wiring #128 and deliberately left until the dashboard settled. It has now settled -- #180
-(the design review) and #128 (the data layer) are both merged -- so this is that pass.
+## What the investigation found
+
+Written down because it changes the size of the job, and three of the four findings make it
+smaller.
+
+- **The whole public surface maps to routes that exist.** `window.MarpApi` has ten
+  functions and every one has a route behind it: `listWorkers`, `listJobs`, `getJob`,
+  `submitJob`, `cancelJob`, `renameWorker`, `listModels`, `listDatasets`, `listProjects`,
+  `listUsers`.
+- **Authentication is solved, and not by us.** `marp-mosaic-review` is served from this same
+  origin by this same API and uses a seven-day session **cookie**:
+  `credentials: 'same-origin'`, with `/api/v2/auth/me` answering 401 when there is no
+  session. `middleware/resolve-principal.middleware.js` populates `req.principal` from the
+  Passport session before it looks for a bearer token, and the cookie is `httpOnly` /
+  `sameSite: 'lax'`. Nothing is stored by the client and no scheme is invented.
+- **`DESIGN.md` item 16 is mostly already dealt with.** It warned that three shapes here
+  were not the shapes of the tables they come from. The datasets fixture already carries
+  `location`, `num_samples`, `num_classes`, `source` and `notes` — the real columns — and
+  models are already generated as `parent_model_id` chains rather than a `versions` array.
+  So this is far closer to a rename than to a mapping.
+- **The charts are the exception, and they are fabricated in `mock.js`, not in the data
+  layer.** `mock.js` says so itself: *"The Dashboard chart uses a deterministic moving
+  fixture during design review."* Those are gaps 18 to 22 and no API produces them.
 
 ## Requirements
 
-- **R1** -- `GET /gpu/jobs` carries each job's progress, so a page of fifty rows draws fifty
-  progress bars from one request rather than fifty-one. *(gap 23)*
-- **R2** -- `GET /gpu/jobs` can be asked a question about time, so *Completed today* is a
-  query rather than a count over whatever window happened to be fetched. *(gap 24)*
-- **R3** -- a job can be given a name at submit and found again by it. *(gap 25)*
-- **R4** -- `GET /gpu/jobs` can be sorted and searched, so sorting and paging stay honest
-  together once the list is paged server-side. *(gap 26)*
-- **R5** -- `GET /gpu/workers` returns the machine telemetry already stored on the attempt,
-  so the GPU load, VRAM and temperature columns have a source. *(gap 27)*
-- **R6** -- a model can be marked preferred. *(gap 28)*
-- **R7** -- a model's version chain can be fetched without the caller walking
-  `parent_model_id` itself. *(gap 28)*
-- **R8** -- a dataset has a status, so the Datasets screen can say one is building. *(gap 28)*
-- **R9** -- training runs can be listed. `/api/v2/training_run` has `POST`, and `GET`, `PUT`
-  and `DELETE` on `/:id`; what it has no route for is the collection, so a training run can
-  be created and fetched by id and never listed. *(gap 28)*
-
-**Not a requirement, and why.** Gap 28 also asks *how many workers hold this model cached*.
-Nothing in MARP records that -- not the enrolment capabilities, not the poll, not anywhere --
-so it cannot be served from what exists. It needs the worker to report its cache, which is
-`marp-inference-worker` work and a second repository.
+- **R1** — one transport, and only it knows `fetch`, a URL, a header and an HTTP status.
+  Everything else in the dashboard asks it for JSON, the way `src/api/transport.js` is the
+  only such place in the mosaic reviewer.
+- **R2** — the ten functions on `window.MarpApi` fetch from MARP, keeping their current
+  call signatures and answer shapes, so no screen has to change to get real data.
+- **R3** — the session cookie carries the request and nothing is stored client-side.
+- **R4** — a signed-out visitor is told to sign in rather than shown an empty dashboard,
+  and a 403 names the permission it was about.
+- **R5** — the loading, empty and error states built in #128 still work against a real API,
+  including the retry.
+- **R6** — a fault switch survives. `?mock=slow` and `?mock=fail:jobs` are how the states in
+  R5 are demonstrated and tested, and a real API cannot be asked to fail on demand.
+- **R7** — the checks that encode the fixture are rewritten rather than deleted, and what
+  they can no longer assert is said out loud.
+- **R8** — a region with no API behind it does not draw an invented number.
 
 ## Open assumptions
 
-**All answered 2026-10-15.** Isaac: *"i don't have strong opinions about these, lets go with
-what we judge as the best design choice"* -- so each answer below is the agent's judgement,
-recorded with its reason so that a later disagreement has something to argue with rather than
-a silent default to discover. A16 is the one that was put to him as genuinely his; the answer
-taken is the one that invents the least.
+- [x] **A1 · product/UI · blocking** — answered 2026-10-15, see Decisions. Original question: **what do the charts do?** The pool-utilization,
+  inference-throughput, registry-trend, dataset-build and history graphs are gaps 18 to 22:
+  no sampled series exists anywhere in MARP. In a design mockup a moving fixture is honest,
+  because the whole page is a mockup. In a live dashboard it is a picture of data that does
+  not exist, drawn next to real numbers and indistinguishable from them.
 
-### Gap 23 -- progress on the job list
-
-- [x] **A1 · API contract · blocking** -- answered 2026-10-15: **flat**, the attempt's own
-  column names (`progress_done`, `progress_total`, `progress_unit`, `progress_phase`,
-  `progress_elapsed_s`) carried straight onto the job. The pool view nests because an attempt
-  there is already an object; a job is not. Flat also matches what the dashboard's data layer
-  already serves, so wiring it is a deletion rather than a mapping -- item 16's warning is
-  about mappings, and this avoids creating one.
-- [x] **A2 · data-meaning · blocking** -- answered 2026-10-15: **the latest attempt, whatever
-  its state**, ordered by `id DESC`. A failed job showing how far its last try got is useful;
-  a failed job showing nothing is a second way of saying "failed". Nulls still mean "no
-  heartbeat yet" and still draw a dash rather than 0%.
-- [x] **A3 · performance · non-blocking** -- answered 2026-10-15: **always**. It is one join
-  on an indexed foreign key, and an `?include=` flag is a second code path to keep correct
-  for a saving nobody has measured.
-
-### Gap 24 -- asking the job list about time
-
-- [x] **A4 · data-meaning · blocking** -- answered 2026-10-15: **`gpu_jobs` gains its own
-  `finished_at`**, set when the job reaches a terminal state. `updated_at` moves on any write
-  -- a heartbeat, a retry, a priority read-modify-write -- so filtering on it would answer a
-  question about *touched today*, which is not the question. Existing terminal rows are
-  backfilled from the last attempt's `finished_at`, falling back to `updated_at` where there
-  is no attempt, so nothing currently answerable stops being answerable.
-- [x] **A5 · behavioural · blocking** -- answered 2026-10-15: **absolute instants**. The
-  client sends `created_after` / `created_before` / `finished_after` / `finished_before` as
-  timestamps and MARP never has an opinion about where a day starts. A server-side "today"
-  would be wrong for anyone not in the server's timezone and would be wrong silently.
-- [x] **A6 · API contract · non-blocking** -- answered 2026-10-15: **the date range on the
-  list**, no separate counts endpoint. `total` already comes back with every page, so a card
-  asks for `limit=1` with its range and reads `total`.
-
-### Gap 25 -- naming a job
-
-- [x] **A7 · database/schema · blocking** -- answered 2026-10-15: **a `name` column on
-  `gpu_jobs`**. R4 has to search it, and searching inside a JSON blob means either a
-  functional index or a sequential scan.
-- [x] **A8 · behavioural · blocking** -- answered 2026-10-15: **optional, null when absent,
-  no composed fallback.** The screens already compose a label from `spec.video.source_name`
-  and they are the ones that know what their column is for. A fallback composed in MARP would
-  be indistinguishable from a name a person chose, which is the kind of ambiguity the
-  platform rules single out.
-- [x] **A9 · behavioural · non-blocking** -- answered 2026-10-15: **not in this pass.** It is
-  the first job update route and it belongs with gap 3 (reprioritising), which is Milestone 2.
-
-### Gap 26 -- sort and search
-
-- [x] **A10 · API contract · blocking** -- answered 2026-10-15: **the four that live on
-  `gpu_jobs`** -- `name`, `kind`, `state`, `created_at` -- plus `finished_at` now that A4 adds
-  it. *Progress* and *Worker* sort on the joined attempt and can follow once there is a
-  measurement saying the join is affordable at scale.
-- [x] **A11 · behavioural · blocking** -- answered 2026-10-15: **`name`, the video's
-  `source_name` inside the spec, and `batch_id`.** Those are the three things visible on the
-  row, and a search that matches something invisible looks broken.
-- [x] **A12 · architectural · blocking** -- answered 2026-10-15: **stays a browser-side
-  narrowing**, and `DESIGN.md` keeps saying so. A `HAVING` over batches cannot be paged with
-  the rows it filters, so making it a query would trade a visible limitation for a subtle one.
-
-### Gap 27 -- telemetry on the pool view
-
-- [x] **A13 · API contract · blocking** -- answered 2026-10-15: **a reduced subset.** The
-  attempt carries `telemetry: {gpus: [{index, name, utilization, memory_used_mb,
-  memory_total_mb, temperature_c, power_usage_watts, power_limit_watts}], as_of}` rather than
-  the whole `capabilities_snapshot`. Gap 12 already records the pool read as megabytes a
-  refresh at #104's scale, and a second blob per live attempt makes the worse problem worse.
-- [x] **A14 · product/UI · blocking** -- answered 2026-10-15: **show it with its `as_of`.**
-  A number known to be from 14:02 is worth more than a dash, provided the screen says 14:02.
-  An idle machine keeps the dash, because it genuinely has no reading.
-
-### Gap 28 -- the model registry
-
-- [x] **A15 · database/schema · blocking** -- answered 2026-10-15: **per `model_type`**, as a
-  boolean `preferred` with a partial unique index so one model_type cannot have two. Registry-
-  wide would mean one preferred model for detection and segmentation together, which is not a
-  choice anybody wants to make.
-- [x] **A16 · data-meaning · blocking** -- answered 2026-10-15: **a recorded fact, written by
-  whoever creates or updates the dataset through the routes that already exist.** MARP does
-  not run the build and this does not pretend it does. `status` is
-  `draft | building | ready | failed`, NOT NULL, default `draft`; existing rows backfill to
-  `ready`, because every dataset in the database now is a finished one with its `num_samples`
-  filled in.
-
-  **What this deliberately does not settle** is what performs a dataset build. That is gap 19
-  and it is still open -- the Datasets fixtures name a `gpu-build-02` worker and nothing in
-  the API backs it. The column means "what the thing doing the building last said", and until
-  something is doing the building, nothing will move a row off `draft` but a caller.
-- [x] **A17 · API contract · non-blocking** -- answered 2026-10-15: **a separate
-  `GET /ml_models/:id/versions`.** Inline would make every registry read walk a self-join for
-  the callers that only want the list.
-
-### Across the pass
-
-- [x] **A18 · scope · blocking** -- answered 2026-10-15: **the API only.** Rewiring
-  `mockups/api.js` and the screens is a following pass, and it is cheap once the shapes here
-  are fixed. Doing both at once would mean a change set where a dashboard failure and a route
-  failure look the same.
-- [x] **A19 · security/permissions · non-blocking** -- answered 2026-10-15: **reuse the
-  neighbouring permissions.** Nothing here is a new kind of access -- it is more of what the
-  same caller could already read or write -- so no permission seeding migration.
+  My answer, unless you say otherwise: **draw the frame, the axes and a "not recorded yet"
+  state, and keep the fixture only behind `?mock=`.** The doctrine here is emphatic that a
+  thing which narrates a result without asserting it can lie, and a convincing fake chart
+  beside a true table is the clearest case of that. The cost is five emptier-looking panels
+  until somebody serves the series.
+- [ ] **A2 · architectural · non-blocking** — the transport is a **copy** of the mosaic
+  reviewer's reasoning, not a shared module. The two apps are built differently — the
+  mosaic app is ESM under `src/`, this one is a plain browser script that reads `window` as
+  it loads — and `frontend/shared/` currently holds assets and vendor code, not application
+  modules. Sharing is a bigger change than this task, and a wrong one to make while only
+  two apps exist.
+- [ ] **A3 · behavioural · non-blocking** — `?mock=` keeps working and gains `?mock=all`,
+  which serves the whole generated corpus as it does today. That keeps the design review
+  reproducible and keeps `mock-shots.mjs` able to take screenshots without a database.
+- [x] **A4 · scope · blocking** — answered 2026-10-15, Isaac: *"i think your suggestion for A4 makes sense"*. Original: `data-layer-check.mjs` asserts things only a fixture can
+  guarantee: 143 workers exactly, byte-identical answers on two loads, every job state
+  present, a batch with mixed outcomes on the first page. **None of those can hold against a
+  live database.** The check is rewritten to assert the *contract* — shapes, paging, that
+  `total` exceeds the page, that failures surface — and the fixture assertions move behind
+  `?mock=all`, where they still mean something. Deleting it instead would quietly drop the
+  only thing testing the layer.
+- [ ] **A5 · product/UI · non-blocking** — the Datasets screen's build progress, worker and
+  ETA, and the Inference screen's output options, have no API either (gaps 13, 14, 19).
+  Same treatment as A1: drawn as not-recorded rather than invented.
+- [ ] **A6 · environment · non-blocking** — the dashboard is reached at
+  `/apps/marp-ml-dashboard/mockups/<screen>.html`, which still says `mockups`. Renaming the
+  directory is a bigger change than this task and would break every recorded link; it is
+  worth doing and worth doing separately.
 
 ## Decisions
 
-- **2026-10-15** -- this work goes under **#104, *Design the MARP Machine Learning
-  Dashboard***, which is where the gap list was recorded. No new issue; MARP_API#180 and
-  MARP_API#128 are both closed.
-- **2026-10-15** -- branched from the gap 27 correction rather than from `develop`, because
-  that correction is what makes R5 a one-field change instead of a telemetry project.
-- **2026-10-15** -- the worker model-cache count is out of scope. It cannot be served from
-  anything MARP stores.
-- **2026-10-15** -- the assumptions were answered by the agent at Isaac's direction rather
-  than by Isaac. Each carries its reason above for exactly that reason.
+- **2026-10-15 — A1, and the question was asked badly.** I put it as "what do the charts do
+  given no data exists", and Isaac's answer was that he wants charts that work and live-update.
+  So I measured instead of describing the problem again, and the answer was not one thing:
+
+  **Three of the five are derivable from rows already in the database** — job throughput,
+  queue depth, and the History outcomes and turnaround. 9,554 finished jobs span five weeks,
+  and `waiting` reconstructs from `created_at` and `finished_at`. No sampling, no new table.
+
+  **The utilization chart had data and it was a trap.** 6,789 attempts carry a real NVML
+  reading over the same five weeks, so plotting it looked free. Querying it says why that
+  would have been wrong: on the days that ran two thousand jobs the average utilization in
+  those readings is **0.5%**, because they are taken at the poll, before the machine starts.
+  Drawing them would have shown a permanently idle GPU farm. Isaac's call was to do the
+  heartbeat change so the chart is real, worker side included.
+
+  **The dataset-build chart stays empty**, because nothing builds datasets yet (gap 19).
+
+- **2026-10-15 — A4 as proposed.** `data-layer-check.mjs` is rewritten to assert the contract;
+  the fixture-only assertions move behind `?mock=all`.
+
+- **2026-10-15 — the scope grew, and this branch carries the groundwork rather than the
+  wiring.** Answering A1 properly meant a cross-repository change: `marp-inference-worker`
+  sending telemetry on the heartbeat, and MARP storing and serving it. That is what is here.
+  The screens are still reading the local layer and are the next branch. Said plainly because
+  the branch is named for the wiring and does not contain it.
+
+- **2026-10-15 — the worker half is a separate repository and a separate pull request**, per
+  the polyrepo rule. Branch `heartbeat-carries-telemetry` in
+  `MarineAppliedResearch/marp-inference-worker`.
+
+- **2026-10-15** — under **#104, *Design the MARP Machine Learning Dashboard***, like the
+  three passes before it. No new issue.
+- **2026-10-15** — branched from `develop` after #260 merged, so the routes this calls are
+  on the base.
 
 ## Plan
 
-1. One migration adding `gpu_jobs.name` and `gpu_jobs.finished_at`, backfilling `finished_at`
-   from the last attempt.
-2. One migration adding `ml_models.preferred` and `datasets.status`, with the partial unique
-   index and the backfill to `ready`.
-3. The models, so the new columns are readable.
-4. `listJobs` in the repository and service: the latest-attempt join, the date range, sort and
-   search; `submitJob` takes a name.
-5. `listWorkerPoolRows` and `listPool`: the telemetry subset on the live attempt.
-6. The routes and their swagger: new query parameters, the versions route, the training run
-   collection route.
-7. Regenerate the contract rather than hand-editing it.
-8. `DESIGN.md`: gaps 23 to 28 move from "no API behind it" to what the API now answers, with
-   what is still missing stated rather than dropped.
+After the gate, since A1 and A4 change what is built.
+
+1. `mockups/transport.js` — one `request()`, the error taxonomy, the fault switch.
+2. The ten functions, one at a time, each verified against the real route before the next.
+3. The signed-out and forbidden states.
+4. Whatever A1 settles for the chart regions.
+5. Rewrite `data-layer-check.mjs` per A4; keep `api-contract-check.mjs`, which still holds.
+6. `DESIGN.md`: the gap list stops saying the screens draw fabricated data, because they
+   will not.
 
 ## Acceptance criteria
 
-- A page of the Jobs list draws every progress bar from one request.
-- *Completed today* is answered by a query that does not depend on how many rows were fetched.
-- A job submitted with a name is found by searching for that name.
-- Sorting the Jobs list by any sortable column and turning the page shows the next rows in
-  that order, not the next page re-sorted.
-- A working machine's pool entry carries its GPU telemetry and the instant it was taken; an
-  idle one carries none.
-- The registry says which model is preferred per type; a dataset says whether it is building.
-- Training runs can be listed over a route.
-- `tools/api-contract-check.mjs` and the dashboard's other checks still pass.
+- With a session, every screen draws MARP's own rows, and the numbers match what the same
+  query returns over `curl`.
+- Signed out, the dashboard says so instead of showing an empty table.
+- No screen shows a number that nothing in MARP recorded.
+- `?mock=all` still produces the design corpus, so the screenshots and the review are
+  reproducible.
+- The dashboard's checks pass, and `data-layer-check.mjs` still tests something.
 
 ## Test plan
 
-G3, after implementation. Each requirement gets a test at a tier that can see it: route and
-contract tests for R1 to R9 (shapes, filters, sort order across a page boundary), a migration
-test for the backfills, and no browser tier, because A18 keeps the dashboard out of this pass.
+G3, after implementation. The tier that can see this is the browser against a real API, which
+is what `screens-check.mjs` already is — it drives a real page. The fixture-only assertions
+move behind `?mock=all`; the live assertions get their own pass against a seeded database.

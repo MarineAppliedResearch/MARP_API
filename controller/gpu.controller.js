@@ -138,6 +138,32 @@ class GpuController {
     /**
      * List GPU jobs.
      *
+     * What the pool's GPUs were doing, over a window.
+     *
+     * @async
+     * @param {Object} query - `{since, until, bucket}`.
+     * @returns {Promise<Object>} `{since, until, bucket, points}`.
+     */
+    async gpuUtilizationSeries(query) {
+        logger.info('Controller: gpuUtilizationSeries');
+        return gpuService.gpuUtilizationSeries(query);
+    }
+
+    /**
+     * How much work finished and how much was waiting, over a window.
+     *
+     * @async
+     * @param {Object} query - `{since, until, bucket}`.
+     * @returns {Promise<Object>} `{since, until, bucket, points}`.
+     */
+    async jobThroughputSeries(query) {
+        logger.info('Controller: jobThroughputSeries');
+        return gpuService.jobThroughputSeries(query);
+    }
+
+    /**
+     * List jobs.
+     *
      * @async
      * @param {Object} query - Query-string filters.
      * @returns {Promise<Object>} `{jobs, total, limit, offset}`.
