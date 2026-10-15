@@ -76,12 +76,12 @@
       <div class="dashboard-panels">
         <section class="panel" id="worker-pool">
           <header class="panel-hd">
-            <h2 title="124 of 143 machines are reachable. Paused machines stay reachable and take no new work. A worker counts as quiet only after 90 seconds, because an idle machine on a long poll can legitimately go a minute without speaking.">Worker pool</h2>
-            <a class="more" href="./workers.html">All 143 workers <svg class="ico sm"><use href="#i-arrow"/></svg></a>
+            <h2 title="Paused machines stay reachable and take no new work. A worker counts as quiet only after 90 seconds, because an idle machine on a long poll can legitimately go a minute without speaking.">Worker pool</h2>
+            <a class="more" href="./workers.html">All workers <svg class="ico sm"><use href="#i-arrow"/></svg></a>
           </header>
           <div class="panel-bd worker-pool-bd">
             <div class="pool">
-              <div class="donut">
+              <div class="donut" data-rendered>
                 <svg viewBox="0 0 132 132" aria-hidden="true">
                   <circle cx="66" cy="66" r="54" fill="none" stroke="rgba(1,6,14,.6)" stroke-width="16"/>
                   <circle cx="66" cy="66" r="54" fill="none" stroke="var(--cyan-400)" stroke-width="16" stroke-linecap="butt" stroke-dasharray="231 108" stroke-dashoffset="0"/>
@@ -89,7 +89,7 @@
                   <circle cx="66" cy="66" r="54" fill="none" stroke="var(--violet-300)" stroke-width="16" stroke-linecap="butt" stroke-dasharray="12.2 327" stroke-dashoffset="-280"/>
                   <circle cx="66" cy="66" r="54" fill="none" stroke="var(--grey-400)" stroke-width="16" stroke-linecap="butt" stroke-dasharray="43.1 296" stroke-dashoffset="-294.2"/>
                 </svg>
-                <span class="mid"><b>143</b><span>Enrolled</span></span>
+                <span class="mid"><b></b><span>Enrolled</span></span>
               </div>
               <div class="legend"></div>
             </div>
@@ -105,7 +105,7 @@
               <div class="pool-history-hd">
                 <div>
                   <h3 id="pool-history-title">GPU pool utilization</h3>
-                  <span class="pool-history-now">313 total slots <i><span class="dot" data-state="running"></span> Updating preview</i></span>
+                  <span class="pool-history-now"><span data-pool-slots-total></span> total slots <i><span class="dot" data-state="running"></span> Updating preview</i></span>
                 </div>
                 <div class="seg pool-ranges" role="group" aria-label="GPU utilization time range">
                   <button type="button" data-pool-range="24h" aria-pressed="false">24h</button>

@@ -2353,6 +2353,11 @@ function renderDashboardPool(workers) {
   write('[data-pool-used-summary-percent]', pct(used));
   write('[data-pool-available]', String(slots - used));
   write('[data-pool-available-percent]', pct(slots - used));
+
+  /* The history panel's caption said "313 total slots" in markup, which is the
+     same number this already computes and was wrong the moment the pool
+     changed. Said once, from the pool. */
+  write('[data-pool-slots-total]', String(slots));
 }
 
 /**
