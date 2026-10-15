@@ -730,7 +730,18 @@ function jobView(job, issueBatches) {
      session, range, params and reduction and nothing else. The title is
      composed from the video being processed, which is the one human-readable
      thing in there. */
-  const title = ((spec.video && spec.video.source_name) || `Job ${job.id}`).replace(/.[a-z0-9]+$/i, '');
+  /* The name a person gave it wins. MARP composes no fallback -- a name it
+     invented would be indistinguishable from a chosen one -- so composing one
+     is this screen's job, and it has two more things to try.
+
+     The extension strip only applies to a source name, and its `.` is escaped.
+     It used to be `/.[a-z0-9]+$/`, which matches *any* character before the
+     trailing run, so `Job 19343` lost ` 19343` and every unnamed job on the
+     screen was titled "Job". Invisible against the fixtures, because every
+     fixture job had a source name ending in `.mp4`. */
+  const source = spec.video && spec.video.source_name;
+  const title = job.name
+    || (source ? source.replace(/\.[a-z0-9]+$/i, '') : `Job ${job.id}`);
 
   const measured = job.progress_done !== null && job.progress_total;
 

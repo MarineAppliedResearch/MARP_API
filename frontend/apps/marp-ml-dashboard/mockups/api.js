@@ -634,13 +634,16 @@
     const fail = new Set();
     let slow = false;
 
+    let fixture = false;
+
     for (const part of parts) {
       if (part === 'slow') slow = true;
       else if (part.startsWith('fail:')) fail.add(part.slice(5));
       else if (part === 'fail') fail.add('*');
       else if (part === 'empty') fail.add('@empty');
+      else if (part === 'all') fixture = true;
     }
-    return { slow, fail, raw };
+    return { slow, fail, raw, fixture };
   })();
 
   /** An error carrying a status, so a screen can tell 500 from 404. */
@@ -660,12 +663,91 @@
    * @param {function(): *} produce - Builds the answer.
    * @returns {Promise<*>}
    */
-  async function serve(route, produce) {
+  /**
+   * The one place that knows `fetch`, a URL, a header and an HTTP status.
+   *
+   * **`credentials: 'same-origin'`, and no scheme invented.** These pages are served by the
+   * API they call, `resolve-principal.middleware.js` fills `req.principal` from the Passport
+   * session before it looks for a bearer token, and the cookie is `httpOnly`/`sameSite:lax`
+   * -- so a same-origin request is authorised by the session the person already has. Nothing
+   * is stored here, no token goes in a query string. `marp-mosaic-review` settled this and
+   * this follows it rather than inventing a second answer.
+   *
+   * Nothing is retried. Which failures are worth retrying is a screen's question, and a
+   * transport that retries a 403 turns "you are not allowed" into a hang.
+   *
+   * @param {string} path - Below `/api/v2`, e.g. `/gpu/workers`.
+   * @param {Object} [options]
+   * @param {string} [options.method] - Defaults to GET.
+   * @param {Object} [options.query] - Appended, skipping undefined and null.
+   * @param {Object} [options.body] - Sent as JSON when present.
+   * @returns {Promise<*>} The parsed body, or null for a 204.
+   * @throws {ApiError} With the status, and the API's own message where it sent one.
+   */
+  async function request(path, options) {
+    const { method = 'GET', query, body } = options || {};
+    const url = new URL(`/api/v2${path}`, location.origin);
+
+    for (const [key, value] of Object.entries(query || {})) {
+      if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value);
+    }
+
+    let response;
+
+    try {
+      response = await fetch(url, {
+        method,
+        credentials: 'same-origin',
+        headers: body === undefined
+          ? { accept: 'application/json' }
+          : { accept: 'application/json', 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (error) {
+      // No status at all: the request never arrived. Distinct from a 500, and a
+      // screen should say "could not reach MARP" rather than "MARP failed".
+      throw new ApiError(0, `Could not reach MARP: ${error.message}`);
+    }
+
+    if (!response.ok) {
+      /* `error-contract.middleware.js` answers {error:{code,message,status}}.
+         Read defensively: a proxy in front of the API can answer with HTML, and
+         a client that throws while working out what went wrong says nothing. */
+      let message = `${response.status} ${response.statusText || ''}`.trim();
+
+      try {
+        const problem = await response.json();
+        if (problem && problem.error && problem.error.message) message = problem.error.message;
+      } catch { /* not JSON, or empty */ }
+
+      throw new ApiError(response.status, message);
+    }
+
+    return response.status === 204 ? null : response.json();
+  }
+
+  /**
+   * Every route goes through here, so latency, failure and the choice between MARP and the
+   * built-in corpus are one decision rather than something each route remembers.
+   *
+   * **Live by default.** `?mock=all` serves the generated corpus instead, which is what the
+   * design review and the screenshot tool run against: they need a page that draws without a
+   * database behind it, and the corpus is deterministic so the pictures do not move.
+   *
+   * `?mock=slow` and `?mock=fail:<route>` still work either way, because they are how the
+   * loading and error states are demonstrated and a real API cannot be asked to fail on cue.
+   *
+   * @param {string} route - Short name the `fail:` switch matches on.
+   * @param {function(): Promise<*>} live - Asks MARP.
+   * @param {function(): *} produce - Builds the same answer from the corpus.
+   * @returns {Promise<*>}
+   */
+  async function serve(route, live, produce) {
     if (SWITCH.slow) await new Promise((done) => setTimeout(done, 2000));
     if (SWITCH.fail.has(route) || SWITCH.fail.has('*')) {
       throw new ApiError(500, `Mock failure for ${route}`);
     }
-    return produce();
+    return SWITCH.fixture ? produce() : live();
   }
 
   /** Deep copy, so a caller cannot edit the corpus by editing what it got. */
@@ -682,7 +764,7 @@
    * @returns {Promise<Object[]>}
    */
   function listWorkers() {
-    return serve('workers', () => {
+    return serve('workers', () => request('/gpu/workers'), () => {
       if (SWITCH.fail.has('@empty')) return [];
       return copy(CORPUS.workers);
     });
@@ -701,7 +783,7 @@
    */
   function listJobs(query) {
     const q = query || {};
-    return serve('jobs', () => {
+    return serve('jobs', () => request('/gpu/jobs', { query: q }), () => {
       if (SWITCH.fail.has('@empty')) return { jobs: [], total: 0, limit: 50, offset: 0 };
 
       let rows = CORPUS.jobs.slice();
@@ -724,7 +806,7 @@
    * @returns {Promise<{job: Object, attempts: Object[], artifacts: Object[]}>}
    */
   function getJob(id) {
-    return serve('jobs', () => {
+    return serve('jobs', () => request(`/gpu/jobs/${encodeURIComponent(id)}`), () => {
       const job = CORPUS.jobs.find((j) => j.id === Number(id));
       if (!job) throw new ApiError(404, `No job ${id}`);
       const mine = CORPUS.attempts.filter((a) => a.job_id === job.id);
@@ -748,7 +830,7 @@
    * @returns {Promise<{status: number, job: Object}>}
    */
   function submitJob(spec) {
-    return serve('jobs', () => {
+    return serve('jobs', () => request('/gpu/jobs', { method: 'POST', body: spec }), () => {
       const job = {
         id: 9000 + CORPUS.jobs.length + 1,
         batch_id: null,
@@ -780,7 +862,7 @@
    * @returns {Promise<Object>}
    */
   function cancelJob(id) {
-    return serve('jobs', () => {
+    return serve('jobs', () => request(`/gpu/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' }), () => {
       const job = CORPUS.jobs.find((j) => j.id === Number(id));
       if (!job) throw new ApiError(404, `No job ${id}`);
       job.state = 'cancelled';
@@ -798,7 +880,7 @@
    * @returns {Promise<Object>}
    */
   function renameWorker(id, name) {
-    return serve('workers', () => {
+    return serve('workers', () => request(`/gpu/workers/${encodeURIComponent(id)}/rename`, { method: 'POST', body: { name } }), () => {
       const worker = CORPUS.workers.find((w) => w.worker_id === Number(id));
       if (!worker) throw new ApiError(404, `No worker ${id}`);
       worker.name = String(name);
@@ -816,7 +898,7 @@
    * @returns {Promise<Object[]>}
    */
   function listModels() {
-    return serve('models', () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.models)));
+    return serve('models', () => request('/ml_models'), () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.models)));
   }
 
   /**
@@ -827,7 +909,7 @@
    * @returns {Promise<Object[]>}
    */
   function listDatasets() {
-    return serve('datasets', () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.datasets)));
+    return serve('datasets', () => request('/dataset'), () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.datasets)));
   }
 
   /**
@@ -839,7 +921,7 @@
    * @returns {Promise<Object[]>}
    */
   function listProjects() {
-    return serve('projects', () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.projects)));
+    return serve('projects', () => request('/projects'), () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.projects)));
   }
 
   /**
@@ -851,10 +933,37 @@
    * @returns {Promise<Object[]>}
    */
   function listUsers() {
-    return serve('users', () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.users)));
+    return serve('users', () => request('/users'), () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.users)));
+  }
+
+  /**
+   * Who is signed in, or null.
+   *
+   * `/auth/me` answers 401 with no session, which is not an error here -- it is the answer.
+   * A screen asks this before it draws so that a visitor without a session is told to sign
+   * in, rather than shown eight screens of empty tables that look like a broken MARP.
+   *
+   * Always answers somebody under `?mock=all`: the design review and the screenshot tool
+   * have no session and no API, and a sign-in wall in front of the fixtures would make the
+   * corpus unreachable.
+   *
+   * @returns {Promise<?Object>} The signed-in user, or null.
+   */
+  function whoAmI() {
+    return serve('auth',
+      async () => {
+        try {
+          return await request('/auth/me');
+        } catch (error) {
+          if (error.status === 401) return null;
+          throw error;
+        }
+      },
+      () => copy(REGISTRY.users[0]));
   }
 
   window.MarpApi = {
+    whoAmI,
     listWorkers,
     listJobs,
     getJob,
