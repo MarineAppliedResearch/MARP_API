@@ -24,9 +24,15 @@ question only the human can answer.
 - **R1** — Given a video and a session, report the frame ranges covered by
   succeeded inference jobs, and the ranges not covered, as half-open intervals
   consistent with the rest of the GPU API.
-- **R2** — Coverage is computed from what a job **actually processed**, never
-  from the range it was submitted with. A job submitted 0–60,000 that stopped
-  at 22,320 because the video ended has not covered 60,000 frames.
+- **R2** — Coverage is computed from what a job **actually processed**, as the
+  worker reported it, never from the range it was submitted with. A job
+  submitted 0–60,000 that stopped at 22,320 because the video ended has not
+  covered 60,000 frames.
+- **R2a** — The worker reports, on a terminal result, the frame ranges it
+  actually processed and the time it took.
+- **R2b** — The coordinator compares that against the range it asked for, at
+  ingest, and records the difference. A shortfall is noticed when it happens,
+  not reconstructed by a query months later.
 - **R3** — Overlapping and adjacent succeeded ranges merge, so a video split
   into pieces that tile it exactly reports as one covered interval rather than
   as N.
@@ -36,30 +42,32 @@ question only the human can answer.
   returning nothing. "No work has been requested" and "work was requested and
   is incomplete" are different answers.
 - **R6** — Read-only. No state changes, nothing requeued, nothing cancelled.
-- **R7** — It is a query over existing columns. No migration, no new table, and
-  no new writing path for workers.
+- **R7** — The reported ranges are stored where the attempt is, so the view
+  reads a recorded fact rather than inferring one. This does need a migration;
+  what it must not become is a second copy of the job record.
+- **R8** — A video's extent comes from Jellyfin, so "complete" means complete
+  against the video rather than against the largest request made of it.
 
 ## Open assumptions
 
-- [ ] **A1 · scientific/data-meaning · blocking** — **What counts as "actually
-      processed"?** A job's `spec.range` is what was *asked for*. The evidence
-      of what was *done* is weaker: a yielded attempt leaves
-      `resume_from_frame`, but a succeeded job leaves nothing saying where it
-      really stopped — job 14371 was submitted 0–60,000 and succeeded at 22,320
-      because the video ran out. Three options, and they give different answers:
-      **(a)** trust `spec.range` on a succeeded job and accept over-reporting at
-      the end of a video; **(b)** derive the real extent from the observations
-      and keyframes the job wrote, which is the true record but says nothing for
-      a range that genuinely contained no animals; **(c)** have the worker
-      report its final frame on success, which is correct but is a change to the
-      worker and a new field. → **Which?**
-- [ ] **A2 · scientific/data-meaning · blocking** — **What is a video's full
-      extent measured against?** Nothing in `gpu_jobs` knows how long a video
-      is; the current best proxy is the largest `end_frame` anybody ever
-      submitted for it. That makes "complete" mean "as complete as the biggest
-      request", which is circular if the first submission was short. The
-      alternative is asking Jellyfin for the real duration. → **Proxy, or ask
-      Jellyfin?**
+- [x] **A1 · scientific/data-meaning · blocking** — answered 2026-10-15: **the
+      worker reports the ranges it actually processed, and the coordinator
+      compares them against what it asked for, at ingest.** Isaac: *"when we
+      ingest from the worker, the coordinator should compare the work the worker
+      did with the work it was expecting the worker to do, so the worker should
+      technically be reporting the ranges of what it actually processed, it
+      could even report the time taken so the coordinator can track that and
+      show it in the dashboard."*
+
+      This is wider than the final-frame field that was proposed, and better:
+      the check happens where the evidence arrives rather than being
+      reconstructed later by a query, so a shortfall is noticed at the moment it
+      happens. It also makes coverage a recorded fact instead of an inference.
+      Elapsed time rides along for the dashboard.
+- [x] **A2 · scientific/data-meaning · blocking** — answered 2026-10-15: **ask
+      Jellyfin.** It knows the video's real length, so "complete" is measured
+      against the video rather than against the largest request anybody happened
+      to make. `repository/jellyfin.repository.js` already talks to it.
 - [ ] **A3 · product/UI · non-blocking** — Is a gap reported per *(video,
       session)* or per *video*? The same item appears under several sessions
       (item `48ff096a…` under 754 and 640), which are different survey contexts
@@ -110,7 +118,7 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** design
+- **Gate:** design -- both blocking assumptions answered; scope now spans two repositories
 - **Notes:** A1 and A2 both block, and both are data-meaning questions rather
   than technical ones. A1 is the sharper of the two: every option gives a
   different definition of "done", and the easy one (trust `spec.range`) is the
