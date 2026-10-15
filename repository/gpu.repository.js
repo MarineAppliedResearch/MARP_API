@@ -1454,12 +1454,52 @@ class GpuRepository {
                     );
                 }
 
+                // `completed_through_frame` is recorded here too, not only on a
+                // yield. A succeeded attempt that stopped short -- because the
+                // video ran out, or for any other reason -- used to leave no
+                // record of how far it actually got, so coverage computed from
+                // `spec.range` called the video done. On this database that was
+                // 3,042 succeeded attempts carrying nothing, against 7 yielded
+                // ones that had it (#257).
                 await this.db.sequelize.query(
                     `UPDATE gpu_job_attempts
-                        SET state = 'succeeded', finished_at = NOW()
+                        SET state = 'succeeded',
+                            completed_through_frame = COALESCE(:completedThroughFrame, completed_through_frame),
+                            finished_at = NOW()
                       WHERE id = :attemptId`,
-                    { replacements: { attemptId: attempt.id }, transaction }
+                    {
+                        replacements: {
+                            attemptId: attempt.id,
+                            completedThroughFrame: completedThroughFrame === undefined ? null : completedThroughFrame,
+                        },
+                        transaction,
+                    }
                 );
+
+                // Compare what the worker did against what it was asked to do,
+                // here, where the evidence arrives. A succeeded attempt that
+                // covered less than its range is not a failure -- a video
+                // running out is the ordinary reason -- but it is the thing
+                // nobody could see afterwards, and reconstructing it from a
+                // query months later is how a half-done dive looks finished.
+                const askedThrough = Number(job?.spec?.range?.end_frame);
+                const shortBy = Number.isFinite(askedThrough) && completedThroughFrame !== null
+                    && completedThroughFrame !== undefined
+                    ? askedThrough - completedThroughFrame
+                    : 0;
+
+                if (shortBy > 0) {
+                    await this.appendCoordinatorNote(
+                        attempt.id,
+                        {
+                            note: 'succeeded short of its range',
+                            asked_through_frame: askedThrough,
+                            completed_through_frame: completedThroughFrame,
+                            frames_short: shortBy,
+                        },
+                        transaction
+                    );
+                }
             } else if (outcome === 'failed') {
                 const released = await this.endAttemptAndReleaseJob({
                     attempt,
@@ -1469,6 +1509,10 @@ class GpuRepository {
                     // Nothing to note: failure_reason on the attempt says it, and
                     // a note repeating it would only pad the event stream.
                     note: null,
+                    // The frames it got through before it failed are real, and
+                    // are the difference between "never started" and "got half
+                    // way and died" (#257).
+                    completedThroughFrame,
                     transaction,
                     finalState: 'failed',
                 });
@@ -1804,15 +1848,29 @@ class GpuRepository {
      * @param {Object} params.transaction - Transaction to write in.
      * @returns {Promise<{jobState: string}>} What the job is now.
      */
-    async endAttemptAndReleaseJob({ attempt, job, attemptState, failureReason, note, finalState, transaction }) {
+    async endAttemptAndReleaseJob({
+        attempt, job, attemptState, failureReason, note, finalState, transaction,
+        completedThroughFrame,
+    }) {
+        // A failed attempt covered real frames before it failed, and that is
+        // worth keeping: without it the only record of a half-done range is the
+        // absence of a succeeded job over it, which cannot tell "never started"
+        // from "got half way and died". COALESCE so a caller that has nothing
+        // to report leaves whatever is already there (#257).
         await this.db.sequelize.query(
             `UPDATE gpu_job_attempts
                 SET state = :attemptState,
                     failure_reason = :failureReason,
+                    completed_through_frame = COALESCE(:completedThroughFrame, completed_through_frame),
                     finished_at = NOW()
               WHERE id = :attemptId`,
             {
-                replacements: { attemptId: attempt.id, attemptState, failureReason },
+                replacements: {
+                    attemptId: attempt.id,
+                    attemptState,
+                    failureReason,
+                    completedThroughFrame: completedThroughFrame === undefined ? null : completedThroughFrame,
+                },
                 transaction,
             }
         );

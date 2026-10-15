@@ -1866,3 +1866,104 @@ describe('GPU worker rename', () => {
         expect(row.name).toBe(`jest-rename-refusal-${runId}`);
     });
 });
+
+/**
+ * What an attempt actually covered, recorded on every outcome.
+ *
+ * `completed_through_frame` existed but was written only on a yield, so a
+ * succeeded attempt said nothing about how far it got. On the development
+ * database that was 3,042 succeeded and 3,739 failed attempts carrying
+ * nothing, against 7 yielded ones that had it -- and a job submitted
+ * 0-60,000 that finished at 22,320 because the video ran out looked, in the
+ * record, exactly like one that did all 60,000.
+ *
+ * Refs #257, MarineAppliedResearch/marp-inference-worker#62.
+ */
+describe('coverage recorded on every outcome', () => {
+    /**
+     * Lease a job and report a terminal outcome for it.
+     *
+     * @param {string} outcome - succeeded or failed.
+     * @param {number} completedThroughFrame - Exclusive bound on frames done.
+     * @returns {Promise<Object>} `{job, lease, reported}`.
+     */
+    async function leaseAndReport(outcome, completedThroughFrame) {
+        const { job, lease } = await submitAndLease();
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome,
+                completed_through_frame: completedThroughFrame,
+                ...(outcome === 'failed' ? { failure_reason: 'ran out of video' } : {}),
+            });
+
+        return { job, lease, reported };
+    }
+
+    it('stores how far a succeeded attempt got', async () => {
+        const { lease } = await leaseAndReport('succeeded', 40);
+
+        const [attempt] = await query(
+            'SELECT completed_through_frame FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        // The submitted range is 0-100, so this attempt covered 40 of it. Before
+        // #257 this column was null for every succeeded attempt ever recorded.
+        expect(attempt.completed_through_frame).toBe(40);
+    });
+
+    it('notes that a success fell short of the range it was given', async () => {
+        const { lease } = await leaseAndReport('succeeded', 40);
+
+        const notes = await query(
+            `SELECT payload FROM gpu_job_events
+              WHERE attempt_id = :id AND kind = 'note'`,
+            { id: lease.attempt_id }
+        );
+
+        const short = notes
+            .map((row) => (typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload))
+            .find((payload) => payload && payload.note === 'succeeded short of its range');
+
+        // The comparison happens where the evidence arrives, rather than being
+        // reconstructed by a query months later.
+        expect(short).toBeDefined();
+        expect(short.asked_through_frame).toBe(100);
+        expect(short.completed_through_frame).toBe(40);
+        expect(short.frames_short).toBe(60);
+    });
+
+    it('says nothing when a success covered its whole range', async () => {
+        const { lease } = await leaseAndReport('succeeded', 100);
+
+        const notes = await query(
+            `SELECT payload FROM gpu_job_events
+              WHERE attempt_id = :id AND kind = 'note'`,
+            { id: lease.attempt_id }
+        );
+
+        const short = notes
+            .map((row) => (typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload))
+            .find((payload) => payload && payload.note === 'succeeded short of its range');
+
+        expect(short).toBeUndefined();
+    });
+
+    it('keeps the frames a failed attempt got through before it failed', async () => {
+        const { lease } = await leaseAndReport('failed', 25);
+
+        const [attempt] = await query(
+            'SELECT state, completed_through_frame FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        // The difference between "never started" and "got a quarter of the way
+        // and died", which the absence of a succeeded job cannot express.
+        expect(attempt.state).toBe('failed');
+        expect(attempt.completed_through_frame).toBe(25);
+    });
+});
