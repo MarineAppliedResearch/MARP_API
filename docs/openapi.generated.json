@@ -2843,6 +2843,76 @@
               }
             }
           },
+          "telemetry": {
+            "type": "object",
+            "nullable": true,
+            "description": "What the machine reported about itself when this lease opened. The worker reads NVML on every poll and the reading is stored on the attempt it opens, so this is a **snapshot taken at `as_of`, not a live reading** -- the heartbeat carries the attempt's progress and nothing about the hardware. Null when the machine reported no GPU, and absent for an idle machine, which holds no attempt to carry one. Reduced to the GPUs rather than the whole capabilities blob, which also describes CPU, disk, network and the engine registry.",
+            "properties": {
+              "as_of": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the lease opened, which is when this reading was taken."
+              },
+              "gpus": {
+                "type": "array",
+                "description": "One entry per GPU, in the worker's own field names.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "device_index": {
+                      "type": "integer",
+                      "example": 0
+                    },
+                    "name": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "NVIDIA GeForce RTX 4090"
+                    },
+                    "gpu_utilization_percent": {
+                      "type": "integer",
+                      "nullable": true,
+                      "example": 97
+                    },
+                    "memory_utilization_percent": {
+                      "type": "integer",
+                      "nullable": true,
+                      "example": 61
+                    },
+                    "memory_used_bytes": {
+                      "type": "integer",
+                      "nullable": true,
+                      "example": 14763950080
+                    },
+                    "memory_total_bytes": {
+                      "type": "integer",
+                      "nullable": true,
+                      "example": 25757220864
+                    },
+                    "memory_percent_used": {
+                      "type": "number",
+                      "nullable": true,
+                      "example": 57.3
+                    },
+                    "temperature_c": {
+                      "type": "integer",
+                      "nullable": true,
+                      "example": 71
+                    },
+                    "power_usage_watts": {
+                      "type": "number",
+                      "nullable": true,
+                      "example": 312.4
+                    },
+                    "power_limit_watts": {
+                      "type": "number",
+                      "nullable": true,
+                      "example": 450
+                    }
+                  }
+                }
+              }
+            }
+          },
           "job": {
             "type": "object",
             "description": "The job being attempted, in summary.",
@@ -2912,6 +2982,13 @@
             "nullable": true,
             "description": "Groups the pieces of one split video. A split video is N jobs sharing this, not one job with children, so each piece leases, retries and fails independently."
           },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "nullable": true,
+            "example": "Dive 895 line 4 recount",
+            "description": "What a person called this job. Null when the submitter gave none -- MARP never composes one, because a name it invented would be indistinguishable from a name somebody chose. Every piece of a split batch carries the same name."
+          },
           "kind": {
             "type": "string",
             "enum": [
@@ -2970,6 +3047,44 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the job reached a terminal state. Null while it is queued or running, and cleared again if it goes back in the queue. Distinct from `updated_at`, which a heartbeat or a retry moves on a job that finished last week -- this is the one to ask \"what completed today\" with."
+          },
+          "progress_done": {
+            "type": "integer",
+            "nullable": true,
+            "example": 4210,
+            "description": "From the job's latest attempt, on list reads. Null means no heartbeat yet, which is not the same as no progress made."
+          },
+          "progress_total": {
+            "type": "integer",
+            "nullable": true,
+            "example": 9000,
+            "description": "From the job's latest attempt, on list reads."
+          },
+          "progress_unit": {
+            "type": "string",
+            "nullable": true,
+            "example": "frames",
+            "description": "From the job's latest attempt, on list reads."
+          },
+          "progress_phase": {
+            "type": "string",
+            "maxLength": 64,
+            "nullable": true,
+            "example": "inferring",
+            "description": "From the job's latest attempt, on list reads. Worker-defined for this job type."
+          },
+          "progress_elapsed_s": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true,
+            "example": 142.375,
+            "description": "From the job's latest attempt, on list reads."
           }
         }
       },
@@ -3672,6 +3787,12 @@
           },
           "spec": {
             "$ref": "#/components/schemas/GpuJobSpec"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "example": "Dive 895 line 4 recount",
+            "description": "What to call this job, so it can be found again by it. Optional: a job without one has none, and MARP does not compose a fallback. Every piece of a split batch gets the same name."
           },
           "priority": {
             "type": "integer",
@@ -5811,6 +5932,19 @@
             "description": "Source or method of dataset creation (e.g., \"auto-compiled\", \"manual curation\", \"legacy import\").",
             "example": "auto-compiled"
           },
+          "status": {
+            "type": "string",
+            "maxLength": 16,
+            "default": "draft",
+            "enum": [
+              "draft",
+              "building",
+              "ready",
+              "failed"
+            ],
+            "description": "Build state of the dataset (\"draft\", \"building\", \"ready\", or \"failed\"). Recorded by whatever builds it; MARP does not run the build.",
+            "example": "ready"
+          },
           "notes": {
             "type": "string",
             "nullable": true,
@@ -5833,6 +5967,7 @@
         "required": [
           "id",
           "name",
+          "status",
           "created_at",
           "updated_at"
         ],
@@ -5955,6 +6090,12 @@
             "description": "Lifecycle state of the model (\"draft\", \"training\", \"trained\", or \"archived\").",
             "example": "draft"
           },
+          "preferred": {
+            "type": "boolean",
+            "default": false,
+            "description": "True on the one model of its model_type that jobs should reach for by default.",
+            "example": false
+          },
           "notes": {
             "type": "string",
             "nullable": true,
@@ -5982,6 +6123,7 @@
           "name",
           "model_type",
           "status",
+          "preferred",
           "created_at",
           "updated_at"
         ],
@@ -9436,6 +9578,53 @@
         }
       }
     },
+    "/v2/ml_models/{id}/versions": {
+      "get": {
+        "summary": "Fetch a model's version chain",
+        "description": "Returns every version in the chain the given model belongs to, oldest first. `ml_models` has no versions array -- a chain is `parent_model_id` and has to be walked -- and this walks up to the root and back down, so asking about any member returns the whole family. Its own route rather than part of the registry listing, so a caller that only wants the list does not pay for a self-join per row. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Any model in the chain."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version chain, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MlModel"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/model/{id}/artifact": {
       "get": {
         "summary": "Download registered model weights",
@@ -9858,6 +10047,48 @@
       }
     },
     "/v2/training_run": {
+      "get": {
+        "summary": "Fetch training runs",
+        "description": "Returns training runs, newest first, optionally narrowed to one model. This collection read did not exist: a run could be created and fetched by id and never found, so no screen could show a training history at all. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model_id",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Only runs that produced this model."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "TrainingRun list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TrainingRun"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
       "post": {
         "summary": "Create a new training run",
         "description": "Creates a new training run record. Requires the `models:write` permission.",
@@ -13758,7 +13989,7 @@
     "/v2/gpu/jobs": {
       "get": {
         "summary": "List GPU jobs",
-        "description": "Returns a page of jobs, newest first, with how many matched in total. Ordered by `created_at` then `id`: the id tie-breaker is not decoration, since a batch's pieces are inserted in one statement and share a timestamp to the microsecond, and without it two pages of the same list could show one piece twice and miss another. Filter by `batch_id` to see the pieces of one split video together. Expired leases are taken back before the list is read, for the same reason as the pool view. Requires the `jobs:read` permission.",
+        "description": "Returns a page of jobs, newest first unless sorted otherwise, with how many matched in total. Every ordering ends in `id` descending: the tie-breaker is not decoration, since a batch's pieces are inserted in one statement and share a timestamp to the microsecond, and without it two pages of the same list could show one piece twice and miss another. Each job carries the progress of its **latest attempt**, whatever state that attempt is in, so a page of fifty rows draws fifty progress bars from one request rather than fifty-one; nulls mean no heartbeat yet, which is not the same as no progress made. Filter by `batch_id` to see the pieces of one split video together. Expired leases are taken back before the list is read, for the same reason as the pool view. Requires the `jobs:read` permission.",
         "tags": [
           "V2 · GpuCompute"
         ],
@@ -13804,6 +14035,86 @@
               "format": "uuid"
             },
             "description": "Only the pieces of this batch."
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Matched against the job's name, the video's source name and the batch id -- the three things visible on the row."
+          },
+          {
+            "in": "query",
+            "name": "created_after",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Queued at or after this instant. An absolute instant, not a day: MARP has no opinion about where your day starts."
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Queued before this instant. Half-open, so two adjacent windows cannot both claim one job."
+          },
+          {
+            "in": "query",
+            "name": "finished_after",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Finished at or after this instant. `finished_at` only moves when the job reaches a terminal state, unlike `updated_at`."
+          },
+          {
+            "in": "query",
+            "name": "finished_before",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Finished before this instant."
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "kind",
+                "state",
+                "priority",
+                "created_at",
+                "finished_at"
+              ]
+            },
+            "description": "Column to order by. Only columns of the job itself; progress and worker live on the attempt and are not sortable here."
+          },
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            },
+            "description": "Order direction. Nulls sort last either way."
           },
           {
             "in": "query",

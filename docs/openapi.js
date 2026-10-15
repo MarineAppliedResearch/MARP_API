@@ -2403,6 +2403,33 @@ const buildOpenApiSpec = () => {
                                     elapsed_s: { type: 'number', minimum: 0, nullable: true, example: 142.375 },
                                 },
                             },
+                            telemetry: {
+                                type: 'object',
+                                nullable: true,
+                                description: 'What the machine reported about itself when this lease opened. The worker reads NVML on every poll and the reading is stored on the attempt it opens, so this is a **snapshot taken at `as_of`, not a live reading** -- the heartbeat carries the attempt\'s progress and nothing about the hardware. Null when the machine reported no GPU, and absent for an idle machine, which holds no attempt to carry one. Reduced to the GPUs rather than the whole capabilities blob, which also describes CPU, disk, network and the engine registry.',
+                                properties: {
+                                    as_of: { type: 'string', format: 'date-time', description: 'When the lease opened, which is when this reading was taken.' },
+                                    gpus: {
+                                        type: 'array',
+                                        description: 'One entry per GPU, in the worker\'s own field names.',
+                                        items: {
+                                            type: 'object',
+                                            properties: {
+                                                device_index: { type: 'integer', example: 0 },
+                                                name: { type: 'string', nullable: true, example: 'NVIDIA GeForce RTX 4090' },
+                                                gpu_utilization_percent: { type: 'integer', nullable: true, example: 97 },
+                                                memory_utilization_percent: { type: 'integer', nullable: true, example: 61 },
+                                                memory_used_bytes: { type: 'integer', nullable: true, example: 14763950080 },
+                                                memory_total_bytes: { type: 'integer', nullable: true, example: 25757220864 },
+                                                memory_percent_used: { type: 'number', nullable: true, example: 57.3 },
+                                                temperature_c: { type: 'integer', nullable: true, example: 71 },
+                                                power_usage_watts: { type: 'number', nullable: true, example: 312.4 },
+                                                power_limit_watts: { type: 'number', nullable: true, example: 450 },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
                             job: {
                                 type: 'object',
                                 description: 'The job being attempted, in summary.',
@@ -2448,6 +2475,13 @@ const buildOpenApiSpec = () => {
                                 nullable: true,
                                 description: 'Groups the pieces of one split video. A split video is N jobs sharing this, not one job with children, so each piece leases, retries and fails independently.',
                             },
+                            name: {
+                                type: 'string',
+                                maxLength: 255,
+                                nullable: true,
+                                example: 'Dive 895 line 4 recount',
+                                description: 'What a person called this job. Null when the submitter gave none -- MARP never composes one, because a name it invented would be indistinguishable from a name somebody chose. Every piece of a split batch carries the same name.',
+                            },
                             kind: { type: 'string', enum: ['inference', 'tracking', 'training', 'diagnostic'], example: 'inference' },
                             spec: { $ref: '#/components/schemas/GpuJobSpec' },
                             state: {
@@ -2468,6 +2502,17 @@ const buildOpenApiSpec = () => {
                             created_by: { type: 'integer', nullable: true, description: 'User who submitted it. Null when an application token did.' },
                             created_at: { type: 'string', format: 'date-time' },
                             updated_at: { type: 'string', format: 'date-time' },
+                            finished_at: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                                description: 'When the job reached a terminal state. Null while it is queued or running, and cleared again if it goes back in the queue. Distinct from `updated_at`, which a heartbeat or a retry moves on a job that finished last week -- this is the one to ask "what completed today" with.',
+                            },
+                            progress_done: { type: 'integer', nullable: true, example: 4210, description: 'From the job\'s latest attempt, on list reads. Null means no heartbeat yet, which is not the same as no progress made.' },
+                            progress_total: { type: 'integer', nullable: true, example: 9000, description: 'From the job\'s latest attempt, on list reads.' },
+                            progress_unit: { type: 'string', nullable: true, example: 'frames', description: 'From the job\'s latest attempt, on list reads.' },
+                            progress_phase: { type: 'string', maxLength: 64, nullable: true, example: 'inferring', description: 'From the job\'s latest attempt, on list reads. Worker-defined for this job type.' },
+                            progress_elapsed_s: { type: 'number', minimum: 0, nullable: true, example: 142.375, description: 'From the job\'s latest attempt, on list reads.' },
                         },
                     },
                     GpuJobAttempt: {
@@ -2783,6 +2828,12 @@ const buildOpenApiSpec = () => {
                         properties: {
                             kind: { type: 'string', enum: ['inference', 'tracking', 'training', 'diagnostic'], example: 'inference' },
                             spec: { $ref: '#/components/schemas/GpuJobSpec' },
+                            name: {
+                                type: 'string',
+                                maxLength: 255,
+                                example: 'Dive 895 line 4 recount',
+                                description: 'What to call this job, so it can be found again by it. Optional: a job without one has none, and MARP does not compose a fallback. Every piece of a split batch gets the same name.',
+                            },
                             priority: { type: 'integer', example: 0, description: 'Higher is claimed first. Defaults to 0.' },
                             max_attempts: { type: 'integer', minimum: 1, example: 3, description: 'How many times a piece may be attempted before a failure or expiry is final. Defaults to 3.' },
                             piece_frames: {

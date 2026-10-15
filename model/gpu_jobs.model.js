@@ -75,6 +75,12 @@ module.exports = (sequelize, DataTypes) => {
                 comment: 'Groups the pieces of one split video. Null for a job submitted on its own.',
             },
 
+            name: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                comment: 'What a person called this job. Null when the submitter gave none; MARP never composes one.',
+            },
+
             kind: {
                 type: DataTypes.STRING(16),
                 allowNull: false,
@@ -152,6 +158,15 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false,
                 defaultValue: DataTypes.NOW,
                 comment: 'When this job row last changed.',
+            },
+
+            // Distinct from `updated_at`, which a heartbeat or a retry moves on a job
+            // that finished last week. Asking "what completed today" needs the one
+            // that only moves once.
+            finished_at: {
+                type: DataTypes.DATE,
+                allowNull: true,
+                comment: 'When this job reached a terminal state. Null while it is still queued or running.',
             },
         },
         {

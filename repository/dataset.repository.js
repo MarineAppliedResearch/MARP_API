@@ -31,6 +31,8 @@
  * @module repository/dataset
  */
 
+const { QueryTypes } = require('sequelize');
+
 const db = require('../model');
 const logger = require('../logger/api.logger');
 
@@ -385,6 +387,56 @@ class DatasetRepository {
         }
     }
 
+    /**
+     * Every version in the chain a model belongs to, oldest first.
+     *
+     * `ml_models` has no versions array: a version chain is `parent_model_id`
+     * and has to be walked, which is why the Models screen could not show one
+     * (#104, gap 28). Walked here rather than inline on the list, so a caller
+     * that only wants the registry does not pay for a self-join per row.
+     *
+     * Walks **up** to the root and then back **down**, so asking about any
+     * member returns the whole family rather than that member's descendants --
+     * a version three along is still one of the model's versions.
+     *
+     * A model whose chain has no root -- an orphan, or a cycle somebody managed
+     * to record -- falls back to itself rather than returning nothing, because
+     * an empty answer would read as "no such model".
+     *
+     * @async
+     * @param {number|string} modelId - Any model in the chain.
+     * @returns {Promise<Array<Object>>} The chain, oldest first. Empty when there is no such model.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getModelVersions(modelId) {
+        try {
+            return await this.db.sequelize.query(
+                `WITH RECURSIVE ancestors AS (
+                        SELECT id, parent_model_id FROM ml_models WHERE id = :modelId
+                         UNION
+                        SELECT m.id, m.parent_model_id
+                          FROM ml_models m
+                          JOIN ancestors a ON a.parent_model_id = m.id
+                 ),
+                 root AS (
+                        SELECT COALESCE(
+                                   (SELECT id FROM ancestors WHERE parent_model_id IS NULL LIMIT 1),
+                                   :modelId) AS id
+                 ),
+                 chain AS (
+                        SELECT * FROM ml_models WHERE id = (SELECT id FROM root)
+                         UNION
+                        SELECT m.* FROM ml_models m JOIN chain c ON m.parent_model_id = c.id
+                 )
+                 SELECT * FROM chain ORDER BY created_at ASC, id ASC`,
+                { replacements: { modelId }, type: QueryTypes.SELECT }
+            );
+        } catch (err) {
+            console.error(`Error in getModelVersions(${modelId}):`, err);
+            throw err;
+        }
+    }
+
 
 
     /**
@@ -599,6 +651,37 @@ class DatasetRepository {
      * the returned promise rejects rather than resolving to a fallback
      * value.
      */
+    /**
+     * Every training run, newest first, optionally for one model.
+     *
+     * `/v2/training_run` could create a run and fetch one by id, and had no way
+     * to find one -- so no screen could show a training history at all (#104,
+     * gap 28). This is that read.
+     *
+     * @async
+     * @param {Object} [filters]
+     * @param {number|string} [filters.modelId] - Only runs that produced this model.
+     * @returns {Promise<Array<Object>>} The runs, newest first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getTrainingRuns(filters = {}) {
+        try {
+            const where = {};
+
+            if (filters.modelId !== undefined && filters.modelId !== null) {
+                where.model_id = filters.modelId;
+            }
+
+            return await this.db.training_runs.findAll({
+                where,
+                order: [['created_at', 'DESC'], ['id', 'DESC']],
+            });
+        } catch (err) {
+            console.error('Error in getTrainingRuns():', err);
+            throw err;
+        }
+    }
+
     async getTrainingRunById(runID) {
         try {
             const run = await this.db.training_runs.findByPk(runID);

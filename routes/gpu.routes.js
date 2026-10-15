@@ -47,6 +47,18 @@ const {
     JOB_STATES,
 } = require('../config/gpu-orchestration');
 
+const gpuRepository = require('../repository/gpu.repository');
+
+/**
+ * What `GET /gpu/jobs` may be sorted by, taken from the repository that applies
+ * the whitelist rather than written out again here -- a documented sort key the
+ * route then rejects is worse than an undocumented one.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const JOB_SORT_KEYS = Object.keys(gpuRepository.JOB_SORT_COLUMNS);
+
 /**
  * OpenAPI tag for every route in this file. Declared in V1 terms, like every
  * other route registered through `registerVersionedRoute`, which rewrites it to
@@ -545,12 +557,19 @@ function registerGpuRoutes(app) {
         path: '/api/gpu/jobs',
         summary: 'List GPU jobs',
         description:
-            'Returns a page of jobs, newest first, with how many matched in total. Ordered by `created_at` then `id`: the id tie-breaker is not decoration, since a batch\'s pieces are inserted in one statement and share a timestamp to the microsecond, and without it two pages of the same list could show one piece twice and miss another. Filter by `batch_id` to see the pieces of one split video together. Expired leases are taken back before the list is read, for the same reason as the pool view.',
+            'Returns a page of jobs, newest first unless sorted otherwise, with how many matched in total. Every ordering ends in `id` descending: the tie-breaker is not decoration, since a batch\'s pieces are inserted in one statement and share a timestamp to the microsecond, and without it two pages of the same list could show one piece twice and miss another. Each job carries the progress of its **latest attempt**, whatever state that attempt is in, so a page of fifty rows draws fifty progress bars from one request rather than fifty-one; nulls mean no heartbeat yet, which is not the same as no progress made. Filter by `batch_id` to see the pieces of one split video together. Expired leases are taken back before the list is read, for the same reason as the pool view.',
         tags: [GPU_TAG],
         parameters: [
             { in: 'query', name: 'state', required: false, schema: { type: 'string', enum: JOB_STATES }, description: 'Only jobs in this state.' },
             { in: 'query', name: 'kind', required: false, schema: { type: 'string', enum: JOB_KINDS }, description: 'Only jobs of this kind.' },
             { in: 'query', name: 'batch_id', required: false, schema: { type: 'string', format: 'uuid' }, description: 'Only the pieces of this batch.' },
+            { in: 'query', name: 'search', required: false, schema: { type: 'string' }, description: 'Matched against the job\'s name, the video\'s source name and the batch id -- the three things visible on the row.' },
+            { in: 'query', name: 'created_after', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Queued at or after this instant. An absolute instant, not a day: MARP has no opinion about where your day starts.' },
+            { in: 'query', name: 'created_before', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Queued before this instant. Half-open, so two adjacent windows cannot both claim one job.' },
+            { in: 'query', name: 'finished_after', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Finished at or after this instant. `finished_at` only moves when the job reaches a terminal state, unlike `updated_at`.' },
+            { in: 'query', name: 'finished_before', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Finished before this instant.' },
+            { in: 'query', name: 'sort', required: false, schema: { type: 'string', enum: JOB_SORT_KEYS }, description: 'Column to order by. Only columns of the job itself; progress and worker live on the attempt and are not sortable here.' },
+            { in: 'query', name: 'direction', required: false, schema: { type: 'string', enum: ['asc', 'desc'], default: 'desc' }, description: 'Order direction. Nulls sort last either way.' },
             { in: 'query', name: 'limit', required: false, schema: { type: 'integer', default: 50, maximum: 500 }, description: 'Page size. Defaults to 50, capped at 500.' },
             { in: 'query', name: 'offset', required: false, schema: { type: 'integer', default: 0 }, description: 'Rows to skip.' },
         ],
