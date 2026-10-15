@@ -10,9 +10,11 @@
     "shots": "node tools/mock-shots.mjs",
     "check:scroll": "node tools/scroll-check.mjs",
     "check:account": "node tools/account-check.mjs",
-    "test": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/api-contract-check.mjs && node tools/markup-check.mjs && node tools/scroll-check.mjs && node tools/account-check.mjs && node tools/mock-shots.mjs",
+    "test": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/api-contract-check.mjs && node tools/markup-check.mjs && node tools/data-layer-check.mjs && node tools/screens-check.mjs && node tools/scroll-check.mjs && node tools/account-check.mjs && node tools/mock-shots.mjs",
     "check:contract": "node tools/api-contract-check.mjs",
-    "check:markup": "node tools/markup-check.mjs"
+    "check:markup": "node tools/markup-check.mjs",
+    "check:layer": "node tools/data-layer-check.mjs",
+    "check:screens": "node tools/screens-check.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"

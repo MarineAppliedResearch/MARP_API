@@ -69,6 +69,36 @@ const answerAsNobody = (page) => page.route('**/api/v2/auth/me', (route) => rout
   contentType: 'application/json',
   body: JSON.stringify({ user: null })
 }));
+
+/** A 1x1 grey PNG: the smallest thing that is honestly an image. */
+const ONE_PIXEL = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64'
+);
+
+/**
+ * Serve the Jellyfin image proxy, as a picture of nothing.
+ *
+ * Same reasoning as `answerAsNobody` above, and the same rule kept intact: this
+ * tier has no API, so `/api/v2/jellyfin/items/.../images/Primary` 404s, and a
+ * failed request is a console error these checks rightly fail on.
+ *
+ * It became visible in #128, when `loading="lazy"` came off those thumbnails.
+ * Lazy images inside a collapsed row are never fetched at all -- which is why
+ * they had never 404'd here, and also why they never appeared in a real
+ * browser. Eighty console errors appeared the moment they started loading.
+ *
+ * The real route is exercised nowhere in this tier by design; what it serves is
+ * a redirect to a Jellyfin host, which is not this app's to test.
+ *
+ * @param {import('@playwright/test').Page} page the page to answer for.
+ * @returns {Promise<void>}
+ */
+const answerWithNoPicture = (page) => page.route('**/api/v2/jellyfin/**', (route) => route.fulfill({
+  status: 200,
+  contentType: 'image/png',
+  body: ONE_PIXEL
+}));
 const browser = await chromium.launch();
 const problems = [];
 
@@ -78,6 +108,7 @@ for (const view of views) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e.message)));
   await answerAsNobody(page);
+  await answerWithNoPicture(page);
 
   for (const name of which) {
     errors.length = 0;
@@ -143,7 +174,12 @@ for (const view of views) {
         const before = overview.poolLine;
         await page.locator('[data-pool-range="1h"]').click();
         const switched = await page.locator('[data-pool-range="1h"]').getAttribute('aria-pressed');
-        const after = await page.locator('[data-pool-line]').getAttribute('d');
+        /* `.first()`, because the graph draws four series and a bare locator is
+           strict: this threw on all four rather than comparing anything. The
+           `before` above is `querySelector`, which takes the first, so the
+           comparison was against a different element even in principle.
+           Pre-existing; found by running the suite for #128. */
+        const after = await page.locator('[data-pool-line]').first().getAttribute('d');
         if (switched !== 'true' || before === after) {
           problems.push(`dashboard/${view}: GPU history does not switch from 5h to 1h`);
         }
@@ -282,7 +318,12 @@ for (const view of views) {
       }));
       await resultLabel.click();
       const resultRestored = await resultLabel.getAttribute('aria-pressed');
-      const evaluation = page.locator('#jobs [data-training-evaluation]');
+      /* `.first()`, as the result-graph locator above already does. The Jobs
+         table draws from the data layer now, so how many training jobs are on
+         the page is a property of the corpus rather than of the markup, and
+         three of them expanded here. The check exercises one evaluation panel;
+         it never needed to be the only one. */
+      const evaluation = page.locator('#jobs [data-training-evaluation]').first();
       await evaluation.locator('[data-eval-split="val"]').click();
       const splitLabel = await evaluation.locator('[data-split-label]').textContent();
       await evaluation.locator('[data-eval-tab="confusion"]').click();

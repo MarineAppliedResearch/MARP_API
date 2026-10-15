@@ -979,7 +979,7 @@ let jobsWindow = null;
  * cannot express are done in one place, so it stays obvious which is which.
  */
 function applyJobsQuery() {
-  const table = $('#jobs');
+  const table = $('table#jobs');
   if (table) table.dataset.sortsItsOwnData = 'true';
   if (!table || !jobsWindow) return;
 
@@ -1593,7 +1593,7 @@ function modelRows(view, byId) {
 
 /** Narrows, sorts and pages the registry, then draws it. */
 function applyModelsQuery() {
-  const table = $('#models');
+  const table = $('table#models');
   if (table) table.dataset.sortsItsOwnData = 'true';
   if (!table || !modelsRegistry) return;
 
@@ -1730,7 +1730,7 @@ function renderModelsSummary(views) {
  * @returns {Promise<void>}
  */
 async function renderModelsScreen() {
-  const table = $('#models');
+  const table = $('table#models');
   if (!table || !window.MarpApi) return;
 
   const body = $('tbody', table);
@@ -1904,7 +1904,7 @@ function tookText(ms) {
 
 /** Narrows, sorts and pages the finished work, then draws it. */
 function applyHistoryQuery() {
-  const table = $('#history');
+  const table = $('table#history');
   if (table) table.dataset.sortsItsOwnData = 'true';
   if (!table || !historyData) return;
 
@@ -2088,7 +2088,7 @@ function historyRow(view) {
  * @returns {Promise<void>}
  */
 async function renderHistoryScreen() {
-  const table = $('#history');
+  const table = $('table#history');
   if (!table || !window.MarpApi) return;
 
   const body = $('tbody', table);
@@ -2142,7 +2142,7 @@ function fillHistoryFilterOptions() {
 
 /** The History filters, sort headers and pager. Bound once. */
 function wireHistoryControls() {
-  const panel = $('#history-panel') || $('#history')?.closest('.panel');
+  const panel = $('#history-panel') || $('table#history')?.closest('.panel');
   if (!panel) return;
 
   const renarrow = () => { historyQuery.page = 1; applyHistoryQuery(); };
@@ -2563,7 +2563,7 @@ function workerRows(view) {
 
 /** Narrows, sorts and pages the pool, then draws it. */
 function applyWorkersQuery() {
-  const table = $('#workers');
+  const table = $('table#workers');
   if (table) table.dataset.sortsItsOwnData = 'true';
   if (!table || !workersPool) return;
 
@@ -2714,7 +2714,11 @@ function renderWorkersSummary(workers, jobs) {
  * @returns {Promise<void>}
  */
 async function renderWorkersTable() {
-  const table = $('#workers');
+  /* **`table#workers`, not `#workers`.** The Inference submission form has a
+     `<select id="workers">` for choosing a machine, so the bare id matched a
+     dropdown on a screen that has no pool at all, passed the guard, and threw
+     on its missing tbody. Every renderer here names the element it expects. */
+  const table = $('table#workers');
   if (!table || !window.MarpApi) return;
 
   const body = $('tbody', table);
@@ -2816,7 +2820,7 @@ function wireWorkersControls() {
  * already in hand.
  */
 function wireJobsControls() {
-  const panel = $('#jobs')?.closest('.panel');
+  const panel = $('table#jobs')?.closest('.panel');
   if (!panel) return;
 
   const refetch = () => { jobsQuery.page = 1; renderJobsTable(); };
@@ -2912,7 +2916,7 @@ function wireJobsControls() {
  * @returns {Promise<void>}
  */
 async function renderJobsTable() {
-  const table = $('#jobs');
+  const table = $('table#jobs');
   if (!table || !window.MarpApi) return;
 
   const body = $('tbody', table);
@@ -2951,7 +2955,7 @@ async function renderJobsTable() {
  * state. The overview history is a deterministic moving seam for later API data.
  */
 function wireJobsOverview() {
-  const table = $('#jobs');
+  const table = $('table#jobs');
   if (!table) return;
   const body = $('tbody', table);
   const metric = (label, value, note = '') => `<div class="jobmetric"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`;
@@ -3811,7 +3815,7 @@ function wireInferenceForm() {
     }));
     const spec = { kind: 'inference_plan', pipeline: 'detection_bytetrack',
       name: $('#jobname')?.value || null, groups,
-      output: 'unreviewed_observations', worker_selection: $('#workers')?.value };
+      output: 'unreviewed_observations', worker_selection: $('table#workers')?.value };
     $('#specText').textContent = JSON.stringify(spec, null, 2);
     $('#specOut').hidden = false;
     $('#specOut').scrollIntoView({ block: 'nearest' });
@@ -3936,7 +3940,7 @@ function renderDatasetsSummary(ready, builds) {
 }
 
 async function wireDatasetPage() {
-  const table = $('#saved-datasets');
+  const table = $('table#saved-datasets');
   if (!table) return;
   const body = $('tbody', table);
 

@@ -446,11 +446,19 @@
     }
 
     /* Activity is derived in the real route and never stored, so it is derived
-       here too -- a machine is busy exactly while it holds a live attempt. */
+       here the same way -- and "the same way" means exactly `gpu.service.js`:
+
+           activity: row.state === 'online' ? 'idle' : row.state
+           ... then `activity = 'busy'` for any row with an attempt
+
+       **Holding an attempt wins over every state**, including paused and
+       offline. This had the precedence the other way round, so a paused machine
+       still running work reported `paused` here and would report `busy` from
+       MARP. `data-layer-check` caught it on its first run; it is the kind of
+       difference a screen cannot show you, because both answers look sensible. */
     for (const w of workers) {
-      if (w.state === 'offline') w.activity = 'offline';
-      else if (w.state === 'paused') w.activity = 'paused';
-      else w.activity = w.attempts.length ? 'busy' : 'idle';
+      w.activity = w.state === 'online' ? 'idle' : w.state;
+      if (w.attempts.length) w.activity = 'busy';
     }
 
     return { workers, jobs, attempts };
