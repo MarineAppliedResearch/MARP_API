@@ -692,8 +692,14 @@ on the screen, and left. Do not open API work off the back of this list without 
     array — a version chain is `parent_model_id` and has to be walked. `GET /api/v2/dataset`
     likewise has no status, so nothing in the API says a dataset is building.
 
-    Worth knowing alongside it: `/v2/training_run` has **only a `POST`**. A training run can
-    be created and never listed, so no screen can show training history from the API at all.
+    Worth knowing alongside it: **`/v2/training_run` has no collection listing.** `POST` on
+    the collection creates one, and `GET`, `PUT` and `DELETE` on `/:id` reach one you already
+    know the id of — so a training run can be created and fetched by id and never *found*,
+    and no screen can show training history from the API at all.
+
+    This line used to say the route had "only a `POST`", which was wrong about the three
+    routes on `/:id`. Corrected 2026-10-15; the gap is the collection read, not the whole
+    surface.
     Found 2026-10-14 in #128, after looking outside the `/gpu/` group for the first time.
 
 ## Running it
