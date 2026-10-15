@@ -794,9 +794,30 @@ the new fields is the next pass, and it is cheap now that the shapes are fixed.
     worker that nothing in the API backs. Until something is doing the building, nothing moves a
     row off `draft` but a caller.
 
-    **How many workers hold a model cached was not closed, and cannot be from here.** Nothing in
-    MARP records it -- not the enrolment capabilities, not the poll, not anywhere. It needs the
-    worker to report its cache, which is `marp-inference-worker` work and a second repository.
+    **How many workers hold a model cached was not closed**, because nothing records it: not the
+    enrolment capabilities, not the poll, not anywhere. It needs the worker to say what it has,
+    and the worker is `marp-inference-worker`, a separate git repository rather than a separate
+    database.
+
+    **Looked at properly on 2026-10-15 it is small, and needs no migration.** The worker already
+    keeps a real cache -- `models/model_cache.py`, laid out as
+    `models/cache/<model_id>_<sha256>/<file>` -- so it already knows what it holds and merely
+    never reports it. Adding a `models_cached` list to the `capabilities` blob puts it exactly
+    where `slots`, `engines`, `cuda_devices` and the NVML telemetry already live, and MARP
+    already stores that blob.
+
+    One thing on this side has to change with it: **the poll does not write capabilities back to
+    the worker row.** `gpu_workers.capabilities` is written at enrolment and never again -- a
+    poll snapshots onto the attempt instead -- so a cache list stored there would be frozen at
+    whatever the machine had when it first appeared. That is one statement, still no migration.
+
+    A `worker_model_cache` table is the other option and would be more queryable, with a record
+    of *when* something was cached. It costs a migration and sync logic, which the capabilities
+    route does not, so it is the thing to promote to rather than to start from.
+
+    Either way the count is as of each worker's last poll, and an offline machine reports
+    whatever it last said -- which is about right, since a cache does not empty itself when a
+    computer is switched off.
 
 ## Running it
 
