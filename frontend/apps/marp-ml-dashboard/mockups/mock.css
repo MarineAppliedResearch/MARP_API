@@ -16,6 +16,10 @@
   --st-done: var(--green-400);
   --st-issues: var(--amber-300);
   --st-failed: var(--red-400);
+  /* Amber and not grey: an expired lease is work MARP lost, and somebody has to
+     resubmit it. Cancelled is work somebody stopped on purpose and needs
+     nothing, which is what grey says. */
+  --st-expired: var(--amber-300);
   --st-cancelled: var(--grey-400);
   --st-cancelling: var(--amber-300);
   --st-paused: var(--violet-300);
@@ -878,6 +882,7 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 [data-state="done"]       { --s: var(--st-done); }
 [data-state="issues"]     { --s: var(--st-issues); }
 [data-state="failed"]     { --s: var(--st-failed); }
+[data-state="expired"]    { --s: var(--st-expired); }
 [data-state="cancelled"]  { --s: var(--st-cancelled); }
 [data-state="cancelling"] { --s: var(--st-cancelling); }
 [data-state="paused"]     { --s: var(--st-paused); }
@@ -1884,10 +1889,6 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .dataset-build-progress span, .dataset-build-progress small { color: var(--muted); font-size: 10px; }
 .dataset-build-progress .bar { width: 100%; }
 .dataset-detail[data-status="attention"] .dataset-build-progress { border-color: rgba(224, 97, 107, .3); background: rgba(224, 97, 107, .06); }
-.dataset-job-row .dataset-job-name { color: var(--white); text-decoration: none; }
-.dataset-job-row .dataset-job-name:hover .t { color: var(--cyan-300); text-decoration: underline; }
-.dataset-job-mark { display: inline-grid; place-items: center; width: 24px; height: 24px; color: var(--cyan-300); border: 1px solid var(--hairline-2); border-radius: 5px; background: var(--sunk); }
-.dataset-job-link { white-space: nowrap; text-decoration: none; }
 
 /* A condition that is not a choice. It looks like a setting because a person
    will look for one, and says it is fixed. */
@@ -2554,6 +2555,55 @@ td.whb.quiet { color: var(--amber-300); }
   /* The date under the time is redundant on a card that is all one day. */
   .tbl.stack.expandable td.jtime .two { display: flex; gap: 7px; align-items: baseline; }
 
+  /* ---- the pool's card, and the registry's --------------------------------
+     The areas above name the Jobs card's cells. Workers and Models are the same
+     kind of table with different columns, so their cells had no area at all and
+     auto-placed into whatever the four-column grid had left -- a status chip in
+     3px, a dash in 1px. It never showed while those cells held a progress bar,
+     which can shrink to nothing without complaining; it showed the moment they
+     held content with a floor under its width.
+
+     Each card keeps what identifies a machine or a model and what an operator
+     scans for. The columns that say *not recorded* are left out: on a card,
+     four dashes in a row cost more than the absence is worth, and the expanded
+     detail says plainly what is missing and why (gaps 27 and 28). */
+
+  #workers.stack.expandable tbody tr.runrow-head,
+  #models.stack.expandable tbody tr.runrow-head {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+
+  /* **The desktop column widths have to go.** Both tables size their columns in
+     percentages -- `#models .hname { width: 20% }` and so on -- which is what a
+     table needs and nonsense for a grid item, where the percentage resolves
+     against the item rather than the table: a 261px column held a 57px cell
+     with an 82px chip inside it. The Jobs card never hit this because its cells
+     carry no width rules at all. */
+  #workers.stack.expandable tbody td,
+  #models.stack.expandable tbody td { width: auto; }
+
+  #workers.stack.expandable td.jname  { grid-area: 1 / 2; }
+  #workers.stack.expandable td.jstatus { grid-area: 1 / 3; text-align: right; align-self: center; }
+  #workers.stack.expandable td.wgpu   { grid-area: 2 / 2 / 2 / -1; }
+  #workers.stack.expandable td.num    { grid-area: 3 / 2; }
+  #workers.stack.expandable td.whb    { grid-area: 3 / 3; text-align: right; }
+  #workers.stack.expandable td.wver,
+  #workers.stack.expandable td.wcpu,
+  #workers.stack.expandable td.wmem,
+  #workers.stack.expandable td.wmodel,
+  #workers.stack.expandable td.wup    { display: none; }
+
+  #models.stack.expandable td.hname   { grid-area: 1 / 2; }
+  #models.stack.expandable td.hstatus { grid-area: 1 / 3; text-align: right; align-self: center; }
+  #models.stack.expandable td.htask   { grid-area: 2 / 2; }
+  #models.stack.expandable td.hver    { grid-area: 2 / 3; text-align: right; }
+  #models.stack.expandable td.hbase   { grid-area: 3 / 2; }
+  #models.stack.expandable td.hupd    { grid-area: 3 / 3; text-align: right; }
+  #models.stack.expandable td.hdset,
+  #models.stack.expandable td.hmodel,
+  #models.stack.expandable td.hcache,
+  #models.stack.expandable td.hacts   { display: none; }
+
   .tbl.stack.expandable tbody tr.runrow-body { display: block; padding: 0; }
   .tbl.stack.expandable tbody tr.runrow-body > td { display: block; }
 
@@ -2736,3 +2786,36 @@ td.whb.quiet { color: var(--amber-300); }
   #saved-datasets td:nth-of-type(10) { grid-row: 6; grid-column: 3; }
   #saved-datasets td.jacts { grid-row: 7; grid-column: 1 / -1; }
 }
+
+/* ---- a table that is not full -------------------------------------------
+   Loading, empty and error are states the data layer can actually produce --
+   `?mock=slow` and `?mock=fail:jobs` -- so they are drawn here rather than
+   left to whatever an unstyled row happens to look like. */
+.tbl .tblmsg td {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.tbl .tblmsg td.error { color: var(--st-failed); }
+
+.tbl .tblmsg td .btn { margin-left: 10px; }
+
+/* ---- a dataset build, expanded on Datasets ------------------------------
+   Its detail used to be a link into Jobs. A dataset build is not a GPU job
+   (#128), so the build's own row is where its progress and diagnostics live. */
+.dataset-build-name { display: inline-flex; align-items: center; gap: 8px; }
+
+.dataset-build-progress {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px 0 4px;
+}
+
+.dataset-build-progress .prog { flex: 1; }
+.dataset-build-progress .build-frames { color: var(--muted); white-space: nowrap; }
+
+/* A panel whose content is design data rather than API output says so in its
+   own header, beside the heading (#128). */
+.panel-hd .unbacked-note { margin: 4px 0 0; font-size: 12px; }

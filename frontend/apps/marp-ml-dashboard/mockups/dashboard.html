@@ -27,48 +27,48 @@
         <a class="stat stat-link" data-state="running" href="./jobs.html">
           <span class="stat-ico"><svg class="ico"><use href="#i-jobs"/></svg></span>
           <span class="stat-lab">Jobs</span>
-          <b class="stat-num">14</b>
-          <span class="stat-sub"><span><b>6</b> running</span><span><b>8</b> queued</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
 
         <a class="stat stat-link" data-state="running" href="./inference.html">
           <span class="stat-ico"><svg class="ico"><use href="#i-inference"/></svg></span>
           <span class="stat-lab">Inference</span>
-          <b class="stat-num">4</b>
-          <span class="stat-sub"><span>running now</span><span><b>5</b> queued</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
 
         <a class="stat stat-link" data-state="running" href="./training.html">
           <span class="stat-ico"><svg class="ico"><use href="#i-training"/></svg></span>
           <span class="stat-lab">Training</span>
-          <b class="stat-num">2</b>
-          <span class="stat-sub"><span>running now</span><span><b>3</b> queued</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
 
         <a class="stat stat-link" data-state="queued" href="./datasets.html">
           <span class="stat-ico"><svg class="ico"><use href="#i-datasets"/></svg></span>
           <span class="stat-lab">Datasets</span>
-          <b class="stat-num">38</b>
-          <span class="stat-sub"><span>saved</span><span><b>1</b> building</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
 
         <a class="stat stat-link" data-state="done" href="./models.html">
           <span class="stat-ico"><svg class="ico"><use href="#i-models"/></svg></span>
           <span class="stat-lab">Models</span>
-          <b class="stat-num">12</b>
-          <span class="stat-sub"><span>registered</span><span><b>3</b> preferred</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
 
         <a class="stat stat-link" data-state="done" href="./history.html">
           <span class="stat-ico"><svg class="ico"><use href="#i-history"/></svg></span>
           <span class="stat-lab">History</span>
-          <b class="stat-num">49</b>
-          <span class="stat-sub"><span>finished</span><span>last 7 days</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
       </nav>
@@ -91,20 +91,15 @@
                 </svg>
                 <span class="mid"><b>143</b><span>Enrolled</span></span>
               </div>
-              <div class="legend">
-                <span class="dot" data-state="busy"></span><span class="k">Busy</span><span class="v">98</span><span class="p">69%</span>
-                <span class="dot" data-state="idle"></span><span class="k">Idle</span><span class="v">20</span><span class="p">14%</span>
-                <span class="dot" data-state="paused"></span><span class="k">Paused</span><span class="v">6</span><span class="p">4%</span>
-                <span class="dot" data-state="offline"></span><span class="k">Offline</span><span class="v">19</span><span class="p">13%</span>
-              </div>
+              <div class="legend"></div>
             </div>
             <div class="slots">
               <span class="big">
                 <span class="c"><svg class="ico"><use href="#i-slots"/></svg></span>
-                <span><span class="n">313</span><br><span class="faint slots-label">GPU slots</span></span>
+                <span><span class="n"></span><br><span class="faint slots-label">GPU slots</span></span>
               </span>
-              <span class="row"><span class="k">In use</span><span class="v" data-pool-used-summary>127</span><span class="p" data-pool-used-summary-percent>41%</span></span>
-              <span class="row"><span class="k">Available</span><span class="v" data-pool-available>186</span><span class="p" data-pool-available-percent>59%</span></span>
+              <span class="row"><span class="k">In use</span><span class="v" data-pool-used-summary></span><span class="p" data-pool-used-summary-percent></span></span>
+              <span class="row"><span class="k">Available</span><span class="v" data-pool-available></span><span class="p" data-pool-available-percent></span></span>
             </div>
             <section class="pool-history" data-pool-history aria-labelledby="pool-history-title">
               <div class="pool-history-hd">
@@ -161,7 +156,7 @@
 
         <section class="panel" id="current-activity">
           <header class="panel-hd">
-            <h2>Current and recent jobs <span class="count">(5)</span></h2>
+            <h2>Current and recent jobs <span class="count"></span></h2>
             <a class="more" href="./jobs.html">All jobs <svg class="ico sm"><use href="#i-arrow"/></svg></a>
           </header>
           <div class="panel-bd flush">
@@ -184,43 +179,7 @@
                     <th class="sortable">Updated</th>
                   </tr>
                 </thead>
-                <tbody>
-                  <tr>
-                    <td><a class="two row-destination" href="./jobs.html"><span class="a">Train_MARP_Multiclass_Det_XL_ALL_v5</span><span class="b">ALL_Projects_Inverts_v5</span></a></td>
-                    <td><span class="tag training">Training</span></td>
-                    <td data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="num" data-sort="86">86%</td>
-                    <td data-sort="2026-09-09T16:39">16:39</td>
-                  </tr>
-                  <tr>
-                    <td><a class="two row-destination" href="./jobs.html"><span class="a">CAMPA_2024_D0103_L30_Crab_Count</span><span class="b">Dive 0103 · Line 30</span></a></td>
-                    <td><span class="tag inference">Inference</span></td>
-                    <td data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="num" data-sort="11">11%</td>
-                    <td data-sort="2026-09-09T16:36">16:36</td>
-                  </tr>
-                  <tr>
-                    <td><a class="two row-destination" href="./jobs.html"><span class="a">CAMPA_2024_D0305_L15_Invertebrate</span><span class="b">2 of 12 ranges failed</span></a></td>
-                    <td><span class="tag inference">Inference</span></td>
-                    <td data-sort="2"><span class="st" data-state="issues"><span class="dot"></span>Issues</span></td>
-                    <td class="num" data-sort="100">100%</td>
-                    <td data-sort="2026-09-09T15:59">15:59</td>
-                  </tr>
-                  <tr>
-                    <td><a class="two row-destination" href="./jobs.html"><span class="a">Train_MARP_SeaStar_Det_SALT_v2</span><span class="b">CUDA out of memory</span></a></td>
-                    <td><span class="tag training">Training</span></td>
-                    <td><span class="pill" data-state="failed">Failed</span></td>
-                    <td class="num" data-sort="37">37%</td>
-                    <td data-sort="2026-09-09T15:41">15:41</td>
-                  </tr>
-                  <tr>
-                    <td><a class="two row-destination" href="./jobs.html"><span class="a">VENTS_2025_Line_32_Benthic_All</span><span class="b">24 videos</span></a></td>
-                    <td><span class="tag inference">Inference</span></td>
-                    <td data-sort="4"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
-                    <td class="num" data-sort="100">100%</td>
-                    <td data-sort="2026-09-09T15:28">15:28</td>
-                  </tr>
-                </tbody>
+                <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
               </table>
             </div>
           </div>
@@ -230,6 +189,7 @@
   </div>
 </div>
 
+<script src="./api.js"></script>
 <script src="./mock.js"></script>
 </body>
 </html>

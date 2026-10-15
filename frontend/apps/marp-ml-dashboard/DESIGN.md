@@ -305,10 +305,13 @@ queued job counts and completed-build markers. Legend labels isolate each series
 values are deterministic design fixtures until sampled dataset-build telemetry is stored and served.
 
 Materializing images, labels, thumbnails, a manifest and an immutable split may take hours, so
-`Queue dataset build` creates a first-class job in the same Jobs system used by inference and
-training. Queued, building and failed dataset entries remain visible on Datasets and link to their
-complete Jobs expansion. A saved dataset becomes available only after the build succeeds; partial
-output never masquerades as a usable dataset.
+`Queue dataset build` starts tracked work with its own progress, worker and diagnostics — **but
+not a job in the GPU queue.** Settled 2026-10-14 in #128: a dataset build is not a `gpu_jobs`
+row, is never leased through `POST /gpu/poll`, and is not run by the inference worker. Queued,
+building and failed entries stay on Datasets and **expand in place**, which is where their
+progress, worker, elapsed time, remaining estimate and failure detail belong. A saved dataset
+becomes available only after the build succeeds; partial output never masquerades as a usable
+dataset.
 
 The builder holds a union of query snapshots rather than one mutable query. `Run query` refreshes
 the visible match count and class distribution. Before `Add all matching` is used, the operator
@@ -323,10 +326,12 @@ does not trap touch scrolling inside a narrow nested region.
 
 The combined lifecycle table searches names, descriptions, projects and job ids; filters by task
 and build status; and sorts every meaningful column. Its rows deliberately represent two different
-objects. Queued, building and failed rows are Dataset Build jobs: they do not expand on Datasets and
-their name, job marker and `View job` action all open the matching first-class entry in Jobs, where
-progress, workers, retry state and diagnostics belong. Only a successfully materialized `Ready`
-dataset expands inline on Datasets, showing provenance, fingerprint, composition, split, archive
+objects. Queued, building and failed rows are builds in flight: they expand in place, showing
+progress against frames, the worker, elapsed and remaining time, how much has been materialized,
+the split and the fingerprint — plus the failure and a `Retry build` where one is needed. They used
+to link into Jobs instead; #128 removed that, because the queue they pointed at never held them.
+A successfully materialized `Ready` dataset expands inline too, showing provenance, fingerprint,
+composition, split, archive
 size and representative imagery, followed by duplicate, training and export actions. `Expand all
 ready` ignores build-job rows. At tablet and phone widths each row becomes a card before the desktop
 columns crowd, and expanded ready-dataset content stacks without hiding scientific provenance or
@@ -379,8 +384,21 @@ History does not become another live queue.
 
 One vocabulary for every state in the app, on every element that carries one:
 
-`data-state="running | queued | done | issues | failed | cancelled | cancelling | paused |
-online | idle | busy | offline | draining"`
+`data-state="running | queued | done | issues | failed | cancelled | cancelling | expired |
+paused | online | idle | busy | offline | draining"`
+
+Two of these are not what they look like, and both were nearly got wrong:
+
+- **`issues` is about a batch, never about one job.** It means *finished, but some videos
+  or ranges failed* — so the action on it is **Retry failed work**, and the usable work is
+  kept. A single MARP job cannot be in this state: #225 settled that a job whose results did
+  not reach the database is *failed*, not succeeded-with-problems. It is derived by grouping
+  jobs on `batch_id` and finding both `succeeded` and `failed` pieces among them. Gap 1 still
+  stands — a batch has no row of its own — so the dashboard computes this from the pieces
+  rather than fetching it.
+- **`expired` is amber, not grey.** The lease ran out and the work went back to the pool.
+  Nothing is wrong with the model or the data and nobody chose to stop it, so it is neither
+  `failed` nor `cancelled`; somebody has to resubmit, which is why it is not grey.
 
 - `.dot` — a 7px disc. Always accompanied by text; colour is never the only cue.
 - `.st` — the dot plus its label, as one inline unit. This is what a table cell holds.
@@ -504,11 +522,23 @@ Every item here is drawn in the mockup and cannot be fetched today. Recorded bec
 mockup that quietly invents an API is how the implementation agent gets misled. Sources
 are #104's measurement comment and its two decision comments.
 
+**These are closed after the dashboard settles, not as they are found** — Isaac,
+2026-10-14. That ordering is deliberate and it is the reason the list keeps growing rather
+than shrinking: wiring a screen is what reveals what the API is missing, and closing each
+one the moment it appears would mean changing routes and schema against a design still
+being argued with. So the list is the backlog, written while the evidence is in front of
+us, and the API work is one pass afterwards. A gap found here is recorded, drawn honestly
+on the screen, and left. Do not open API work off the back of this list without asking.
+
 1. **A logical job over a MARP selection** — a job named for a project, dive or transect,
    with its own state and progress rollup. `batch_id` has no row of its own, and a batch
    is one video cut into frame ranges and cannot span videos. Milestone 2.
 2. **Completed with issues** — not in the job state enum, and there is no parent object to
-   hang it on. Milestone 2.
+   hang it on. Milestone 2. **Partly closed 2026-10-14 in #128:** the dashboard derives it by
+   grouping jobs on `batch_id` and finding both `succeeded` and `failed` pieces, which needs
+   no schema change and no new route. What is still missing is the parent — a batch cannot be
+   fetched, named, or given a state of its own, so this is computed from a page of pieces and
+   is only as complete as that page. The rollup belongs with gap 1.
 3. **Reprioritising queued work** — `priority` is write-once at submit; there is no update
    route. Milestone 2.
 4. **Retry, retry-failed-only, duplicate, run again** — no routes.
@@ -551,10 +581,26 @@ are #104's measurement comment and its two decision comments.
     aggregated into a present snapshot, but there is no sampled time series or queued-frame
     rollup for the Inference activity graph. Its moving values remain deterministic design data
     until a later phase defines and serves those measurements.
-19. **Dataset build jobs and build telemetry** — dataset materialization is not yet a first-class
-    shared Job kind, and no sampled frames-per-minute, build concurrency, queue-depth or completion
-    series exists. The Datasets lifecycle rows and activity chart define the intended contract;
-    their progress, worker, ETA and series values are deterministic review fixtures in Phase 0.
+19. **Dataset build telemetry** — no sampled frames-per-minute, build concurrency, queue-depth
+    or completion series exists. The Datasets lifecycle rows and activity chart define the
+    intended contract; their progress, worker, ETA and series values are deterministic review
+    fixtures in Phase 0.
+
+    **A dataset build is not a GPU job, settled 2026-10-14 in #128.** The ML Dashboard still
+    builds datasets — that work is real, it is tracked, and the Datasets screen owns it. What
+    it is not is a `gpu_jobs` row: it is not leased through `POST /gpu/poll`, not run by the
+    inference worker, and not one of MARP's job kinds, which are inference, tracking, training
+    and diagnostic.
+
+    This gap used to read "not *yet* a first-class shared Job kind". That "yet" is what did the
+    damage: it left the **Jobs** screen — the GPU queue — showing six hand-written Dataset Build
+    rows against a day that is not coming, and those rows made its headline cards disagree with
+    the table beneath them, 18 running against 20. They are gone from that screen only.
+    `tools/api-contract-check.mjs` fails if the dashboard starts believing in a fifth GPU job
+    kind.
+
+    What dataset builds run *on* is a separate question this did not settle — the Datasets
+    fixtures name a `gpu-build-02` worker, and nothing in the API backs that yet.
 20. **Model-registry trend and cache-coverage history** — current model and worker snapshots can
     supply present totals, but no sampled registry/cache series exists. The Models graph is
     deterministic Phase 0 design data.
@@ -565,6 +611,71 @@ are #104's measurement comment and its two decision comments.
 22. **Finished-job outcome and turnaround history** — the current job records can be queried for
     terminal states, but `completed with issues` and the sampled rollup used by the History graph
     are not served as an operational series. Those chart values are deterministic review fixtures.
+23. **Progress on the job list** — `GET /gpu/jobs` returns no progress of any kind. Progress is
+    recorded on the *attempt* (`progress_done`, `progress_total`, `progress_unit`,
+    `progress_phase`, `progress_elapsed_s`, every one nullable) and attempts come back only from
+    `GET /gpu/jobs/:id`. The Jobs table draws a Progress column on every row, so it is drawn as
+    if the list carries it and **the route will have to learn to** — the same shape of gap as
+    item 12. A detail call per visible row was the alternative and was rejected: fifty-one
+    requests to draw one page. Settled 2026-10-14 in #128.
+
+    The two shapes differ as well, which is item 16's warning again. The mockup carried a flat
+    integer percentage with `-1` meaning none. The data layer serves the attempt's own fields and
+    the screen computes the percentage, so it can say "1,240 of 3,000 frames" and keep the phase.
+    Null before the first heartbeat still draws a dash and never a 0% bar.
+
+24. **The job list cannot be asked a question about time** — `GET /gpu/jobs` filters on
+    `state`, `kind` and `batch_id`, and nothing else. *Completed today* on the Jobs screen is
+    therefore not a query: the dashboard pulls a window of rows back and counts them here.
+    That is fine at a few hundred jobs and is not fine at the scale #104 assumes, where the
+    card would be counting over a page that no longer contains yesterday. The route needs a
+    date range, or a counts endpoint. Found 2026-10-14 while wiring the cards in #128.
+25. **A job has no name** — `GpuJobSpec` carries `engine`, `model`, `video`, `session`,
+    `range`, `params` and `reduction`. Nothing names the job. The titles the screens show are
+    composed from `spec.video.source_name`, which is why they read "SALT 2025 D0895 L4"
+    rather than anything a person chose. A submitted job cannot be given a label and found
+    again by it. Found 2026-10-14 in #128.
+26. **Four of the Jobs screen's six controls cannot be asked of the route** — `GET /gpu/jobs`
+    takes `state`, `kind`, `batch_id`, `limit` and `offset`. The Type and Status selectors are
+    therefore real queries. **Search, the time window, every sort column and the derived
+    *Issues* filter are not**, so the screen fetches a window the route *can* answer and
+    narrows, sorts and pages it in the browser.
+
+    That is correct at a few hundred jobs and wrong at the scale #104 assumes, and it fails in
+    a way worth naming: sorting and paging are only honest together while the whole matching
+    set is in hand. Sort by Progress over a window and page 4 follows page 3; sort by Progress
+    over a *page* and the column means nothing. The route needs sort parameters and a search
+    before this list can be paged server-side, which is also what gap 24 needs for the cards.
+    Found 2026-10-14 in #128.
+
+27. **A worker reports nothing about itself while it runs** — the Workers table has columns
+    for GPU load, VRAM load and temperature/power, and the expanded row had a *Live machine
+    telemetry* section listing utilization, temperature, fan, power, clocks, CPU, system RAM,
+    disk and process uptime. **None of it exists.** `capabilities` is a blob sent once at
+    enrolment — the schema calls it "GPUs and VRAM, driver, disk, engines, ranges supported" —
+    and `POST /gpu/attempts/:id/heartbeat` carries the *attempt's* progress and nothing about
+    the machine. There is no route, no column and no field anywhere that holds a live reading.
+
+    So those cells draw a dash with an explanation rather than a number, the same rule progress
+    follows before its first heartbeat, and the expanded row says plainly what is not reported
+    instead of leaving it to be inferred from a column of dashes. What *is* real there: name,
+    activity (derived by the route), version, the enrolment capabilities, slots in use against
+    slot count, when it enrolled, when it was last heard from, and its live attempt.
+
+    Uptime is in the same position for a subtler reason: `local_id` is durable across restarts,
+    so `enrolled_at` is when the machine first appeared, not when its process started. Showing
+    the age of the enrolment under a column headed *Uptime* would be a wrong number rather than
+    a missing one. Found 2026-10-14 in #128.
+
+28. **The model registry is thinner than the screens assume** — `GET /api/v2/ml_models` does
+    list the registry, so the counts are real. What is not on an `MlModel`: anything marking a
+    model **preferred**, any count of **how many workers hold it cached**, and any `versions`
+    array — a version chain is `parent_model_id` and has to be walked. `GET /api/v2/dataset`
+    likewise has no status, so nothing in the API says a dataset is building.
+
+    Worth knowing alongside it: `/v2/training_run` has **only a `POST`**. A training run can
+    be created and never listed, so no screen can show training history from the API at all.
+    Found 2026-10-14 in #128, after looking outside the `/gpu/` group for the first time.
 
 ## Running it
 

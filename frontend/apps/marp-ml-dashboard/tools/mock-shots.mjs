@@ -69,6 +69,36 @@ const answerAsNobody = (page) => page.route('**/api/v2/auth/me', (route) => rout
   contentType: 'application/json',
   body: JSON.stringify({ user: null })
 }));
+
+/** A 1x1 grey PNG: the smallest thing that is honestly an image. */
+const ONE_PIXEL = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64'
+);
+
+/**
+ * Serve the Jellyfin image proxy, as a picture of nothing.
+ *
+ * Same reasoning as `answerAsNobody` above, and the same rule kept intact: this
+ * tier has no API, so `/api/v2/jellyfin/items/.../images/Primary` 404s, and a
+ * failed request is a console error these checks rightly fail on.
+ *
+ * It became visible in #128, when `loading="lazy"` came off those thumbnails.
+ * Lazy images inside a collapsed row are never fetched at all -- which is why
+ * they had never 404'd here, and also why they never appeared in a real
+ * browser. Eighty console errors appeared the moment they started loading.
+ *
+ * The real route is exercised nowhere in this tier by design; what it serves is
+ * a redirect to a Jellyfin host, which is not this app's to test.
+ *
+ * @param {import('@playwright/test').Page} page the page to answer for.
+ * @returns {Promise<void>}
+ */
+const answerWithNoPicture = (page) => page.route('**/api/v2/jellyfin/**', (route) => route.fulfill({
+  status: 200,
+  contentType: 'image/png',
+  body: ONE_PIXEL
+}));
 const browser = await chromium.launch();
 const problems = [];
 
@@ -78,6 +108,7 @@ for (const view of views) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e.message)));
   await answerAsNobody(page);
+  await answerWithNoPicture(page);
 
   for (const name of which) {
     errors.length = 0;
@@ -93,7 +124,18 @@ for (const view of views) {
         const poolHistory = document.querySelector('#worker-pool .pool-history')?.getBoundingClientRect();
         const activityElement = document.querySelector('#current-activity');
         const activity = activityElement?.getBoundingClientRect();
-        const content = document.querySelector('.content')?.getBoundingClientRect();
+        /* The *inner* width. `.content` carries 12px of side padding, so its
+           border box is 24px wider than anything that fills it -- and R4's
+           "both panels use the full content width" was being compared against
+           a box no child can ever match. A panel at exactly full width failed
+           by exactly the padding. Found by running this check for the first
+           time; #180's verification was written and never run. */
+        const contentBox = document.querySelector('.content');
+        const contentStyle = contentBox && getComputedStyle(contentBox);
+        const content = contentBox && {
+          width: contentBox.clientWidth
+            - parseFloat(contentStyle.paddingLeft) - parseFloat(contentStyle.paddingRight),
+        };
         return {
           destinations: summaries.map((link) => link.getAttribute('href')),
           hasDuplicateJobList: document.body.textContent.includes('Active and recent jobs'),
@@ -143,7 +185,12 @@ for (const view of views) {
         const before = overview.poolLine;
         await page.locator('[data-pool-range="1h"]').click();
         const switched = await page.locator('[data-pool-range="1h"]').getAttribute('aria-pressed');
-        const after = await page.locator('[data-pool-line]').getAttribute('d');
+        /* `.first()`, because the graph draws four series and a bare locator is
+           strict: this threw on all four rather than comparing anything. The
+           `before` above is `querySelector`, which takes the first, so the
+           comparison was against a different element even in principle.
+           Pre-existing; found by running the suite for #128. */
+        const after = await page.locator('[data-pool-line]').first().getAttribute('d');
         if (switched !== 'true' || before === after) {
           problems.push(`dashboard/${view}: GPU history does not switch from 5h to 1h`);
         }
@@ -229,7 +276,13 @@ for (const view of views) {
       if (jobs.moreFilters || jobs.filters.join('|') !== 'Search jobs|Job type|Status|Window') {
         problems.push(`jobs/${view}: visible search and selectors are not the complete filter set`);
       }
-      if (jobs.rows !== 12 || jobs.details !== jobs.rows || jobs.diagnostics !== jobs.rows
+      /* `rows > 0` rather than `rows === 12`. Twelve was the number of jobs
+         written into the markup; the table is paged from the data layer now
+         (#128) and the rows-per-page control offers 18, 25 and 50, so twelve is
+         not a number this screen can produce. The requirement was never about
+         the count -- R14 is that *every job displayed* owns a detail and a
+         diagnostics fold, which is what the three comparisons below say. */
+      if (jobs.rows < 1 || jobs.details !== jobs.rows || jobs.diagnostics !== jobs.rows
           || jobs.stateDetails !== jobs.rows || !['active', 'queued', 'attention', 'complete', 'cancelled']
             .every((kind) => jobs.stateKinds.includes(kind))) {
         problems.push(`jobs/${view}: each displayed job does not own a state-specific detail and diagnostics fold`);
@@ -274,15 +327,28 @@ for (const view of views) {
 
       await page.locator('#expandAll').click();
       const opened = await page.locator('#jobs tr.runrow-body:not([hidden])').count();
-      const resultLabel = page.locator('#jobs .inference-results [data-result-highlight]').first();
+      /* **One graph, and its own legend.** These were two independent `.first()`
+         locators -- a label from anywhere, a graph from anywhere -- which was
+         safe while the table was twelve rows of fixed markup. It is not safe
+         now: the rows come from the data layer, a locator re-resolves on every
+         use, and the label whose `aria-pressed` was read at the end need not be
+         the one that was clicked. The assertion is unchanged; it just holds
+         still while it is made. */
+      const resultGraph = await page.locator('#jobs .inference-results [data-result-graph]').first().elementHandle();
+      const resultLabel = await resultGraph.$('[data-result-highlight]');
       await resultLabel.click();
-      const resultHighlight = await page.locator('#jobs .inference-results [data-result-graph]').first().evaluate((results) => ({
+      const resultHighlight = await resultGraph.evaluate((results) => ({
         active: results.classList.contains('is-highlighted'),
         selected: results.querySelectorAll('.result-line.highlighted').length
       }));
       await resultLabel.click();
       const resultRestored = await resultLabel.getAttribute('aria-pressed');
-      const evaluation = page.locator('#jobs [data-training-evaluation]');
+      /* `.first()`, as the result-graph locator above already does. The Jobs
+         table draws from the data layer now, so how many training jobs are on
+         the page is a property of the corpus rather than of the markup, and
+         three of them expanded here. The check exercises one evaluation panel;
+         it never needed to be the only one. */
+      const evaluation = page.locator('#jobs [data-training-evaluation]').first();
       await evaluation.locator('[data-eval-split="val"]').click();
       const splitLabel = await evaluation.locator('[data-split-label]').textContent();
       await evaluation.locator('[data-eval-tab="confusion"]').click();
@@ -351,7 +417,15 @@ for (const view of views) {
         for (let i = 1; i < ctrls.length; i++) {
           const a = ctrls[i - 1].getBoundingClientRect();
           const b = ctrls[i].getBoundingClientRect();
-          const sideBySide = Math.abs(a.left - b.left) > 2;
+          /* Side by side means *on the same line*, which a different `left`
+             does not establish on its own: a row of three fields in a
+             two-column grid wraps the third, and the wrapped one sits at a
+             different left and a different top, exactly like the misalignment
+             this is hunting. It has to overlap vertically to be beside
+             anything. The 7px drop this was written for still overlaps -- the
+             controls are four times that tall -- so nothing is let through. */
+          const overlaps = a.bottom > b.top + 1 && b.bottom > a.top + 1;
+          const sideBySide = Math.abs(a.left - b.left) > 2 && overlaps;
           if (sideBySide && Math.abs(a.top - b.top) > 1) {
             out.push((row.querySelector('label') || {}).textContent
               + ' -> ' + Math.round(a.top) + ' / ' + Math.round(b.top));

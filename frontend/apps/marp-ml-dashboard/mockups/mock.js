@@ -103,7 +103,7 @@ const NAV = [
   { id: 'dashboard', label: 'Dashboard',
     tip: 'What the GPU pool is running, queued and struggling with' },
   { id: 'jobs', label: 'Jobs', badge: 8, tone: 'attn',
-    tip: 'One queue for inference, training and dataset builds \u2014 8 need attention' },
+    tip: 'The GPU queue: inference, tracking and training. Dataset builds live on Datasets' },
   { id: 'inference', label: 'Inference', badge: 4, tone: 'run',
     tip: 'Run a model over MARP data \u2014 4 running now' },
   { id: 'training', label: 'Training', badge: 2, tone: 'run',
@@ -328,6 +328,18 @@ function wireSelection() {
  */
 function wireSorting() {
   $$('table.tbl').forEach((table) => {
+    /* **A table that sorts its own data says so, and is left alone here.**
+       Sorting rows in the DOM only ever reorders the page you can see, which
+       is a different answer from the one the column promises once a list is
+       paged -- and with both handlers bound the two sorts fight, leaving the
+       arrow claiming ascending over descending rows.
+
+       This was a list of table ids and it was forgotten three times, once per
+       screen, each time producing the same silent wrong order. Now the screen
+       that takes over sorting marks the table as it draws it, so forgetting is
+       not possible: whoever owns the data owns the sort. */
+    if (table.dataset.sortsItsOwnData === 'true') return;
+
     const heads = $$('th.sortable', table);
     const body = $('tbody', table);
     if (!heads.length || !body) return;
@@ -602,12 +614,2368 @@ function wirePoolUtilization() {
   }
 }
 
+/* ============================================================== jobs table */
+
+/* The Jobs table is drawn from the data layer and no longer from its markup.
+   What follows turns one `GET /gpu/jobs` row into one table row, so it is also
+   the seam where the API's vocabulary stops and the design's begins. */
+
+/** `leased` is a lease; `running` is what an operator calls it. @type {Object} */
+const JOB_STATE_LABEL = {
+  queued: ['queued', 'Queued'],
+  leased: ['running', 'Running'],
+  succeeded: ['done', 'Done'],
+  failed: ['failed', 'Failed'],
+  cancelled: ['cancelled', 'Cancelled'],
+  expired: ['expired', 'Expired'],
+};
+
+/** Sort rank for the Status column: what needs attention first. @type {Object} */
+const JOB_STATE_RANK = { running: 0, queued: 1, issues: 2, failed: 3, expired: 4, cancelled: 5, done: 6 };
+
+/** Kind to its icon and its label. @type {Object} */
+const JOB_KIND_LABEL = {
+  inference: ['inference', 'Inference'],
+  training: ['training', 'Training'],
+  tracking: ['inference', 'Tracking'],
+  diagnostic: ['jobs', 'Diagnostic'],
+};
+
+/**
+ * Which batches finished with some of their pieces failed.
+ *
+ * This is where `issues` comes from, and it is the only place it can: a single
+ * job is never succeeded-with-problems, because #225 settled that a job whose
+ * results did not reach the database is *failed*. A batch -- one video cut into
+ * frame ranges -- routinely finishes with some ranges failed, and that is what
+ * the design has always meant by the word.
+ *
+ * **Scoped to the page, which is a real limit and not a shortcut.** A batch has
+ * no row of its own to fetch (gap 1), so this sees only the pieces in this
+ * response; a batch straddling a page boundary looks clean on one of them. The
+ * fix is a batch object, not a larger page.
+ *
+ * @param {Object[]} jobs - The page of jobs.
+ * @returns {Set<string>} Batch ids holding both a success and a failure.
+ */
+function batchesWithIssues(jobs) {
+  const seen = new Map();
+
+  for (const job of jobs) {
+    if (!job.batch_id) continue;
+    const found = seen.get(job.batch_id) || { ok: false, bad: false };
+    if (job.state === 'succeeded') found.ok = true;
+    if (job.state === 'failed' || job.state === 'expired') found.bad = true;
+    seen.set(job.batch_id, found);
+  }
+
+  const issues = new Set();
+  for (const [id, { ok, bad }] of seen) if (ok && bad) issues.add(id);
+  return issues;
+}
+
+/**
+ * The Progress cell.
+ *
+ * **Null is not zero.** A job with no heartbeat yet has no measurement, and a
+ * 0% bar would claim one, so it draws a dash. Required by `DESIGN.md` since
+ * #104 measured that progress is legitimately null before the first heartbeat.
+ *
+ * @param {Object} job - A job row.
+ * @param {string} state - The design state, which colours the fill.
+ * @returns {{html: string, sort: number}}
+ */
+function progressCell(job, state) {
+  if (job.progress_done === null || !job.progress_total) {
+    return { html: '<span class="dash">&mdash;</span>', sort: -1 };
+  }
+
+  const pct = Math.round((job.progress_done / job.progress_total) * 100);
+  const counts = `${job.progress_done.toLocaleString()} of ${job.progress_total.toLocaleString()} ${job.progress_unit || ''}`.trim();
+
+  return {
+    sort: pct,
+    html: `<span class="prog" data-state="${state}" title="${counts}">`
+      + `<span class="bar" role="progressbar" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span>`
+      + `<span class="pct">${pct}%</span></span>`,
+  };
+}
+
+/**
+ * One job, reduced to what the table shows and sorts on.
+ *
+ * Separate from the rendering because sorting compares *values*: a sort that
+ * reads rendered cells can only order the page it can see, and this screen
+ * pages.
+ *
+ * @param {Object} job - A job from `GET /gpu/jobs`.
+ * @param {Set<string>} issueBatches - Batches that finished with issues.
+ * @returns {Object} The view model.
+ */
+function jobView(job, issueBatches) {
+  const spec = job.spec || {};
+  const session = spec.session || {};
+  const [kindIcon, kindLabel] = JOB_KIND_LABEL[job.kind] || JOB_KIND_LABEL.inference;
+
+  let [state, label] = JOB_STATE_LABEL[job.state] || ['queued', job.state];
+
+  /* A succeeded piece of a batch that did not all succeed is drawn as the
+     batch's state, because the batch is the thing an operator acts on. */
+  if (job.state === 'succeeded' && job.batch_id && issueBatches.has(job.batch_id)) {
+    state = 'issues';
+    label = 'Issues';
+  }
+
+  /* MARP has no name for a job: `GpuJobSpec` carries engine, model, video,
+     session, range, params and reduction and nothing else. The title is
+     composed from the video being processed, which is the one human-readable
+     thing in there. */
+  const title = ((spec.video && spec.video.source_name) || `Job ${job.id}`).replace(/.[a-z0-9]+$/i, '');
+
+  const measured = job.progress_done !== null && job.progress_total;
+
+  return {
+    job,
+    spec,
+    session,
+    state,
+    label,
+    title,
+    kindIcon,
+    kindLabel,
+    model: (spec.model && spec.model.name) || 'No model',
+    reduction: spec.reduction ? `${spec.reduction.name} v${spec.reduction.version}` : '',
+    /* -1 rather than 0 for "never measured", so an unstarted job sorts below a
+       job genuinely sitting at zero instead of tying with it. */
+    pct: measured ? Math.round((job.progress_done / job.progress_total) * 100) : -1,
+  };
+}
+
+/**
+ * A view model, as a table row.
+ *
+ * @param {Object} view - From `jobView`.
+ * @returns {string} A `<tr>`.
+ */
+function rowFor(view) {
+  const { job, spec, session, state } = view;
+
+  const scope = session.dive ? `Dive ${session.dive} &middot; Line ${session.line}` : 'No session';
+  const frames = spec.range
+    ? `${session.type || 'Unassigned'} &middot; frames ${spec.range.start_frame.toLocaleString()}-${spec.range.end_frame.toLocaleString()}`
+    : '';
+
+  const progress = progressCell(job, state);
+  const when = new Date(job.created_at);
+  const hhmm = when.toTimeString().slice(0, 5);
+  const date = when.toISOString().slice(0, 10);
+
+  const live = job.state === 'queued' || job.state === 'leased';
+  const actions = live
+    ? '<button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
+    : '<button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button>';
+
+  return `<tr data-job="${job.id}">`
+    + `<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job ${job.id}"></td>`
+    + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+    + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
+    + `<td class="jscope"><span class="two"><span class="a">${scope}</span><span class="b">${frames}</span></span></td>`
+    + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
+    + `<td class="jstatus" data-sort="${JOB_STATE_RANK[state]}"><span class="st" data-state="${state}"><span class="dot"></span>${view.label}</span></td>`
+    + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
+    + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${hhmm}</span><span class="b">${date}</span></span></td>`
+    + `<td class="jacts"><span>${actions}</span></td>`
+    + '</tr>';
+}
+
+/**
+ * The four headline cards, counted from the same data as the table.
+ *
+ * **Counted over a fetched window, because the route cannot be asked.**
+ * `GET /gpu/jobs` filters on `state`, `kind` and `batch_id` and nothing else;
+ * there is no date parameter, so *Completed today* cannot be a query and has to
+ * be a count of rows pulled back and filtered here. Fine at 420 jobs, not fine
+ * at the scale #104 assumes. Recorded as gap 24.
+ *
+ * Drawn from one fetch with the table, because cards disagreeing with the rows
+ * beneath them is worse than either of them being wrong.
+ *
+ * @param {Object[]} jobs - The window of jobs to count over.
+ */
+function renderJobsSummary(jobs) {
+  const issues = batchesWithIssues(jobs);
+
+  const isIssue = (job) => job.state === 'succeeded' && job.batch_id && issues.has(job.batch_id);
+  const running = jobs.filter((j) => j.state === 'leased');
+  const queued = jobs.filter((j) => j.state === 'queued');
+
+  /* "Today" is measured against the newest job in the corpus rather than the
+     reader's clock: the data layer's present is fixed so that two people see
+     the same screen, and a card reading the wall clock would undo that. */
+  const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const today = newest - 86400000;
+  const done = jobs.filter((j) => j.state === 'succeeded' && Date.parse(j.created_at) >= today);
+
+  /* Scoped to the same day as Completed. Counting every failure in the window
+     put 107 beside 22 completed, which compares a fortnight against a day. */
+  const attention = jobs.filter((j) => (j.state === 'failed' || j.state === 'expired' || isIssue(j))
+    && Date.parse(j.created_at) >= today);
+
+  const byKind = (rows, kind) => rows.filter((j) => j.kind === kind).length;
+
+  const cards = {
+    running: [running.length, [[byKind(running, 'inference'), 'inference'], [byKind(running, 'training'), 'training']]],
+    queued: [queued.length, [[byKind(queued, 'inference'), 'inference'], [byKind(queued, 'training'), 'training']]],
+    done: [done.length, [[done.filter((j) => !isIssue(j)).length, 'clean'], [done.filter(isIssue).length, 'with issues']]],
+    attention: [attention.length, [[attention.filter((j) => !isIssue(j)).length, 'failed or expired'], [attention.filter(isIssue).length, 'with issues']]],
+  };
+
+  for (const [priority, [total, parts]] of Object.entries(cards)) {
+    const card = $(`.stat[data-job-priority="${priority}"]`);
+    if (!card) continue;
+
+    const num = $('.stat-num', card);
+    if (num) num.textContent = String(total);
+
+    /* The breakdown is rebuilt rather than patched. A card keeping a stale
+       "3 builds" beside a fresh total would be the most believable kind of
+       wrong -- and dataset builds are gap 19, not a MARP job kind at all, so
+       that sub-count is gone rather than zero. */
+    const sub = $('.stat-sub', card);
+    if (sub) sub.innerHTML = parts.map(([n, label]) => `<span><b>${n}</b> ${label}</span>`).join('');
+  }
+
+  /* The Job status donut. Five arcs, not six: the sixth was *building datasets*
+     and a dataset build is not a job (gap 19), so the arc is gone from the
+     markup rather than drawn at zero, which would leave a segment that can
+     never grow. */
+  const donutParts = [
+    ['inference', byKind(running, 'inference') + byKind(running, 'tracking'), 'Running inference'],
+    ['training', byKind(running, 'training'), 'Running training'],
+    ['queued', queued.length, 'Queued'],
+    ['done', done.length, 'Completed today'],
+    ['attention', attention.length, 'Need attention'],
+  ];
+  const donutTotal = donutParts.reduce((sum, [, value]) => sum + value, 0) || 1;
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    let offset = 0;
+    for (const [cls, value] of donutParts) {
+      const arc = $(`.donut-part.${cls}`, donut);
+      if (!arc) continue;
+      arc.setAttribute('pathLength', String(donutTotal));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, donutTotal - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    }
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(donutTotal);
+  }
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = donutParts
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+}
+
+/**
+ * The count, the "showing" line, the pager and the sort arrows.
+ *
+ * Every number here was written into the markup — `(69)`, `1-18 of 69`, a fixed
+ * run of five page buttons — and every one of them was wrong the moment the
+ * table stopped being those twenty rows.
+ *
+ * @param {number} total - Matching jobs.
+ * @param {number} from - Zero-based index of the first row shown.
+ * @param {number} shown - How many rows are on this page.
+ * @param {number} pages - How many pages there are.
+ */
+function renderJobsHeaderState(total, from, shown, pages) {
+  const count = $('.panel-hd .count');
+  if (count) count.textContent = `(${total.toLocaleString()})`;
+
+  const showing = $('.panel-ft > span');
+  if (showing) {
+    showing.innerHTML = shown
+      ? `Showing <b class="strong">${(from + 1).toLocaleString()}&ndash;${(from + shown).toLocaleString()}</b> of ${total.toLocaleString()} jobs`
+      : 'No jobs match these filters';
+  }
+
+  const pager = $('.panel-ft .pager');
+  if (pager) {
+    /* Rebuilt rather than patched: the markup held a fixed run of five, which
+       is a lie about any list that is not exactly five pages long. */
+    const buttons = [`<button aria-label="Previous page" data-jobs-page="${jobsQuery.page - 1}"${jobsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
+
+    /* A window around the current page, so a hundred pages do not become a
+       hundred buttons. */
+    const first = Math.max(1, Math.min(jobsQuery.page - 2, pages - 4));
+    for (let p = first; p <= Math.min(pages, first + 4); p++) {
+      buttons.push(`<button data-jobs-page="${p}"${p === jobsQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
+    }
+
+    buttons.push(`<button aria-label="Next page" data-jobs-page="${jobsQuery.page + 1}"${jobsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
+    pager.innerHTML = buttons.join('');
+  }
+
+  /* The arrow is drawn from `aria-sort`, so the accessible state and the drawn
+     state cannot disagree -- `DESIGN.md`, Tables. */
+  for (const th of $$('#jobs thead th.sortable')) {
+    const key = [...th.classList].find((c) => JOBS_SORT_KEYS[c]);
+    if (!key) continue;
+    if (key === jobsQuery.sort.key) th.setAttribute('aria-sort', jobsQuery.sort.dir);
+    else th.setAttribute('aria-sort', 'none');
+  }
+
+  /* **The phone's sort strip carries the state too.** Below 1050px the headers
+     are gone and this strip is the only sort control there is, so it has to say
+     which column is sorted and which way -- `data-direction` and `aria-pressed`,
+     the same pair the shared sorter uses. Taking sorting away from that sorter
+     left these buttons working but silent, and a control that reorders the
+     table while claiming nothing is worse than one that does not work. */
+  for (const control of $$('.jobs-sort-mobile [data-sort-column]')) {
+    const key = JOBS_SORT_COLUMNS[Number(control.dataset.sortColumn)];
+    const active = key === jobsQuery.sort.key;
+    control.dataset.direction = active ? jobsQuery.sort.dir : 'none';
+    control.setAttribute('aria-pressed', String(active));
+  }
+}
+
+/**
+ * What the Jobs screen is currently asking for.
+ *
+ * **Two of these are real query parameters and four are not**, which is the
+ * whole shape of this screen's relationship with the API. `kind` and `state`
+ * are sent to `GET /gpu/jobs`. Search, the time window, the sort column and the
+ * derived *Issues* filter have no parameter to be sent in -- the route takes
+ * `state`, `kind`, `batch_id`, `limit` and `offset` and nothing else -- so they
+ * are applied here, over a window the route *can* be asked for. Gap 26 records
+ * what that costs.
+ *
+ * @type {Object}
+ */
+const jobsQuery = {
+  kind: '',
+  state: '',
+  issuesOnly: false,
+  search: '',
+  windowDays: 7,
+  sort: { key: 'created_at', dir: 'descending' },
+  page: 1,
+  perPage: 18,
+};
+
+/** How each sortable column is ordered. Keyed by the header's class. */
+const JOBS_SORT_KEYS = {
+  hjob: (view) => view.title.toLowerCase(),
+  htype: (view) => view.job.kind,
+  hscope: (view) => `${view.session.dive || ''}${view.session.line || ''}`,
+  hmodel: (view) => ((view.job.spec.model && view.job.spec.model.name) || '').toLowerCase(),
+  hstatus: (view) => JOB_STATE_RANK[view.state],
+  hprog: (view) => view.pct,
+  hupd: (view) => view.job.created_at,
+};
+
+/** The column order the phone's sort strip uses. @type {string[]} */
+const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hprog', 'hupd'];
+
+/** The window the whole screen is drawn from, refetched only when the API query changes. */
+let jobsWindow = null;
+
+/**
+ * Narrows, sorts and pages what came back, then draws it.
+ *
+ * Everything here happens after the fetch on purpose: the parts the route
+ * cannot express are done in one place, so it stays obvious which is which.
+ */
+function applyJobsQuery() {
+  const table = $('table#jobs');
+  if (table) table.dataset.sortsItsOwnData = 'true';
+  if (!table || !jobsWindow) return;
+
+  const body = $('tbody', table);
+  const columns = $$('thead th', table).length;
+  const issues = batchesWithIssues(jobsWindow.jobs);
+  const newest = jobsWindow.jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const since = newest - jobsQuery.windowDays * 86400000;
+
+  /* One view per job, so sorting compares values rather than rendered cells.
+     A sort that reads the DOM can only ever order the page it can see. */
+  let views = jobsWindow.jobs.map((job) => {
+    const view = jobView(job, issues);
+    view.haystack = `${view.title} ${view.model} ${view.job.kind} ${view.label} ${view.session.dive || ''} ${view.session.line || ''}`.toLowerCase();
+    return view;
+  });
+
+  if (jobsQuery.issuesOnly) views = views.filter((v) => v.state === 'issues');
+  if (jobsQuery.search) views = views.filter((v) => v.haystack.includes(jobsQuery.search));
+  views = views.filter((v) => Date.parse(v.job.created_at) >= since);
+
+  const key = JOBS_SORT_KEYS[jobsQuery.sort.key] || JOBS_SORT_KEYS.hupd;
+  const sign = jobsQuery.sort.dir === 'ascending' ? 1 : -1;
+  views.sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    if (left < right) return -1 * sign;
+    if (left > right) return 1 * sign;
+    return b.job.id - a.job.id;  /* the same id tie-breaker the route uses */
+  });
+
+  const total = views.length;
+  const pages = Math.max(1, Math.ceil(total / jobsQuery.perPage));
+  if (jobsQuery.page > pages) jobsQuery.page = pages;
+  const from = (jobsQuery.page - 1) * jobsQuery.perPage;
+  const shown = views.slice(from, from + jobsQuery.perPage);
+
+  body.innerHTML = shown.length
+    ? shown.map(rowFor).join('')
+    : `<tr class="tblmsg"><td class="empty" colspan="${columns}">No jobs match these filters.</td></tr>`;
+
+  renderJobsHeaderState(total, from, shown.length, pages);
+  wireJobsOverview();
+  wireSelection();
+  applyTips();
+}
+
+/* ========================================================== training */
+
+/* Training is two different things on one page, and only one of them has an
+   API behind it.
+
+   A **training job** is a `gpu_jobs` row with `kind: 'training'`, and the job
+   list returns it like any other. A **training run** is the record of what that
+   job produced -- epochs, losses, mAP, the model it made -- and
+   `/v2/training_run` has only a `POST`. A run can be created and never listed,
+   so the Training runs table, every epoch count and every mAP on this screen
+   has no route to come from. Gap 28.
+
+   So the overview, the recent-jobs table and the setup form's choices are real;
+   the runs table stays fixture and says so. */
+
+/** Nothing lists these. Distinct from a run that has no epochs yet. */
+const NOT_LISTABLE = '<span class="dash" title="Training runs cannot be listed: /v2/training_run has only a POST, so epochs, losses and mAP exist in MARP but no route returns them (gap 28)">&mdash;</span>';
+
+/**
+ * Draws the Training overview and its recent jobs.
+ *
+ * @param {Object[]} jobs - Every job in the window.
+ */
+function renderTraining(jobs) {
+  const mine = jobs.filter((j) => j.kind === 'training');
+  const issues = batchesWithIssues(jobs);
+  const views = mine.map((job) => jobView(job, issues));
+
+  const newest = mine.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const today = newest - 86400000;
+
+  const running = views.filter((v) => v.state === 'running');
+  const queued = views.filter((v) => v.state === 'queued');
+  const done = views.filter((v) => v.state === 'done');
+  /* Scoped to the day, as on Inference and Jobs, so the four read as one
+     moment rather than three spans and a fortnight. */
+  const attention = views.filter((v) => ['failed', 'expired', 'issues'].includes(v.state)
+    && Date.parse(v.job.created_at) >= today);
+
+  const cards = $$('.stat');
+  const setCard = (card, num, parts) => {
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.textContent = String(num);
+    const sub = $('.stat-sub', card);
+    if (sub) sub.innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
+  };
+
+  /* The labels repeat across the two panels on this screen, so the cards are
+     taken in order rather than by name -- the first four are the overview. */
+  const weekAgo = newest - 7 * 86400000;
+  const doneThisWeek = done.filter((v) => Date.parse(v.job.created_at) >= weekAgo).length;
+
+  setCard(cards[0], running.length, [`${running.length} on GPUs`, 'in flight']);
+  setCard(cards[1], queued.length, ['waiting for a worker', `${queued.length} to start`]);
+  setCard(cards[2], done.length, [`${doneThisWeek} this week`, NOT_LISTABLE + ' versions']);
+  setCard(cards[3], attention.length, [
+    `${attention.filter((v) => v.state === 'failed').length} failed`,
+    `${attention.filter((v) => v.state === 'expired').length} expired`,
+  ]);
+
+  /* The second row of cards belongs to the runs panel. Three of them are the
+     same job counts; the fourth is a best mAP, which nothing serves. */
+  setCard(cards[4], running.length, ['workers busy']);
+  setCard(cards[5], done.length, [`${doneThisWeek} this week`]);
+  setCard(cards[6], views.filter((v) => v.state === 'failed').length, ['in the window']);
+  if (cards[7]) {
+    const n = $('.stat-num', cards[7]);
+    if (n) n.innerHTML = NOT_LISTABLE;
+    const sub = $('.stat-sub', cards[7]);
+    if (sub) sub.innerHTML = '<span>no route returns run metrics</span>';
+  }
+
+  const parts = [
+    ['running', running.length, 'Running'],
+    ['queued', queued.length, 'Queued'],
+    ['done', done.length, 'Completed'],
+    ['failed', attention.length, 'Need attention'],
+  ];
+  const total = parts.reduce((sum, [, value]) => sum + value, 0) || 1;
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const arcs = $$('.donut-part', donut);
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = parts[index] ? parts[index][1] : 0;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(total);
+  }
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = parts
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+
+  renderTrainingRecent(views);
+}
+
+/**
+ * The recent training jobs table.
+ *
+ * Four of its eight columns are run facts rather than job facts -- the dataset
+ * it trained on, the model it produces, how many epochs it reached and its best
+ * mAP -- and none of those can be fetched. They draw a dash with the reason.
+ *
+ * @param {Object[]} views - Training job views.
+ */
+function renderTrainingRecent(views) {
+  const table = $('.training-table');
+  if (!table) return;
+
+  const body = $('tbody', table);
+  const rank = { running: 0, issues: 1, failed: 2, expired: 3, queued: 4, cancelled: 5, done: 6 };
+  const shown = views
+    .slice()
+    .sort((a, b) => (rank[a.state] - rank[b.state])
+      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
+    .slice(0, 3);
+
+  const heading = $('.training-recent .panel-hd h2') || $$('.panel-hd h2').find((h) => /Recent training/.test(h.textContent));
+  if (heading) heading.textContent = `Recent training jobs (${views.length.toLocaleString()})`;
+
+  body.innerHTML = shown.map((view) => {
+    const { job } = view;
+    const started = new Date(job.created_at);
+    const tookMs = Math.max(0, Date.parse(job.updated_at) - Date.parse(job.created_at));
+    const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
+
+    return `<tr data-job="${job.id}">`
+      + `<td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
+      + `<td class="jdset">${NOT_LISTABLE}</td>`
+      + `<td class="jmakes">${NOT_LISTABLE}</td>`
+      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+      + `<td class="jepochs num">${NOT_LISTABLE}</td>`
+      + `<td class="jmap num">${NOT_LISTABLE}</td>`
+      + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
+      + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
+      + '</tr>';
+  }).join('');
+}
+
+/**
+ * Puts the real registry and the real datasets into the setup form.
+ *
+ * Every one of these selectors was written out by hand: base models that are
+ * not in `ml_models`, datasets that are not in `dataset`. A run configured from
+ * them names things MARP cannot resolve.
+ *
+ * @param {Object[]} models - From `GET /api/v2/ml_models`.
+ * @param {Object[]} datasets - From `GET /api/v2/dataset`.
+ */
+function fillTrainingChoices(models, datasets) {
+  const trained = models.filter((m) => m.status === 'trained');
+  const names = new Set(datasets.map((d) => d.name));
+
+  for (const select of $$('select')) {
+    const options = [...select.options].map((o) => o.text);
+
+    /* A base-model picker: the invented names all carry a version after a dash,
+       or name an upstream checkpoint. */
+    if (options.some((t) => /^MARP-[\w-]+ — |upstream/.test(t))) {
+      const upstream = options.filter((t) => /upstream/.test(t));
+      select.innerHTML = [
+        ...trained.map((m) => `<option value="${m.id}">${m.name}</option>`),
+        /* The upstream checkpoints stay: they are not MARP models and are not
+           meant to be in the registry. */
+        ...upstream.map((t) => `<option>${t}</option>`),
+      ].join('');
+      continue;
+    }
+
+    /* A dataset picker: every option names something that looks like a dataset
+       and none of them is in `dataset`. */
+    if (options.length && options.every((t) => /^[A-Z][A-Za-z0-9_]+$/.test(t)) && !options.some((t) => names.has(t))) {
+      select.innerHTML = datasets.length
+        ? datasets.map((d) => `<option value="${d.id}">${d.name}</option>`).join('')
+        : '<option>No dataset saved in MARP</option>';
+    }
+  }
+}
+
+/**
+ * Fills the Training screen from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderTrainingScreen() {
+  if (document.body.dataset.screen !== 'training' || !window.MarpApi) return;
+
+  try {
+    const [jobs, models, datasets] = await Promise.all([
+      window.MarpApi.listJobs({ limit: 500 }),
+      window.MarpApi.listModels(),
+      window.MarpApi.listDatasets(),
+    ]);
+
+    renderTraining(jobs.jobs);
+    fillTrainingChoices(models, datasets);
+    markTrainingRunsUnbacked();
+  } catch (error) {
+    const body = $('.training-table tbody');
+    if (body) {
+      body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="8">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
+    }
+  }
+}
+
+/**
+ * Says, on the Training runs panel itself, that nothing serves it.
+ *
+ * The table is left as it is -- it is the designed contract for a run record,
+ * and deleting it would lose that -- but a reader has to be able to tell it
+ * apart from the tables above it, which are real.
+ */
+function markTrainingRunsUnbacked() {
+  const heading = $$('.panel-hd h2').find((h) => /^Training runs/.test(h.textContent.trim()));
+  const header = heading && heading.closest('.panel-hd');
+  if (!header || $('.unbacked-note', header)) return;
+
+  const note = document.createElement('p');
+  note.className = 'unbacked-note muted';
+  note.textContent = 'Design data. /v2/training_run has only a POST, so no route returns a run, '
+    + 'its epochs or its metrics (gap 28).';
+  header.appendChild(note);
+}
+
+
+/* ========================================================= inference */
+
+/* Inference is the GPU job list seen through one kind. Its cards, its donut and
+   its recent-jobs table are all `GET /gpu/jobs` narrowed to `inference` and
+   `tracking` -- tracking belongs here because it is the same pipeline with the
+   reduction left on, which is why the submission form offers one choice (R30).
+
+   Two columns on this table have no source and already said so before anything
+   was wired: **Detections** is gap 11 -- the ingest writes observations and
+   nothing rolls the count back up to the job -- and the throughput graph is
+   gap 18. */
+
+/** The job kinds this screen is about. @type {string[]} */
+const INFERENCE_KINDS = ['inference', 'tracking'];
+
+/**
+ * Draws the Inference overview and its recent jobs.
+ *
+ * @param {Object[]} jobs - Every job in the window.
+ */
+function renderInference(jobs) {
+  const mine = jobs.filter((j) => INFERENCE_KINDS.includes(j.kind));
+  const issues = batchesWithIssues(jobs);
+  const views = mine.map((job) => jobView(job, issues));
+
+  const running = views.filter((v) => v.state === 'running');
+  const queued = views.filter((v) => v.state === 'queued');
+  const newest = mine.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const today = newest - 86400000;
+  const done = views.filter((v) => v.state === 'done' && Date.parse(v.job.created_at) >= today);
+
+  /* **Scoped to the same day as Completed.** Unscoped this counted every
+     failure in the fortnight -- 85 against 13 completed -- and the donut below
+     then composed four numbers measured over different spans, which makes a
+     shape rather than a fact. A job that failed last week has not stopped
+     needing attention; this card is about today, beside the other three. */
+  const attention = views.filter((v) => ['failed', 'expired', 'issues'].includes(v.state)
+    && Date.parse(v.job.created_at) >= today);
+
+  const byLabel = {};
+  for (const card of $$('.stat')) {
+    const label = $('.stat-lab', card);
+    if (label) byLabel[label.textContent.trim()] = card;
+  }
+  const set = (label, num, parts) => {
+    const card = byLabel[label];
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.textContent = String(num);
+    const sub = $('.stat-sub', card);
+    if (sub) sub.innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
+  };
+
+  /* How many machines are carrying this work, counted from the jobs rather
+     than guessed: a job in flight names the worker holding it only on its
+     detail, but the pool view and the job list agree on how many are running. */
+  const frames = (rows) => rows.reduce((sum, v) => sum + (v.job.spec.range ? v.job.spec.range.end_frame : 0), 0);
+  const big = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M frames` : `${Math.round(n / 1000)}k frames`);
+
+  set('Running inference', running.length, [big(frames(running)), 'in flight']);
+  set('Queued inference', queued.length, [big(frames(queued)), 'waiting']);
+  set('Completed today', done.length, [big(frames(done)), `${done.filter((v) => v.state === 'done').length} clean`]);
+  set('Needs attention', attention.length, [
+    `${attention.filter((v) => v.state === 'failed').length} failed`,
+    `${attention.filter((v) => v.state === 'issues').length} with issues`,
+  ]);
+
+  const parts = [
+    ['running', running.length, 'Running'],
+    ['queued', queued.length, 'Queued'],
+    ['done', done.length, 'Completed today'],
+    ['failed', attention.length, 'Need attention'],
+  ];
+  const total = parts.reduce((sum, [, value]) => sum + value, 0) || 1;
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const arcs = $$('.donut-part', donut);
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = parts[index] ? parts[index][1] : 0;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(total);
+  }
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = parts
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+
+  renderInferenceRecent(views);
+}
+
+/**
+ * The recent inference jobs table.
+ *
+ * Running work first, then anything needing attention, then the most recently
+ * finished -- the same ordering the Dashboard preview uses, for the same
+ * reason: a short list is only useful if it leads with what is live.
+ *
+ * @param {Object[]} views - Inference job views.
+ */
+function renderInferenceRecent(views) {
+  const table = $('.inference-table');
+  if (!table) return;
+
+  const body = $('tbody', table);
+  const rank = { running: 0, issues: 1, failed: 2, expired: 3, queued: 4, cancelled: 5, done: 6 };
+  const shown = views
+    .slice()
+    .sort((a, b) => (rank[a.state] - rank[b.state])
+      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
+    .slice(0, 6);
+
+  const heading = $('.inference-recent .panel-hd h2');
+  if (heading) heading.textContent = `Recent inference jobs (${views.length.toLocaleString()})`;
+
+  body.innerHTML = shown.map((view) => {
+    const { job, session } = view;
+    const started = new Date(job.created_at);
+    const tookMs = Math.max(0, Date.parse(job.updated_at) - Date.parse(job.created_at));
+    const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
+
+    return `<tr data-job="${job.id}">`
+      + `<td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">${view.title}</span></span></td>`
+      + `<td class="jscope"><span class="two"><span class="a">Dive ${session.dive || '?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
+      + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
+      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+      /* Detections is gap 11: the ingest writes observations and nothing counts
+         them back onto the job. A dash, not a zero. */
+      + `<td class="jdet">${NOT_COUNTED}</td>`
+      + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
+      + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
+      + `<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
+      + '</tr>';
+  }).join('');
+}
+
+/** Nothing counts these. Distinct from zero of them. */
+const NOT_COUNTED = '<span class="dash" title="Nothing rolls detections up to a job: the ingest writes observations and the count is not recorded anywhere (gap 11)">&mdash;</span>';
+
+/**
+ * Puts the real registry into the submission form's model selectors.
+ *
+ * They offered "Gorgonian Detector", "Starfish Detector" and "MARP General
+ * Benthic" -- none of which is in `ml_models`, so a run planned against any of
+ * them names a model MARP could not resolve.
+ *
+ * @param {Object[]} models - From `GET /api/v2/ml_models`.
+ */
+function fillInferenceModels(models) {
+  /* Only models that could actually run: a draft has no weights worth sending
+     and an archived one is retired. */
+  const usable = models.filter((m) => m.status === 'trained');
+
+  for (const select of $$('select')) {
+    const options = [...select.options].map((o) => o.text);
+    /* The two model pickers are the ones offering the invented names. */
+    if (!options.some((text) => /Detector|Benthic/.test(text))) continue;
+
+    select.innerHTML = usable
+      .map((m) => `<option value="${m.id}">${m.name}</option>`)
+      .join('') || '<option>No trained model in the registry</option>';
+  }
+}
+
+/**
+ * Fills the Inference screen from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderInferenceScreen() {
+  if (document.body.dataset.screen !== 'inference' || !window.MarpApi) return;
+
+  try {
+    const [jobs, models] = await Promise.all([
+      window.MarpApi.listJobs({ limit: 500 }),
+      window.MarpApi.listModels(),
+    ]);
+
+    renderInference(jobs.jobs);
+    fillInferenceModels(models);
+  } catch (error) {
+    const table = $('.inference-table tbody');
+    if (table) {
+      table.innerHTML = `<tr class="tblmsg"><td class="error" colspan="8">Could not load inference jobs (${error.status || 'no answer'}).</td></tr>`;
+    }
+  }
+}
+
+
+/* ============================================================ models */
+
+/* `GET /api/v2/ml_models` is the whole of what the registry knows: id, name,
+   parent_model_id, model_type, architecture_version, storage_path, status,
+   notes and the two timestamps. Three of the table's columns ask for more than
+   that -- the training dataset, key metrics and how many workers hold a model
+   -- and none of the three is anywhere in MARP. Gap 28. */
+
+/** The registry does not carry this. Distinct from "not measured yet". */
+const NOT_IN_REGISTRY = '<span class="dash" title="Not carried by ml_models: the dataset link lives on a training run, which cannot be listed, and nothing records metrics, cache placement or a preferred model (gap 28)">&mdash;</span>';
+
+/** MARP's `ml_models.status`, in the design's own state words. @type {Object} */
+const MODEL_STATE = {
+  trained: ['done', 'Trained'],
+  training: ['running', 'Training'],
+  draft: ['queued', 'Draft'],
+  archived: ['cancelled', 'Archived'],
+};
+
+/** What the Models screen is asking for. The route takes no parameters. */
+const modelsQuery = {
+  task: '', status: '', base: '', search: '',
+  sort: { key: 'hupd', dir: 'descending' },
+  page: 1, perPage: 8,
+};
+
+/** How each sortable column orders. Keyed by the header's class. */
+const MODELS_SORT_KEYS = {
+  hname: (v) => v.model.name.toLowerCase(),
+  htask: (v) => v.model.model_type,
+  hver: (v) => v.version,
+  hstatus: (v) => ['training', 'draft', 'trained', 'archived'].indexOf(v.model.status),
+  hbase: (v) => (v.model.architecture_version || '').toLowerCase(),
+  hupd: (v) => v.model.updated_at,
+};
+
+/** The registry, as fetched. */
+let modelsRegistry = null;
+
+/**
+ * Which generation a model is, by walking `parent_model_id`.
+ *
+ * **A version chain is a self-join** (gap 16): `ml_models` has no `versions`
+ * array and no version number, so "v3" is a position in a chain rather than a
+ * field. Walking it here is honest and cheap at registry size; it is also
+ * exactly the work a route would do if one ever returned a chain.
+ *
+ * @param {Object} model - The model.
+ * @param {Map<number,Object>} byId - Every model, by id.
+ * @returns {number} 1 for a root model.
+ */
+function modelGeneration(model, byId) {
+  let depth = 1;
+  let current = model;
+  const seen = new Set([model.id]);
+
+  while (current.parent_model_id && byId.has(current.parent_model_id)) {
+    /* A cycle would hang this. Self-joins are not guaranteed acyclic by
+       anything in the schema, so the walk refuses to revisit. */
+    if (seen.has(current.parent_model_id)) break;
+    seen.add(current.parent_model_id);
+    current = byId.get(current.parent_model_id);
+    depth += 1;
+  }
+  return depth;
+}
+
+/**
+ * One model, reduced to what the table shows and sorts on.
+ *
+ * @param {Object} model - From `GET /api/v2/ml_models`.
+ * @param {Map<number,Object>} byId - Every model, by id.
+ * @returns {Object}
+ */
+function modelView(model, byId) {
+  const [state, label] = MODEL_STATE[model.status] || ['queued', model.status];
+  return {
+    model, state, label,
+    version: modelGeneration(model, byId),
+    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status}`.toLowerCase(),
+  };
+}
+
+/**
+ * A model, as its row and its expanded detail.
+ *
+ * @param {Object} view - From `modelView`.
+ * @param {Map<number,Object>} byId - Every model, by id.
+ * @returns {string} Two `<tr>`s.
+ */
+function modelRows(view, byId) {
+  const { model } = view;
+  const parent = model.parent_model_id && byId.get(model.parent_model_id);
+
+  const head = `<tr class="runrow-head" data-model="${model.id}" aria-expanded="false">`
+    + `<td class="ex"><button class="exbtn" type="button" aria-label="Show ${model.name} details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
+    + `<td class="hname"><span class="name"><svg class="ico models"><use href="#i-models"/></svg><span class="t">${model.name}</span></span></td>`
+    + `<td class="htask"><span class="tag">${model.model_type}</span></td>`
+    + `<td class="hver">v${view.version}</td>`
+    + `<td class="hstatus" data-sort="${MODELS_SORT_KEYS.hstatus(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+    + `<td class="hbase">${model.architecture_version || NOT_REPORTED}</td>`
+    + `<td class="hdset">${NOT_IN_REGISTRY}</td>`
+    + `<td class="hmodel">${NOT_IN_REGISTRY}</td>`
+    + `<td class="hcache num">${NOT_IN_REGISTRY}</td>`
+    + `<td class="hupd">${sinceText(model.updated_at)}</td>`
+    + '<td class="hacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
+    + '</tr>';
+
+  const body = '<tr class="runrow-body"><td colspan="11"><div class="rundetail">'
+    + `<div class="wdhead"><span class="name"><svg class="ico models"><use href="#i-models"/></svg><span class="t">${model.name}</span></span>`
+    + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
+    + `<span class="wid mono" title="Model id as the registry reports it">ml_${model.id}</span></div>`
+    + '<div class="grid" data-cols="2">'
+    + '<div class="sect"><h3>In the registry</h3><dl class="kv">'
+    + `<dt>Task</dt><dd>${model.model_type}</dd>`
+    + `<dt>Architecture</dt><dd>${model.architecture_version || NOT_REPORTED}</dd>`
+    + `<dt>Generation</dt><dd>v${view.version}${parent ? ` &middot; from ${parent.name}` : ' &middot; root model'}</dd>`
+    + `<dt>Weights</dt><dd class="mono">${model.storage_path || NOT_REPORTED}</dd>`
+    + `<dt>Registered</dt><dd>${new Date(model.created_at).toISOString().slice(0, 10)}</dd>`
+    + `<dt>Updated</dt><dd>${sinceText(model.updated_at)}</dd>`
+    + '</dl></div>'
+    + '<div class="sect"><h3>Not in the registry</h3>'
+    + '<p class="muted">Which dataset trained this model, how it scored, and how many workers hold it '
+    + 'are all absent from <code>ml_models</code>. The link to a dataset exists on a training run, and '
+    + '<code>/v2/training_run</code> has only a <code>POST</code> — a run can be created and never '
+    + 'listed. Nothing marks a model preferred. Gap 28.</p></div>'
+    + '</div></div></td></tr>';
+
+  return head + body;
+}
+
+/** Narrows, sorts and pages the registry, then draws it. */
+function applyModelsQuery() {
+  const table = $('table#models');
+  if (table) table.dataset.sortsItsOwnData = 'true';
+  if (!table || !modelsRegistry) return;
+
+  const body = $('tbody', table);
+  const byId = new Map(modelsRegistry.map((m) => [m.id, m]));
+  let views = modelsRegistry.map((m) => modelView(m, byId));
+
+  renderModelsSummary(views);
+
+  if (modelsQuery.task) views = views.filter((v) => v.model.model_type === modelsQuery.task);
+  if (modelsQuery.status) views = views.filter((v) => v.model.status === modelsQuery.status);
+  if (modelsQuery.base) views = views.filter((v) => v.model.architecture_version === modelsQuery.base);
+  if (modelsQuery.search) views = views.filter((v) => v.haystack.includes(modelsQuery.search));
+
+  const key = MODELS_SORT_KEYS[modelsQuery.sort.key] || MODELS_SORT_KEYS.hupd;
+  const sign = modelsQuery.sort.dir === 'ascending' ? 1 : -1;
+  views.sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    if (left < right) return -1 * sign;
+    if (left > right) return 1 * sign;
+    return a.model.id - b.model.id;
+  });
+
+  const total = views.length;
+  const pages = Math.max(1, Math.ceil(total / modelsQuery.perPage));
+  if (modelsQuery.page > pages) modelsQuery.page = pages;
+  const from = (modelsQuery.page - 1) * modelsQuery.perPage;
+  const shown = views.slice(from, from + modelsQuery.perPage);
+
+  const columns = $$('thead th', table).length;
+  body.innerHTML = shown.length
+    ? shown.map((view) => modelRows(view, byId)).join('')
+    : `<tr class="tblmsg"><td class="empty" colspan="${columns}">No models match these filters.</td></tr>`;
+
+  const heading = $('#model-registry .panel-hd h2');
+  if (heading) heading.textContent = `Model registry (${total.toLocaleString()})`;
+
+  const showing = $('#model-registry .panel-ft > span');
+  if (showing) {
+    showing.innerHTML = shown.length
+      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} models`
+      : 'No models match these filters';
+  }
+
+  const pager = $('#model-registry .panel-ft .pager');
+  if (pager) {
+    const buttons = [`<button aria-label="Previous page" data-models-page="${modelsQuery.page - 1}"${modelsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
+    const first = Math.max(1, Math.min(modelsQuery.page - 2, pages - 4));
+    for (let p = first; p <= Math.min(pages, first + 4); p++) {
+      buttons.push(`<button data-models-page="${p}"${p === modelsQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
+    }
+    buttons.push(`<button aria-label="Next page" data-models-page="${modelsQuery.page + 1}"${modelsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
+    pager.innerHTML = buttons.join('');
+  }
+
+  for (const th of $$('#models thead th.sortable')) {
+    const sortKey = [...th.classList].find((c) => MODELS_SORT_KEYS[c]);
+    if (!sortKey) continue;
+    if (sortKey === modelsQuery.sort.key) th.setAttribute('aria-sort', modelsQuery.sort.dir);
+    else th.removeAttribute('aria-sort');
+  }
+
+  wireAccordions();
+}
+
+/**
+ * The four cards and the registry-status donut.
+ *
+ * Two of the four cards ask for things `ml_models` does not carry, and they say
+ * so rather than showing a number nothing produced.
+ *
+ * @param {Object[]} views - Every model.
+ */
+function renderModelsSummary(views) {
+  const count = (status) => views.filter((v) => v.model.status === status).length;
+  const trained = count('trained');
+  const training = count('training');
+  const draft = count('draft');
+  const archived = count('archived');
+  const total = views.length || 1;
+
+  const newest = views.reduce((max, v) => Math.max(max, Date.parse(v.model.updated_at)), 0);
+  const recent = views.filter((v) => v.model.status === 'trained'
+    && Date.parse(v.model.updated_at) >= newest - 7 * 86400000).length;
+
+  const byLabel = {};
+  for (const card of $$('.stat')) {
+    const label = $('.stat-lab', card);
+    if (label) byLabel[label.textContent.trim()] = card;
+  }
+  const set = (label, num, sub) => {
+    const card = byLabel[label];
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.innerHTML = num;
+    const s = $('.stat-sub', card);
+    if (s) s.innerHTML = `<span>${sub}</span>`;
+  };
+
+  set('Registered models', String(views.length), `${trained} trained &middot; ${training} training`);
+  set('Preferred models', NOT_IN_REGISTRY, 'nothing marks a model preferred');
+  set('Cached on workers', NOT_IN_REGISTRY, 'no worker reports what it holds');
+  set('Recently trained', String(recent), 'updated in the last 7 days');
+
+  const parts = [['done', trained, 'Trained'], ['running', training, 'Training'], ['queued', draft, 'Draft'], ['cancelled', archived, 'Archived']];
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const arcs = $$('.donut-part', donut);
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = parts[index] ? parts[index][1] : 0;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(views.length);
+  }
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = parts
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+}
+
+/**
+ * Fills the Models screen from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderModelsScreen() {
+  const table = $('table#models');
+  if (!table || !window.MarpApi) return;
+
+  const body = $('tbody', table);
+  const columns = $$('thead th', table).length;
+  body.innerHTML = `<tr class="tblmsg"><td class="loading" colspan="${columns}">Loading the registry&hellip;</td></tr>`;
+
+  try {
+    modelsRegistry = await window.MarpApi.listModels();
+    fillModelsFilterOptions();
+    applyModelsQuery();
+  } catch (error) {
+    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="${columns}">Could not load the registry (${error.status || 'no answer'}). `
+      + '<button class="btn sm" type="button" id="modelsRetry">Try again</button></td></tr>';
+    $('#modelsRetry')?.addEventListener('click', renderModelsScreen);
+  }
+}
+
+/**
+ * Fills the Task and Base model selectors from what is there.
+ *
+ * The Dataset selector is left alone and disabled: `ml_models` has no dataset
+ * link, so every choice it could offer would match nothing.
+ */
+function fillModelsFilterOptions() {
+  const selects = {};
+  for (const select of $$('select')) selects[select.getAttribute('aria-label')] = select;
+
+  const tasks = [...new Set(modelsRegistry.map((m) => m.model_type))].sort();
+  const bases = [...new Set(modelsRegistry.map((m) => m.architecture_version).filter(Boolean))].sort();
+
+  if (selects.Task) {
+    selects.Task.innerHTML = ['<option>All tasks</option>', ...tasks.map((t) => `<option>${t}</option>`)].join('');
+  }
+  if (selects['Base model']) {
+    selects['Base model'].innerHTML = ['<option>All base models</option>', ...bases.map((b) => `<option>${b}</option>`)].join('');
+  }
+  if (selects.Dataset) {
+    selects.Dataset.innerHTML = '<option>Not linked in the registry</option>';
+    selects.Dataset.disabled = true;
+    selects.Dataset.title = 'ml_models carries no dataset link; the connection lives on a training run, which cannot be listed (gap 28)';
+  }
+}
+
+/** The Models filters, sort headers and pager. Bound once. */
+function wireModelsControls() {
+  const panel = $('#model-registry');
+  if (!panel) return;
+
+  const renarrow = () => { modelsQuery.page = 1; applyModelsQuery(); };
+  const selects = {};
+  for (const select of $$('select')) selects[select.getAttribute('aria-label')] = select;
+
+  selects.Task?.addEventListener('change', () => {
+    modelsQuery.task = selects.Task.value.startsWith('All') ? '' : selects.Task.value;
+    renarrow();
+  });
+  selects.Status?.addEventListener('change', () => {
+    modelsQuery.status = {
+      Trained: 'trained', Training: 'training', Draft: 'draft', Archived: 'archived',
+    }[selects.Status.value] || '';
+    renarrow();
+  });
+  selects['Base model']?.addEventListener('change', () => {
+    modelsQuery.base = selects['Base model'].value.startsWith('All') ? '' : selects['Base model'].value;
+    renarrow();
+  });
+
+  const search = $('.search input', panel) || $('#filters input[type="search"]');
+  if (search) {
+    search.addEventListener('input', () => {
+      modelsQuery.search = search.value.trim().toLowerCase();
+      renarrow();
+    });
+  }
+
+  for (const th of $$('#models thead th.sortable')) {
+    const key = [...th.classList].find((c) => MODELS_SORT_KEYS[c]);
+    if (!key) continue;
+    th.addEventListener('click', () => {
+      if (modelsQuery.sort.key === key) {
+        modelsQuery.sort.dir = modelsQuery.sort.dir === 'ascending' ? 'descending' : 'ascending';
+      } else {
+        modelsQuery.sort = { key, dir: 'ascending' };
+      }
+      modelsQuery.page = 1;
+      applyModelsQuery();
+    });
+  }
+
+  const pager = $('.panel-ft .pager', panel);
+  if (pager) {
+    pager.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-models-page]');
+      if (!button || button.disabled) return;
+      modelsQuery.page = Number(button.dataset.modelsPage);
+      applyModelsQuery();
+    });
+  }
+}
+
+
+/* =========================================================== history */
+
+/* History is the terminal states over a window, which is the one question
+   `GET /gpu/jobs` cannot be asked (gap 24): there is no date parameter, so the
+   window is applied here over everything the route will hand back. It also
+   resolves two ids the job carries bare -- `session.project_id` and
+   `created_by` -- against `GET /api/v2/projects` and `GET /api/v2/users`. */
+
+/** What the History screen is asking for. None of it is a query parameter. */
+const historyQuery = {
+  project: '', kind: '', state: '', model: '', windowDays: 30,
+  sort: { key: 'hend', dir: 'descending' },
+  page: 1, perPage: 10,
+};
+
+/** How each sortable column orders. Keyed by the header's class. */
+const HISTORY_SORT_KEYS = {
+  hjob: (v) => v.title.toLowerCase(),
+  htype: (v) => v.job.kind,
+  hstatus: (v) => JOB_STATE_RANK[v.state],
+  hscope: (v) => v.projectName.toLowerCase(),
+  hmodel: (v) => v.model.toLowerCase(),
+  hdata: (v) => v.frames,
+  hstart: (v) => v.job.created_at,
+  hend: (v) => v.job.updated_at,
+  hdur: (v) => v.tookMs,
+  hwho: (v) => v.byName.toLowerCase(),
+};
+
+/** Everything History draws from, fetched once. */
+let historyData = null;
+
+/**
+ * A finished job, reduced to what History shows.
+ *
+ * @param {Object} job - A terminal job.
+ * @param {Set<string>} issues - Batches that finished with issues.
+ * @param {Map<number,string>} projects - project_id to name.
+ * @param {Map<number,string>} users - user_id to name.
+ * @returns {Object}
+ */
+function historyView(job, issues, projects, users) {
+  const view = jobView(job, issues);
+  const session = view.session;
+  const started = Date.parse(job.created_at);
+  const completed = Date.parse(job.updated_at);
+
+  view.projectName = projects.get(session.project_id) || 'Unknown project';
+  view.byName = users.get(job.created_by) || 'Unattributed';
+  view.frames = job.spec.range ? job.spec.range.end_frame - job.spec.range.start_frame : 0;
+  /* `updated_at` is the closest thing the list route has to a finish time: the
+     attempt's `finished_at` is real but only `GET /gpu/jobs/:id` returns it,
+     and one detail call per row is what gap 23 already rejected. */
+  view.tookMs = Math.max(0, completed - started);
+  return view;
+}
+
+/**
+ * How long something took, in the units an operator reads.
+ *
+ * @param {number} ms - Duration.
+ * @returns {string}
+ */
+function tookText(ms) {
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+/** Narrows, sorts and pages the finished work, then draws it. */
+function applyHistoryQuery() {
+  const table = $('table#history');
+  if (table) table.dataset.sortsItsOwnData = 'true';
+  if (!table || !historyData) return;
+
+  const body = $('tbody', table);
+  const { jobs, projects, users } = historyData;
+
+  const issues = batchesWithIssues(jobs);
+  const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const since = newest - historyQuery.windowDays * 86400000;
+
+  const terminal = ['succeeded', 'failed', 'cancelled', 'expired'];
+  let views = jobs
+    .filter((j) => terminal.includes(j.state) && Date.parse(j.created_at) >= since)
+    .map((job) => historyView(job, issues, projects, users));
+
+  /* The window drives the cards as well as the table, so they are counted
+     before the other filters narrow anything. */
+  renderHistoryOutcomes(views, jobs, since, newest);
+
+  if (historyQuery.project) views = views.filter((v) => v.projectName === historyQuery.project);
+  if (historyQuery.kind) views = views.filter((v) => v.job.kind === historyQuery.kind);
+  if (historyQuery.model) views = views.filter((v) => v.model === historyQuery.model);
+  if (historyQuery.state) {
+    views = historyQuery.state === 'issues'
+      ? views.filter((v) => v.state === 'issues')
+      : views.filter((v) => v.state === historyQuery.state);
+  }
+
+  const key = HISTORY_SORT_KEYS[historyQuery.sort.key] || HISTORY_SORT_KEYS.hend;
+  const sign = historyQuery.sort.dir === 'ascending' ? 1 : -1;
+  views.sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    if (left < right) return -1 * sign;
+    if (left > right) return 1 * sign;
+    return b.job.id - a.job.id;
+  });
+
+  const total = views.length;
+  const pages = Math.max(1, Math.ceil(total / historyQuery.perPage));
+  if (historyQuery.page > pages) historyQuery.page = pages;
+  const from = (historyQuery.page - 1) * historyQuery.perPage;
+  const shown = views.slice(from, from + historyQuery.perPage);
+
+  const columns = $$('thead th', table).length;
+  body.innerHTML = shown.length
+    ? shown.map(historyRow).join('')
+    : `<tr class="tblmsg"><td class="empty" colspan="${columns}">No finished work matches these filters.</td></tr>`;
+
+  const heading = $('#history-panel .panel-hd h2');
+  if (heading) heading.textContent = `Job history (${total.toLocaleString()})`;
+
+  const showing = $('#history-panel .panel-ft > span');
+  if (showing) {
+    const windowText = historyQuery.windowDays === 365 ? 'this year' : `the last ${historyQuery.windowDays} days`;
+    showing.innerHTML = shown.length
+      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} jobs in ${windowText}`
+      : `Nothing finished in ${windowText} matches these filters`;
+  }
+
+  const pager = $('#history-panel .panel-ft .pager');
+  if (pager) {
+    const buttons = [`<button aria-label="Previous page" data-history-page="${historyQuery.page - 1}"${historyQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
+    const first = Math.max(1, Math.min(historyQuery.page - 2, pages - 4));
+    for (let p = first; p <= Math.min(pages, first + 4); p++) {
+      buttons.push(`<button data-history-page="${p}"${p === historyQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
+    }
+    buttons.push(`<button aria-label="Next page" data-history-page="${historyQuery.page + 1}"${historyQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
+    pager.innerHTML = buttons.join('');
+  }
+
+  for (const th of $$('#history thead th.sortable')) {
+    const sortKey = [...th.classList].find((c) => HISTORY_SORT_KEYS[c]);
+    if (!sortKey) continue;
+    if (sortKey === historyQuery.sort.key) th.setAttribute('aria-sort', historyQuery.sort.dir);
+    else th.removeAttribute('aria-sort');
+  }
+}
+
+/**
+ * The four outcome cards and the outcomes donut.
+ *
+ * @param {Object[]} views - Finished work inside the window.
+ * @param {Object[]} jobs - Every job, for the previous window's comparison.
+ * @param {number} since - Start of the window.
+ * @param {number} newest - The corpus's latest job.
+ */
+function renderHistoryOutcomes(views, jobs, since, newest) {
+  const done = views.filter((v) => v.state === 'done').length;
+  const issues = views.filter((v) => v.state === 'issues').length;
+  const bad = views.filter((v) => ['failed', 'cancelled', 'expired'].includes(v.state)).length;
+  const total = views.length || 1;
+
+  /* The first card compares against the window before this one, which is a
+     real question the data can answer -- it is only the *route* that cannot. */
+  const span = newest - since;
+  const previous = jobs.filter((j) => {
+    const at = Date.parse(j.created_at);
+    return at >= since - span && at < since
+      && ['succeeded', 'failed', 'cancelled', 'expired'].includes(j.state);
+  }).length;
+  const change = previous ? Math.round(((views.length - previous) / previous) * 100) : 0;
+
+  const byLabel = {};
+  for (const card of $$('.stat')) {
+    const label = $('.stat-lab', card);
+    if (label) byLabel[label.textContent.trim()] = card;
+  }
+  const set = (label, num, sub) => {
+    const card = byLabel[label];
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.textContent = String(num);
+    const s = $('.stat-sub', card);
+    if (s) s.innerHTML = `<span>${sub}</span>`;
+  };
+  const share = (n) => `${Math.round((n / total) * 100)}% of the window`;
+
+  set('Jobs in this window', views.length, previous
+    ? `${change >= 0 ? '+' : ''}${change}% against the window before`
+    : 'no earlier window to compare');
+  set('Completed', done, share(done));
+  set('Completed with issues', issues, share(issues));
+  set('Failed or cancelled', bad, share(bad));
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = [['done', done, 'Completed'], ['issues', issues, 'With issues'], ['failed', bad, 'Failed / cancelled']]
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const arcs = $$('.donut-part', donut);
+    const parts = [done, issues, bad];
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = parts[index] || 0;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(views.length);
+  }
+}
+
+/**
+ * One finished job, as a table row.
+ *
+ * @param {Object} view - From `historyView`.
+ * @returns {string} A `<tr>`.
+ */
+function historyRow(view) {
+  const { job } = view;
+  const started = new Date(job.created_at);
+  const completed = new Date(job.updated_at);
+  const stamp = (d) => `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
+
+  return `<tr data-job="${job.id}">`
+    + '<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select ' + view.title + '"></td>'
+    + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+    + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
+    + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+    + `<td class="hscope"><span class="two"><span class="a">${view.projectName}</span><span class="b">Dive ${view.session.dive || '?'} &middot; Line ${view.session.line || '?'}</span></span></td>`
+    + `<td class="hmodel">${view.model}</td>`
+    + `<td class="hdata num" data-sort="${view.frames}">${view.frames.toLocaleString()}</td>`
+    + `<td class="hstart" data-sort="${job.created_at}">${stamp(started)}</td>`
+    + `<td class="hend" data-sort="${job.updated_at}">${stamp(completed)}</td>`
+    + `<td class="hdur num" data-sort="${view.tookMs}">${tookText(view.tookMs)}</td>`
+    + `<td class="hwho">${view.byName}</td>`
+    + '<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
+    + '</tr>';
+}
+
+/**
+ * Fills the History screen from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderHistoryScreen() {
+  const table = $('table#history');
+  if (!table || !window.MarpApi) return;
+
+  const body = $('tbody', table);
+  const columns = $$('thead th', table).length;
+  body.innerHTML = `<tr class="tblmsg"><td class="loading" colspan="${columns}">Loading history&hellip;</td></tr>`;
+
+  try {
+    const [jobs, projects, users] = await Promise.all([
+      window.MarpApi.listJobs({ limit: 500 }),
+      window.MarpApi.listProjects(),
+      window.MarpApi.listUsers(),
+    ]);
+
+    historyData = {
+      jobs: jobs.jobs,
+      projects: new Map(projects.map((p) => [p.project_id, p.name])),
+      users: new Map(users.map((u) => [u.user_id, u.name])),
+    };
+
+    fillHistoryFilterOptions();
+    applyHistoryQuery();
+  } catch (error) {
+    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="${columns}">Could not load history (${error.status || 'no answer'}). `
+      + '<button class="btn sm" type="button" id="historyRetry">Try again</button></td></tr>';
+    $('#historyRetry')?.addEventListener('click', renderHistoryScreen);
+  }
+}
+
+/**
+ * Fills the Project and Model selectors from what is actually there.
+ *
+ * They were written out by hand and listed six projects and two models, none of
+ * which need match the data: a filter offering a choice that matches nothing is
+ * worse than no filter.
+ */
+function fillHistoryFilterOptions() {
+  const selects = $$('#history-panel select, .panel-tools select');
+  const byLabel = {};
+  for (const select of selects) byLabel[select.getAttribute('aria-label')] = select;
+
+  const projects = [...new Set(historyData.jobs.map((j) => historyData.projects.get(j.spec.session.project_id)).filter(Boolean))].sort();
+  const models = [...new Set(historyData.jobs.map((j) => j.spec.model && j.spec.model.name).filter(Boolean))].sort();
+
+  if (byLabel.Project) {
+    byLabel.Project.innerHTML = ['<option>All projects</option>', ...projects.map((p) => `<option>${p}</option>`)].join('');
+  }
+  if (byLabel.Model) {
+    byLabel.Model.innerHTML = ['<option>All models</option>', ...models.map((m) => `<option>${m}</option>`)].join('');
+  }
+}
+
+/** The History filters, sort headers and pager. Bound once. */
+function wireHistoryControls() {
+  const panel = $('#history-panel') || $('table#history')?.closest('.panel');
+  if (!panel) return;
+
+  const renarrow = () => { historyQuery.page = 1; applyHistoryQuery(); };
+  const selects = {};
+  for (const select of $$('select')) selects[select.getAttribute('aria-label')] = select;
+
+  selects.Project?.addEventListener('change', () => {
+    historyQuery.project = selects.Project.value.startsWith('All') ? '' : selects.Project.value;
+    renarrow();
+  });
+  selects['Job type']?.addEventListener('change', () => {
+    historyQuery.kind = { Inference: 'inference', Training: 'training' }[selects['Job type'].value] || '';
+    renarrow();
+  });
+  selects.Status?.addEventListener('change', () => {
+    historyQuery.state = {
+      Completed: 'done', 'Completed with issues': 'issues', Failed: 'failed', Cancelled: 'cancelled',
+    }[selects.Status.value] || '';
+    renarrow();
+  });
+  selects.Window?.addEventListener('change', () => {
+    historyQuery.windowDays = {
+      'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'This year': 365,
+    }[selects.Window.value] || 30;
+    renarrow();
+  });
+  selects.Model?.addEventListener('change', () => {
+    historyQuery.model = selects.Model.value.startsWith('All') ? '' : selects.Model.value;
+    renarrow();
+  });
+  selects['Rows per page']?.addEventListener('change', () => {
+    historyQuery.perPage = Number(selects['Rows per page'].value) || 10;
+    renarrow();
+  });
+
+  for (const th of $$('#history thead th.sortable')) {
+    const key = [...th.classList].find((c) => HISTORY_SORT_KEYS[c]);
+    if (!key) continue;
+    th.addEventListener('click', () => {
+      if (historyQuery.sort.key === key) {
+        historyQuery.sort.dir = historyQuery.sort.dir === 'ascending' ? 'descending' : 'ascending';
+      } else {
+        historyQuery.sort = { key, dir: 'ascending' };
+      }
+      historyQuery.page = 1;
+      applyHistoryQuery();
+    });
+  }
+
+  const pager = $('.panel-ft .pager', panel);
+  if (pager) {
+    pager.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-history-page]');
+      if (!button || button.disabled) return;
+      historyQuery.page = Number(button.dataset.historyPage);
+      applyHistoryQuery();
+    });
+  }
+}
+
+
+/* ========================================================= dashboard */
+
+/* The landing screen summarises every other one, so it reads four routes:
+   jobs, workers, ml_models and dataset. Three of its six cards are counts the
+   routes can give; the sub-lines underneath them are where this screen runs
+   out of API, and each of those is a recorded gap rather than a number. */
+
+/**
+ * The Dashboard's six overview cards, the worker pool panel and the short
+ * current-and-recent-jobs preview.
+ *
+ * @param {Object} data - `{ jobs, workers, models, datasets }`.
+ */
+function renderDashboard(data) {
+  const { jobs, workers, models, datasets } = data;
+
+  const running = jobs.filter((j) => j.state === 'leased');
+  const queued = jobs.filter((j) => j.state === 'queued');
+  const kindOf = (rows, kind) => rows.filter((j) => j.kind === kind).length;
+
+  const byLabel = {};
+  for (const card of $$('.stat')) {
+    const label = $('.stat-lab', card);
+    if (label) byLabel[label.textContent.trim()] = card;
+  }
+
+  const set = (label, num, parts) => {
+    const card = byLabel[label];
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.textContent = String(num);
+    const sub = $('.stat-sub', card);
+    if (sub) sub.innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
+  };
+
+  set('Jobs', running.length + queued.length, [`${running.length} running`, `${queued.length} queued`]);
+
+  set('Inference', kindOf(running, 'inference') + kindOf(running, 'tracking'), [
+    'running now',
+    `${kindOf(queued, 'inference') + kindOf(queued, 'tracking')} queued`,
+  ]);
+
+  set('Training', kindOf(running, 'training'), ['running now', `${kindOf(queued, 'training')} queued`]);
+
+  /* A `Dataset` has no status column, so "building" cannot be counted -- the
+     builds the Datasets screen shows are its own, not the API's. Gap 19. */
+  set('Datasets', datasets.length, ['saved', 'builds not tracked by the API']);
+
+  /* Nothing on an `MlModel` marks one preferred, and nothing counts how many
+     workers hold it. Gap 28. */
+  set('Models', models.length, ['registered', 'no preferred flag in the API']);
+
+  /* History is the terminal states over the same window the screen is drawn
+     for, which the route can answer only by being handed everything. Gap 24. */
+  const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const finished = jobs.filter((j) => ['succeeded', 'failed', 'cancelled', 'expired'].includes(j.state)
+    && Date.parse(j.created_at) >= newest - 7 * 86400000);
+  set('History', finished.length, ['finished', 'last 7 days']);
+
+  renderDashboardPool(workers);
+  renderDashboardActivity(jobs);
+}
+
+/**
+ * The Worker pool panel's figures.
+ *
+ * The utilization percentages it was drawn with are not available (gap 27), so
+ * what is shown is what the pool really reports: machines, reachability and
+ * slots in use against capacity.
+ *
+ * @param {Object[]} workers - The pool.
+ */
+function renderDashboardPool(workers) {
+  const panel = $('#worker-pool');
+  if (!panel) return;
+
+  const total = workers.length || 1;
+  const counts = ['busy', 'idle', 'paused', 'offline']
+    .map((activity) => [activity, workers.filter((w) => w.activity === activity).length]);
+
+  /* The donut's arcs are measured in circumference rather than `pathLength`
+     here, so each share has to be converted. r=54. */
+  const circumference = 2 * Math.PI * 54;
+  const arcs = $$('.pool .donut circle', panel).slice(1);
+  let offset = 0;
+  counts.forEach(([, value], index) => {
+    const arc = arcs[index];
+    if (!arc) return;
+    const length = (value / total) * circumference;
+    arc.setAttribute('stroke-dasharray', `${length.toFixed(1)} ${(circumference - length).toFixed(1)}`);
+    arc.setAttribute('stroke-dashoffset', `${(-offset).toFixed(1)}`);
+    offset += length;
+  });
+
+  /* The count lives in `.mid > b`, beside its caption. Targeting `.n` here
+     silently did nothing and still read 143, which was right by luck -- the
+     kind of wiring that looks finished and is not. */
+  const enrolled = $('.pool .donut .mid b', panel);
+  if (enrolled) enrolled.textContent = String(workers.length);
+
+  /* The legend is a flat run of dot/key/value/percent, four to a state. */
+  const legend = $('.pool .legend', panel);
+  if (legend) {
+    legend.innerHTML = counts.map(([activity, value]) => {
+      const label = activity[0].toUpperCase() + activity.slice(1);
+      return `<span class="dot" data-state="${activity}"></span><span class="k">${label}</span>`
+        + `<span class="v">${value}</span><span class="p">${Math.round((value / total) * 100)}%</span>`;
+    }).join('');
+  }
+
+  const slots = workers.reduce((sum, w) => sum + w.slot_count, 0);
+  const used = workers.reduce((sum, w) => sum + (w.attempts || []).length, 0);
+  const pct = (n) => `${Math.round((n / Math.max(1, slots)) * 100)}%`;
+
+  const capacity = $('.slots .big .n', panel);
+  if (capacity) capacity.textContent = String(slots);
+
+  const write = (selector, value) => {
+    const node = $(selector, panel);
+    if (node) node.textContent = value;
+  };
+  write('[data-pool-used-summary]', String(used));
+  write('[data-pool-used-summary-percent]', pct(used));
+  write('[data-pool-available]', String(slots - used));
+  write('[data-pool-available-percent]', pct(slots - used));
+}
+
+/**
+ * The short Current and recent jobs preview.
+ *
+ * Deliberately not the Jobs list: running work first, then anything needing
+ * attention, then the most recently finished. Every column still sorts, and the
+ * complete list, filters and paging stay on Jobs.
+ *
+ * @param {Object[]} jobs - The window of jobs.
+ */
+function renderDashboardActivity(jobs) {
+  const table = $('#current-activity table') || $('#current-activity .tbl');
+  if (!table) return;
+
+  const body = $('tbody', table);
+  if (!body) return;
+
+  const issues = batchesWithIssues(jobs);
+  const views = jobs.map((job) => jobView(job, issues));
+
+  /* **Three groups, not one sorted list** (R3). Ranking by state and taking the
+     top five filled the preview with running work and nothing else: eighteen
+     jobs were running, so work needing attention and recently finished work
+     never appeared, and a panel whose whole purpose is the mix showed a third
+     of it. Each group is drawn from separately; leftovers top it back up. */
+  const newest = (rows) => rows.sort((a, b) => Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at));
+  const running = newest(views.filter((v) => v.state === 'running'));
+  const finished = newest(views.filter((v) => v.state === 'done'));
+
+  /* **One per kind of trouble, not the two newest.** Taking the newest two
+     filled both slots with `issues` and left a panel that never showed a
+     failure -- two slots spent saying the same word. A preview this short is
+     only useful if each row tells the reader something the others do not. */
+  const attention = ['failed', 'issues', 'expired']
+    .map((state) => newest(views.filter((v) => v.state === state))[0])
+    .filter(Boolean);
+
+  const shown = [...running.slice(0, 2), ...attention.slice(0, 2), ...finished.slice(0, 1)];
+
+  for (const pool of [attention.slice(2), running.slice(2), finished.slice(1)]) {
+    for (const view of pool) {
+      if (shown.length >= 5) break;
+      shown.push(view);
+    }
+  }
+
+  body.innerHTML = shown.map((view) => {
+    const progress = progressCell(view.job, view.state);
+    const updated = new Date(view.job.updated_at);
+    return `<tr data-job="${view.job.id}">`
+      + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+      + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
+      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+      + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
+      + `<td class="jtime" data-sort="${view.job.updated_at}">${updated.toTimeString().slice(0, 5)}</td>`
+      + '</tr>';
+  }).join('');
+}
+
+/**
+ * Fills the Dashboard from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderDashboardScreen() {
+  if (document.body.dataset.screen !== 'dashboard' || !window.MarpApi) return;
+
+  try {
+    const [jobs, workers, models, datasets] = await Promise.all([
+      window.MarpApi.listJobs({ limit: 500 }),
+      window.MarpApi.listWorkers(),
+      window.MarpApi.listModels(),
+      window.MarpApi.listDatasets(),
+    ]);
+
+    renderDashboard({ jobs: jobs.jobs, workers, models, datasets });
+  } catch (error) {
+    /* One banner, not six broken cards. A landing screen that half-loaded is
+       worse than one that says it could not. */
+    const content = $('.content');
+    if (!content) return;
+    const warning = document.createElement('div');
+    warning.className = 'tblmsg-banner';
+    warning.innerHTML = `<p class="error">The dashboard could not be loaded (${error.status || 'no answer'}). `
+      + '<button class="btn sm" type="button" id="dashRetry">Try again</button></p>';
+    content.prepend(warning);
+    $('#dashRetry')?.addEventListener('click', () => {
+      warning.remove();
+      renderDashboardScreen();
+    });
+  }
+}
+
+
+/* ============================================================ workers table */
+
+/* `GET /gpu/workers` returns every machine, unpaged (gap 12). What it does
+   *not* return is any live machine telemetry: `capabilities` is the static blob
+   a worker sent at enrolment -- "GPUs and VRAM, driver, disk, engines" -- and a
+   heartbeat carries the attempt's progress and nothing about the machine. So
+   GPU load, VRAM load, temperature, power, clocks, CPU, system RAM, disk and
+   process uptime have no source at all, and are drawn as not reported rather
+   than invented. Gap 27. */
+
+/** Not measured is not zero. One dash, one explanation, used everywhere. */
+const NOT_REPORTED = '<span class="dash" title="MARP records no live machine telemetry: a worker reports its capabilities at enrolment and its attempt progress on heartbeat">&mdash;</span>';
+
+/** Activity to the design's state word. The API derives `activity` already. */
+const WORKER_ACTIVITY = {
+  busy: ['busy', 'Busy'],
+  idle: ['idle', 'Idle'],
+  paused: ['paused', 'Paused'],
+  offline: ['offline', 'Offline'],
+};
+
+/** What the Workers screen is asking for. The route takes no parameters at all. */
+const workersQuery = {
+  activity: '', gpu: '', search: '',
+  sort: { key: 'whb', dir: 'ascending' },
+  page: 1, perPage: 5,
+};
+
+/** How each sortable column orders. Keyed by the header's class. */
+const WORKERS_SORT_KEYS = {
+  wname: (v) => v.worker.name.toLowerCase(),
+  wstate: (v) => ['busy', 'idle', 'paused', 'offline'].indexOf(v.activity),
+  wver: (v) => v.worker.worker_version || '',
+  wgpu: (v) => v.gpu.toLowerCase(),
+  wjobs: (v) => v.used / Math.max(1, v.worker.slot_count),
+  whb: (v) => (v.worker.last_seen_at ? -Date.parse(v.worker.last_seen_at) : Infinity),
+};
+
+/** The pool, as fetched. The route does not page, so this is all of it. */
+let workersPool = null;
+
+/**
+ * How long ago, in the units an operator reads.
+ *
+ * Measured against the data layer's fixed present rather than the wall clock,
+ * so the column says the same thing to two people looking at one screen.
+ *
+ * @param {?string} iso - An instant, or null.
+ * @returns {string}
+ */
+function sinceText(iso) {
+  if (!iso) return 'never';
+  const seconds = Math.max(0, Math.round((window.MarpApi._meta.NOW - Date.parse(iso)) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
+}
+
+/**
+ * One worker, reduced to what the table shows and sorts on.
+ *
+ * @param {Object} worker - A worker from `GET /gpu/workers`.
+ * @returns {Object}
+ */
+function workerView(worker) {
+  const caps = worker.capabilities || {};
+  const [state, label] = WORKER_ACTIVITY[worker.activity] || WORKER_ACTIVITY.idle;
+  const vramGb = caps.vram_mb ? Math.round(caps.vram_mb / 1024) : null;
+
+  return {
+    worker, caps, state, label,
+    activity: worker.activity,
+    gpu: caps.gpu || 'Not reported',
+    vram: vramGb ? `${vramGb} GB` : '',
+    used: (worker.attempts || []).length,
+    haystack: `${worker.name} ${worker.worker_id} ${caps.gpu || ''} ${worker.worker_version || ''}`.toLowerCase(),
+  };
+}
+
+/**
+ * A worker, as its row and its expanded detail.
+ *
+ * @param {Object} view - From `workerView`.
+ * @returns {string} Two `<tr>`s, the head and its body.
+ */
+function workerRows(view) {
+  const { worker, caps } = view;
+  const attempt = (worker.attempts || [])[0] || null;
+
+  const head = `<tr class="runrow-head" data-worker="${worker.worker_id}" aria-expanded="false">`
+    + `<td class="ex"><button class="exbtn" type="button" aria-label="Show ${worker.name} details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
+    + `<td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">${worker.name}</span></span></td>`
+    + `<td class="jstatus" data-sort="${WORKERS_SORT_KEYS.wstate(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
+    + `<td class="wver">${worker.worker_version || NOT_REPORTED}</td>`
+    + `<td class="wgpu"><span class="two"><span class="a">${view.gpu}</span><span class="b">${view.vram}</span></span></td>`
+    + `<td class="wcpu" data-sort="-1">${NOT_REPORTED}</td>`
+    + `<td class="wmem" data-sort="-1">${NOT_REPORTED}</td>`
+    + `<td class="wmodel">${NOT_REPORTED}</td>`
+    + `<td class="num" data-sort="${view.used}">${view.used} / ${worker.slot_count}</td>`
+    + `<td class="wup">${NOT_REPORTED}</td>`
+    + `<td class="whb" data-sort="${WORKERS_SORT_KEYS.whb(view)}">${sinceText(worker.last_seen_at)}</td>`
+    + '</tr>';
+
+  const progress = attempt && attempt.progress_done !== null
+    ? `${attempt.progress_done.toLocaleString()} / ${attempt.progress_total.toLocaleString()} ${attempt.progress_unit}`
+    : 'No heartbeat yet';
+
+  const live = attempt
+    ? '<div class="sect"><h3>Live attempt</h3><dl class="kv">'
+      + `<dt>Attempt</dt><dd>${attempt.id} &middot; job ${attempt.job_id}</dd>`
+      + `<dt>State</dt><dd>${attempt.state}</dd>`
+      + `<dt>Progress</dt><dd>${progress}</dd>`
+      + `<dt>Slot</dt><dd>${attempt.slot_index} of ${worker.slot_count}</dd>`
+      + `<dt>Heartbeat</dt><dd>${sinceText(attempt.last_heartbeat_at)}</dd>`
+      + '</dl></div>'
+    : '<div class="sect"><h3>Live attempt</h3><p class="muted">No attempt on this machine right now.</p></div>';
+
+  const body = '<tr class="runrow-body"><td colspan="11"><div class="rundetail">'
+    + `<div class="wdhead"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">${worker.name}</span></span>`
+    + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
+    + `<span class="wid mono" title="Worker id as the pool reports it">wk_${worker.worker_id}</span>`
+    + '<span class="wdacts"><button class="btn sm" title="Rename is the one worker mutation the API has"><svg class="ico sm"><use href="#i-pencil"/></svg>Rename</button></span></div>'
+    + '<div class="grid" data-cols="2">'
+    + '<div class="sect"><h3>Reported at enrolment</h3><dl class="kv">'
+    + `<dt>GPU</dt><dd>${caps.gpu || NOT_REPORTED}</dd>`
+    + `<dt>VRAM</dt><dd>${view.vram || NOT_REPORTED}</dd>`
+    + `<dt>Driver / CUDA</dt><dd>${caps.driver || '?'} / ${caps.cuda || '?'}</dd>`
+    + `<dt>Worker version</dt><dd>${worker.worker_version || NOT_REPORTED}</dd>`
+    + `<dt>Slots</dt><dd>${view.used} of ${worker.slot_count} in use</dd>`
+    + `<dt>Enrolled</dt><dd>${new Date(worker.enrolled_at).toISOString().slice(0, 10)}</dd>`
+    + `<dt>Last heard</dt><dd>${sinceText(worker.last_seen_at)}</dd>`
+    + '</dl>'
+    /* Said once, here, rather than left to be inferred from a column of dashes:
+       this machine is not instrumented and MARP is not asking it to be. */
+    + '<p class="muted">Live load, temperature, power, clocks, CPU, system RAM and disk are not reported. '
+    + 'A worker sends its capabilities once at enrolment and its attempt progress on heartbeat (gap 27).</p>'
+    + '</div>'
+    + live
+    + '</div></div></td></tr>';
+
+  return head + body;
+}
+
+/** Narrows, sorts and pages the pool, then draws it. */
+function applyWorkersQuery() {
+  const table = $('table#workers');
+  if (table) table.dataset.sortsItsOwnData = 'true';
+  if (!table || !workersPool) return;
+
+  const body = $('tbody', table);
+  let views = workersPool.map(workerView);
+
+  if (workersQuery.activity) views = views.filter((v) => v.activity === workersQuery.activity);
+  if (workersQuery.gpu) views = views.filter((v) => v.gpu.toLowerCase().includes(workersQuery.gpu));
+  if (workersQuery.search) views = views.filter((v) => v.haystack.includes(workersQuery.search));
+
+  const key = WORKERS_SORT_KEYS[workersQuery.sort.key] || WORKERS_SORT_KEYS.whb;
+  const sign = workersQuery.sort.dir === 'ascending' ? 1 : -1;
+  views.sort((a, b) => {
+    const left = key(a);
+    const right = key(b);
+    if (left < right) return -1 * sign;
+    if (left > right) return 1 * sign;
+    return a.worker.worker_id - b.worker.worker_id;
+  });
+
+  const total = views.length;
+  const pages = Math.max(1, Math.ceil(total / workersQuery.perPage));
+  if (workersQuery.page > pages) workersQuery.page = pages;
+  const from = (workersQuery.page - 1) * workersQuery.perPage;
+  const shown = views.slice(from, from + workersQuery.perPage);
+
+  body.innerHTML = shown.length
+    ? shown.map(workerRows).join('')
+    : '<tr class="tblmsg"><td class="empty" colspan="11">No workers match these filters.</td></tr>';
+
+  const count = $('#worker-pool .panel-hd .count');
+  if (count) count.textContent = `(${total.toLocaleString()})`;
+
+  const showing = $('#worker-pool .panel-ft > span');
+  if (showing) {
+    showing.innerHTML = shown.length
+      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} workers`
+      : 'No workers match these filters';
+  }
+
+  const pager = $('#worker-pool .panel-ft .pager');
+  if (pager) {
+    const buttons = [`<button aria-label="Previous page" data-workers-page="${workersQuery.page - 1}"${workersQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
+    const first = Math.max(1, Math.min(workersQuery.page - 2, pages - 4));
+    for (let p = first; p <= Math.min(pages, first + 4); p++) {
+      buttons.push(`<button data-workers-page="${p}"${p === workersQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
+    }
+    buttons.push(`<button aria-label="Next page" data-workers-page="${workersQuery.page + 1}"${workersQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
+    pager.innerHTML = buttons.join('');
+  }
+
+  for (const th of $$('#workers thead th.sortable')) {
+    const sortKey = [...th.classList].find((c) => WORKERS_SORT_KEYS[c]);
+    if (!sortKey) continue;
+    if (sortKey === workersQuery.sort.key) th.setAttribute('aria-sort', workersQuery.sort.dir);
+    else th.removeAttribute('aria-sort');
+  }
+
+  wireAccordions();
+}
+
+/**
+ * The four headline cards, the donut and its key.
+ *
+ * Drawn from the same fetch as the table, because a card reading 98 busy over a
+ * table holding 22 is the failure this screen already had once.
+ *
+ * Two of the four are about *jobs* rather than machines, so this takes both.
+ *
+ * @param {Object[]} workers - The pool.
+ * @param {Object[]} jobs - A window of jobs, for the two queue cards.
+ */
+function renderWorkersSummary(workers, jobs) {
+  const by = (activity) => workers.filter((w) => w.activity === activity).length;
+  const busy = by('busy');
+  const idle = by('idle');
+  const paused = by('paused');
+  const offline = by('offline');
+  const total = workers.length;
+
+  /* Reachable is everything the scheduler could still talk to, which includes a
+     paused machine: paused is a decision, offline is a silence. */
+  const reachable = total - offline;
+  const slots = workers.reduce((sum, w) => sum + w.slot_count, 0);
+  const used = workers.reduce((sum, w) => sum + (w.attempts || []).length, 0);
+
+  const running = jobs.filter((j) => j.state === 'leased');
+  const queued = jobs.filter((j) => j.state === 'queued');
+  const oldestQueued = queued.reduce((oldest, j) => Math.min(oldest, Date.parse(j.created_at)), Infinity);
+  const waitingMinutes = Number.isFinite(oldestQueued)
+    ? Math.round((window.MarpApi._meta.NOW - oldestQueued) / 60000) : 0;
+
+  const cards = $$('.workers-stats .stat');
+  const set = (card, num, parts) => {
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.innerHTML = num;
+    const sub = $('.stat-sub', card);
+    if (sub) sub.innerHTML = parts.map((p) => `<span>${p}</span>`).join('');
+  };
+
+  set(cards[0], `${reachable}<small>/ ${total}</small>`, [`${busy} busy`, `${idle} idle`, `${paused} paused`]);
+  set(cards[1], `${used}<small>/ ${slots}</small>`, [`${Math.round((used / Math.max(1, slots)) * 100)}% used`, `${slots - used} free`]);
+  /* The breakdown has to add up to the number above it. MARP has four job
+     kinds and this card named two, so a diagnostic run quietly went missing
+     from a sum a reader can do in their head. */
+  const inferenceish = running.filter((j) => j.kind === 'inference' || j.kind === 'tracking').length;
+  const trainingish = running.filter((j) => j.kind === 'training').length;
+  const others = running.length - inferenceish - trainingish;
+  set(cards[2], String(running.length), [
+    `${inferenceish} inference`,
+    `${trainingish} training`,
+    ...(others ? [`${others} diagnostic`] : []),
+  ]);
+  set(cards[3], String(queued.length), [queued.length ? `longest waiting ${waitingMinutes}m` : 'nothing waiting']);
+
+  /* The donut's `pathLength` is the total, so each arc's dash is simply its own
+     count and nothing has to be converted into a percentage first. */
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const parts = [['inference', busy], ['done', idle], ['queued', paused], ['attention', offline]];
+    let offset = 0;
+    for (const [cls, value] of parts) {
+      const arc = $(`.donut-part.${cls}`, donut);
+      if (!arc) continue;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    }
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(total);
+    const label = $('.job-donut');
+    if (label) label.setAttribute('aria-label', `${total} workers: ${busy} busy, ${idle} idle, ${paused} paused and ${offline} offline`);
+  }
+
+  const key = $('.job-mix-key');
+  if (key) {
+    key.innerHTML = [['inference', busy, 'Busy'], ['done', idle, 'Idle'], ['queued', paused, 'Paused'], ['attention', offline, 'Offline']]
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+}
+
+/**
+ * Fills the Workers table from the data layer.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderWorkersTable() {
+  /* **`table#workers`, not `#workers`.** The Inference submission form has a
+     `<select id="workers">` for choosing a machine, so the bare id matched a
+     dropdown on a screen that has no pool at all, passed the guard, and threw
+     on its missing tbody. Every renderer here names the element it expects. */
+  const table = $('table#workers');
+  if (!table || !window.MarpApi) return;
+
+  const body = $('tbody', table);
+  body.innerHTML = '<tr class="tblmsg"><td class="loading" colspan="11">Loading the pool&hellip;</td></tr>';
+
+  try {
+    /* Both routes, because two of the four headline cards are about the queue
+       rather than the machines. One failure state covers them: a screen that
+       half-loaded would be worse than one that says it could not. */
+    const [pool, jobs] = await Promise.all([
+      window.MarpApi.listWorkers(),
+      window.MarpApi.listJobs({ limit: 500 }),
+    ]);
+
+    workersPool = pool;
+    renderWorkersSummary(pool, jobs.jobs);
+    applyWorkersQuery();
+  } catch (error) {
+    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load the pool (${error.status || 'no answer'}). `
+      + '<button class="btn sm" type="button" id="workersRetry">Try again</button></td></tr>';
+    const retry = $('#workersRetry');
+    if (retry) retry.addEventListener('click', renderWorkersTable);
+  }
+}
+
+/**
+ * The pool's filters, sort headers and pager. Bound once.
+ *
+ * Nothing here refetches: `GET /gpu/workers` takes no parameters at all, so
+ * every control narrows what is already in hand.
+ */
+function wireWorkersControls() {
+  const panel = $('#worker-pool');
+  if (!panel) return;
+
+  const renarrow = () => { workersQuery.page = 1; applyWorkersQuery(); };
+
+  const search = $('.search input', panel);
+  if (search) {
+    search.addEventListener('input', () => {
+      workersQuery.search = search.value.trim().toLowerCase();
+      renarrow();
+    });
+  }
+
+  const [activitySel, gpuSel] = $$('.panel-tools select', panel);
+  if (activitySel) {
+    activitySel.addEventListener('change', () => {
+      workersQuery.activity = { Busy: 'busy', Idle: 'idle', Paused: 'paused', Offline: 'offline' }[activitySel.value] || '';
+      renarrow();
+    });
+  }
+  if (gpuSel) {
+    gpuSel.addEventListener('change', () => {
+      workersQuery.gpu = gpuSel.value.startsWith('All') ? '' : gpuSel.value.toLowerCase();
+      renarrow();
+    });
+  }
+
+  for (const th of $$('#workers thead th.sortable', panel)) {
+    const key = [...th.classList].find((c) => WORKERS_SORT_KEYS[c]);
+    if (!key) continue;
+    th.addEventListener('click', () => {
+      if (workersQuery.sort.key === key) {
+        workersQuery.sort.dir = workersQuery.sort.dir === 'ascending' ? 'descending' : 'ascending';
+      } else {
+        workersQuery.sort = { key, dir: 'ascending' };
+      }
+      workersQuery.page = 1;
+      applyWorkersQuery();
+    });
+  }
+
+  const pager = $('.panel-ft .pager', panel);
+  if (pager) {
+    pager.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-workers-page]');
+      if (!button || button.disabled) return;
+      workersQuery.page = Number(button.dataset.workersPage);
+      applyWorkersQuery();
+    });
+  }
+
+  const perPage = $('.panel-ft .rpp select', panel);
+  if (perPage) {
+    perPage.addEventListener('change', () => {
+      workersQuery.perPage = Number(perPage.value) || 5;
+      renarrow();
+    });
+  }
+}
+
+
+/**
+ * The filters, the sort headers and the pager.
+ *
+ * Bound once. A control that changes `kind` or `state` refetches, because those
+ * are the two the route can answer; everything else only re-narrows what is
+ * already in hand.
+ */
+function wireJobsControls() {
+  const panel = $('table#jobs')?.closest('.panel');
+  if (!panel) return;
+
+  const refetch = () => { jobsQuery.page = 1; renderJobsTable(); };
+  const renarrow = () => { jobsQuery.page = 1; applyJobsQuery(); };
+
+  const search = $('#filters input[type="search"]', panel);
+  if (search) {
+    search.addEventListener('input', () => {
+      jobsQuery.search = search.value.trim().toLowerCase();
+      renarrow();
+    });
+  }
+
+  const [kindSel, stateSel, windowSel] = $$('#filters select', panel);
+
+  if (kindSel) {
+    kindSel.addEventListener('change', () => {
+      jobsQuery.kind = { Inference: 'inference', Tracking: 'tracking', Training: 'training', Diagnostic: 'diagnostic' }[kindSel.value] || '';
+      refetch();
+    });
+  }
+
+  if (stateSel) {
+    stateSel.addEventListener('change', () => {
+      /* *Issues* is the odd one: it is derived from a batch's pieces and is not
+         a state the route knows, so it cannot be a `state=` and is narrowed
+         here instead. */
+      const choice = stateSel.value;
+      jobsQuery.issuesOnly = choice === 'Issues';
+      jobsQuery.state = jobsQuery.issuesOnly ? '' : ({
+        Running: 'leased', Queued: 'queued', Done: 'succeeded',
+        Failed: 'failed', Cancelled: 'cancelled', Expired: 'expired',
+      }[choice] || '');
+      refetch();
+    });
+  }
+
+  if (windowSel) {
+    windowSel.addEventListener('change', () => {
+      jobsQuery.windowDays = { 'Last 24 hours': 1, 'Last 7 days': 7, 'Last 30 days': 30 }[windowSel.value] || 7;
+      renarrow();
+    });
+  }
+
+  /* Sorting: the header and the phone strip drive the same query. */
+  const sortBy = (key) => {
+    if (jobsQuery.sort.key === key) {
+      jobsQuery.sort.dir = jobsQuery.sort.dir === 'ascending' ? 'descending' : 'ascending';
+    } else {
+      jobsQuery.sort = { key, dir: key === 'hupd' ? 'descending' : 'ascending' };
+    }
+    jobsQuery.page = 1;
+    applyJobsQuery();
+  };
+
+  for (const th of $$('#jobs thead th.sortable', panel)) {
+    const key = [...th.classList].find((c) => JOBS_SORT_KEYS[c]);
+    if (key) th.addEventListener('click', () => sortBy(key));
+  }
+
+  for (const button of $$('[data-sort-column]', panel)) {
+    const key = JOBS_SORT_COLUMNS[Number(button.dataset.sortColumn)];
+    if (key) button.addEventListener('click', () => sortBy(key));
+  }
+
+  /* The pager is rebuilt on every draw, so its clicks are taken by delegation
+     rather than bound to buttons that will not exist by the time they fire. */
+  const pager = $('.panel-ft .pager', panel);
+  if (pager) {
+    pager.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-jobs-page]');
+      if (!button || button.disabled) return;
+      jobsQuery.page = Number(button.dataset.jobsPage);
+      applyJobsQuery();
+    });
+  }
+
+  const perPage = $('.panel-ft .rpp select', panel);
+  if (perPage) {
+    perPage.addEventListener('change', () => {
+      jobsQuery.perPage = Number(perPage.value) || 18;
+      renarrow();
+    });
+  }
+}
+
+/**
+ * Fills the Jobs table from the data layer.
+ *
+ * Resolves immediately and does nothing anywhere but the Jobs screen, so the
+ * boot sequence can wait on it unconditionally.
+ *
+ * @returns {Promise<void>}
+ */
+async function renderJobsTable() {
+  const table = $('table#jobs');
+  if (!table || !window.MarpApi) return;
+
+  const body = $('tbody', table);
+  const columns = $$('thead th', table).length;
+  const fill = (cls, text) => `<tr class="tblmsg"><td class="${cls}" colspan="${columns}">${text}</td></tr>`;
+
+  /* Drawn before the await, so a slow answer reads as loading rather than as an
+     empty table somebody reloads. `?mock=slow` is how to see it. */
+  body.innerHTML = fill('loading', 'Loading jobs&hellip;');
+
+  try {
+    /* The two things the route *can* be asked. Everything else the screen
+       offers is narrowed after this, because there is no parameter for it. */
+    const ask = { limit: 500 };
+    if (jobsQuery.kind) ask.kind = jobsQuery.kind;
+    if (jobsQuery.state) ask.state = jobsQuery.state;
+
+    jobsWindow = await window.MarpApi.listJobs(ask);
+
+    /* The cards count the window, not the page: they are about the queue, not
+       about what happens to be on screen. */
+    renderJobsSummary(jobsWindow.jobs);
+    applyJobsQuery();
+  } catch (error) {
+    /* A real state, and the reason the layer can be made to fail on purpose.
+       `?mock=fail:jobs` is how to see it. */
+    body.innerHTML = fill('error', `Could not load jobs (${error.status || 'no answer'}). `
+      + '<button class="btn sm" type="button" id="jobsRetry">Try again</button>');
+    const retry = $('#jobsRetry');
+    if (retry) retry.addEventListener('click', renderJobsTable);
+  }
+}
+
 /**
  * Jobs keeps its complete list visible while the headline cards prioritize one
  * state. The overview history is a deterministic moving seam for later API data.
  */
 function wireJobsOverview() {
-  const table = $('#jobs');
+  const table = $('table#jobs');
   if (!table) return;
   const body = $('tbody', table);
   const metric = (label, value, note = '') => `<div class="jobmetric"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`;
@@ -664,35 +3032,24 @@ function wireJobsOverview() {
     return `<section class="training-evaluation" data-training-evaluation><header><div><h4>Final evaluation</h4><p><span data-split-label>Test</span> split · best checkpoint at epoch 94</p></div><div class="seg eval-splits" aria-label="Evaluation split"><button type="button" data-eval-split="train">Train</button><button type="button" data-eval-split="val">Validation</button><button type="button" class="on" data-eval-split="test" aria-pressed="true">Test</button></div></header><div class="evaluation-metrics">${metric('Macro F1', '0.78', '8 classes')}${metric('Precision', '0.81')}${metric('Recall', '0.76')}${metric('mAP@50', '0.79')}${metric('mAP@50–95', '0.52')}${metric('Best checkpoint', 'Epoch 94', 'last: epoch 100')}</div><div class="eval-tabs" role="tablist" aria-label="Evaluation views"><button type="button" class="on" role="tab" data-eval-tab="classes" aria-selected="true">Per-class quality</button><button type="button" role="tab" data-eval-tab="thresholds" aria-selected="false">Thresholds</button><button type="button" role="tab" data-eval-tab="confusion" aria-selected="false">Confusion matrix</button><button type="button" role="tab" data-eval-tab="balance" aria-selected="false">Class balance</button></div><div class="eval-view" data-eval-view="classes"><div class="class-metrics-wrap"><table class="class-metrics"><thead><tr><th>Class</th><th>Support</th><th>Precision</th><th>Recall</th><th>F1</th><th>AP@50</th><th>AP@50–95</th></tr></thead><tbody>${classRows}</tbody></table></div><article class="evaluation-card" data-result-graph><header><div><h5>Per-class precision–recall</h5><p>Eight classes · legend labels isolate individual curves</p></div><div class="result-legend eight-class">${legends}</div></header><div class="result-chart" role="img" aria-label="Precision recall curves for eight fish classes on the test split"><svg viewBox="0 0 740 205" aria-hidden="true">${chartGrid}<g class="result-axis"><text x="38" y="28">1.0</text><text x="38" y="103">.5</text><text x="38" y="178">0</text><text x="46" y="196">Recall 0</text><text x="700" y="196">Recall 1</text></g>${pr}</svg></div></article></div><div class="eval-view" data-eval-view="thresholds" hidden><article class="evaluation-card" data-result-graph><header><div><h5>Operating threshold</h5><p>Best macro F1 is 0.78 at confidence 0.61</p></div><div class="result-legend"><button type="button" class="precision" data-result-highlight="precision">Precision</button><button type="button" class="recall" data-result-highlight="recall">Recall</button><button type="button" class="f1-score" data-result-highlight="f1-score">F1</button></div></header><div class="result-chart" role="img" aria-label="Precision, recall and F1 by confidence threshold"><svg viewBox="0 0 740 205" aria-hidden="true">${chartGrid}<g class="result-axis"><text x="38" y="28">1.0</text><text x="38" y="103">.5</text><text x="38" y="178">0</text><text x="46" y="196">Confidence 0</text><text x="700" y="196">Confidence 1</text></g><path class="result-line precision" d="${plotPath([.31,.39,.47,.55,.63,.71,.78,.84,.89,.93,.96,.99],1)}"/><path class="result-line recall" d="${plotPath([.98,.96,.93,.89,.85,.80,.74,.66,.56,.43,.27,.06],1)}"/><path class="result-line f1-score" d="${plotPath([.47,.55,.62,.68,.72,.76,.78,.77,.69,.59,.42,.11],1)}"/><line class="threshold-mark" x1="445" y1="24" x2="445" y2="174"/><text class="threshold-label" x="451" y="38">chosen .61</text></svg></div></article></div><div class="eval-view" data-eval-view="confusion" hidden><article class="evaluation-card matrix-card"><header><div><h5>Confusion matrix</h5><p>Rows are actual class; columns are predicted class</p></div><div class="seg matrix-modes" aria-label="Confusion matrix values"><button type="button" class="on" data-matrix-mode="norm" aria-pressed="true">Normalized</button><button type="button" data-matrix-mode="count">Counts</button></div></header><div class="matrix-scroll"><div class="confusion eight" role="img" aria-label="Eight-class confusion matrix"><span></span>${classes.map((item) => `<b>${item.name}</b>`).join('')}${matrix}</div></div></article></div><div class="eval-view" data-eval-view="balance" hidden><article class="evaluation-card balance-card"><header><div><h5>Class balance</h5><p>Samples by class and dataset split</p></div><div class="balance-key"><span class="train">Train</span><span class="val">Validation</span><span class="test">Test</span></div></header><div class="balance-chart">${balance}</div></article></div><footer class="evaluation-artifacts"><div><b>Selected model</b><span>best.pt · epoch 94 · fitness 0.736</span></div><div><b>Last checkpoint</b><span>last.pt · epoch 100 · mAP@50–95 0.50</span></div><button class="btn sm" type="button">Weights &amp; plots</button><button class="btn sm" type="button">Hyperparameters</button></footer></section>`;
   };
 
-  /* Dataset construction is first-class work in this queue. Datasets owns the
-     finished artifact; until then this job owns progress, retries and logs. */
-  const datasetBuildJobs = [
-    { id: 'DS-2048', name: 'Build_CAMPA_2024_Rockfish_v4', scope: 'CAMPA 2024 · 4 query subsets', context: '31,640 observations', output: 'YOLO bounding boxes', state: 'running', status: 'Running', progress: 68, submitted: '2026-09-14T07:42' },
-    { id: 'DS-2049', name: 'Build_GULF_Invertebrates_v3', scope: 'GULF 2025 · 3 query subsets', context: '18,920 observations', output: 'YOLO bounding boxes', state: 'running', status: 'Running', progress: 21, submitted: '2026-09-14T09:26' },
-    { id: 'DS-2050', name: 'Build_PACIFIC_2023_RareFish_v1', scope: 'PACIFIC 2023 · 5 query subsets', context: '8,412 observations', output: 'YOLO bounding boxes', state: 'queued', status: 'Queued', progress: -1, submitted: '2026-09-14T10:02' },
-    { id: 'DS-2051', name: 'Build_CAMPA_2025_Habitat_v1', scope: 'CAMPA 2025 · 2 query subsets', context: '12,104 observations', output: 'Class-labelled images', state: 'queued', status: 'Queued', progress: -1, submitted: '2026-09-14T10:08' },
-    { id: 'DS-2052', name: 'Build_GULF_2024_CoralMasks_v2', scope: 'GULF 2024 · 2 query subsets', context: '6,780 observations', output: 'YOLO instance polygons', state: 'queued', status: 'Queued', progress: -1, submitted: '2026-09-14T10:11' },
-    { id: 'DS-2042', name: 'Build_SALT_2025_Substrate_v1', scope: 'SALT 2025 · 3 query subsets', context: '9,330 observations', output: 'Class-labelled images', state: 'failed', status: 'Failed', progress: 33, submitted: '2026-09-13T16:44' }
-  ];
-  datasetBuildJobs.slice().reverse().forEach((job) => {
-    const row = document.createElement('tr');
-    row.dataset.job = job.id;
-    const statusSort = { running: 0, queued: 3, failed: 5 }[job.state];
-    const progress = job.progress < 0
-      ? '<span class="dash">Not started</span>'
-      : `<span class="prog" data-state="${job.state}"><span class="bar"><i style="width:${job.progress}%"></i></span><span class="pct">${job.progress}%</span></span>`;
-    const actions = job.state === 'running'
-      ? '<button class="btn sm icon" aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
-      : job.state === 'queued'
-        ? '<button class="btn sm icon" aria-label="Start now"><svg class="ico sm"><use href="#i-play"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
-        : '<button class="btn sm">Retry job</button>';
-    row.innerHTML = `<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job ${job.id}"></td><td class="jname"><span class="name"><svg class="ico datasets"><use href="#i-datasets"/></svg><span class="t">${job.name}</span></span></td><td class="jtype"><span class="tag datasets">Dataset Build</span></td><td class="jscope"><span class="two"><span class="a">${job.scope}</span><span class="b">${job.context}</span></span></td><td class="jmodel"><span class="two"><span class="a">${job.output}</span><span class="b">Dataset output</span></span></td><td class="jstatus" data-sort="${statusSort}"><span class="st" data-state="${job.state}"><span class="dot"></span>${job.status}</span></td><td class="jprog" data-sort="${job.progress}">${progress}</td><td class="jtime" data-sort="${job.submitted}"><span class="two"><span class="a">${job.submitted.slice(11)}</span><span class="b">${job.submitted.slice(0, 10)}</span></span></td><td class="jacts"><span>${actions}</span></td>`;
-    body.prepend(row);
-  });
+  /* **A dataset build is not a GPU job**, settled 2026-10-14 in #128. Six of
+     them used to be prepended here, hand-written, because the design treated
+     dataset construction as first-class work in *this* queue. The dashboard
+     still builds datasets -- that work is real and the Datasets screen owns it
+     -- but it is not a `gpu_jobs` row and the inference worker never leases
+     one. MARP's job kinds are inference, tracking, training and diagnostic, so
+     nothing could ever have filled these rows, and they made the headline cards
+     disagree with the table beneath them: 18 running against 20. See gap 19. */
 
   /* The expanded row is the complete job view. Shared identity stays stable,
      while the operational facts change with type and state. */
   $$('tr[data-job]', body).forEach((head) => {
+    /* **Decorate a row once.** `applyJobsQuery` calls this on every re-render
+       and the boot calls it too, so eighteen jobs grew thirty-six detail rows
+       -- two apiece, the second one unreachable behind the first. Guarding here
+       rather than fixing the call order, because the next caller would make the
+       same mistake and this is the place that can refuse. */
+    if (head.classList.contains('runrow-head')) return;
     head.classList.add('runrow-head');
     head.setAttribute('aria-expanded', 'false');
     const id = head.dataset.job;
@@ -1484,7 +3841,7 @@ function wireInferenceForm() {
     }));
     const spec = { kind: 'inference_plan', pipeline: 'detection_bytetrack',
       name: $('#jobname')?.value || null, groups,
-      output: 'unreviewed_observations', worker_selection: $('#workers')?.value };
+      output: 'unreviewed_observations', worker_selection: $('table#workers')?.value };
     $('#specText').textContent = JSON.stringify(spec, null, 2);
     $('#specOut').hidden = false;
     $('#specOut').scrollIntoView({ block: 'nearest' });
@@ -1499,10 +3856,124 @@ function wireInferenceForm() {
  * wants one run's curves beside the row above rather than in a drawer that
  * hides the list.
  */
-function wireDatasetPage() {
-  const table = $('#saved-datasets');
+/** `Dataset` does not carry this. Distinct from "not measured yet". */
+const NOT_IN_DATASET = '<span class="dash" title="Not carried by the dataset record: it has name, description, location, num_samples, num_classes, source and timestamps, and nothing else (gap 16)">&mdash;</span>';
+
+/**
+ * Puts the saved datasets from `GET /api/v2/dataset` into the lifecycle table.
+ *
+ * The five that were written into the markup are replaced. The *builds* above
+ * them are not: a build in flight has no API behind it at all (gap 19), so
+ * those rows stay fixture and say so in their own detail.
+ *
+ * @param {Element} body - The table body.
+ * @returns {Promise<void>}
+ */
+async function fillSavedDatasets(body) {
+  if (!window.MarpApi) return;
+
+  let datasets;
+  try {
+    datasets = await window.MarpApi.listDatasets();
+  } catch (error) {
+    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load datasets (${error.status || 'no answer'}).</td></tr>`;
+    return 0;
+  }
+
+  const stamp = (iso) => {
+    const d = new Date(iso);
+    return `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
+  };
+
+  const written = datasets.length;
+  body.innerHTML = datasets.map((set) => '<tr>'
+    + `<td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">${set.name}</span></span></td>`
+    + `<td class="jscope">${set.description || ''}</td>`
+    + `<td class="num" data-sort="${set.num_samples}">${set.num_samples.toLocaleString()}</td>`
+    /* Frames is not a column on `Dataset`. `num_samples` is the only count it
+       has, and calling it frames as well would be one number pretending to be
+       two different measurements. */
+    + `<td class="num" data-sort="-1">${NOT_IN_DATASET}</td>`
+    + `<td class="num" data-sort="${set.num_classes}">${set.num_classes}</td>`
+    + `<td class="jtime" data-sort="${set.created_at}">${stamp(set.created_at)}</td>`
+    + `<td class="jtime" data-sort="${set.updated_at}">${stamp(set.updated_at)}</td>`
+    + '<td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button></span></td>'
+    + '</tr>').join('');
+  return written;
+}
+
+/**
+ * The four cards and the status donut.
+ *
+ * **Only one of the four numbers is an API fact.** Ready datasets is a count of
+ * `GET /api/v2/dataset`. Building, queued and needing attention are builds in
+ * flight, and MARP records none of them — a dataset build is not a GPU job and
+ * `Dataset` has no status column — so those three are counted from the fixture
+ * rows, and the cards say where they come from. Gap 19.
+ *
+ * @param {number} ready - Saved datasets, from the API.
+ * @param {Object[]} builds - The in-flight build fixtures.
+ */
+function renderDatasetsSummary(ready, builds) {
+  const count = (status) => builds.filter((b) => b.status === status).length;
+  const building = count('building');
+  const queued = count('queued');
+  const attention = count('attention');
+  const total = ready + builds.length;
+
+  const byLabel = {};
+  for (const card of $$('.stat')) {
+    const label = $('.stat-lab', card);
+    if (label) byLabel[label.textContent.trim()] = card;
+  }
+  const set = (label, num, sub) => {
+    const card = byLabel[label];
+    if (!card) return;
+    const n = $('.stat-num', card);
+    if (n) n.textContent = String(num);
+    const s = $('.stat-sub', card);
+    if (s) s.innerHTML = `<span>${sub}</span>`;
+  };
+
+  set('Building now', building, 'builds are not tracked by the API');
+  set('Queued builds', queued, 'builds are not tracked by the API');
+  set('Ready datasets', ready, 'saved in MARP');
+  set('Needs attention', attention, 'builds are not tracked by the API');
+
+  const parts = [['running', building, 'Building'], ['queued', queued, 'Queued'], ['done', ready, 'Ready'], ['failed', attention, 'Needs attention']];
+
+  const donut = $('.job-donut svg');
+  if (donut) {
+    const arcs = $$('.donut-part', donut);
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = parts[index] ? parts[index][1] : 0;
+      arc.setAttribute('pathLength', String(total || 1));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, (total || 1) - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+    const middle = $('.job-donut > span > b');
+    if (middle) middle.textContent = String(total);
+  }
+
+  const legend = $('.job-mix-key');
+  if (legend) {
+    legend.innerHTML = parts
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+}
+
+async function wireDatasetPage() {
+  const table = $('table#saved-datasets');
   if (!table) return;
   const body = $('tbody', table);
+
+  /* The saved rows come from the API before anything decorates them, so the
+     Task, Status and expander cells are added to real rows rather than to the
+     five that used to be typed into the markup. */
+  const savedCount = await fillSavedDatasets(body);
   const samples = [
     ['/api/v2/jellyfin/items/9f66020c16c80d2800560a76d4417080/images/Primary', 'CAMPA2024 Dive 1 · 141923'],
     ['/api/v2/jellyfin/items/847c5f1034d01cf3a7aa2427fa7af4b4/images/Primary', 'CAMPA2024 Dive 1 · 154643'],
@@ -1527,21 +3998,49 @@ function wireDatasetPage() {
   buildJobs.slice().reverse().forEach((item) => {
     fixtures[item.name] = item;
     const row = document.createElement('tr');
-    row.innerHTML = '<td class="jname"><a class="name dataset-job-name" href="./jobs.html?job=' + item.job + '" title="Open ' + item.job + ' in Jobs"><svg class="ico"><use href="#i-jobs"/></svg><span class="t">' + item.name + '</span></a></td>'
+    /* No link into Jobs: a dataset build is not in that queue, and its detail
+       is this row's own expansion. The icon is the Datasets one for the same
+       reason -- the jobs icon claimed a home it does not have. */
+    row.innerHTML = '<td class="jname"><span class="name dataset-build-name"><svg class="ico datasets"><use href="#i-datasets"/></svg><span class="t">' + item.name + '</span></span></td>'
       + '<td class="jscope">' + item.description + '</td>'
       + '<td class="num" data-sort="' + item.observations.replaceAll(',', '') + '">' + item.observations + '</td>'
       + '<td class="num" data-sort="' + item.frameSort + '">' + item.frames + '</td>'
       + '<td class="num" data-sort="' + item.classes + '">' + item.classes + '</td>'
       + '<td class="jtime" data-sort="' + item.created + '"><span class="two"><span class="a">' + item.created.slice(11) + '</span><span class="b">' + item.created.slice(0, 10) + '</span></span></td>'
       + '<td class="jtime" data-sort="' + item.updated + '"><span class="two"><span class="a">' + item.updated + '</span></span></td>'
-      + '<td class="jacts"><a class="btn sm dataset-job-link" href="./jobs.html?job=' + item.job + '" aria-label="Open ' + item.job + ' in Jobs" title="Open this Dataset Build job in the shared Jobs list"><svg class="ico sm"><use href="#i-arrow"/></svg>View job</a></td>';
+      + '<td class="jacts"><button class="btn sm dataset-build-open" type="button" aria-label="Show build detail for ' + item.name + '" title="Show build progress, worker and diagnostics"><svg class="ico sm"><use href="#i-right"/></svg>Build detail</button></td>';
     body.prepend(row);
   });
+  renderDatasetsSummary(savedCount || 0, buildJobs);
+
   const heads = $$(':scope > tr', body);
   heads.forEach((head) => {
     const original = [...head.children];
     const name = $('.jname .t', head)?.textContent.trim() || 'Saved dataset';
-    const cfg = fixtures[name] || fixtures.CAMPA_2024_Rockfish_v3;
+    /* **A row from the API gets the API's own blanks, not another dataset's
+       fixture.** This used to fall back to `CAMPA_2024_Rockfish_v3`, so any
+       dataset the fixtures did not name borrowed that one's task, project,
+       queries, overlap groups and split -- five invented facts per row, each
+       of them plausible and none of them true. A `Dataset` carries `name`,
+       `description`, `location`, `num_samples`, `num_classes`, `source` and
+       the timestamps; everything else on this panel is gap 16. */
+    const cfg = fixtures[name] || {
+      task: 'Unassigned',
+      fromApi: true,
+      status: head.dataset.datasetStatus || 'ready',
+      format: NOT_IN_DATASET,
+      project: NOT_IN_DATASET,
+      queries: NOT_IN_DATASET,
+      groups: NOT_IN_DATASET,
+      split: NOT_IN_DATASET,
+      build: NOT_IN_DATASET,
+      size: NOT_IN_DATASET,
+      fingerprint: NOT_IN_DATASET,
+      worker: NOT_IN_DATASET,
+      eta: NOT_IN_DATASET,
+      progress: -1,
+      job: null,
+    };
     const description = original[1]?.textContent.trim() || '';
     const observations = original[2]?.textContent.trim() || '';
     const frames = original[3]?.textContent.trim() || '';
@@ -1566,16 +4065,73 @@ function wireDatasetPage() {
     task.after(state);
     const expand = document.createElement('td');
     expand.className = 'ex';
+    /* **A build expands here, on Datasets.** It used to carry a mark linking
+       into Jobs, because a dataset build was drawn as a job in the GPU queue.
+       It is not one -- settled 2026-10-14 in #128 -- so its progress, its
+       worker and its diagnostics have to live where the build does, which is
+       this row. The structure is deliberately the same as a Ready row's, a
+       `runrow-head` with a `runrow-body` after it, so the existing expander
+       wires it without knowing the difference. */
     if (isBuild) {
-      head.classList.add('dataset-job-row');
-      expand.innerHTML = `<a class="dataset-job-mark" href="./jobs.html?job=${cfg.job}" aria-label="Open ${cfg.job} in Jobs" title="This is a Dataset Build job; open it in Jobs"><svg class="ico sm"><use href="#i-jobs"/></svg></a>`;
+      head.classList.add('dataset-build-row');
+      head.setAttribute('aria-expanded', 'false');
+      expand.innerHTML = `<button class="exbtn" type="button" aria-label="Expand ${name}" title="Show build progress, worker and diagnostics"><svg class="ico sm"><use href="#i-right"/></svg></button>`;
       head.prepend(expand);
+
+      const failed = status === 'attention';
+      const pct = Math.max(0, cfg.progress || 0);
+      const tone = { building: 'running', queued: 'queued', attention: 'failed' }[status];
+
+      /* Queued work has not measured anything, so it draws a dash rather than
+         a 0% bar -- the same rule the Jobs table follows. */
+      const bar = status === 'queued'
+        ? '<span class="dash">Not started</span>'
+        : `<span class="prog" data-state="${tone}"><span class="bar" role="progressbar" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span><span class="pct">${pct}%</span></span>`;
+
+      const fact = (label, value) => `<div class="jobmetric"><span>${label}</span><b>${value}</b></div>`;
+      const note = failed
+        ? `<div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${cfg.description}</h4><p>Materialized frames are kept; only the unread remainder needs to run again.</p></div></div>`
+        : '';
+      const actions = failed
+        ? '<button class="btn sm" type="button">Retry build</button><button class="btn sm ghost" type="button">Discard</button>'
+        : status === 'queued'
+          ? '<button class="btn sm" type="button">Start now</button><button class="btn sm ghost" type="button">Cancel build</button>'
+          : '<button class="btn sm ghost" type="button">Cancel build</button>';
+
+      const detail = document.createElement('tr');
+      detail.className = 'runrow-body dataset-row-detail';
+      detail.hidden = true;
+      detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}">`
+        + `<header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${tone}">${stateLabel}</span></header>`
+        + `<div class="dataset-build-progress">${bar}<span class="build-frames">${frames} frames</span></div>`
+        + note
+        + `<div class="jobmetrics">${fact('Worker', cfg.worker)}${fact('Elapsed', cfg.build)}${fact('Remaining', cfg.eta)}${fact('Materialized', cfg.size)}${fact('Split', cfg.split)}${fact('Fingerprint', cfg.fingerprint)}</div>`
+        + `<dl class="kv"><dt>Project</dt><dd>${cfg.project}</dd><dt>Queries</dt><dd>${cfg.queries}</dd><dt>Overlap groups</dt><dd>${cfg.groups}</dd><dt>Output format</dt><dd>${cfg.format}</dd></dl>`
+        + `<div class="jobstate-actions">${actions}</div>`
+        + '</div></td>';
+      head.after(detail);
+
+      /* The row's own click handler ignores buttons, so the action has to ask
+         the expander itself -- the same arrangement a Ready row uses. */
+      const open = $('.dataset-build-open', head);
+      if (open) {
+        open.addEventListener('click', (event) => {
+          event.stopPropagation();
+          $('.exbtn', head)?.click();
+        });
+      }
       return;
     }
     head.setAttribute('aria-expanded', 'false');
     expand.innerHTML = `<button class="exbtn" type="button" aria-label="Expand ${name}" title="Show provenance, composition, split and sample images"><svg class="ico sm"><use href="#i-right"/></svg></button>`;
     head.prepend(expand);
-    const thumbs = samples.map(([src, alt]) => `<figure><img src="${src}" alt="Opening source frame from ${alt}" loading="lazy"><figcaption>${alt}</figcaption></figure>`).join('');
+    /* **Not `loading="lazy"`.** These sit inside a row that is collapsed until
+       somebody opens it, and a lazy image revealed that way is never fetched:
+       the load is deferred and the deferral never resolves, so the strip stays
+       blank with no error anywhere -- the browser simply never asked. Twenty-six
+       thumbnails on a page is a cost worth paying over a panel that silently
+       shows nothing. */
+    const thumbs = samples.map(([src, alt]) => `<figure><img src="${src}" alt="Opening source frame from ${alt}"><figcaption>${alt}</figcaption></figure>`).join('');
     const detail = document.createElement('tr');
     detail.className = 'runrow-body dataset-row-detail';
     detail.hidden = true;
@@ -1610,9 +4166,18 @@ function wireDatasetPage() {
       if (detail) detail.hidden = !match || head.getAttribute('aria-expanded') !== 'true';
       if (match) shown += 1;
     });
-    count.textContent = `(${shown} shown of 20)`;
-    if (footer) footer.innerHTML = `Showing <b class="strong">${shown}</b> of 20 builds and datasets`;
+    /* `heads.length`, not 20. The total was written in when there were twenty
+       rows in the markup; the saved datasets come from the API now and there
+       are as many as MARP holds. */
+    count.textContent = `(${shown} shown of ${heads.length})`;
+    if (footer) footer.innerHTML = `Showing <b class="strong">${shown}</b> of ${heads.length} builds and datasets`;
   };
+  /* **Bound here, not in the boot list.** `wireAccordions` runs before this
+     function resolves -- these rows come from the API, so they did not exist
+     when it swept the page -- and without this the expander on every dataset
+     did nothing at all. */
+  wireAccordions();
+
   search.addEventListener('input', filter);
   task.addEventListener('change', filter);
   status.addEventListener('change', filter);
@@ -2610,10 +5175,8 @@ mountTopbar();
 wireTopbarAutohide();
 wireRailSheet();
 wireDrawer();
-wireSelection();
 wireSwitchers();
 wirePoolUtilization();
-wireJobsOverview();
 wireInferenceActivity();
 wireTrainingActivity();
 wireDatasetActivity();
@@ -2621,11 +5184,33 @@ wireOperationalActivity();
 wireModelRegistration();
 wireSliders();
 wireInferenceForm();
-wireDatasetPage();
-wireSorting();
 wireAccordions();
 wireDatasetBuilder();
 wireSplit();
 wireLineage();
 wireRowSelect();
-applyTips();
+
+/* **Rows first, then the wiring that needs rows.** The Jobs table is filled
+   from the data layer, which is asynchronous because it has to be -- swapping
+   it for real `fetch` calls is meant to be the whole of the wiring work, and a
+   synchronous layer could not be swapped for one. So the four that bind to rows
+   wait, and everything above, which does not care, has already run.
+
+   Off those screens each render resolves without doing anything, so this costs
+   one microtask and no special case. */
+Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen(), renderModelsScreen(), renderInferenceScreen(), renderTrainingScreen(), wireDatasetPage()]).then(() => {
+  /* `applyJobsQuery` and `applyWorkersQuery` rewire the rows they draw; these
+     are the ones that bind once, to controls that outlive every redraw. */
+  wireJobsControls();
+  wireWorkersControls();
+  wireHistoryControls();
+  wireModelsControls();
+  wireSorting();
+  /* **Not `wireJobsOverview()`.** `applyJobsQuery` calls it on every render,
+     including the first, so calling it here bound every result-graph legend a
+     second time -- and a second listener undid what the first did, leaving a
+     button that visibly worked and highlighted nothing. The row loop guards
+     itself against a repeat; the graph bindings could not. */
+  wireSelection();
+  applyTips();
+});

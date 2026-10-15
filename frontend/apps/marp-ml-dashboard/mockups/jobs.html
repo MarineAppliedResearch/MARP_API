@@ -30,26 +30,26 @@
         <button class="stat stat-sort" type="button" data-state="running" data-job-priority="running" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
           <span class="stat-lab">Running jobs</span>
-          <b class="stat-num">8</b>
-          <span class="stat-sub"><span><b>4</b> inference</span><span><b>2</b> training</span><span><b>2</b> builds</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
         </button>
         <button class="stat stat-sort" type="button" data-state="queued" data-job-priority="queued" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span>
           <span class="stat-lab">Queued jobs</span>
-          <b class="stat-num">11</b>
-          <span class="stat-sub"><span><b>5</b> inference</span><span><b>3</b> training</span><span><b>3</b> builds</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
         </button>
         <button class="stat stat-sort" type="button" data-state="done" data-job-priority="done" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
           <span class="stat-lab">Completed today</span>
-          <b class="stat-num">18</b>
-          <span class="stat-sub"><span><b>15</b> clean</span><span><b>3</b> with issues</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
         </button>
         <button class="stat stat-sort" type="button" data-state="failed" data-job-priority="attention" aria-pressed="false">
           <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
           <span class="stat-lab">Needs attention</span>
-          <b class="stat-num">8</b>
-          <span class="stat-sub"><span><b>5</b> failed</span><span><b>3</b> with issues</span></span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
         </button>
       </div>
 
@@ -62,21 +62,13 @@
                 <circle class="donut-track" cx="60" cy="60" r="43"/>
                 <circle class="donut-part inference" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="4 41" stroke-dashoffset="0"/>
                 <circle class="donut-part training" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="2 43" stroke-dashoffset="-4"/>
-                <circle class="donut-part datasets" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="2 43" stroke-dashoffset="-6"/>
                 <circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="11 34" stroke-dashoffset="-8"/>
                 <circle class="donut-part done" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="18 27" stroke-dashoffset="-19"/>
                 <circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="45" stroke-dasharray="8 37" stroke-dashoffset="-37"/>
               </svg>
               <span><b>45</b><small>jobs</small></span>
             </div>
-            <div class="job-mix-key">
-              <span class="inference"><i></i><b>4</b> Running inference</span>
-              <span class="training"><i></i><b>2</b> Running training</span>
-              <span class="datasets"><i></i><b>2</b> Building datasets</span>
-              <span class="queued"><i></i><b>11</b> Queued</span>
-              <span class="done"><i></i><b>18</b> Completed today</span>
-              <span class="attention"><i></i><b>8</b> Need attention</span>
-            </div>
+            <div class="job-mix-key"></div>
           </div>
         </article>
 
@@ -104,14 +96,14 @@
 
       <section class="panel">
         <header class="panel-hd">
-          <h2>Jobs <span class="count">(69)</span></h2>
+          <h2>Jobs <span class="count"></span></h2>
           <div class="panel-tools" id="filters">
             <span class="search">
               <svg class="ico sm"><use href="#i-search"/></svg>
               <input class="inp" type="search" placeholder="Search jobs&hellip;" aria-label="Search jobs">
             </span>
-            <select class="sel" aria-label="Job type"><option>All job types</option><option>Inference</option><option>Training</option><option>Dataset Build</option></select>
-            <select class="sel" aria-label="Status"><option>All statuses</option><option>Running</option><option>Queued</option><option>Paused</option><option>Failed</option><option>Completed</option></select>
+            <select class="sel" aria-label="Job type"><option>All job types</option><option>Inference</option><option>Tracking</option><option>Training</option><option>Diagnostic</option></select>
+            <select class="sel" aria-label="Status"><option>All statuses</option><option>Running</option><option>Queued</option><option>Done</option><option>Issues</option><option>Failed</option><option>Cancelled</option><option>Expired</option></select>
             <select class="sel" aria-label="Window"><option>Last 7 days</option><option>Last 24 hours</option><option>Last 30 days</option></select>
             <button class="btn" type="button" id="expandAll"><svg class="ico"><use href="#i-right"/></svg>Expand all</button>
           </div>
@@ -123,7 +115,7 @@
             <button type="button" data-sort-column="6">Submitted</button>
           </div>
           <div class="bulk" id="bulk" hidden>
-            <span><span class="n" id="bulkN">0</span> selected</span>
+            <span><span class="n" id="bulkN"></span> selected</span>
             <button class="btn sm">Reprioritize</button>
             <button class="btn sm">Retry failed</button>
             <button class="btn sm">Cancel</button>
@@ -143,150 +135,16 @@
                   <th class="hacts"><span class="vh">Actions</span></th>
                 </tr>
               </thead>
-              <tbody>
-                  <tr data-job="1742">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1742"></td>
-                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Train_MARP_Multiclass_Det_XL_ALL_v5</span></span></td>
-                    <td class="jtype"><span class="tag training">Training</span></td>
-                    <td class="jscope"><span class="two"><span class="a">ALL_Projects_Inverts_v5</span><span class="b">Dataset &middot; 41,208 obs</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Multiclass-Det-XL</span><span class="b">v1.0.2</span></span></td>
-                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="jprog" data-sort="86"><span class="prog" data-state="running"><span class="bar"><i style="width:86%"></i></span><span class="pct">86%</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09T14:36"><span class="two"><span class="a">14:36</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
-                  </tr>
-                  <tr data-job="1741">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1741"></td>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_D0103_L30_Crab_Count</span></span></td>
-                    <td class="jtype"><span class="tag inference">Inference</span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0103 &middot; Line 30</span><span class="b">CAMPA 2024 &middot; 1 video</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Crab-Det</span><span class="b">v1.1.4</span></span></td>
-                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="jprog" data-sort="11"><span class="prog" data-state="running"><span class="bar"><i style="width:11%"></i></span><span class="pct">11%</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09T16:20"><span class="two"><span class="a">16:20</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
-                  </tr>
-                  <tr data-job="1736">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1736"></td>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">ARCTIC_2024_Dive_0449_Inverts</span></span></td>
-                    <td class="jtype"><span class="tag inference">Inference</span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0449 &middot; Line 08</span><span class="b">ARCTIC 2024 &middot; 1 video</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Det-v3</span><span class="b">v2.0.0</span></span></td>
-                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="jprog" data-sort="47"><span class="prog" data-state="running"><span class="bar"><i style="width:47%"></i></span><span class="pct">47%</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09T12:28"><span class="two"><span class="a">12:28</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
-                  </tr>
-                  <tr data-job="1734">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1734"></td>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">VENTS_2025_D0318_L12_Sponge_Survey</span></span></td>
-                    <td class="jtype"><span class="tag inference">Inference</span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0318 &middot; Line 12</span><span class="b">VENTS 2025 &middot; 1 video</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Sponge-Det</span><span class="b">v1.1.2</span></span></td>
-                    <td class="jstatus" data-sort="1"><span class="st" data-state="cancelling"><span class="dot"></span>Cancelling</span></td>
-                    <td class="jprog" data-sort="87"><span class="prog" data-state="cancelling"><span class="bar"><i style="width:87%"></i></span><span class="pct">87%</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09T15:52"><span class="two"><span class="a">15:52</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" disabled aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" disabled aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
-                  </tr>
-                  <tr data-job="1733">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1733"></td>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">PACIFIC_2023_D0070_L23_Crab_Count</span></span></td>
-                    <td class="jtype"><span class="tag inference">Inference</span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0070 &middot; Line 23</span><span class="b">PACIFIC 2023 &middot; 1 video</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Crab-Det</span><span class="b">v1.1.4</span></span></td>
-                    <td class="jstatus" data-sort="2"><span class="st" data-state="paused"><span class="dot"></span>Paused</span></td>
-                    <td class="jprog" data-sort="60"><span class="prog" data-state="paused"><span class="bar"><i style="width:60%"></i></span><span class="pct">60%</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09T14:35"><span class="two"><span class="a">14:35</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Resume"><svg class="ico sm"><use href="#i-play"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
-                  </tr>
-                  <tr data-job="1731">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1731"></td>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_D0125_L30_Rockfish_Cls</span></span></td>
-                    <td class="jtype"><span class="tag inference">Inference</span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0125 &middot; Line 30</span><span class="b">CAMPA 2024 &middot; 1 video</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Rockfish-Cls</span><span class="b">v2.0.0</span></span></td>
-                    <td class="jstatus" data-sort="3"><span class="st" data-state="queued"><span class="dot"></span>Queued</span></td>
-                    <td class="jprog" data-sort="-1"><span class="dash">Not started</span></td>
-                    <td class="jtime" data-sort="2026-09-09T16:20"><span class="two"><span class="a">16:20</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Start now"><svg class="ico sm"><use href="#i-play"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
-                  </tr>
-                  <tr data-job="1728">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1728"></td>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_D0305_L15_Invertebrate_Detect</span></span></td>
-                    <td class="jtype"><span class="tag inference">Inference</span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0305 &middot; Line 15</span><span class="b">CAMPA 2024 &middot; 1 video</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Det-v3</span><span class="b">v1.0.4</span></span></td>
-                    <td class="jstatus" data-sort="4"><span class="st" data-state="issues"><span class="dot"></span>Issues</span></td>
-                    <td class="jprog" data-sort="100"><span class="prog" data-state="issues"><span class="bar"><i style="width:100%"></i></span><span class="pct">100%</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09T11:04"><span class="two"><span class="a">11:04</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm">Retry 2</button></span></td>
-                  </tr>
-                  <tr data-job="1726">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1726"></td>
-                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Train_MARP_SeaStar_Det_SALT_2024_SeaStar_v2LT_v2</span></span></td>
-                    <td class="jtype"><span class="tag training">Training</span></td>
-                    <td class="jscope"><span class="two"><span class="a">SALT_2024_SeaStar_v2</span><span class="b">Dataset &middot; 3,880 obs</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-SeaStar-Det</span><span class="b">v1.0.1</span></span></td>
-                    <td class="jstatus" data-sort="5"><span class="st" data-state="failed"><span class="dot"></span>Failed</span></td>
-                    <td class="jprog" data-sort="-2"><span class="two"><span class="a faint">Stopped at 37%</span><span class="b">CUDA out of memory</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09T09:18"><span class="two"><span class="a">09:18</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm">Retry</button></span></td>
-                  </tr>
-                  <tr data-job="1724">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1724"></td>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">GULF_2025_D0212_L04_Fish_Count</span></span></td>
-                    <td class="jtype"><span class="tag inference">Inference</span></td>
-                    <td class="jscope"><span class="two"><span class="a">Dive 0212 &middot; Line 04</span><span class="b">GULF 2025 &middot; 1 video</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Fish-Det</span><span class="b">v1.1.1</span></span></td>
-                    <td class="jstatus" data-sort="6"><span class="st" data-state="cancelled"><span class="dot"></span>Cancelled</span></td>
-                    <td class="jprog" data-sort="-2"><span class="two"><span class="a faint">Stopped at 22%</span><span class="b">Cancelled by an operator</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09T08:41"><span class="two"><span class="a">08:41</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm">Run again</button></span></td>
-                  </tr>
-                  <tr data-job="1722">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1722"></td>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">VENTS_2025_Line_32_Benthic_All</span></span></td>
-                    <td class="jtype"><span class="tag inference">Inference</span></td>
-                    <td class="jscope"><span class="two"><span class="a">Line 32 &middot; 24 videos</span><span class="b">VENTS 2025</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Multiclass-Det-XL</span><span class="b">v1.0.2</span></span></td>
-                    <td class="jstatus" data-sort="7"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
-                    <td class="jprog" data-sort="100"><span class="prog" data-state="done"><span class="bar"><i style="width:100%"></i></span><span class="pct">100%</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09T08:12"><span class="two"><span class="a">08:12</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm">Run again</button></span></td>
-                  </tr>
-                  <tr data-job="1739">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1739"></td>
-                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Finetune_MARP_Fish_Det_GULF_v1</span></span></td>
-                    <td class="jtype"><span class="tag training">Training</span></td>
-                    <td class="jscope"><span class="two"><span class="a">GULF_2025_Fish_Train_v1</span><span class="b">Dataset &middot; 9,140 obs</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Fish-Det</span><span class="b">v1.1.3</span></span></td>
-                    <td class="jstatus" data-sort="7"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
-                    <td class="jprog" data-sort="100"><span class="prog" data-state="done"><span class="bar"><i style="width:100%"></i></span><span class="pct">100%</span></span></td>
-                    <td class="jtime" data-sort="2026-09-09T12:06"><span class="two"><span class="a">12:06</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm">Open model</button></span></td>
-                  </tr>
-                  <tr data-job="1730">
-                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1730"></td>
-                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_Line_28_Crab_Count</span></span></td>
-                    <td class="jtype"><span class="tag inference">Inference</span></td>
-                    <td class="jscope"><span class="two"><span class="a">Line 28 &middot; 18 videos</span><span class="b">CAMPA 2024</span></span></td>
-                    <td class="jmodel"><span class="two"><span class="a">MARP-Crab-Det</span><span class="b">v1.0.2</span></span></td>
-                    <td class="jstatus" data-sort="3"><span class="st" data-state="queued"><span class="dot"></span>Queued</span></td>
-                    <td class="jprog" data-sort="-1"><span class="dash">Not started</span></td>
-                    <td class="jtime" data-sort="2026-09-09T16:17"><span class="two"><span class="a">16:17</span><span class="b">2026-09-09</span></span></td>
-                    <td class="jacts"><span><button class="btn sm icon" aria-label="Start now"><svg class="ico sm"><use href="#i-play"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
-                  </tr>
-              </tbody>
+              <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
             </table>
           </div>
         </div>
         <footer class="panel-ft">
-          <span>Showing <b class="strong">1&ndash;18</b> of 69 jobs</span>
+          <span>Counting jobs&hellip;</span>
           <div class="pager">
-            <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button>
-            <button aria-current="page">1</button><button>2</button><button>3</button>
-            <button>4</button><button>5</button>
-            <button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+            <!-- Built by renderJobsHeaderState(). How many pages there are is not a fact
+                 this markup can know, and the fixed run of five it used to hold was wrong
+                 for every list that was not exactly five pages long. -->
           </div>
           <span class="rpp">Rows
             <select class="sel" aria-label="Rows per page"><option>18</option><option>25</option><option>50</option></select>
@@ -348,38 +206,7 @@
       <div class="tblwrap">
         <table class="tbl">
           <thead><tr><th>Frames</th><th>Worker</th><th>State</th><th class="num">Done</th></tr></thead>
-          <tbody>
-                  <tr>
-                    <td class="mono">16 200 &ndash; 17 100</td><td>campa-lab-04</td>
-                    <td><span class="st" data-state="done"><span class="dot"></span>Done</span></td>
-                    <td class="num">100%</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">17 100 &ndash; 18 000</td><td>campa-lab-07</td>
-                    <td><span class="st" data-state="done"><span class="dot"></span>Done</span></td>
-                    <td class="num">100%</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">18 000 &ndash; 18 900</td><td>bergstrom-4090</td>
-                    <td><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="num">62%</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">18 900 &ndash; 19 800</td><td>campa-lab-02</td>
-                    <td><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
-                    <td class="num">18%</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">19 800 &ndash; 20 700</td><td>&mdash;</td>
-                    <td><span class="st" data-state="queued"><span class="dot"></span>Queued</span></td>
-                    <td class="num"><span class="dash">&mdash;</span></td>
-                  </tr>
-                  <tr>
-                    <td class="mono">20 700 &ndash; 21 600</td><td>&mdash;</td>
-                    <td><span class="st" data-state="queued"><span class="dot"></span>Queued</span></td>
-                    <td class="num"><span class="dash">&mdash;</span></td>
-                  </tr>
-          </tbody>
+          <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
         </table>
       </div>
     </div>
@@ -430,6 +257,7 @@
   </footer>
 </aside>
 
+<script src="./api.js"></script>
 <script src="./mock.js"></script>
 
 </body>

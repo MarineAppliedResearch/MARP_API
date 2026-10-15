@@ -3,14 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MARP Machine Learning Dashboard \u2014 the design mockups. Static screens, no data layer yet; see DESIGN.md.",
+  "description": "MARP Machine Learning Dashboard — the design mockups and their data layer. See DESIGN.md.",
   "scripts": {
     "serve": "node tools/serve.mjs",
-    "lint": "node tools/syntax-check.mjs && node tools/style-check.mjs",
+    "lint": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/api-contract-check.mjs && node tools/markup-check.mjs",
     "shots": "node tools/mock-shots.mjs",
     "check:scroll": "node tools/scroll-check.mjs",
     "check:account": "node tools/account-check.mjs",
-    "test": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/scroll-check.mjs && node tools/account-check.mjs && node tools/mock-shots.mjs"
+    "test": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/api-contract-check.mjs && node tools/markup-check.mjs && node tools/data-layer-check.mjs && node tools/screens-check.mjs && node tools/scroll-check.mjs && node tools/account-check.mjs && node tools/mock-shots.mjs",
+    "check:contract": "node tools/api-contract-check.mjs",
+    "check:markup": "node tools/markup-check.mjs",
+    "check:layer": "node tools/data-layer-check.mjs",
+    "check:screens": "node tools/screens-check.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"
