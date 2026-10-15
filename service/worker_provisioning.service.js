@@ -2,6 +2,7 @@
 
 const repository = require('../repository/worker_provisioning.repository');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
+const workerReleases = require('../config/worker-releases');
 
 const STATES = new Set(['current', 'update_available', 'update_requested', 'updating', 'succeeded', 'failed', 'rolled_back']);
 const SHA256 = /^[0-9a-f]{64}$/i;
@@ -75,7 +76,6 @@ class WorkerProvisioningService {
             workerVersion: body.worker_version ? requiredString(body.worker_version, 'worker_version', 64) : null,
         });
         if (!result) throw new ApiError(401, ERROR_CODES.UNAUTHORIZED, 'Activation code is invalid, expired, or already used.');
-        if (result.conflict) throw new ApiError(409, ERROR_CODES.CONFLICT, 'This worker identity is already activated.');
         return result;
     }
 
@@ -86,9 +86,16 @@ class WorkerProvisioningService {
         if (!SHA256.test(sha256)) throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'sha256 must be 64 hexadecimal characters.');
         let url;
         try { url = new URL(requiredString(body.download_url, 'download_url', 4096)); } catch { throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'download_url must be an absolute HTTPS URL.'); }
-        if (url.protocol !== 'https:') throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'download_url must use HTTPS.');
-        if (url.hostname !== 'github.com' || !url.pathname.startsWith('/MarineAppliedResearch/marp-inference-worker/releases/download/')) {
-            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'download_url must name an immutable marp-inference-worker GitHub Release asset.');
+        // An allowlist of places we publish from, rather than one hardcoded host (#253). The
+        // size and SHA-256 below are unchanged and are what stop the file being swapped; this
+        // answers the different question of whether the publisher is ours. An `http://` source
+        // is refused unless an operator deliberately listed one, which is how a coordinator
+        // with no trusted certificate serves its own updates.
+        if (!workerReleases.isAllowedSource(url.toString())) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, workerReleases.sourceRefusal());
+        }
+        if (url.protocol !== 'https:' && !workerReleases.SOURCES.some((source) => source.startsWith('http://') && url.toString().startsWith(source))) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'download_url must use HTTPS.');
         }
         return repository.registerRelease({
             version: requiredString(body.version, 'version', 64),
