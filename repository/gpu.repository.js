@@ -630,7 +630,13 @@ class GpuRepository {
             // microsecond, so without it two pages of the same list could show
             // the same piece twice and miss another. It matters more now: `name`
             // and `finished_at` are both nullable, and NULLs tie with each other.
-            const order = `ORDER BY ${column} ${direction} NULLS LAST, j.id DESC`;
+            //
+            // It follows the direction rather than being fixed at DESC, so that
+            // ascending and descending are exact reverses of one another. Either
+            // way is a stable total order and pages correctly; a fixed DESC is
+            // simply surprising, because reversing the sort would then leave
+            // tied rows in the order they were already in.
+            const order = `ORDER BY ${column} ${direction} NULLS LAST, j.id ${direction}`;
 
             const jobs = await this.db.sequelize.query(
                 `SELECT j.*,
