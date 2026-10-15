@@ -186,6 +186,19 @@ class GpuController {
     }
 
     /**
+     * Queue the frames interrupted work left owed (#257).
+     *
+     * @async
+     * @param {Object} body - Optional narrowing to one video.
+     * @param {Object} principal - Who asked.
+     * @returns {Promise<Object>} What was queued, per video.
+     */
+    async requeueInterrupted(body, principal) {
+        logger.info('Controller: requeueInterrupted');
+        return gpuService.requeueInterrupted(body, principal);
+    }
+
+    /**
      * Fetch one job with its attempts and artifacts.
      *
      * @async

@@ -1,158 +1,123 @@
 ---
-task: MarineAppliedResearch/MARP_API#104
+task: MarineAppliedResearch/MARP_API#257
 repos: [MARP_API]
-status: implementing
+status: design
 needs: []
 ---
 
 ## Goal
 
-Make the ML Dashboard show MARP's own data. Today every figure on all eight screens comes
-out of a seeded random generator in `mockups/api.js` — the file has twelve references to
-`/api/v2/...` routes and all twelve are doc comments, with no `fetch()` anywhere. The API
-those comments name now answers, so this replaces the generator with real requests and
-leaves the screens reading from the same one place they already read from.
-
-## What the investigation found
-
-Written down because it changes the size of the job, and three of the four findings make it
-smaller.
-
-- **The whole public surface maps to routes that exist.** `window.MarpApi` has ten
-  functions and every one has a route behind it: `listWorkers`, `listJobs`, `getJob`,
-  `submitJob`, `cancelJob`, `renameWorker`, `listModels`, `listDatasets`, `listProjects`,
-  `listUsers`.
-- **Authentication is solved, and not by us.** `marp-mosaic-review` is served from this same
-  origin by this same API and uses a seven-day session **cookie**:
-  `credentials: 'same-origin'`, with `/api/v2/auth/me` answering 401 when there is no
-  session. `middleware/resolve-principal.middleware.js` populates `req.principal` from the
-  Passport session before it looks for a bearer token, and the cookie is `httpOnly` /
-  `sameSite: 'lax'`. Nothing is stored by the client and no scheme is invented.
-- **`DESIGN.md` item 16 is mostly already dealt with.** It warned that three shapes here
-  were not the shapes of the tables they come from. The datasets fixture already carries
-  `location`, `num_samples`, `num_classes`, `source` and `notes` — the real columns — and
-  models are already generated as `parent_model_id` chains rather than a `versions` array.
-  So this is far closer to a rename than to a mapping.
-- **The charts are the exception, and they are fabricated in `mock.js`, not in the data
-  layer.** `mock.js` says so itself: *"The Dashboard chart uses a deterministic moving
-  fixture during design review."* Those are gaps 18 to 22 and no API produces them.
+Make a hole in the data tell you it is a hole. `cancelled` means two things
+today — *"we changed our mind"* and *"this never got done"* — so nothing can
+safely act on it. This milestone splits them and then fills what is owed.
 
 ## Requirements
 
-- **R1** — one transport, and only it knows `fetch`, a URL, a header and an HTTP status.
-  Everything else in the dashboard asks it for JSON, the way `src/api/transport.js` is the
-  only such place in the mosaic reviewer.
-- **R2** — the ten functions on `window.MarpApi` fetch from MARP, keeping their current
-  call signatures and answer shapes, so no screen has to change to get real data.
-- **R3** — the session cookie carries the request and nothing is stored client-side.
-- **R4** — a signed-out visitor is told to sign in rather than shown an empty dashboard,
-  and a 403 names the permission it was about.
-- **R5** — the loading, empty and error states built in #128 still work against a real API,
-  including the retry.
-- **R6** — a fault switch survives. `?mock=slow` and `?mock=fail:jobs` are how the states in
-  R5 are demonstrated and tested, and a real API cannot be asked to fail on demand.
-- **R7** — the checks that encode the fixture are rewritten rather than deleted, and what
-  they can no longer assert is said out loud.
-- **R8** — a region with no API behind it does not draw an invented number.
+- **R1** — A new job state, **`interrupted`**: the job stopped part-way and the
+  frames it did not reach are owed.
+- **R2** — `cancelled` means a human changed their mind. Nothing is missing, and
+  nothing is ever requeued from it.
+- **R3** — A worker reporting `cancelled` for a job that is **not already
+  cancelled** is a worker stopping of its own accord. That is `interrupted`.
+  Where the job is already `cancelled`, the human's decision is propagating and
+  it stays `cancelled`.
+- **R4** — `POST /api/gpu/jobs/:id/cancel` is unchanged: it is the human path
+  and it produces `cancelled`.
+- **R5** — The coverage view counts an `interrupted` job's unreached frames as a
+  gap, which it already does, since coverage is computed from what was reported
+  rather than from job state.
+- **R6** — Requeueing an owed range creates real queued work over exactly the
+  frames nobody covered: never the whole original range, and never frames a
+  succeeded job already did.
+- **R6a** — `interrupted` work is requeued automatically. Nobody has to notice
+  that a volunteer paused.
+- **R6b** — `failed` work is **never** requeued automatically. It stays visible
+  as `failed`, and the route lets a human requeue it once they have looked.
+- **R7** — Requeueing twice does not queue the same frames twice.
+- **R8** — The historical 5,329 `cancelled` jobs stay `cancelled`. The
+  distinction starts the day it ships; the development database is development
+  data and production has not used any of this.
 
 ## Open assumptions
 
-- [x] **A1 · product/UI · blocking** — answered 2026-10-15, see Decisions. Original question: **what do the charts do?** The pool-utilization,
-  inference-throughput, registry-trend, dataset-build and history graphs are gaps 18 to 22:
-  no sampled series exists anywhere in MARP. In a design mockup a moving fixture is honest,
-  because the whole page is a mockup. In a live dashboard it is a picture of data that does
-  not exist, drawn next to real numbers and indistinguishable from them.
+- [x] **A1 · behavioural · blocking** — answered 2026-10-15: **`failed` is
+      never requeued automatically.** Isaac: *"if something fails a certain
+      amount of times we shouldn't automatically keep requeuing it, but if it
+      goes to failed status, the user can notice the failed status, and try to
+      requeue it or recreate the job manually."*
 
-  My answer, unless you say otherwise: **draw the frame, the axes and a "not recorded yet"
-  state, and keep the fixture only behind `?mock=`.** The doctrine here is emphatic that a
-  thing which narrates a result without asserting it can lie, and a convincing fake chart
-  beside a true table is the clearest case of that. The cost is five emptier-looking panels
-  until somebody serves the series.
-- [ ] **A2 · architectural · non-blocking** — the transport is a **copy** of the mosaic
-  reviewer's reasoning, not a shared module. The two apps are built differently — the
-  mosaic app is ESM under `src/`, this one is a plain browser script that reads `window` as
-  it loads — and `frontend/shared/` currently holds assets and vendor code, not application
-  modules. Sharing is a bigger change than this task, and a wrong one to make while only
-  two apps exist.
-- [ ] **A3 · behavioural · non-blocking** — `?mock=` keeps working and gains `?mock=all`,
-  which serves the whole generated corpus as it does today. That keeps the design review
-  reproducible and keeps `mock-shots.mjs` able to take screenshots without a database.
-- [x] **A4 · scope · blocking** — answered 2026-10-15, Isaac: *"i think your suggestion for A4 makes sense"*. Original: `data-layer-check.mjs` asserts things only a fixture can
-  guarantee: 143 workers exactly, byte-identical answers on two loads, every job state
-  present, a batch with mixed outcomes on the first page. **None of those can hold against a
-  live database.** The check is rewritten to assert the *contract* — shapes, paging, that
-  `total` exceeds the page, that failures surface — and the fixture assertions move behind
-  `?mock=all`, where they still mean something. Deleting it instead would quietly drop the
-  only thing testing the layer.
-- [ ] **A5 · product/UI · non-blocking** — the Datasets screen's build progress, worker and
-  ETA, and the Inference screen's output options, have no API either (gaps 13, 14, 19).
-  Same treatment as A1: drawn as not-recorded rather than invented.
-- [ ] **A6 · environment · non-blocking** — the dashboard is reached at
-  `/apps/marp-ml-dashboard/mockups/<screen>.html`, which still says `mockups`. Renaming the
-  directory is a bigger change than this task and would break every recorded link; it is
-  worth doing and worth doing separately.
+      A job that has exhausted its attempts has already been retried as much as
+      retrying is worth; doing it again on a schedule spends GPU time on
+      something that is probably broken rather than unlucky. It stays visible as
+      `failed` and a human decides.
+- [x] **A2 · product/UI · blocking** — answered 2026-10-15: **both, and they
+      differ by what they are allowed to touch.** Isaac: *"i think both can
+      reque, like i just said kinda"*.
+
+      - **Automatic**, over `interrupted` work only: a volunteer pausing or a
+        worker stopping is an ordinary event and the frames should simply get
+        done. Nobody should have to remember.
+      - **A route**, for a human, which can also requeue a `failed` job: that is
+        the path A1 describes, taken deliberately after somebody has looked.
+- [ ] **A5 · behavioural · non-blocking** — **What stops an automatic requeue
+      looping?** A requeue makes a *new* job, which starts with a fresh
+      `max_attempts`, so a range that is interrupted every time could be
+      requeued for ever. Each interruption is legitimate on its own -- a
+      volunteer paused -- so a plain attempt cap is the wrong instrument.
+      Proposed: carry a requeue count forward on the spec, and stop requeueing
+      automatically past a small number, leaving it `interrupted` and visible.
+      That is exactly A1's shape, one level up.
+- [ ] **A3 · behavioural · non-blocking** — Does an `expired` lease become
+      `interrupted`? Today the job returns to the queue by itself, so it is
+      already owed and already being dealt with. Proposed: no, leave it.
+- [ ] **A4 · API contract · non-blocking** — `interrupted` is a new value in
+      `JOB_STATES`, which the job-list filter and the OpenAPI enum both expose.
+      Proposed: add it to both; it is additive and no existing value changes
+      meaning.
 
 ## Decisions
 
-- **2026-10-15 — A1, and the question was asked badly.** I put it as "what do the charts do
-  given no data exists", and Isaac's answer was that he wants charts that work and live-update.
-  So I measured instead of describing the problem again, and the answer was not one thing:
-
-  **Three of the five are derivable from rows already in the database** — job throughput,
-  queue depth, and the History outcomes and turnaround. 9,554 finished jobs span five weeks,
-  and `waiting` reconstructs from `created_at` and `finished_at`. No sampling, no new table.
-
-  **The utilization chart had data and it was a trap.** 6,789 attempts carry a real NVML
-  reading over the same five weeks, so plotting it looked free. Querying it says why that
-  would have been wrong: on the days that ran two thousand jobs the average utilization in
-  those readings is **0.5%**, because they are taken at the poll, before the machine starts.
-  Drawing them would have shown a permanently idle GPU farm. Isaac's call was to do the
-  heartbeat change so the chart is real, worker side included.
-
-  **The dataset-build chart stays empty**, because nothing builds datasets yet (gap 19).
-
-- **2026-10-15 — A4 as proposed.** `data-layer-check.mjs` is rewritten to assert the contract;
-  the fixture-only assertions move behind `?mock=all`.
-
-- **2026-10-15 — the scope grew, and this branch carries the groundwork rather than the
-  wiring.** Answering A1 properly meant a cross-repository change: `marp-inference-worker`
-  sending telemetry on the heartbeat, and MARP storing and serving it. That is what is here.
-  The screens are still reading the local layer and are the next branch. Said plainly because
-  the branch is named for the wiring and does not contain it.
-
-- **2026-10-15 — the worker half is a separate repository and a separate pull request**, per
-  the polyrepo rule. Branch `heartbeat-carries-telemetry` in
-  `MarineAppliedResearch/marp-inference-worker`.
-
-- **2026-10-15** — under **#104, *Design the MARP Machine Learning Dashboard***, like the
-  three passes before it. No new issue.
-- **2026-10-15** — branched from `develop` after #260 merged, so the routes this calls are
-  on the base.
+- **2026-10-15** — `cancelled` means nothing is missing; `interrupted` means a
+  hole. Isaac: *"something cancelled should mean nothing is missing, we should
+  have another term for yes, there's a hole in the data because of this"*.
+  `interrupted` says what happened rather than how anyone feels about it, and
+  avoids `abandoned`, which already means a lease that blew past its cap.
+- **2026-10-15** — The conflation is named in the code today: *"The job is
+  cancelled whether or not the cancel came from a human -- a worker that stops
+  of its own accord and calls it cancelled is saying the same thing."* They are
+  not the same thing, and job 14372 is the evidence: twelve thousand frames
+  done, the rest never processed, recorded as though nobody wanted them.
 
 ## Plan
 
-After the gate, since A1 and A4 change what is built.
-
-1. `mockups/transport.js` — one `request()`, the error taxonomy, the fault switch.
-2. The ten functions, one at a time, each verified against the real route before the next.
-3. The signed-out and forbidden states.
-4. Whatever A1 settles for the chart regions.
-5. Rewrite `data-layer-check.mjs` per A4; keep `api-contract-check.mjs`, which still holds.
-6. `DESIGN.md`: the gap list stops saying the screens draw fabricated data, because they
-   will not.
+1. `interrupted` in `JOB_STATES`, and in the OpenAPI enum the job filter uses.
+2. The worker-reported branch in `publishResult` chooses `interrupted` over
+   `cancelled` when the job was not already cancelled.
+3. A repository query for owed ranges: the gaps from the coverage work,
+   narrowed to videos with an `interrupted` job over them.
+4. Requeue: submit jobs over those gaps, reusing the submission path so a
+   requeued job is an ordinary job with an ordinary spec.
+5. A route for it, per A2.
 
 ## Acceptance criteria
 
-- With a session, every screen draws MARP's own rows, and the numbers match what the same
-  query returns over `curl`.
-- Signed out, the dashboard says so instead of showing an empty table.
-- No screen shows a number that nothing in MARP recorded.
-- `?mock=all` still produces the design corpus, so the screenshots and the review are
-  reproducible.
-- The dashboard's checks pass, and `data-layer-check.mjs` still tests something.
+- A worker reporting cancelled on a live job leaves the job `interrupted`.
+- A human cancelling leaves it `cancelled`, and a worker's later report does
+  not change that.
+- The coverage view shows an interrupted job's unreached frames as a gap.
+- Requeueing that video queues jobs covering exactly the gap.
+- Requeueing again queues nothing.
+- Nothing requeues from a `cancelled` job.
 
 ## Test plan
 
-G3, after implementation. The tier that can see this is the browser against a real API, which
-is what `screens-check.mjs` already is — it drives a real page. The fixture-only assertions
-move behind `?mock=all`; the live assertions get their own pass against a seeded database.
+Filled in at G3.
+
+## Status
+
+- **Gate:** design -- both blocking assumptions answered
+- **Notes:** Settled. The shape is that automatic requeueing is for things that
+  are nobody's fault and will simply work next time, and everything else waits
+  for a human to look at it. A5 is the same question one level up and is
+  answered the same way; it is non-blocking because the first version can
+  requeue once and be watched.

@@ -237,10 +237,19 @@ const JOB_KINDS = ['inference', 'tracking', 'training', 'diagnostic'];
 /**
  * Job states.
  *
+ * **`cancelled` and `interrupted` are not the same thing.** `cancelled` means a
+ * human changed their mind and nothing is missing. `interrupted` means the job
+ * stopped part-way and the frames it never reached are owed -- a volunteer
+ * pausing, a worker stopping of its own accord.
+ *
+ * They were one word until #257, and the cost is job 14372: twelve thousand
+ * frames processed, the rest never done, recorded as though nobody had wanted
+ * them. Only `interrupted` is ever requeued automatically.
+ *
  * @constant
  * @type {Array<string>}
  */
-const JOB_STATES = ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'expired'];
+const JOB_STATES = ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'interrupted', 'expired'];
 
 /**
  * Job kinds whose results become observations in the annotation record.
@@ -286,7 +295,7 @@ const ENGINE_DATA_TYPES = ['Fish', 'GULF_Fish', 'Invert', 'GULF_Inverts'];
  * @constant
  * @type {Array<string>}
  */
-const TERMINAL_JOB_STATES = ['succeeded', 'failed', 'cancelled', 'expired'];
+const TERMINAL_JOB_STATES = ['succeeded', 'failed', 'cancelled', 'interrupted', 'expired'];
 
 /**
  * Attempt states.

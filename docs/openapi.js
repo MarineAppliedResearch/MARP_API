@@ -2487,9 +2487,10 @@ const buildOpenApiSpec = () => {
                             spec: { $ref: '#/components/schemas/GpuJobSpec' },
                             state: {
                                 type: 'string',
-                                enum: ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'expired'],
+                                enum: ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'interrupted', 'expired'],
                                 example: 'leased',
-                                description: '`expired` is distinct from `failed`: nothing went wrong with the work, MARP simply stopped hearing from every machine that tried it.',
+                                description: '`expired` is distinct from `failed`: nothing went wrong with the work, MARP simply stopped hearing from every machine that tried it.\n\n'
+                                    + '`cancelled` and `interrupted` are also distinct, and the difference decides what gets redone. `cancelled` is a human changing their mind: nothing is missing and it is never requeued. `interrupted` is the job stopping part-way -- a volunteer pausing, a worker giving up -- so the frames it never reached are owed, and those are requeued automatically. A `failed` job is never requeued automatically: it has already been retried as far as retrying is worth, and it stays visible for somebody to look at.',
                             },
                             priority: { type: 'integer', example: 0, description: 'Higher is claimed first.' },
                             attempts_made: { type: 'integer', example: 1, description: 'How many times this job has been leased; also the current attempt\'s lease epoch.' },
@@ -2916,6 +2917,33 @@ const buildOpenApiSpec = () => {
                                 type: 'boolean',
                                 example: true,
                                 description: 'False for a job that had already finished, which is not an error -- cancelling something finished simply does nothing.',
+                            },
+                        },
+                    },
+                    GpuRequeueRequest: {
+                        type: 'object',
+                        description: 'Which video to requeue owed frames for. Omit both fields to requeue every video with interrupted work.',
+                        properties: {
+                            jellyfin_item_id: { type: 'string', example: '937c5062e9186e878f8e99673edc84b4' },
+                            source_name: { type: 'string', example: '20240727_185645 Fwd.mp4' },
+                        },
+                    },
+                    GpuRequeueResponse: {
+                        type: 'object',
+                        description: 'What was queued. A video whose length is unknown is skipped and says why, rather than being given work over frames that may not exist.',
+                        properties: {
+                            jobs_queued: { type: 'integer', example: 2, description: 'Total jobs created across every video.' },
+                            videos: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        video: { type: 'object', description: 'The video, as it was identified.' },
+                                        session_id: { type: 'integer', nullable: true, example: 755 },
+                                        queued: { type: 'array', items: { type: 'integer' }, example: [15071, 15072], description: 'Jobs created over the owed frames. Empty when nothing was owed.' },
+                                        skipped: { type: 'string', example: 'the video could not be sized', description: 'Present only when nothing was queued for a reason worth saying.' },
+                                    },
+                                },
                             },
                         },
                     },

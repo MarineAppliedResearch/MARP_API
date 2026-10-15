@@ -2486,6 +2486,135 @@ class GpuService {
                 : undefined,
         };
     }
+
+    /**
+     * Queue the frames that interrupted work left owed (#257).
+     *
+     * **Only `interrupted`.** A `cancelled` job means a human changed their mind
+     * and nothing is missing. A `failed` one has already been retried as far as
+     * retrying is worth, and requeueing it on a schedule spends GPU time on
+     * something that is probably broken rather than unlucky -- it stays visible
+     * as `failed` and a human decides, which is what `jobIds` is for.
+     *
+     * The spec is copied from the interrupted job rather than invented: what is
+     * owed is the rest of *that* work, with the same model, params and
+     * reduction. Only the range differs.
+     *
+     * Requeueing twice queues nothing the second time, because the gaps are
+     * recomputed from coverage each time and queued work is not coverage -- a
+     * range already waiting in the queue is not owed again.
+     *
+     * @async
+     * @param {Object} [body] - Narrowing. `jellyfin_item_id` or `source_name`
+     *   for one video; omitted, every video with interrupted work.
+     * @param {Object} [principal] - Who asked, recorded on the jobs created.
+     * @returns {Promise<Object>} What was queued, per video.
+     */
+    async requeueInterrupted(body = {}, principal = null) {
+        const jellyfinItemId = body.jellyfin_item_id ? String(body.jellyfin_item_id) : null;
+        const sourceName = body.source_name ? String(body.source_name) : null;
+
+        const owed = await gpuRepository.interruptedWork({ jellyfinItemId, sourceName });
+        const videos = [];
+
+        for (const work of owed) {
+            const identity = work.item_id
+                ? { jellyfin_item_id: work.item_id }
+                : { source_name: work.source_name };
+
+            const seen = await this.coverage({
+                ...(work.item_id ? { jellyfin_item_id: work.item_id } : { source_name: work.source_name }),
+                session_id: work.session_id,
+            });
+
+            // No extent means no gap list, and a requeue guessing where a video
+            // ends would queue work over frames that do not exist.
+            if (seen.gaps === null) {
+                videos.push({ video: identity, session_id: work.session_id, queued: [], skipped: 'the video could not be sized' });
+                continue;
+            }
+
+            // Take off what is already waiting. Coverage counts work that
+            // finished, so a range sitting in the queue is not covered -- but
+            // it is not owed either, because somebody has already asked for it.
+            // Without this, calling twice piles a second copy of every gap onto
+            // the pool, which a test caught rather than a reading of the code.
+            const pending = await gpuRepository.pendingRanges({
+                jellyfinItemId: work.item_id || null,
+                sourceName: work.item_id ? null : work.source_name,
+                sessionId: work.session_id,
+            });
+
+            const queued = [];
+
+            for (const gap of subtractRanges(seen.gaps, pending)) {
+                const submitted = await this.submitJobs({
+                    kind: 'inference',
+                    spec: {
+                        ...work.spec,
+                        range: { start_frame: gap.start_frame, end_frame: gap.end_frame },
+                    },
+                }, principal);
+
+                queued.push(...submitted.jobs.map((job) => job.id));
+            }
+
+            videos.push({ video: identity, session_id: work.session_id, queued });
+        }
+
+        return {
+            videos,
+            jobs_queued: videos.reduce((sum, video) => sum + video.queued.length, 0),
+        };
+    }
+}
+
+/**
+ * What is left of `spans` once `taken` is removed from them.
+ *
+ * Used to keep a requeue from asking for frames somebody has already asked for:
+ * the gaps say what is unfinished, and this removes the part of that which is
+ * already queued or leased.
+ *
+ * Both sides are half-open. A span may be cut into two when something is taken
+ * out of its middle, which is why this builds a list rather than trimming ends.
+ *
+ * @param {Array<{start_frame: number, end_frame: number}>} spans - What is owed.
+ * @param {Array<{start_frame: number, end_frame: number}>} taken - What is already asked for.
+ * @returns {Array<{start_frame: number, end_frame: number}>} The remainder.
+ */
+function subtractRanges(spans, taken) {
+    const result = [];
+
+    for (const span of spans) {
+        let pieces = [{ start_frame: span.start_frame, end_frame: span.end_frame }];
+
+        for (const cut of taken) {
+            const next = [];
+
+            for (const piece of pieces) {
+                // No overlap: the piece survives whole.
+                if (cut.end_frame <= piece.start_frame || cut.start_frame >= piece.end_frame) {
+                    next.push(piece);
+                    continue;
+                }
+
+                if (cut.start_frame > piece.start_frame) {
+                    next.push({ start_frame: piece.start_frame, end_frame: cut.start_frame });
+                }
+
+                if (cut.end_frame < piece.end_frame) {
+                    next.push({ start_frame: cut.end_frame, end_frame: piece.end_frame });
+                }
+            }
+
+            pieces = next;
+        }
+
+        result.push(...pieces.filter((piece) => piece.end_frame > piece.start_frame));
+    }
+
+    return result;
 }
 
 /**
