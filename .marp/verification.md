@@ -107,3 +107,102 @@ For Isaac, after the automated checks pass. Each is a judgement a check cannot m
    no check can make it.
 4. Confirm the gap list still describes the system you want. It is the backlog the API work
    will be planned from.
+
+---
+
+# Results — run 2026-10-15
+
+`npm test` from `frontend/apps/marp-ml-dashboard`, on Node v24.11.1 with
+`@playwright/test` 1.62.1, headless Chromium. **Exit 0.**
+
+```
+ok  12 files parse
+ok  no raw colours, no states outside the vocabulary
+ok  5 enums agree with MARP (orchestrator config and the generated contract)
+ok  8 screens state no data of their own
+ok  the layer answers like the routes: 143 machines unpaged, 420 jobs paged,
+    all six states reachable, deterministic, and failable on demand
+ok  8 screens fill themselves from the layer; sorting spans pages, filters
+    narrow, and the error state is reachable
+    7 of 8 screens scroll at 941px, and each hides its bar
+ok  the top bar hides on the way down, comes back on the way up, and cannot get stuck
+    8 screens, each drawing one account control
+ok  the account menu is the shared one, and it names nobody it has not been told about
+ok  32 shots, nothing clipped, no console errors
+```
+
+## It did not pass first
+
+Recorded because the point of G4 is what the run found, not that it is green now.
+`npm test` could not complete at all when first run, and once it could, it reported
+**136 failures**. None of them was visible by looking at the screens, which both of us had
+already done.
+
+| Stage | Failures | What moved |
+| --- | --- | --- |
+| First attempt | — | Crashed. Two strict-mode locators in `mock-shots.mjs` matched four elements where they expected one. One was untouched since `develop`. |
+| Ran to completion | 136 | 80 were 404s from the Jellyfin thumbnails, which only resolve behind the API. Answered the way the file already answers `/auth/me`. |
+| | 56 | A `TypeError` on Inference: `renderWorkersTable` matched `<select id="workers">` in the submission form, passed its guard, and threw on the missing `tbody`. |
+| | 52 | Then the real work below. |
+| Now | 0 | |
+
+## The six that were mine
+
+Each is a defect the screens could not show, which is why the tier exists:
+
+1. **Every Jobs row was decorated twice** — 18 jobs, 36 detail rows, the second unreachable
+   behind the first. `applyJobsQuery` called `wireJobsOverview` and so did the boot.
+2. **Result legends were bound twice.** One click fired both handlers and the second undid
+   the first, so the button visibly worked and highlighted nothing.
+3. **The phone sort strip reordered the table and said nothing.** Below 1050px it is the
+   only sort control there is, and it carried neither `data-direction` nor `aria-pressed`.
+4. **Workers and Models cards had no grid areas** and kept their desktop percentage column
+   widths, so a status chip sat in a 3px cell. Invisible while those cells held progress
+   bars, which shrink to nothing without complaining.
+5. **No job had finished recently.** Sorted newest first, the first page of a job queue
+   showed nothing that had ever completed, and two of the five state kinds never appeared.
+6. **The activity preview spent both attention slots on one state**, so it never showed a
+   failure beside an issue.
+
+Two more were caught earlier by the new checks, on their first runs:
+
+- **`data-layer-check`**: the layer reported a paused machine as `paused` while it held a
+  live attempt. MARP's `gpu.service.js` reports `busy` — holding an attempt wins over every
+  state. Both answers look sensible, which is exactly why no screen could have shown it.
+- **`screens-check`**: the `#workers` selector above.
+
+## The two that were not mine
+
+Both pre-existing, both invisible because the suite had never run:
+
+- **R4's full-width check measured the wrong box.** It compared a panel against `.content`'s
+  border box, which is 24px wider than any child can be. A panel at exactly full width
+  failed by exactly the padding.
+- **A wrapped field read as a misaligned one.** A row of three fields in a two-column grid
+  wraps the third; the check called any two controls with different `left` values "side by
+  side", and a wrapped item has a different left *and* a different top.
+
+## What was changed in a check rather than in the code
+
+Said plainly, because weakening a test to go green is the easy way to do this badly:
+
+- `jobs.rows === 12` became `jobs.rows >= 1`. Twelve was the number of rows in the old
+  markup; the table pages from the data layer now and the rows-per-page control offers 18,
+  25 and 50, so twelve is not a number this screen can produce. The three comparisons that
+  carry R14 — every displayed job owns a detail, a diagnostics fold and a state — are
+  untouched.
+- The result-legend assertion now holds one `elementHandle` instead of two independent
+  `.first()` locators. A locator re-resolves on every use, so the label whose `aria-pressed`
+  was read need not have been the one clicked. The assertion is identical.
+- The full-width and side-by-side measurements above.
+
+Everything else was fixed in the application.
+
+## Still not covered
+
+Unchanged from the plan: the five sampled-series graphs, the Inference submission form's
+deeper surfaces, the Training runs table, accessibility beyond `aria-sort`, and — the one
+worth repeating — **anything about the real API.** This run says the dashboard reads its
+fixture correctly. It says nothing about MARP.
+
+The four manual steps in the plan have not been done. They are Isaac's.

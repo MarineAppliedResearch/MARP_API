@@ -150,7 +150,7 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** G3 — your review of .marp/verification.md before anything runs
+- **Gate:** G5 — the pull request, which is yours to call
 - **Notes:** All eight read from `mockups/api.js` — Dashboard, Jobs, Workers, History,
   Models, Datasets, Inference and Training. The layer serves the three GPU routes plus
   `ml_models`, `dataset`, `projects` and `users`, in MARP's own shapes, from one seeded
@@ -163,8 +163,14 @@ Filled in at G3.
   `MlModel.status` from the generated contract), and every page loads the data layer. Each
   check was proved to fail before it was believed.
 
-  **Not done.** The Inference submission form's deeper surfaces (R19-R29) are still design
-  data, as are the five sampled-series graphs, which have no telemetry behind them. Gaps 23
-  to 28 are recorded and deliberately open. No verification has been written or run, so G3
-  and G4 are both untouched — nothing here has been tested beyond the fast checks and
-  browser inspection.
+  **Verified 2026-10-15.** `npm test` passes end to end: nine checks, 32 screenshots, exit
+  0. It did not pass first. The suite could not run at all, then reported 136 failures, six
+  of which were real defects in this work that looking at the screens had not shown — rows
+  decorated twice, legends bound twice, a phone sort control that reordered the table
+  silently. `.marp/verification.md` records the run verbatim, what it found, and the three
+  places where a check was corrected rather than the code.
+
+  **Still not done.** The Inference submission form's deeper surfaces (R19-R29) are still
+  design data, as are the five sampled-series graphs, which have no telemetry behind them.
+  Gaps 23 to 28 are recorded and deliberately open. The four manual steps in the
+  verification plan are Isaac's and have not been done.
