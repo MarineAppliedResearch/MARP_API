@@ -2150,6 +2150,88 @@ class GpuRepository {
             artifacts_recorded: counted.n,
         };
     }
+
+    /**
+     * The frame intervals actually covered for one video, merged.
+     *
+     * **Covered means a job reported covering it, never that a job asked to.**
+     * A job submitted 0-60,000 that finished at 22,320 because the video ran out
+     * covers 22,320 frames, and reading `spec.range` instead would call the
+     * video done (#257).
+     *
+     * A job's coverage is `[spec.range.start_frame, max(completed_through_frame))`
+     * across its attempts, and that is contiguous rather than a union of pieces:
+     * a resumed lease starts at exactly where the last attempt stopped, so the
+     * attempts of one job tile its range in order. Attempts carry no start frame
+     * of their own, which is why this is computed per job.
+     *
+     * Merging is done here rather than in JavaScript because a long video split
+     * into pieces is thousands of rows, and folding them in the database keeps
+     * that out of the process.
+     *
+     * @async
+     * @param {Object} params - Which video.
+     * @param {string} [params.jellyfinItemId] - Jellyfin item id.
+     * @param {string} [params.sourceName] - `video.source_name`, for a job that
+     *   carried a bare url instead of an item id.
+     * @param {number} [params.sessionId] - Narrow to one session. Omitted, every
+     *   session's work over this video counts.
+     * @returns {Promise<Array<{start_frame: number, end_frame: number, job_ids: Array<number>}>>}
+     *   Merged covered intervals, ascending, half-open.
+     */
+    async coveredIntervals({ jellyfinItemId = null, sourceName = null, sessionId = null }) {
+        // Islands and gaps. `runningMax` is the furthest any earlier job reached;
+        // a job starting beyond it opens a new island, and the cumulative sum of
+        // those breaks numbers the islands so they can be grouped.
+        const rows = await this.db.sequelize.query(
+            `WITH job_coverage AS (
+                 SELECT j.id AS job_id,
+                        (j.spec->'range'->>'start_frame')::int AS start_frame,
+                        MAX(a.completed_through_frame)         AS end_frame
+                   FROM gpu_jobs j
+                   JOIN gpu_job_attempts a ON a.job_id = j.id
+                  WHERE j.kind = 'inference'
+                    AND a.completed_through_frame IS NOT NULL
+                    AND (:jellyfinItemId::text IS NULL
+                         OR j.spec->'video'->>'jellyfin_item_id' = :jellyfinItemId)
+                    AND (:sourceName::text IS NULL
+                         OR j.spec->'video'->>'source_name' = :sourceName)
+                    AND (:sessionId::int IS NULL
+                         OR (j.spec->'session'->>'session_id')::int = :sessionId)
+                  GROUP BY j.id, start_frame
+                 HAVING MAX(a.completed_through_frame) > (j.spec->'range'->>'start_frame')::int
+             ),
+             marked AS (
+                 SELECT job_id, start_frame, end_frame,
+                        CASE WHEN start_frame > MAX(end_frame) OVER (
+                                 ORDER BY start_frame, end_frame
+                                 ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                             ) THEN 1 ELSE 0 END AS opens_island
+                   FROM job_coverage
+             ),
+             islands AS (
+                 SELECT job_id, start_frame, end_frame,
+                        SUM(opens_island) OVER (ORDER BY start_frame, end_frame) AS island
+                   FROM marked
+             )
+             SELECT MIN(start_frame)::int        AS start_frame,
+                    MAX(end_frame)::int          AS end_frame,
+                    ARRAY_AGG(job_id ORDER BY job_id) AS job_ids
+               FROM islands
+              GROUP BY island
+              ORDER BY start_frame`,
+            {
+                replacements: { jellyfinItemId, sourceName, sessionId },
+                type: QueryTypes.SELECT,
+            }
+        );
+
+        return rows.map((row) => ({
+            start_frame: Number(row.start_frame),
+            end_frame: Number(row.end_frame),
+            job_ids: (row.job_ids || []).map(Number),
+        }));
+    }
 }
 
 module.exports = new GpuRepository();

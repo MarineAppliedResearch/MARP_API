@@ -3768,6 +3768,104 @@
           }
         }
       },
+      "GpuCoverageResponse": {
+        "type": "object",
+        "description": "Which frames of a video have succeeded work over them and which do not. `covered` is merged and ascending; `extent` and `gaps` are null when the video could not be sized, because a gap list measured against a guess is worse than none.",
+        "properties": {
+          "video": {
+            "type": "object",
+            "description": "The video this is about, as it was asked for.",
+            "properties": {
+              "jellyfin_item_id": {
+                "type": "string",
+                "example": "937c5062e9186e878f8e99673edc84b4"
+              },
+              "source_name": {
+                "type": "string",
+                "example": "20240727_185645 Fwd.mp4"
+              }
+            }
+          },
+          "session_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 755,
+            "description": "The session this was narrowed to, or null for every session over this video."
+          },
+          "extent": {
+            "type": "object",
+            "nullable": true,
+            "description": "How long the video really is, from Jellyfin. Null when it could not be sized.",
+            "properties": {
+              "frames": {
+                "type": "integer",
+                "example": 27721
+              },
+              "duration_seconds": {
+                "type": "number",
+                "example": 1111.274
+              },
+              "average_frame_rate": {
+                "type": "number",
+                "example": 24.946007,
+                "description": "The delivered rate, not the declared one: converting frames to time wants what the stream actually carries."
+              }
+            }
+          },
+          "covered": {
+            "type": "array",
+            "description": "Merged half-open intervals that attempts reported covering, with the jobs behind each.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "start_frame": {
+                  "type": "integer",
+                  "example": 0
+                },
+                "end_frame": {
+                  "type": "integer",
+                  "example": 4620,
+                  "description": "Exclusive, matching every other frame bound in this API."
+                },
+                "job_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "example": [
+                    14371,
+                    14373
+                  ],
+                  "description": "The jobs that produced this interval, so a gap can be traced to what abandoned it."
+                }
+              }
+            }
+          },
+          "gaps": {
+            "type": "array",
+            "nullable": true,
+            "description": "What is left of the video. Null when the extent is unknown.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "start_frame": {
+                  "type": "integer",
+                  "example": 4620
+                },
+                "end_frame": {
+                  "type": "integer",
+                  "example": 27721
+                }
+              }
+            }
+          },
+          "frames_covered": {
+            "type": "integer",
+            "example": 4620,
+            "description": "Total frames across the covered intervals."
+          }
+        }
+      },
       "GpuJobIngestResponse": {
         "type": "object",
         "description": "What one job's result became in the annotation record. `ingested` is false without being an error when the job's observations were already present -- `already_ingested` then says how many rows there are.",
@@ -13981,6 +14079,68 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/coverage": {
+      "get": {
+        "summary": "Which frames of a video have actually been processed",
+        "description": "Answers \"is this dive actually done?\" from the record rather than from recollection. Returns the frame intervals a video has succeeded work over, the intervals it does not, and how long the video really is.\n\n**Covered means an attempt reported covering it, never that a job asked to.** A job submitted 0-60,000 that finished at 22,320 because the video ran out covers 22,320 frames; reading the submitted range instead would call the video done. Coverage comes from `completed_through_frame` on the attempts, which is recorded on every outcome that did work.\n\nThe extent comes from Jellyfin. The alternative -- the largest range anybody happened to submit -- makes \"complete\" mean \"as complete as the biggest request\", which cannot notice that a video is longer than anyone thought. A video Jellyfin cannot size returns its covered intervals with a null `extent` and null `gaps`, rather than a gap list measured against a guess.\n\n**Read-only.** Nothing is requeued. What is *owed* turns on what a cancelled job means -- today that word covers both \"we changed our mind\" and \"this never got done\" -- and nothing automatic should act on a word carrying two meanings. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "jellyfin_item_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The video, by Jellyfin item id. Give this or `source_name`, not both."
+          },
+          {
+            "in": "query",
+            "name": "source_name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The video, by the `source_name` a job carried with a bare url. Cannot be sized by Jellyfin, so `extent` and `gaps` come back null."
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Only work recorded under this session. Omitted, every session over this video counts."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What has been covered, what has not, and how long the video is.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuCoverageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
