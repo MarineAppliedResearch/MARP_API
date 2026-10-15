@@ -1866,3 +1866,374 @@ describe('GPU worker rename', () => {
         expect(row.name).toBe(`jest-rename-refusal-${runId}`);
     });
 });
+
+/**
+ * What an attempt actually covered, recorded on every outcome.
+ *
+ * `completed_through_frame` existed but was written only on a yield, so a
+ * succeeded attempt said nothing about how far it got. On the development
+ * database that was 3,042 succeeded and 3,739 failed attempts carrying
+ * nothing, against 7 yielded ones that had it -- and a job submitted
+ * 0-60,000 that finished at 22,320 because the video ran out looked, in the
+ * record, exactly like one that did all 60,000.
+ *
+ * Refs #257, MarineAppliedResearch/marp-inference-worker#62.
+ */
+describe('coverage recorded on every outcome', () => {
+    /**
+     * Lease a job and report a terminal outcome for it.
+     *
+     * @param {string} outcome - succeeded or failed.
+     * @param {number} completedThroughFrame - Exclusive bound on frames done.
+     * @returns {Promise<Object>} `{job, lease, reported}`.
+     */
+    async function leaseAndReport(outcome, completedThroughFrame) {
+        const { job, lease } = await submitAndLease();
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome,
+                completed_through_frame: completedThroughFrame,
+                ...(outcome === 'failed' ? { failure_reason: 'ran out of video' } : {}),
+            });
+
+        return { job, lease, reported };
+    }
+
+    it('stores how far a succeeded attempt got', async () => {
+        const { lease } = await leaseAndReport('succeeded', 40);
+
+        const [attempt] = await query(
+            'SELECT completed_through_frame FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        // The submitted range is 0-100, so this attempt covered 40 of it. Before
+        // #257 this column was null for every succeeded attempt ever recorded.
+        expect(attempt.completed_through_frame).toBe(40);
+    });
+
+    it('notes that a success fell short of the range it was given', async () => {
+        const { lease } = await leaseAndReport('succeeded', 40);
+
+        const notes = await query(
+            `SELECT payload FROM gpu_job_events
+              WHERE attempt_id = :id AND kind = 'note'`,
+            { id: lease.attempt_id }
+        );
+
+        const short = notes
+            .map((row) => (typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload))
+            .find((payload) => payload && payload.note === 'succeeded short of its range');
+
+        // The comparison happens where the evidence arrives, rather than being
+        // reconstructed by a query months later.
+        expect(short).toBeDefined();
+        expect(short.asked_through_frame).toBe(100);
+        expect(short.completed_through_frame).toBe(40);
+        expect(short.frames_short).toBe(60);
+    });
+
+    it('says nothing when a success covered its whole range', async () => {
+        const { lease } = await leaseAndReport('succeeded', 100);
+
+        const notes = await query(
+            `SELECT payload FROM gpu_job_events
+              WHERE attempt_id = :id AND kind = 'note'`,
+            { id: lease.attempt_id }
+        );
+
+        const short = notes
+            .map((row) => (typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload))
+            .find((payload) => payload && payload.note === 'succeeded short of its range');
+
+        expect(short).toBeUndefined();
+    });
+
+    it('keeps the frames a failed attempt got through before it failed', async () => {
+        const { lease } = await leaseAndReport('failed', 25);
+
+        const [attempt] = await query(
+            'SELECT state, completed_through_frame FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        // The difference between "never started" and "got a quarter of the way
+        // and died", which the absence of a succeeded job cannot express.
+        expect(attempt.state).toBe('failed');
+        expect(attempt.completed_through_frame).toBe(25);
+    });
+});
+
+/**
+ * Which frames of a video have actually been processed (#257).
+ *
+ * Each test owns its own video name, because coverage is computed across every
+ * job over a video and the suite's shared `jest-gpu.mp4` would mix this test's
+ * jobs with every other test's.
+ *
+ * A `source_name` video cannot be sized by Jellyfin, so `extent` and `gaps`
+ * come back null here and the gap arithmetic is covered separately against a
+ * stubbed extent -- rather than reaching the media server from a test.
+ */
+describe('coverage over a video', () => {
+    // Publishing a success ingests it, and ingest creates a session for a video
+    // it has not seen -- and a project and a model the first time. Each test
+    // here owns its own video, so each leaves a session behind. The suite's
+    // corpus guard counts those and is right to: a test may create rows and
+    // must remove them (#142).
+    let sessionsBefore;
+    let projectsBefore;
+    let modelsBefore;
+
+    /**
+     * The highest id in a table, or 0 when it is empty.
+     *
+     * @param {string} table - Table name.
+     * @param {string} column - Its primary key.
+     * @returns {Promise<number>} The high-water mark.
+     */
+    async function highWater(table, column) {
+        const [row] = await query(`SELECT COALESCE(MAX(${column}), 0)::int AS top FROM ${table}`);
+        return row.top;
+    }
+
+    beforeAll(async () => {
+        sessionsBefore = await highWater('sessions', 'session_id');
+        projectsBefore = await highWater('projects', 'project_id');
+        modelsBefore = await highWater('ml_models', 'id');
+    });
+
+    afterAll(async () => {
+        // Jobs and their attempts go with the suite's own teardown; these are
+        // what ingest made on the way past. Bounded by the marks taken above so
+        // nothing predating this describe is touched.
+        await query('DELETE FROM sessions WHERE session_id > :mark', { mark: sessionsBefore });
+        await query('DELETE FROM ml_models WHERE id > :mark', { mark: modelsBefore });
+        await query('DELETE FROM projects WHERE project_id > :mark', { mark: projectsBefore });
+    });
+
+    /**
+     * Submit a job over one video, lease it, and report what it covered.
+     *
+     * @param {string} sourceName - The video this job is over.
+     * @param {number} startFrame - Range start, inclusive.
+     * @param {number} endFrame - Range end, exclusive.
+     * @param {number} completedThroughFrame - What it actually got through.
+     * @returns {Promise<number>} The job id.
+     */
+    async function processed(sourceName, startFrame, endFrame, completedThroughFrame) {
+        const { job, lease } = await submitAndLease({
+            spec: {
+                ...specFor({ start_frame: startFrame, end_frame: endFrame }),
+                video: { url: `http://jest.invalid/media/${sourceName}`, source_name: sourceName },
+            },
+        });
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'succeeded',
+                completed_through_frame: completedThroughFrame,
+            });
+
+        expect(reported.status).toBe(200);
+        return job.id;
+    }
+
+    /**
+     * Ask the route about one video.
+     *
+     * @param {string} sourceName - The video.
+     * @returns {Promise<Object>} The coverage body.
+     */
+    async function coverageOf(sourceName) {
+        const response = await global.api.get(
+            `/api/v2/gpu/coverage?source_name=${encodeURIComponent(sourceName)}`
+        );
+
+        expect(response.status).toBe(200);
+        return response.body;
+    }
+
+    it('merges pieces that tile a range into one interval', async () => {
+        const video = `jest-coverage-tiled-${runId}.mp4`;
+
+        await processed(video, 0, 50, 50);
+        await processed(video, 50, 100, 100);
+
+        const body = await coverageOf(video);
+
+        // Two jobs, one interval: a video split into pieces that tile it
+        // exactly is covered once, not twice.
+        expect(body.covered).toHaveLength(1);
+        expect(body.covered[0].start_frame).toBe(0);
+        expect(body.covered[0].end_frame).toBe(100);
+        expect(body.covered[0].job_ids).toHaveLength(2);
+        expect(body.frames_covered).toBe(100);
+    });
+
+    it('shows a hole where a piece was never finished', async () => {
+        const video = `jest-coverage-hole-${runId}.mp4`;
+
+        await processed(video, 0, 50, 50);
+        // The middle piece is submitted and gets nowhere.
+        await processed(video, 100, 150, 150);
+
+        const body = await coverageOf(video);
+
+        // 50-100 is missing, and it shows as two intervals rather than one.
+        expect(body.covered.map((span) => [span.start_frame, span.end_frame]))
+            .toEqual([[0, 50], [100, 150]]);
+    });
+
+    it('counts what an attempt covered, not what it was asked for', async () => {
+        const video = `jest-coverage-short-${runId}.mp4`;
+
+        // Asked for 0-1000, got through 220. This is the case the issue was
+        // opened on: reading the submitted range would call the video done.
+        await processed(video, 0, 1000, 220);
+
+        const body = await coverageOf(video);
+
+        expect(body.covered).toEqual([
+            { start_frame: 0, end_frame: 220, job_ids: expect.any(Array) },
+        ]);
+        expect(body.frames_covered).toBe(220);
+    });
+
+    it('says nothing is covered for a video nobody has processed', async () => {
+        const body = await coverageOf(`jest-coverage-untouched-${runId}.mp4`);
+
+        // Not an error, and not "complete": the absence of work is an answer.
+        expect(body.covered).toEqual([]);
+        expect(body.frames_covered).toBe(0);
+    });
+
+    it('reports no extent and no gaps for a video it cannot size', async () => {
+        const video = `jest-coverage-unsizeable-${runId}.mp4`;
+
+        await processed(video, 0, 40, 40);
+
+        const body = await coverageOf(video);
+
+        // A bare url is somebody else's file and Jellyfin has never heard of
+        // it. A gap list measured against a guessed end is worse than none.
+        expect(body.extent).toBeNull();
+        expect(body.gaps).toBeNull();
+        expect(body.covered).toHaveLength(1);
+    });
+
+    it('refuses to be asked about no video, or about two', async () => {
+        const none = await global.api.get('/api/v2/gpu/coverage');
+        const both = await global.api.get('/api/v2/gpu/coverage?jellyfin_item_id=a&source_name=b');
+
+        expect(none.status).toBe(400);
+        expect(both.status).toBe(400);
+    });
+});
+
+/**
+ * The gap arithmetic, which the route tests above cannot reach (#257).
+ *
+ * They use a `source_name` video, which Jellyfin cannot size, so `gaps` is
+ * null for all of them. Leasing a `jellyfin_item_id` job instead would need
+ * the media server to resolve the video, and CI has none -- a test that
+ * skipped there would look green while proving nothing.
+ *
+ * So these drive the service with both of its sources stubbed. What is under
+ * test is the complement: given what is covered and how long the video is,
+ * what is left.
+ */
+describe('what is left of a video of known length', () => {
+    const gpuService = require('../service/gpu.service');
+    const gpuRepository = require('../repository/gpu.repository');
+    const jellyfinRepository = require('../repository/jellyfin.repository');
+
+    let covered;
+    let sized;
+
+    /**
+     * Stub what has been covered, over a video 1000 frames long.
+     *
+     * @param {Array<Object>} intervals - Merged covered spans.
+     * @returns {Promise<Object>} The coverage body.
+     */
+    async function coverageGiven(intervals) {
+        covered = jest.spyOn(gpuRepository, 'coveredIntervals').mockResolvedValue(intervals);
+        sized = jest.spyOn(jellyfinRepository, 'getVideoExtent').mockResolvedValue({
+            frames: 1000, durationSeconds: 40, averageFrameRate: 25,
+        });
+
+        return gpuService.coverage({ jellyfin_item_id: 'item-under-test' });
+    }
+
+    afterEach(() => {
+        if (covered) covered.mockRestore();
+        if (sized) sized.mockRestore();
+    });
+
+    it('reports what is left after the furthest frame anybody reached', async () => {
+        const body = await coverageGiven([{ start_frame: 0, end_frame: 300, job_ids: [1] }]);
+
+        expect(body.extent.frames).toBe(1000);
+        expect(body.gaps).toEqual([{ start_frame: 300, end_frame: 1000 }]);
+        expect(body.frames_covered).toBe(300);
+    });
+
+    it('reports a hole in the middle as well as the tail', async () => {
+        const body = await coverageGiven([
+            { start_frame: 0, end_frame: 100, job_ids: [1] },
+            { start_frame: 400, end_frame: 500, job_ids: [2] },
+        ]);
+
+        expect(body.gaps).toEqual([
+            { start_frame: 100, end_frame: 400 },
+            { start_frame: 500, end_frame: 1000 },
+        ]);
+    });
+
+    it('reports the whole video as a gap when nothing has run', async () => {
+        const body = await coverageGiven([]);
+
+        // "Nothing has been processed" and "this is complete" must not look the
+        // same, which is the point of measuring against the video rather than
+        // against the largest range anybody submitted.
+        expect(body.gaps).toEqual([{ start_frame: 0, end_frame: 1000 }]);
+        expect(body.frames_covered).toBe(0);
+    });
+
+    it('reports no gaps when the video is fully covered', async () => {
+        const body = await coverageGiven([{ start_frame: 0, end_frame: 1000, job_ids: [1] }]);
+
+        expect(body.gaps).toEqual([]);
+    });
+
+    it('does not run off the end when coverage exceeds the video', async () => {
+        // A range submitted past the end of the video. The video is still 1000
+        // frames long; there is nothing beyond it to be owed.
+        const body = await coverageGiven([{ start_frame: 0, end_frame: 1200, job_ids: [1] }]);
+
+        expect(body.gaps).toEqual([]);
+    });
+
+    it('still reports coverage when the video cannot be sized', async () => {
+        covered = jest.spyOn(gpuRepository, 'coveredIntervals')
+            .mockResolvedValue([{ start_frame: 0, end_frame: 40, job_ids: [1] }]);
+        sized = jest.spyOn(jellyfinRepository, 'getVideoExtent')
+            .mockRejectedValue(new Error('jellyfin is unreachable'));
+
+        const body = await gpuService.coverage({ jellyfin_item_id: 'item-unreachable' });
+
+        // Jellyfin being down must not take the half that needs no network with
+        // it, and a gap list against an unknown end is worse than none.
+        expect(body.covered).toHaveLength(1);
+        expect(body.extent).toBeNull();
+        expect(body.gaps).toBeNull();
+    });
+});

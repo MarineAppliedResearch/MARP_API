@@ -2829,6 +2829,57 @@ const buildOpenApiSpec = () => {
                             },
                         },
                     },
+                    GpuCoverageResponse: {
+                        type: 'object',
+                        description:
+                            'Which frames of a video have succeeded work over them and which do not. `covered` is merged and ascending; `extent` and `gaps` are null when the video could not be sized, because a gap list measured against a guess is worse than none.',
+                        properties: {
+                            video: {
+                                type: 'object',
+                                description: 'The video this is about, as it was asked for.',
+                                properties: {
+                                    jellyfin_item_id: { type: 'string', example: '937c5062e9186e878f8e99673edc84b4' },
+                                    source_name: { type: 'string', example: '20240727_185645 Fwd.mp4' },
+                                },
+                            },
+                            session_id: { type: 'integer', nullable: true, example: 755, description: 'The session this was narrowed to, or null for every session over this video.' },
+                            extent: {
+                                type: 'object',
+                                nullable: true,
+                                description: 'How long the video really is, from Jellyfin. Null when it could not be sized.',
+                                properties: {
+                                    frames: { type: 'integer', example: 27721 },
+                                    duration_seconds: { type: 'number', example: 1111.274 },
+                                    average_frame_rate: { type: 'number', example: 24.946007, description: 'The delivered rate, not the declared one: converting frames to time wants what the stream actually carries.' },
+                                },
+                            },
+                            covered: {
+                                type: 'array',
+                                description: 'Merged half-open intervals that attempts reported covering, with the jobs behind each.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        start_frame: { type: 'integer', example: 0 },
+                                        end_frame: { type: 'integer', example: 4620, description: 'Exclusive, matching every other frame bound in this API.' },
+                                        job_ids: { type: 'array', items: { type: 'integer' }, example: [14371, 14373], description: 'The jobs that produced this interval, so a gap can be traced to what abandoned it.' },
+                                    },
+                                },
+                            },
+                            gaps: {
+                                type: 'array',
+                                nullable: true,
+                                description: 'What is left of the video. Null when the extent is unknown.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        start_frame: { type: 'integer', example: 4620 },
+                                        end_frame: { type: 'integer', example: 27721 },
+                                    },
+                                },
+                            },
+                            frames_covered: { type: 'integer', example: 4620, description: 'Total frames across the covered intervals.' },
+                        },
+                    },
                     GpuJobIngestResponse: {
                         type: 'object',
                         description:

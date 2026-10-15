@@ -1,148 +1,116 @@
 ---
-task: MarineAppliedResearch/MARP_API#128
+task: MarineAppliedResearch/MARP_API#257
 repos: [MARP_API]
-status: implementing
+status: design
 needs: []
 ---
 
 ## Goal
 
-The eight Machine Learning Dashboard screens stop being pictures. Filters filter, sorting
-sorts, paging pages, and a screen can be seen loading, empty and broken rather than only
-succeeding instantly. Every value comes from one module shaped like the real API, so wiring
-MARP in later is a change of source and not a change of vocabulary.
+Answer the question "is this dive actually done?" from the record rather than
+from somebody's memory. Today the coordinator stores what was *attempted* --
+5,329 cancelled jobs against 3,040 succeeded on this database -- and nothing
+distinguishes a range nobody wanted from a range that was started and never
+finished. A GPU worker that gives a job up mid-range leaves no trace saying
+those frames are still owed.
+
+This milestone delivers the **read-only half**: a view that reports, for a
+video, which frames have a succeeded job over them and which do not.
+Requeueing what is owed is deliberately not in it, because it turns on a
+question only the human can answer.
 
 ## Requirements
 
-- **R1** — One module is the only thing the screens read from. No screen carries a value in
-  its markup.
-- **R2** — Request and response shapes match the real routes, including the awkward ones:
-  `204` for no work, paging on `GET /gpu/jobs` but not on `GET /gpu/workers`, and `200`
-  rather than `201` from `POST /gpu/jobs`.
-- **R3** — The data is deterministic from a fixed seed. Two people on the same screen see
-  the same numbers, and a regenerated fixture is byte-identical.
-- **R4** — Enough rows to exercise the screens honestly: the Workers screen drawn for 143
-  machines, the History screen for a bounded window over hundreds of jobs.
-- **R5** — Every state a screen draws is reachable in the data, including the awkward ones:
-  `cancelling`, which is derived rather than stored (`state == 'cancelled'` with a live
-  attempt, measured at 18-20 seconds), and *completed with issues*, which has no enum value
-  and no parent object to hang it on.
-- **R6** — Latency and failure are producible, so loading and error states exist because the
-  layer can make them happen rather than because somebody drew them.
-- **R7** — Filters, sorting, paging and search operate against the layer rather than being
-  drawn.
-- **R8** — The current API surface is written down per route, checked against the code
-  rather than against prose.
-- **R9** — Each remaining gap is either closed or listed in `DESIGN.md` with the reason.
-- **R10** — Swapping the module for real `fetch` calls is the whole of the wiring work.
-- **R11** — No server, no database, no build step. A local module, not a second
-  implementation of MARP.
-
-## The current surface, measured
-
-Read from `docs/openapi.generated.json` and `routes/gpu.routes.js` on `develop`, not from
-#104's measurement comment, which is a year of assumptions ahead of anything else written
-down and is a comment rather than a contract.
-
-Fourteen **GPU** routes are registered, not the twelve #128 names. Three of those are
-dashboard-facing; the rest are the worker protocol (poll, heartbeat, events, result, the
-artifact hand-off) and are not read by any screen.
-
-**Corrected 2026-10-14, while wiring the Dashboard:** counting only the `/gpu/` group was
-the wrong frame. MARP publishes 147 routes, and the screens also read
-`GET /api/v2/ml_models` and `GET /api/v2/dataset`, which are not GPU routes at all. The
-Models and Datasets counts were very nearly recorded as having no API behind them on the
-strength of that mistake. `/v2/training_run` really does have only a `POST`, so training
-history is the thing with no route — `DESIGN.md` gap 28.
-
-- `GET /api/v2/gpu/workers` → an array, unpaged. `worker_id`, `name`, `state`, `slot_count`,
-  `enrolled_at`, `activity` (derived, never stored), `attempts[]`; nullable `worker_version`,
-  `capabilities`, `last_seen_at`.
-- `GET /api/v2/gpu/jobs` → `{ jobs[], total, limit, offset }`, newest first, default 50 and
-  capped at 500, ordered `created_at` then `id`. Each job: `id`, `kind`, `spec`, `state`,
-  `priority`, `attempts_made`, `max_attempts`, `created_at`, `updated_at`; nullable
-  `batch_id`, `published_attempt_id`, `created_by`.
-- `GET /api/v2/gpu/jobs/:id` → `{ job, attempts[], artifacts[] }`.
+- **R1** — Given a video and a session, report the frame ranges covered by
+  succeeded inference jobs, and the ranges not covered, as half-open intervals
+  consistent with the rest of the GPU API.
+- **R2** — Coverage is computed from what a job **actually processed**, as the
+  worker reported it, never from the range it was submitted with. A job
+  submitted 0–60,000 that stopped at 22,320 because the video ended has not
+  covered 60,000 frames.
+- **R2a** — The worker reports, on a terminal result, the frame ranges it
+  actually processed and the time it took.
+- **R2b** — The coordinator compares that against the range it asked for, at
+  ingest, and records the difference. A shortfall is noticed when it happens,
+  not reconstructed by a query months later.
+- **R3** — Overlapping and adjacent succeeded ranges merge, so a video split
+  into pieces that tile it exactly reports as one covered interval rather than
+  as N.
+- **R4** — The report says which jobs produced each covered interval, so a gap
+  can be traced to the attempt that abandoned it.
+- **R5** — It answers for a video that was never submitted at all, rather than
+  returning nothing. "No work has been requested" and "work was requested and
+  is incomplete" are different answers.
+- **R6** — Read-only. No state changes, nothing requeued, nothing cancelled.
+- **R7** — The reported ranges are stored where the attempt is, so the view
+  reads a recorded fact rather than inferring one. This does need a migration;
+  what it must not become is a second copy of the job record.
+- **R8** — A video's extent comes from Jellyfin, so "complete" means complete
+  against the video rather than against the largest request made of it.
 
 ## Open assumptions
 
-- [x] **A1 · API contract · blocking** — answered 2026-10-14: the job list carries a
-  progress summary. The real route will have to learn to, exactly as gap 12 already says of
-  worker paging, so this joins `DESIGN.md`'s gap list rather than being closed quietly. The
-  screen is not to make a detail call per visible row.
-- [x] **A2 · API contract · blocking** — answered 2026-10-14: serve the API's shape —
-  `progress_done`, `progress_total`, `progress_unit`, `progress_phase`,
-  `progress_elapsed_s` — and let the screen compute the percentage. It can then render
-  "1,240 of 3,000 frames" and keep the phase, and null before the first heartbeat still
-  draws a dash rather than a 0% bar. The mockup's flat percent with `-1` goes.
-- [x] **A3 · product/UI · blocking** — answered 2026-10-14: an explicit switch, set by query
-  parameter — `?mock=slow`, `?mock=fail:jobs`. The default path is instant, successful and
-  deterministic, so R3 is untouched and a failure is reproducible by URL and can be
-  demonstrated on purpose.
-- [x] **A4 · architectural · non-blocking** — answered 2026-10-14 by following the pattern
-  already in the repository: `mockups/api.js`, a plain script loaded before `mock.js` and
-  exposing one global. `mock.js` is a plain script and cannot `import` without becoming a
-  module, and converting it is a change this task did not ask for.
-- [x] **A5 · API contract · non-blocking** — answered 2026-10-14: the three dashboard-facing
-  routes plus the three mutations a screen performs (submit, cancel, rename). The worker
-  protocol — poll, heartbeat, events, result, the artifact hand-off — is not modelled,
-  because no screen reads it and a fixture nothing exercises is a fixture that rots.
-- [x] **A6 · product/UI · blocking** — *Found during G2*, answered 2026-10-14: *completed with
-  issues* is a property of a **batch**, never of one job, and is derived by grouping jobs on
-  `batch_id` and finding both `succeeded` and `failed` pieces. It needs no schema change and
-  no new route.
+- [x] **A1 · scientific/data-meaning · blocking** — answered 2026-10-15: **the
+      worker reports the ranges it actually processed, and the coordinator
+      compares them against what it asked for, at ingest.** Isaac: *"when we
+      ingest from the worker, the coordinator should compare the work the worker
+      did with the work it was expecting the worker to do, so the worker should
+      technically be reporting the ranges of what it actually processed, it
+      could even report the time taken so the coordinator can track that and
+      show it in the dashboard."*
 
-  Worth recording how nearly this went the other way. It was first proposed that the state
-  be dropped altogether, on the grounds that #225 settled that a job whose results did not
-  reach the database is *failed* rather than succeeded-with-problems — true of one job, and
-  irrelevant here, because the design's own words are *"finished, but some videos or ranges
-  failed"* and its action is *"Retry failed work"*. The mockup's `Retry 2` means two failed
-  ranges, not two retries. Reading the state's definition before its implications would have
-  settled it; reading a single row did not.
-
-  Two consequences, both taken: `expired` joins the state vocabulary, because it is a real
-  job state the design had no word for and an expired job could not be drawn at all; and gap
-  2 is now *partly* closed rather than closed, since the derivation works but a batch still
-  has no row of its own to be fetched, named or given a state.
+      This is wider than the final-frame field that was proposed, and better:
+      the check happens where the evidence arrives rather than being
+      reconstructed later by a query, so a shortfall is noticed at the moment it
+      happens. It also makes coverage a recorded fact instead of an inference.
+      Elapsed time rides along for the dashboard.
+- [x] **A2 · scientific/data-meaning · blocking** — answered 2026-10-15: **ask
+      Jellyfin.** It knows the video's real length, so "complete" is measured
+      against the video rather than against the largest request anybody happened
+      to make. `repository/jellyfin.repository.js` already talks to it.
+- [ ] **A3 · product/UI · non-blocking** — Is a gap reported per *(video,
+      session)* or per *video*? The same item appears under several sessions
+      (item `48ff096a…` under 754 and 640), which are different survey contexts
+      rather than a repeat of the same work. Proposed: per *(video, session)*,
+      because a session is what a scientist reasons about.
+- [ ] **A4 · API contract · non-blocking** — A new `GET` under
+      `/api/gpu/...`, or part of the existing job listing? Proposed: its own
+      route, `GET /api/gpu/coverage`, because it answers a different question
+      from "list the jobs" and takes different parameters.
+- [ ] **A5 · behavioural · non-blocking** — Do `failed` and `expired` jobs
+      count as not-covered the same way `cancelled` does? Proposed: yes — only
+      `succeeded` covers anything; everything else is absence of evidence.
 
 ## Decisions
 
-- **2026-10-14** — The surface is read out of the generated contract and the route files
-  rather than out of #104's measurement comment.
-- **2026-10-14** — A1, A2 and A3 above, from Isaac. Together they settle that the data layer
-  serves the shape the API will have rather than the shape the mockup drew, and that the
-  distance between the two is recorded in `DESIGN.md` rather than hidden inside the module.
-- **2026-10-14** — **The API gaps are closed after the dashboard settles, not as they are
-  found.** Isaac: *"the api gaps are something we will close and fill in after we settle all
-  this."* So wiring a screen records what the API is missing and moves on; it does not open
-  route or schema work. Six gaps were added during this task (23 to 28) and all six stay
-  open on purpose. The ordering is the point: wiring is what reveals the missing surface,
-  and closing each one on sight would mean changing MARP against a design still being
-  argued with.
-- **2026-10-14** — A dataset build is not a GPU job, and the Datasets screen owns a build's
-  progress and diagnostics rather than linking into the GPU queue. Settled after the Jobs
-  screen's cards disagreed with its own table over six hand-written rows.
+- **2026-10-15** — The read-only view ships first and alone. Requeueing is the
+  second piece and is blocked on what `cancelled` means: today it covers both
+  *"we changed our mind"* and *"this never got done"*, and nothing automatic
+  should act on a word carrying two meanings. Raised with Isaac on 2026-10-15.
+- **2026-10-15** — This is a query, not a new table. The record of what was
+  attempted already exists; what is missing is a way to read it. A new table
+  would be a second copy of the same facts, and the first to drift.
 
 ## Plan
 
-1. Record the job-list progress gap as `DESIGN.md` gap 23, and correct gap 16's shape list
-   if the progress mismatch belongs beside it.
-2. The module: the three dashboard-facing routes, the seeded generator, and the `?mock=`
-   switch. Shapes exactly as measured above.
-3. The generator's scale and reachable states — 143 machines, a bounded window of hundreds
-   of jobs, `cancelling` and *completed with issues* among them.
-4. Screen by screen, move every value out of the markup and onto the module, starting with
-   Jobs because it carries the progress change.
-5. Filters, sorting, paging and search against the module rather than the DOM.
-6. Loading, empty and error states, proven by the switch.
+1. A repository function that, for a `(video, session)`, returns succeeded jobs
+   with their ranges and whatever A1 settles on as evidence of real extent.
+2. Merge the intervals, in SQL rather than in JavaScript, so a long video does
+   not pull thousands of rows to fold them.
+3. The complement against the extent A2 settles on, yielding the gaps.
+4. A service that names the jobs behind each covered interval (R4).
+5. One route, documented through `docs/openapi-route-registry.js`, and
+   `npm run docs:build` re-run because the generated contract is committed.
 
 ## Acceptance criteria
 
-- No screen carries a value in its markup, and deleting the module breaks every screen.
-- A regenerated fixture is byte-identical to the previous one.
-- The Workers screen draws 143 machines and remains usable.
-- Each screen can be seen loading, empty and failed.
-- Every item in `DESIGN.md`'s gap list is still true, or has moved, with the reason.
+- A video processed by a batch that tiled it exactly reports one covered
+  interval and no gaps.
+- A video with a job cancelled mid-range reports the gap, and names the job.
+- Job 14372 -- cancelled on 2026-10-15 after twelve thousand frames -- appears
+  as a gap, since it is the worked example the issue was opened on.
+- A video nobody has submitted reports "nothing requested", not "complete".
+- Re-running the query changes nothing in the database.
 
 ## Test plan
 
@@ -150,27 +118,8 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** G5 — the pull request, which is yours to call
-- **Notes:** All eight read from `mockups/api.js` — Dashboard, Jobs, Workers, History,
-  Models, Datasets, Inference and Training. The layer serves the three GPU routes plus
-  `ml_models`, `dataset`, `projects` and `users`, in MARP's own shapes, from one seeded
-  corpus: 143 machines, 420 jobs, 29 models, 38 datasets. `?mock=slow` and
-  `?mock=fail:<route>` produce the loading and error states; the default path is instant
-  and byte-identical across reloads.
-
-  `npm run lint` covers four things: every file parses, no raw colours and no state outside
-  the vocabulary, the enums match MARP (the GPU ones from `config/gpu-orchestration.js` and
-  `MlModel.status` from the generated contract), and every page loads the data layer. Each
-  check was proved to fail before it was believed.
-
-  **Verified 2026-10-15.** `npm test` passes end to end: nine checks, 32 screenshots, exit
-  0. It did not pass first. The suite could not run at all, then reported 136 failures, six
-  of which were real defects in this work that looking at the screens had not shown — rows
-  decorated twice, legends bound twice, a phone sort control that reordered the table
-  silently. `.marp/verification.md` records the run verbatim, what it found, and the three
-  places where a check was corrected rather than the code.
-
-  **Still not done.** The Inference submission form's deeper surfaces (R19-R29) are still
-  design data, as are the five sampled-series graphs, which have no telemetry behind them.
-  Gaps 23 to 28 are recorded and deliberately open. The four manual steps in the
-  verification plan are Isaac's and have not been done.
+- **Gate:** design -- both blocking assumptions answered; scope now spans two repositories
+- **Notes:** A1 and A2 both block, and both are data-meaning questions rather
+  than technical ones. A1 is the sharper of the two: every option gives a
+  different definition of "done", and the easy one (trust `spec.range`) is the
+  one that would quietly hide gaps at the end of every video.
