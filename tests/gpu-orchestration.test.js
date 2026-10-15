@@ -2329,6 +2329,8 @@ describe('requeueing owed frames', () => {
     const jellyfinRepository = require('../repository/jellyfin.repository');
 
     let sized;
+    let streamed;
+    let rated;
     let sessionsBefore;
     let projectsBefore;
     let modelsBefore;
@@ -2355,10 +2357,23 @@ describe('requeueing owed frames', () => {
         sized = jest.spyOn(jellyfinRepository, 'getVideoExtent').mockResolvedValue({
             frames: 100, durationSeconds: 4, averageFrameRate: 25,
         });
+
+        // Leasing a job whose video is a Jellyfin item resolves that item to a
+        // playable URL, and the API refuses a spec carrying both an item id and
+        // a url -- so a test about coverage over a Jellyfin item cannot avoid
+        // the resolution, it can only stand in for it. A runner has no media
+        // server, and these four tests passed on a machine that does and failed
+        // in CI for exactly that reason.
+        streamed = jest.spyOn(jellyfinRepository, 'buildDirectStreamUrl')
+            .mockResolvedValue(`http://jest.invalid/media/jest-gpu-${runId}.mp4`);
+        rated = jest.spyOn(jellyfinRepository, 'getVideoFrameRate')
+            .mockResolvedValue({ realFrameRate: 25 });
     });
 
     afterEach(() => {
         if (sized) sized.mockRestore();
+        if (streamed) streamed.mockRestore();
+        if (rated) rated.mockRestore();
     });
 
     afterAll(async () => {
@@ -2376,10 +2391,21 @@ describe('requeueing owed frames', () => {
      * @returns {Promise<Object>} The job.
      */
     async function interrupt(itemId, completedThroughFrame) {
+        const base = specFor({ start_frame: 0, end_frame: 100 });
+
+        // The url stays on the spec beside the item id, and that is not
+        // decoration: a lease whose video is only a Jellyfin item has to be
+        // resolved through Jellyfin, which a CI runner cannot reach -- the
+        // lease is then given up and the poll answers 204. These four tests
+        // passed on a machine where Jellyfin is reachable and failed in CI for
+        // exactly that reason. Coverage is still keyed by the item id.
         const { job, lease } = await submitAndLease({
             spec: {
-                ...specFor({ start_frame: 0, end_frame: 100 }),
-                video: { jellyfin_item_id: itemId },
+                ...base,
+                // The source name is submitted rather than looked up: with it,
+                // resolution never calls Jellyfin for the item's path. The url
+                // is dropped because the API refuses both keys at once.
+                video: { jellyfin_item_id: itemId, source_name: base.video.source_name },
             },
         });
 
@@ -2453,10 +2479,11 @@ describe('requeueing owed frames', () => {
     it('never requeues a job a human cancelled', async () => {
         const item = `jest-requeue-cancelled-${runId}`;
 
+        const cancelled = specFor({ start_frame: 0, end_frame: 100 });
         const { job } = await submitAndLease({
             spec: {
-                ...specFor({ start_frame: 0, end_frame: 100 }),
-                video: { jellyfin_item_id: item },
+                ...cancelled,
+                video: { jellyfin_item_id: item, source_name: cancelled.video.source_name },
             },
         });
 
