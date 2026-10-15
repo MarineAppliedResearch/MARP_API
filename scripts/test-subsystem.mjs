@@ -42,6 +42,11 @@ const SUBSYSTEMS = {
             'gpu-observation-ingest',
             // #232: the settings an attempt ran with, reported on the event stream.
             'gpu-attempt-settings',
+            // #104: what the job list and the pool view can be asked, after the
+            // dashboard's gaps 23 to 27 were closed.
+            'gpu-finished-at',
+            'gpu-job-list',
+            'gpu-pool-telemetry',
             'worker-provisioning',
         ],
     },
@@ -95,6 +100,9 @@ const SUBSYSTEMS = {
             'metrics_curves',
             'metrics_summary',
             'ml_models',
+            // #104: preferred models, version chains, dataset status and the
+            // training-run listing the registry had no route for.
+            'ml-registry',
             'model_species',
             'training_runs',
         ],

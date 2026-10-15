@@ -133,6 +133,16 @@ const MAX_WORKER_NAME_LENGTH = 255;
 const MAX_WORKER_LOCAL_ID_LENGTH = 128;
 
 /**
+ * Longest name a job may be given, matching `gpu_jobs.name`. Checked in the
+ * service for the same reason as a worker's: an over-long name should be a 400
+ * rather than a database error surfacing as a 500.
+ *
+ * @constant
+ * @type {number}
+ */
+const MAX_JOB_NAME_LENGTH = 255;
+
+/**
  * Longest phase name a worker may report. Phase vocabularies belong to each job
  * type, so the coordinator bounds the string without closing the vocabulary.
  *
@@ -369,6 +379,7 @@ module.exports = {
     POLL_RETRY_INTERVAL_MS,
     JSON_BODY_LIMIT,
     MAX_WORKER_NAME_LENGTH,
+    MAX_JOB_NAME_LENGTH,
     MAX_WORKER_LOCAL_ID_LENGTH,
     MAX_PROGRESS_PHASE_LENGTH,
     MAX_EVENTS_PER_BATCH,

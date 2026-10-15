@@ -169,6 +169,28 @@ class DatasetService {
     }
 
     /**
+     * Every version in the chain a model belongs to, oldest first.
+     *
+     * @async
+     * @param {number|string} modelId - Any model in the chain.
+     * @returns {Promise<Array<Object>>} The chain, oldest first.
+     */
+    async getModelVersions(modelId) {
+        return await datasetRepository.getModelVersions(modelId);
+    }
+
+    /**
+     * Every training run, newest first, optionally for one model.
+     *
+     * @async
+     * @param {Object} [filters] - `{modelId}`.
+     * @returns {Promise<Array<Object>>} The runs, newest first.
+     */
+    async getTrainingRuns(filters) {
+        return await datasetRepository.getTrainingRuns(filters);
+    }
+
+    /**
      * Create a new ML model record.
      *
      * @async

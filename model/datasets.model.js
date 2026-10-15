@@ -153,6 +153,22 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      status: {
+        // What the process building this dataset last reported. MARP does not
+        // run the build -- what does is still an open question (DESIGN.md gap
+        // 19) -- so this is recorded by whoever creates or updates the row.
+        type: DataTypes.STRING(16),
+        allowNull: false,
+        defaultValue: 'draft',
+        comment:
+          'Build state of the dataset: "draft", "building", "ready", or "failed".',
+        jsonSchema: {
+            schema: { type: 'string', enum: ['draft', 'building', 'ready', 'failed'] },
+            description: 'Build state of the dataset ("draft", "building", "ready", or "failed"). Recorded by whatever builds it; MARP does not run the build.',
+            examples: ['ready'],
+        },
+      },
+
       notes: {
         // Additional comments or contextual notes
         type: DataTypes.TEXT,

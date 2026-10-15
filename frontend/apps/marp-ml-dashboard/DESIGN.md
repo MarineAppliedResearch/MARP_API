@@ -530,6 +530,15 @@ being argued with. So the list is the backlog, written while the evidence is in 
 us, and the API work is one pass afterwards. A gap found here is recorded, drawn honestly
 on the screen, and left. Do not open API work off the back of this list without asking.
 
+**That pass happened on 2026-10-15, and it covered items 23 to 28 only.** Each of those now
+carries a *Closed in the API* note saying what the route answers and what it still does not.
+
+**"Closed in the API" is not "closed on the screen."** The screens were deliberately left
+alone in that pass, so a Progress column with a route behind it is still drawn from the data
+layer and a telemetry column still shows a dash. Doing both at once would have meant a change
+set where a dashboard failure and a route failure looked the same. Rewiring the screens onto
+the new fields is the next pass, and it is cheap now that the shapes are fixed.
+
 1. **A logical job over a MARP selection** — a job named for a project, dive or transect,
    with its own state and progress rollup. `batch_id` has no row of its own, and a batch
    is one video cut into frame ranges and cannot span videos. Milestone 2.
@@ -624,17 +633,46 @@ on the screen, and left. Do not open API work off the back of this list without 
     the screen computes the percentage, so it can say "1,240 of 3,000 frames" and keep the phase.
     Null before the first heartbeat still draws a dash and never a 0% bar.
 
+    **Closed in the API, 2026-10-15.** `GET /gpu/jobs` carries `progress_done`, `progress_total`,
+    `progress_unit`, `progress_phase` and `progress_elapsed_s` from the job's **latest attempt**,
+    whatever state that attempt is in -- a failed job showing how far its last try got is useful,
+    and a failed job showing nothing is a second way of saying "failed". The attempt's own field
+    names, flat on the job, so wiring the screen is a deletion rather than a mapping. One lateral
+    join; no opt-in flag.
+
 24. **The job list cannot be asked a question about time** — `GET /gpu/jobs` filters on
     `state`, `kind` and `batch_id`, and nothing else. *Completed today* on the Jobs screen is
     therefore not a query: the dashboard pulls a window of rows back and counts them here.
     That is fine at a few hundred jobs and is not fine at the scale #104 assumes, where the
     card would be counting over a page that no longer contains yesterday. The route needs a
     date range, or a counts endpoint. Found 2026-10-14 while wiring the cards in #128.
+
+    **Closed in the API, 2026-10-15,** and it needed a column first. `gpu_jobs` had no terminal
+    timestamp at all -- `finished_at` was on the *attempt* -- so "completed today" could only be
+    asked as "touched today", which is a different question. `gpu_jobs.finished_at` now exists,
+    is set wherever a job goes terminal and cleared wherever one goes back in the queue, and
+    existing rows were backfilled from their last attempt.
+
+    `GET /gpu/jobs` takes `created_after`, `created_before`, `finished_after` and
+    `finished_before`, as **absolute instants rather than day names**: MARP has no opinion about
+    where a day starts, because a server that decided would be wrong silently for anyone in
+    another timezone. No counts endpoint -- `total` already comes back with every page, so a card
+    asks for `limit=1` with its range and reads `total`.
 25. **A job has no name** — `GpuJobSpec` carries `engine`, `model`, `video`, `session`,
     `range`, `params` and `reduction`. Nothing names the job. The titles the screens show are
     composed from `spec.video.source_name`, which is why they read "SALT 2025 D0895 L4"
     rather than anything a person chose. A submitted job cannot be given a label and found
     again by it. Found 2026-10-14 in #128.
+
+    **Closed in the API, 2026-10-15.** `gpu_jobs.name` is a column rather than a field inside
+    `spec`, because the list has to search it and searching inside a JSON blob means a functional
+    index or a sequential scan. `POST /gpu/jobs` takes an optional `name` and every piece of a
+    split batch carries it, because the person submitted one thing.
+
+    **Null when absent, and MARP composes no fallback.** A name invented by the API would be
+    indistinguishable from one a person chose, and the screens already know how to label a job
+    that has none. Renaming after submit is deliberately not here: it would be the first job
+    update route and belongs with gap 3.
 26. **Four of the Jobs screen's six controls cannot be asked of the route** — `GET /gpu/jobs`
     takes `state`, `kind`, `batch_id`, `limit` and `offset`. The Type and Status selectors are
     therefore real queries. **Search, the time window, every sort column and the derived
@@ -648,24 +686,77 @@ on the screen, and left. Do not open API work off the back of this list without 
     before this list can be paged server-side, which is also what gap 24 needs for the cards.
     Found 2026-10-14 in #128.
 
-27. **A worker reports nothing about itself while it runs** — the Workers table has columns
-    for GPU load, VRAM load and temperature/power, and the expanded row had a *Live machine
-    telemetry* section listing utilization, temperature, fan, power, clocks, CPU, system RAM,
-    disk and process uptime. **None of it exists.** `capabilities` is a blob sent once at
-    enrolment — the schema calls it "GPUs and VRAM, driver, disk, engines, ranges supported" —
-    and `POST /gpu/attempts/:id/heartbeat` carries the *attempt's* progress and nothing about
-    the machine. There is no route, no column and no field anywhere that holds a live reading.
+    **Mostly closed in the API, 2026-10-15.** `GET /gpu/jobs` takes `sort`, `direction` and
+    `search`. Sorting covers the columns that live on the job itself -- `name`, `kind`, `state`,
+    `priority`, `created_at`, `finished_at` -- and every ordering still ends in `id DESC`, which
+    matters more now that `name` and `finished_at` are both nullable and NULLs tie with each
+    other. An unknown sort key is a 400 rather than ignored: a sort the route silently dropped
+    would hand back rows in some other order and look broken. Search matches the name, the
+    video's `source_name` and the batch id -- the three things visible on the row.
 
-    So those cells draw a dash with an explanation rather than a number, the same rule progress
-    follows before its first heartbeat, and the expanded row says plainly what is not reported
-    instead of leaving it to be inferred from a column of dashes. What *is* real there: name,
-    activity (derived by the route), version, the enrolment capabilities, slots in use against
-    slot count, when it enrolled, when it was last heard from, and its live attempt.
+    **Progress and Worker are still not sortable**, because they live on the joined attempt and
+    ordering by them is a different and more expensive query. They can follow once something has
+    measured that the join is affordable at #104's scale.
+
+    **The *Issues* filter stays in the browser**, deliberately. It is derived by grouping on
+    `batch_id` and finding both a success and a failure, and a `HAVING` over batches cannot be
+    paged with the rows it filters -- so making it a query would trade a visible limitation for a
+    subtle one. It remains only as complete as the page in hand, and the screen should keep
+    saying so.
+
+27. **The pool view cannot reach the machine telemetry MARP already has** — the Workers table
+    has columns for GPU load, VRAM load and temperature/power, and they draw a dash.
+
+    **Corrected 2026-10-15.** This said "a worker reports nothing about itself while it runs"
+    and that none of it exists. That was wrong, and wrong in the direction that invents work:
+    `marp-inference-worker`'s `system/resource_monitor.py` reads NVML and reports GPU and
+    memory `utilization`, `temperature_c`, `power_usage_watts` and `power_limit_watts` per
+    device; those travel inside `capabilities` on **every** `POST /gpu/poll` — the schema calls
+    that field "Current hardware, snapshotted onto whatever attempt this poll opens" — and
+    MARP stores it as `capabilities_snapshot` on the attempt. The mistake was checking the
+    enrol and heartbeat bodies and never the poll.
+
+    What is actually missing is narrower and cheaper:
+
+    - **`GET /gpu/workers` does not return it.** `GpuPoolAttempt` carries `attempt_id`,
+      `state`, `slot_index`, `lease_epoch`, `lease_expires_at`, `last_heartbeat_at`,
+      `progress` and `job` — no `capabilities_snapshot`. `GET /gpu/jobs/:id` does return it,
+      so the pool view is the only thing standing between this screen and the numbers.
+    - **It is a lease-time snapshot, not a live reading.** The heartbeat carries the attempt's
+      progress and nothing about the machine, so the figures are as of when the job started.
+      A column headed *GPU load* implying "now" would be overstating what is known.
+    - **An idle machine has no reading at all**, because the snapshot lives on an attempt and
+      an idle machine has none.
+
+    So the cells still draw a dash today, but for a reason worth one line of route change
+    rather than a telemetry pipeline. **#214 owns the power-draw feature** — idle baseline,
+    delta above idle, pool totals — and carries six open assumptions of Isaac's that are
+    unanswered, so it is blocked at its own design gate rather than waiting on this.
+
+    What is real on the screen now: name, activity (derived by the route), version, the
+    enrolment capabilities, slots in use against slot count, when it enrolled, when it was
+    last heard from, and its live attempt.
 
     Uptime is in the same position for a subtler reason: `local_id` is durable across restarts,
     so `enrolled_at` is when the machine first appeared, not when its process started. Showing
     the age of the enrolment under a column headed *Uptime* would be a wrong number rather than
     a missing one. Found 2026-10-14 in #128.
+
+    **Closed in the API, 2026-10-15.** A live attempt in `GET /gpu/workers` now carries
+    `telemetry: {as_of, gpus[]}`, each GPU in the worker's own field names --
+    `gpu_utilization_percent`, `memory_utilization_percent`, `memory_used_bytes`,
+    `memory_total_bytes`, `memory_percent_used`, `temperature_c`, `power_usage_watts`,
+    `power_limit_watts`. Not renamed on the way through: calling `gpu_utilization_percent`
+    something tidier here would make this the one place in MARP that does, which is item 16 all
+    over again.
+
+    **Reduced to the GPUs rather than passed through whole.** The snapshot also describes CPU,
+    disk, network, the torch build, the engine list and the reduction registry, and gap 12
+    already records this route as megabytes a refresh at #104's scale.
+
+    Two limits stand and the screen must not paper over them: `as_of` is when the **lease
+    opened**, not now, so a column headed *GPU load* has to say when it was read; and an idle
+    machine holds no attempt and therefore has no reading at all, which is still a dash.
 
 28. **The model registry is thinner than the screens assume** — `GET /api/v2/ml_models` does
     list the registry, so the counts are real. What is not on an `MlModel`: anything marking a
@@ -673,9 +764,60 @@ on the screen, and left. Do not open API work off the back of this list without 
     array — a version chain is `parent_model_id` and has to be walked. `GET /api/v2/dataset`
     likewise has no status, so nothing in the API says a dataset is building.
 
-    Worth knowing alongside it: `/v2/training_run` has **only a `POST`**. A training run can
-    be created and never listed, so no screen can show training history from the API at all.
+    Worth knowing alongside it: **`/v2/training_run` has no collection listing.** `POST` on
+    the collection creates one, and `GET`, `PUT` and `DELETE` on `/:id` reach one you already
+    know the id of — so a training run can be created and fetched by id and never *found*,
+    and no screen can show training history from the API at all.
+
+    This line used to say the route had "only a `POST`", which was wrong about the three
+    routes on `/:id`. Corrected 2026-10-15; the gap is the collection read, not the whole
+    surface.
+
     Found 2026-10-14 in #128, after looking outside the `/gpu/` group for the first time.
+
+    **Closed in the API, 2026-10-15**, except one part that could not be.
+
+    `ml_models.preferred` is a boolean, **one per `model_type`**, enforced by a partial unique
+    index -- registry-wide would have meant choosing one preferred model for detection and
+    segmentation together, which is not a choice anybody wants to make.
+    `GET /ml_models/:id/versions` walks the chain: up to the root, then back down, so asking
+    about any member returns the whole family. Its own route rather than inline on the registry
+    listing, so a caller that only wants the list does not pay for a self-join per row.
+    `datasets.status` is `draft | building | ready | failed`, and existing rows were backfilled
+    to `ready` rather than taking the default, because every dataset in the database is a
+    finished one and describing it as unstarted would be a value becoming wrong.
+    `GET /training_run` lists runs, newest first, optionally for one model.
+
+    **A dataset's status is a recorded fact, not a derived one.** Whoever creates or updates the
+    row sets it; MARP does not run the build and this does not pretend it does. What *performs* a
+    dataset build is still open -- that is gap 19, and the Datasets fixtures name a `gpu-build-02`
+    worker that nothing in the API backs. Until something is doing the building, nothing moves a
+    row off `draft` but a caller.
+
+    **How many workers hold a model cached was not closed**, because nothing records it: not the
+    enrolment capabilities, not the poll, not anywhere. It needs the worker to say what it has,
+    and the worker is `marp-inference-worker`, a separate git repository rather than a separate
+    database.
+
+    **Looked at properly on 2026-10-15 it is small, and needs no migration.** The worker already
+    keeps a real cache -- `models/model_cache.py`, laid out as
+    `models/cache/<model_id>_<sha256>/<file>` -- so it already knows what it holds and merely
+    never reports it. Adding a `models_cached` list to the `capabilities` blob puts it exactly
+    where `slots`, `engines`, `cuda_devices` and the NVML telemetry already live, and MARP
+    already stores that blob.
+
+    One thing on this side has to change with it: **the poll does not write capabilities back to
+    the worker row.** `gpu_workers.capabilities` is written at enrolment and never again -- a
+    poll snapshots onto the attempt instead -- so a cache list stored there would be frozen at
+    whatever the machine had when it first appeared. That is one statement, still no migration.
+
+    A `worker_model_cache` table is the other option and would be more queryable, with a record
+    of *when* something was cached. It costs a migration and sync logic, which the capabilities
+    route does not, so it is the thing to promote to rather than to start from.
+
+    Either way the count is as of each worker's last poll, and an offline machine reports
+    whatever it last said -- which is about right, since a cache does not empty itself when a
+    computer is switched off.
 
 ## Running it
 

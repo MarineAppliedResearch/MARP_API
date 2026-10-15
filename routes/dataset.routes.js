@@ -58,6 +58,42 @@ function registerDatasetRoutes(app) {
 
     registerVersionedRoute(app, {
         method: 'get',
+        permission: 'models:read',
+        path: '/api/ml_models/:id/versions',
+        summary: 'Fetch a model\'s version chain',
+        description:
+            'Returns every version in the chain the given model belongs to, oldest first. `ml_models` has no versions array -- a chain is `parent_model_id` and has to be walked -- and this walks up to the root and back down, so asking about any member returns the whole family. Its own route rather than part of the registry listing, so a caller that only wants the list does not pay for a self-join per row.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'Any model in the chain.' },
+        ],
+        responses: {
+            200: {
+                description: 'The version chain, oldest first.',
+                content: {
+                    'application/json': {
+                        schema: { type: 'array', items: { $ref: '#/components/schemas/MlModel' } },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await datasetController.getModelVersions(req.params.id);
+
+            // Empty means there is no such model, not a model with no versions:
+            // a model is always in its own chain.
+            if (!data.length) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `ML model ${req.params.id} was not found.`);
+            }
+
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
         permission: 'jobs:execute',
         path: '/api/model/:id/artifact',
         summary: 'Download registered model weights',
@@ -344,6 +380,34 @@ function registerDatasetRoutes(app) {
     // ---------------------------------------------------------------
     // training_runs
     // ---------------------------------------------------------------
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run',
+        summary: 'Fetch training runs',
+        description:
+            'Returns training runs, newest first, optionally narrowed to one model. This collection read did not exist: a run could be created and fetched by id and never found, so no screen could show a training history at all.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'query', name: 'model_id', required: false, schema: { type: 'integer' }, description: 'Only runs that produced this model.' },
+        ],
+        responses: {
+            200: {
+                description: 'TrainingRun list returned successfully.',
+                content: {
+                    'application/json': {
+                        schema: { type: 'array', items: { $ref: '#/components/schemas/TrainingRun' } },
+                    },
+                },
+            },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await datasetController.getTrainingRuns({ modelId: req.query.model_id });
+            res.json(data);
+        }),
+    });
 
     registerVersionedRoute(app, {
         method: 'post',

@@ -79,6 +79,54 @@ const {
 const LIVE_ATTEMPT_STATES_SQL = LIVE_ATTEMPT_STATES.map((state) => `'${state}'`).join(', ');
 
 /**
+ * The terminal job states as a SQL list.
+ *
+ * @constant
+ * @type {string}
+ */
+const TERMINAL_JOB_STATES_SQL = TERMINAL_JOB_STATES.map((state) => `'${state}'`).join(', ');
+
+/**
+ * Keeps `gpu_jobs.finished_at` in step with a state this statement is setting
+ * from a bound `:jobState`.
+ *
+ * Every statement that moves a job's state carries this, because `finished_at`
+ * is only trustworthy if it is impossible to set a state without it -- and a
+ * requeue has to *clear* it as surely as a success sets it, or a job that
+ * expired and went back in the queue would go on claiming it finished an hour
+ * ago. `tests/gpu-finished-at.test.js` reads this file and fails if a statement
+ * that sets a job's state forgets.
+ *
+ * @constant
+ * @type {string}
+ */
+const FINISHED_AT_SQL = `finished_at = CASE WHEN :jobState IN (${TERMINAL_JOB_STATES_SQL}) THEN NOW() ELSE NULL END`;
+
+/**
+ * What the job list may be sorted by, and the expression for each.
+ *
+ * A whitelist because a column name cannot be a bound parameter -- it is
+ * interpolated into the statement, so the set of things that can land there is
+ * fixed here rather than taken from the caller.
+ *
+ * Only columns of `gpu_jobs`. Progress and worker live on the joined attempt and
+ * sorting by them is a different and more expensive query; they can be added
+ * once something has measured that the join is affordable at the scale #104
+ * assumes.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const JOB_SORT_COLUMNS = {
+    name: 'j.name',
+    kind: 'j.kind',
+    state: 'j.state',
+    priority: 'j.priority',
+    created_at: 'j.created_at',
+    finished_at: 'j.finished_at',
+};
+
+/**
  * Outcomes that leave observations worth taking into the record.
  *
  * A stop is in here with a success, because the frames a volunteer got through
@@ -431,6 +479,8 @@ class GpuRepository {
                         a.lease_epoch      AS attempt_lease_epoch,
                         a.lease_expires_at AS attempt_lease_expires_at,
                         a.last_heartbeat_at,
+                        a.leased_at        AS attempt_leased_at,
+                        a.capabilities_snapshot,
                         a.progress_done,
                         a.progress_total,
                         a.progress_unit,
@@ -488,18 +538,30 @@ class GpuRepository {
     }
 
     /**
-     * List jobs, newest first.
+     * List jobs, newest first unless asked otherwise.
      *
-     * Ordered `created_at DESC, id DESC` -- the id tie-breaker is not decoration.
-     * A batch's pieces are all inserted in the same statement and share a
-     * `created_at` to the microsecond, so without it two pages of the same list
-     * could show the same piece twice and miss another.
+     * Each job carries the progress of its **latest attempt**, whatever state that
+     * attempt is in (#104, gap 23). A failed job showing how far its last try got
+     * is useful; a failed job showing nothing is a second way of saying "failed".
+     * The alternative was a detail call per visible row -- fifty-one requests to
+     * draw one page -- and it was rejected for that reason.
+     *
+     * Nulls are left as nulls. A leased job that has not heartbeated yet has no
+     * progress, which is not the same as no progress *made*, and the screens draw
+     * a dash rather than an empty bar for exactly that distinction.
      *
      * @async
      * @param {Object} [filters]
      * @param {string} [filters.state] - Only jobs in this state.
      * @param {string} [filters.kind] - Only jobs of this kind.
      * @param {string} [filters.batchId] - Only jobs in this batch.
+     * @param {Date} [filters.createdAfter] - Queued at or after this instant.
+     * @param {Date} [filters.createdBefore] - Queued before this instant.
+     * @param {Date} [filters.finishedAfter] - Finished at or after this instant.
+     * @param {Date} [filters.finishedBefore] - Finished before this instant.
+     * @param {string} [filters.search] - Matched against name, the video's source name and batch id.
+     * @param {string} [filters.sort] - A key of {@link JOB_SORT_COLUMNS}.
+     * @param {string} [filters.direction] - `asc` or `desc`.
      * @param {number} [filters.limit] - Page size.
      * @param {number} [filters.offset] - Rows to skip.
      * @returns {Promise<{jobs: Array<Object>, total: number}>} The page, and how many matched in total.
@@ -507,30 +569,115 @@ class GpuRepository {
      */
     async listJobs(filters = {}) {
         try {
-            const where = {};
+            const conditions = [];
+            const replacements = {};
 
             if (filters.state) {
-                where.state = filters.state;
+                conditions.push('j.state = :state');
+                replacements.state = filters.state;
             }
 
             if (filters.kind) {
-                where.kind = filters.kind;
+                conditions.push('j.kind = :kind');
+                replacements.kind = filters.kind;
             }
 
             if (filters.batchId) {
-                where.batch_id = filters.batchId;
+                conditions.push('j.batch_id = :batchId');
+                replacements.batchId = filters.batchId;
             }
 
-            const { rows, count } = await this.db.gpu_jobs.findAndCountAll({
-                where,
-                order: [['created_at', 'DESC'], ['id', 'DESC']],
-                limit: filters.limit,
-                offset: filters.offset,
-            });
+            // Half-open on purpose: `before` excludes its own instant, so two
+            // adjacent windows cannot both claim the same job.
+            if (filters.createdAfter) {
+                conditions.push('j.created_at >= :createdAfter');
+                replacements.createdAfter = filters.createdAfter;
+            }
+
+            if (filters.createdBefore) {
+                conditions.push('j.created_at < :createdBefore');
+                replacements.createdBefore = filters.createdBefore;
+            }
+
+            if (filters.finishedAfter) {
+                conditions.push('j.finished_at >= :finishedAfter');
+                replacements.finishedAfter = filters.finishedAfter;
+            }
+
+            if (filters.finishedBefore) {
+                conditions.push('j.finished_at < :finishedBefore');
+                replacements.finishedBefore = filters.finishedBefore;
+            }
+
+            // The three things visible on the row. A search that matches
+            // something invisible looks broken to whoever typed it.
+            if (filters.search) {
+                conditions.push(`(j.name ILIKE :search
+                                  OR j.spec->'video'->>'source_name' ILIKE :search
+                                  OR j.batch_id::text ILIKE :search)`);
+                replacements.search = `%${filters.search}%`;
+            }
+
+            const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+            // Whitelisted, because this is interpolated rather than bound -- a
+            // column name cannot be a parameter.
+            const column = JOB_SORT_COLUMNS[filters.sort] || JOB_SORT_COLUMNS.created_at;
+            const direction = filters.direction === 'asc' ? 'ASC' : 'DESC';
+
+            // The id tie-breaker is not decoration. A batch's pieces are all
+            // inserted in the same statement and share a `created_at` to the
+            // microsecond, so without it two pages of the same list could show
+            // the same piece twice and miss another. It matters more now: `name`
+            // and `finished_at` are both nullable, and NULLs tie with each other.
+            //
+            // It follows the direction rather than being fixed at DESC, so that
+            // ascending and descending are exact reverses of one another. Either
+            // way is a stable total order and pages correctly; a fixed DESC is
+            // simply surprising, because reversing the sort would then leave
+            // tied rows in the order they were already in.
+            const order = `ORDER BY ${column} ${direction} NULLS LAST, j.id ${direction}`;
+
+            const jobs = await this.db.sequelize.query(
+                `SELECT j.*,
+                        a.progress_done,
+                        a.progress_total,
+                        a.progress_unit,
+                        a.progress_phase,
+                        a.progress_elapsed_s
+                   FROM gpu_jobs j
+                   LEFT JOIN LATERAL (
+                        SELECT progress_done, progress_total, progress_unit,
+                               progress_phase, progress_elapsed_s
+                          FROM gpu_job_attempts
+                         WHERE job_id = j.id
+                         ORDER BY id DESC
+                         LIMIT 1
+                   ) a ON TRUE
+                   ${where}
+                   ${order}
+                  LIMIT :limit OFFSET :offset`,
+                {
+                    replacements: { ...replacements, limit: filters.limit, offset: filters.offset },
+                    type: QueryTypes.SELECT,
+                }
+            );
+
+            // Counted without the lateral join: it produces exactly one row per
+            // job, so joining it here would cost the same work for the same answer.
+            const [{ total }] = await this.db.sequelize.query(
+                `SELECT count(*)::int AS total FROM gpu_jobs j ${where}`,
+                { replacements, type: QueryTypes.SELECT }
+            );
 
             return {
-                jobs: rows.map((job) => job.get({ plain: true })),
-                total: count,
+                jobs: jobs.map((job) => ({
+                    ...job,
+                    progress_elapsed_s: job.progress_elapsed_s === null
+                        ? null
+                        : Number(job.progress_elapsed_s),
+                })),
+                total,
             };
         } catch (error) {
             logger.error('Error::' + error);
@@ -699,7 +846,7 @@ class GpuRepository {
 
             const [updated] = await this.db.sequelize.query(
                 `UPDATE gpu_jobs
-                    SET state = 'cancelled', updated_at = NOW()
+                    SET state = 'cancelled', updated_at = NOW(), finished_at = NOW()
                   WHERE id = :jobId
                   RETURNING *`,
                 { replacements: { jobId }, type: QueryTypes.SELECT, transaction }
@@ -831,7 +978,8 @@ class GpuRepository {
                 `UPDATE gpu_jobs
                     SET state = 'leased',
                         attempts_made = attempts_made + 1,
-                        updated_at = NOW()
+                        updated_at = NOW(),
+                        finished_at = NULL
                   WHERE id = :jobId
                   RETURNING *`,
                 { replacements: { jobId: job.id }, type: QueryTypes.SELECT, transaction }
@@ -944,7 +1092,7 @@ class GpuRepository {
                     jobState = attemptsSpent(job) < Number(job.max_attempts) ? 'queued' : 'expired';
 
                     await this.db.sequelize.query(
-                        'UPDATE gpu_jobs SET state = :jobState, updated_at = NOW() WHERE id = :jobId',
+                        `UPDATE gpu_jobs SET state = :jobState, updated_at = NOW(), ${FINISHED_AT_SQL} WHERE id = :jobId`,
                         { replacements: { jobState, jobId: job.id }, transaction }
                     );
                 }
@@ -1428,7 +1576,8 @@ class GpuRepository {
                         `UPDATE gpu_jobs
                             SET state = 'succeeded',
                                 published_attempt_id = :attemptId,
-                                updated_at = NOW()
+                                updated_at = NOW(),
+                                finished_at = NOW()
                           WHERE id = :jobId`,
                         { replacements: { attemptId: attempt.id, jobId: job.id }, transaction }
                     );
@@ -1572,7 +1721,8 @@ class GpuRepository {
                                     COALESCE(:completedThroughFrame, resume_from_frame, 0),
                                     COALESCE(resume_from_frame, 0)
                                 ),
-                                updated_at = NOW()
+                                updated_at = NOW(),
+                                finished_at = NULL
                           WHERE id = :jobId`,
                         {
                             replacements: {
@@ -1623,7 +1773,7 @@ class GpuRepository {
                     jobState = 'cancelled';
 
                     await this.db.sequelize.query(
-                        "UPDATE gpu_jobs SET state = 'cancelled', updated_at = NOW() WHERE id = :jobId",
+                        "UPDATE gpu_jobs SET state = 'cancelled', updated_at = NOW(), finished_at = NOW() WHERE id = :jobId",
                         { replacements: { jobId: job.id }, transaction }
                     );
                 }
@@ -1887,7 +2037,7 @@ class GpuRepository {
                 : (finalState || 'expired');
 
             await this.db.sequelize.query(
-                'UPDATE gpu_jobs SET state = :jobState, updated_at = NOW() WHERE id = :jobId',
+                `UPDATE gpu_jobs SET state = :jobState, updated_at = NOW(), ${FINISHED_AT_SQL} WHERE id = :jobId`,
                 { replacements: { jobState, jobId: job.id }, transaction }
             );
         }
@@ -1965,7 +2115,8 @@ class GpuRepository {
                             published_attempt_id = CASE
                                 WHEN published_attempt_id = :attemptId THEN NULL
                                 ELSE published_attempt_id END,
-                            updated_at = NOW()
+                            updated_at = NOW(),
+                            ${FINISHED_AT_SQL}
                       WHERE id = :jobId`,
                     { replacements: { jobState, jobId: job.id, attemptId }, transaction }
                 );
@@ -2235,3 +2386,7 @@ class GpuRepository {
 }
 
 module.exports = new GpuRepository();
+
+/* The sort whitelist travels with the repository that applies it, so the
+   service validates against the same list rather than a second copy of it. */
+module.exports.JOB_SORT_COLUMNS = JOB_SORT_COLUMNS;

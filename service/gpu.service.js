@@ -39,6 +39,7 @@ const {
     POLL_MAX_WAIT_SECONDS,
     POLL_RETRY_INTERVAL_MS,
     MAX_WORKER_NAME_LENGTH,
+    MAX_JOB_NAME_LENGTH,
     MAX_WORKER_LOCAL_ID_LENGTH,
     MAX_PROGRESS_PHASE_LENGTH,
     MAX_EVENTS_PER_BATCH,
@@ -153,6 +154,89 @@ function optionalInteger(value, field, fallback) {
     }
 
     return requiredInteger(value, field);
+}
+
+/**
+ * The GPU telemetry out of an attempt's `capabilities_snapshot` (#104, gap 27).
+ *
+ * The worker reads NVML on every poll and the coordinator stores the whole
+ * reading on the attempt it opens, so this information has always been in the
+ * database -- `GET /gpu/jobs/:id` returns it. What the pool view could not do is
+ * reach it, which is the entire gap.
+ *
+ * **Reduced rather than passed through.** The snapshot carries the machine's CPU,
+ * disk, network, torch build, engine list and reduction registry alongside the
+ * GPUs. Gap 12 already records `GET /gpu/workers` as megabytes a refresh at the
+ * scale #104 assumes, and handing back a second whole blob per live attempt
+ * makes the worse problem worse.
+ *
+ * **Field names are the worker's own**, not tidier ones invented here. Renaming
+ * `gpu_utilization_percent` to `utilization` on the way through would make this
+ * route the only place in MARP where the reading is called that, and item 16 of
+ * `DESIGN.md` is about exactly that kind of silent mapping.
+ *
+ * @param {?Object} snapshot - The attempt's `capabilities_snapshot`, as stored.
+ * @param {?Date} asOf - When the snapshot was taken, i.e. when the lease opened.
+ * @returns {?Object} `{gpus, as_of}`, or null when the machine reported no GPU.
+ */
+function gpuTelemetryFrom(snapshot, asOf) {
+    const devices = snapshot
+        && snapshot.resources
+        && snapshot.resources.nvidia
+        && snapshot.resources.nvidia.devices;
+
+    if (!Array.isArray(devices) || devices.length === 0) {
+        return null;
+    }
+
+    return {
+        gpus: devices.map((device) => ({
+            device_index: device.device_index,
+            name: device.name,
+            gpu_utilization_percent: device.gpu_utilization_percent,
+            memory_utilization_percent: device.memory_utilization_percent,
+            memory_used_bytes: device.memory_used_bytes,
+            memory_total_bytes: device.memory_total_bytes,
+            memory_percent_used: device.memory_percent_used,
+            temperature_c: device.temperature_c,
+            power_usage_watts: device.power_usage_watts,
+            power_limit_watts: device.power_limit_watts,
+        })),
+
+        // Carried deliberately. This is what the machine looked like when the
+        // lease opened, not what it looks like now -- the heartbeat reports the
+        // attempt's progress and nothing about the hardware -- so a screen that
+        // drew it as a live reading would be overstating what is known.
+        as_of: asOf,
+    };
+}
+
+/**
+ * Read an optional instant from a query string.
+ *
+ * An **absolute instant**, deliberately -- an ISO timestamp the caller worked
+ * out, not a day name MARP interprets. "Completed today" is a question only the
+ * caller can answer, because only the caller knows what timezone it is being
+ * asked in, and a server that decided would be wrong silently for everyone
+ * somewhere else (#104, gap 24).
+ *
+ * @param {*} value - Value as supplied.
+ * @param {string} field - Field name, for the message.
+ * @returns {?Date} The instant, or undefined when absent.
+ * @throws {ApiError} When present but not a parseable timestamp.
+ */
+function optionalInstant(value, field) {
+    if (value === undefined || value === null || value === '') {
+        return undefined;
+    }
+
+    const parsed = new Date(value);
+
+    if (Number.isNaN(parsed.getTime())) {
+        invalid(`${field} must be an ISO 8601 timestamp.`);
+    }
+
+    return parsed;
 }
 
 /**
@@ -1372,6 +1456,12 @@ class GpuService {
                         ? null
                         : Number(row.progress_elapsed_s),
                 },
+
+                // Null on a machine that reported no GPU at all, and absent
+                // entirely for an idle machine, which holds no attempt to
+                // carry a reading.
+                telemetry: gpuTelemetryFrom(row.capabilities_snapshot, row.attempt_leased_at),
+
                 job: {
                     job_id: row.job_id,
                     kind: row.job_kind,
@@ -1438,9 +1528,11 @@ class GpuService {
      * List jobs.
      *
      * @async
-     * @param {Object} query - `{state, kind, batch_id, limit, offset}` as strings from the query string.
+     * @param {Object} query - `{state, kind, batch_id, created_after, created_before,
+     *   finished_after, finished_before, search, sort, direction, limit, offset}` as
+     *   strings from the query string.
      * @returns {Promise<Object>} `{jobs, total, limit, offset}`.
-     * @throws {ApiError} 400 for an unknown state or kind.
+     * @throws {ApiError} 400 for an unknown state, kind, sort key or timestamp.
      */
     async listJobs(query) {
         const filters = {};
@@ -1455,6 +1547,27 @@ class GpuService {
 
         if (query.batch_id !== undefined) {
             filters.batchId = requiredString(query.batch_id, 'batch_id');
+        }
+
+        filters.createdAfter = optionalInstant(query.created_after, 'created_after');
+        filters.createdBefore = optionalInstant(query.created_before, 'created_before');
+        filters.finishedAfter = optionalInstant(query.finished_after, 'finished_after');
+        filters.finishedBefore = optionalInstant(query.finished_before, 'finished_before');
+
+        if (query.search !== undefined && String(query.search).trim() !== '') {
+            filters.search = String(query.search).trim();
+        }
+
+        // Rejected rather than ignored. A sort the route silently dropped would
+        // hand back rows in some other order and look like a broken sort.
+        if (query.sort !== undefined) {
+            filters.sort = requiredEnum(
+                query.sort, 'sort', Object.keys(gpuRepository.JOB_SORT_COLUMNS)
+            );
+        }
+
+        if (query.direction !== undefined) {
+            filters.direction = requiredEnum(query.direction, 'direction', ['asc', 'desc']);
         }
 
         filters.limit = Math.min(Math.max(Number(query.limit) || 50, 1), 500);
@@ -1575,12 +1688,29 @@ class GpuService {
             invalid('piece_frames must be at least 1.');
         }
 
+        // Optional, and null when absent. MARP does not compose a fallback: a
+        // name it invented would be indistinguishable from one a person chose,
+        // and the screens already know how to label a job that has none (#104,
+        // gap 25).
+        let name = null;
+
+        if (body.name !== undefined && body.name !== null && String(body.name).trim() !== '') {
+            name = requiredString(body.name, 'name');
+
+            if (name.length > MAX_JOB_NAME_LENGTH) {
+                invalid(`name must be ${MAX_JOB_NAME_LENGTH} characters or fewer.`);
+            }
+        }
+
         const ranges = this.splitRange(startFrame, endFrame, pieceFrames);
         const batchId = ranges.length > 1 ? crypto.randomUUID() : null;
         const createdBy = principal && principal.type === 'user' ? principal.id : null;
 
+        // Every piece of a split carries the same name, because the name is what
+        // the person submitted and they submitted one thing.
         const rows = ranges.map((range) => ({
             batch_id: batchId,
+            name,
             kind,
             spec: { ...spec, range },
             state: 'queued',

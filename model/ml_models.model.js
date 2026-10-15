@@ -167,6 +167,19 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      preferred: {
+        // One per model_type, enforced by a partial unique index.
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment:
+          'True on the one model of its model_type that jobs should reach for by default.',
+        jsonSchema: {
+            description: 'True on the one model of its model_type that jobs should reach for by default.',
+            examples: [false],
+        },
+      },
+
       notes: {
         type: DataTypes.TEXT,
         allowNull: true,

@@ -1,0 +1,176 @@
+---
+task: MarineAppliedResearch/MARP_API#128
+repos: [MARP_API]
+status: implementing
+needs: []
+---
+
+## Goal
+
+The eight Machine Learning Dashboard screens stop being pictures. Filters filter, sorting
+sorts, paging pages, and a screen can be seen loading, empty and broken rather than only
+succeeding instantly. Every value comes from one module shaped like the real API, so wiring
+MARP in later is a change of source and not a change of vocabulary.
+
+## Requirements
+
+- **R1** — One module is the only thing the screens read from. No screen carries a value in
+  its markup.
+- **R2** — Request and response shapes match the real routes, including the awkward ones:
+  `204` for no work, paging on `GET /gpu/jobs` but not on `GET /gpu/workers`, and `200`
+  rather than `201` from `POST /gpu/jobs`.
+- **R3** — The data is deterministic from a fixed seed. Two people on the same screen see
+  the same numbers, and a regenerated fixture is byte-identical.
+- **R4** — Enough rows to exercise the screens honestly: the Workers screen drawn for 143
+  machines, the History screen for a bounded window over hundreds of jobs.
+- **R5** — Every state a screen draws is reachable in the data, including the awkward ones:
+  `cancelling`, which is derived rather than stored (`state == 'cancelled'` with a live
+  attempt, measured at 18-20 seconds), and *completed with issues*, which has no enum value
+  and no parent object to hang it on.
+- **R6** — Latency and failure are producible, so loading and error states exist because the
+  layer can make them happen rather than because somebody drew them.
+- **R7** — Filters, sorting, paging and search operate against the layer rather than being
+  drawn.
+- **R8** — The current API surface is written down per route, checked against the code
+  rather than against prose.
+- **R9** — Each remaining gap is either closed or listed in `DESIGN.md` with the reason.
+- **R10** — Swapping the module for real `fetch` calls is the whole of the wiring work.
+- **R11** — No server, no database, no build step. A local module, not a second
+  implementation of MARP.
+
+## The current surface, measured
+
+Read from `docs/openapi.generated.json` and `routes/gpu.routes.js` on `develop`, not from
+#104's measurement comment, which is a year of assumptions ahead of anything else written
+down and is a comment rather than a contract.
+
+Fourteen **GPU** routes are registered, not the twelve #128 names. Three of those are
+dashboard-facing; the rest are the worker protocol (poll, heartbeat, events, result, the
+artifact hand-off) and are not read by any screen.
+
+**Corrected 2026-10-14, while wiring the Dashboard:** counting only the `/gpu/` group was
+the wrong frame. MARP publishes 147 routes, and the screens also read
+`GET /api/v2/ml_models` and `GET /api/v2/dataset`, which are not GPU routes at all. The
+Models and Datasets counts were very nearly recorded as having no API behind them on the
+strength of that mistake. `/v2/training_run` really does have only a `POST`, so training
+history is the thing with no route — `DESIGN.md` gap 28.
+
+- `GET /api/v2/gpu/workers` → an array, unpaged. `worker_id`, `name`, `state`, `slot_count`,
+  `enrolled_at`, `activity` (derived, never stored), `attempts[]`; nullable `worker_version`,
+  `capabilities`, `last_seen_at`.
+- `GET /api/v2/gpu/jobs` → `{ jobs[], total, limit, offset }`, newest first, default 50 and
+  capped at 500, ordered `created_at` then `id`. Each job: `id`, `kind`, `spec`, `state`,
+  `priority`, `attempts_made`, `max_attempts`, `created_at`, `updated_at`; nullable
+  `batch_id`, `published_attempt_id`, `created_by`.
+- `GET /api/v2/gpu/jobs/:id` → `{ job, attempts[], artifacts[] }`.
+
+## Open assumptions
+
+- [x] **A1 · API contract · blocking** — answered 2026-10-14: the job list carries a
+  progress summary. The real route will have to learn to, exactly as gap 12 already says of
+  worker paging, so this joins `DESIGN.md`'s gap list rather than being closed quietly. The
+  screen is not to make a detail call per visible row.
+- [x] **A2 · API contract · blocking** — answered 2026-10-14: serve the API's shape —
+  `progress_done`, `progress_total`, `progress_unit`, `progress_phase`,
+  `progress_elapsed_s` — and let the screen compute the percentage. It can then render
+  "1,240 of 3,000 frames" and keep the phase, and null before the first heartbeat still
+  draws a dash rather than a 0% bar. The mockup's flat percent with `-1` goes.
+- [x] **A3 · product/UI · blocking** — answered 2026-10-14: an explicit switch, set by query
+  parameter — `?mock=slow`, `?mock=fail:jobs`. The default path is instant, successful and
+  deterministic, so R3 is untouched and a failure is reproducible by URL and can be
+  demonstrated on purpose.
+- [x] **A4 · architectural · non-blocking** — answered 2026-10-14 by following the pattern
+  already in the repository: `mockups/api.js`, a plain script loaded before `mock.js` and
+  exposing one global. `mock.js` is a plain script and cannot `import` without becoming a
+  module, and converting it is a change this task did not ask for.
+- [x] **A5 · API contract · non-blocking** — answered 2026-10-14: the three dashboard-facing
+  routes plus the three mutations a screen performs (submit, cancel, rename). The worker
+  protocol — poll, heartbeat, events, result, the artifact hand-off — is not modelled,
+  because no screen reads it and a fixture nothing exercises is a fixture that rots.
+- [x] **A6 · product/UI · blocking** — *Found during G2*, answered 2026-10-14: *completed with
+  issues* is a property of a **batch**, never of one job, and is derived by grouping jobs on
+  `batch_id` and finding both `succeeded` and `failed` pieces. It needs no schema change and
+  no new route.
+
+  Worth recording how nearly this went the other way. It was first proposed that the state
+  be dropped altogether, on the grounds that #225 settled that a job whose results did not
+  reach the database is *failed* rather than succeeded-with-problems — true of one job, and
+  irrelevant here, because the design's own words are *"finished, but some videos or ranges
+  failed"* and its action is *"Retry failed work"*. The mockup's `Retry 2` means two failed
+  ranges, not two retries. Reading the state's definition before its implications would have
+  settled it; reading a single row did not.
+
+  Two consequences, both taken: `expired` joins the state vocabulary, because it is a real
+  job state the design had no word for and an expired job could not be drawn at all; and gap
+  2 is now *partly* closed rather than closed, since the derivation works but a batch still
+  has no row of its own to be fetched, named or given a state.
+
+## Decisions
+
+- **2026-10-14** — The surface is read out of the generated contract and the route files
+  rather than out of #104's measurement comment.
+- **2026-10-14** — A1, A2 and A3 above, from Isaac. Together they settle that the data layer
+  serves the shape the API will have rather than the shape the mockup drew, and that the
+  distance between the two is recorded in `DESIGN.md` rather than hidden inside the module.
+- **2026-10-14** — **The API gaps are closed after the dashboard settles, not as they are
+  found.** Isaac: *"the api gaps are something we will close and fill in after we settle all
+  this."* So wiring a screen records what the API is missing and moves on; it does not open
+  route or schema work. Six gaps were added during this task (23 to 28) and all six stay
+  open on purpose. The ordering is the point: wiring is what reveals the missing surface,
+  and closing each one on sight would mean changing MARP against a design still being
+  argued with.
+- **2026-10-14** — A dataset build is not a GPU job, and the Datasets screen owns a build's
+  progress and diagnostics rather than linking into the GPU queue. Settled after the Jobs
+  screen's cards disagreed with its own table over six hand-written rows.
+
+## Plan
+
+1. Record the job-list progress gap as `DESIGN.md` gap 23, and correct gap 16's shape list
+   if the progress mismatch belongs beside it.
+2. The module: the three dashboard-facing routes, the seeded generator, and the `?mock=`
+   switch. Shapes exactly as measured above.
+3. The generator's scale and reachable states — 143 machines, a bounded window of hundreds
+   of jobs, `cancelling` and *completed with issues* among them.
+4. Screen by screen, move every value out of the markup and onto the module, starting with
+   Jobs because it carries the progress change.
+5. Filters, sorting, paging and search against the module rather than the DOM.
+6. Loading, empty and error states, proven by the switch.
+
+## Acceptance criteria
+
+- No screen carries a value in its markup, and deleting the module breaks every screen.
+- A regenerated fixture is byte-identical to the previous one.
+- The Workers screen draws 143 machines and remains usable.
+- Each screen can be seen loading, empty and failed.
+- Every item in `DESIGN.md`'s gap list is still true, or has moved, with the reason.
+
+## Test plan
+
+Filled in at G3.
+
+## Status
+
+- **Gate:** G5 — the pull request, which is yours to call
+- **Notes:** All eight read from `mockups/api.js` — Dashboard, Jobs, Workers, History,
+  Models, Datasets, Inference and Training. The layer serves the three GPU routes plus
+  `ml_models`, `dataset`, `projects` and `users`, in MARP's own shapes, from one seeded
+  corpus: 143 machines, 420 jobs, 29 models, 38 datasets. `?mock=slow` and
+  `?mock=fail:<route>` produce the loading and error states; the default path is instant
+  and byte-identical across reloads.
+
+  `npm run lint` covers four things: every file parses, no raw colours and no state outside
+  the vocabulary, the enums match MARP (the GPU ones from `config/gpu-orchestration.js` and
+  `MlModel.status` from the generated contract), and every page loads the data layer. Each
+  check was proved to fail before it was believed.
+
+  **Verified 2026-10-15.** `npm test` passes end to end: nine checks, 32 screenshots, exit
+  0. It did not pass first. The suite could not run at all, then reported 136 failures, six
+  of which were real defects in this work that looking at the screens had not shown — rows
+  decorated twice, legends bound twice, a phone sort control that reordered the table
+  silently. `.marp/verification.md` records the run verbatim, what it found, and the three
+  places where a check was corrected rather than the code.
+
+  **Still not done.** The Inference submission form's deeper surfaces (R19-R29) are still
+  design data, as are the five sampled-series graphs, which have no telemetry behind them.
+  Gaps 23 to 28 are recorded and deliberately open. The four manual steps in the
+  verification plan are Isaac's and have not been done.
