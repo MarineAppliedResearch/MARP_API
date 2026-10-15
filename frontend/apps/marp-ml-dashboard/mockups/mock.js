@@ -927,7 +927,20 @@ function renderJobsHeaderState(total, from, shown, pages) {
     const key = [...th.classList].find((c) => JOBS_SORT_KEYS[c]);
     if (!key) continue;
     if (key === jobsQuery.sort.key) th.setAttribute('aria-sort', jobsQuery.sort.dir);
-    else th.removeAttribute('aria-sort');
+    else th.setAttribute('aria-sort', 'none');
+  }
+
+  /* **The phone's sort strip carries the state too.** Below 1050px the headers
+     are gone and this strip is the only sort control there is, so it has to say
+     which column is sorted and which way -- `data-direction` and `aria-pressed`,
+     the same pair the shared sorter uses. Taking sorting away from that sorter
+     left these buttons working but silent, and a control that reorders the
+     table while claiming nothing is worse than one that does not work. */
+  for (const control of $$('.jobs-sort-mobile [data-sort-column]')) {
+    const key = JOBS_SORT_COLUMNS[Number(control.dataset.sortColumn)];
+    const active = key === jobsQuery.sort.key;
+    control.dataset.direction = active ? jobsQuery.sort.dir : 'none';
+    control.setAttribute('aria-pressed', String(active));
   }
 }
 
@@ -2357,12 +2370,19 @@ function renderDashboardActivity(jobs) {
      of it. Each group is drawn from separately; leftovers top it back up. */
   const newest = (rows) => rows.sort((a, b) => Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at));
   const running = newest(views.filter((v) => v.state === 'running'));
-  const attention = newest(views.filter((v) => ['issues', 'failed', 'expired'].includes(v.state)));
   const finished = newest(views.filter((v) => v.state === 'done'));
+
+  /* **One per kind of trouble, not the two newest.** Taking the newest two
+     filled both slots with `issues` and left a panel that never showed a
+     failure -- two slots spent saying the same word. A preview this short is
+     only useful if each row tells the reader something the others do not. */
+  const attention = ['failed', 'issues', 'expired']
+    .map((state) => newest(views.filter((v) => v.state === state))[0])
+    .filter(Boolean);
 
   const shown = [...running.slice(0, 2), ...attention.slice(0, 2), ...finished.slice(0, 1)];
 
-  for (const pool of [running.slice(2), attention.slice(2), finished.slice(1)]) {
+  for (const pool of [attention.slice(2), running.slice(2), finished.slice(1)]) {
     for (const view of pool) {
       if (shown.length >= 5) break;
       shown.push(view);
@@ -3024,6 +3044,12 @@ function wireJobsOverview() {
   /* The expanded row is the complete job view. Shared identity stays stable,
      while the operational facts change with type and state. */
   $$('tr[data-job]', body).forEach((head) => {
+    /* **Decorate a row once.** `applyJobsQuery` calls this on every re-render
+       and the boot calls it too, so eighteen jobs grew thirty-six detail rows
+       -- two apiece, the second one unreachable behind the first. Guarding here
+       rather than fixing the call order, because the next caller would make the
+       same mistake and this is the place that can refuse. */
+    if (head.classList.contains('runrow-head')) return;
     head.classList.add('runrow-head');
     head.setAttribute('aria-expanded', 'false');
     const id = head.dataset.job;
@@ -5180,7 +5206,11 @@ Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), r
   wireHistoryControls();
   wireModelsControls();
   wireSorting();
-  wireJobsOverview();
+  /* **Not `wireJobsOverview()`.** `applyJobsQuery` calls it on every render,
+     including the first, so calling it here bound every result-graph legend a
+     second time -- and a second listener undid what the first did, leaving a
+     button that visibly worked and highlighted nothing. The row loop guards
+     itself against a repeat; the graph bindings could not. */
   wireSelection();
   applyTips();
 });

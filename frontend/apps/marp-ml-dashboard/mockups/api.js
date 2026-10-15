@@ -231,7 +231,15 @@
     }
 
     for (let i = 1; i <= 420; i++) {
-      const kind = r() < 0.62 ? 'inference' : pick(r, JOB_KINDS);
+      /* **Two jobs are placed rather than rolled**, for the same reason the
+         mixed batch is: #180's R16 is a whole review hierarchy that only a
+         *completed training* job draws -- epoch curves, per-class metrics, a
+         confusion matrix, the best checkpoint. Left to chance, training is a
+         tenth of the corpus and completed training a fraction of that, so the
+         screen could go a whole page without showing any of it. A state the
+         design is built around has to be on the first page. */
+      const placed = i <= 2 ? { kind: 'training', state: 'succeeded', recent: true } : null;
+      const kind = placed ? placed.kind : (r() < 0.62 ? 'inference' : pick(r, JOB_KINDS));
 
       /* **State first, then when it happened** -- not the other way round. The
          first cut of this drew a time and then let the time decide the state,
@@ -243,7 +251,8 @@
 
       let state;
       const roll = r();
-      if (plan && plan.forced) state = plan.forced;
+      if (placed) state = placed.state;
+      else if (plan && plan.forced) state = plan.forced;
       else if (roll < 0.05) state = 'leased';
       else if (roll < 0.11) state = 'queued';
       else if (roll < 0.74) state = 'succeeded';
@@ -253,10 +262,22 @@
 
       /* Live work is minutes old; everything terminal is spread over the window
          the History screen is drawn for. */
+      /* **Finished work can be minutes old.** Terminal jobs used to start an
+         hour back, so the newest eighteen rows -- the first page, sorted newest
+         first -- were nothing but running and queued work. A queue where
+         nothing has finished recently is not a queue anybody has seen, and it
+         left the Jobs screen unable to show a completed or cancelled job at all
+         without paging. */
       const live = state === 'leased' || state === 'queued';
-      const createdMinutes = (live || (plan && plan.recent))
+      /* Squared, so finished work clusters in the last few hours and thins out
+         across the fortnight. Spread evenly, a hundred-odd live jobs drowned
+         every terminal one out of the newest page: the first page of a job
+         queue showed nothing that had ever finished. Real queues finish work
+         constantly, and most of what finished, finished recently. */
+      const aged = Math.round((r() ** 2) * 60 * 24 * 14);
+      const createdMinutes = (live || (plan && plan.recent) || (placed && placed.recent))
         ? int(r, 0, 240)
-        : int(r, 60, 60 * 24 * 14);
+        : 5 + aged;
 
       /* Drawn once here because the spec below and the title the screen
          composes from it have to agree -- a dive on the job and a different
