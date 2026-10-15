@@ -2406,9 +2406,10 @@ const buildOpenApiSpec = () => {
                             telemetry: {
                                 type: 'object',
                                 nullable: true,
-                                description: 'What the machine reported about itself when this lease opened. The worker reads NVML on every poll and the reading is stored on the attempt it opens, so this is a **snapshot taken at `as_of`, not a live reading** -- the heartbeat carries the attempt\'s progress and nothing about the hardware. Null when the machine reported no GPU, and absent for an idle machine, which holds no attempt to carry one. Reduced to the GPUs rather than the whole capabilities blob, which also describes CPU, disk, network and the engine registry.',
+                                description: 'What this machine\'s GPUs are doing. **Check `live` before drawing it.** When the worker sends telemetry on its heartbeat, this is the most recent reading and `live` is true; when it does not, this falls back to the hardware snapshot the poll stored, which was taken before the job started and reads near-idle, and `live` is false. Either way `as_of` says when, and a screen is expected to show it. Null when the machine reported no GPU, and absent for an idle machine, which holds no attempt to carry one. Reduced to the GPUs rather than the whole capabilities blob, which also describes CPU, disk, network and the engine registry.',
                                 properties: {
-                                    as_of: { type: 'string', format: 'date-time', description: 'When the lease opened, which is when this reading was taken.' },
+                                    live: { type: 'boolean', example: true, description: 'True when this came from a heartbeat while the job was running; false when it is the poll\'s snapshot from before it started.' },
+                                    as_of: { type: 'string', format: 'date-time', description: 'When this reading was taken.' },
                                     gpus: {
                                         type: 'array',
                                         description: 'One entry per GPU, in the worker\'s own field names.',
@@ -2676,6 +2677,44 @@ const buildOpenApiSpec = () => {
                                     unit: { type: 'string', example: 'frames' },
                                     phase: { type: 'string', maxLength: 64, example: 'inferring', description: 'Current worker-defined phase. Future job types may use their own vocabulary.' },
                                     elapsed_s: { type: 'number', minimum: 0, example: 142.375 },
+                                },
+                            },
+                            telemetry: {
+                                type: 'object',
+                                description: 'What this machine\'s GPUs are doing **right now**. Optional, and omitted rather than sent as null by a machine with no GPU, so a worker that predates this field sends exactly the body it always sent. MARP keeps one reading per machine per minute, whatever the heartbeat interval. This is the only observation of a working machine MARP gets: the hardware snapshot on `POST /gpu/poll` is taken before the job starts and reads near-idle. The device fields are NVML\'s own and are stored as they arrive — a driver that stops reporting one must not turn a heartbeat into a 400 and cost a running job its lease.',
+                                properties: {
+                                    devices: {
+                                        type: 'array',
+                                        description: 'One entry per GPU, as the worker reports it.',
+                                        items: { type: 'object', additionalProperties: true },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    GpuSeries: {
+                        type: 'object',
+                        description: 'A bucketed series over a window. `points` is oldest first, and the window it was actually read over is echoed back, because the request may have left it to default.',
+                        properties: {
+                            since: { type: 'string', format: 'date-time' },
+                            until: { type: 'string', format: 'date-time' },
+                            bucket: { type: 'string', enum: ['minute', 'hour', 'day'], example: 'hour' },
+                            points: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    description: 'One bucket. Which fields are present depends on which series was asked for.',
+                                    properties: {
+                                        at: { type: 'string', format: 'date-time', description: 'Start of the bucket.' },
+                                        machines: { type: 'integer', nullable: true, example: 4, description: 'Utilization series: how many machines reported in this bucket.' },
+                                        avg_utilization_percent: { type: 'number', nullable: true, example: 87.4 },
+                                        max_utilization_percent: { type: 'integer', nullable: true, example: 99 },
+                                        avg_memory_percent_used: { type: 'number', nullable: true, example: 61.2 },
+                                        avg_power_usage_watts: { type: 'number', nullable: true, example: 298.7 },
+                                        finished: { type: 'integer', nullable: true, example: 142, description: 'Throughput series: jobs whose finished_at falls in this bucket.' },
+                                        succeeded: { type: 'integer', nullable: true, example: 139, description: 'Throughput series: the subset that worked.' },
+                                        waiting: { type: 'integer', nullable: true, example: 7, description: 'Throughput series: jobs created before this instant and not finished by it.' },
+                                    },
                                 },
                             },
                         },

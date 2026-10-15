@@ -554,6 +554,60 @@ function registerGpuRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'jobs:read',
+        path: '/api/gpu/telemetry/series',
+        summary: 'What the pool\'s GPUs were doing, over a window',
+        description:
+            'Per-bucket GPU readings taken **while machines were working**. The worker reports NVML on every heartbeat and MARP keeps one row per machine per minute; this averages across the machines in each bucket and carries the maximum with it, because an average over a pool where one card is saturated and nine are idle hides the one fact worth seeing. Only machines that were working appear at all — a reading exists because a heartbeat wrote it, and a heartbeat only happens during an attempt — so this is utilization of the machines doing work rather than of the pool\'s whole capacity, and a screen drawing it should say so. Distinct from the snapshot on `GET /gpu/workers`, which the **poll** writes before a job starts and which therefore reads near-idle. Readings are kept for 30 days.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'query', name: 'since', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Start of the window. Defaults to 24 hours before `until`.' },
+            { in: 'query', name: 'until', required: false, schema: { type: 'string', format: 'date-time' }, description: 'End of the window. Defaults to now.' },
+            { in: 'query', name: 'bucket', required: false, schema: { type: 'string', enum: ['minute', 'hour', 'day'], default: 'hour' }, description: 'Bucket size.' },
+        ],
+        responses: {
+            200: {
+                description: 'The series, oldest first.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuSeries' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.gpuUtilizationSeries(req.query || {});
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
+        path: '/api/gpu/jobs/series',
+        summary: 'How much work finished, and how much was waiting',
+        description:
+            'Per-bucket counts from `gpu_jobs`, with nothing sampled: `finished` counts jobs whose `finished_at` falls in the bucket, `succeeded` the subset that worked, and `waiting` is reconstructed — a job was waiting at a given instant if it was created before it and had not finished by it. Answerable only because `finished_at` exists; `updated_at` moves on a heartbeat and would have counted a job that finished last week as finishing today.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'query', name: 'since', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Start of the window. Defaults to 24 hours before `until`.' },
+            { in: 'query', name: 'until', required: false, schema: { type: 'string', format: 'date-time' }, description: 'End of the window. Defaults to now.' },
+            { in: 'query', name: 'bucket', required: false, schema: { type: 'string', enum: ['minute', 'hour', 'day'], default: 'hour' }, description: 'Bucket size.' },
+        ],
+        responses: {
+            200: {
+                description: 'The series, oldest first.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuSeries' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.jobThroughputSeries(req.query || {});
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
         path: '/api/gpu/jobs',
         summary: 'List GPU jobs',
         description:

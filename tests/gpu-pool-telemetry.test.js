@@ -217,8 +217,14 @@ describe('R5 — the pool view reaches the telemetry MARP already stores', () =>
         const { telemetry } = worker.attempts[0];
 
         /* Gap 12 already records this route as megabytes a refresh at scale. A
-           second whole blob per live attempt makes the worse problem worse. */
-        expect(Object.keys(telemetry).sort()).toEqual(['as_of', 'gpus']);
+           second whole blob per live attempt makes the worse problem worse.
+
+           `live` joined the payload when the heartbeat began carrying readings:
+           it says whether this came from a running job or from the poll's
+           snapshot before one started, which a screen has to know. The list is
+           pinned rather than loosened, because the point of this assertion is
+           that the payload cannot quietly grow back into the whole blob. */
+        expect(Object.keys(telemetry).sort()).toEqual(['as_of', 'gpus', 'live']);
         expect(JSON.stringify(telemetry)).not.toMatch(/physical_cores|sent_bytes|ultralytics/);
     });
 

@@ -67,6 +67,7 @@ const {
     LIVE_ATTEMPT_STATES,
     TERMINAL_JOB_STATES,
     RESULT_OUTCOMES,
+    SAMPLE_RETENTION_DAYS,
 } = require('../config/gpu-orchestration');
 
 /**
@@ -426,6 +427,133 @@ class GpuRepository {
      * `{id, name, last_seen_at}`.
      * @throws {Error} Re-throws any database failure.
      */
+    /**
+     * The pool's GPU readings over a window, bucketed.
+     *
+     * Averaged **across machines within a bucket**, which is the question the
+     * Workers chart asks: "how hard was the pool working at four o'clock". A max
+     * travels with it, because an average over a pool where one machine is
+     * saturated and nine are idle hides the one fact worth seeing.
+     *
+     * Only machines that were working appear: a sample exists because a
+     * heartbeat wrote it, and a heartbeat only happens during an attempt. So
+     * this is utilization *of the machines doing work*, not of the pool's whole
+     * capacity, and a screen should say so.
+     *
+     * @async
+     * @param {Object} window
+     * @param {Date} window.since - Start of the window.
+     * @param {Date} window.until - End of the window.
+     * @param {string} window.bucket - A PostgreSQL interval unit: minute, hour or day.
+     * @returns {Promise<Array<Object>>} One row per bucket, oldest first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async gpuUtilizationSeries({ since, until, bucket }) {
+        try {
+            /* `bucket` is interpolated because `date_trunc` takes a literal, so
+               the service whitelists it. It never reaches here as caller text. */
+            return await this.db.sequelize.query(
+                `SELECT date_trunc('${bucket}', s.at) AS at,
+                        count(DISTINCT s.worker_id)::int AS machines,
+                        round(avg(d.util), 1)::float AS avg_utilization_percent,
+                        max(d.util)::int AS max_utilization_percent,
+                        round(avg(d.mem), 1)::float AS avg_memory_percent_used,
+                        round(avg(d.watts), 1)::float AS avg_power_usage_watts
+                   FROM gpu_worker_samples s
+                   CROSS JOIN LATERAL (
+                        SELECT (device->>'gpu_utilization_percent')::numeric AS util,
+                               (device->>'memory_percent_used')::numeric     AS mem,
+                               (device->>'power_usage_watts')::numeric       AS watts
+                          FROM jsonb_array_elements(s.devices) AS device
+                   ) d
+                  WHERE s.at >= :since AND s.at < :until
+                  GROUP BY 1
+                  ORDER BY 1 ASC`,
+                { replacements: { since, until }, type: QueryTypes.SELECT }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * How much work finished, and how much was waiting, over a window.
+     *
+     * Both from `gpu_jobs` and neither needing anything sampled: `finished` is a
+     * count of jobs whose `finished_at` falls in the bucket, and `queued` is
+     * reconstructed -- a job was waiting at time T if it was created before T
+     * and had not finished by T. That is why #104's gap 24 had to add
+     * `finished_at` before this was answerable at all.
+     *
+     * @async
+     * @param {Object} window
+     * @param {Date} window.since - Start of the window.
+     * @param {Date} window.until - End of the window.
+     * @param {string} window.bucket - A PostgreSQL interval unit: minute, hour or day.
+     * @returns {Promise<Array<Object>>} One row per bucket, oldest first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async jobThroughputSeries({ since, until, bucket }) {
+        try {
+            return await this.db.sequelize.query(
+                `WITH buckets AS (
+                        SELECT generate_series(
+                                   date_trunc('${bucket}', :since::timestamptz),
+                                   date_trunc('${bucket}', :until::timestamptz),
+                                   ('1 ${bucket}')::interval) AS at
+                 )
+                 SELECT b.at,
+                        (SELECT count(*)::int FROM gpu_jobs j
+                          WHERE j.finished_at >= b.at
+                            AND j.finished_at < b.at + ('1 ${bucket}')::interval) AS finished,
+                        (SELECT count(*)::int FROM gpu_jobs j
+                          WHERE j.finished_at >= b.at
+                            AND j.finished_at < b.at + ('1 ${bucket}')::interval
+                            AND j.state = 'succeeded') AS succeeded,
+                        (SELECT count(*)::int FROM gpu_jobs j
+                          WHERE j.created_at <= b.at
+                            AND (j.finished_at IS NULL OR j.finished_at > b.at)) AS waiting
+                   FROM buckets b
+                  ORDER BY b.at ASC`,
+                { replacements: { since, until }, type: QueryTypes.SELECT }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * Throw away GPU readings older than the retention window.
+     *
+     * One row per machine per minute is cheap and unbounded, which is the shape
+     * of problem nobody notices until a year has passed. `SAMPLE_RETENTION_DAYS`
+     * is what the charts can look back over; past that the rows answer nothing
+     * anybody asks.
+     *
+     * Swept from the pool read rather than from the heartbeat: a delete on every
+     * heartbeat is a write per machine per ten seconds to achieve nothing most
+     * of the time, and the range is an index scan that costs nothing when there
+     * is nothing old.
+     *
+     * @async
+     * @returns {Promise<void>}
+     * @throws {Error} Re-throws any database failure.
+     */
+    async dropExpiredWorkerSamples() {
+        try {
+            await this.db.sequelize.query(
+                `DELETE FROM gpu_worker_samples
+                  WHERE at < NOW() - (:days * INTERVAL '1 day')`,
+                { replacements: { days: SAMPLE_RETENTION_DAYS } }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
     async markStaleWorkersOffline() {
         try {
             return await this.db.sequelize.query(
@@ -481,6 +609,8 @@ class GpuRepository {
                         a.last_heartbeat_at,
                         a.leased_at        AS attempt_leased_at,
                         a.capabilities_snapshot,
+                        s.at               AS sample_at,
+                        s.devices          AS sample_devices,
                         a.progress_done,
                         a.progress_total,
                         a.progress_unit,
@@ -496,6 +626,17 @@ class GpuRepository {
                          AND a.state IN (${LIVE_ATTEMPT_STATES_SQL})
                    LEFT JOIN gpu_jobs j
                           ON j.id = a.job_id
+                   /* The machine's most recent reading, which the heartbeat
+                      writes while work is running. Preferred over the attempt's
+                      capabilities_snapshot because that one is taken at the
+                      poll, before the job starts, and reads near-idle. */
+                   LEFT JOIN LATERAL (
+                        SELECT at, devices
+                          FROM gpu_worker_samples
+                         WHERE worker_id = w.id
+                         ORDER BY at DESC
+                         LIMIT 1
+                   ) s ON TRUE
                   ORDER BY w.name ASC, w.id ASC, a.slot_index ASC, a.id ASC`,
                 { type: QueryTypes.SELECT }
             );
@@ -1136,7 +1277,7 @@ class GpuRepository {
      * @returns {Promise<Object>} `{action, reason, lease_expires_at, heartbeat_seconds, attempt}`.
      * @throws {Error} Re-throws after rolling back if anything fails.
      */
-    async recordHeartbeat({ attemptId, workerId, leaseEpoch, state, progress }) {
+    async recordHeartbeat({ attemptId, workerId, leaseEpoch, state, progress, telemetry }) {
         const transaction = await this.db.sequelize.transaction();
 
         try {
@@ -1166,6 +1307,32 @@ class GpuRepository {
                 'UPDATE gpu_workers SET last_seen_at = NOW() WHERE id = :workerId',
                 { replacements: { workerId }, transaction }
             );
+
+            // The GPU reading, when the worker sent one. **Upserted onto the
+            // minute**, so a heartbeat every ten seconds leaves one row rather
+            // than six: `date_trunc` plus the unique index on (worker_id, at)
+            // makes the rate limit the schema's rather than a caller's to
+            // remember, and the last reading in a minute is the one that stays.
+            //
+            // Written here rather than left to the poll's snapshot because the
+            // poll happens before the machine starts work -- that is the whole
+            // reason this table exists.
+            if (telemetry && Array.isArray(telemetry.devices) && telemetry.devices.length) {
+                await this.db.sequelize.query(
+                    `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices)
+                     VALUES (:workerId, :attemptId, date_trunc('minute', NOW()), :devices)
+                     ON CONFLICT (worker_id, at)
+                     DO UPDATE SET devices = EXCLUDED.devices, attempt_id = EXCLUDED.attempt_id`,
+                    {
+                        replacements: {
+                            workerId,
+                            attemptId: attempt.id,
+                            devices: JSON.stringify(telemetry.devices),
+                        },
+                        transaction,
+                    }
+                );
+            }
 
             // The per-attempt cap. A worker that heartbeats faithfully forever
             // while making no progress is otherwise indistinguishable from one

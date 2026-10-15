@@ -157,6 +157,71 @@ function optionalInteger(value, field, fallback) {
 }
 
 /**
+ * The fields the pool view carries out of one worker's device array.
+ *
+ * Shared by the heartbeat's reading and the poll's snapshot, because they are the same
+ * array from the same NVML call and differ only in when it was taken. **Field names are
+ * the worker's own**: a tidier `utilization` here would make this the one place in MARP
+ * that calls it that, which `DESIGN.md` item 16 is entirely about.
+ *
+ * @param {Array<Object>} devices - The worker's per-GPU array.
+ * @returns {Array<Object>} One entry per GPU, reduced to what a pool view draws.
+ */
+function reduceDevices(devices) {
+    return devices.map((device) => ({
+        device_index: device.device_index,
+        name: device.name,
+        gpu_utilization_percent: device.gpu_utilization_percent,
+        memory_utilization_percent: device.memory_utilization_percent,
+        memory_used_bytes: device.memory_used_bytes,
+        memory_total_bytes: device.memory_total_bytes,
+        memory_percent_used: device.memory_percent_used,
+        temperature_c: device.temperature_c,
+        power_usage_watts: device.power_usage_watts,
+        power_limit_watts: device.power_limit_watts,
+    }));
+}
+
+/**
+ * Read the GPU reading a heartbeat may carry.
+ *
+ * **Lenient on the device fields, strict on the shape.** The fields are NVML's and a driver
+ * that stops reporting one — fan speed on a passive card, power on a laptop GPU — must not
+ * turn a heartbeat into a 400 and cost a running job its lease. So the devices travel as
+ * they arrive and only the envelope is checked.
+ *
+ * Absent is normal: a machine with no GPU omits the field rather than sending null, so an
+ * older worker that never heard of this is indistinguishable from a current one with
+ * nothing to report, and both are fine.
+ *
+ * @param {*} telemetry - `body.telemetry`, as supplied.
+ * @returns {?Object} `{devices}`, or null when there is nothing to record.
+ * @throws {ApiError} 400 when present but not shaped like a reading.
+ */
+function validateTelemetry(telemetry) {
+    if (telemetry === undefined || telemetry === null) {
+        return null;
+    }
+
+    if (typeof telemetry !== 'object' || Array.isArray(telemetry)) {
+        invalid('telemetry must be an object carrying a devices array.');
+    }
+
+    if (!Array.isArray(telemetry.devices)) {
+        invalid('telemetry.devices must be an array.');
+    }
+
+    for (const [index, device] of telemetry.devices.entries()) {
+        if (typeof device !== 'object' || device === null || Array.isArray(device)) {
+            invalid(`telemetry.devices[${index}] must be an object.`);
+        }
+    }
+
+    // An empty array is "I have no GPU", which is the same as not reporting.
+    return telemetry.devices.length ? { devices: telemetry.devices } : null;
+}
+
+/**
  * The GPU telemetry out of an attempt's `capabilities_snapshot` (#104, gap 27).
  *
  * The worker reads NVML on every poll and the coordinator stores the whole
@@ -190,18 +255,10 @@ function gpuTelemetryFrom(snapshot, asOf) {
     }
 
     return {
-        gpus: devices.map((device) => ({
-            device_index: device.device_index,
-            name: device.name,
-            gpu_utilization_percent: device.gpu_utilization_percent,
-            memory_utilization_percent: device.memory_utilization_percent,
-            memory_used_bytes: device.memory_used_bytes,
-            memory_total_bytes: device.memory_total_bytes,
-            memory_percent_used: device.memory_percent_used,
-            temperature_c: device.temperature_c,
-            power_usage_watts: device.power_usage_watts,
-            power_limit_watts: device.power_limit_watts,
-        })),
+        gpus: reduceDevices(devices),
+
+        // Not live. See `live` on the heartbeat's reading.
+        live: false,
 
         // Carried deliberately. This is what the machine looked like when the
         // lease opened, not what it looks like now -- the heartbeat reports the
@@ -412,6 +469,14 @@ class GpuService {
      * @returns {Promise<Array<Object>>} Machines marked offline.
      */
     async sweepStaleWorkers() {
+        // Retention rides along here rather than on the heartbeat or the job
+        // list. One row per machine per minute is small, but it is unbounded,
+        // and a table nobody ever deletes from is a slow leak somebody finds in
+        // a year. The pool read is the right place: far less frequent than the
+        // job list, and the delete is a range scan on an indexed column that
+        // answers instantly when there is nothing old.
+        await gpuRepository.dropExpiredWorkerSamples();
+
         return gpuRepository.markStaleWorkersOffline();
     }
 
@@ -994,6 +1059,7 @@ class GpuService {
             leaseEpoch,
             state: body.state,
             progress,
+            telemetry: validateTelemetry(body.telemetry),
         });
 
         // A refused heartbeat carries no accepted attempt. It may have named a
@@ -1457,10 +1523,19 @@ class GpuService {
                         : Number(row.progress_elapsed_s),
                 },
 
-                // Null on a machine that reported no GPU at all, and absent
-                // entirely for an idle machine, which holds no attempt to
-                // carry a reading.
-                telemetry: gpuTelemetryFrom(row.capabilities_snapshot, row.attempt_leased_at),
+                // The machine's **live** reading where the heartbeat has written
+                // one, falling back to the lease-time snapshot where it has not
+                // -- an older worker, or a job that has not beaten yet. `as_of`
+                // says which, and the screen is expected to show it, because the
+                // two mean quite different things.
+                //
+                // Still absent entirely for an idle machine: a reading belongs
+                // to work being done, and the last one from an hour ago under a
+                // column headed *GPU load* would be a wrong number rather than a
+                // missing one.
+                telemetry: row.sample_devices
+                    ? { gpus: reduceDevices(row.sample_devices), as_of: row.sample_at, live: true }
+                    : gpuTelemetryFrom(row.capabilities_snapshot, row.attempt_leased_at),
 
                 job: {
                     job_id: row.job_id,
@@ -1522,6 +1597,63 @@ class GpuService {
             enrolled_at: worker.enrolled_at,
             last_seen_at: worker.last_seen_at,
         };
+    }
+
+    /**
+     * A window and a bucket, read off a query string.
+     *
+     * `bucket` is **whitelisted rather than escaped**, because `date_trunc` takes a literal
+     * and the value is interpolated into the statement. Three units, and nothing a caller
+     * sends reaches the SQL.
+     *
+     * The window defaults to the last 24 hours, which is what a dashboard opens on.
+     *
+     * @param {Object} query - `{since, until, bucket}` as strings.
+     * @returns {Object} `{since, until, bucket}`.
+     * @throws {ApiError} 400 for a bad instant, an unknown bucket, or a backwards window.
+     */
+    seriesWindow(query) {
+        const until = optionalInstant(query.until, 'until') || new Date();
+        const since = optionalInstant(query.since, 'since')
+            || new Date(until.getTime() - 24 * 60 * 60 * 1000);
+
+        if (since >= until) {
+            invalid('since must be before until.');
+        }
+
+        const bucket = query.bucket === undefined
+            ? 'hour'
+            : requiredEnum(query.bucket, 'bucket', ['minute', 'hour', 'day']);
+
+        return { since, until, bucket };
+    }
+
+    /**
+     * What the pool's GPUs were doing, over a window.
+     *
+     * @async
+     * @param {Object} query - `{since, until, bucket}`.
+     * @returns {Promise<Object>} `{since, until, bucket, points}`.
+     * @throws {ApiError} 400 for a bad window.
+     */
+    async gpuUtilizationSeries(query) {
+        const window = this.seriesWindow(query);
+
+        return { ...window, points: await gpuRepository.gpuUtilizationSeries(window) };
+    }
+
+    /**
+     * How much work finished and how much was waiting, over a window.
+     *
+     * @async
+     * @param {Object} query - `{since, until, bucket}`.
+     * @returns {Promise<Object>} `{since, until, bucket, points}`.
+     * @throws {ApiError} 400 for a bad window.
+     */
+    async jobThroughputSeries(query) {
+        const window = this.seriesWindow(query);
+
+        return { ...window, points: await gpuRepository.jobThroughputSeries(window) };
     }
 
     /**

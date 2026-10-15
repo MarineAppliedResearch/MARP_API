@@ -617,9 +617,38 @@ the new fields is the next pass, and it is cheap now that the shapes are fixed.
     reported capabilities and live attempts, but no sampled GPU utilization, training/inference
     compute split, VRAM pressure or queue-depth series. The Workers graph defines the desired
     telemetry contract; its moving values are not current API output.
+
+    **Closed 2026-10-15, and it needed a measurement to settle an argument.** The obvious move
+    was to draw this from the readings MARP already had: 6,789 attempts carry a real NVML
+    snapshot spanning five weeks. Querying them says why that would have been a mistake — on
+    the two days that ran two thousand jobs, the average GPU utilization in those readings is
+    **0.5%**. They are taken at the poll, which is the instant *before* the machine starts, so
+    a chart drawn from them shows a farm that is permanently idle. Having the data and plotting
+    it would have been worse than having none.
+
+    So the reading now travels on the **heartbeat**, the only thing that happens while work
+    runs. `gpu_worker_samples` keeps one row per machine per minute — a unique index on
+    `(worker_id, at)` makes that the schema's rule rather than a caller's — and
+    `GET /gpu/telemetry/series` reads it back bucketed by minute, hour or day, with a maximum
+    beside the average because an average over a pool where one card is saturated and nine are
+    idle hides the one fact worth seeing. Kept 30 days, swept on the pool read.
+
+    Two honest limits: only machines that were **working** appear, since a reading exists
+    because a heartbeat wrote it, so this is utilization of the machines doing work rather than
+    of the pool's whole capacity. And the worker has to be sending it — that half is
+    `marp-inference-worker`, and until a given machine runs a version that does, it contributes
+    nothing to the series.
 22. **Finished-job outcome and turnaround history** — the current job records can be queried for
     terminal states, but `completed with issues` and the sampled rollup used by the History graph
     are not served as an operational series. Those chart values are deterministic review fixtures.
+
+    **Largely closed 2026-10-15, with nothing sampled at all.** `GET /gpu/jobs/series` buckets
+    straight out of `gpu_jobs`: `finished` counts jobs whose `finished_at` falls in the bucket,
+    `succeeded` the subset that worked, and `waiting` is **reconstructed** rather than recorded
+    — a job was waiting at a given instant if it was created before it and had not finished by
+    it. No new table, and it was unanswerable before only because `gpu_jobs` had no terminal
+    timestamp; gap 24 added one. `completed with issues` is still not in it, because that is
+    derived by grouping on `batch_id` and belongs with gaps 1 and 2.
 23. **Progress on the job list** — `GET /gpu/jobs` returns no progress of any kind. Progress is
     recorded on the *attempt* (`progress_done`, `progress_total`, `progress_unit`,
     `progress_phase`, `progress_elapsed_s`, every one nullable) and attempts come back only from
@@ -757,6 +786,15 @@ the new fields is the next pass, and it is cheap now that the shapes are fixed.
     Two limits stand and the screen must not paper over them: `as_of` is when the **lease
     opened**, not now, so a column headed *GPU load* has to say when it was read; and an idle
     machine holds no attempt and therefore has no reading at all, which is still a dash.
+
+    **The first of those two limits is gone, as of 2026-10-15.** The heartbeat now carries the
+    reading as well (see gap 21), so the pool view serves the machine's **live** numbers where
+    a current worker is sending them, and falls back to the poll's snapshot where it is not.
+    `telemetry.live` says which, and the screen has to read it: a reading from ten seconds ago
+    and one from when the lease opened are both "telemetry" and mean quite different things.
+    The second limit stands unchanged — an idle machine still has no reading, and the last one
+    from an hour ago under a column headed *GPU load* would be a wrong number rather than a
+    missing one.
 
 28. **The model registry is thinner than the screens assume** — `GET /api/v2/ml_models` does
     list the registry, so the counts are real. What is not on an `MlModel`: anything marking a
