@@ -150,7 +150,7 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** your review of the eight wired screens
+- **Gate:** G3 — your review of .marp/verification.md before anything runs
 - **Notes:** All eight read from `mockups/api.js` — Dashboard, Jobs, Workers, History,
   Models, Datasets, Inference and Training. The layer serves the three GPU routes plus
   `ml_models`, `dataset`, `projects` and `users`, in MARP's own shapes, from one seeded
