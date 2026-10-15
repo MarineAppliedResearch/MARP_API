@@ -666,6 +666,36 @@ function registerGpuRoutes(app) {
     });
 
     registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
+        path: '/api/gpu/coverage',
+        summary: 'Which frames of a video have actually been processed',
+        description:
+            'Answers "is this dive actually done?" from the record rather than from recollection. Returns the frame intervals a video has succeeded work over, the intervals it does not, and how long the video really is.\n\n'
+            + '**Covered means an attempt reported covering it, never that a job asked to.** A job submitted 0-60,000 that finished at 22,320 because the video ran out covers 22,320 frames; reading the submitted range instead would call the video done. Coverage comes from `completed_through_frame` on the attempts, which is recorded on every outcome that did work.\n\n'
+            + 'The extent comes from Jellyfin. The alternative -- the largest range anybody happened to submit -- makes "complete" mean "as complete as the biggest request", which cannot notice that a video is longer than anyone thought. A video Jellyfin cannot size returns its covered intervals with a null `extent` and null `gaps`, rather than a gap list measured against a guess.\n\n'
+            + '**Read-only.** Nothing is requeued. What is *owed* turns on what a cancelled job means -- today that word covers both "we changed our mind" and "this never got done" -- and nothing automatic should act on a word carrying two meanings.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'query', name: 'jellyfin_item_id', required: false, schema: { type: 'string' }, description: 'The video, by Jellyfin item id. Give this or `source_name`, not both.' },
+            { in: 'query', name: 'source_name', required: false, schema: { type: 'string' }, description: 'The video, by the `source_name` a job carried with a bare url. Cannot be sized by Jellyfin, so `extent` and `gaps` come back null.' },
+            { in: 'query', name: 'session_id', required: false, schema: { type: 'integer' }, description: 'Only work recorded under this session. Omitted, every session over this video counts.' },
+        ],
+        responses: {
+            200: {
+                description: 'What has been covered, what has not, and how long the video is.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuCoverageResponse' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.coverage(req.query || {});
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
         method: 'post',
         permission: 'jobs:write',
         path: '/api/gpu/jobs/:id/ingest',

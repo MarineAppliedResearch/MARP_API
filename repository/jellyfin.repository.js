@@ -510,6 +510,65 @@ class JellyfinRepository {
         };
     }
 
+    /**
+     * How many frames a video actually has (#257).
+     *
+     * Coverage has to be measured against the video, not against the largest
+     * range anybody happened to submit for it -- that proxy makes "complete"
+     * mean "as complete as the biggest request", which is circular if the first
+     * submission was short. Jellyfin knows the real length, so it is asked.
+     *
+     * `RunTimeTicks` are 100-nanosecond units, and the frame count is the
+     * duration times `AverageFrameRate` -- the delivered rate rather than the
+     * declared one, for the reason `getVideoFrameRate` gives. Floored, because
+     * a part-frame at the end is not a frame anybody can process.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id.
+     * @param {Object} [clientIdentity] - Client identity for the session.
+     * @returns {Promise<{frames: number, durationSeconds: number, averageFrameRate: number}|null>}
+     *   The extent, or null when Jellyfin reports no duration or no rate -- in
+     *   which case the caller must say it does not know rather than guess.
+     * @throws {ApiError} When the item id is missing or Jellyfin cannot be reached.
+     */
+    async getVideoExtent(itemId, clientIdentity = {}) {
+        if (!itemId) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const url =
+            `${this.baseUrl}/Users/${encodeURIComponent(session.userId)}/Items` +
+            `?Ids=${encodeURIComponent(itemId)}` +
+            `&Fields=${encodeURIComponent('MediaSources,RunTimeTicks')}`;
+
+        const data = await this._authenticatedRequest(session, 'GET', url);
+        const [rawItem] = (data && data.Items) || [];
+
+        if (!rawItem) {
+            return null;
+        }
+
+        const streams = (rawItem.MediaSources && rawItem.MediaSources[0]
+            && rawItem.MediaSources[0].MediaStreams) || [];
+        const video = streams.find((stream) => stream.Type === 'Video');
+        const rate = Number(video && video.AverageFrameRate);
+        const ticks = Number(rawItem.RunTimeTicks);
+
+        if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(ticks) || ticks <= 0) {
+            return null;
+        }
+
+        const durationSeconds = ticks / 10000000;
+
+        return {
+            frames: Math.floor(durationSeconds * rate),
+            durationSeconds,
+            averageFrameRate: rate,
+        };
+    }
+
     async getPlaybackInfo(itemId, options = {}, clientIdentity = {}) {
         if (!itemId) {
             throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');

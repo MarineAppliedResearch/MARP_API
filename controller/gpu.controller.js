@@ -148,6 +148,18 @@ class GpuController {
     }
 
     /**
+     * Which frames of a video have actually been processed (#257).
+     *
+     * @async
+     * @param {Object} query - `jellyfin_item_id` or `source_name`, optional `session_id`.
+     * @returns {Promise<Object>} Covered intervals, gaps, and the video's extent.
+     */
+    async coverage(query) {
+        logger.info('Controller: coverage');
+        return gpuService.coverage(query);
+    }
+
+    /**
      * Fetch one job with its attempts and artifacts.
      *
      * @async

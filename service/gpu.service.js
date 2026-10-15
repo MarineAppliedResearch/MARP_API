@@ -2282,6 +2282,108 @@ class GpuService {
 
         return id;
     }
+
+    /**
+     * Which frames of a video have been processed, and which have not (#257).
+     *
+     * Answers "is this dive actually done?" from the record. Coverage comes from
+     * what attempts reported covering, never from the ranges they were asked to
+     * cover, and the extent comes from Jellyfin rather than from the largest
+     * request anybody made -- a proxy that cannot notice the video is longer
+     * than anyone thought has the same blind spot as the problem.
+     *
+     * **It reports what it does not know.** A video Jellyfin cannot size gets
+     * covered intervals and `extent: null`, not a guess, because a gap list
+     * measured against an unknown end is worse than no gap list.
+     *
+     * Read-only: nothing is requeued here. Deciding what is owed turns on what
+     * `cancelled` means, which is a question for a human and is why this
+     * milestone stops at reporting.
+     *
+     * @async
+     * @param {Object} query - `jellyfin_item_id` or `source_name`, and an
+     *   optional `session_id`.
+     * @returns {Promise<Object>} The covered intervals, the gaps, and the extent.
+     */
+    async coverage(query = {}) {
+        const jellyfinItemId = query.jellyfin_item_id ? String(query.jellyfin_item_id) : null;
+        const sourceName = query.source_name ? String(query.source_name) : null;
+
+        if (!jellyfinItemId && !sourceName) {
+            invalid('Name the video: jellyfin_item_id or source_name.');
+        }
+
+        if (jellyfinItemId && sourceName) {
+            invalid('Name the video once: jellyfin_item_id or source_name, not both.');
+        }
+
+        const sessionId = query.session_id === undefined || query.session_id === null || query.session_id === ''
+            ? null
+            : optionalInteger(query.session_id, 'session_id', null);
+
+        const covered = await gpuRepository.coveredIntervals({ jellyfinItemId, sourceName, sessionId });
+
+        // Only an item id can be sized: a bare url is somebody else's file and
+        // Jellyfin has never heard of it.
+        let extent = null;
+        if (jellyfinItemId) {
+            try {
+                extent = await jellyfinRepository.getVideoExtent(jellyfinItemId, MEDIA_CLIENT_IDENTITY);
+            } catch (error) {
+                // Jellyfin being unreachable must not make the covered intervals
+                // unavailable too -- they are the half that needs no network.
+                extent = null;
+            }
+        }
+
+        const totalFrames = extent && Number.isFinite(extent.frames) ? extent.frames : null;
+
+        return {
+            video: jellyfinItemId ? { jellyfin_item_id: jellyfinItemId } : { source_name: sourceName },
+            session_id: sessionId,
+            extent: extent === null ? null : {
+                frames: extent.frames,
+                duration_seconds: extent.durationSeconds,
+                average_frame_rate: extent.averageFrameRate,
+            },
+            covered,
+            gaps: totalFrames === null ? null : gapsWithin(covered, totalFrames),
+            frames_covered: covered.reduce((sum, span) => sum + (span.end_frame - span.start_frame), 0),
+            requested: covered.length === 0 && totalFrames === null
+                ? 'nothing has been processed, and the video could not be sized'
+                : undefined,
+        };
+    }
+}
+
+/**
+ * The half-open intervals of `[0, totalFrames)` that `covered` does not include.
+ *
+ * `covered` is already merged and ascending, so this is one pass: the gap before
+ * each interval, and whatever is left after the last one.
+ *
+ * @param {Array<{start_frame: number, end_frame: number}>} covered - Merged spans.
+ * @param {number} totalFrames - The video's length in frames.
+ * @returns {Array<{start_frame: number, end_frame: number}>} The gaps.
+ */
+function gapsWithin(covered, totalFrames) {
+    const gaps = [];
+    let cursor = 0;
+
+    for (const span of covered) {
+        if (span.start_frame > cursor) {
+            gaps.push({ start_frame: cursor, end_frame: Math.min(span.start_frame, totalFrames) });
+        }
+        cursor = Math.max(cursor, span.end_frame);
+    }
+
+    // Everything past the furthest frame anybody reached. This is the one that
+    // matters: a dive abandoned part-way shows up here and nowhere else.
+    if (cursor < totalFrames) {
+        gaps.push({ start_frame: cursor, end_frame: totalFrames });
+    }
+
+    return gaps.filter((gap) => gap.end_frame > gap.start_frame);
 }
 
 module.exports = new GpuService();
