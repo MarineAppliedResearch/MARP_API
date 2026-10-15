@@ -780,6 +780,14 @@ class GpuService {
      * producing an empty or inverted range -- that would mean the job is
      * finished, which is not this function's decision to make.
      *
+     * **It also says where the job itself began**, as `job_start_frame`, which
+     * is the start it has just moved. Without it the worker cannot tell a
+     * resumed attempt from a fresh one -- it is handed a range beginning
+     * part-way through a dive and nothing to say why -- so the watch window's
+     * timeline draws the earlier attempt's frames as work this job skipped.
+     * Added for MarineAppliedResearch/marp-inference-worker#60; a worker that
+     * does not read it is unaffected, because nothing else in the spec moves.
+     *
      * @param {Object} job - The `gpu_jobs` row being leased.
      * @returns {Object} The spec to resolve and hand over.
      */
@@ -798,7 +806,14 @@ class GpuService {
             return spec;
         }
 
-        return { ...spec, range: { ...spec.range, start_frame: resumeFrom } };
+        return {
+            ...spec,
+            range: {
+                ...spec.range,
+                start_frame: resumeFrom,
+                job_start_frame: startFrame,
+            },
+        };
     }
 
     /**

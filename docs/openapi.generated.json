@@ -2659,6 +2659,12 @@
                 "minimum": 1,
                 "example": 9000,
                 "description": "One past the last frame to process, excluded. `[0, 9000)` is nine thousand frames."
+              },
+              "job_start_frame": {
+                "type": "integer",
+                "minimum": 0,
+                "example": 0,
+                "description": "Where the **job** begins, as against where this lease does. Present only on a lease of a job somebody already worked part of: MARP moves `start_frame` forward to the resume point, and this says what it moved. Never accepted on submission and never stored -- the submitted spec is left exactly as it was sent. A worker uses it to show the frames an earlier attempt covered as covered rather than skipped."
               }
             }
           },

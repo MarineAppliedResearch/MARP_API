@@ -1219,6 +1219,30 @@ describe('GPU attempt yielded', () => {
         expect(resumed.body.spec.range.end_frame).toBe(100);
     });
 
+    it('tells the worker where the job itself began', async () => {
+        const { job } = await leaseAndYield(40);
+
+        const resumed = await pollOnce();
+
+        // The worker is handed 40..100 and, without this, nothing to say that
+        // 0..40 was ever done -- so the window it shows a volunteer draws the
+        // first forty frames as frames this job skipped rather than as an
+        // earlier attempt's work. MarineAppliedResearch/marp-inference-worker#60.
+        expect(resumed.body.spec.range.job_start_frame).toBe(0);
+        expect(resumed.body.spec.range.start_frame).toBe(40);
+        expect(resumed.body.job_id).toBe(job.id);
+    });
+
+    it('says nothing about a job start on a first lease', async () => {
+        const { lease } = await submitAndLease();
+
+        // A job nobody has worked on began where it says it begins. Sending the
+        // field anyway would make every fresh job look resumed from its own
+        // start, which is a distinction the window draws.
+        expect(lease.spec.range.job_start_frame).toBeUndefined();
+        expect(lease.spec.range.start_frame).toBe(0);
+    });
+
     it('does not rewrite the stored spec when it resumes', async () => {
         const { job } = await leaseAndYield(40);
 
