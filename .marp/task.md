@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#104
 repos: [MARP_API]
-status: design
+status: implementing
 needs: []
 ---
 
@@ -57,7 +57,7 @@ smaller.
 
 ## Open assumptions
 
-- [ ] **A1 · product/UI · blocking** — **what do the charts do?** The pool-utilization,
+- [x] **A1 · product/UI · blocking** — answered 2026-10-15, see Decisions. Original question: **what do the charts do?** The pool-utilization,
   inference-throughput, registry-trend, dataset-build and history graphs are gaps 18 to 22:
   no sampled series exists anywhere in MARP. In a design mockup a moving fixture is honest,
   because the whole page is a mockup. In a live dashboard it is a picture of data that does
@@ -77,7 +77,7 @@ smaller.
 - [ ] **A3 · behavioural · non-blocking** — `?mock=` keeps working and gains `?mock=all`,
   which serves the whole generated corpus as it does today. That keeps the design review
   reproducible and keeps `mock-shots.mjs` able to take screenshots without a database.
-- [ ] **A4 · scope · blocking** — `data-layer-check.mjs` asserts things only a fixture can
+- [x] **A4 · scope · blocking** — answered 2026-10-15, Isaac: *"i think your suggestion for A4 makes sense"*. Original: `data-layer-check.mjs` asserts things only a fixture can
   guarantee: 143 workers exactly, byte-identical answers on two loads, every job state
   present, a batch with mixed outcomes on the first page. **None of those can hold against a
   live database.** The check is rewritten to assert the *contract* — shapes, paging, that
@@ -93,6 +93,36 @@ smaller.
   worth doing and worth doing separately.
 
 ## Decisions
+
+- **2026-10-15 — A1, and the question was asked badly.** I put it as "what do the charts do
+  given no data exists", and Isaac's answer was that he wants charts that work and live-update.
+  So I measured instead of describing the problem again, and the answer was not one thing:
+
+  **Three of the five are derivable from rows already in the database** — job throughput,
+  queue depth, and the History outcomes and turnaround. 9,554 finished jobs span five weeks,
+  and `waiting` reconstructs from `created_at` and `finished_at`. No sampling, no new table.
+
+  **The utilization chart had data and it was a trap.** 6,789 attempts carry a real NVML
+  reading over the same five weeks, so plotting it looked free. Querying it says why that
+  would have been wrong: on the days that ran two thousand jobs the average utilization in
+  those readings is **0.5%**, because they are taken at the poll, before the machine starts.
+  Drawing them would have shown a permanently idle GPU farm. Isaac's call was to do the
+  heartbeat change so the chart is real, worker side included.
+
+  **The dataset-build chart stays empty**, because nothing builds datasets yet (gap 19).
+
+- **2026-10-15 — A4 as proposed.** `data-layer-check.mjs` is rewritten to assert the contract;
+  the fixture-only assertions move behind `?mock=all`.
+
+- **2026-10-15 — the scope grew, and this branch carries the groundwork rather than the
+  wiring.** Answering A1 properly meant a cross-repository change: `marp-inference-worker`
+  sending telemetry on the heartbeat, and MARP storing and serving it. That is what is here.
+  The screens are still reading the local layer and are the next branch. Said plainly because
+  the branch is named for the wiring and does not contain it.
+
+- **2026-10-15 — the worker half is a separate repository and a separate pull request**, per
+  the polyrepo rule. Branch `heartbeat-carries-telemetry` in
+  `MarineAppliedResearch/marp-inference-worker`.
 
 - **2026-10-15** — under **#104, *Design the MARP Machine Learning Dashboard***, like the
   three passes before it. No new issue.
