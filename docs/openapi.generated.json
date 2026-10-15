@@ -3010,10 +3010,11 @@
               "succeeded",
               "failed",
               "cancelled",
+              "interrupted",
               "expired"
             ],
             "example": "leased",
-            "description": "`expired` is distinct from `failed`: nothing went wrong with the work, MARP simply stopped hearing from every machine that tried it."
+            "description": "`expired` is distinct from `failed`: nothing went wrong with the work, MARP simply stopped hearing from every machine that tried it.\n\n`cancelled` and `interrupted` are also distinct, and the difference decides what gets redone. `cancelled` is a human changing their mind: nothing is missing and it is never requeued. `interrupted` is the job stopping part-way -- a volunteer pausing, a worker giving up -- so the frames it never reached are owed, and those are requeued automatically. A `failed` job is never requeued automatically: it has already been retried as far as retrying is worth, and it stays visible for somebody to look at."
           },
           "priority": {
             "type": "integer",
@@ -3886,6 +3887,64 @@
             "type": "boolean",
             "example": true,
             "description": "False for a job that had already finished, which is not an error -- cancelling something finished simply does nothing."
+          }
+        }
+      },
+      "GpuRequeueRequest": {
+        "type": "object",
+        "description": "Which video to requeue owed frames for. Omit both fields to requeue every video with interrupted work.",
+        "properties": {
+          "jellyfin_item_id": {
+            "type": "string",
+            "example": "937c5062e9186e878f8e99673edc84b4"
+          },
+          "source_name": {
+            "type": "string",
+            "example": "20240727_185645 Fwd.mp4"
+          }
+        }
+      },
+      "GpuRequeueResponse": {
+        "type": "object",
+        "description": "What was queued. A video whose length is unknown is skipped and says why, rather than being given work over frames that may not exist.",
+        "properties": {
+          "jobs_queued": {
+            "type": "integer",
+            "example": 2,
+            "description": "Total jobs created across every video."
+          },
+          "videos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "video": {
+                  "type": "object",
+                  "description": "The video, as it was identified."
+                },
+                "session_id": {
+                  "type": "integer",
+                  "nullable": true,
+                  "example": 755
+                },
+                "queued": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "example": [
+                    15071,
+                    15072
+                  ],
+                  "description": "Jobs created over the owed frames. Empty when nothing was owed."
+                },
+                "skipped": {
+                  "type": "string",
+                  "example": "the video could not be sized",
+                  "description": "Present only when nothing was queued for a reason worth saying."
+                }
+              }
+            }
           }
         }
       },
@@ -14104,6 +14163,7 @@
                 "succeeded",
                 "failed",
                 "cancelled",
+                "interrupted",
                 "expired"
               ]
             },
@@ -14440,6 +14500,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GpuCoverageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/requeue-interrupted": {
+      "post": {
+        "summary": "Queue the frames that interrupted work left owed",
+        "description": "Finds work that stopped part-way and queues jobs over exactly the frames nobody covered. The spec is copied from the interrupted job rather than decided afresh -- same model, same params, same reduction -- because what is owed is the rest of that work.\n\n**Only `interrupted` work.** A `cancelled` job means a human changed their mind and nothing is missing. A `failed` job has already been retried as far as retrying is worth, and requeueing it on a schedule would spend GPU time on something that is probably broken rather than unlucky; it stays visible as `failed` for somebody to look at and resubmit deliberately.\n\nSafe to call twice: gaps are recomputed from coverage each time, and a range already waiting in the queue is not covered, so nothing is queued over it again.\n\nA video Jellyfin cannot size is skipped and says so, rather than being given work over frames that may not exist. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuRequeueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What was queued, per video.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuRequeueResponse"
                 }
               }
             }

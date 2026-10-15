@@ -698,6 +698,35 @@ function registerGpuRoutes(app) {
     registerVersionedRoute(app, {
         method: 'post',
         permission: 'jobs:write',
+        path: '/api/gpu/requeue-interrupted',
+        summary: 'Queue the frames that interrupted work left owed',
+        description:
+            'Finds work that stopped part-way and queues jobs over exactly the frames nobody covered. The spec is copied from the interrupted job rather than decided afresh -- same model, same params, same reduction -- because what is owed is the rest of that work.\n\n'
+            + '**Only `interrupted` work.** A `cancelled` job means a human changed their mind and nothing is missing. A `failed` job has already been retried as far as retrying is worth, and requeueing it on a schedule would spend GPU time on something that is probably broken rather than unlucky; it stays visible as `failed` for somebody to look at and resubmit deliberately.\n\n'
+            + 'Safe to call twice: gaps are recomputed from coverage each time, and a range already waiting in the queue is not covered, so nothing is queued over it again.\n\n'
+            + 'A video Jellyfin cannot size is skipped and says so, rather than being given work over frames that may not exist.',
+        tags: [GPU_TAG],
+        requestBody: {
+            required: false,
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuRequeueRequest' } } },
+        },
+        responses: {
+            200: {
+                description: 'What was queued, per video.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuRequeueResponse' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.requeueInterrupted(req.body || {}, req.principal);
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
         path: '/api/gpu/jobs/:id/ingest',
         summary: 'Turn a finished job\'s result into observations',
         description:

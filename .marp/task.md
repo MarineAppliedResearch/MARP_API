@@ -29,6 +29,10 @@ safely act on it. This milestone splits them and then fills what is owed.
 - **R6** — Requeueing an owed range creates real queued work over exactly the
   frames nobody covered: never the whole original range, and never frames a
   succeeded job already did.
+- **R6a** — `interrupted` work is requeued automatically. Nobody has to notice
+  that a volunteer paused.
+- **R6b** — `failed` work is **never** requeued automatically. It stays visible
+  as `failed`, and the route lets a human requeue it once they have looked.
 - **R7** — Requeueing twice does not queue the same frames twice.
 - **R8** — The historical 5,329 `cancelled` jobs stay `cancelled`. The
   distinction starts the day it ships; the development database is development
@@ -36,18 +40,33 @@ safely act on it. This milestone splits them and then fills what is owed.
 
 ## Open assumptions
 
-- [ ] **A1 · behavioural · blocking** — **Is a job that exhausted `max_attempts`
-      owed?** It is `failed` today. A model that cannot run on this video is not
-      a hole somebody can fill by retrying, but a worker that crashed three times
-      on a flaky stream is. The state cannot tell them apart either. Options:
-      **(a)** `failed` is never requeued, and a human resubmits; **(b)** `failed`
-      is owed like `interrupted`, and the requeue will retry it for ever;
-      **(c)** `failed` is owed but only up to a limit. → **Which?**
-- [ ] **A2 · product/UI · blocking** — **Who requeues?** **(a)** A route somebody
-      calls, after looking at the coverage — explicit, nothing moves unseen;
-      **(b)** the coordinator does it by itself whenever it notices a gap —
-      nothing to remember, and a bad job can loop for ever; **(c)** a route now,
-      automatic later once it has been watched. Proposed: **(c)**. → **Agreed?**
+- [x] **A1 · behavioural · blocking** — answered 2026-10-15: **`failed` is
+      never requeued automatically.** Isaac: *"if something fails a certain
+      amount of times we shouldn't automatically keep requeuing it, but if it
+      goes to failed status, the user can notice the failed status, and try to
+      requeue it or recreate the job manually."*
+
+      A job that has exhausted its attempts has already been retried as much as
+      retrying is worth; doing it again on a schedule spends GPU time on
+      something that is probably broken rather than unlucky. It stays visible as
+      `failed` and a human decides.
+- [x] **A2 · product/UI · blocking** — answered 2026-10-15: **both, and they
+      differ by what they are allowed to touch.** Isaac: *"i think both can
+      reque, like i just said kinda"*.
+
+      - **Automatic**, over `interrupted` work only: a volunteer pausing or a
+        worker stopping is an ordinary event and the frames should simply get
+        done. Nobody should have to remember.
+      - **A route**, for a human, which can also requeue a `failed` job: that is
+        the path A1 describes, taken deliberately after somebody has looked.
+- [ ] **A5 · behavioural · non-blocking** — **What stops an automatic requeue
+      looping?** A requeue makes a *new* job, which starts with a fresh
+      `max_attempts`, so a range that is interrupted every time could be
+      requeued for ever. Each interruption is legitimate on its own -- a
+      volunteer paused -- so a plain attempt cap is the wrong instrument.
+      Proposed: carry a requeue count forward on the spec, and stop requeueing
+      automatically past a small number, leaving it `interrupted` and visible.
+      That is exactly A1's shape, one level up.
 - [ ] **A3 · behavioural · non-blocking** — Does an `expired` lease become
       `interrupted`? Today the job returns to the queue by itself, so it is
       already owed and already being dealt with. Proposed: no, leave it.
@@ -96,7 +115,9 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** design
-- **Notes:** A1 and A2 block. A1 is the sharper one: `failed` covers both a
-  model that will never run on this video and a stream that dropped, and
-  requeueing the first for ever is the obvious way to get this wrong.
+- **Gate:** design -- both blocking assumptions answered
+- **Notes:** Settled. The shape is that automatic requeueing is for things that
+  are nobody's fault and will simply work next time, and everything else waits
+  for a human to look at it. A5 is the same question one level up and is
+  answered the same way; it is non-blocking because the first version can
+  requeue once and be watched.

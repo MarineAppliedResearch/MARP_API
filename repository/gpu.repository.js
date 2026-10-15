@@ -1754,26 +1754,47 @@ class GpuRepository {
                     transaction,
                 });
             } else {
-                // Cancelled. The job is cancelled whether or not the cancel came
-                // from a human -- a worker that stops of its own accord and calls
-                // it cancelled is saying the same thing.
+                // Cancelled by the worker.
+                //
+                // This used to make the job `cancelled` on the reasoning that "a
+                // worker that stops of its own accord and calls it cancelled is
+                // saying the same thing" as a human cancelling. It is not the
+                // same thing, and the difference is the whole of #257: a human
+                // cancelling means nothing is missing, while a worker stopping
+                // part-way leaves frames nobody did.
+                //
+                // Which one this is, is already knowable here. If the job is
+                // *already* cancelled, this report is the human's decision
+                // coming back round and the job stays cancelled. If it is not,
+                // the worker stopped on its own and the job is `interrupted` --
+                // the state that gets requeued.
                 await this.db.sequelize.query(
                     `UPDATE gpu_job_attempts
                         SET state = 'cancelled',
+                            completed_through_frame = COALESCE(:completedThroughFrame, completed_through_frame),
                             failure_reason = :failureReason,
                             finished_at = NOW()
                       WHERE id = :attemptId`,
                     {
-                        replacements: { attemptId: attempt.id, failureReason: failureReason || null },
+                        replacements: {
+                            attemptId: attempt.id,
+                            failureReason: failureReason || null,
+                            completedThroughFrame: completedThroughFrame === undefined ? null : completedThroughFrame,
+                        },
                         transaction,
                     }
                 );
 
                 if (!TERMINAL_JOB_STATES.includes(job.state)) {
-                    jobState = 'cancelled';
+                    jobState = 'interrupted';
 
                     await this.db.sequelize.query(
-                        "UPDATE gpu_jobs SET state = 'cancelled', updated_at = NOW(), finished_at = NOW() WHERE id = :jobId",
+                        // `interrupted` rather than `cancelled`, and it still
+                        // finishes: the job stopped here and the frames it owed
+                        // are requeued as new work rather than resumed in place,
+                        // so `finished_at` means the same as it does for the
+                        // cancel this used to be (#257, and #104's finish time).
+                        "UPDATE gpu_jobs SET state = 'interrupted', updated_at = NOW(), finished_at = NOW() WHERE id = :jobId",
                         { replacements: { jobId: job.id }, transaction }
                     );
                 }
@@ -2300,6 +2321,94 @@ class GpuRepository {
             published_attempt_id: job.published_attempt_id,
             artifacts_recorded: counted.n,
         };
+    }
+
+    /**
+     * Frame ranges over one video that are already waiting to be done.
+     *
+     * Coverage counts work that *finished*, so a range sitting in the queue is
+     * not covered -- correctly, because nothing has processed it yet. It is
+     * still not owed, though: somebody has already asked for it. Without this,
+     * requeueing twice piles a second copy of every gap onto the pool, which a
+     * test caught rather than a reading of the code (#257 R7).
+     *
+     * @async
+     * @param {Object} params - Which video.
+     * @param {string} [params.jellyfinItemId] - By Jellyfin item id.
+     * @param {string} [params.sourceName] - By source name.
+     * @param {number} [params.sessionId] - Narrow to one session.
+     * @returns {Promise<Array<{start_frame: number, end_frame: number}>>}
+     *   Ranges of jobs that are queued or leased, ascending.
+     */
+    async pendingRanges({ jellyfinItemId = null, sourceName = null, sessionId = null }) {
+        const rows = await this.db.sequelize.query(
+            `SELECT (spec->'range'->>'start_frame')::int AS start_frame,
+                    (spec->'range'->>'end_frame')::int   AS end_frame
+               FROM gpu_jobs
+              WHERE kind = 'inference'
+                AND state IN ('queued', 'leased')
+                AND (:jellyfinItemId::text IS NULL
+                     OR spec->'video'->>'jellyfin_item_id' = :jellyfinItemId)
+                AND (:sourceName::text IS NULL
+                     OR spec->'video'->>'source_name' = :sourceName)
+                AND (:sessionId::int IS NULL
+                     OR (spec->'session'->>'session_id')::int = :sessionId)
+              ORDER BY start_frame`,
+            {
+                replacements: { jellyfinItemId, sourceName, sessionId },
+                type: QueryTypes.SELECT,
+            }
+        );
+
+        return rows.map((row) => ({
+            start_frame: Number(row.start_frame),
+            end_frame: Number(row.end_frame),
+        }));
+    }
+
+    /**
+     * Videos with work that was interrupted, and the spec to redo it from.
+     *
+     * Only `interrupted`. A `cancelled` job means a human changed their mind and
+     * nothing is missing; a `failed` one has already been retried as far as
+     * retrying is worth and waits for somebody to look at it (#257).
+     *
+     * The newest interrupted job per video supplies the spec a requeue copies --
+     * its model, params and reduction -- because what is owed is the rest of
+     * *that* work, not a fresh decision about how to do it.
+     *
+     * @async
+     * @param {Object} [params] - Narrowing.
+     * @param {string} [params.jellyfinItemId] - One video, by item id.
+     * @param {string} [params.sourceName] - One video, by source name.
+     * @returns {Promise<Array<Object>>} One row per video: its identity, the
+     *   session, and the spec of the most recent interrupted job over it.
+     */
+    async interruptedWork({ jellyfinItemId = null, sourceName = null } = {}) {
+        return this.db.sequelize.query(
+            `SELECT DISTINCT ON (item_id, source_name, session_id)
+                    item_id, source_name, session_id, spec, job_id
+               FROM (
+                     SELECT j.spec->'video'->>'jellyfin_item_id'    AS item_id,
+                            j.spec->'video'->>'source_name'         AS source_name,
+                            (j.spec->'session'->>'session_id')::int AS session_id,
+                            j.spec                                  AS spec,
+                            j.id                                    AS job_id,
+                            j.created_at
+                       FROM gpu_jobs j
+                      WHERE j.kind = 'inference'
+                        AND j.state = 'interrupted'
+                        AND (:jellyfinItemId::text IS NULL
+                             OR j.spec->'video'->>'jellyfin_item_id' = :jellyfinItemId)
+                        AND (:sourceName::text IS NULL
+                             OR j.spec->'video'->>'source_name' = :sourceName)
+                   ) AS interrupted
+              ORDER BY item_id, source_name, session_id, created_at DESC, job_id DESC`,
+            {
+                replacements: { jellyfinItemId, sourceName },
+                type: QueryTypes.SELECT,
+            }
+        );
     }
 
     /**
