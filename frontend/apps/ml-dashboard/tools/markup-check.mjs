@@ -42,7 +42,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const app = join(here, '..');
-const dir = join(app, 'mockups');
+const dir = app;
 
 /**
  * The inside of every element whose opening tag matches.
@@ -189,7 +189,7 @@ for (const page of readdirSync(dir).filter((f) => f.endsWith('.html'))) {
     for (const [what, open, tag] of OWNED) {
         for (const inside of insidesOf(html, open, tag)) {
             const text = meat(inside);
-            if (text) problems.push(`mockups/${page} states ${what} in its markup: "${text.slice(0, 60)}"`);
+            if (text) problems.push(`${page} states ${what} in its markup: "${text.slice(0, 60)}"`);
         }
     }
 
@@ -199,11 +199,11 @@ for (const page of readdirSync(dir).filter((f) => f.endsWith('.html'))) {
         const match = table.exec(html);
 
         if (!match) {
-            problems.push(`mockups/${page} no longer has the table its renderer fills.`);
+            problems.push(`${page} no longer has the table its renderer fills.`);
         } else {
             const after = html.slice(match.index + match[0].length);
             const rows = after.slice(0, after.indexOf('</tbody>'));
-            if (meat(rows)) problems.push(`mockups/${page} ships table rows its renderer will replace.`);
+            if (meat(rows)) problems.push(`${page} ships table rows its renderer will replace.`);
         }
     }
 
@@ -232,7 +232,7 @@ for (const page of readdirSync(dir).filter((f) => f.endsWith('.html'))) {
     }
 
     for (const one of stated) {
-        problems.push(`mockups/${page} states a number nothing fills: ${one}`);
+        problems.push(`${page} states a number nothing fills: ${one}`);
     }
 }
 

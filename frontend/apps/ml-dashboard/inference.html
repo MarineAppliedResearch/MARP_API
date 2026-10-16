@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; Inference</title>
+<link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
+<link rel="stylesheet" href="../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
+<link rel="stylesheet" href="./mock.css">
+<script src="../../shared/assets/js/account-menu.js" defer></script>
+</head>
+<body data-screen="inference">
+
+<div class="app">
+  <aside class="rail"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="Run a registered model over MARP data">Inference</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ================================================ inference workflow -->
+      <div class="grid">
+
+        <nav class="stats inference-stats" aria-label="Inference workload destinations">
+          <a class="stat stat-link" data-state="running" href="./jobs.html?type=inference&amp;status=running"
+             title="Open Jobs with running inference work prioritized">
+            <span class="stat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
+            <span class="stat-lab">Running inference</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="queued" href="./jobs.html?type=inference&amp;status=queued"
+             title="Open Jobs with queued inference work prioritized">
+            <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span>
+            <span class="stat-lab">Queued inference</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="done" href="./history.html?type=inference&amp;window=today"
+             title="Open today's completed inference work in History">
+            <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
+            <span class="stat-lab">Completed today</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="failed" href="./jobs.html?type=inference&amp;status=attention"
+             title="Open Jobs with inference failures and partial results prioritized">
+            <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
+            <span class="stat-lab">Needs attention</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+        </nav>
+
+        <section class="inference-overview" aria-label="Inference at a glance">
+          <article class="panel inference-mix">
+            <header class="panel-hd"><div><h2>Inference status</h2><p>Current queue and today&rsquo;s outcomes</p></div></header>
+            <div class="panel-bd jobs-mix-bd">
+              <div class="job-donut" role="img" aria-label="30 inference jobs represented: 4 running, 5 queued, 18 completed today and 3 needing attention">
+                <svg viewBox="0 0 120 120" aria-hidden="true">
+                  <circle class="donut-track" cx="60" cy="60" r="43"/>
+                  <circle class="donut-part inference" cx="60" cy="60" r="43" pathLength="30" stroke-dasharray="4 26" stroke-dashoffset="0"/>
+                  <circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="30" stroke-dasharray="5 25" stroke-dashoffset="-4"/>
+                  <circle class="donut-part done" cx="60" cy="60" r="43" pathLength="30" stroke-dasharray="18 12" stroke-dashoffset="-9"/>
+                  <circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="30" stroke-dasharray="3 27" stroke-dashoffset="-27"/>
+                </svg>
+                <span><b>30</b><small>inference jobs</small></span>
+              </div>
+              <div class="job-mix-key inference-mix-key"></div>
+            </div>
+          </article>
+
+          <article class="panel inference-flow" data-inference-activity>
+            <header class="panel-hd inference-flow-hd">
+              <div><h2>Throughput &amp; backlog</h2><p>Is inference processing keeping pace with queued frames?</p></div>
+              <div class="seg" aria-label="Inference activity range">
+                <button type="button" data-inference-range="24h">24h</button>
+                <button type="button" class="on" data-inference-range="5h" aria-pressed="true">5h</button>
+                <button type="button" data-inference-range="1h">1h</button>
+              </div>
+            </header>
+            <div class="panel-bd">
+              <p class="nodata">Inference throughput over time is not recorded. Current jobs and ranges can be counted into a snapshot, but no sampled frames-per-minute or queued-frame series exists, so there is nothing to plot against time. See <code>DESIGN.md</code> gap 18.</p>
+            </div>
+          </article>
+        </section>
+
+        <div class="inference-builder">
+
+          <!-- 1 ------------------------------------------------------------- -->
+          <section class="panel pipeline-panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>1.</b>Pipeline</span>
+                <span class="sub">What each configured model will produce</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field">
+                <label for="pipeline">Inference pipeline</label>
+                <select class="sel wide" id="pipeline">
+                  <option>Detection + ByteTrack</option>
+                  <option disabled>Detection only — unavailable in the first worker pipeline</option>
+                  <option disabled>Segmentation — unavailable in the first worker pipeline</option>
+                  <option disabled>Stereo disparity — unavailable in the first worker pipeline</option>
+                  <option disabled>Classification — unavailable in the first worker pipeline</option>
+                  <option disabled>Custom runtime — unavailable in the first worker pipeline</option>
+                </select>
+                <span class="hint">The worker runs detection, assigns track IDs, then selects representative frames.</span>
+              </div>
+
+              <div class="pipeline-status">
+                <span class="pipeline-icon"><svg class="ico"><use href="#i-inference"/></svg></span>
+                <span><b>Detection + ByteTrack is available</b>
+                  <small>Other pipeline types are design placeholders and cannot be selected or submitted.</small></span>
+                <span class="pill" data-state="online"><i class="dot"></i>Available</span>
+              </div>
+
+              <details class="fold future-fold">
+                <summary>Additional pipeline designs</summary>
+                <div class="fbody future-grid">
+                  <span><b>Segmentation</b><small>Prompted or automatic masks</small></span>
+                  <span><b>Stereo disparity</b><small>Paired video and calibration</small></span>
+                  <span><b>Classification</b><small>Per-frame class scores</small></span>
+                  <span><b>Custom runtime</b><small>Registered adapter and artifact</small></span>
+                </div>
+              </details>
+
+            </div>
+          </section>
+
+          <!-- 2 ------------------------------------------------------------- -->
+          <section class="panel video-query-panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>2.</b>Find videos</span>
+                <span class="sub">Browse the Jellyfin project and dive hierarchy</span></h2>
+              <span class="query-source"><svg class="ico sm"><use href="#i-video"/></svg>Jellyfin catalog</span>
+            </header>
+            <div class="panel-bd">
+              <div class="query-fields">
+                <details class="multi-pick" open>
+                  <summary><span>Projects</span><b>CAMPA2024</b></summary>
+                  <div class="multi-menu">
+                    <label><input type="checkbox" checked>CAMPA2024 <small>20 dives</small></label>
+                    <label><input type="checkbox">CAMPA2025 <small>3 folders</small></label>
+                    <label><input type="checkbox">CAMPA2021 <small>9 folders</small></label>
+                  </div>
+                </details>
+                <details class="multi-pick">
+                  <summary><span>Dives</span><b>Dive 1</b></summary>
+                  <div class="multi-menu">
+                    <label><input type="checkbox" checked>CAMPA2024 · Dive 1</label>
+                    <label><input type="checkbox">CAMPA2024 · Dive 2</label>
+                    <label><input type="checkbox">CAMPA2024 · Dive 3</label>
+                  </div>
+                </details>
+                <label class="query-search"><span>Filter videos</span>
+                  <span class="search"><svg class="ico sm"><use href="#i-search"/></svg>
+                    <input class="inp" type="search" placeholder="Timestamp or filename"></span></label>
+              </div>
+
+              <div class="query-result-head">
+                <span><b>10 videos</b> in 1 selected dive</span>
+                <label class="check"><input type="checkbox" checked data-select-videos><span>Select visible</span></label>
+              </div>
+
+              <div class="video-results">
+                <article class="video-choice is-selected" data-video-choice data-video-id="9f66020c16c80d2800560a76d4417080">
+                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_141923_Fwd.mp4"></label>
+                  <div class="video-thumb">
+                    <img src="/api/v2/jellyfin/items/9f66020c16c80d2800560a76d4417080/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_141923_Fwd">
+                  </div>
+                  <div class="video-main">
+                    <div class="video-title"><b class="mono">20240727_141923_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:00:55</span></div>
+                    <div class="video-controls">
+                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_141923_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
+                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
+                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
+                    </div>
+                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:00:55"></label></div>
+                  </div>
+                </article>
+
+                <article class="video-choice is-selected" data-video-choice data-video-id="847c5f1034d01cf3a7aa2427fa7af4b4">
+                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_154643_Fwd.mp4"></label>
+                  <div class="video-thumb alt">
+                    <img src="/api/v2/jellyfin/items/847c5f1034d01cf3a7aa2427fa7af4b4/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_154643_Fwd">
+                  </div>
+                  <div class="video-main">
+                    <div class="video-title"><b class="mono">20240727_154643_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:29:46</span></div>
+                    <div class="video-controls">
+                      <label class="line-entry"><span>Line</span><input class="inp" value="1960" aria-label="Line number for 20240727_154643_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
+                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time" selected>Time range</option></select></label>
+                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
+                    </div>
+                    <div class="time-range" data-time-range><label>Start <input class="inp mono" value="00:04:00"></label><label>End <input class="inp mono" value="00:24:00"></label></div>
+                  </div>
+                </article>
+
+                <article class="video-choice is-selected" data-video-choice data-video-id="f53860e0fbee24ceec374c12dd1f22a9">
+                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_163021_Fwd.mp4"></label>
+                  <div class="video-thumb cool">
+                    <img src="/api/v2/jellyfin/items/f53860e0fbee24ceec374c12dd1f22a9/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_163021_Fwd">
+                  </div>
+                  <div class="video-main">
+                    <div class="video-title"><b class="mono">20240727_163021_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:29:46</span></div>
+                    <div class="video-controls">
+                      <label class="line-entry"><span>Line</span><input class="inp" value="1750" aria-label="Line number for 20240727_163021_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
+                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
+                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
+                    </div>
+                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:29:46"></label></div>
+                  </div>
+                </article>
+
+                <article class="video-choice is-selected" data-video-choice data-video-id="e8d220bb309bda85b77da70451cdb896">
+                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_171404_Fwd.mp4"></label>
+                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/e8d220bb309bda85b77da70451cdb896/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_171404_Fwd"></div>
+                  <div class="video-main">
+                    <div class="video-title"><b class="mono">20240727_171404_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:20:58</span></div>
+                    <div class="video-controls">
+                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_171404_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
+                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
+                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
+                    </div>
+                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:20:58"></label></div>
+                  </div>
+                </article>
+
+                <article class="video-choice is-selected" data-video-choice data-video-id="74e5c479eeec61456fbc15d4a00eadf3">
+                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_174909_Fwd.mp4"></label>
+                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/74e5c479eeec61456fbc15d4a00eadf3/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_174909_Fwd"></div>
+                  <div class="video-main">
+                    <div class="video-title"><b class="mono">20240727_174909_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:23:13</span></div>
+                    <div class="video-controls">
+                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_174909_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
+                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
+                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
+                    </div>
+                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:23:13"></label></div>
+                  </div>
+                </article>
+
+                <article class="video-choice is-selected" data-video-choice data-video-id="76006d79adfb276192e5acffd5a596db">
+                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_181958_Fwd.mp4"></label>
+                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/76006d79adfb276192e5acffd5a596db/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_181958_Fwd"></div>
+                  <div class="video-main">
+                    <div class="video-title"><b class="mono">20240727_181958_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:23:32</span></div>
+                    <div class="video-controls">
+                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_181958_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
+                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
+                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
+                    </div>
+                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:23:32"></label></div>
+                  </div>
+                </article>
+
+                <article class="video-choice is-selected" data-video-choice data-video-id="10ffcfb47611860806b42c2419738b9f">
+                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_185645_Fwd.mp4"></label>
+                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/10ffcfb47611860806b42c2419738b9f/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_185645_Fwd"></div>
+                  <div class="video-main">
+                    <div class="video-title"><b class="mono">20240727_185645_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:23:09</span></div>
+                    <div class="video-controls">
+                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_185645_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
+                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
+                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
+                    </div>
+                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:23:09"></label></div>
+                  </div>
+                </article>
+
+                <article class="video-choice is-selected" data-video-choice data-video-id="178fe8146755da5eaa07df9b120f5be5">
+                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_193401_Fwd.mp4"></label>
+                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/178fe8146755da5eaa07df9b120f5be5/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_193401_Fwd"></div>
+                  <div class="video-main">
+                    <div class="video-title"><b class="mono">20240727_193401_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:25:38</span></div>
+                    <div class="video-controls">
+                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_193401_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
+                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
+                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
+                    </div>
+                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:25:38"></label></div>
+                  </div>
+                </article>
+
+                <article class="video-choice is-selected" data-video-choice data-video-id="b08acc3bab5d5ede71cd984b2220542e">
+                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_201102_Fwd.mp4"></label>
+                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/b08acc3bab5d5ede71cd984b2220542e/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_201102_Fwd"></div>
+                  <div class="video-main">
+                    <div class="video-title"><b class="mono">20240727_201102_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:32:52</span></div>
+                    <div class="video-controls">
+                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_201102_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
+                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
+                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
+                    </div>
+                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:32:52"></label></div>
+                  </div>
+                </article>
+
+                <article class="video-choice is-selected" data-video-choice data-video-id="95c34543ff54e8895e839b86a07aa8e7">
+                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_210312_Fwd.mp4"></label>
+                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/95c34543ff54e8895e839b86a07aa8e7/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_210312_Fwd"></div>
+                  <div class="video-main">
+                    <div class="video-title"><b class="mono">20240727_210312_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:21:36</span></div>
+                    <div class="video-controls">
+                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_210312_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
+                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
+                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
+                    </div>
+                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:21:36"></label></div>
+                  </div>
+                </article>
+              </div>
+
+              <div class="query-actions">
+                <span><b data-video-selected-count>3</b> selected · line assignments save independently</span>
+                <button class="btn primary" type="button" data-add-targets><svg class="ico"><use href="#i-plus"/></svg>Add selected to run group</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- 3 ------------------------------------------------------------- -->
+          <section class="panel run-plan-panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>3.</b>Run plan</span>
+                <span class="sub">Targets and model configurations</span></h2>
+              <button class="btn sm" type="button" data-new-group><svg class="ico sm"><use href="#i-plus"/></svg>New query group</button>
+            </header>
+            <div class="panel-bd run-groups">
+              <article class="run-group" data-run-group>
+                <header class="run-group-head">
+                  <span class="group-number">1</span>
+                  <span><b>CAMPA2024 · Dive 1</b><small>Snapshot from the production Jellyfin catalog</small></span>
+                  <button class="btn sm icon" type="button" data-remove-group aria-label="Delete run group"><svg class="ico sm"><use href="#i-x"/></svg></button>
+                </header>
+
+                <section class="plan-section">
+                  <header><span><b>Video ranges</b><small><span data-target-count>3</span> targets</small></span><button class="btn sm" type="button" data-edit-query>Edit query</button></header>
+                  <div class="plan-targets" data-plan-targets>
+                    <article class="plan-target" data-target data-video-id="9f66020c16c80d2800560a76d4417080">
+                      <span class="mini-thumb pending">—</span><span><b class="mono">20240727_141923_Fwd.mp4</b><small>Dive 1 · Line not assigned · Entire video</small></span>
+                      <button class="btn sm icon" type="button" data-remove-target aria-label="Remove 20240727_141923_Fwd.mp4"><svg class="ico sm"><use href="#i-x"/></svg></button>
+                    </article>
+                    <article class="plan-target" data-target data-video-id="847c5f1034d01cf3a7aa2427fa7af4b4">
+                      <span class="mini-thumb">L1960</span><span><b class="mono">20240727_154643_Fwd.mp4</b><small>Dive 1 · Line 1960 · 00:04:00–00:24:00</small></span>
+                      <button class="btn sm icon" type="button" data-remove-target aria-label="Remove 20240727_154643_Fwd.mp4"><svg class="ico sm"><use href="#i-x"/></svg></button>
+                    </article>
+                    <article class="plan-target" data-target data-video-id="f53860e0fbee24ceec374c12dd1f22a9">
+                      <span class="mini-thumb">L1750</span><span><b class="mono">20240727_163021_Fwd.mp4</b><small>Dive 1 · Line 1750 · Entire video</small></span>
+                      <button class="btn sm icon" type="button" data-remove-target aria-label="Remove 20240727_163021_Fwd.mp4"><svg class="ico sm"><use href="#i-x"/></svg></button>
+                    </article>
+                  </div>
+                </section>
+
+                <section class="plan-section">
+                  <header><span><b>Models</b><small><span data-model-count>2</span> configurations · each runs on every target above</small></span><button class="btn sm" type="button" data-add-model><svg class="ico sm"><use href="#i-plus"/></svg>Add model</button></header>
+                  <div class="model-configs" data-model-configs>
+                    <details class="model-config" open data-model-config>
+                      <summary><span class="model-mark gorg">G</span><span><b>Gorgonian Detector</b><small>v2.0.0 · all 8 species · conf 0.18</small></span><span class="config-state">Configured</span></summary>
+                      <div class="model-config-body">
+                        <div class="model-fields">
+                          <label>Model<select class="sel"><option>Gorgonian Detector</option><option>Starfish Detector</option><option>MARP General Benthic</option></select></label>
+                          <label>Version<select class="sel"><option>2.0.0</option><option>1.8.2</option></select></label>
+                          <label>Species/classes<select class="sel" data-class-mode><option value="all">All 8 species</option><option value="subset">Selected subset</option></select></label>
+                        </div>
+                        <div class="class-picker" data-class-picker hidden>
+                          <label><input type="checkbox" checked>Red gorgonian</label><label><input type="checkbox" checked>Bubblegum coral</label>
+                          <label><input type="checkbox" checked>Sea fan</label><label><input type="checkbox" checked>Whip coral</label>
+                          <label><input type="checkbox" checked>Soft coral</label><label><input type="checkbox" checked>Black coral</label>
+                          <label><input type="checkbox" checked>Sea pen</label><label><input type="checkbox" checked>Other gorgonian</label>
+                        </div>
+                        <details class="fold model-settings">
+                          <summary>Inference &amp; ByteTrack settings <span class="now">conf .18 · match .70 · buffer 240</span></summary>
+                          <div class="fbody settings-grid">
+                            <label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.18"></label>
+                            <label>NMS IoU<input class="inp" type="number" min="0" max="1" step="0.01" value="0.45"></label>
+                            <label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30"></label>
+                            <label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70"></label>
+                            <label>Track buffer (frames)<input class="inp" type="number" min="1" value="240"></label>
+                            <label>Range size (frames)<input class="inp" type="number" min="1" value="900"></label>
+                            <label class="check"><input type="checkbox"><span>MOT20 mode</span></label>
+                            <label>Reduction<select class="sel"><option>Best frame of each track</option><option>Every detection</option></select></label>
+                          </div>
+                        </details>
+                        <button class="text-action danger" type="button" data-remove-model>Remove model</button>
+                      </div>
+                    </details>
+
+                    <details class="model-config" data-model-config>
+                      <summary><span class="model-mark star">S</span><span><b>Starfish Detector</b><small>v1.4.2 · 3 of 8 species · conf 0.24</small></span><span class="config-state">Configured</span></summary>
+                      <div class="model-config-body">
+                        <div class="model-fields">
+                          <label>Model<select class="sel"><option>Starfish Detector</option><option>Gorgonian Detector</option><option>MARP General Benthic</option></select></label>
+                          <label>Version<select class="sel"><option>1.4.2</option><option>1.3.0</option></select></label>
+                          <label>Species/classes<select class="sel" data-class-mode><option value="all">All 8 species</option><option value="subset" selected>Selected subset</option></select></label>
+                        </div>
+                        <div class="class-picker" data-class-picker>
+                          <label><input type="checkbox" checked>Sunflower star</label><label><input type="checkbox" checked>Bat star</label>
+                          <label><input type="checkbox" checked>Basket star</label><label><input type="checkbox">Blood star</label>
+                          <label><input type="checkbox">Leather star</label><label><input type="checkbox">Sand star</label>
+                          <label><input type="checkbox">Brittle star</label><label><input type="checkbox">Other starfish</label>
+                        </div>
+                        <details class="fold model-settings">
+                          <summary>Inference &amp; ByteTrack settings <span class="now">conf .24 · match .76 · buffer 180</span></summary>
+                          <div class="fbody settings-grid">
+                            <label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.24"></label>
+                            <label>NMS IoU<input class="inp" type="number" min="0" max="1" step="0.01" value="0.50"></label>
+                            <label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.34"></label>
+                            <label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.76"></label>
+                            <label>Track buffer (frames)<input class="inp" type="number" min="1" value="180"></label>
+                            <label>Range size (frames)<input class="inp" type="number" min="1" value="900"></label>
+                            <label class="check"><input type="checkbox"><span>MOT20 mode</span></label>
+                            <label>Reduction<select class="sel"><option>Best frame of each track</option><option>Every detection</option></select></label>
+                          </div>
+                        </details>
+                        <button class="text-action danger" type="button" data-remove-model>Remove model</button>
+                      </div>
+                    </details>
+                  </div>
+                </section>
+
+                <footer class="group-math"><span><b data-target-math>3</b> video ranges</span><i>×</i><span><b data-model-math>2</b> model configurations</span><i>=</i><strong><b data-run-math>6</b> model runs</strong><small>Worker range splitting happens after this plan is submitted.</small></footer>
+              </article>
+            </div>
+          </section>
+
+        </div>
+
+
+        <section class="panel" id="runbar">
+          <header class="panel-hd">
+            <h2><span class="stepnum"><b>4.</b>Review &amp; run</span>
+              <span class="sub">6 model runs across 3 selected video ranges</span></h2>
+          </header>
+          <div class="panel-bd">
+            <div class="runrow">
+              <div class="field">
+                <label for="dest">Result destination</label>
+                <select class="sel wide" id="dest">
+                  <option>Write unreviewed observations</option>
+                </select>
+                <span class="hint">Confidence, model version and track provenance are retained.</span>
+              </div>
+              <div class="field">
+                <label for="workers">Worker selection</label>
+                <select class="sel wide" id="workers">
+                  <option>Auto &mdash; best available GPU</option>
+                  <option>Only workers with this model cached</option>
+                  <option>Choose workers&hellip;</option>
+                </select>
+                <span class="hint">A preference, not an assignment.</span>
+              </div>
+              <div class="field">
+                <label for="jobname">Plan name <span class="faint">(optional)</span></label>
+                <input class="inp wide" type="text" id="jobname"
+                       value="CAMPA_2024_Dives_0103_0125">
+                <span class="hint">Letters, numbers, hyphen, underscore.</span>
+              </div>
+              <div class="field">
+                <label>&nbsp;</label>
+                <button class="btn primary big block" id="runBtn">
+                  <svg class="ico"><use href="#i-play"/></svg>Review request</button>
+                <span class="hint">Mockup &mdash; shows the request, sends nothing.</span>
+              </div>
+            </div>
+            <div class="spec" id="specOut" hidden>
+              <h4>The request this would send</h4>
+              <pre id="specText"></pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel inference-recent">
+          <header class="panel-hd">
+            <h2>Recent inference jobs <span class="count"></span></h2>
+            <a class="more" href="./jobs.html?type=inference">All jobs <svg class="ico sm"><use href="#i-arrow"/></svg></a>
+            <div class="jobs-sort-mobile" aria-label="Sort recent inference jobs">
+              <span>Sort</span>
+              <button type="button" data-sort-column="0">Job</button><button type="button" data-sort-column="1">Scope</button>
+              <button type="button" data-sort-column="2">Model</button><button type="button" data-sort-column="3">Status</button>
+              <button type="button" data-sort-column="4">Detections</button><button type="button" data-sort-column="5">Started</button>
+              <button type="button" data-sort-column="6">Took</button>
+            </div>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed stack inference-table">
+                <thead>
+                  <tr>
+                    <th class="hjob sortable">Job</th>
+                    <th class="hscope sortable">Scope</th>
+                    <th class="hmodel sortable">Model</th>
+                    <th class="hstatus sortable">Status</th>
+                    <th class="hprog sortable">Detections</th>
+                    <th class="hupd sortable" aria-sort="descending">Started</th>
+                    <th class="htype sortable">Took</th>
+                    <th class="hacts"><span class="vh">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="./api.js"></script>
+<script src="./mock.js"></script>
+</body>
+</html>

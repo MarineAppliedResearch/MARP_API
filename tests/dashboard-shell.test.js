@@ -122,7 +122,7 @@ describe('the legacy dashboard shell', () => {
 
     it('keeps both application links on the main dashboard', () => {
         expect(raw['index.html']).toMatch(/href="\/apps\/marp-mosaic-review\//);
-        expect(raw['index.html']).toMatch(/href="\/apps\/marp-ml-dashboard\//);
+        expect(raw['index.html']).toMatch(/href="\/apps\/ml-dashboard\//);
     });
 
     it('#176 exposes the shared review-imagery policy and usage on the admin page', () => {

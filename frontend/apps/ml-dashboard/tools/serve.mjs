@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = normalize(join(HERE, '..', '..', '..'));      // frontend/
 const PORT = Number(process.argv[2] || process.env.PORT || 8124);
-const APP = '/apps/marp-ml-dashboard/';
+const APP = '/apps/ml-dashboard/';
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',

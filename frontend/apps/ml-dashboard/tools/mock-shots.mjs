@@ -1,5 +1,5 @@
 /**
- * Screenshots the static mockups in mockups/, at desktop and phone width.
+ * Screenshots the static mockups in , at desktop and phone width.
  *
  *   node tools/mock-shots.mjs                 every screen, both widths
  *   node tools/mock-shots.mjs dashboard       one screen
@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const APP = join(HERE, '..');
 const PORT = Number(process.env.SHOT_PORT || 8129);
-const BASE = `http://localhost:${PORT}/apps/marp-ml-dashboard/mockups/`;
+const BASE = `http://localhost:${PORT}/apps/ml-dashboard/`;
 
 /* The shell is a fixed-height grid whose content scrolls inside it, so
    `fullPage` sees exactly one screen and nothing below the fold. The phone
@@ -35,7 +35,7 @@ const VIEWS = {
   'phone-fold': { width: 390, height: 844 },
 };
 
-const all = (await readdir(join(APP, 'mockups')))
+const all = (await readdir(APP))
   /* A leading underscore marks a template rather than a screen. One got shot as
      a page, placeholders and all, and reported four console errors. */
   .filter((f) => f.endsWith('.html') && !f.startsWith('_'))

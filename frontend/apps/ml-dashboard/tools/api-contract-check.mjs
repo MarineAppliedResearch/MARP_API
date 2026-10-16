@@ -1,7 +1,7 @@
 /**
  * Does the data layer still agree with the API about what the words mean?
  *
- * `mockups/api.js` is a plain script served to a browser and
+ * `api.js` is a plain script served to a browser and
  * `config/gpu-orchestration.js` is CommonJS on the server, so the enums cannot
  * be shared by importing -- the data layer writes them out. Two copies of a
  * list is two things to get wrong, and the one that would be wrong is the one
@@ -37,7 +37,7 @@ const require = createRequire(import.meta.url);
    drift from what the running API actually believes. */
 const orchestration = require(join(repo, 'config', 'gpu-orchestration.js'));
 
-const source = readFileSync(join(app, 'mockups', 'api.js'), 'utf8');
+const source = readFileSync(join(app, 'api.js'), 'utf8');
 
 /**
  * Reads one `const NAME = [ ... ];` array out of the data layer.
@@ -94,7 +94,7 @@ for (const { name, theirs, from } of PAIRS) {
     const ours = arrayFrom(name);
 
     if (!ours) {
-        problems.push(`${name} is not declared in mockups/api.js.`);
+        problems.push(`${name} is not declared in api.js.`);
         continue;
     }
     if (!Array.isArray(theirs)) {
@@ -120,13 +120,17 @@ for (const { name, theirs, from } of PAIRS) {
    was written, the page never loaded the module, and the only symptom was an
    empty table. The order matters too, because `mock.js` reads the global while
    it runs rather than on an event. */
-for (const page of readdirSync(join(app, 'mockups')).filter((f) => f.endsWith('.html'))) {
-    const html = readFileSync(join(app, 'mockups', page), 'utf8');
+/* `index.html` is the app's own landing page: it links to the eight screens and draws
+   nothing from the data layer, so requiring it to load `api.js` would be requiring it to
+   carry a module it never calls. It only became a candidate when the screens moved up out
+   of `mockups/` and found themselves in the same directory as it. */
+for (const page of readdirSync(app).filter((f) => f.endsWith('.html') && f !== 'index.html')) {
+    const html = readFileSync(join(app, page), 'utf8');
     const api = html.indexOf('api.js');
     const mock = html.indexOf('mock.js');
 
-    if (api === -1) problems.push(`mockups/${page} never loads api.js, so window.MarpApi is undefined and every renderer silently returns.`);
-    else if (mock !== -1 && api > mock) problems.push(`mockups/${page} loads api.js after mock.js; the global has to exist before mock.js runs.`);
+    if (api === -1) problems.push(`${page} never loads api.js, so window.MarpApi is undefined and every renderer silently returns.`);
+    else if (mock !== -1 && api > mock) problems.push(`${page} loads api.js after mock.js; the global has to exist before mock.js runs.`);
 }
 
 /* The live attempt states are a subset rather than a copy: the pool view only

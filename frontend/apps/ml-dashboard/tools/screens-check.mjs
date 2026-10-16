@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const APP = join(HERE, '..');
 const PORT = Number(process.env.SCREENS_PORT || 8141);
-const BASE = `http://localhost:${PORT}/apps/marp-ml-dashboard/mockups/`;
+const BASE = `http://localhost:${PORT}/apps/ml-dashboard/`;
 
 const server = spawn(process.execPath, [join(HERE, 'serve.mjs'), String(PORT)], { stdio: 'ignore' });
 const stop = () => { try { server.kill(); } catch { /* already gone */ } };
@@ -53,11 +53,11 @@ const withoutComments = (source) => source
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
-for (const file of ['mock.js', ...readdirSync(join(APP, 'mockups')).filter((f) => f.endsWith('.html'))]) {
-    const source = withoutComments(readFileSync(join(APP, 'mockups', file), 'utf8'));
+for (const file of ['mock.js', ...readdirSync(APP).filter((f) => f.endsWith('.html'))]) {
+    const source = withoutComments(readFileSync(join(APP, file), 'utf8'));
     const routes = source.match(/\/api\/v2\/(?!jellyfin)[a-z_]+/g) || [];
     check(routes.length === 0,
-        `R10: mockups/${file} reaches for ${[...new Set(routes)].join(', ')}; only api.js may name a route`);
+        `R10: ${file} reaches for ${[...new Set(routes)].join(', ')}; only api.js may name a route`);
 }
 
 /* ------------------------------------------------------------------ R1 */
