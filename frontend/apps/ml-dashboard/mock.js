@@ -4049,6 +4049,65 @@ const NOT_IN_DATASET = '<span class="dash" title="Not carried by the dataset rec
  * @param {Element} body - The table body.
  * @returns {Promise<void>}
  */
+/**
+ * Fill the dataset builder's pickers from MARP.
+ *
+ * Project, dive, line and model were four lists typed into the markup: `CAMPA 2024`,
+ * `0123`, `L30`, `MARP-Det-v3 2.0.0`. They are not a design decision, they are data, and
+ * they were wrong the moment somebody ran a survey the mockup had not heard of — a picker
+ * that cannot offer the thing you want is worse than an empty one, because it looks like
+ * the system does not have it.
+ *
+ * Dives and lines come from the sessions rather than from a route of their own: a session
+ * *is* a dive and a line, and `GET /sessions` already carries both. Narrowing the dives to
+ * the chosen project is deliberately not done here — that is a behaviour, and this is the
+ * pass that stops the screen inventing values.
+ *
+ * @returns {Promise<void>}
+ */
+async function fillDatasetPickers() {
+  const pickers = {
+    dsproj: $('[data-fills="dsproj"]'),
+    dsdive: $('[data-fills="dsdive"]'),
+    dsline: $('[data-fills="dsline"]'),
+    dsmodel: $('[data-fills="dsmodel"]'),
+  };
+
+  if (!pickers.dsproj && !pickers.dsmodel) return;
+
+  /** Append options, keeping whatever "all" choice the markup opens on. */
+  const add = (select, values) => {
+    if (!select) return;
+    select.insertAdjacentHTML('beforeend', values
+      .map((v) => `<option value="${String(v).replace(/"/g, '&quot;')}">${v}</option>`).join(''));
+  };
+
+  try {
+    const [projects, models] = await Promise.all([
+      window.MarpApi.listProjects(),
+      window.MarpApi.listModels(),
+    ]);
+
+    await loadSessions();
+
+    add(pickers.dsproj, projects.map((p) => p.name).filter(Boolean).sort());
+
+    /* Distinct and sorted, because a session list repeats a dive once per line. */
+    const dives = [...new Set([...SESSIONS.values()].map((s) => s.dive).filter(Boolean))].sort();
+    const lines = [...new Set([...SESSIONS.values()].map((s) => s.line).filter(Boolean))].sort();
+
+    add(pickers.dsdive, dives);
+    add(pickers.dsline, lines);
+    add(pickers.dsmodel, models.map((m) => m.name).filter(Boolean).sort());
+  } catch (error) {
+    /* A picker that could not be filled says so, rather than silently offering
+       only "All projects" and looking like MARP has nothing. */
+    for (const select of Object.values(pickers)) {
+      if (select) select.insertAdjacentHTML('beforeend', `<option disabled>Could not load (${error.status || 'no answer'})</option>`);
+    }
+  }
+}
+
 async function fillSavedDatasets(body) {
   if (!window.MarpApi) return;
 
@@ -4153,6 +4212,10 @@ async function wireDatasetPage() {
   /* The saved rows come from the API before anything decorates them, so the
      Task, Status and expander cells are added to real rows rather than to the
      five that used to be typed into the markup. */
+  /* The pickers do not block the table: a builder whose dropdowns are still
+     filling is usable, and a saved-dataset list that waited for them would not be. */
+  fillDatasetPickers();
+
   const savedCount = await fillSavedDatasets(body);
   const samples = [
     ['/api/v2/jellyfin/items/9f66020c16c80d2800560a76d4417080/images/Primary', 'CAMPA2024 Dive 1 · 141923'],

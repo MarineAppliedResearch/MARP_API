@@ -83,22 +83,21 @@
 
               <div class="field">
                 <label for="dsproj">Project</label>
-                <select class="sel wide" id="dsproj">
-                  <option>CAMPA 2024</option><option>GULF 2025</option>
-                  <option>PACIFIC 2023</option><option>All projects</option>
+                <select class="sel wide" id="dsproj" data-rendered data-fills="dsproj">
+                  <option value="">All projects</option>
                 </select>
               </div>
               <div class="fieldrow">
                 <div class="field">
                   <label for="dsdive">Dive</label>
-                  <select class="sel wide" id="dsdive">
-                    <option>All dives</option><option>0123</option><option>0140</option>
+                  <select class="sel wide" id="dsdive" data-rendered data-fills="dsdive">
+                    <option value="">All dives</option>
                   </select>
                 </div>
                 <div class="field">
                   <label for="dsline">Line</label>
-                  <select class="sel wide" id="dsline">
-                    <option>All lines</option><option>L30</option><option>L28</option>
+                  <select class="sel wide" id="dsline" data-rendered data-fills="dsline">
+                    <option value="">All lines</option>
                   </select>
                 </div>
               </div>
@@ -110,9 +109,8 @@
               </div>
               <div class="field">
                 <label for="dsmodel">Generating model</label>
-                <select class="sel wide" id="dsmodel">
-                  <option>Any model</option><option>Human annotation only</option>
-                  <option>MARP-Det-v3 2.0.0</option><option>MARP-Multiclass-Det-XL 1.0.2</option>
+                <select class="sel wide" id="dsmodel" data-rendered data-fills="dsmodel">
+                  <option value="">Any model</option><option value="human">Human annotation only</option>
                 </select>
               </div>
               <div class="field">
