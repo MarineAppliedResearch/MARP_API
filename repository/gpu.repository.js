@@ -691,6 +691,14 @@ class GpuRepository {
      * progress, which is not the same as no progress *made*, and the screens draw
      * a dash rather than an empty bar for exactly that distinction.
      *
+     * **Which machine ran it comes back too**, by the same route: `worker_id` and
+     * `worker_name` from the latest attempt, and `workers_used`, a count of the
+     * distinct machines that have attempted the job. `DESIGN.md` gap 17 said this
+     * was "not recorded anywhere", which was a reading of the *fixture* rather than
+     * of the database -- the fixture's `workers.using` is present tense and reads 0
+     * once a job is over. `gpu_job_attempts.worker_id` has always recorded it, and a
+     * job retried on a second machine is exactly the case worth seeing.
+     *
      * @async
      * @param {Object} [filters]
      * @param {string} [filters.state] - Only jobs in this state.
@@ -785,16 +793,22 @@ class GpuRepository {
                         a.progress_total,
                         a.progress_unit,
                         a.progress_phase,
-                        a.progress_elapsed_s
+                        a.progress_elapsed_s,
+                        a.worker_id,
+                        w.name AS worker_name,
+                        (SELECT count(DISTINCT worker_id)::int
+                           FROM gpu_job_attempts
+                          WHERE job_id = j.id) AS workers_used
                    FROM gpu_jobs j
                    LEFT JOIN LATERAL (
                         SELECT progress_done, progress_total, progress_unit,
-                               progress_phase, progress_elapsed_s
+                               progress_phase, progress_elapsed_s, worker_id
                           FROM gpu_job_attempts
                          WHERE job_id = j.id
                          ORDER BY id DESC
                          LIMIT 1
                    ) a ON TRUE
+                   LEFT JOIN gpu_workers w ON w.id = a.worker_id
                    ${where}
                    ${order}
                   LIMIT :limit OFFSET :offset`,

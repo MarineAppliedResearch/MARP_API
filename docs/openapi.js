@@ -2514,6 +2514,9 @@ const buildOpenApiSpec = () => {
                             progress_unit: { type: 'string', nullable: true, example: 'frames', description: 'From the job\'s latest attempt, on list reads.' },
                             progress_phase: { type: 'string', maxLength: 64, nullable: true, example: 'inferring', description: 'From the job\'s latest attempt, on list reads. Worker-defined for this job type.' },
                             progress_elapsed_s: { type: 'number', minimum: 0, nullable: true, example: 142.375, description: 'From the job\'s latest attempt, on list reads.' },
+                            worker_id: { type: 'integer', nullable: true, example: 1634, description: 'The machine that made the job\'s latest attempt, on list reads. Null for a job never leased.' },
+                            worker_name: { type: 'string', nullable: true, example: 'ABYSS-fba6be1a', description: 'That machine\'s name, so a list need not fetch the pool to label a row.' },
+                            workers_used: { type: 'integer', example: 1, description: 'How many distinct machines have attempted this job. Past tense and therefore still true once it has finished, unlike a count of who holds it now: a job retried on a second machine reads 2.' },
                         },
                     },
                     GpuJobAttempt: {
