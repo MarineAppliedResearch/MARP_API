@@ -724,6 +724,17 @@ function progressCell(job, state) {
 const SESSIONS = new Map();
 
 /**
+ * People by id, so a job's `created_by` can become a name.
+ *
+ * Same reason as {@link SESSIONS}: the job carries an id and the name lives elsewhere. Null
+ * is normal and means an application token submitted the job rather than a person, which is
+ * most of them, so the screens say that rather than showing a blank.
+ *
+ * @type {Map<number, Object>}
+ */
+const USERS = new Map();
+
+/**
  * Fill {@link SESSIONS}. Safe to call on every screen; it asks once.
  *
  * A failure here is deliberately swallowed. Sessions are what turn an id into a name, and a
@@ -735,7 +746,7 @@ const SESSIONS = new Map();
 let sessionsAsked = null;
 function loadSessions() {
   if (!sessionsAsked) {
-    sessionsAsked = (window.MarpApi?.listSessions?.() || Promise.resolve([]))
+    const sessions = (window.MarpApi?.listSessions?.() || Promise.resolve([]))
       .then((rows) => {
         for (const row of rows || []) {
           const id = row.session_id ?? row.id;
@@ -743,6 +754,17 @@ function loadSessions() {
         }
       })
       .catch(() => { /* scope falls back to the id; the jobs still draw */ });
+
+    const users = (window.MarpApi?.listUsers?.() || Promise.resolve([]))
+      .then((rows) => {
+        for (const row of rows || []) {
+          const id = row.user_id ?? row.id;
+          if (id !== undefined) USERS.set(Number(id), row);
+        }
+      })
+      .catch(() => { /* a submitter falls back to the id */ });
+
+    sessionsAsked = Promise.all([sessions, users]);
   }
 
   return sessionsAsked;
@@ -839,7 +861,46 @@ function rowFor(view) {
     ? '<button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
     : '<button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button>';
 
-  return `<tr data-job="${job.id}">`
+  /**
+   * Which machine ran this job.
+   *
+   * **Past tense, and that is the whole point.** The mockup carried a present-tense
+   * `workers.using`, which reads 0 the moment a job finishes -- so every completed row said
+   * nothing had run it, and `DESIGN.md` gap 17 recorded that as "not recorded anywhere". It
+   * always was: `gpu_job_attempts.worker_id` names the machine for every attempt, and the
+   * job list carries it as of #104.
+   *
+   * A job tried on more than one machine says so, because that is the case worth seeing:
+   * it usually means the first machine failed it.
+   *
+   * @param {Object} row - A job from the list.
+   * @returns {string} The cell's contents.
+   */
+  function workerCell(row) {
+    if (!row.worker_name && !row.worker_id) {
+      // Never leased. Distinct from "ran and we lost the record".
+      return '<span class="dash" title="Never leased to a machine">&mdash;</span>';
+    }
+
+    const name = row.worker_name || `Worker ${row.worker_id}`;
+    const retried = Number(row.workers_used) > 1
+      ? `<span class="b">${row.workers_used} machines</span>`
+      : '';
+
+    return `<span class="two"><span class="a">${name}</span>${retried}</span>`;
+  }
+
+  /* The expanded detail is built by a decorator that reads the row out of the
+     DOM rather than holding the job, so anything it needs and cannot scrape from
+     a visible cell travels here. It used to invent these -- "itravers", "5 ·
+     normal", "Up to 3 attempts", "heartbeat 4s ago" -- on every job. */
+  return `<tr data-job="${job.id}"`
+    + ` data-worker="${job.worker_name || (job.worker_id ? `Worker ${job.worker_id}` : '')}"`
+    + ` data-workers-used="${job.workers_used ?? 0}"`
+    + ` data-attempts="${job.attempts_made ?? 0}"`
+    + ` data-max-attempts="${job.max_attempts ?? 0}"`
+    + ` data-priority="${job.priority ?? 0}"`
+    + ` data-by="${job.created_by ?? ''}">`
     + `<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job ${job.id}"></td>`
     + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
     + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
@@ -847,6 +908,7 @@ function rowFor(view) {
     + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
     + `<td class="jstatus" data-sort="${JOB_STATE_RANK[state]}"><span class="st" data-state="${state}"><span class="dot"></span>${view.label}</span></td>`
     + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
+    + `<td class="jworker" data-sort="${job.worker_name || ''}">${workerCell(job)}</td>`
     + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${hhmm}</span><span class="b">${date}</span></span></td>`
     + `<td class="jacts"><span>${actions}</span></td>`
     + '</tr>';
@@ -2161,6 +2223,7 @@ function historyRow(view) {
     + `<td class="hstart" data-sort="${job.created_at}">${stamp(started)}</td>`
     + `<td class="hend" data-sort="${job.updated_at}">${stamp(completed)}</td>`
     + `<td class="hdur num" data-sort="${view.tookMs}">${tookText(view.tookMs)}</td>`
+    + `<td class="hworker" data-sort="${view.job.worker_name || ''}">${view.job.worker_name || (view.job.worker_id ? `Worker ${view.job.worker_id}` : '<span class="dash" title="Never leased to a machine">&mdash;</span>')}${Number(view.job.workers_used) > 1 ? ` <span class="faint">· ${view.job.workers_used} machines</span>` : ''}</td>`
     + `<td class="hwho">${view.byName}</td>`
     + '<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
     + '</tr>';
@@ -3142,6 +3205,31 @@ function wireJobsOverview() {
     const model = $('.jmodel .a', head)?.textContent.trim() || '—';
     const modelVersion = $('.jmodel .b', head)?.textContent.trim() || '';
     const state = $('.jstatus [data-state]', head)?.dataset.state || 'queued';
+
+    /* Real facts about this job, carried on the row by `rowFor`. Every one of
+       these was previously a constant written into the detail template, so each
+       expanded job claimed the same submitter, the same priority and the same
+       attempt policy whatever it actually had. */
+    const attemptsMade = Number(head.dataset.attempts) || 0;
+    const maxAttempts = Number(head.dataset.maxAttempts) || 0;
+    const priority = head.dataset.priority || '0';
+    const machinesTried = Number(head.dataset.workersUsed) || 0;
+
+    const ranOn = head.dataset.worker
+      ? head.dataset.worker
+      : '<span class="faint">Never leased</span>';
+
+    const machines = machinesTried > 1
+      ? `${machinesTried} <span class="faint">· retried elsewhere</span>`
+      : (machinesTried === 1 ? '1' : '<span class="faint">None</span>');
+
+    /* `created_by` is a user id, and null when an application token submitted
+       the job -- which is most of them, because the worker pipeline does. */
+    const submittedBy = head.dataset.by
+      ? (USERS.get(Number(head.dataset.by))?.name
+        || USERS.get(Number(head.dataset.by))?.username
+        || `User ${head.dataset.by}`)
+      : '<span class="faint">An application token</span>';
     const status = $('.jstatus', head)?.textContent.trim() || 'Queued';
     const progress = $('.jprog', head)?.textContent.trim() || 'Not started';
     const progressValue = Number($('.jprog', head)?.dataset.sort);
@@ -3223,16 +3311,16 @@ function wireJobsOverview() {
     const detail = document.createElement('tr');
     detail.className = 'runrow-body';
     detail.hidden = true;
-    detail.innerHTML = `<td colspan="10"><div class="rundetail jobdetail">
+    detail.innerHTML = `<td colspan="11"><div class="rundetail jobdetail">
       <div class="jobdetail-head"><div><b>${name}</b><span>Job ${id} · ${type}</span></div><span class="st" data-state="${state}"><span class="dot"></span>${status}</span></div>
       <div class="jobdetail-grid jobidentity">
         <dl class="kv"><dt>Job ID</dt><dd class="mono">${id}</dd><dt>Type</dt><dd>${type}</dd><dt>Scope</dt><dd>${scope}${scopeContext ? ` <span class="faint">· ${scopeContext}</span>` : ''}</dd><dt>${isDatasetBuild ? 'Build output' : 'Locked model'}</dt><dd>${model} <span class="faint">${modelVersion}</span><div class="locked">Immutable from submission</div></dd></dl>
-        <dl class="kv"><dt>Submitted</dt><dd>${submitted}</dd><dt>Submitted by</dt><dd>itravers</dd><dt>Priority</dt><dd>5 · normal</dd><dt>Attempt policy</dt><dd>Up to 3 attempts</dd></dl>
+        <dl class="kv"><dt>Submitted</dt><dd>${submitted}</dd><dt>Submitted by</dt><dd>${submittedBy}</dd><dt>Priority</dt><dd>${priority}</dd><dt>Attempt policy</dt><dd>Up to ${maxAttempts} attempt${maxAttempts === 1 ? '' : 's'}</dd></dl>
       </div>
       ${operational}
       ${resultsPreview}
       <details class="diag"><summary>Diagnostics<span class="later">Attempts, worker lease and event log</span></summary><div class="dbody">
-        <dl class="kv"><dt>Attempt</dt><dd>${state === 'issues' ? '3 of 3' : '1 of 3'}</dd><dt>Worker lease</dt><dd>${state === 'running' ? 'Healthy · heartbeat 4s ago' : 'No active lease'}</dd><dt>Last event</dt><dd>${status} · review fixture</dd><dt>Request ID</dt><dd class="mono">job-${id}-attempt-1</dd></dl>
+        <dl class="kv"><dt>Attempt</dt><dd>${attemptsMade} of ${maxAttempts}</dd><dt>Ran on</dt><dd>${ranOn}</dd><dt>Machines tried</dt><dd>${machines}</dd><dt>Job ID</dt><dd class="mono">${id}</dd></dl>
         <div class="log"><div><span class="t">12:36:55</span><span class="l" data-lvl="info">info</span><span class="m">job ${id} status updated to ${status.toLowerCase()}</span></div><div><span class="t">12:36:54</span><span class="l" data-lvl="info">info</span><span class="m">worker checkpoint and lease state recorded</span></div></div>
       </div></details>
     </div></td>`;

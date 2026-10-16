@@ -730,17 +730,19 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   #jobs td.jscope { grid-area: 2 / 2 / 2 / -1; }
   #jobs td.jmodel { grid-area: 3 / 2 / 3 / -1; }
   #jobs td.jprog { grid-area: 4 / 1 / 4 / -1; margin-top: 5px; }
-  #jobs td.jtime { grid-area: 5 / 1 / 5 / 3; }
+  #jobs td.jworker { grid-area: 5 / 1 / 5 / -1; }
+  #jobs td.jtime { grid-area: 6 / 1 / 6 / 3; }
   #jobs td.jtime .two { display: flex; flex-direction: row; gap: 7px; align-items: baseline; }
-  #jobs td.jacts { grid-area: 5 / 3; text-align: right; }
+  #jobs td.jacts { grid-area: 6 / 3; text-align: right; }
   #jobs td.jscope::before, #jobs td.jmodel::before, #jobs td.jprog::before,
-  #jobs td.jtime::before {
+  #jobs td.jworker::before, #jobs td.jtime::before {
     display: block; margin-bottom: 2px; color: var(--faint); font-size: 8.5px;
     font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
   }
   #jobs td.jscope::before { content: "Scope"; }
   #jobs td.jmodel::before { content: "Model"; }
   #jobs td.jprog::before { content: "Progress"; }
+  #jobs td.jworker::before { content: "Worker"; }
   #jobs td.jtime::before { content: "Submitted"; }
   #jobs tbody tr.runrow-body { display: block; padding: 0; }
   #jobs tbody tr.runrow-body > td { display: block; }

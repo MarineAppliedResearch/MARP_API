@@ -586,6 +586,22 @@ the new fields is the next pass, and it is cheap now that the shapes are fixed.
 17. **How many machines worked on a finished job** is not recorded anywhere, so
     `workers.using` is 0 on every terminal row and a History column cannot show it.
     "Using" is present tense.
+
+    **Wrong, and corrected 2026-10-15.** This read the *fixture* rather than the database.
+    `workers.using` is present tense and does read 0 once a job is over — but
+    `gpu_job_attempts.worker_id` names the machine for every attempt ever made, and has since
+    the orchestrator was built. The right question was never "how many are using it" but "how
+    many tried it", which is past tense and stays true.
+
+    `GET /gpu/jobs` now carries `worker_id` and `worker_name` from the latest attempt and
+    `workers_used`, a count of the distinct machines that have attempted the job — by the same
+    lateral join that carries progress, so it costs nothing extra. Jobs and History both have a
+    Worker column, and a job retried on a second machine says so, which is the case worth
+    seeing because it usually means the first one failed it.
+
+    It is worth noticing how this survived: the fixture had a field, the field was
+    plausible, and it was read as evidence about MARP. A gap list written from the mockup
+    describes the mockup.
 18. **Inference throughput and queued-frame history** — current job and range records can be
     aggregated into a present snapshot, but there is no sampled time series or queued-frame
     rollup for the Inference activity graph. Its moving values remain deterministic design data
