@@ -3465,6 +3465,9 @@ function wireJobsOverview() {
 function wireInferenceActivity() {
   const root = $('[data-inference-activity]');
   if (!root) return;
+  /* Same reason as wireDatasetActivity: no chart means the panel is saying the
+     series does not exist, and there is nothing here to animate. */
+  if (!$('.inference-chart svg', root)) return;
   const ranges = {
     '24h': { labels: ['24h ago', '12h ago', 'Now'], throughput: [48,52,55,51,58,62,59,65,69,63,67,72,70,74,76,73,79,82,77,81,84,80,76,78], backlog: [7.6,7.7,7.5,7.4,7.3,7.2,7.1,7.2,7.0,6.9,6.8,6.7,6.8,6.6,6.5,6.4,6.2,6.3,6.1,6.0,5.9,5.8,5.9,5.8] },
     '5h': { labels: ['5h ago', '2.5h ago', 'Now'], throughput: [61,64,67,65,69,72,70,74,76,73,77,80,78,82,85,81,79,83,86,82,80,79,77,78], backlog: [6.9,6.8,6.8,6.7,6.6,6.6,6.5,6.4,6.3,6.3,6.2,6.1,6.1,6.0,5.9,5.9,5.8,5.8,5.7,5.7,5.8,5.7,5.8,5.8] },
@@ -3661,6 +3664,13 @@ function wireTrainingActivity() {
 function wireDatasetActivity() {
   const root = $('[data-dataset-activity]');
   if (!root) return;
+  /* **The guard has to be on the chart, not on the panel.** The panel can now
+     carry an honest "not recorded yet" body instead of a fabricated series, and
+     when it does the SVG this animates is gone. Guarding only on the panel let
+     this run anyway, throw on a missing element, and take the rest of the boot
+     script with it -- so the tables below never rendered and it looked like the
+     API had failed. */
+  if (!$('.dataset-chart svg', root)) return;
   const ranges = {
     '24h': { labels: ['24h ago', '12h ago', 'Now'],
       throughput: [0,0,180,260,420,610,720,840,910,760,620,500,390,460,580,740,920,1040,980,850,690,720,760,780],
@@ -5167,6 +5177,9 @@ function wireOperationalActivity() {
     const lines = Object.fromEntries($$('[data-ops-line]', root).map((line) => [line.dataset.opsLine, line]));
     const area = $('[data-ops-area]', root);
     const chart = $('.ops-chart', root);
+    /* Same again, and per panel because this one wires several screens: a panel
+       drawing an empty state has no chart to animate. */
+    if (!chart) return;
     const rangeButtons = $$('[data-ops-range]', root);
     const highlightButtons = $$('[data-ops-highlight]', root);
     let range = config.initial;

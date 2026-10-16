@@ -131,6 +131,22 @@ const GEOMETRY = /\b(?:viewBox|pathLength|cx|cy|rx|ry|r|x1|x2|y1|y2|x|y|width|he
 const CONTROLS = /(?:^|[\s>])(?:24h|7d|30d|90d|1y|1h|6h|12h|5h|v\d+)(?=[\s<,.)]|$)/gi;
 
 /**
+ * Prose, and a numbered step, are not claims about MARP.
+ *
+ * A paragraph saying "nothing records this yet, see gap 19" contains a number and states
+ * nothing; so does a `<li>` numbered "1.". Flagging those teaches whoever runs this that its
+ * output contains noise, and a check people have learned to skim is a check that has stopped
+ * working. These classes are the ones that exist to explain rather than to report, so their
+ * contents are exempt and their *absence* of a renderer is the point.
+ */
+const PROSE = [
+    [/<p class="(?:nodata|muted)[^"]*"[^>]*>/g, 'p'],
+    [/<li\b[^>]*>/g, 'li'],
+    [/<code\b[^>]*>/g, 'code'],
+    [/<small class="(?:later|faint)[^"]*"[^>]*>/g, 'small'],
+];
+
+/**
  * Remove every subtree a renderer has claimed, so what is left is markup nobody fills.
  *
  * @param {string} html - The page source.
@@ -199,6 +215,10 @@ for (const page of readdirSync(dir).filter((f) => f.endsWith('.html'))) {
         .replace(/<!--[\s\S]*?-->/g, '')
         .replace(GEOMETRY, '')
         .replace(CONTROLS, ' ');
+
+    for (const [open, tag] of PROSE) {
+        for (const inside of insidesOf(rest, open, tag)) rest = rest.replace(inside, ' ');
+    }
 
     const stated = new Set();
 
