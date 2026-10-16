@@ -103,6 +103,41 @@ for (const [screen, rowSelector] of Object.entries(SCREENS)) {
     check(filled.rows > 0, `R1: ${screen} drew no rows into the table its layer fills`);
 }
 
+/* ------------------------------------------ expandable rows open collapsed */
+
+/* An expandable table draws every row's detail row as well as its head, and the
+   head says `aria-expanded="false"` from the moment it is written. Only the
+   rendered page can tell whether the detail row obeyed it. `markup-check` reads
+   the template and the template looks right; what was missing was `hidden` on
+   the detail row itself, so every row stood open while its chevron and its aria
+   state both said closed -- and the first click then appeared to do nothing,
+   because it was the click that set `aria-expanded` to true on a row that was
+   already open.
+
+   Models and Workers build their detail rows from strings and both forgot it.
+   Jobs and Datasets build theirs with `createElement` and set `hidden` there,
+   which is why only these two screens were wrong. */
+for (const [screen, table] of [['models', '#models'], ['workers', '#workers']]) {
+    await page.goto(`${BASE}${screen}.html`, { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+
+    const rows = await page.evaluate((id) => {
+        const heads = [...document.querySelectorAll(`${id} tbody tr.runrow-head`)];
+        const bodies = [...document.querySelectorAll(`${id} tbody tr.runrow-body`)];
+        return {
+            heads: heads.length,
+            expanded: heads.filter((head) => head.getAttribute('aria-expanded') === 'true').length,
+            bodies: bodies.length,
+            showing: bodies.filter((body) => !body.hidden).length,
+        };
+    }, table);
+
+    check(rows.bodies > 0 && rows.showing === 0,
+        `${screen} opened with ${rows.showing} of ${rows.bodies} detail rows showing`);
+    check(rows.expanded === 0,
+        `${screen} opened with ${rows.expanded} of ${rows.heads} rows marked expanded`);
+}
+
 /* ------------------------------------------------------------------ R6 */
 
 await page.goto(`${BASE}jobs.html?mock=fail:jobs`, { waitUntil: 'load' });
