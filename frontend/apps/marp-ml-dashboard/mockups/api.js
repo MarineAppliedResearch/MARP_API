@@ -891,9 +891,9 @@
   /**
    * `GET /api/v2/ml_models` -- the registry, as a plain array.
    *
-   * Note what is *not* on an `MlModel`: anything marking one as preferred, any
-   * count of how many workers hold it, and any `versions` array. A version
-   * chain is `parent_model_id` and has to be walked.
+   * An `MlModel` carries `preferred` since #260 -- one per `model_type` -- and its
+   * version chain is reachable at `/ml_models/:id/versions`. What is still not on
+   * it is any count of how many workers hold the model cached.
    *
    * @returns {Promise<Object[]>}
    */
@@ -904,7 +904,8 @@
   /**
    * `GET /api/v2/dataset` -- saved datasets, as a plain array.
    *
-   * A `Dataset` has no status, so nothing here says whether one is building.
+   * A `Dataset` carries `status` since #260: draft, building, ready or failed.
+   * What no API records is a build's *progress*, which is gap 19.
    *
    * @returns {Promise<Object[]>}
    */
@@ -962,8 +963,28 @@
       () => copy(REGISTRY.users[0]));
   }
 
+  /**
+   * `GET /api/v2/sessions` -- every session, as a plain array.
+   *
+   * A real job's `spec.session` is `{session_id}` and nothing else: the dive and the line
+   * live on the session row, and `describeSession` resolves them server-side only at lease
+   * time, for the worker. A screen has to resolve them itself.
+   *
+   * This was the gap behind every job reading "No session". The fixtures inlined
+   * `{dive, line}` into the spec, so the Scope column worked against them and had nothing to
+   * resolve -- and the moment it met a real job it had an id it could not turn into a name.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listSessions() {
+    return serve('sessions',
+      () => request('/sessions'),
+      () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.sessions || [])));
+  }
+
   window.MarpApi = {
     whoAmI,
+    listSessions,
     listWorkers,
     listJobs,
     getJob,

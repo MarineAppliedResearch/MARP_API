@@ -712,9 +712,58 @@ function progressCell(job, state) {
  * @param {Set<string>} issueBatches - Batches that finished with issues.
  * @returns {Object} The view model.
  */
+/**
+ * Sessions by id, so a job's `session_id` can become a dive and a line.
+ *
+ * Fetched once and kept, rather than per job: `GET /gpu/jobs` hands back fifty rows that
+ * between them name a handful of sessions, and resolving each one separately would be the
+ * same mistake the Progress column was built to avoid.
+ *
+ * @type {Map<number, Object>}
+ */
+const SESSIONS = new Map();
+
+/**
+ * Fill {@link SESSIONS}. Safe to call on every screen; it asks once.
+ *
+ * A failure here is deliberately swallowed. Sessions are what turn an id into a name, and a
+ * screen that refuses to draw its jobs because it could not pretty-print their scope has
+ * made a bad trade.
+ *
+ * @returns {Promise<void>}
+ */
+let sessionsAsked = null;
+function loadSessions() {
+  if (!sessionsAsked) {
+    sessionsAsked = (window.MarpApi?.listSessions?.() || Promise.resolve([]))
+      .then((rows) => {
+        for (const row of rows || []) {
+          const id = row.session_id ?? row.id;
+          if (id !== undefined) SESSIONS.set(Number(id), row);
+        }
+      })
+      .catch(() => { /* scope falls back to the id; the jobs still draw */ });
+  }
+
+  return sessionsAsked;
+}
+
 function jobView(job, issueBatches) {
   const spec = job.spec || {};
-  const session = spec.session || {};
+  /* `spec.session` takes two forms. A job submitted against an existing session
+     carries `{session_id}` alone -- the dive and line are columns on the session
+     row -- while one submitted for a session that does not exist yet carries
+     `{project_id, dive, line, type}` inline, because the ingest creates it
+     afterwards. The fixtures only ever produced the second, so the Scope column
+     worked against them and read "No session" for every real job in MARP.
+
+     SESSIONS is filled once per screen by `loadSessions`. A miss leaves the id
+     visible rather than blank: "Session 755" is a thing somebody can look up,
+     and "No session" was a lie about a job that has one. */
+  const named = spec.session && spec.session.session_id !== undefined
+    ? SESSIONS.get(Number(spec.session.session_id))
+    : null;
+  const session = named || spec.session || {};
   const [kindIcon, kindLabel] = JOB_KIND_LABEL[job.kind] || JOB_KIND_LABEL.inference;
 
   let [state, label] = JOB_STATE_LABEL[job.state] || ['queued', job.state];
@@ -771,7 +820,11 @@ function jobView(job, issueBatches) {
 function rowFor(view) {
   const { job, spec, session, state } = view;
 
-  const scope = session.dive ? `Dive ${session.dive} &middot; Line ${session.line}` : 'No session';
+  const scope = session.dive
+    ? `Dive ${session.dive}${session.line ? ` &middot; Line ${session.line}` : ''}`
+    : (spec.session && spec.session.session_id !== undefined
+      ? `Session ${spec.session.session_id}`
+      : 'No session');
   const frames = spec.range
     ? `${session.type || 'Unassigned'} &middot; frames ${spec.range.start_frame.toLocaleString()}-${spec.range.end_frame.toLocaleString()}`
     : '';
@@ -1250,7 +1303,7 @@ async function renderTrainingScreen() {
 
   try {
     const [jobs, models, datasets] = await Promise.all([
-      window.MarpApi.listJobs({ limit: 500 }),
+      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 })),
       window.MarpApi.listModels(),
       window.MarpApi.listDatasets(),
     ]);
@@ -1469,7 +1522,7 @@ async function renderInferenceScreen() {
 
   try {
     const [jobs, models] = await Promise.all([
-      window.MarpApi.listJobs({ limit: 500 }),
+      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 })),
       window.MarpApi.listModels(),
     ]);
 
@@ -1607,9 +1660,9 @@ function modelRows(view, byId) {
     + '</dl></div>'
     + '<div class="sect"><h3>Not in the registry</h3>'
     + '<p class="muted">Which dataset trained this model, how it scored, and how many workers hold it '
-    + 'are all absent from <code>ml_models</code>. The link to a dataset exists on a training run, and '
-    + '<code>/v2/training_run</code> has only a <code>POST</code> — a run can be created and never '
-    + 'listed. Nothing marks a model preferred. Gap 28.</p></div>'
+    + 'are absent from <code>ml_models</code>. Its training runs can be listed now, and whether it is '
+    + 'preferred for its task is recorded — both landed in #260, and this said otherwise for hours '
+    + 'afterwards. What is left of gap 28 is the metrics and the cache count.</p></div>'
     + '</div></div></td></tr>';
 
   return head + body;
@@ -1719,7 +1772,14 @@ function renderModelsSummary(views) {
   };
 
   set('Registered models', String(views.length), `${trained} trained &middot; ${training} training`);
-  set('Preferred models', NOT_IN_REGISTRY, 'nothing marks a model preferred');
+  /* Real since #260. One per `model_type`, enforced by a partial unique index,
+     so this counts types that have chosen rather than models that are special. */
+  const preferred = views.filter((v) => v.preferred).length;
+  set('Preferred models', String(preferred), preferred === 1 ? 'one model type has chosen' : `${preferred} model types have chosen`);
+
+  /* Still nothing. The worker keeps a real cache -- `models/cache/<id>_<sha>` --
+     and simply never reports it, so closing this is a `marp-inference-worker`
+     change and no migration. See DESIGN.md gap 28. */
   set('Cached on workers', NOT_IN_REGISTRY, 'no worker reports what it holds');
   set('Recently trained', String(recent), 'updated in the last 7 days');
 
@@ -2121,7 +2181,7 @@ async function renderHistoryScreen() {
 
   try {
     const [jobs, projects, users] = await Promise.all([
-      window.MarpApi.listJobs({ limit: 500 }),
+      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 })),
       window.MarpApi.listProjects(),
       window.MarpApi.listUsers(),
     ]);
@@ -2272,13 +2332,18 @@ function renderDashboard(data) {
 
   set('Training', kindOf(running, 'training'), ['running now', `${kindOf(queued, 'training')} queued`]);
 
-  /* A `Dataset` has no status column, so "building" cannot be counted -- the
-     builds the Datasets screen shows are its own, not the API's. Gap 19. */
-  set('Datasets', datasets.length, ['saved', 'builds not tracked by the API']);
+  /* `datasets.status` exists as of #260, so "building" is a count rather than
+     an apology. What still has no API behind it is the *progress* of a build,
+     which is gap 19 and belongs to whatever ends up doing the building. */
+  const building = datasets.filter((d) => d.status === 'building').length;
+  set('Datasets', datasets.length, ['saved', building ? `${building} building` : 'none building']);
 
-  /* Nothing on an `MlModel` marks one preferred, and nothing counts how many
-     workers hold it. Gap 28. */
-  set('Models', models.length, ['registered', 'no preferred flag in the API']);
+  /* `ml_models.preferred` exists as of #260 -- one per model_type, held by a
+     partial unique index. This said "no preferred flag in the API" for hours
+     after the flag shipped, which is worse than saying nothing: a screen that
+     reports a capability as missing is believed. */
+  const preferred = models.filter((m) => m.preferred).length;
+  set('Models', models.length, ['registered', `${preferred} preferred`]);
 
   /* History is the terminal states over the same window the screen is drawn
      for, which the route can answer only by being handed everything. Gap 24. */
@@ -2428,7 +2493,7 @@ async function renderDashboardScreen() {
 
   try {
     const [jobs, workers, models, datasets] = await Promise.all([
-      window.MarpApi.listJobs({ limit: 500 }),
+      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 })),
       window.MarpApi.listWorkers(),
       window.MarpApi.listModels(),
       window.MarpApi.listDatasets(),
@@ -2766,7 +2831,7 @@ async function renderWorkersTable() {
        half-loaded would be worse than one that says it could not. */
     const [pool, jobs] = await Promise.all([
       window.MarpApi.listWorkers(),
-      window.MarpApi.listJobs({ limit: 500 }),
+      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 })),
     ]);
 
     workersPool = pool;
@@ -2970,6 +3035,7 @@ async function renderJobsTable() {
     if (jobsQuery.kind) ask.kind = jobsQuery.kind;
     if (jobsQuery.state) ask.state = jobsQuery.state;
 
+    await loadSessions();
     jobsWindow = await window.MarpApi.listJobs(ask);
 
     /* The cards count the window, not the page: they are about the queue, not
@@ -4201,21 +4267,36 @@ async function wireDatasetPage() {
 }
 
 function wireAccordions() {
-  $$('table.expandable tbody tr.runrow-head').forEach((head) => {
-    const body = head.nextElementSibling;
-    if (!body || !body.classList.contains('runrow-body')) return;
-    const set = (on) => {
-      head.setAttribute('aria-expanded', String(on));
-      body.hidden = !on;
-    };
-    const toggle = () => set(head.getAttribute('aria-expanded') !== 'true');
-    const btn = $('.exbtn', head);
-    if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
-    head.addEventListener('click', (e) => {
-      if (e.target.closest('button, input, a, select')) return;
-      toggle();
+  /* **Delegated, because the rows are not there yet.**
+     This used to attach a listener per row, which worked for exactly as long as
+     the rows were built synchronously from a fixture: `wireAccordions` ran at
+     boot, found eighteen rows and wired them. The moment the data layer started
+     asking MARP, the rows arrived after the fetch resolved — so this ran, found
+     nothing, wired nothing, and every expander on every screen silently stopped
+     working. No error, no empty table, just a button that does nothing, which is
+     the hardest kind of broken to notice.
+
+     One listener on the document survives that, and survives a re-render too:
+     `applyJobsQuery` replaces the tbody on every filter change, which would have
+     thrown away per-row listeners anyway. */
+  if (!document.body.dataset.accordionsWired) {
+    document.body.dataset.accordionsWired = 'true';
+
+    document.addEventListener('click', (event) => {
+      const head = event.target.closest('table.expandable tbody tr.runrow-head');
+      if (!head) return;
+
+      const body = head.nextElementSibling;
+      if (!body || !body.classList.contains('runrow-body')) return;
+
+      // Anything else interactive in the row keeps its own meaning.
+      if (!event.target.closest('.exbtn') && event.target.closest('button, input, a, select')) return;
+
+      const open = head.getAttribute('aria-expanded') !== 'true';
+      head.setAttribute('aria-expanded', String(open));
+      body.hidden = !open;
     });
-  });
+  }
 
   const all = $$('.btn').find((b) => /^Expand all/.test(b.textContent.trim()));
   if (!all) return;
