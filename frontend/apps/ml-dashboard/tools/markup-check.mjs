@@ -27,6 +27,13 @@
  *   belong inside a `data-rendered` element and are not exempt here.
  * - it is a control the person operates rather than a value MARP supplies: the `24h`/`7d`
  *   range buttons and similar.
+ * - it is inside an element marked `data-choices`: a fixed vocabulary the design settled on,
+ *   not values MARP holds. A training form offering image sizes of 640, 960 and 1280 is
+ *   offering the three YOLO accepts, and those numbers are as much part of the interface as
+ *   the word "Training" is. The distinction from data is whether MARP could answer
+ *   differently tomorrow: it could list a different set of models, it could not decide that
+ *   960 is no longer an image size. Marking the select says which kind it is, and a reviewer
+ *   can disagree with the mark.
  *
  * It still fails the other way too: a region blanked for a renderer that does not exist will
  * render empty forever. Blanking the markup and forgetting to wire the renderer is the failure
@@ -159,12 +166,13 @@ function withoutRendered(html) {
     /* Innermost-first: find a `data-rendered` opening tag with no further one inside its
        body, cut it, and go again. Nesting is rare but a page is allowed it. */
     while (guard < 500) {
-        const open = /<([a-z][a-z0-9]*)\b[^>]*\bdata-rendered\b[^>]*>/i.exec(out);
+        const open = /<([a-z][a-z0-9]*)\b[^>]*\bdata-(?:rendered|choices)\b[^>]*>/i.exec(out);
 
         if (!open) break;
 
         const tag = open[1];
-        const inside = insidesOf(out, new RegExp(`<${tag}\\b[^>]*\\bdata-rendered\\b[^>]*>`, 'gi'), tag)[0];
+        const mark = /data-choices/i.test(open[0]) ? 'data-choices' : 'data-rendered';
+        const inside = insidesOf(out, new RegExp(`<${tag}\\b[^>]*\\b${mark}\\b[^>]*>`, 'gi'), tag)[0];
 
         if (inside === undefined) {
             // Self-closing or unbalanced: drop the tag itself and move on.

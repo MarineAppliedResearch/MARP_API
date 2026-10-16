@@ -626,6 +626,25 @@ the new fields is the next pass, and it is cheap now that the shapes are fixed.
 
     What dataset builds run *on* is a separate question this did not settle — the Datasets
     fixtures name a `gpu-build-02` worker, and nothing in the API backs that yet.
+
+    **What a build actually is, found 2026-10-15 and recorded for the phase that does this.**
+    It already exists, in `Workspace/MARE_Video_Annotations/createDataSet.py` — 201 lines of
+    legacy Python that: asks the API for observations by video; maps `comname_taxserial` to a
+    class id; opens each observation's video at its `mediaPosition` and extracts that frame
+    with OpenCV; writes YOLO labels from the stored annotation string; shuffles and splits
+    80/20 into `images/{train,val}` and `labels/{train,val}`; then writes `classes.names` and
+    a `data.yaml` naming the classes and the two paths.
+
+    It has been run: that folder holds **1,097,550 images and 469,416 labels** across
+    seventeen named datasets — `CAMPA2025_TEST8`, `CAMPA2025_group1_candidate1`, `GULF1`,
+    `WireCoral1` and the rest. Those are what MARP's current models were trained on, and the
+    names line up with models in the registry.
+
+    **MARP's `datasets` table knows about none of them.** It has zero rows here. So the
+    registry is not behind on this work, it has never seen it — which is worth settling
+    before anything builds a dataset through the dashboard, because the first question will
+    be whether these are imported or ignored. Not acted on: dataset building and training are
+    a later phase, and one being designed alongside GPU-worker training elsewhere.
 20. **Model-registry trend and cache-coverage history** — current model and worker snapshots can
     supply present totals, but no sampled registry/cache series exists. The Models graph is
     deterministic Phase 0 design data.

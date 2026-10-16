@@ -146,16 +146,11 @@
                 <div class="task-callout"><b>Detection</b><span>Bounding boxes, class labels and confidence per object</span></div>
                 <div class="field req">
                   <label for="base-det">Detection base model</label>
-                  <select class="sel wide" id="base-det">
-                    <option>MARP-Multiclass-Det-XL &mdash; 1.0.2</option>
-                    <option>MARP-Det-v3 &mdash; 2.0.0</option>
-                    <option>MARP-Fish-Det &mdash; 1.1.3</option>
-                    <option>YOLO detection &mdash; upstream checkpoint</option>
-                  </select>
+                  <select data-rendered data-fills="base-det" class="sel wide" id="base-det"><option value="">Loading…</option></select>
                 </div>
                 <div class="fieldrow">
-                  <div class="field"><label for="det-size">Image size</label><select class="sel wide" id="det-size"><option>640</option><option>960</option><option>1280</option></select></div>
-                  <div class="field"><label for="det-single">Class handling</label><select class="sel wide" id="det-single"><option>Keep all classes</option><option>Treat as one class</option></select></div>
+                  <div class="field"><label for="det-size">Image size</label><select class="sel wide" id="det-size" data-choices><option>640</option><option>960</option><option>1280</option></select></div>
+                  <div class="field"><label for="det-single">Class handling</label><select class="sel wide" id="det-single" data-choices><option>Keep all classes</option><option>Treat as one class</option></select></div>
                 </div>
                 <details class="fold task-fold"><summary>Detection loss balance <span class="now">box 7.5 &middot; class 0.5 &middot; DFL 1.5</span></summary><div class="fbody fieldrow">
                   <div class="field"><label for="det-box" title="Weight applied to bounding-box localization error">Box loss gain</label><input class="inp wide" type="number" step="0.1" id="det-box" value="7.5"></div>
@@ -166,19 +161,19 @@
 
               <div data-viewof="task" data-view="cls" class="task-settings" hidden>
                 <div class="task-callout"><b>Classification</b><span>One class and confidence distribution for each complete image</span></div>
-                <div class="field req"><label for="base-cls">Classification base model</label><select class="sel wide" id="base-cls"><option>MARP-Habitat-Cls &mdash; 1.2.0</option><option>MARP-Rockfish-Cls &mdash; 1.0.1</option><option>YOLO classification &mdash; upstream -cls checkpoint</option></select></div>
+                <div class="field req"><label for="base-cls">Classification base model</label><select data-rendered data-fills="base-cls" class="sel wide" id="base-cls"><option value="">Loading…</option></select></div>
                 <div class="fieldrow">
-                  <div class="field"><label for="cls-size">Image size</label><select class="sel wide" id="cls-size"><option>224</option><option>384</option><option>512</option></select></div>
+                  <div class="field"><label for="cls-size">Image size</label><select class="sel wide" id="cls-size" data-choices><option>224</option><option>384</option><option>512</option></select></div>
                   <div class="field"><label for="cls-drop" title="Probability of dropping classification-head activations during training">Head dropout</label><input class="inp wide" type="number" min="0" max="1" step="0.05" id="cls-drop" value="0.0"></div>
                 </div>
               </div>
 
               <div data-viewof="task" data-view="seg" class="task-settings" hidden>
                 <div class="task-callout"><b>Instance segmentation</b><span>Per-object masks, bounding boxes, class labels and confidence</span></div>
-                <div class="field req"><label for="base-seg">Segmentation base model</label><select class="sel wide" id="base-seg"><option>MARP-Benthic-Seg &mdash; 0.9.0</option><option>YOLO segmentation &mdash; upstream -seg checkpoint</option></select></div>
+                <div class="field req"><label for="base-seg">Segmentation base model</label><select data-rendered data-fills="base-seg" class="sel wide" id="base-seg"><option value="">Loading…</option></select></div>
                 <div class="fieldrow">
-                  <div class="field"><label for="seg-size">Image size</label><select class="sel wide" id="seg-size"><option>640</option><option>960</option><option>1280</option></select></div>
-                  <div class="field"><label for="mask-ratio" title="Downsample ratio used to build training masks; lower preserves more mask detail and uses more memory">Mask downsample</label><select class="sel wide" id="mask-ratio"><option>4 &mdash; standard</option><option>2 &mdash; finer</option><option>1 &mdash; full resolution</option><option>8 &mdash; lower memory</option></select></div>
+                  <div class="field"><label for="seg-size">Image size</label><select class="sel wide" id="seg-size" data-choices><option>640</option><option>960</option><option>1280</option></select></div>
+                  <div class="field"><label for="mask-ratio" title="Downsample ratio used to build training masks; lower preserves more mask detail and uses more memory">Mask downsample</label><select class="sel wide" id="mask-ratio" data-choices><option>4 &mdash; standard</option><option>2 &mdash; finer</option><option>1 &mdash; full resolution</option><option>8 &mdash; lower memory</option></select></div>
                 </div>
                 <label class="check" title="Merge overlapping instance masks into one training tensor while retaining instance order"><input type="checkbox" checked><span>Overlap masks during training</span></label>
                 <details class="fold task-fold"><summary>Box and class loss balance <span class="now">box 7.5 &middot; class 0.5 &middot; DFL 1.5</span></summary><div class="fbody fieldrow">
@@ -190,7 +185,7 @@
 
               <div class="fieldrow shared-training-settings">
                 <div class="field"><label for="epochs">Epochs</label><input class="inp wide" type="number" id="epochs" value="100"></div>
-                <div class="field"><label for="batch">Batch size</label><select class="sel wide" id="batch"><option>16</option><option>Auto &mdash; 60% GPU memory</option><option>8</option><option>32</option></select></div>
+                <div class="field"><label for="batch">Batch size</label><select class="sel wide" id="batch" data-choices><option>16</option><option>Auto &mdash; 60% GPU memory</option><option>8</option><option>32</option></select></div>
               </div>
 
               <details class="fold">
@@ -200,11 +195,11 @@
                   <div class="fieldrow">
                     <div class="field">
                       <label for="opt">Optimiser</label>
-                      <select class="sel wide" id="opt"><option>Auto</option><option>AdamW</option><option>SGD</option></select>
+                      <select class="sel wide" id="opt" data-choices><option>Auto</option><option>AdamW</option><option>SGD</option></select>
                     </div>
                     <div class="field">
                       <label for="lr">Initial learning rate</label>
-                      <select class="sel wide" id="lr"><option>Auto for optimiser</option><option>0.001</option><option>0.01</option></select>
+                      <select class="sel wide" id="lr" data-choices><option>Auto for optimiser</option><option>0.001</option><option>0.01</option></select>
                     </div>
                   </div>
                   <div class="fieldrow">
@@ -230,15 +225,15 @@
             <div class="panel-bd">
 
               <div data-viewof="task" data-view="det" class="task-dataset">
-                <div class="field req"><label for="dataset-det">Detection dataset</label><select class="sel wide" id="dataset-det"><option>ALL_Projects_Inverts_v5</option><option>GULF_2025_Fish_Train_v1</option><option>SALT_2024_SeaStar_v2</option></select></div>
+                <div class="field req"><label for="dataset-det">Detection dataset</label><select data-rendered data-fills="dataset-det" class="sel wide" id="dataset-det"><option value="">Loading…</option></select></div>
                 <div class="dataset-contract"><b>Detection-compatible</b><span>Every training image has class-labelled bounding boxes.</span></div>
               </div>
               <div data-viewof="task" data-view="cls" class="task-dataset" hidden>
-                <div class="field req"><label for="dataset-cls">Classification dataset</label><select class="sel wide" id="dataset-cls"><option>CAMPA_2024_Habitat_Cls_v2</option><option>GULF_2025_Rockfish_Cls_v1</option></select></div>
+                <div class="field req"><label for="dataset-cls">Classification dataset</label><select data-rendered data-fills="dataset-cls" class="sel wide" id="dataset-cls"><option value="">Loading…</option></select></div>
                 <div class="dataset-contract"><b>Classification-compatible</b><span>Every image has one whole-image class label.</span></div>
               </div>
               <div data-viewof="task" data-view="seg" class="task-dataset" hidden>
-                <div class="field req"><label for="dataset-seg">Segmentation dataset</label><select class="sel wide" id="dataset-seg"><option>CAMPA_2024_Benthic_Masks_v1</option><option>SALT_2024_SeaStar_Masks_v1</option></select></div>
+                <div class="field req"><label for="dataset-seg">Segmentation dataset</label><select data-rendered data-fills="dataset-seg" class="sel wide" id="dataset-seg"><option value="">Loading…</option></select></div>
                 <div class="dataset-contract"><b>Segmentation-compatible</b><span>Every instance has a class-labelled polygon or mask.</span></div>
               </div>
               <span class="hint dataset-owned-note">Dataset variants and preprocessing are fixed when it is saved; this run does not change them.</span>
@@ -334,11 +329,7 @@
             <div class="runrow">
               <div class="field">
                 <label for="trworkers">Worker selection</label>
-                <select class="sel wide" id="trworkers">
-                  <option>Auto &mdash; best available GPU</option>
-                  <option>Only workers with 24 GB or more</option>
-                  <option>Choose a worker&hellip;</option>
-                </select>
+                <select data-rendered data-fills="trworkers" class="sel wide" id="trworkers"><option value="">Loading…</option></select>
                 <span class="hint">One worker, start to finish. No resume.</span>
               </div>
               <div class="field">

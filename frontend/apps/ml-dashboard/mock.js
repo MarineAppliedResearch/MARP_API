@@ -1325,33 +1325,73 @@ function renderTrainingRecent(views) {
  * @param {Object[]} models - From `GET /api/v2/ml_models`.
  * @param {Object[]} datasets - From `GET /api/v2/dataset`.
  */
+/**
+ * The upstream checkpoints, by task.
+ *
+ * YOLO's own starting weights. They are not MARP models, are deliberately not in the
+ * registry, and are owned here rather than left in the markup because the markup may state
+ * no values -- and because losing them is exactly what happened when the options were
+ * stripped out from under a renderer that read them back.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const UPSTREAM_CHECKPOINTS = {
+  'base-det': 'YOLO detection — upstream checkpoint',
+  'base-cls': 'YOLO classification — upstream checkpoint',
+  'base-seg': 'YOLO segmentation — upstream checkpoint',
+};
+
 function fillTrainingChoices(models, datasets) {
-  const trained = models.filter((m) => m.status === 'trained');
-  const names = new Set(datasets.map((d) => d.name));
+  /* **Not filtered by status, and not filtered by task, because neither column
+     means what this screen assumed.**
 
-  for (const select of $$('select')) {
-    const options = [...select.options].map((o) => o.text);
+     Measured against MARP: thirteen models carry `model_type: "detection"` with
+     `status: "active"`, and two carry `model_type: "YOLOv8"` with `status:
+     "trained"`. So `model_type` holds a task on some rows and an architecture on
+     others, and `status` holds `active`, which is not one of the four values the
+     generated contract declares. Filtering on either one hid every model MARP
+     has: the two trained ones are "YOLOv8" and matched no task, and the thirteen
+     detection ones are "active" and matched no status.
 
-    /* A base-model picker: the invented names all carry a version after a dash,
-       or name an upstream checkpoint. */
-    if (options.some((t) => /^MARP-[\w-]+ — |upstream/.test(t))) {
-      const upstream = options.filter((t) => /upstream/.test(t));
-      select.innerHTML = [
-        ...trained.map((m) => `<option value="${m.id}">${m.name}</option>`),
-        /* The upstream checkpoints stay: they are not MARP models and are not
-           meant to be in the registry. */
-        ...upstream.map((t) => `<option>${t}</option>`),
-      ].join('');
-      continue;
-    }
+     Every model is offered, with whatever `model_type` says beside it, until
+     somebody settles what those two columns mean. Showing fifteen models and
+     letting a person choose is honest; showing none because a filter the data
+     does not support found nothing is not. */
 
-    /* A dataset picker: every option names something that looks like a dataset
-       and none of them is in `dataset`. */
-    if (options.length && options.every((t) => /^[A-Z][A-Za-z0-9_]+$/.test(t)) && !options.some((t) => names.has(t))) {
-      select.innerHTML = datasets.length
-        ? datasets.map((d) => `<option value="${d.id}">${d.name}</option>`).join('')
-        : '<option>No dataset saved in MARP</option>';
-    }
+  /* **This used to find its targets by reading the fake data.** It decided a
+     select was a base-model picker when its options matched
+     `/^MARP-[\w-]+ — |upstream/` -- that is, when they were the invented names
+     the mockup shipped. It worked, and only while the fiction was there:
+     stripping those options, to stop the screen stating models MARP does not
+     have, turned this into a function that matched nothing and filled nothing.
+
+     The markup now says which selects a renderer owns, with `data-fills`. A mark
+     is a statement somebody can check; a pattern that recognises last year's
+     placeholder text is a guess that happens to be right. */
+  const put = (id, options, empty) => {
+    const select = $(`[data-fills="${id}"]`);
+    if (!select) return;
+
+    const upstream = UPSTREAM_CHECKPOINTS[id]
+      ? [`<option>${UPSTREAM_CHECKPOINTS[id]}</option>`] : [];
+
+    select.innerHTML = (options.length ? options : [`<option value="">${empty}</option>`])
+      .concat(upstream).join('');
+  };
+
+  /* The type is shown rather than filtered on, so a person can see that one
+     model says "detection" and another says "YOLOv8" and judge for themselves. */
+  const everyModel = models.map((m) => `<option value="${m.id}">${m.name}`
+    + `${m.model_type ? ` — ${m.model_type}` : ''}</option>`);
+
+  put('base-det', everyModel, 'No model in the registry');
+  put('base-cls', everyModel, 'No model in the registry');
+  put('base-seg', everyModel, 'No model in the registry');
+
+  const datasetOptions = datasets.map((d) => `<option value="${d.id}">${d.name}</option>`);
+  for (const id of ['dataset-det', 'dataset-cls', 'dataset-seg']) {
+    put(id, datasetOptions, 'No dataset saved in MARP');
   }
 }
 
