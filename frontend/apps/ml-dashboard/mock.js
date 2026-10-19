@@ -5523,109 +5523,138 @@ function wireTopbarAutohide() {
   floor();
 }
 
-/* The last three review pages use one chart mechanism with different questions.
-   The fixtures are deterministic seams for future telemetry; each legend item
-   isolates its own series exactly like the reviewed job and training graphs. */
-function wireOperationalActivity() {
-  const configs = {
-    models: {
-      initial: '90d', leftMax: 30, rightMax: 100,
-      ranges: {
-        '30d': { labels: ['30d ago', '15d ago', 'Now'], registered: [22,22,23,23,23,24,24,24,24,25,25,25,25,25,25,26,26,26,26,27,27,27,27,28], preferred: [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,6,6,6,6,6,6,6,6], coverage: [31,32,32,34,35,35,36,36,38,37,38,39,40,40,39,41,41,42,42,41,42,43,43,43] },
-        '90d': { labels: ['90d ago', '45d ago', 'Now'], registered: [16,16,17,17,18,18,18,19,19,20,20,21,21,21,22,22,23,23,24,24,25,26,27,28], preferred: [3,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,6,6,6], coverage: [18,20,21,22,24,23,25,27,28,29,30,32,31,33,34,35,36,37,38,39,40,41,42,43] },
-        '1y': { labels: ['1y ago', '6mo ago', 'Now'], registered: [6,7,7,8,9,10,11,12,13,14,15,16,16,17,18,19,20,21,22,23,24,25,27,28], preferred: [1,1,1,2,2,2,2,2,3,3,3,3,3,3,4,4,4,4,5,5,5,5,6,6], coverage: [4,5,7,8,10,12,13,15,17,19,21,23,25,27,28,30,32,34,35,37,39,40,42,43] }
-      },
-      scales: { registered: 'left', preferred: 'left', coverage: 'right' },
-      formats: { registered: (v) => Math.round(v), preferred: (v) => Math.round(v), coverage: (v) => `${Math.round(v)}%` }
-    },
-    workers: {
-      initial: '5h', leftMax: 100, rightMax: 16,
-      ranges: {
-        '24h': { labels: ['24h ago', '12h ago', 'Now'], inference: [18,21,24,29,34,31,36,39,42,38,35,32,28,30,34,37,41,44,40,36,34,32,30,31], training: [8,8,9,10,11,12,14,15,14,13,12,11,10,10,11,12,13,12,11,10,10,9,10,10], vram: [36,38,41,44,48,49,52,56,58,55,51,48,46,47,50,54,58,61,59,57,55,54,53,54], queued: [3,3,4,5,6,6,7,8,9,8,7,6,5,5,6,7,9,10,10,9,9,8,8,8] },
-        '5h': { labels: ['5h ago', '2.5h ago', 'Now'], inference: [26,28,30,29,32,35,34,37,39,36,34,32,30,33,36,38,35,33,31,30,32,33,30,31], training: [9,9,10,11,11,12,13,13,12,12,11,10,10,11,11,12,12,11,11,10,10,10,10,10], vram: [47,49,51,50,53,56,58,59,57,55,54,52,51,53,56,58,57,55,54,53,55,56,54,54], queued: [6,6,7,7,8,9,9,10,10,9,9,8,8,9,9,10,9,9,8,8,9,9,8,8] },
-        '1h': { labels: ['1h ago', '30m ago', 'Now'], inference: [30,31,33,32,34,36,35,37,38,36,35,34,33,35,36,35,34,33,32,31,32,31,30,31], training: [10,10,10,11,11,11,12,12,11,11,10,10,10,10,11,11,10,10,10,10,10,10,10,10], vram: [52,53,54,53,55,57,56,58,59,57,56,55,54,55,57,56,55,54,53,54,55,54,54,54], queued: [8,8,9,9,9,10,10,10,9,9,8,8,8,9,9,9,8,8,8,8,8,8,8,8] }
-      },
-      scales: { inference: 'left', training: 'left', vram: 'left', queued: 'right' },
-      formats: { inference: (v) => `${Math.round(v)}%`, training: (v) => `${Math.round(v)}%`, vram: (v) => `${Math.round(v)}%`, queued: (v) => Math.round(v) }
-    },
-    history: {
-      initial: '30d', leftMax: 16, rightMax: 4,
-      ranges: {
-        '7d': { labels: ['7d ago', '3.5d ago', 'Now'], completed: [7,8,9,8,10,11,10,12,11,9,8,10,12,13,11,10,9,8,10,11,10,9,8,9], issues: [1,1,2,1,1,2,1,2,2,1,1,1,2,2,1,1,2,1,1,2,1,1,1,1], turnaround: [1.6,1.5,1.4,1.5,1.3,1.2,1.3,1.1,1.2,1.4,1.5,1.3,1.1,1.0,1.2,1.3,1.4,1.5,1.3,1.2,1.3,1.4,1.3,1.3] },
-        '30d': { labels: ['30d ago', '15d ago', 'Now'], completed: [5,7,6,8,9,7,6,5,8,10,11,9,8,7,9,12,13,11,9,8,10,12,11,9], issues: [1,1,1,2,1,1,2,1,1,2,2,1,1,2,1,2,2,1,2,1,1,2,1,1], turnaround: [2.4,2.2,2.3,2.0,1.9,2.1,2.3,2.4,2.0,1.8,1.7,1.9,2.0,2.2,1.9,1.6,1.5,1.7,1.9,2.0,1.7,1.5,1.4,1.3] },
-        '90d': { labels: ['90d ago', '45d ago', 'Now'], completed: [4,5,6,5,7,6,8,7,9,8,10,9,8,10,11,10,12,11,10,12,11,10,9,9], issues: [1,1,1,1,2,1,1,2,1,2,1,1,2,1,2,1,2,1,2,1,1,2,1,1], turnaround: [3.0,2.9,2.8,2.9,2.7,2.6,2.5,2.6,2.4,2.3,2.2,2.3,2.1,2.0,1.9,2.0,1.8,1.7,1.6,1.7,1.5,1.4,1.4,1.3] }
-      },
-      scales: { completed: 'left', issues: 'left', turnaround: 'right' },
-      formats: { completed: (v) => Math.round(v), issues: (_v, samples) => `${Math.round(samples.issues.at(-1) / Math.max(1, samples.completed.at(-1) + samples.issues.at(-1)) * 100)}%`, turnaround: (v) => `${Math.floor(v)}h ${Math.round((v % 1) * 60)}m` }
-    }
+/**
+ * The operational charts, drawn from MARP rather than from arrays.
+ *
+ * **What this replaced.** Each panel carried a `configs` entry holding twenty-four
+ * hand-written numbers per series per range -- `registered: [22,22,23,23,...]`,
+ * `completed: [...]`, `turnaround: [...]` -- and drew them. Nothing about them came from
+ * MARP, and because they were plausible they were read as evidence: `DESIGN.md` gap 22 was
+ * written from them, saying the rollup "is not served as an operational series", which was a
+ * statement about the mockup.
+ *
+ * **History is answerable with nothing sampled.** `GET /gpu/jobs/series` counts out of
+ * `gpu_jobs`: `finished` per bucket, `succeeded` within it, and the median time from
+ * submission to finish. The issue rate is the two counts against each other. None of it
+ * existed before `finished_at` did.
+ *
+ * Panels whose series MARP does not hold are left alone -- their markup says so instead.
+ *
+ * @returns {Promise<void>}
+ */
+async function wireOperationalActivity() {
+  const root = $('[data-ops-activity="history"]');
+  if (!root || !$('.ops-chart', root)) return;
+
+  const RANGES = {
+    '7d': { days: 7, bucket: 'day', label: '7 days' },
+    '30d': { days: 30, bucket: 'day', label: '30 days' },
+    '90d': { days: 90, bucket: 'day', label: '90 days' },
   };
 
-  $$('[data-ops-activity]').forEach((root) => {
-    const config = configs[root.dataset.opsActivity];
-    if (!config) return;
-    const lines = Object.fromEntries($$('[data-ops-line]', root).map((line) => [line.dataset.opsLine, line]));
-    const area = $('[data-ops-area]', root);
-    const chart = $('.ops-chart', root);
-    /* Same again, and per panel because this one wires several screens: a panel
-       drawing an empty state has no chart to animate. */
-    if (!chart) return;
-    const rangeButtons = $$('[data-ops-range]', root);
-    const highlightButtons = $$('[data-ops-highlight]', root);
-    let range = config.initial;
-    let samples;
-    let tick = 0;
-    const pathOf = (values, scale) => values.map((value, index) => {
-      const x = 54 + 672 * index / Math.max(1, values.length - 1);
-      const max = scale === 'right' ? config.rightMax : config.leftMax;
-      const y = 196 - 168 * Math.max(0, Math.min(max, value)) / max;
-      return `${index ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-    const draw = () => {
-      Object.entries(lines).forEach(([name, line]) => line.setAttribute('d', pathOf(samples[name], config.scales[name])));
-      const areaName = area?.dataset.opsArea;
-      if (area && areaName) area.setAttribute('d', `${pathOf(samples[areaName], config.scales[areaName])} L726,196 L54,196 Z`);
-      Object.entries(config.formats).forEach(([name, format]) => {
-        const current = $(`[data-ops-current="${name}"]`, root);
-        if (current) current.textContent = format(samples[name].at(-1), samples);
-      });
-      const values = Object.keys(lines).map((name) => `${name} ${config.formats[name](samples[name].at(-1), samples)}`).join(', ');
-      const label = `${root.dataset.opsActivity} activity over ${range}: ${values}`;
-      chart.setAttribute('aria-label', label);
-      chart.title = label;
-    };
-    const choose = (next) => {
-      range = next;
-      samples = Object.fromEntries(Object.entries(config.ranges[range]).filter(([name]) => name !== 'labels').map(([name, values]) => [name, [...values]]));
-      rangeButtons.forEach((button) => { const on = button.dataset.opsRange === range; button.classList.toggle('on', on); button.setAttribute('aria-pressed', String(on)); });
-      $$('[data-ops-time]', root).forEach((label, index) => { label.textContent = config.ranges[range].labels[index]; });
-      draw();
-    };
-    const highlight = (name = '') => {
-      const active = root.dataset.highlight === name ? '' : name;
-      root.dataset.highlight = active;
-      root.classList.toggle('is-highlighted', Boolean(active));
-      highlightButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.opsHighlight === active)));
-      $$('.ops-line, .ops-area', root).forEach((mark) => mark.classList.toggle('highlighted', Boolean(active) && mark.classList.contains(active)));
-    };
-    rangeButtons.forEach((button) => button.addEventListener('click', () => choose(button.dataset.opsRange)));
-    highlightButtons.forEach((button) => {
-      button.title = `Highlight only ${button.textContent.trim()} on this graph; select it again or press Escape to restore all series`;
-      button.setAttribute('aria-pressed', 'false');
-      button.addEventListener('click', () => highlight(button.dataset.opsHighlight));
+  const lines = Object.fromEntries($$('[data-ops-line]', root).map((l) => [l.dataset.opsLine, l]));
+  const area = $('[data-ops-area]', root);
+  const buttons = $$('[data-ops-range]', root);
+  const chart = $('.ops-chart', root);
+  const leftAxis = $$('.inference-axis.left text:not(.axis-title):not([data-ops-time])', root);
+  const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
+
+  const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
+  const y = (v, max) => 196 - 168 * (v / Math.max(1, max));
+
+  const pathOf = (values, max) => values
+    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
+
+  /** The same line closed down to the baseline, for the filled area under it. */
+  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`;
+
+  const hours = (seconds) => {
+    if (!seconds) return '0';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.round((seconds % 3600) / 60);
+    return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
+  };
+
+  const day = (iso) => new Date(iso).toISOString().slice(5, 10);
+
+  async function choose(next) {
+    buttons.forEach((b) => {
+      const on = b.dataset.opsRange === next;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
     });
-    root.addEventListener('keydown', (event) => { if (event.key === 'Escape' && root.classList.contains('is-highlighted')) highlight(''); });
-    choose(range);
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const movement = [1, 0, -1, 1, -1, 0];
-      window.setInterval(() => {
-        const first = Object.keys(lines)[0];
-        const max = config.scales[first] === 'right' ? config.rightMax : config.leftMax;
-        samples[first][samples[first].length - 1] = Math.max(0, Math.min(max, samples[first].at(-1) + movement[tick % movement.length]));
-        tick += 1;
-        draw();
-      }, 3000);
+
+    const { days, bucket, label } = RANGES[next] || RANGES['30d'];
+    const until = new Date();
+    const since = new Date(until.getTime() - days * 86400000);
+
+    try {
+      const series = await window.MarpApi.jobSeries({
+        since: since.toISOString(), until: until.toISOString(), bucket,
+      });
+
+      const points = series.points || [];
+      const completed = points.map((p) => p.finished || 0);
+      /* The share of finishing work that did not succeed. Expressed against the
+         same bucket rather than against the whole window, so a bad afternoon
+         shows as a spike instead of being averaged away. */
+      const issues = points.map((p) => (p.finished ? Math.round(((p.finished - (p.succeeded || 0)) / p.finished) * 100) : 0));
+      const turnaround = points.map((p) => p.median_turnaround_s || 0);
+
+      const peak = Math.max(...completed, 0);
+
+      if (!points.length || peak === 0) {
+        [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
+        leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
+        if (chart) chart.setAttribute('aria-label', `Nothing finished in the last ${label}`);
+        root.classList.add('is-quiet');
+        return;
+      }
+
+      root.classList.remove('is-quiet');
+
+      const maxJobs = Math.max(3, Math.ceil(peak / 3) * 3);
+      const maxTurn = Math.max(1, ...turnaround);
+
+      if (lines.completed) lines.completed.setAttribute('d', pathOf(completed, maxJobs));
+      if (area) area.setAttribute('d', areaOf(completed, maxJobs));
+      /* The issue rate is a percentage and the turnaround is seconds; each is
+         scaled to its own axis, which is why the chart carries two. */
+      if (lines.issues) lines.issues.setAttribute('d', pathOf(issues, 100));
+      if (lines.turnaround) lines.turnaround.setAttribute('d', pathOf(turnaround, maxTurn));
+
+      leftAxis.forEach((t, i) => { t.textContent = String(Math.round(maxJobs * (3 - i) / 3)); });
+      rightAxis.forEach((t, i) => { t.textContent = hours(Math.round(maxTurn * (3 - i) / 3)); });
+
+      $$('[data-ops-time]', root).forEach((t, i) => {
+        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][i];
+        if (at) t.textContent = i === 2 ? 'Now' : day(at.at);
+      });
+
+      const last = points.at(-1);
+      const current = {
+        completed: String(last.finished || 0),
+        issues: `${last.finished ? Math.round(((last.finished - (last.succeeded || 0)) / last.finished) * 100) : 0}%`,
+        turnaround: hours(last.median_turnaround_s),
+      };
+
+      $$('[data-ops-current]', root).forEach((node) => {
+        if (current[node.dataset.opsCurrent] !== undefined) node.textContent = current[node.dataset.opsCurrent];
+      });
+
+      if (chart) {
+        chart.setAttribute('aria-label', `Completion activity over ${label}: `
+          + `${completed.at(-1)} finished in the last bucket, ${current.issues} with issues, `
+          + `median turnaround ${current.turnaround}`);
+      }
+    } catch (error) {
+      [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
+      if (chart) chart.setAttribute('aria-label', `Could not load completion activity (${error.status || 'no answer'})`);
     }
-  });
+  }
+
+  buttons.forEach((b) => b.addEventListener('click', () => choose(b.dataset.opsRange)));
+  await choose('30d');
 }
 
 function wireModelRegistration() {

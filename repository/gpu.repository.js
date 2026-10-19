@@ -516,7 +516,17 @@ class GpuRepository {
                             AND j.state = 'succeeded') AS succeeded,
                         (SELECT count(*)::int FROM gpu_jobs j
                           WHERE j.created_at <= b.at
-                            AND (j.finished_at IS NULL OR j.finished_at > b.at)) AS waiting
+                            AND (j.finished_at IS NULL OR j.finished_at > b.at)) AS waiting,
+                        /* Median rather than mean: one job that sat in the queue
+                           over a weekend drags an average into meaninglessness,
+                           and the question is what a typical job took. */
+                        (SELECT round(percentile_cont(0.5) WITHIN GROUP (
+                                    ORDER BY EXTRACT(EPOCH FROM (j.finished_at - j.created_at))
+                                ))::int
+                           FROM gpu_jobs j
+                          WHERE j.finished_at >= b.at
+                            AND j.finished_at < b.at + ('1 ${bucket}')::interval
+                            AND j.finished_at > j.created_at) AS median_turnaround_s
                    FROM buckets b
                   ORDER BY b.at ASC`,
                 { replacements: { since, until }, type: QueryTypes.SELECT }

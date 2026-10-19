@@ -57,7 +57,7 @@
 
       <section class="inference-overview ops-overview" aria-label="History at a glance">
         <article class="panel"><header class="panel-hd"><div><h2>Outcomes</h2><p>How work ended inside the selected window</p></div></header><div class="panel-bd jobs-mix-bd"><div class="job-donut" data-rendered role="img" aria-label="Status breakdown"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="donut-track" cx="60" cy="60" r="43"/><circle class="donut-part done" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="198 49"/><circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="28 219" stroke-dashoffset="-198"/><circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="21 226" stroke-dashoffset="-226"/></svg><span><b></b><small>finished jobs</small></span></div><div class="job-mix-key"></div></div></article>
-        <article class="panel inference-flow ops-activity" data-ops-activity="history"><header class="panel-hd inference-flow-hd"><div><h2>Completion activity</h2><p>Finished work, issue rate and median turnaround</p></div><div class="seg" aria-label="History activity range"><button type="button" data-ops-range="7d">7d</button><button type="button" class="on" data-ops-range="30d" aria-pressed="true">30d</button><button type="button" data-ops-range="90d">90d</button></div></header><div class="panel-bd inference-flow-bd"><div class="inference-chart ops-chart" role="img" aria-label="Completion activity over 30 days"><svg viewBox="0 0 780 248" aria-hidden="true"><g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g><g class="inference-axis left"><text x="46" y="32">16</text><text x="46" y="88">12</text><text x="46" y="144">6</text><text x="46" y="200">0</text><text x="54" y="225" data-ops-time>30d ago</text><text x="390" y="225" data-ops-time>15d ago</text><text x="726" y="225" data-ops-time>Now</text><text class="axis-title" x="54" y="15">JOBS / DAY</text></g><g class="inference-axis right"><text x="734" y="32">4h</text><text x="734" y="88">3h</text><text x="734" y="144">1.5h</text><text x="734" y="200">0</text><text class="axis-title" x="726" y="15">MEDIAN TURNAROUND</text></g><path class="ops-area completed" data-ops-area="completed"/><path class="ops-line completed" data-ops-line="completed"/><path class="ops-line issues" data-ops-line="issues"/><path class="ops-line turnaround" data-ops-line="turnaround"/></svg></div><div class="inference-flow-foot"><div class="inference-chart-key result-legend"><button class="completed" data-ops-highlight="completed">Completed jobs</button><button class="issues" data-ops-highlight="issues">Issue / failure rate</button><button class="turnaround" data-ops-highlight="turnaround">Median turnaround</button></div><div class="inference-current"><span><b data-ops-current="completed">9</b> completed today</span><span><b data-ops-current="issues">12%</b> issue rate</span><span><b data-ops-current="turnaround">1h 18m</b> median</span><span class="live"><i class="dot"></i>Design preview</span></div></div></div></article>
+        <article class="panel inference-flow ops-activity" data-ops-activity="history"><header class="panel-hd inference-flow-hd"><div><h2>Completion activity</h2><p>Finished work, issue rate and median turnaround</p></div><div class="seg" aria-label="History activity range"><button type="button" data-ops-range="7d">7d</button><button type="button" class="on" data-ops-range="30d" aria-pressed="true">30d</button><button type="button" data-ops-range="90d">90d</button></div></header><div class="panel-bd inference-flow-bd"><div class="inference-chart ops-chart" role="img" aria-label="Completion activity over 30 days"><svg viewBox="0 0 780 248" aria-hidden="true"><g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g><g class="inference-axis left"><text x="46" y="32"></text><text x="46" y="88"></text><text x="46" y="144"></text><text x="46" y="200"></text><text x="54" y="225" data-ops-time></text><text x="390" y="225" data-ops-time></text><text x="726" y="225" data-ops-time></text><text class="axis-title" x="54" y="15">JOBS / DAY</text></g><g class="inference-axis right"><text x="734" y="32"></text><text x="734" y="88"></text><text x="734" y="144"></text><text x="734" y="200"></text><text class="axis-title" x="726" y="15">MEDIAN TURNAROUND</text></g><path class="ops-area completed" data-ops-area="completed"/><path class="ops-line completed" data-ops-line="completed"/><path class="ops-line issues" data-ops-line="issues"/><path class="ops-line turnaround" data-ops-line="turnaround"/></svg></div><div class="inference-flow-foot"><div class="inference-chart-key result-legend"><button class="completed" data-ops-highlight="completed">Completed jobs</button><button class="issues" data-ops-highlight="issues">Issue / failure rate</button><button class="turnaround" data-ops-highlight="turnaround">Median turnaround</button></div><div class="inference-current"><span><b data-ops-current="completed"></b> completed today</span><span><b data-ops-current="issues"></b> issue rate</span><span><b data-ops-current="turnaround"></b> median</span><span class="live"><i class="dot"></i>Live</span></div></div></div></article>
       </section>
 
       <section class="panel" id="history-panel">
@@ -130,76 +130,6 @@
         </footer>
       </section>
 
-      <section class="panel">
-        <header class="panel-hd">
-          <h2><span class="name"><svg class="ico training"><use href="#i-training"/></svg>
-            <span class="t">Train_MARP_Multiclass_Det_XL_v5</span></span></h2>
-          <span class="pill" data-state="done"><span class="dot"></span>Completed</span>
-          <div class="panel-tools">
-            <button class="btn" title="Start a new run with this configuration">
-              <svg class="ico"><use href="#i-retry"/></svg>Run again</button>
-            <button class="btn" title="Open the dataset it trained on">
-              <svg class="ico"><use href="#i-datasets"/></svg>Dataset</button>
-            <button class="btn" title="Open the version it registered">
-              <svg class="ico"><use href="#i-models"/></svg>Model</button>
-            <button class="btn" title="Review the observations in the Picture Mosaic Reviewer">
-              <svg class="ico"><use href="#i-eye"/></svg>Review in Mosaic</button>
-            <button class="btn" title="Download the run's output">
-              <svg class="ico"><use href="#i-download"/></svg>Output</button>
-          </div>
-        </header>
-        <div class="panel-bd">
-          <div class="grid" data-cols="3">
-
-            <div class="sect">
-              <h3>Job</h3>
-              <dl class="kv">
-                <dt>Job id</dt><dd class="mono">1742</dd>
-                <dt>Kind</dt><dd>Training</dd>
-                <dt>Scope</dt><dd>All projects</dd>
-                <dt>Dataset</dt><dd>ALL_Projects_Inverts_v5</dd>
-                <dt>Base model</dt><dd>MARP-Multiclass-Det-XL 1.2.0</dd>
-                <dt>Submitted by</dt><dd>itravers</dd>
-                <dt>Started</dt><dd>2026-09-09 14:36:31</dd>
-                <dt>Completed</dt><dd>2026-09-09 16:48:17</dd>
-                <dt>Took</dt><dd>2h 11m 46s</dd>
-                <dt>Worker</dt><dd>bergstrom-4090 <span class="faint">RTX 4090</span></dd>
-                <dt>Attempts</dt><dd>1 of 3</dd>
-              </dl>
-            </div>
-
-            <div class="sect">
-              <h3>Timeline</h3>
-              <ol class="lin">
-                              <li class="lstep"><span class="lv">14:36:31</span><span class="lw">Queued</span><span class="ld">Submitted by itravers, priority 5</span></li>
-                              <li class="lstep"><span class="lv">14:37:05</span><span class="lw">Leased</span><span class="ld">bergstrom-4090 took the work, attempt 1 of 3</span></li>
-                              <li class="lstep"><span class="lv">14:39:12</span><span class="lw">Preparing</span><span class="ld">Base model cached, dataset materialized</span></li>
-                              <li class="lstep"><span class="lv">14:41:03</span><span class="lw">Training</span><span class="ld">100 epochs over 12,846 observations</span></li>
-                              <li class="lstep"><span class="lv">16:44:18</span><span class="lw">Validating</span><span class="ld">Scored against the held-out test split</span></li>
-                              <li class="lstep is-current"><span class="lv">16:48:17</span><span class="lw">Completed</span><span class="ld">Registered MARP-Multiclass-Det-XL 1.2.1</span></li>
-              </ol>
-            </div>
-
-            <div class="sect">
-              <h3>Result</h3>
-              <dl class="kv">
-                <dt>Registered</dt><dd>MARP-Multiclass-Det-XL 1.2.1</dd>
-                <dt>Preferred</dt><dd>No <span class="faint">&mdash; a human decision</span></dd>
-                <dt>mAP@0.5</dt><dd>0.892</dd>
-                <dt>mAP@0.5:0.95</dt><dd>0.641</dd>
-                <dt>Precision</dt><dd>0.904</dd>
-                <dt>Recall</dt><dd>0.876</dd>
-                <dt>Final train loss</dt><dd>0.0892</dd>
-                <dt>Final val loss</dt><dd>0.1043</dd>
-                <dt>Epochs</dt><dd>100 of 100</dd>
-                <dt>Observations</dt><dd>12,846 <span class="faint">in 1,204 groups</span></dd>
-                <dt>Artifact</dt><dd>138 MB</dd>
-              </dl>
-            </div>
-
-          </div>
-        </div>
-      </section>
 
     </main>
   </div>

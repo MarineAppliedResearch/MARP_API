@@ -2717,6 +2717,7 @@ const buildOpenApiSpec = () => {
                                         finished: { type: 'integer', nullable: true, example: 142, description: 'Throughput series: jobs whose finished_at falls in this bucket.' },
                                         succeeded: { type: 'integer', nullable: true, example: 139, description: 'Throughput series: the subset that worked.' },
                                         waiting: { type: 'integer', nullable: true, example: 7, description: 'Throughput series: jobs created before this instant and not finished by it.' },
+                                        median_turnaround_s: { type: 'integer', nullable: true, example: 4680, description: 'Throughput series: the median time from submission to finish, in seconds, for jobs finishing in this bucket. Median rather than mean, because one job that sat in the queue over a weekend drags an average into meaninglessness. Null when nothing finished.' },
                                     },
                                 },
                             },
