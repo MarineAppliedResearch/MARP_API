@@ -76,7 +76,7 @@
               <option>All statuses</option><option>Completed</option>
               <option>Completed with issues</option><option>Failed</option><option>Cancelled</option>
             </select>
-            <select class="sel" id="window" aria-label="Window"
+            <select data-choices class="sel" id="window" aria-label="Window"
                     title="History is never fetched whole; everything on this screen is within this window">
               <option>Last 30 days</option><option>Last 7 days</option>
               <option>Last 90 days</option><option>This year</option>
@@ -120,15 +120,12 @@
           </div>
         </div>
         <footer class="panel-ft">
-          <span>Showing <b class="strong">1&ndash;10</b> of 247 jobs in the last 30 days</span>
-          <div class="pager">
-            <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button>
-            <button aria-current="page">1</button><button>2</button><button>3</button>
-            <button>4</button><button>&hellip;</button><button>25</button>
-            <button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+          <span data-rendered data-fills="showing"></span>
+          <div class="pager" data-rendered>
+            <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button><button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
           </div>
           <span class="rpp">Rows
-            <select class="sel" aria-label="Rows per page"><option>10</option><option>25</option><option>50</option></select>
+            <select data-choices class="sel" aria-label="Rows per page"><option>10</option><option>25</option><option>50</option></select>
           </span>
         </footer>
       </section>

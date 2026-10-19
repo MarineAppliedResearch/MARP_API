@@ -253,29 +253,6 @@ function wireRailSheet() {
   });
 }
 
-/* The account menu wires itself: it is the shared component, and its opening, its
-   dismissal and who it draws all live in `assets/js/account-menu.js` (#151). A second
-   implementation here is exactly what that change removed. */
-
-function wireDrawer() {
-  const drawer = $('#drawer');
-  const scrim = $('#scrim');
-  if (!drawer || !scrim) return;
-  const show = (on) => { drawer.hidden = !on; scrim.hidden = !on; };
-  $$('.rowlink tbody tr').forEach((tr) => {
-    tr.addEventListener('click', (e) => {
-      /* A row action is not the row. Without this, cancelling a job also opened
-         its detail behind the click. */
-      if (e.target.closest('button, input, a, select')) return;
-      show(true);
-    });
-  });
-  const close = $('#drawerX');
-  if (close) close.addEventListener('click', () => show(false));
-  scrim.addEventListener('click', () => show(false));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') show(false); });
-}
-
 function wireSelection() {
   const bulk = $('#bulk');
   if (!bulk) return;
@@ -5611,7 +5588,7 @@ mountRail();
 mountTopbar();
 wireTopbarAutohide();
 wireRailSheet();
-wireDrawer();
+
 wireSwitchers();
 wirePoolUtilization();
 wireInferenceActivity();

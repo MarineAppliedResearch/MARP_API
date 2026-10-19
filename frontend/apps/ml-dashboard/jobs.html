@@ -104,7 +104,7 @@
             </span>
             <select class="sel" aria-label="Job type"><option>All job types</option><option>Inference</option><option>Tracking</option><option>Training</option><option>Diagnostic</option></select>
             <select class="sel" aria-label="Status"><option>All statuses</option><option>Running</option><option>Queued</option><option>Done</option><option>Issues</option><option>Failed</option><option>Cancelled</option><option>Expired</option></select>
-            <select class="sel" aria-label="Window"><option>Last 7 days</option><option>Last 24 hours</option><option>Last 30 days</option></select>
+            <select data-choices class="sel" aria-label="Window"><option>Last 7 days</option><option>Last 24 hours</option><option>Last 30 days</option></select>
             <button class="btn" type="button" id="expandAll"><svg class="ico"><use href="#i-right"/></svg>Expand all</button>
           </div>
           <div class="jobs-sort-mobile" aria-label="Sort jobs">
@@ -141,13 +141,13 @@
         </div>
         <footer class="panel-ft">
           <span>Counting jobs&hellip;</span>
-          <div class="pager">
+          <div class="pager" data-rendered>
             <!-- Built by renderJobsHeaderState(). How many pages there are is not a fact
                  this markup can know, and the fixed run of five it used to hold was wrong
                  for every list that was not exactly five pages long. -->
           </div>
           <span class="rpp">Rows
-            <select class="sel" aria-label="Rows per page"><option>18</option><option>25</option><option>50</option></select>
+            <select data-choices class="sel" aria-label="Rows per page"><option>18</option><option>25</option><option>50</option></select>
           </span>
         </footer>
       </section>
@@ -156,106 +156,7 @@
   </div>
 </div>
 
-<div class="scrim" id="scrim" hidden></div>
-<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Job detail" hidden>
-  <header class="drawer-hd">
-    <div>
-      <h2>ARCTIC_2024_Dive_0449_Inverts</h2>
-      <div class="sub">Job 1736 &middot; inference &middot; submitted by itravers at 12:28</div>
-    </div>
-    <span class="pill" data-state="running"><span class="dot"></span>Running</span>
-    <button class="btn icon" id="drawerX" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
-  </header>
 
-  <div class="drawer-bd">
-
-    <div class="sect">
-      <h3>Progress</h3>
-      <div class="roll" data-state="running">
-        <div class="top">
-          <span class="big">47%</span>
-          <span class="of">8,604 of 18,300 frames &middot; 21 ranges, 2 running</span>
-        </div>
-        <span class="bar wide"><i style="width:47%"></i></span>
-        <div class="facts">
-          <span><span class="k">Elapsed</span><span class="v">12m 04s</span></span>
-          <span><span class="k">Remaining</span><span class="v">~13m</span></span>
-          <span><span class="k">Throughput</span><span class="v">11.9 fps</span></span>
-          <span><span class="k">Attempts</span><span class="v">1 of 3</span></span>
-        </div>
-      </div>
-    </div>
-
-    <div class="sect">
-      <h3>What is running</h3>
-      <dl class="kv">
-        <dt>Model</dt>
-        <dd>MARP-Det-v3 <span class="faint">v2.0.0</span> &middot; <span class="mono">9f2c41ab</span>
-          <div class="locked">Locked at submit</div></dd>
-        <dt>Task</dt><dd>Detect &amp; track &middot; ByteTrack &middot; best frame of each track</dd>
-        <dt>Scope</dt><dd>ARCTIC 2024 &middot; Dive 0449 &middot; Line 08</dd>
-        <dt>Video</dt><dd class="mono">ARCTIC_2024_D0449_L08_CAM1.mp4</dd>
-        <dt>Range size</dt><dd>900 frames &middot; hard boundaries</dd>
-        <dt>Priority</dt><dd>5</dd>
-        <dt>Results</dt><dd>Observation database</dd>
-      </dl>
-    </div>
-
-    <div class="sect pieces">
-      <h3>Ranges <span class="faint">(6 of 21)</span></h3>
-      <div class="tblwrap">
-        <table class="tbl">
-          <thead><tr><th>Frames</th><th>Worker</th><th>State</th><th class="num">Done</th></tr></thead>
-          <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="sect">
-      <h3>Contributing workers <span class="faint">(8 of 15)</span></h3>
-      <div class="chips">
-        <span class="tag">campa-lab-02</span>
-        <span class="tag">campa-lab-04</span>
-        <span class="tag">campa-lab-07</span>
-        <span class="tag">bergstrom-4090</span>
-        <span class="tag">reef-node-11</span>
-        <span class="tag">campa-lab-12</span>
-        <span class="tag">arctic-rig-03</span>
-        <span class="tag">volunteer-maren</span>
-      </div>
-    </div>
-
-    <details class="diag">
-      <summary>Diagnostics</summary>
-      <div class="dbody">
-        <dl class="kv">
-          <dt>Attempt</dt><dd>1 of 3 &middot; leased 12:28:04 &middot; epoch 1</dd>
-          <dt>Lease expires</dt><dd>12:41:36 &middot; renewed by heartbeat every 10s</dd>
-          <dt>Last heartbeat</dt><dd>12:36:55 &middot; 4 seconds ago</dd>
-        </dl>
-        <div class="log">
-          <div><span class="t">12:28:04</span><span class="l" data-lvl="info">info</span><span class="m">lease taken, epoch 1, attempt 1 of 3</span></div>
-          <div><span class="t">12:28:06</span><span class="l" data-lvl="info">info</span><span class="m">model MARP-Det-v3 v2.0.0 already cached, sha256 9f2c41ab</span></div>
-          <div><span class="t">12:28:07</span><span class="l" data-lvl="info">info</span><span class="m">opening ARCTIC_2024_D0449_L08_CAM1.mp4 by direct play</span></div>
-          <div><span class="t">12:28:19</span><span class="l" data-lvl="info">info</span><span class="m">seek to frame 16200 exact, decoder warm</span></div>
-          <div><span class="t">12:29:48</span><span class="l" data-lvl="info">info</span><span class="m">progress 900 of 18300 frames, 12.1 fps</span></div>
-          <div><span class="t">12:31:22</span><span class="l" data-lvl="warn">warn</span><span class="m">frame 17418 decoded twice, duplicate dropped</span></div>
-          <div><span class="t">12:33:10</span><span class="l" data-lvl="info">info</span><span class="m">range 16200-17100 complete, 214 tracks reduced to 61 keyframes</span></div>
-          <div><span class="t">12:35:02</span><span class="l" data-lvl="warn">warn</span><span class="m">campa-lab-12 lease expired, range 19800-20700 returned to the pool</span></div>
-          <div><span class="t">12:36:55</span><span class="l" data-lvl="info">info</span><span class="m">progress 8604 of 18300 frames, 11.9 fps</span></div>
-        </div>
-      </div>
-    </details>
-
-  </div>
-
-  <footer class="drawer-ft">
-    <button class="btn"><svg class="ico"><use href="#i-pause"/></svg>Pause after current range</button>
-    <button class="btn"><svg class="ico"><use href="#i-stop"/></svg>Pause now</button>
-    <button class="btn danger">Cancel job</button>
-    <button class="btn"><svg class="ico"><use href="#i-copy"/></svg>Duplicate</button>
-  </footer>
-</aside>
 
 <script src="./api.js"></script>
 <script src="./mock.js"></script>
