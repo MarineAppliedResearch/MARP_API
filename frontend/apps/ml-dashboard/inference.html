@@ -148,20 +148,12 @@
             <div class="panel-bd">
               <div class="query-fields">
                 <details class="multi-pick" open>
-                  <summary><span>Projects</span><b>CAMPA2024</b></summary>
-                  <div class="multi-menu">
-                    <label><input type="checkbox" checked>CAMPA2024 <small>20 dives</small></label>
-                    <label><input type="checkbox">CAMPA2025 <small>3 folders</small></label>
-                    <label><input type="checkbox">CAMPA2021 <small>9 folders</small></label>
-                  </div>
+                  <summary><span>Projects</span><b data-rendered data-fills="jf-projects-label"></b></summary>
+                  <div class="multi-menu" data-rendered data-fills="jf-projects"></div>
                 </details>
                 <details class="multi-pick">
-                  <summary><span>Dives</span><b>Dive 1</b></summary>
-                  <div class="multi-menu">
-                    <label><input type="checkbox" checked>CAMPA2024 · Dive 1</label>
-                    <label><input type="checkbox">CAMPA2024 · Dive 2</label>
-                    <label><input type="checkbox">CAMPA2024 · Dive 3</label>
-                  </div>
+                  <summary><span>Dives</span><b data-rendered data-fills="jf-dives-label"></b></summary>
+                  <div class="multi-menu" data-rendered data-fills="jf-dives"></div>
                 </details>
                 <label class="query-search"><span>Filter videos</span>
                   <span class="search"><svg class="ico sm"><use href="#i-search"/></svg>
@@ -169,156 +161,11 @@
               </div>
 
               <div class="query-result-head">
-                <span><b>10 videos</b> in 1 selected dive</span>
+                <span data-rendered data-fills="jf-count"></span>
                 <label class="check"><input type="checkbox" checked data-select-videos><span>Select visible</span></label>
               </div>
 
-              <div class="video-results">
-                <article class="video-choice is-selected" data-video-choice data-video-id="9f66020c16c80d2800560a76d4417080">
-                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_141923_Fwd.mp4"></label>
-                  <div class="video-thumb">
-                    <img src="/api/v2/jellyfin/items/9f66020c16c80d2800560a76d4417080/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_141923_Fwd">
-                  </div>
-                  <div class="video-main">
-                    <div class="video-title"><b class="mono">20240727_141923_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:00:55</span></div>
-                    <div class="video-controls">
-                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_141923_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
-                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
-                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
-                    </div>
-                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:00:55"></label></div>
-                  </div>
-                </article>
-
-                <article class="video-choice is-selected" data-video-choice data-video-id="847c5f1034d01cf3a7aa2427fa7af4b4">
-                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_154643_Fwd.mp4"></label>
-                  <div class="video-thumb alt">
-                    <img src="/api/v2/jellyfin/items/847c5f1034d01cf3a7aa2427fa7af4b4/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_154643_Fwd">
-                  </div>
-                  <div class="video-main">
-                    <div class="video-title"><b class="mono">20240727_154643_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:29:46</span></div>
-                    <div class="video-controls">
-                      <label class="line-entry"><span>Line</span><input class="inp" value="1960" aria-label="Line number for 20240727_154643_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
-                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time" selected>Time range</option></select></label>
-                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
-                    </div>
-                    <div class="time-range" data-time-range><label>Start <input class="inp mono" value="00:04:00"></label><label>End <input class="inp mono" value="00:24:00"></label></div>
-                  </div>
-                </article>
-
-                <article class="video-choice is-selected" data-video-choice data-video-id="f53860e0fbee24ceec374c12dd1f22a9">
-                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_163021_Fwd.mp4"></label>
-                  <div class="video-thumb cool">
-                    <img src="/api/v2/jellyfin/items/f53860e0fbee24ceec374c12dd1f22a9/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_163021_Fwd">
-                  </div>
-                  <div class="video-main">
-                    <div class="video-title"><b class="mono">20240727_163021_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:29:46</span></div>
-                    <div class="video-controls">
-                      <label class="line-entry"><span>Line</span><input class="inp" value="1750" aria-label="Line number for 20240727_163021_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
-                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
-                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
-                    </div>
-                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:29:46"></label></div>
-                  </div>
-                </article>
-
-                <article class="video-choice is-selected" data-video-choice data-video-id="e8d220bb309bda85b77da70451cdb896">
-                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_171404_Fwd.mp4"></label>
-                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/e8d220bb309bda85b77da70451cdb896/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_171404_Fwd"></div>
-                  <div class="video-main">
-                    <div class="video-title"><b class="mono">20240727_171404_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:20:58</span></div>
-                    <div class="video-controls">
-                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_171404_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
-                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
-                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
-                    </div>
-                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:20:58"></label></div>
-                  </div>
-                </article>
-
-                <article class="video-choice is-selected" data-video-choice data-video-id="74e5c479eeec61456fbc15d4a00eadf3">
-                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_174909_Fwd.mp4"></label>
-                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/74e5c479eeec61456fbc15d4a00eadf3/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_174909_Fwd"></div>
-                  <div class="video-main">
-                    <div class="video-title"><b class="mono">20240727_174909_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:23:13</span></div>
-                    <div class="video-controls">
-                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_174909_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
-                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
-                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
-                    </div>
-                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:23:13"></label></div>
-                  </div>
-                </article>
-
-                <article class="video-choice is-selected" data-video-choice data-video-id="76006d79adfb276192e5acffd5a596db">
-                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_181958_Fwd.mp4"></label>
-                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/76006d79adfb276192e5acffd5a596db/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_181958_Fwd"></div>
-                  <div class="video-main">
-                    <div class="video-title"><b class="mono">20240727_181958_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:23:32</span></div>
-                    <div class="video-controls">
-                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_181958_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
-                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
-                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
-                    </div>
-                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:23:32"></label></div>
-                  </div>
-                </article>
-
-                <article class="video-choice is-selected" data-video-choice data-video-id="10ffcfb47611860806b42c2419738b9f">
-                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_185645_Fwd.mp4"></label>
-                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/10ffcfb47611860806b42c2419738b9f/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_185645_Fwd"></div>
-                  <div class="video-main">
-                    <div class="video-title"><b class="mono">20240727_185645_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:23:09</span></div>
-                    <div class="video-controls">
-                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_185645_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
-                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
-                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
-                    </div>
-                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:23:09"></label></div>
-                  </div>
-                </article>
-
-                <article class="video-choice is-selected" data-video-choice data-video-id="178fe8146755da5eaa07df9b120f5be5">
-                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_193401_Fwd.mp4"></label>
-                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/178fe8146755da5eaa07df9b120f5be5/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_193401_Fwd"></div>
-                  <div class="video-main">
-                    <div class="video-title"><b class="mono">20240727_193401_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:25:38</span></div>
-                    <div class="video-controls">
-                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_193401_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
-                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
-                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
-                    </div>
-                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:25:38"></label></div>
-                  </div>
-                </article>
-
-                <article class="video-choice is-selected" data-video-choice data-video-id="b08acc3bab5d5ede71cd984b2220542e">
-                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_201102_Fwd.mp4"></label>
-                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/b08acc3bab5d5ede71cd984b2220542e/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_201102_Fwd"></div>
-                  <div class="video-main">
-                    <div class="video-title"><b class="mono">20240727_201102_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:32:52</span></div>
-                    <div class="video-controls">
-                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_201102_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
-                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
-                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
-                    </div>
-                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:32:52"></label></div>
-                  </div>
-                </article>
-
-                <article class="video-choice is-selected" data-video-choice data-video-id="95c34543ff54e8895e839b86a07aa8e7">
-                  <label class="video-select"><input type="checkbox" checked aria-label="Select 20240727_210312_Fwd.mp4"></label>
-                  <div class="video-thumb"><img src="/api/v2/jellyfin/items/95c34543ff54e8895e839b86a07aa8e7/images/Primary" alt="CAMPA2024 Dive 1 opening thumbnail for 20240727_210312_Fwd"></div>
-                  <div class="video-main">
-                    <div class="video-title"><b class="mono">20240727_210312_Fwd.mp4</b><span>CAMPA2024 · Dive 1 · 00:21:36</span></div>
-                    <div class="video-controls">
-                      <label class="line-entry"><span>Line</span><input class="inp" placeholder="Read thumbnail" aria-label="Line number for 20240727_210312_Fwd.mp4"><button class="btn sm" type="button" data-save-line>Save</button></label>
-                      <label class="range-entry"><span>Use</span><select class="sel" data-video-range><option value="all">Entire video</option><option value="time">Time range</option></select></label>
-                      <span class="saved-line" hidden><svg class="ico sm"><use href="#i-tick"/></svg>Line saved</span>
-                    </div>
-                    <div class="time-range" data-time-range hidden><label>Start <input class="inp mono" value="00:00:00"></label><label>End <input class="inp mono" value="00:21:36"></label></div>
-                  </div>
-                </article>
+              <div class="video-results" data-rendered data-fills="jf-videos">
               </div>
 
               <div class="query-actions">

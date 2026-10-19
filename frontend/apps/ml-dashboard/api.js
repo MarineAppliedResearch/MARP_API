@@ -982,9 +982,45 @@
       () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.sessions || [])));
   }
 
+  /**
+   * `GET /api/v2/jellyfin/libraries` -- the top of the video library.
+   *
+   * One entry per project folder, each carrying a `childCount`. This is what the Inference
+   * screen's project picker is: the videos MARP can run against live in Jellyfin, not in
+   * MARP, and `spec.video.jellyfin_item_id` is the id from here.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listVideoLibraries() {
+    return serve('jellyfin',
+      () => request('/jellyfin/libraries').then((r) => r.items || []),
+      () => (REGISTRY.libraries || []));
+  }
+
+  /**
+   * `GET /api/v2/jellyfin/items/:id/children` -- one level down.
+   *
+   * A library's children are dives; a dive's children are videos. The same call does both,
+   * which is why the picker is a drill-down rather than three different routes.
+   *
+   * `runtimeTicks` is Jellyfin's: ten-million per second. Left as it arrives rather than
+   * converted here, because the screen that draws a duration is the one that knows what
+   * format it wants.
+   *
+   * @param {string} id - The parent item.
+   * @returns {Promise<Object[]>}
+   */
+  function listVideoChildren(id) {
+    return serve('jellyfin',
+      () => request(`/jellyfin/items/${encodeURIComponent(id)}/children`).then((r) => r.items || []),
+      () => (REGISTRY.libraryChildren || {})[id] || []);
+  }
+
   window.MarpApi = {
     whoAmI,
     listSessions,
+    listVideoLibraries,
+    listVideoChildren,
     listWorkers,
     listJobs,
     getJob,

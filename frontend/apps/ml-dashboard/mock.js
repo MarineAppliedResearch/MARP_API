@@ -1457,6 +1457,141 @@ function markTrainingRunsUnbacked() {
 const INFERENCE_KINDS = ['inference', 'tracking'];
 
 /**
+ * The Inference screen's video picker, against Jellyfin's own library.
+ *
+ * Three columns that were typed into the markup -- `CAMPA2024 · 20 dives`,
+ * `20240727_141923_Fwd.mp4 · 00:00:55` and eight more like it. None of those filenames was
+ * a real one, and the dive counts were invented, on a screen whose whole job is choosing
+ * which real video to run against.
+ *
+ * It is a drill-down because Jellyfin is one: `/jellyfin/libraries` gives the project
+ * folders, and `/jellyfin/items/:id/children` gives whatever is inside any of them. A
+ * library's children are dives; a dive's children are videos. The same call does both.
+ *
+ * The thumbnails were already real — the markup pointed `<img>` at
+ * `/jellyfin/items/:id/images/Primary` with a genuine item id — which is why they looked
+ * right while every name beside them was fiction.
+ *
+ * @returns {Promise<void>}
+ */
+async function wireVideoPicker() {
+  const projects = $('[data-fills="jf-projects"]');
+  const dives = $('[data-fills="jf-dives"]');
+  const videos = $('[data-fills="jf-videos"]');
+  if (!projects || !dives || !videos) return;
+
+  const projectsLabel = $('[data-fills="jf-projects-label"]');
+  const divesLabel = $('[data-fills="jf-dives-label"]');
+  const count = $('[data-fills="jf-count"]');
+
+  /** Jellyfin counts in ten-millionths of a second. */
+  const duration = (ticks) => {
+    if (!ticks) return '';
+    const total = Math.round(ticks / 10000000);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  const escape = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+  /** Which boxes are ticked in a menu, as [{id, name}]. */
+  const chosen = (menu) => [...menu.querySelectorAll('input:checked')]
+    .map((box) => ({ id: box.dataset.id, name: box.dataset.name }));
+
+  /** A menu of checkboxes. The first is ticked so the screen opens on something. */
+  const menu = (items, extra) => items.map((item, index) =>
+    `<label><input type="checkbox" data-id="${escape(item.id)}" data-name="${escape(item.name)}"`
+    + `${index === 0 ? ' checked' : ''}>${escape(item.name)}`
+    + `${extra(item) ? ` <small>${extra(item)}</small>` : ''}</label>`).join('');
+
+  const say = (node, items) => {
+    if (!node) return;
+    node.textContent = items.length === 0 ? 'None'
+      : (items.length === 1 ? items[0].name : `${items.length} selected`);
+  };
+
+  /** Render the videos of whatever dives are ticked. */
+  async function showVideos() {
+    const picked = chosen(dives);
+    say(divesLabel, picked);
+
+    if (!picked.length) {
+      videos.innerHTML = '<p class="nodata">Choose a dive to see its videos.</p>';
+      if (count) count.textContent = 'No dive selected';
+      return;
+    }
+
+    videos.innerHTML = '<p class="nodata">Loading videos&hellip;</p>';
+
+    try {
+      const lists = await Promise.all(picked.map((d) => window.MarpApi.listVideoChildren(d.id)));
+      /* Only playable items: a dive folder can hold stills and sidecars, and a
+         picker that offers a .srt as something to run inference on is lying. */
+      const files = lists.flat().filter((item) => !item.isFolder);
+
+      if (count) {
+        count.innerHTML = `<b>${files.length} video${files.length === 1 ? '' : 's'}</b>`
+          + ` in ${picked.length} selected dive${picked.length === 1 ? '' : 's'}`;
+      }
+
+      videos.innerHTML = files.length ? files.map((file, index) => {
+        const when = duration(file.runtimeTicks);
+        return `<article class="video-choice${index === 0 ? ' is-selected' : ''}" data-video-choice data-video-id="${escape(file.id)}">`
+          + `<label class="video-select"><input type="checkbox"${index === 0 ? ' checked' : ''} aria-label="Select ${escape(file.name)}"></label>`
+          + `<div class="video-thumb"><img loading="lazy" src="/api/v2/jellyfin/items/${encodeURIComponent(file.id)}/images/Primary" alt="${escape(file.name)}"></div>`
+          + `<div class="video-meta"><b>${escape(file.name)}</b>`
+          + `<span class="faint">${escape(file.path || '')}${when ? ` &middot; ${when}` : ''}</span></div>`
+          + '</article>';
+      }).join('') : '<p class="nodata">That dive holds no video files.</p>';
+    } catch (error) {
+      videos.innerHTML = `<p class="nodata">Could not reach the video library (${error.status || 'no answer'}).</p>`;
+      if (count) count.textContent = '';
+    }
+  }
+
+  /** Render the dives of whatever projects are ticked, then their videos. */
+  async function showDives() {
+    const picked = chosen(projects);
+    say(projectsLabel, picked);
+
+    if (!picked.length) {
+      dives.innerHTML = '';
+      return showVideos();
+    }
+
+    try {
+      const lists = await Promise.all(picked.map((p) => window.MarpApi.listVideoChildren(p.id)));
+      const folders = lists.flat().filter((item) => item.isFolder);
+      dives.innerHTML = menu(folders, (f) => f.childCount ? `${f.childCount} items` : '');
+    } catch (error) {
+      dives.innerHTML = `<label class="nodata">Could not load dives (${error.status || 'no answer'})</label>`;
+    }
+
+    return showVideos();
+  }
+
+  try {
+    const libraries = await window.MarpApi.listVideoLibraries();
+    projects.innerHTML = libraries.length
+      ? menu(libraries, (l) => l.childCount ? `${l.childCount} dives` : '')
+      : '<label class="nodata">The video library is empty</label>';
+  } catch (error) {
+    projects.innerHTML = `<label class="nodata">Could not reach the video library (${error.status || 'no answer'})</label>`;
+    if (count) count.textContent = '';
+    return;
+  }
+
+  /* Delegated for the same reason the expanders are: these menus are replaced
+     whenever a level above them changes. */
+  projects.addEventListener('change', showDives);
+  dives.addEventListener('change', showVideos);
+
+  await showDives();
+}
+
+/**
  * Draws the Inference overview and its recent jobs.
  *
  * @param {Object[]} jobs - Every job in the window.
@@ -1629,6 +1764,7 @@ async function renderInferenceScreen() {
     ]);
 
     renderInference(jobs.jobs);
+    wireVideoPicker();
     fillInferenceModels(models);
   } catch (error) {
     const table = $('.inference-table tbody');
