@@ -1913,6 +1913,63 @@ class GpuService {
         return result;
     }
 
+
+    /**
+     * Where a dataset's archive is on disk, for the route to stream.
+     *
+     * **Why a worker may read this at all.** The permission is `jobs:execute`, the
+     * same one the worker already holds to poll and lease, because fetching the
+     * dataset a job names is part of executing that job. `datasets:read` would be
+     * the wrong instrument: it is the human-facing permission for browsing the
+     * dataset catalogue, and granting it to every worker would widen what a
+     * compromised worker token reaches, for no gain.
+     *
+     * The row is the authority for the hash, not the filename. The file is named
+     * for its hash because content addressing makes re-packaging idempotent, but
+     * what a worker verifies against is the value the job spec carried, which came
+     * from this column.
+     *
+     * @async
+     * @param {number|string} datasetId - `datasets.id` from the path.
+     * @returns {Promise<Object>} `{absolutePath, sha256, bytes, name}`.
+     * @throws {ApiError} 404 when the dataset, the archive record, or the file is absent.
+     */
+    async datasetArchive(datasetId) {
+        const id = Number(datasetId);
+        if (!Number.isInteger(id) || id <= 0) invalid('dataset id must be a positive integer.');
+
+        const dataset = await gpuRepository.getDatasetArchiveById(id);
+        if (!dataset) {
+            throw new ApiError(404, ERROR_CODES.NOT_FOUND, `No dataset ${id}.`);
+        }
+        if (!dataset.archive_path) {
+            throw new ApiError(404, ERROR_CODES.NOT_FOUND,
+                `Dataset ${id} has not been packaged; run scripts/package-dataset.js.`);
+        }
+
+        /* Resolved against the storage root and then checked to still be inside it.
+           `archive_path` is written by our own packaging script, but it is a database
+           value, and a database value that becomes a filesystem path is exactly the
+           shape of a traversal bug. */
+        const storageRoot = path.resolve(path.join(__dirname, '..', 'storage'));
+        const absolutePath = path.resolve(storageRoot, dataset.archive_path);
+        if (!absolutePath.startsWith(storageRoot + path.sep)) {
+            throw new ApiError(404, ERROR_CODES.NOT_FOUND, `Dataset ${id} archive path is not under storage.`);
+        }
+        if (!fs.existsSync(absolutePath)) {
+            throw new ApiError(404, ERROR_CODES.NOT_FOUND,
+                `Dataset ${id} is recorded as packaged but its archive is missing from storage.`);
+        }
+
+        return {
+            absolutePath,
+            sha256: dataset.archive_sha256,
+            bytes: Number(dataset.archive_bytes || fs.statSync(absolutePath).size),
+            name: dataset.name,
+        };
+    }
+
+
     /**
      * Ingest one job's observations on request.
      *

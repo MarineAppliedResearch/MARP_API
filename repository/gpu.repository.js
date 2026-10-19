@@ -345,6 +345,30 @@ class GpuRepository {
      * @returns {Promise<Object|null>} The worker row, or null when there is no such worker.
      * @throws {Error} Re-throws any database failure.
      */
+    /**
+     * The packaged archive recorded for a dataset, or null.
+     *
+     * Only the columns a fetch needs. A dataset nobody has packaged has no
+     * `archive_path`, which is the honest way to ask whether it can be trained
+     * on remotely at all.
+     *
+     * @async
+     * @param {number|string} datasetId - `datasets.id`.
+     * @returns {Promise<Object|null>} `{id, name, archive_path, archive_sha256, archive_bytes}` or null.
+     */
+    async getDatasetArchiveById(datasetId) {
+        try {
+            const dataset = await this.db.datasets.findByPk(datasetId, {
+                attributes: ['id', 'name', 'archive_path', 'archive_sha256', 'archive_bytes'],
+            });
+
+            return dataset ? dataset.get({ plain: true }) : null;
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
     async getWorkerById(workerId) {
         try {
             const worker = await this.db.gpu_workers.findByPk(workerId);
