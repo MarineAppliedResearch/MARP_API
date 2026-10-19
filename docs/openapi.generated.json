@@ -3544,6 +3544,12 @@
                   "nullable": true,
                   "example": 298.7
                 },
+                "created": {
+                  "type": "integer",
+                  "nullable": true,
+                  "example": 150,
+                  "description": "Throughput series: jobs submitted in this bucket. What went in, against `finished` coming out."
+                },
                 "finished": {
                   "type": "integer",
                   "nullable": true,

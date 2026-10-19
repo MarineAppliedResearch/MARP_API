@@ -1016,11 +1016,48 @@
       () => (REGISTRY.libraryChildren || {})[id] || []);
   }
 
+  /**
+   * `GET /api/v2/gpu/jobs/series` -- what went in and what came out, bucketed.
+   *
+   * `created`, `finished`, `succeeded` and `waiting` per bucket, with **nothing sampled**:
+   * it is counted out of `gpu_jobs`, and `waiting` is reconstructed -- a job was waiting at
+   * an instant if it was created before it and had not finished by it. Answerable only
+   * because `gpu_jobs.finished_at` exists (#104 gap 24); `updated_at` moves on a heartbeat
+   * and would have counted last week's job as finishing today.
+   *
+   * @param {Object} [query] - `{since, until, bucket}`.
+   * @returns {Promise<{since: string, until: string, bucket: string, points: Object[]}>}
+   */
+  function jobSeries(query) {
+    return serve('series',
+      () => request('/gpu/jobs/series', { query: query || {} }),
+      () => ({ since: null, until: null, bucket: (query && query.bucket) || 'hour', points: [] }));
+  }
+
+  /**
+   * `GET /api/v2/gpu/telemetry/series` -- what the pool's GPUs were doing.
+   *
+   * Averaged across the machines in each bucket, with the maximum beside it. **Only
+   * machines that were working appear**: a reading exists because a heartbeat wrote it, and
+   * a heartbeat only happens during an attempt. So this is utilization of the machines
+   * doing work, not of the pool's whole capacity, and a screen drawing it should say so.
+   *
+   * @param {Object} [query] - `{since, until, bucket}`.
+   * @returns {Promise<{since: string, until: string, bucket: string, points: Object[]}>}
+   */
+  function gpuSeries(query) {
+    return serve('series',
+      () => request('/gpu/telemetry/series', { query: query || {} }),
+      () => ({ since: null, until: null, bucket: (query && query.bucket) || 'hour', points: [] }));
+  }
+
   window.MarpApi = {
     whoAmI,
     listSessions,
     listVideoLibraries,
     listVideoChildren,
+    jobSeries,
+    gpuSeries,
     listWorkers,
     listJobs,
     getJob,

@@ -916,13 +916,15 @@ function renderJobsSummary(jobs) {
      reader's clock: the data layer's present is fixed so that two people see
      the same screen, and a card reading the wall clock would undo that. */
   const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
-  const today = newest - 86400000;
-  const done = jobs.filter((j) => j.state === 'succeeded' && Date.parse(j.created_at) >= today);
+  /* Local midnight, not a rolling day from the newest row. */
+  const today = new Date().setHours(0, 0, 0, 0);
+  const done = jobs.filter((j) => j.state === 'succeeded'
+    && j.finished_at && Date.parse(j.finished_at) >= today);
 
   /* Scoped to the same day as Completed. Counting every failure in the window
      put 107 beside 22 completed, which compares a fortnight against a day. */
   const attention = jobs.filter((j) => (j.state === 'failed' || j.state === 'expired' || isIssue(j))
-    && Date.parse(j.created_at) >= today);
+    && j.finished_at && Date.parse(j.finished_at) >= today);
 
   const byKind = (rows, kind) => rows.filter((j) => j.kind === kind).length;
 
@@ -1172,7 +1174,8 @@ function renderTraining(jobs) {
   const views = mine.map((job) => jobView(job, issues));
 
   const newest = mine.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
-  const today = newest - 86400000;
+  /* Local midnight, not a rolling day from the newest row. */
+  const today = new Date().setHours(0, 0, 0, 0);
 
   const running = views.filter((v) => v.state === 'running');
   const queued = views.filter((v) => v.state === 'queued');
@@ -1180,7 +1183,7 @@ function renderTraining(jobs) {
   /* Scoped to the day, as on Inference and Jobs, so the four read as one
      moment rather than three spans and a fortnight. */
   const attention = views.filter((v) => ['failed', 'expired', 'issues'].includes(v.state)
-    && Date.parse(v.job.created_at) >= today);
+    && v.job.finished_at && Date.parse(v.job.finished_at) >= today);
 
   const cards = $$('.stat');
   const setCard = (card, num, parts) => {
@@ -1581,8 +1584,10 @@ function renderInference(jobs) {
   const running = views.filter((v) => v.state === 'running');
   const queued = views.filter((v) => v.state === 'queued');
   const newest = mine.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
-  const today = newest - 86400000;
-  const done = views.filter((v) => v.state === 'done' && Date.parse(v.job.created_at) >= today);
+  /* Local midnight, not a rolling day from the newest row. */
+  const today = new Date().setHours(0, 0, 0, 0);
+  const done = views.filter((v) => v.state === 'done'
+    && v.job.finished_at && Date.parse(v.job.finished_at) >= today);
 
   /* **Scoped to the same day as Completed.** Unscoped this counted every
      failure in the fortnight -- 85 against 13 completed -- and the donut below
@@ -1590,7 +1595,7 @@ function renderInference(jobs) {
      shape rather than a fact. A job that failed last week has not stopped
      needing attention; this card is about today, beside the other three. */
   const attention = views.filter((v) => ['failed', 'expired', 'issues'].includes(v.state)
-    && Date.parse(v.job.created_at) >= today);
+    && v.job.finished_at && Date.parse(v.job.finished_at) >= today);
 
   const byLabel = {};
   for (const card of $$('.stat')) {
@@ -3666,38 +3671,118 @@ function wireJobsOverview() {
 
   const root = $('[data-jobs-history]');
   if (!root) return;
-  const ranges = {
-    '24h': { labels: ['24h ago', '12h ago', 'Now'], started: [2,3,3,4,5,4,6,7,5,6,8,7,6,5,7,8,6,7,9,8,7,6,5,6], completed: [1,2,2,3,3,4,4,5,4,5,6,7,7,6,6,7,8,8,7,9,8,7,7,8], queued: [5,6,5,7,8,7,9,10,8,9,11,10,9,8,9,10,8,9,10,9,8,8,7,8] },
-    '5h': { labels: ['5h ago', '2.5h ago', 'Now'], started: [3,4,3,5,4,6,5,7,8,7,6,5,6,7,6,8,7,6,5,6,7,6,5,6], completed: [2,2,3,3,4,4,5,5,6,6,7,7,6,6,7,7,8,8,7,7,8,8,7,8], queued: [6,6,7,8,8,9,9,10,11,10,10,9,9,8,8,9,9,8,8,9,9,8,8,8] },
-    '1h': { labels: ['1h ago', '30m ago', 'Now'], started: [4,4,5,5,6,6,7,6,5,5,6,7,7,6,6,5,5,6,7,7,6,6,5,6], completed: [5,5,5,6,6,6,7,7,7,7,8,8,8,8,7,7,7,8,8,8,8,8,8,8], queued: [8,8,9,9,10,10,10,9,9,8,8,9,9,8,8,7,7,8,8,9,9,8,8,8] }
+
+  /* **This used to carry three arrays of invented numbers and animate them on a
+     2.5-second timer**, which is what "updating preview" meant in the chart's
+     own aria-label. It moved, so it looked alive; it was the same twenty-four
+     values shuffling along.
+
+     `GET /gpu/jobs/series` answers it properly now, out of `gpu_jobs` with
+     nothing sampled: `created` is what went in, `finished` what came out, and
+     `waiting` is reconstructed -- a job was waiting at an instant if it was
+     created before it and had not finished by it. None of that was answerable
+     until `finished_at` existed. */
+  const RANGES = {
+    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+    '5h': { hours: 5, bucket: 'minute', label: 'the last 5 hours' },
+    '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
   };
+
   const buttons = $$('[data-jobs-range]', root);
   const lines = Object.fromEntries($$('[data-jobs-line]', root).map((line) => [line.dataset.jobsLine, line]));
+  const chart = $('.jobs-chart', root);
+  const axis = $$('[data-jobs-axis]', root);
   let range = '5h';
-  let samples;
-  let tick = 0;
-  const pathOf = (values) => values.map((value, index) => `${index ? 'L' : 'M'}${(42 + 700 * index / (values.length - 1)).toFixed(1)},${(198 - 174 * value / 12).toFixed(1)}`).join(' ');
-  const draw = () => {
-    Object.entries(lines).forEach(([name, line]) => line.setAttribute('d', pathOf(samples[name])));
-    $('.jobs-chart', root).setAttribute('aria-label', `Job activity over the last ${range}; ${samples.started.at(-1)} started, ${samples.completed.at(-1)} completed and ${samples.queued.at(-1)} queued; updating preview`);
+
+  /** Fit a run of values into the chart's box. */
+  const pathOf = (values, max) => values.map((value, index) =>
+    `${index ? 'L' : 'M'}${(42 + 700 * index / Math.max(1, values.length - 1)).toFixed(1)},`
+    + `${(198 - 174 * (value / Math.max(1, max))).toFixed(1)}`).join(' ');
+
+  const clock = (iso) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
-  const choose = (next) => {
+
+  async function choose(next) {
     range = next;
-    samples = Object.fromEntries(Object.entries(ranges[range]).filter(([key]) => key !== 'labels').map(([key, values]) => [key, [...values]]));
-    buttons.forEach((button) => { const on = button.dataset.jobsRange === range; button.classList.toggle('on', on); button.setAttribute('aria-pressed', String(on)); });
-    $$('[data-jobs-time]', root).forEach((label, index) => { label.textContent = ranges[range].labels[index]; });
-    draw();
-  };
+    buttons.forEach((button) => {
+      const on = button.dataset.jobsRange === range;
+      button.classList.toggle('on', on);
+      button.setAttribute('aria-pressed', String(on));
+    });
+
+    const { hours, bucket, label } = RANGES[range];
+    const until = new Date();
+    const since = new Date(until.getTime() - hours * 3600 * 1000);
+
+    try {
+      const series = await window.MarpApi.jobSeries({
+        since: since.toISOString(), until: until.toISOString(), bucket,
+      });
+
+      const points = series.points || [];
+
+      if (!points.length) {
+        Object.values(lines).forEach((line) => line.removeAttribute('d'));
+        if (chart) chart.setAttribute('aria-label', `No job activity recorded in ${label}`);
+        return;
+      }
+
+      const samples = {
+        started: points.map((p) => p.created || 0),
+        completed: points.map((p) => p.finished || 0),
+        queued: points.map((p) => p.waiting || 0),
+      };
+
+      /* One scale for all three, so the lines can be compared by eye. */
+      const peak = Math.max(...Object.values(samples).flat());
+
+      /* **A flat line along zero is not a chart, it is a chart-shaped nothing.**
+         Nothing ran in this window, and saying so is clearer than drawing three
+         lines on the floor and leaving somebody to work out they are all zero. */
+      if (peak === 0) {
+        Object.values(lines).forEach((line) => line.removeAttribute('d'));
+        axis.forEach((text) => { text.textContent = ''; });
+        $$('[data-jobs-time]', root).forEach((label2) => { label2.textContent = ''; });
+        if (chart) chart.setAttribute('aria-label', `No jobs submitted or finished in ${label}`);
+        root.classList.add('is-quiet');
+        return;
+      }
+
+      root.classList.remove('is-quiet');
+
+      /* Round the top up to something the ticks can divide into thirds without
+         repeating: a max of 1 produced an axis reading 1, 1, 0, 0. */
+      const max = Math.max(3, Math.ceil(peak / 3) * 3);
+
+      Object.entries(lines).forEach(([name, line]) => {
+        if (samples[name]) line.setAttribute('d', pathOf(samples[name], max));
+      });
+
+      /* The axis is the data's range, not four numbers somebody picked. */
+      axis.forEach((text, index) => {
+        text.textContent = String(Math.round(max * (3 - index) / 3));
+      });
+
+      $$('[data-jobs-time]', root).forEach((label2, index) => {
+        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][index];
+        if (at) label2.textContent = index === 2 ? 'Now' : clock(at.at);
+      });
+
+      if (chart) {
+        chart.setAttribute('aria-label', `Job activity over ${label}: `
+          + `${samples.started.at(-1)} submitted, ${samples.completed.at(-1)} finished, `
+          + `${samples.queued.at(-1)} waiting`);
+      }
+    } catch (error) {
+      Object.values(lines).forEach((line) => line.removeAttribute('d'));
+      if (chart) chart.setAttribute('aria-label', `Could not load job activity (${error.status || 'no answer'})`);
+    }
+  }
+
   buttons.forEach((button) => button.addEventListener('click', () => choose(button.dataset.jobsRange)));
   choose(range);
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const movement = [1, 0, -1, 1, -1, 0];
-    window.setInterval(() => {
-      samples = Object.fromEntries(Object.entries(samples).map(([name, values], index) => [name, [...values.slice(1), Math.max(0, Math.min(12, values.at(-1) + movement[(tick + index) % movement.length]))]]));
-      tick += 1;
-      draw();
-    }, 2500);
-  }
 }
 
 /* Inference needs an operational graph, not another count of jobs. Throughput

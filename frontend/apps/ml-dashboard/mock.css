@@ -2821,3 +2821,13 @@ td.whb.quiet { color: var(--amber-300); }
 /* A panel whose content is design data rather than API output says so in its
    own header, beside the heading (#128). */
 .panel-hd .unbacked-note { margin: 4px 0 0; font-size: 12px; }
+
+/* A quiet window: the chart drew three lines along zero, which reads as a
+   chart with data in it until you look at the axis. The panel says so in
+   words instead, and the empty SVG stays for its frame. */
+.is-quiet .jobs-chart::after {
+  content: "No jobs submitted or finished in this window";
+  display: grid; place-items: center; min-height: 120px;
+  color: var(--faint); font-size: 12px;
+}
+.is-quiet .jobs-chart svg { opacity: .25; }

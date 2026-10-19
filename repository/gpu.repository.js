@@ -505,6 +505,9 @@ class GpuRepository {
                  )
                  SELECT b.at,
                         (SELECT count(*)::int FROM gpu_jobs j
+                          WHERE j.created_at >= b.at
+                            AND j.created_at < b.at + ('1 ${bucket}')::interval) AS created,
+                        (SELECT count(*)::int FROM gpu_jobs j
                           WHERE j.finished_at >= b.at
                             AND j.finished_at < b.at + ('1 ${bucket}')::interval) AS finished,
                         (SELECT count(*)::int FROM gpu_jobs j

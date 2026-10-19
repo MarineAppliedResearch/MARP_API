@@ -2713,6 +2713,7 @@ const buildOpenApiSpec = () => {
                                         max_utilization_percent: { type: 'integer', nullable: true, example: 99 },
                                         avg_memory_percent_used: { type: 'number', nullable: true, example: 61.2 },
                                         avg_power_usage_watts: { type: 'number', nullable: true, example: 298.7 },
+                                        created: { type: 'integer', nullable: true, example: 150, description: 'Throughput series: jobs submitted in this bucket. What went in, against `finished` coming out.' },
                                         finished: { type: 'integer', nullable: true, example: 142, description: 'Throughput series: jobs whose finished_at falls in this bucket.' },
                                         succeeded: { type: 'integer', nullable: true, example: 139, description: 'Throughput series: the subset that worked.' },
                                         waiting: { type: 'integer', nullable: true, example: 7, description: 'Throughput series: jobs created before this instant and not finished by it.' },
