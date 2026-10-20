@@ -430,211 +430,147 @@ function wireSwitchers() {
 }
 
 /**
- * The Dashboard chart uses a deterministic moving fixture during design review.
- * Its input is two arrays of aggregate slot samples, which is deliberately the
- * same seam a later API stream can feed without changing the interaction.
+ * The Dashboard's GPU pool chart.
+ *
+ * **What this replaced.** Four arrays of invented percentages per range, a `slotCapacity` of
+ * 313 and a `queueScale` of 24 — none of which came from MARP. The 313 was visible on screen
+ * beside a pool that has a different number of slots.
+ *
+ * Its own renderer rather than the shared helper, because this panel is shaped differently
+ * from the other three: two filled areas rather than one, and time labels addressed by name
+ * (`start`, `middle`, `end`) instead of by position.
+ *
+ * Three fetches, because the chart asks three questions: what the cards were doing
+ * (`/gpu/telemetry/series`), and what each queue looked like (`/gpu/jobs/series`, once per
+ * kind). The queues come from the jobs rather than the telemetry on purpose — a queue is a
+ * fact about work waiting, and a machine with nothing to do reports no reading at all.
+ *
+ * @returns {Promise<void>}
  */
-function wirePoolUtilization() {
+async function wirePoolUtilization() {
   const root = $('[data-pool-history]');
   if (!root) return;
 
-  const slotCapacity = 313;
-  const queueScale = 24;
-  const plots = {
-    '24h': {
-      labels: ['24h ago', '12h ago', 'Now'],
-      computeUsed: [28, 30, 33, 36, 34, 39, 44, 42, 46, 51, 55, 52, 48, 45, 42, 44, 49, 54, 51, 47, 45, 43, 40, 40.6],
-      vramUsed: [32, 34, 36, 39, 38, 43, 48, 47, 51, 56, 60, 58, 54, 51, 48, 49, 54, 59, 57, 53, 50, 48, 45, 45],
-      training: [17, 18, 20, 22, 20, 24, 27, 25, 29, 33, 36, 34, 31, 29, 27, 28, 31, 35, 33, 30, 29, 28, 26, 26],
-      queueTraining: [1, 1, 2, 2, 1, 3, 4, 3, 5, 6, 8, 7, 6, 5, 4, 4, 6, 8, 7, 5, 4, 3, 2, 2],
-      queueInference: [3, 4, 4, 5, 4, 5, 6, 5, 7, 9, 11, 10, 9, 8, 7, 7, 8, 10, 9, 8, 7, 7, 6, 6]
-    },
-    '5h': {
-      labels: ['5h ago', '2.5h ago', 'Now'],
-      computeUsed: [31, 33, 32, 35, 37, 39, 38, 41, 44, 48, 50, 49, 46, 44, 42, 39, 38, 39, 42, 44, 43, 42, 40, 40.6],
-      vramUsed: [35, 37, 36, 39, 41, 43, 42, 45, 48, 52, 55, 53, 51, 49, 47, 44, 43, 44, 47, 49, 48, 47, 45, 45],
-      training: [19, 20, 19, 21, 23, 24, 23, 25, 27, 31, 33, 32, 30, 28, 27, 25, 24, 25, 27, 29, 28, 27, 26, 26],
-      queueTraining: [1, 1, 1, 2, 2, 2, 2, 3, 4, 5, 6, 5, 4, 4, 3, 3, 2, 2, 3, 4, 3, 3, 2, 2],
-      queueInference: [4, 4, 4, 5, 5, 6, 5, 6, 7, 9, 10, 9, 8, 8, 7, 7, 6, 6, 7, 8, 7, 7, 6, 6]
-    },
-    '1h': {
-      labels: ['1h ago', '30m ago', 'Now'],
-      computeUsed: [38, 39, 40, 42, 44, 45, 47, 46, 44, 43, 42, 41, 40, 38, 37, 38, 39, 41, 43, 44, 43, 42, 41, 40.6],
-      vramUsed: [42, 43, 44, 46, 48, 49, 51, 50, 48, 47, 46, 45, 44, 42, 41, 42, 43, 45, 47, 48, 47, 46, 45, 45],
-      training: [24, 25, 25, 27, 28, 29, 30, 29, 28, 27, 27, 26, 25, 24, 23, 24, 25, 26, 28, 29, 28, 27, 26, 26],
-      queueTraining: [2, 2, 2, 3, 3, 4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 2, 2, 3, 3, 3, 2, 2, 2],
-      queueInference: [6, 6, 7, 7, 8, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5, 5, 6, 6, 7, 7, 7, 6, 6, 6]
-    }
+  const RANGES = {
+    '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
+    '5h': { hours: 5, bucket: 'minute', label: 'the last 5 hours' },
+    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
   };
-  Object.values(plots).forEach((plot) => {
-    plot.inference = plot.computeUsed.map((used, index) => used - plot.training[index]);
-  });
+
+  const lines = Object.fromEntries($$('[data-pool-line]', root).map((l) => [l.dataset.poolLine, l]));
+  const areas = Object.fromEntries($$('[data-pool-area]', root).map((a) => [a.dataset.poolArea, a]));
   const buttons = $$('[data-pool-range]', root);
-  const highlightButtons = $$('[data-pool-highlight]', root);
-  const lines = Object.fromEntries($$('[data-pool-line]', root)
-    .map((line) => [line.dataset.poolLine, line]));
-  const trainingArea = $('[data-pool-area="training"]', root);
-  const inferenceArea = $('[data-pool-area="inference"]', root);
   const chart = $('.pool-chart', root);
-  const usedSummary = $('[data-pool-used-summary]');
-  const usedSummaryPercent = $('[data-pool-used-summary-percent]');
-  const available = $('[data-pool-available]');
-  const availablePercent = $('[data-pool-available-percent]');
-  let range = buttons.find((button) => button.classList.contains('on'))?.dataset.poolRange || '5h';
-  let samples = Object.fromEntries(Object.entries(plots[range])
-    .filter(([key]) => key !== 'labels').map(([key, values]) => [key, [...values]]));
-  let tick = 0;
+  const times = Object.fromEntries($$('[data-pool-time]', root).map((t) => [t.dataset.poolTime, t]));
 
-  const percentPoint = (value, index, count) => ({
-    x: 44 + (700 * index / Math.max(1, count - 1)),
-    y: 212 - (188 * value / 100)
-  });
-  const queuePoint = (value, index, count) => ({
-    x: 44 + (700 * index / Math.max(1, count - 1)),
-    y: 212 - (188 * value / queueScale)
-  });
-  const pathOf = (points) => points.map((p, index) => `${index ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-  const draw = () => {
-    samples.computeAvailable = samples.computeUsed.map((value) => 100 - value);
-    samples.vramAvailable = samples.vramUsed.map((value) => 100 - value);
-    Object.entries(lines).forEach(([name, line]) => {
-      const values = samples[name];
-      const makePoint = name.startsWith('queue') ? queuePoint : percentPoint;
-      line.setAttribute('d', pathOf(values.map((value, index) => makePoint(value, index, values.length))));
-    });
-    const totalPoints = samples.computeUsed.map((value, index) => percentPoint(value, index, samples.computeUsed.length));
-    const inferencePoints = samples.inference.map((value, index) => percentPoint(value, index, samples.inference.length));
-    const reversedInference = [...inferencePoints].reverse()
-      .map((p) => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-    inferenceArea.setAttribute('d', `${pathOf(inferencePoints)} L744,212 L44,212 Z`);
-    trainingArea.setAttribute('d', `${pathOf(totalPoints)} ${reversedInference} Z`);
-    const latest = Object.fromEntries(Object.entries(samples)
-      .map(([name, values]) => [name, values[values.length - 1]]));
-    latest.queueTotal = latest.queueTraining + latest.queueInference;
-    const slotUse = Math.round(slotCapacity * latest.computeUsed / 100);
-    usedSummary.textContent = String(slotUse);
-    usedSummaryPercent.textContent = `${Math.round(latest.computeUsed)}%`;
-    available.textContent = String(slotCapacity - slotUse);
-    availablePercent.textContent = `${100 - Math.round(latest.computeUsed)}%`;
-    $$('[data-current]', root).forEach((label) => {
-      const value = latest[label.dataset.current];
-      const suffix = {
-        computeUsed: '% used', computeAvailable: '% free', vramUsed: '% used',
-        vramAvailable: '% free', training: '%', inference: '%',
-        queueTraining: '', queueInference: ''
-      }[label.dataset.current];
-      label.textContent = `${Math.round(value)}${suffix}`;
-    });
-    chart.setAttribute('aria-label', `GPU pool over the last ${range}: ${Math.round(latest.computeUsed)} percent compute and ${Math.round(latest.vramUsed)} percent VRAM utilized, ${latest.queueTotal} jobs queued; updating preview`);
-  };
-  const choose = (next) => {
-    range = next;
-    samples = Object.fromEntries(Object.entries(plots[range])
-      .filter(([key]) => key !== 'labels').map(([key, values]) => [key, [...values]]));
-    buttons.forEach((button) => {
-      const on = button.dataset.poolRange === range;
-      button.classList.toggle('on', on);
-      button.setAttribute('aria-pressed', String(on));
-    });
-    const labels = plots[range].labels;
-    $$('[data-pool-time]', root).forEach((label, index) => { label.textContent = labels[index]; });
-    draw();
+  const box = chart ? chart.querySelector('svg')?.getAttribute('viewBox')?.split(/\s+/) : null;
+  const width = box ? Number(box[2]) : 760;
+  const floor = 196;
+  const top = 28;
+
+  const x = (i, n) => 44 + (width - 70) * i / Math.max(1, n - 1);
+  const y = (v, max) => floor - (floor - top) * (v / Math.max(1, max));
+  const pathOf = (values, max) => values
+    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
+  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},${floor} L44,${floor} Z`;
+
+  const clock = (iso) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
-  buttons.forEach((button) => button.addEventListener('click', () => choose(button.dataset.poolRange)));
-
-  const highlight = (name) => {
-    const active = chart.dataset.highlight === name ? '' : name;
-    chart.dataset.highlight = active;
-    chart.classList.toggle('is-highlighted', Boolean(active));
-    $$('[data-pool-line], [data-pool-area]', chart).forEach((series) => {
-      series.classList.toggle('highlighted', series.dataset.poolLine === active
-        || series.dataset.poolArea === active);
-    });
-    highlightButtons.forEach((button) => {
-      button.setAttribute('aria-pressed', String(button.dataset.poolHighlight === active));
-    });
+  const blank = () => {
+    [...Object.values(lines), ...Object.values(areas)].forEach((n) => n && n.removeAttribute('d'));
+    Object.values(times).forEach((t) => { t.textContent = ''; });
   };
-  highlightButtons.forEach((button) => {
-    button.addEventListener('click', () => highlight(button.dataset.poolHighlight));
-  });
-  root.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && chart.classList.contains('is-highlighted')) {
-      const activeButton = highlightButtons.find((button) => button.getAttribute('aria-pressed') === 'true');
-      highlight('');
-      activeButton?.focus();
-    }
-  });
-  choose(range);
 
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const computeMovement = [.8, 1.2, .5, -.6, -1, .3, .9, -.4];
-    const vramMovement = [.5, .8, .4, -.3, -.7, .2, .6, -.2];
-    const queueMovement = [0, 1, 0, -1, 0, 1, -1, 0];
-    window.setInterval(() => {
-      const nextCompute = Math.max(0, Math.min(100, samples.computeUsed.at(-1) + computeMovement[tick % computeMovement.length]));
-      const nextVram = Math.max(0, Math.min(100, samples.vramUsed.at(-1) + vramMovement[tick % vramMovement.length]));
-      const nextTraining = Math.max(0, Math.min(nextCompute, samples.training.at(-1) + computeMovement[tick % computeMovement.length] * .65));
-      const nextQueueTraining = Math.max(0, Math.min(queueScale, samples.queueTraining.at(-1) + queueMovement[tick % queueMovement.length]));
-      const nextQueueInference = Math.max(0, Math.min(queueScale, samples.queueInference.at(-1) + queueMovement[(tick + 2) % queueMovement.length]));
-      tick += 1;
-      samples = {
-        computeUsed: [...samples.computeUsed.slice(1), nextCompute],
-        vramUsed: [...samples.vramUsed.slice(1), nextVram],
-        training: [...samples.training.slice(1), nextTraining],
-        inference: [...samples.inference.slice(1), nextCompute - nextTraining],
-        queueTraining: [...samples.queueTraining.slice(1), nextQueueTraining],
-        queueInference: [...samples.queueInference.slice(1), nextQueueInference]
+  async function choose(next) {
+    buttons.forEach((b) => {
+      const on = b.dataset.poolRange === next;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+
+    const { hours, bucket, label } = RANGES[next] || RANGES['5h'];
+    const until = new Date();
+    const span = {
+      since: new Date(until.getTime() - hours * 3600e3).toISOString(),
+      until: until.toISOString(),
+      bucket,
+    };
+
+    try {
+      const [gpu, inference, training] = await Promise.all([
+        window.MarpApi.gpuSeries(span),
+        window.MarpApi.jobSeries({ ...span, kind: 'inference' }),
+        window.MarpApi.jobSeries({ ...span, kind: 'training' }),
+      ]);
+
+      const points = gpu.points || [];
+      const waitingAt = (series) => new Map((series.points || []).map((p) => [String(p.at), p.waiting || 0]));
+      const queuedInference = waitingAt(inference);
+      const queuedTraining = waitingAt(training);
+
+      if (!points.length || !points.some((p) => p.machines > 0)) {
+        blank();
+        root.classList.add('is-quiet');
+        if (chart) {
+          chart.setAttribute('aria-label', `No GPU readings in ${label}. A machine reports while it `
+            + 'works, so an idle pool records nothing.');
+        }
+        return;
+      }
+
+      root.classList.remove('is-quiet');
+
+      const samples = {
+        computeUsed: points.map((p) => p.avg_utilization_percent || 0),
+        vramUsed: points.map((p) => p.avg_memory_percent_used || 0),
+        queueInference: points.map((p) => queuedInference.get(String(p.at)) || 0),
+        queueTraining: points.map((p) => queuedTraining.get(String(p.at)) || 0),
       };
-      draw();
-    }, 2500);
+
+      const areaValues = {
+        inference: points.map((p) => p.avg_inference_utilization_percent || 0),
+        training: points.map((p) => p.avg_training_utilization_percent || 0),
+      };
+
+      /* Utilization is a percentage; a queue is a count, scaled to its own peak
+         so a quiet queue does not flatten against a busy pool. */
+      const maxQueue = Math.max(1, ...samples.queueInference, ...samples.queueTraining);
+
+      if (lines.computeUsed) lines.computeUsed.setAttribute('d', pathOf(samples.computeUsed, 100));
+      if (lines.vramUsed) lines.vramUsed.setAttribute('d', pathOf(samples.vramUsed, 100));
+      if (lines.queueInference) lines.queueInference.setAttribute('d', pathOf(samples.queueInference, maxQueue));
+      if (lines.queueTraining) lines.queueTraining.setAttribute('d', pathOf(samples.queueTraining, maxQueue));
+
+      for (const [name, node] of Object.entries(areas)) {
+        if (node && areaValues[name]) node.setAttribute('d', areaOf(areaValues[name], 100));
+      }
+
+      if (times.start) times.start.textContent = clock(points[0].at);
+      if (times.middle) times.middle.textContent = clock(points[Math.floor(points.length / 2)].at);
+      if (times.end) times.end.textContent = 'Now';
+
+      const last = points.at(-1);
+
+      if (chart) {
+        chart.setAttribute('aria-label', `GPU pool over ${label}: `
+          + `${Math.round(last.avg_utilization_percent || 0)} percent compute and `
+          + `${Math.round(last.avg_memory_percent_used || 0)} percent VRAM across `
+          + `${last.machines} reporting ${last.machines === 1 ? 'machine' : 'machines'}, `
+          + `${samples.queueInference.at(-1)} inference and ${samples.queueTraining.at(-1)} training jobs queued`);
+      }
+    } catch (error) {
+      blank();
+      if (chart) chart.setAttribute('aria-label', `Could not load pool utilization (${error.status || 'no answer'})`);
+    }
   }
+
+  buttons.forEach((b) => b.addEventListener('click', () => choose(b.dataset.poolRange)));
+  await choose('5h');
 }
 
-/* ============================================================== jobs table */
-
-/* The Jobs table is drawn from the data layer and no longer from its markup.
-   What follows turns one `GET /gpu/jobs` row into one table row, so it is also
-   the seam where the API's vocabulary stops and the design's begins. */
-
-/** `leased` is a lease; `running` is what an operator calls it. @type {Object} */
-const JOB_STATE_LABEL = {
-  queued: ['queued', 'Queued'],
-  leased: ['running', 'Running'],
-  succeeded: ['done', 'Done'],
-  failed: ['failed', 'Failed'],
-  cancelled: ['cancelled', 'Cancelled'],
-  expired: ['expired', 'Expired'],
-};
-
-/** Sort rank for the Status column: what needs attention first. @type {Object} */
-const JOB_STATE_RANK = { running: 0, queued: 1, issues: 2, failed: 3, expired: 4, cancelled: 5, done: 6 };
-
-/** Kind to its icon and its label. @type {Object} */
-const JOB_KIND_LABEL = {
-  inference: ['inference', 'Inference'],
-  training: ['training', 'Training'],
-  tracking: ['inference', 'Tracking'],
-  diagnostic: ['jobs', 'Diagnostic'],
-};
-
-/**
- * Which batches finished with some of their pieces failed.
- *
- * This is where `issues` comes from, and it is the only place it can: a single
- * job is never succeeded-with-problems, because #225 settled that a job whose
- * results did not reach the database is *failed*. A batch -- one video cut into
- * frame ranges -- routinely finishes with some ranges failed, and that is what
- * the design has always meant by the word.
- *
- * **Scoped to the page, which is a real limit and not a shortcut.** A batch has
- * no row of its own to fetch (gap 1), so this sees only the pieces in this
- * response; a batch straddling a page boundary looks clean on one of them. The
- * fix is a batch object, not a larger page.
- *
- * @param {Object[]} jobs - The page of jobs.
- * @returns {Set<string>} Batch ids holding both a success and a failure.
- */
 function batchesWithIssues(jobs) {
   const seen = new Map();
 
@@ -711,6 +647,28 @@ const SESSIONS = new Map();
  */
 const USERS = new Map();
 
+/** Kind to its icon and its label. @type {Object} */
+/** `leased` is a lease; `running` is what an operator calls it. @type {Object} */
+const JOB_STATE_LABEL = {
+  queued: ['queued', 'Queued'],
+  leased: ['running', 'Running'],
+  succeeded: ['done', 'Done'],
+  failed: ['failed', 'Failed'],
+  cancelled: ['cancelled', 'Cancelled'],
+  expired: ['expired', 'Expired'],
+};
+
+/** Sort rank for the Status column: what needs attention first. @type {Object} */
+const JOB_STATE_RANK = { running: 0, queued: 1, issues: 2, failed: 3, expired: 4, cancelled: 5, done: 6 };
+
+/** Kind to its icon and its label. @type {Object} */
+const JOB_KIND_LABEL = {
+  inference: ['inference', 'Inference'],
+  training: ['training', 'Training'],
+  tracking: ['inference', 'Tracking'],
+  diagnostic: ['jobs', 'Diagnostic'],
+};
+
 /**
  * Fill {@link SESSIONS}. Safe to call on every screen; it asks once.
  *
@@ -747,22 +705,38 @@ function loadSessions() {
   return sessionsAsked;
 }
 
+/**
+ * The session a job spec refers to, as a row.
+ *
+ * `spec.session` takes two forms. A job submitted against an existing session
+ * carries `{session_id}` alone -- the dive and line are columns on the session
+ * row -- while one submitted for a session that does not exist yet carries
+ * `{project_id, dive, line, type}` inline, because the ingest creates it
+ * afterwards. The fixtures only ever produced the second, so the Scope column
+ * worked against them and read "No session" for every real job in MARP.
+ *
+ * A training job has no session at all, so the empty object is a real answer
+ * rather than a failure -- reading through it is what blanked the whole History
+ * screen.
+ *
+ * SESSIONS is filled once per screen by `loadSessions`. A miss leaves the id
+ * visible rather than blank: "Session 755" is a thing somebody can look up, and
+ * "No session" was a lie about a job that has one.
+ *
+ * @param {Object} spec - A job's `spec`.
+ * @returns {Object} The session row, the inline session, or `{}`.
+ */
+function sessionFor(spec) {
+  const asked = (spec || {}).session;
+  const named = asked && asked.session_id !== undefined
+    ? SESSIONS.get(Number(asked.session_id))
+    : null;
+  return named || asked || {};
+}
+
 function jobView(job, issueBatches) {
   const spec = job.spec || {};
-  /* `spec.session` takes two forms. A job submitted against an existing session
-     carries `{session_id}` alone -- the dive and line are columns on the session
-     row -- while one submitted for a session that does not exist yet carries
-     `{project_id, dive, line, type}` inline, because the ingest creates it
-     afterwards. The fixtures only ever produced the second, so the Scope column
-     worked against them and read "No session" for every real job in MARP.
-
-     SESSIONS is filled once per screen by `loadSessions`. A miss leaves the id
-     visible rather than blank: "Session 755" is a thing somebody can look up,
-     and "No session" was a lie about a job that has one. */
-  const named = spec.session && spec.session.session_id !== undefined
-    ? SESSIONS.get(Number(spec.session.session_id))
-    : null;
-  const session = named || spec.session || {};
+  const session = sessionFor(spec);
   const [kindIcon, kindLabel] = JOB_KIND_LABEL[job.kind] || JOB_KIND_LABEL.inference;
 
   let [state, label] = JOB_STATE_LABEL[job.state] || ['queued', job.state];
@@ -2416,6 +2390,11 @@ async function renderHistoryScreen() {
     fillHistoryFilterOptions();
     applyHistoryQuery();
   } catch (error) {
+    /* The banner can only report a status, and a rendering bug has none — so it
+       reads "no answer" and sends whoever sees it to check the API. The detail
+       goes to the console, where it names the actual line. */
+    console.error('MarpDashboard: history failed to render —', error);
+
     body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="${columns}">Could not load history (${error.status || 'no answer'}). `
       + '<button class="btn sm" type="button" id="historyRetry">Try again</button></td></tr>';
     $('#historyRetry')?.addEventListener('click', renderHistoryScreen);
@@ -2434,7 +2413,7 @@ function fillHistoryFilterOptions() {
   const byLabel = {};
   for (const select of selects) byLabel[select.getAttribute('aria-label')] = select;
 
-  const projects = [...new Set(historyData.jobs.map((j) => historyData.projects.get(j.spec.session.project_id)).filter(Boolean))].sort();
+  const projects = [...new Set(historyData.jobs.map((j) => historyData.projects.get(sessionFor(j.spec).project_id)).filter(Boolean))].sort();
   const models = [...new Set(historyData.jobs.map((j) => j.spec.model && j.spec.model.name).filter(Boolean))].sort();
 
   if (byLabel.Project) {
@@ -2722,6 +2701,13 @@ async function renderDashboardScreen() {
 
     renderDashboard({ jobs: jobs.jobs, workers, models, datasets });
   } catch (error) {
+    /* **Say what actually went wrong, in the console.** This banner reports a
+       status, and a rendering bug has no status -- so a `TypeError` thrown
+       while drawing reads on screen as "could not be loaded (no answer)",
+       which sends whoever sees it to look at the API. It cost a while today.
+       The banner stays short; the detail goes where a developer will find it. */
+    console.error('MarpDashboard: the dashboard failed to render —', error);
+
     /* One banner, not six broken cards. A landing screen that half-loaded is
        worse than one that says it could not. */
     const content = $('.content');

@@ -14578,6 +14578,21 @@
               "default": "hour"
             },
             "description": "Bucket size."
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inference",
+                "tracking",
+                "training",
+                "diagnostic"
+              ]
+            },
+            "description": "Narrow to one kind of job, so an inference queue can be read apart from a training one."
           }
         ],
         "responses": {

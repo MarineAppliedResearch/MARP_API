@@ -1653,7 +1653,17 @@ class GpuService {
     async jobThroughputSeries(query) {
         const window = this.seriesWindow(query);
 
-        return { ...window, points: await gpuRepository.jobThroughputSeries(window) };
+        /* The same `kind` the job list takes, so a screen can ask what the
+           inference queue is doing separately from the training one. */
+        const kind = query.kind === undefined
+            ? undefined
+            : requiredEnum(query.kind, 'kind', JOB_KINDS);
+
+        return {
+            ...window,
+            kind: kind || null,
+            points: await gpuRepository.jobThroughputSeries({ ...window, kind }),
+        };
     }
 
     /**

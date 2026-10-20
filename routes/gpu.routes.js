@@ -645,6 +645,7 @@ function registerGpuRoutes(app) {
             { in: 'query', name: 'since', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Start of the window. Defaults to 24 hours before `until`.' },
             { in: 'query', name: 'until', required: false, schema: { type: 'string', format: 'date-time' }, description: 'End of the window. Defaults to now.' },
             { in: 'query', name: 'bucket', required: false, schema: { type: 'string', enum: ['minute', 'hour', 'day'], default: 'hour' }, description: 'Bucket size.' },
+            { in: 'query', name: 'kind', required: false, schema: { type: 'string', enum: JOB_KINDS }, description: 'Narrow to one kind of job, so an inference queue can be read apart from a training one.' },
         ],
         responses: {
             200: {

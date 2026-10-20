@@ -507,7 +507,7 @@ class GpuRepository {
      * @returns {Promise<Array<Object>>} One row per bucket, oldest first.
      * @throws {Error} Re-throws any database failure.
      */
-    async jobThroughputSeries({ since, until, bucket }) {
+    async jobThroughputSeries({ since, until, bucket, kind }) {
         try {
             return await this.db.sequelize.query(
                 `WITH buckets AS (
@@ -522,14 +522,17 @@ class GpuRepository {
                             AND j.created_at < b.at + ('1 ${bucket}')::interval) AS created,
                         (SELECT count(*)::int FROM gpu_jobs j
                           WHERE j.finished_at >= b.at
-                            AND j.finished_at < b.at + ('1 ${bucket}')::interval) AS finished,
+                            AND j.finished_at < b.at + ('1 ${bucket}')::interval
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS finished,
                         (SELECT count(*)::int FROM gpu_jobs j
                           WHERE j.finished_at >= b.at
                             AND j.finished_at < b.at + ('1 ${bucket}')::interval
-                            AND j.state = 'succeeded') AS succeeded,
+                            AND j.state = 'succeeded'
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS succeeded,
                         (SELECT count(*)::int FROM gpu_jobs j
                           WHERE j.created_at <= b.at
-                            AND (j.finished_at IS NULL OR j.finished_at > b.at)) AS waiting,
+                            AND (j.finished_at IS NULL OR j.finished_at > b.at)
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS waiting,
                         /* Median rather than mean: one job that sat in the queue
                            over a weekend drags an average into meaninglessness,
                            and the question is what a typical job took. */
@@ -542,7 +545,7 @@ class GpuRepository {
                             AND j.finished_at > j.created_at) AS median_turnaround_s
                    FROM buckets b
                   ORDER BY b.at ASC`,
-                { replacements: { since, until }, type: QueryTypes.SELECT }
+                { replacements: { since, until, kind }, type: QueryTypes.SELECT }
             );
         } catch (error) {
             logger.error('Error::' + error);
