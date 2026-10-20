@@ -12,6 +12,45 @@ This file is the contract between the people drawing the eight tabs. It exists b
 eight screens drawn independently produce eight vocabularies, and the thing this phase is
 supposed to settle is exactly one.
 
+## Where the design actually comes from
+
+Three things could decide what this app shows, and **none of them is in charge**:
+
+- **The mockup**, which is the design and is usually right, because somebody thought about
+  the screen. It is not always right. It was drawn before the data was understood, and in
+  places it asks for things that would not help anybody.
+- **The API**, which is what MARP can answer today. A screen is not wrong for asking
+  something the API lacks -- that is a thing to build, not a thing to delete. Most of
+  2026-10-20 was spent undoing deletions made on the opposite assumption.
+- **Judgement about what makes the system usable**, which is what settles the other two
+  when they disagree, and is the only one of the three that can say "neither".
+
+So a difference between the mockup and the API is a question, not a defect, and the answer
+is recorded below rather than argued again. Isaac, 2026-10-20: *"we need to track what makes
+sense, and update the design to what makes sense to do, what will make the system
+functional and easy to use, not just what the mockup is, or what the api already has."*
+
+### Decisions
+
+- **2026-10-20 — the Models chart shows what is *used*, not what is *preferred*.** The
+  mockup's second line was `preferred` over time. `preferred` is a flag somebody flips
+  occasionally and a chart of when it flipped answers a question nobody has. Replaced with
+  how many distinct models anything actually ran in each bucket, which is derivable from the
+  jobs and says something worth knowing: this database holds fifteen registered models,
+  eight of which ran on one day in September and one in the week since. A registry filling
+  with models nothing runs is what that panel should expose.
+- **2026-10-20 — cache coverage stays on the design, unbuilt.** The mockup's third line.
+  Worth having, because it answers where a job can start without downloading weights first,
+  which is a scheduling question. It needs the worker to report its cache, so it waits for
+  the next change to `marp-inference-worker` rather than being dropped.
+- **2026-10-20 — the dataset-build chart waits for dataset builds.** It asks for frames
+  materialized per minute, concurrency and queue depth. All three are reasonable and none is
+  answerable until something tracks a build as work. Designing that schema now would be
+  guessing at the shape of a feature being designed elsewhere.
+- **2026-10-20 — throughput is kept as a count, not a rate.** `gpu_attempt_progress` stores
+  the cumulative figure per attempt per minute and the route differences it. A rate computed
+  at write time cannot be re-bucketed afterwards, and the screen asks for three ranges.
+
 ## What this app is, and is not
 
 It is a **mockup with real operation**: fixture data, real filtering, real navigation,

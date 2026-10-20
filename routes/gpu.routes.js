@@ -612,7 +612,7 @@ function registerGpuRoutes(app) {
         path: '/api/gpu/registry/series',
         summary: 'How the model registry grew',
         description:
-            'Registered model versions per bucket, cumulative, with how many were added in each. Counted straight out of `ml_models.created_at` — the rows have carried their own history all along, so nothing had to be recorded for this. **Two things the Models chart also asks for are absent and cannot be served yet**: `preferred` is a current flag with no record of when it changed, and nothing anywhere records which machine holds which model cached. Both need recording before they can be drawn.',
+            'Registered model versions per bucket, cumulative, with how many were added in each and how many distinct models anything actually ran. Counted straight out of `ml_models.created_at` and the job specs — the rows have carried their own history all along, so nothing had to be recorded for this. **`in_use` is deliberately not `preferred`**, which the screen originally asked for: a flag somebody flips occasionally makes a poor chart, whereas how much of a growing registry anyone runs is worth seeing. **Cache coverage is absent and cannot be served yet**: nothing records which machine holds which model, so it waits on the worker reporting its cache.',
         tags: [GPU_TAG],
         parameters: [
             { in: 'query', name: 'since', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Start of the window. Defaults to 24 hours before `until`.' },

@@ -647,11 +647,17 @@ class GpuRepository {
      * Cumulative registrations per bucket, counted straight out of `ml_models.created_at`
      * with nothing recorded specially -- the rows have carried their own history all along.
      *
-     * **`preferred` and cache coverage are deliberately absent.** Both are specified on the
-     * Models chart and neither can be answered: `preferred` is a current flag with no record
-     * of when it changed, and nothing anywhere records which machine holds which model. They
-     * need recording before they can be drawn, and inventing a number for them here is what
-     * this whole pass has been undoing.
+     * **`in_use` replaces the `preferred` line the mockup asked for**, and that is a design
+     * decision rather than a shortcut. `preferred` is a flag somebody flips occasionally; a
+     * chart of when it was flipped answers a question nobody has. What is worth seeing
+     * beside a growing registry is how much of it anyone actually runs -- this database has
+     * fifteen registered models, eight of which were used on one day in September and one in
+     * the week since. A registry filling up with models nothing runs is the thing that chart
+     * should show, and it is derivable from the jobs with nothing recorded specially.
+     *
+     * **Cache coverage is still absent and still worth having.** It answers where a job can
+     * start without downloading weights first, which is a scheduling question. Nothing
+     * records which machine holds which model, so it needs the worker to report its cache.
      *
      * @async
      * @param {Object} window
@@ -675,7 +681,14 @@ class GpuRepository {
                           WHERE m.created_at < b.at + ('1 ${bucket}')::interval) AS registered,
                         (SELECT count(*)::int FROM ml_models m
                           WHERE m.created_at >= b.at
-                            AND m.created_at < b.at + ('1 ${bucket}')::interval) AS added
+                            AND m.created_at < b.at + ('1 ${bucket}')::interval) AS added,
+                        /* How many distinct models anything actually ran in this
+                           bucket, named as the job spec named them. */
+                        (SELECT count(DISTINCT j.spec->'model'->>'name')::int
+                           FROM gpu_jobs j
+                          WHERE j.created_at >= b.at
+                            AND j.created_at < b.at + ('1 ${bucket}')::interval
+                            AND j.spec->'model'->>'name' IS NOT NULL) AS in_use
                    FROM buckets b
                   ORDER BY b.at ASC`,
                 { replacements: { since, until }, type: QueryTypes.SELECT }
