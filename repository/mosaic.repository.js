@@ -1133,6 +1133,94 @@ async function frames(request = {}) {
 }
 
 /**
+ * Every observation a dataset build would include, with what it needs to extract them.
+ *
+ * **The same `filters` the mosaic screens use**, through the same {@link predicates}, so a
+ * saved query means one thing across the platform. A second filter implementation here
+ * would drift the first time somebody added a dimension, and the dataset built would stop
+ * matching the count the Datasets screen showed before building it.
+ *
+ * One row per observation, carrying:
+ *
+ * - `video_source`, because frames are cut per video and the build groups by it;
+ * - `first_framenum` / `last_framenum`, the span the build extracts;
+ * - `keyframes`, the boxes themselves as JSON, so the labels can be interpolated without
+ *   a second query per observation -- a build covers tens of thousands of observations
+ *   and a query each is the difference between minutes and hours;
+ * - `species_id` and `comname`, which become the vocabulary.
+ *
+ * **Observations with no keyframes are left out.** There is nothing to extract and nothing
+ * to label, so including one would put an image in the archive with an empty label file
+ * beside it, which teaches the model that the frame contains nothing.
+ *
+ * **Observations with no species are left out too.** A class index has to mean something,
+ * and `species_id` is what it means; a row that cannot be given one cannot be labelled.
+ *
+ * @param {Object} request - `{filters}`.
+ * @returns {{sql: string, bind: Array}} The statement and its parameters.
+ * @throws {MosaicRequestError} If a filter cannot be served.
+ */
+function buildSelectionQuery({ filters = {} }) {
+    const bind = binder();
+    const where = predicates(filters, bind);
+
+    /* The two the build needs whatever was asked for, appended rather than folded into
+       `predicates`: they are not a question a reviewer asks, they are what this consumer
+       can physically use. */
+    where.push('o.species_id IS NOT NULL');
+    where.push('o.video_source IS NOT NULL');
+
+    const sql = `
+SELECT o.observation_id,
+       o.session_id,
+       o.video_source,
+       o.species_id,
+       sp.comname,
+       s.dive,
+       s.line,
+       k.first_framenum,
+       k.last_framenum,
+       k.keyframes
+  FROM observations o
+  LEFT JOIN sessions s ON s.session_id = o.session_id
+  LEFT JOIN projects p ON p.project_id = o.project_id
+  LEFT JOIN species sp ON sp.id = o.species_id
+  LEFT JOIN observation_review_current rc
+         ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
+  LEFT JOIN observation_review_current rt
+         ON rt.observation_id = o.observation_id AND rt.purpose = 'training'
+  JOIN LATERAL (
+         SELECT min(kf.framenum)::int AS first_framenum,
+                max(kf.framenum)::int AS last_framenum,
+                json_agg(json_build_object(
+                    'framenum', kf.framenum,
+                    'x', kf.x, 'y', kf.y,
+                    'width', kf.width, 'height', kf.height
+                ) ORDER BY kf.framenum) AS keyframes
+           FROM keyframes kf
+          WHERE kf.observation_id = o.observation_id
+       ) k ON k.first_framenum IS NOT NULL
+ WHERE ${where.join('\n   AND ')}
+ ORDER BY o.video_source, k.first_framenum, o.observation_id`;
+
+    return { sql, bind: bind.values };
+}
+
+/**
+ * Every observation a dataset build would include.
+ *
+ * @async
+ * @param {Object} [request] - `{filters}`.
+ * @returns {Promise<Array<Object>>} The rows, grouped by video and ordered within it.
+ * @throws {MosaicRequestError} If a filter cannot be served.
+ */
+async function selectForBuild(request = {}) {
+    const { sql, bind } = buildSelectionQuery(request);
+
+    return db.sequelize.query(sql, { bind, type: db.Sequelize.QueryTypes.SELECT });
+}
+
+/**
  * A `pageSize` that can be served.
  *
  * @param {*} value - The request's `pageSize`.
@@ -1276,10 +1364,12 @@ module.exports = {
     buildCountsQuery,
     buildFacetQuery,
     buildFramesQuery,
+    buildSelectionQuery,
     buildPageSetQuery,
     buildVideoObservationsQuery,
     counts,
     facets,
     frames,
     queryPages,
+    selectForBuild,
 };
