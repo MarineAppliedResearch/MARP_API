@@ -492,6 +492,68 @@ function registerGpuRoutes(app) {
         }),
     });
 
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:execute',
+        path: '/api/gpu/datasets/:id/archive',
+        summary: 'Fetch a packaged dataset, for a worker about to train on it',
+        description:
+            'The dataset a training job names, as one file. A dataset is built as a tree of images and labels on whichever machine built it, with a YAML naming absolute paths on that machine; `scripts/package-dataset.js` turns that into an uncompressed tar carrying `train/`, `eval/` and a `data.yaml` whose paths are relative, and records its hash on the row. This serves those bytes.\n\nGated on `jobs:execute` rather than `datasets:read`: fetching the dataset a job names is part of executing that job, and it is the permission the worker already holds. The catalogue permission is for people browsing datasets and would be a wider grant for no gain.\n\n**Range requests are supported, and that is not decoration.** A packaged dataset is several gigabytes and a volunteer is on a home connection, so a transfer that cannot resume is a transfer that may never finish. The archive is immutable -- it is named for its own hash, and re-packaging the same dataset produces the same file -- so the ETag is strong and the caching is `immutable`.\n\nThis is the narrow version of MarineAppliedResearch/MARP_API#120, which is where one way in and one way out belongs for pictures, models and artifacts alike. It is deliberately not a general file route.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The `datasets.id` the job spec named.' },
+            { in: 'header', name: 'Range', required: false, schema: { type: 'string' }, description: 'A single byte range, as `bytes=<first>-<last>`, to resume an interrupted fetch.' },
+        ],
+        responses: {
+            200: { description: 'The archive.', content: { 'application/x-tar': { schema: { type: 'string', format: 'binary' } } } },
+            206: { description: 'The requested byte range of the archive.', content: { 'application/x-tar': { schema: { type: 'string', format: 'binary' } } } },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const archive = await gpuController.datasetArchive(req.params.id);
+
+            // Named for its own hash, so the hash is the strongest validator there is.
+            res.setHeader('Content-Type', 'application/x-tar');
+            res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+            res.setHeader('ETag', `"dataset-archive-${archive.sha256}"`);
+            res.setHeader('Accept-Ranges', 'bytes');
+
+            // A conditional fetch of an immutable file can always be answered from cache.
+            if (req.headers['if-none-match'] === `"dataset-archive-${archive.sha256}"`) {
+                res.status(304).end();
+                return;
+            }
+
+            const total = archive.bytes;
+            const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+
+            // No range, or one this does not understand: send the whole thing. A
+            // multi-range request is answered whole rather than refused, because the
+            // only client is a worker resuming a download and whole is always correct.
+            if (!range) {
+                res.setHeader('Content-Length', String(total));
+                fs.createReadStream(archive.absolutePath).pipe(res);
+                return;
+            }
+
+            // An open-ended range (`bytes=1000-`) is what a resume actually sends.
+            const first = range[1] === '' ? total - Number(range[2]) : Number(range[1]);
+            const last = range[1] === '' || range[2] === '' ? total - 1 : Number(range[2]);
+
+            if (!Number.isFinite(first) || first < 0 || first > last || last >= total) {
+                res.setHeader('Content-Range', `bytes */${total}`);
+                res.status(416).end();
+                return;
+            }
+
+            res.status(206);
+            res.setHeader('Content-Range', `bytes ${first}-${last}/${total}`);
+            res.setHeader('Content-Length', String(last - first + 1));
+            fs.createReadStream(archive.absolutePath, { start: first, end: last }).pipe(res);
+        }),
+    });
+
     // ---------------------------------------------------------------
     // Human-facing: the pool, the jobs, submit, cancel
     // ---------------------------------------------------------------

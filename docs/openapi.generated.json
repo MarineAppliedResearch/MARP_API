@@ -2552,11 +2552,9 @@
       },
       "GpuJobSpec": {
         "type": "object",
-        "description": "The whole of what a worker is being asked to do. `range` is always present, even for a whole video, so nothing has to special-case the undivided case. Additional properties are allowed: the engine-specific parts of a spec belong to the worker, and MARP validates only the parts it schedules on.",
+        "description": "The whole of what a worker is being asked to do, in one of two shapes. An inference or tracking job carries `video` and `range`, and the range is always present even for a whole video so nothing has to special-case the undivided case. A training job carries `dataset` instead and has neither, because it is not a span of a video. Only `engine` is required of both; which of the rest are required follows from `kind`, and the submit endpoint refuses a spec that is neither shape rather than guessing. Additional properties are allowed: the engine-specific parts of a spec belong to the worker, and MARP validates only the parts it schedules on.",
         "required": [
-          "engine",
-          "video",
-          "range"
+          "engine"
         ],
         "additionalProperties": true,
         "properties": {
@@ -2564,6 +2562,35 @@
             "type": "string",
             "example": "ultralytics",
             "description": "Which inference engine is to run this."
+          },
+          "dataset": {
+            "type": "object",
+            "description": "The packaged dataset a training job learns from. Present only on a training job, and composed by MARP rather than by the submitter: the submitter names `dataset_id` and MARP fills in the locator and the hash from the row, exactly as it resolves a video. A dataset that has never been packaged is refused at submit, because a worker cannot fetch a folder sitting on another machine.",
+            "required": [
+              "url",
+              "sha256"
+            ],
+            "properties": {
+              "dataset_id": {
+                "type": "integer",
+                "example": 294,
+                "description": "The `datasets.id` this came from."
+              },
+              "name": {
+                "type": "string",
+                "example": "rockfish5",
+                "description": "What MARP calls it, for the record."
+              },
+              "url": {
+                "type": "string",
+                "example": "/api/v2/gpu/datasets/294/archive",
+                "description": "Coordinator-relative locator the worker fetches the archive from."
+              },
+              "sha256": {
+                "type": "string",
+                "description": "What the archive must hash to. Verified before anything is unpacked."
+              }
+            }
           },
           "model": {
             "type": "object",
@@ -14152,6 +14179,71 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/datasets/{id}/archive": {
+      "get": {
+        "summary": "Fetch a packaged dataset, for a worker about to train on it",
+        "description": "The dataset a training job names, as one file. A dataset is built as a tree of images and labels on whichever machine built it, with a YAML naming absolute paths on that machine; `scripts/package-dataset.js` turns that into an uncompressed tar carrying `train/`, `eval/` and a `data.yaml` whose paths are relative, and records its hash on the row. This serves those bytes.\n\nGated on `jobs:execute` rather than `datasets:read`: fetching the dataset a job names is part of executing that job, and it is the permission the worker already holds. The catalogue permission is for people browsing datasets and would be a wider grant for no gain.\n\n**Range requests are supported, and that is not decoration.** A packaged dataset is several gigabytes and a volunteer is on a home connection, so a transfer that cannot resume is a transfer that may never finish. The archive is immutable -- it is named for its own hash, and re-packaging the same dataset produces the same file -- so the ETag is strong and the caching is `immutable`.\n\nThis is the narrow version of MarineAppliedResearch/MARP_API#120, which is where one way in and one way out belongs for pictures, models and artifacts alike. It is deliberately not a general file route. Requires the `jobs:execute` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The `datasets.id` the job spec named."
+          },
+          {
+            "in": "header",
+            "name": "Range",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "A single byte range, as `bytes=<first>-<last>`, to resume an interrupted fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The archive.",
+            "content": {
+              "application/x-tar": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The requested byte range of the archive.",
+            "content": {
+              "application/x-tar": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

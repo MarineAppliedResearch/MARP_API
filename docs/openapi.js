@@ -2249,14 +2249,26 @@ const buildOpenApiSpec = () => {
                     GpuJobSpec: {
                         type: 'object',
                         description:
-                            'The whole of what a worker is being asked to do. `range` is always present, even for a whole video, so nothing has to special-case the undivided case. Additional properties are allowed: the engine-specific parts of a spec belong to the worker, and MARP validates only the parts it schedules on.',
-                        required: ['engine', 'video', 'range'],
+                            'The whole of what a worker is being asked to do, in one of two shapes. An inference or tracking job carries `video` and `range`, and the range is always present even for a whole video so nothing has to special-case the undivided case. A training job carries `dataset` instead and has neither, because it is not a span of a video. Only `engine` is required of both; which of the rest are required follows from `kind`, and the submit endpoint refuses a spec that is neither shape rather than guessing. Additional properties are allowed: the engine-specific parts of a spec belong to the worker, and MARP validates only the parts it schedules on.',
+                        required: ['engine'],
                         additionalProperties: true,
                         properties: {
                             engine: {
                                 type: 'string',
                                 example: 'ultralytics',
                                 description: 'Which inference engine is to run this.',
+                            },
+                            dataset: {
+                                type: 'object',
+                                description:
+                                    'The packaged dataset a training job learns from. Present only on a training job, and composed by MARP rather than by the submitter: the submitter names `dataset_id` and MARP fills in the locator and the hash from the row, exactly as it resolves a video. A dataset that has never been packaged is refused at submit, because a worker cannot fetch a folder sitting on another machine.',
+                                required: ['url', 'sha256'],
+                                properties: {
+                                    dataset_id: { type: 'integer', example: 294, description: 'The `datasets.id` this came from.' },
+                                    name: { type: 'string', example: 'rockfish5', description: 'What MARP calls it, for the record.' },
+                                    url: { type: 'string', example: '/api/v2/gpu/datasets/294/archive', description: 'Coordinator-relative locator the worker fetches the archive from.' },
+                                    sha256: { type: 'string', description: 'What the archive must hash to. Verified before anything is unpacked.' },
+                                },
                             },
                             model: {
                                 type: 'object',

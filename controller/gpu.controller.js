@@ -235,6 +235,19 @@ class GpuController {
         return gpuService.cancelJob(jobId);
     }
 
+
+    /**
+     * Where a dataset's archive is, for streaming to a worker.
+     *
+     * @async
+     * @param {number|string} datasetId - Dataset identifier from the path.
+     * @returns {Promise<Object>} `{absolutePath, sha256, bytes, name}`.
+     */
+    async datasetArchive(datasetId) {
+        logger.info('Controller: datasetArchive');
+        return gpuService.datasetArchive(datasetId);
+    }
+
     /**
      * Ingest one job's observations into the annotation record.
      *
