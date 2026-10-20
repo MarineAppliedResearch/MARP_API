@@ -1206,7 +1206,12 @@ function renderTraining(jobs) {
     ['done', done.length, 'Completed'],
     ['failed', attention.length, 'Need attention'],
   ];
-  const total = parts.reduce((sum, [, value]) => sum + value, 0) || 1;
+  /* Two numbers, because they are two different things. `total` is how many jobs
+     there are -- zero is an answer, and the middle of the ring reading "1" while
+     every segment read 0 was this exact conflation. `scale` is what the arcs
+     divide, and it cannot be zero or every dash is NaN. */
+  const total = parts.reduce((sum, [, value]) => sum + value, 0);
+  const scale = total || 1;
 
   const donut = $('.job-donut svg');
   if (donut) {
@@ -1214,8 +1219,8 @@ function renderTraining(jobs) {
     let offset = 0;
     arcs.forEach((arc, index) => {
       const value = parts[index] ? parts[index][1] : 0;
-      arc.setAttribute('pathLength', String(total));
-      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('pathLength', String(scale));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, scale - value)}`);
       arc.setAttribute('stroke-dashoffset', String(-offset));
       offset += value;
     });
@@ -1490,7 +1495,13 @@ async function wireVideoPicker() {
       const lists = await Promise.all(picked.map((d) => window.MarpApi.listVideoChildren(d.id)));
       /* Only playable items: a dive folder can hold stills and sidecars, and a
          picker that offers a .srt as something to run inference on is lying. */
-      const files = lists.flat().filter((item) => !item.isFolder);
+      /* The dive each file came from, carried on the file. A video's own record
+         does not name its dive -- the folder does -- and the run plan's target
+         line needs it, so it is stamped here rather than parsed back out of the
+         path later. */
+      const files = lists.flatMap((list, index) => (list || [])
+        .filter((item) => !item.isFolder)
+        .map((item) => ({ ...item, dive: picked[index]?.name || '' })));
 
       if (count) {
         count.innerHTML = `<b>${files.length} video${files.length === 1 ? '' : 's'}</b>`
@@ -1499,7 +1510,8 @@ async function wireVideoPicker() {
 
       videos.innerHTML = files.length ? files.map((file, index) => {
         const when = duration(file.runtimeTicks);
-        return `<article class="video-choice${index === 0 ? ' is-selected' : ''}" data-video-choice data-video-id="${escape(file.id)}">`
+        return `<article class="video-choice${index === 0 ? ' is-selected' : ''}" data-video-choice`
+          + ` data-video-id="${escape(file.id)}" data-video-dive="${escape(file.dive || '')}">`
           + `<label class="video-select"><input type="checkbox"${index === 0 ? ' checked' : ''} aria-label="Select ${escape(file.name)}"></label>`
           + `<div class="video-thumb"><img loading="lazy" src="/api/v2/jellyfin/items/${encodeURIComponent(file.id)}/images/Primary" alt="${escape(file.name)}"></div>`
           + `<div class="video-meta"><b>${escape(file.name)}</b>`
@@ -1612,7 +1624,12 @@ function renderInference(jobs) {
     ['done', done.length, 'Completed today'],
     ['failed', attention.length, 'Need attention'],
   ];
-  const total = parts.reduce((sum, [, value]) => sum + value, 0) || 1;
+  /* Two numbers, because they are two different things. `total` is how many jobs
+     there are -- zero is an answer, and the middle of the ring reading "1" while
+     every segment read 0 was this exact conflation. `scale` is what the arcs
+     divide, and it cannot be zero or every dash is NaN. */
+  const total = parts.reduce((sum, [, value]) => sum + value, 0);
+  const scale = total || 1;
 
   const donut = $('.job-donut svg');
   if (donut) {
@@ -1620,13 +1637,20 @@ function renderInference(jobs) {
     let offset = 0;
     arcs.forEach((arc, index) => {
       const value = parts[index] ? parts[index][1] : 0;
-      arc.setAttribute('pathLength', String(total));
-      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('pathLength', String(scale));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, scale - value)}`);
       arc.setAttribute('stroke-dashoffset', String(-offset));
       offset += value;
     });
     const middle = $('.job-donut > span > b');
     if (middle) middle.textContent = String(total);
+
+    /* The ring is `aria-hidden`, so this label is the only thing a screen reader
+       gets. It was markup reading "30 inference jobs ... 4 running", which stayed
+       put while the ring beside it moved. */
+    donut.closest('.job-donut')?.setAttribute('aria-label',
+      `${total} inference ${total === 1 ? 'job' : 'jobs'} represented: `
+      + parts.map(([, value, text]) => `${value} ${text.toLowerCase()}`).join(', '));
   }
 
   const legend = $('.job-mix-key');
@@ -1688,31 +1712,6 @@ function renderInferenceRecent(views) {
 const NOT_COUNTED = '<span class="dash" title="Nothing rolls detections up to a job: the ingest writes observations and the count is not recorded anywhere (gap 11)">&mdash;</span>';
 
 /**
- * Puts the real registry into the submission form's model selectors.
- *
- * They offered "Gorgonian Detector", "Starfish Detector" and "MARP General
- * Benthic" -- none of which is in `ml_models`, so a run planned against any of
- * them names a model MARP could not resolve.
- *
- * @param {Object[]} models - From `GET /api/v2/ml_models`.
- */
-function fillInferenceModels(models) {
-  /* Only models that could actually run: a draft has no weights worth sending
-     and an archived one is retired. */
-  const usable = models.filter((m) => m.status === 'trained');
-
-  for (const select of $$('select')) {
-    const options = [...select.options].map((o) => o.text);
-    /* The two model pickers are the ones offering the invented names. */
-    if (!options.some((text) => /Detector|Benthic/.test(text))) continue;
-
-    select.innerHTML = usable
-      .map((m) => `<option value="${m.id}">${m.name}</option>`)
-      .join('') || '<option>No trained model in the registry</option>';
-  }
-}
-
-/**
  * Fills the Inference screen from the data layer.
  *
  * @returns {Promise<void>}
@@ -1721,14 +1720,10 @@ async function renderInferenceScreen() {
   if (document.body.dataset.screen !== 'inference' || !window.MarpApi) return;
 
   try {
-    const [jobs, models] = await Promise.all([
-      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 })),
-      window.MarpApi.listModels(),
-    ]);
+    const jobs = await loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 }));
 
     renderInference(jobs.jobs);
     wireVideoPicker();
-    fillInferenceModels(models);
   } catch (error) {
     const table = $('.inference-table tbody');
     if (table) {
@@ -3883,6 +3878,9 @@ async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read
       $$(`[data-${prefix}-current]`, root).forEach((node) => {
         const value = current[node.dataset[camel('current')]];
         node.textContent = value === undefined ? '' : value;
+        /* An empty value hides its node rather than leaving the label beside it
+           stranded: "Clears in" with no duration reads as a rendering failure. */
+        node.hidden = !node.textContent;
       });
 
       if (chart && current.aria) chart.setAttribute('aria-label', current.aria);
@@ -3902,6 +3900,30 @@ function compactCount(value) {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
   if (n >= 10000) return `${Math.round(n / 1000)}k`;
   return n.toLocaleString();
+}
+
+/**
+ * How long the queue takes to drain, at the rate it is currently going.
+ *
+ * Empty when it cannot be said: nothing queued is not "clears instantly", and nothing
+ * being processed means the queue is not clearing at all. Both of those print nothing
+ * rather than a figure, because a reader who sees a duration believes one.
+ *
+ * @param {number} rate - Units in the last bucket.
+ * @param {number} queued - Units waiting.
+ * @returns {string} A phrase, or '' when there is nothing honest to say.
+ */
+function clearingNote(rate, queued) {
+  if (!queued) return '';
+  if (!rate) return 'Not clearing';
+
+  const minutes = Math.ceil(queued / rate);
+
+  if (minutes < 60) return `Clears in ~${minutes} min`;
+
+  const hours = minutes / 60;
+
+  return hours < 48 ? `Clears in ~${Math.round(hours)} h` : `Clears in ~${Math.round(hours / 24)} days`;
 }
 
 /**
@@ -3954,6 +3976,12 @@ function wireInferenceThroughput() {
           backlog: compactCount(queued.units),
           aria: `Inference throughput: ${compactCount(done.at(-1))} ${unit} in the last bucket, `
             + `${compactCount(queued.units)} queued across ${queued.jobs} jobs`,
+          /* How long the queue takes to drain at the rate it is going. This replaced
+             "Clearing ~16k frames/min", which was a rate nothing measured -- and the
+             question somebody actually has is when the backlog ends, not how fast it
+             is nominally served. It assumes nothing more arrives, which the sentence
+             it replaced assumed too and did not say. */
+          clearing: clearingNote(done.at(-1), queued.units),
         },
       };
     },
@@ -4255,18 +4283,260 @@ function wireSliders() {
 
 /* ================================================= the inference form */
 
+/**
+ * The registry, fetched once per screen.
+ *
+ * Every model config on the page offers the same list, and a run plan can hold
+ * several, so asking per config would ask the same question five times.
+ */
+let registryAsked = null;
+const MODEL_SPECIES = new Map();
+
+/**
+ * MARP's models, once.
+ *
+ * @returns {Promise<Object[]>} Active models, by name. Empty if MARP would not say.
+ */
+function loadModels() {
+  if (!registryAsked) {
+    registryAsked = (window.MarpApi?.listModels?.() || Promise.resolve([]))
+      /* **Active only.** `status` is what says a model is released to run; a draft
+         has no weights worth sending and an archived one is retired. The thirteen
+         real models here are active, and the two that are not are leftovers from a
+         test run that did not clean up after itself. */
+      .then((rows) => (rows || [])
+        .filter((m) => m.name && m.id !== undefined && m.status === 'active')
+        .sort((a, b) => a.name.localeCompare(b.name)))
+      .catch(() => []);
+  }
+
+  return registryAsked;
+}
+
+/**
+ * The classes one model can detect, once per model.
+ *
+ * @param {number} id - The model.
+ * @returns {Promise<Object[]>} Its species, by common name.
+ */
+function loadModelSpecies(id) {
+  if (!MODEL_SPECIES.has(id)) {
+    MODEL_SPECIES.set(id, (window.MarpApi?.listModelSpecies?.(id) || Promise.resolve([]))
+      .catch(() => []));
+  }
+
+  return MODEL_SPECIES.get(id);
+}
+
+/**
+ * One empty model configuration.
+ *
+ * The selects open empty and are filled by {@link refreshModelConfig} once MARP has
+ * answered, so a config appears the moment it is asked for rather than after a
+ * round trip -- the same reason the tables draw a loading row.
+ *
+ * `Version` is present and disabled until there is a chain to choose from. Nothing in
+ * MARP sets `parent_model_id` yet, so every chain is one long; the control says
+ * "Not versioned" rather than offering a list of one, and starts working the day
+ * training records a parent.
+ *
+ * @returns {string} The `<details>` element's markup.
+ */
+function modelConfigMarkup() {
+  return '<details class="model-config" data-model-config>'
+    + '<summary><span class="model-mark" data-model-mark></span>'
+    + '<span><b data-model-name>Choose a model</b><small data-model-note></small></span>'
+    + '<span class="config-state" data-config-state>Not configured</span></summary>'
+    + '<div class="model-config-body">'
+    + '<div class="model-fields">'
+    + '<label>Model<select class="sel" data-model-pick></select></label>'
+    + '<label>Version<select class="sel" data-model-version disabled></select></label>'
+    + '<label>Species/classes<select class="sel" data-class-mode>'
+    + '<option value="all">All species</option><option value="subset">Selected subset</option>'
+    + '</select></label>'
+    + '</div>'
+    + '<div class="class-picker" data-class-picker hidden></div>'
+    + '<details class="fold model-settings">'
+    + '<summary>Inference &amp; ByteTrack settings <span class="now" data-settings-now></span></summary>'
+    + '<div class="fbody settings-grid">'
+    + '<label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.25" data-setting="conf"></label>'
+    + '<label>NMS IoU<input class="inp" type="number" min="0" max="1" step="0.01" value="0.45" data-setting="iou"></label>'
+    + '<label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30" data-setting="track"></label>'
+    + '<label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70" data-setting="match"></label>'
+    + '<label>Track buffer (frames)<input class="inp" type="number" min="1" value="240" data-setting="buffer"></label>'
+    + '<label>Range size (frames)<input class="inp" type="number" min="1" value="900" data-setting="range"></label>'
+    + '<label class="check"><input type="checkbox" data-setting="mot20"><span>MOT20 mode</span></label>'
+    + '<label>Reduction<select class="sel" data-setting="reduction">'
+    + '<option>Best frame of each track</option><option>Every detection</option></select></label>'
+    + '</div></details>'
+    + '<button class="text-action danger" type="button" data-remove-model>Remove model</button>'
+    + '</div></details>';
+}
+
+/** The two-letter mark, from the model's own name rather than a fixed palette. */
+const MODEL_MARK_TONES = ['gorg', 'star', ''];
+
+/**
+ * Fill one model configuration from MARP, and keep its summary honest.
+ *
+ * Called when a config is added, and again whenever its model changes -- the class
+ * list and the version chain both belong to the chosen model, so neither can be
+ * written once and left.
+ *
+ * @param {Element} config - The `[data-model-config]` element.
+ * @returns {Promise<void>}
+ */
+async function refreshModelConfig(config) {
+  const pick = $('[data-model-pick]', config);
+  const models = await loadModels();
+
+  if (!pick) return;
+
+  if (!pick.options.length) {
+    pick.innerHTML = models.length
+      ? models.map((m) => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join('')
+      : '<option value="">No models registered</option>';
+  }
+
+  const id = Number(pick.value);
+  const model = models.find((m) => m.id === id);
+  const mark = $('[data-model-mark]', config);
+  const name = $('[data-model-name]', config);
+  const note = $('[data-model-note]', config);
+  const state = $('[data-config-state]', config);
+
+  if (!model) {
+    if (name) name.textContent = 'No model';
+    if (note) note.textContent = 'Nothing is registered to run';
+    if (state) state.textContent = 'Not configured';
+    return;
+  }
+
+  if (mark) {
+    mark.textContent = model.name.slice(0, 1).toUpperCase();
+    mark.className = `model-mark ${MODEL_MARK_TONES[model.id % MODEL_MARK_TONES.length]}`.trim();
+  }
+
+  if (name) name.textContent = model.name;
+
+  const [versions, species] = await Promise.all([
+    window.MarpApi.listModelVersions(model.id),
+    loadModelSpecies(model.id),
+  ]);
+
+  const version = $('[data-model-version]', config);
+
+  if (version) {
+    /* A model is always in its own chain, so one entry means "not versioned"
+       rather than "not found" -- and a picker offering a single choice is a
+       control that looks broken. */
+    const chain = (versions || []).filter((v) => v.id !== undefined);
+    version.disabled = chain.length < 2;
+    version.innerHTML = chain.length < 2
+      ? '<option>Not versioned</option>'
+      : chain.map((v) => `<option value="${v.id}"${v.id === model.id ? ' selected' : ''}>`
+        + `${escapeHtml(v.architecture_version || v.name)}</option>`).join('');
+  }
+
+  const picker = $('[data-class-picker]', config);
+
+  if (picker) {
+    /* The list is qualified only when the model spans more than one species list,
+       because a common name identifies an organism within its list and nowhere
+       else -- and qualifying every row of a single-list model is just noise. */
+    const lists = new Set(species.map((s) => s.species_list).filter(Boolean));
+    const qualify = lists.size > 1;
+
+    picker.innerHTML = species.length
+      ? species.map((s) => `<label><input type="checkbox" checked data-species-id="${s.species_id}">`
+        + `${escapeHtml(s.comname)}${qualify && s.species_list ? ` <small>${escapeHtml(s.species_list)}</small>` : ''}`
+        + '</label>').join('')
+      : '<span class="nodata">No classes are mapped to this model.</span>';
+  }
+
+  const mode = $('[data-class-mode]', config);
+  const all = $('[data-class-mode] option[value="all"]', config);
+
+  /* "All 1 species" is what counting without reading produces. */
+  if (all) all.textContent = species.length > 1 ? `All ${species.length} species` : 'All species';
+
+  refreshConfigSummary(config, { model, species });
+
+  if (state) state.textContent = species.length ? 'Configured' : 'No classes';
+  if (mode && !species.length) mode.value = 'all';
+}
+
+/**
+ * The one-line summary under a config's name, and the settings fold's own.
+ *
+ * Both restate what is set below them, so both go stale the moment somebody changes
+ * a number -- which is what they did: `conf .18 · match .70 · buffer 240` was markup
+ * beside inputs the reader could edit.
+ *
+ * @param {Element} config - The `[data-model-config]` element.
+ * @param {Object} [known] - `{model, species}` when the caller already has them.
+ */
+function refreshConfigSummary(config, known = {}) {
+  const get = (setting) => $(`[data-setting="${setting}"]`, config)?.value;
+  const checked = $$('[data-class-picker] input:checked', config).length;
+  const total = $$('[data-class-picker] input', config).length;
+  const subset = $('[data-class-mode]', config)?.value === 'subset';
+  const note = $('[data-model-note]', config);
+  const now = $('[data-settings-now]', config);
+
+  if (note) {
+    const version = $('[data-model-version]', config);
+    const chosen = version && !version.disabled ? `${version.selectedOptions[0]?.textContent} · ` : '';
+    const classes = total
+      ? (subset
+        ? `${checked} of ${total} ${total === 1 ? 'species' : 'species'}`
+        : (total === 1 ? 'its one species' : `all ${total} species`))
+      : 'no classes mapped';
+    note.textContent = `${chosen}${classes} · conf ${get('conf') ?? ''}`;
+  }
+
+  /* The leading zero goes, because the fold's own line is tight and ".18" reads
+     as a confidence to anybody who has used one. */
+  const trim = (value) => String(value ?? '').replace(/^0(?=\.)/, '');
+
+  if (now) now.textContent = `conf ${trim(get('conf'))} · match ${trim(get('match'))} · buffer ${get('buffer') ?? ''}`;
+}
+
+/**
+ * A name for a plan nobody named, from what the plan actually is.
+ *
+ * The dives it covers and the date, which is what somebody looking at a job list a
+ * week later wants to tell two runs apart by. Falls back to the date alone when the
+ * targets carry no dive.
+ *
+ * @returns {string} A name made of letters, numbers, hyphen and underscore.
+ */
+function defaultJobName() {
+  const dives = [...new Set($$('[data-target]')
+    .map((t) => (t.dataset.videoDive || $('small', t)?.textContent.split(' · ')[0] || '').trim())
+    .filter(Boolean))];
+
+  const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const scope = dives.slice(0, 3).join('_').replace(/[^A-Za-z0-9_-]+/g, '-');
+
+  return scope ? `${scope}_${day}` : `inference_${day}`;
+}
+
 function wireInferenceForm() {
   const run = $('#runBtn');
   if (!run) return;
   let activeGroup = $('[data-run-group]');
 
+  /* `.video-meta`, not `.video-title`. The picker was rewritten to read the real
+     Jellyfin library and these selectors were not, so every target it produced was
+     titled "video" with an empty scope -- and the submitted plan said so too. */
   const choiceParts = (choice) => {
-    const title = $('.video-title b', choice)?.textContent.trim() || 'video';
-    const meta = $('.video-title > span', choice)?.textContent.trim() || '';
+    const title = $('.video-meta b', choice)?.textContent.trim() || 'video';
+    const dive = (choice.dataset.videoDive || '').trim();
     const line = $('.line-entry .inp', choice)?.value.trim();
     const mode = $('[data-video-range]', choice)?.value || 'all';
     const times = $$('.time-range .inp', choice).map((input) => input.value);
-    return { id: choice.dataset.videoId, title, meta, line,
+    return { id: choice.dataset.videoId, title, dive, line,
       range: mode === 'time' ? times.join('–') : 'Entire video' };
   };
 
@@ -4306,9 +4576,9 @@ function wireInferenceForm() {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[character]));
   const targetMarkup = (parts) => '<article class="plan-target" data-target data-video-id="'
-    + safe(parts.id) + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
+    + safe(parts.id) + '" data-video-dive="' + safe(parts.dive || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
     + (parts.line ? 'L' + safe(parts.line) : '—') + '</span><span><b class="mono">' + safe(parts.title)
-    + '</b><small>' + safe(parts.meta.split(' · ').slice(0, 2).join(' · ')) + ' · '
+    + '</b><small>' + (parts.dive ? safe(parts.dive) + ' · ' : '')
     + (parts.line ? 'Line ' + safe(parts.line) : 'Line not assigned') + ' · ' + safe(parts.range)
     + '</small></span><button class="btn sm icon" type="button" data-remove-target aria-label="Remove '
     + safe(parts.title) + '">' + ico('x', 'sm') + '</button></article>';
@@ -4325,8 +4595,22 @@ function wireInferenceForm() {
       if (range) range.hidden = event.target.value !== 'time';
     }
     if (event.target.matches('[data-class-mode]')) {
-      const picker = $('[data-class-picker]', event.target.closest('[data-model-config]'));
+      const config = event.target.closest('[data-model-config]');
+      const picker = $('[data-class-picker]', config);
       if (picker) picker.hidden = event.target.value !== 'subset';
+      refreshConfigSummary(config);
+    }
+
+    /* A model change replaces the class list and the version chain, because both
+       belong to the model. Everything else only restates what is already there. */
+    if (event.target.matches('[data-model-pick]')) {
+      refreshModelConfig(event.target.closest('[data-model-config]'));
+      return;
+    }
+
+    const config = event.target.closest('[data-model-config]');
+    if (config && event.target.matches('[data-setting], [data-model-version], [data-class-picker] input')) {
+      refreshConfigSummary(config);
     }
   });
 
@@ -4364,13 +4648,16 @@ function wireInferenceForm() {
     const addModel = event.target.closest('[data-add-model]');
     if (addModel) {
       const group = addModel.closest('[data-run-group]');
-      const models = $('[data-model-configs]', group);
-      const source = $('[data-model-config]', group);
-      if (models && source) {
-        const clone = source.cloneNode(true);
-        const name = $('summary b', clone); if (name) name.textContent = 'MARP General Benthic';
-        const note = $('summary small', clone); if (note) note.textContent = 'v1.0.2 · all 24 species · conf 0.20';
-        clone.open = true; models.appendChild(clone);
+      const configs = $('[data-model-configs]', group);
+      if (configs) {
+        /* Built rather than cloned. It used to clone the first config and
+           overwrite two strings with "MARP General Benthic v1.0.2 · all 24
+           species", which is not a model MARP has ever held -- and once the
+           seeded config went, there was nothing to clone at all. */
+        configs.insertAdjacentHTML('beforeend', modelConfigMarkup());
+        const added = configs.lastElementChild;
+        added.open = true;
+        refreshModelConfig(added);
       }
       refreshPlan(); return;
     }
@@ -4405,7 +4692,10 @@ function wireInferenceForm() {
       })),
     }));
     const spec = { kind: 'inference_plan', pipeline: 'detection_bytetrack',
-      name: $('#jobname')?.value || null, groups,
+      /* Blank means "name it after the plan", which is what the placeholder says.
+         The box used to open pre-filled with `CAMPA_2024_Dives_0103_0125`, so every
+         plan anybody submitted without noticing carried that name. */
+      name: $('#jobname')?.value.trim() || defaultJobName(), groups,
       output: 'unreviewed_observations', worker_selection: $('table#workers')?.value };
     $('#specText').textContent = JSON.stringify(spec, null, 2);
     $('#specOut').hidden = false;
@@ -4414,6 +4704,17 @@ function wireInferenceForm() {
 
   refreshSelected();
   refreshPlan();
+
+  /* One configuration to start with, so the panel shows the control rather than an
+     empty box somebody has to guess at. The markup used to carry two, named after
+     models MARP has never held. */
+  const firstGroup = $('[data-run-group]');
+  const configs = firstGroup && $('[data-model-configs]', firstGroup);
+
+  if (configs && !configs.children.length) {
+    configs.insertAdjacentHTML('beforeend', modelConfigMarkup());
+    refreshModelConfig(configs.lastElementChild).then(refreshPlan);
+  }
 }
 
 /**

@@ -3402,6 +3402,24 @@ const buildOpenApiSpec = () => {
                             excluded: { type: 'integer', example: 160 },
                         },
                     },
+                    ModelSpeciesClass: {
+                        type: 'object',
+                        description:
+                            'One class a model can detect: the species joined to its `model_species` linkage. `species_list` is here because a '
+                            + 'common name identifies an organism only within its list. The training figures are the linkage\'s own and may be '
+                            + 'null -- a mapping recorded without them is still a mapping.',
+                        properties: {
+                            species_id: { type: 'integer', example: 775 },
+                            comname: { type: 'string', example: 'White-plumed anemone' },
+                            species: { type: 'string', nullable: true, example: 'Metridium farcimen' },
+                            species_list: { type: 'string', nullable: true, example: 'Invert' },
+                            dataset_size: { type: 'integer', nullable: true, example: 1840 },
+                            balance_weight: { type: 'number', format: 'float', nullable: true },
+                            precision_mean: { type: 'number', format: 'float', nullable: true, example: 0.91 },
+                            recall_mean: { type: 'number', format: 'float', nullable: true, example: 0.87 },
+                            f1_mean: { type: 'number', format: 'float', nullable: true, example: 0.89 },
+                        },
+                    },
                     MosaicFrameCounts: {
                         type: 'object',
                         description:

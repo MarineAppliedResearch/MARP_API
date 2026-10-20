@@ -180,6 +180,17 @@ class DatasetService {
     }
 
     /**
+     * The species a model can detect, by common name.
+     *
+     * @async
+     * @param {number|string} modelId - The model.
+     * @returns {Promise<Array<Object>>} The species, by common name.
+     */
+    async getModelSpecies(modelId) {
+        return await datasetRepository.getModelSpecies(modelId);
+    }
+
+    /**
      * Every training run, newest first, optionally for one model.
      *
      * @async

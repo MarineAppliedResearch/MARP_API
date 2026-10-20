@@ -94,6 +94,39 @@ function registerDatasetRoutes(app) {
 
     registerVersionedRoute(app, {
         method: 'get',
+        permission: 'models:read',
+        path: '/api/ml_models/:id/species',
+        summary: 'Fetch the species a model can detect',
+        description:
+            '`model_species` has mapped models to species since the schema was written and nothing served it, so a client choosing '
+            + 'which classes to run had to be told the list rather than ask for it. Joined to `species` rather than returning the '
+            + 'linkage rows, because a `species_id` is not something a person can pick from; `species_list` comes too, since a common '
+            + 'name identifies an organism only within its list and a model spanning two can otherwise offer one label twice. '
+            + 'The per-species training figures on the linkage ride along free from the same row, and they are what makes the list '
+            + 'worth reading: a class the model recalls poorly is one somebody may want to leave out of a run. '
+            + '**An empty array is a real answer** -- a registered model nothing has mapped yet -- and is not a 404.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The model.' },
+        ],
+        responses: {
+            200: {
+                description: 'The species, by common name.',
+                content: {
+                    'application/json': {
+                        schema: { type: 'array', items: { $ref: '#/components/schemas/ModelSpeciesClass' } },
+                    },
+                },
+            },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await datasetController.getModelSpecies(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
         permission: 'jobs:execute',
         path: '/api/model/:id/artifact',
         summary: 'Download registered model weights',

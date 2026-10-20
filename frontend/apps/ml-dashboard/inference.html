@@ -66,15 +66,15 @@
           <article class="panel inference-mix">
             <header class="panel-hd"><div><h2>Inference status</h2><p>Current queue and today&rsquo;s outcomes</p></div></header>
             <div class="panel-bd jobs-mix-bd">
-              <div class="job-donut" role="img" aria-label="30 inference jobs represented: 4 running, 5 queued, 18 completed today and 3 needing attention">
+              <div class="job-donut" role="img" data-rendered aria-label>
                 <svg viewBox="0 0 120 120" aria-hidden="true">
                   <circle class="donut-track" cx="60" cy="60" r="43"/>
-                  <circle class="donut-part inference" cx="60" cy="60" r="43" pathLength="30" stroke-dasharray="4 26" stroke-dashoffset="0"/>
-                  <circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="30" stroke-dasharray="5 25" stroke-dashoffset="-4"/>
-                  <circle class="donut-part done" cx="60" cy="60" r="43" pathLength="30" stroke-dasharray="18 12" stroke-dashoffset="-9"/>
-                  <circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="30" stroke-dasharray="3 27" stroke-dashoffset="-27"/>
+                  <circle class="donut-part inference" cx="60" cy="60" r="43"/>
+                  <circle class="donut-part queued" cx="60" cy="60" r="43"/>
+                  <circle class="donut-part done" cx="60" cy="60" r="43"/>
+                  <circle class="donut-part attention" cx="60" cy="60" r="43"/>
                 </svg>
-                <span><b>30</b><small>inference jobs</small></span>
+                <span><b data-rendered></b><small>inference jobs</small></span>
               </div>
               <div class="job-mix-key inference-mix-key"></div>
             </div>
@@ -90,7 +90,7 @@
               </div>
             </header>
             <div class="panel-bd inference-flow-bd">
-              <div class="inference-chart" data-result-graph role="img" aria-label="Inference throughput and queued frame backlog over the last 5 hours">
+              <div class="inference-chart" data-result-graph role="img" data-rendered aria-label>
                 <svg viewBox="0 0 780 248" aria-hidden="true">
                   <g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g>
                   <g class="inference-axis left"><text x="46" y="32"></text><text x="46" y="88"></text><text x="46" y="144"></text><text x="46" y="200"></text><text x="54" y="225" data-inference-time></text><text x="390" y="225" data-inference-time></text><text x="726" y="225" data-inference-time></text><text class="axis-title" x="54" y="15">FRAMES PROCESSED / MIN</text></g>
@@ -108,7 +108,7 @@
                 <div class="inference-current" aria-label="Current inference activity">
                   <span><b data-inference-current="throughput"></b> frames/min</span>
                   <span><b data-inference-current="backlog"></b> queued</span>
-                  <span class="clearing"><b>Clearing</b> ~16k frames/min</span>
+                  <span class="clearing" data-rendered data-inference-current="clearing" hidden></span>
                   <span class="live"><i class="dot"></i>Live</span>
                 </div>
               </div>
@@ -190,7 +190,7 @@
               </div>
 
               <div class="query-actions">
-                <span><b data-video-selected-count>3</b> selected · line assignments save independently</span>
+                <span><b data-video-selected-count data-rendered></b> selected · line assignments save independently</span>
                 <button class="btn primary" type="button" data-add-targets><svg class="ico"><use href="#i-plus"/></svg>Add selected to run group</button>
               </div>
             </div>
@@ -206,97 +206,22 @@
             <div class="panel-bd run-groups">
               <article class="run-group" data-run-group>
                 <header class="run-group-head">
-                  <span class="group-number">1</span>
-                  <span><b>CAMPA2024 · Dive 1</b><small>Snapshot from the production Jellyfin catalog</small></span>
+                  <span class="group-number" data-rendered></span>
+                  <span data-rendered><b>Run group</b><small>Add video ranges from the search above, then a model</small></span>
                   <button class="btn sm icon" type="button" data-remove-group aria-label="Delete run group"><svg class="ico sm"><use href="#i-x"/></svg></button>
                 </header>
 
                 <section class="plan-section">
-                  <header><span><b>Video ranges</b><small><span data-target-count>3</span> targets</small></span><button class="btn sm" type="button" data-edit-query>Edit query</button></header>
-                  <div class="plan-targets" data-plan-targets>
-                    <article class="plan-target" data-target data-video-id="9f66020c16c80d2800560a76d4417080">
-                      <span class="mini-thumb pending">—</span><span><b class="mono">20240727_141923_Fwd.mp4</b><small>Dive 1 · Line not assigned · Entire video</small></span>
-                      <button class="btn sm icon" type="button" data-remove-target aria-label="Remove 20240727_141923_Fwd.mp4"><svg class="ico sm"><use href="#i-x"/></svg></button>
-                    </article>
-                    <article class="plan-target" data-target data-video-id="847c5f1034d01cf3a7aa2427fa7af4b4">
-                      <span class="mini-thumb">L1960</span><span><b class="mono">20240727_154643_Fwd.mp4</b><small>Dive 1 · Line 1960 · 00:04:00–00:24:00</small></span>
-                      <button class="btn sm icon" type="button" data-remove-target aria-label="Remove 20240727_154643_Fwd.mp4"><svg class="ico sm"><use href="#i-x"/></svg></button>
-                    </article>
-                    <article class="plan-target" data-target data-video-id="f53860e0fbee24ceec374c12dd1f22a9">
-                      <span class="mini-thumb">L1750</span><span><b class="mono">20240727_163021_Fwd.mp4</b><small>Dive 1 · Line 1750 · Entire video</small></span>
-                      <button class="btn sm icon" type="button" data-remove-target aria-label="Remove 20240727_163021_Fwd.mp4"><svg class="ico sm"><use href="#i-x"/></svg></button>
-                    </article>
-                  </div>
+                  <header><span><b>Video ranges</b><small><span data-target-count></span> targets</small></span><button class="btn sm" type="button" data-edit-query>Edit query</button></header>
+                  <div class="plan-targets" data-plan-targets data-rendered></div>
                 </section>
 
                 <section class="plan-section">
-                  <header><span><b>Models</b><small><span data-model-count>2</span> configurations · each runs on every target above</small></span><button class="btn sm" type="button" data-add-model><svg class="ico sm"><use href="#i-plus"/></svg>Add model</button></header>
-                  <div class="model-configs" data-model-configs>
-                    <details class="model-config" open data-model-config>
-                      <summary><span class="model-mark gorg">G</span><span><b>Gorgonian Detector</b><small>v2.0.0 · all 8 species · conf 0.18</small></span><span class="config-state">Configured</span></summary>
-                      <div class="model-config-body">
-                        <div class="model-fields">
-                          <label>Model<select class="sel"><option>Gorgonian Detector</option><option>Starfish Detector</option><option>MARP General Benthic</option></select></label>
-                          <label>Version<select class="sel"><option>2.0.0</option><option>1.8.2</option></select></label>
-                          <label>Species/classes<select class="sel" data-class-mode><option value="all">All 8 species</option><option value="subset">Selected subset</option></select></label>
-                        </div>
-                        <div class="class-picker" data-class-picker hidden>
-                          <label><input type="checkbox" checked>Red gorgonian</label><label><input type="checkbox" checked>Bubblegum coral</label>
-                          <label><input type="checkbox" checked>Sea fan</label><label><input type="checkbox" checked>Whip coral</label>
-                          <label><input type="checkbox" checked>Soft coral</label><label><input type="checkbox" checked>Black coral</label>
-                          <label><input type="checkbox" checked>Sea pen</label><label><input type="checkbox" checked>Other gorgonian</label>
-                        </div>
-                        <details class="fold model-settings">
-                          <summary>Inference &amp; ByteTrack settings <span class="now">conf .18 · match .70 · buffer 240</span></summary>
-                          <div class="fbody settings-grid">
-                            <label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.18"></label>
-                            <label>NMS IoU<input class="inp" type="number" min="0" max="1" step="0.01" value="0.45"></label>
-                            <label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30"></label>
-                            <label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70"></label>
-                            <label>Track buffer (frames)<input class="inp" type="number" min="1" value="240"></label>
-                            <label>Range size (frames)<input class="inp" type="number" min="1" value="900"></label>
-                            <label class="check"><input type="checkbox"><span>MOT20 mode</span></label>
-                            <label>Reduction<select class="sel"><option>Best frame of each track</option><option>Every detection</option></select></label>
-                          </div>
-                        </details>
-                        <button class="text-action danger" type="button" data-remove-model>Remove model</button>
-                      </div>
-                    </details>
-
-                    <details class="model-config" data-model-config>
-                      <summary><span class="model-mark star">S</span><span><b>Starfish Detector</b><small>v1.4.2 · 3 of 8 species · conf 0.24</small></span><span class="config-state">Configured</span></summary>
-                      <div class="model-config-body">
-                        <div class="model-fields">
-                          <label>Model<select class="sel"><option>Starfish Detector</option><option>Gorgonian Detector</option><option>MARP General Benthic</option></select></label>
-                          <label>Version<select class="sel"><option>1.4.2</option><option>1.3.0</option></select></label>
-                          <label>Species/classes<select class="sel" data-class-mode><option value="all">All 8 species</option><option value="subset" selected>Selected subset</option></select></label>
-                        </div>
-                        <div class="class-picker" data-class-picker>
-                          <label><input type="checkbox" checked>Sunflower star</label><label><input type="checkbox" checked>Bat star</label>
-                          <label><input type="checkbox" checked>Basket star</label><label><input type="checkbox">Blood star</label>
-                          <label><input type="checkbox">Leather star</label><label><input type="checkbox">Sand star</label>
-                          <label><input type="checkbox">Brittle star</label><label><input type="checkbox">Other starfish</label>
-                        </div>
-                        <details class="fold model-settings">
-                          <summary>Inference &amp; ByteTrack settings <span class="now">conf .24 · match .76 · buffer 180</span></summary>
-                          <div class="fbody settings-grid">
-                            <label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.24"></label>
-                            <label>NMS IoU<input class="inp" type="number" min="0" max="1" step="0.01" value="0.50"></label>
-                            <label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.34"></label>
-                            <label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.76"></label>
-                            <label>Track buffer (frames)<input class="inp" type="number" min="1" value="180"></label>
-                            <label>Range size (frames)<input class="inp" type="number" min="1" value="900"></label>
-                            <label class="check"><input type="checkbox"><span>MOT20 mode</span></label>
-                            <label>Reduction<select class="sel"><option>Best frame of each track</option><option>Every detection</option></select></label>
-                          </div>
-                        </details>
-                        <button class="text-action danger" type="button" data-remove-model>Remove model</button>
-                      </div>
-                    </details>
-                  </div>
+                  <header><span><b>Models</b><small><span data-model-count></span> configurations · each runs on every target above</small></span><button class="btn sm" type="button" data-add-model><svg class="ico sm"><use href="#i-plus"/></svg>Add model</button></header>
+                  <div class="model-configs" data-model-configs data-rendered></div>
                 </section>
 
-                <footer class="group-math"><span><b data-target-math>3</b> video ranges</span><i>×</i><span><b data-model-math>2</b> model configurations</span><i>=</i><strong><b data-run-math>6</b> model runs</strong><small>Worker range splitting happens after this plan is submitted.</small></footer>
+                <footer class="group-math"><span><b data-target-math></b> video ranges</span><i>×</i><span><b data-model-math></b> model configurations</span><i>=</i><strong><b data-run-math></b> model runs</strong><small>Worker range splitting happens after this plan is submitted.</small></footer>
               </article>
             </div>
           </section>
@@ -307,7 +232,7 @@
         <section class="panel" id="runbar">
           <header class="panel-hd">
             <h2><span class="stepnum"><b>4.</b>Review &amp; run</span>
-              <span class="sub">6 model runs across 3 selected video ranges</span></h2>
+              <span class="sub" data-rendered></span></h2>
           </header>
           <div class="panel-bd">
             <div class="runrow">
@@ -329,8 +254,8 @@
               </div>
               <div class="field">
                 <label for="jobname">Plan name <span class="faint">(optional)</span></label>
-                <input class="inp wide" type="text" id="jobname"
-                       value="CAMPA_2024_Dives_0103_0125">
+                <input class="inp wide" type="text" id="jobname" data-rendered
+                       placeholder="Named after the plan if left blank">
                 <span class="hint">Letters, numbers, hyphen, underscore.</span>
               </div>
               <div class="field">

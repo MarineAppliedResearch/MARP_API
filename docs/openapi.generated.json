@@ -5271,6 +5271,58 @@
           }
         }
       },
+      "ModelSpeciesClass": {
+        "type": "object",
+        "description": "One class a model can detect: the species joined to its `model_species` linkage. `species_list` is here because a common name identifies an organism only within its list. The training figures are the linkage's own and may be null -- a mapping recorded without them is still a mapping.",
+        "properties": {
+          "species_id": {
+            "type": "integer",
+            "example": 775
+          },
+          "comname": {
+            "type": "string",
+            "example": "White-plumed anemone"
+          },
+          "species": {
+            "type": "string",
+            "nullable": true,
+            "example": "Metridium farcimen"
+          },
+          "species_list": {
+            "type": "string",
+            "nullable": true,
+            "example": "Invert"
+          },
+          "dataset_size": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1840
+          },
+          "balance_weight": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "precision_mean": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "example": 0.91
+          },
+          "recall_mean": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "example": 0.87
+          },
+          "f1_mean": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "example": 0.89
+          }
+        }
+      },
       "MosaicFrameCounts": {
         "type": "object",
         "description": "How much video a question covers. `keyframes` counts the frames somebody or something drew a box on; `frames` adds the frames interpolated between them, which a dataset trains on as well, and is therefore the number to size a training run against. **Counted per observation**: two animals tracked through the same stretch of video contribute their frames twice, which is right for training examples and wrong for image files. Unlike the counts route beside it, **the status filters apply here**.",
@@ -9961,6 +10013,50 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/ml_models/{id}/species": {
+      "get": {
+        "summary": "Fetch the species a model can detect",
+        "description": "`model_species` has mapped models to species since the schema was written and nothing served it, so a client choosing which classes to run had to be told the list rather than ask for it. Joined to `species` rather than returning the linkage rows, because a `species_id` is not something a person can pick from; `species_list` comes too, since a common name identifies an organism only within its list and a model spanning two can otherwise offer one label twice. The per-species training figures on the linkage ride along free from the same row, and they are what makes the list worth reading: a class the model recalls poorly is one somebody may want to leave out of a run. **An empty array is a real answer** -- a registered model nothing has mapped yet -- and is not a 404. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The model."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The species, by common name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelSpeciesClass"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

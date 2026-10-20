@@ -70,6 +70,24 @@ functional and easy to use, not just what the mockup is, or what the api already
   through the same stretch of video contribute those frames twice — right for "how many
   training examples", wrong for "how many image files", and the second is a different
   question nothing asks yet.
+- **2026-10-20 — a model's classes come from `model_species`, which nothing served.** The
+  Inference run plan offered eight invented corals and said "all 8 species" whatever the
+  model was. `model_species` has mapped models to species since the schema was written, so
+  `GET /ml_models/:id/species` serves it. The real spread is 1 to 499 classes across the
+  thirteen active models, which is why that count could never have been markup.
+- **2026-10-20 — the run plan starts empty, and a model config is built rather than cloned.**
+  It carried three video targets and two model configurations naming models MARP has never
+  held. Targets now come from the Jellyfin picker in step 2 and configurations are built from
+  the registry. **Active models only**: `status` is what says a model is released to run.
+- **2026-10-20 — "Version" is present and disabled.** Nothing in MARP sets
+  `parent_model_id`, so every chain is one long and a picker offering one choice looks
+  broken. It reads "Not versioned" and starts working the day a training run records a
+  parent — which is the training work's call to make, not this screen's.
+- **2026-10-20 — the throughput foot says when the queue clears, not how fast.**
+  "Clearing ~16k frames/min" was a rate nothing measured. The question somebody has is when
+  the backlog ends, so it now divides what is queued by what is being processed. Nothing
+  queued and nothing processing both print nothing, because a reader who sees a duration
+  believes one.
 - **2026-10-20 — no overlap between subsets is claimed.** Adding a query used to report that
   six to fifteen per cent of its matches were duplicates, from a hash. Knowing the real figure
   means comparing observation ids across subsets and the page route caps at 600 rows, so the

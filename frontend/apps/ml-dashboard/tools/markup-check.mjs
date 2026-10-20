@@ -151,6 +151,11 @@ const PROSE = [
     [/<li\b[^>]*>/g, 'li'],
     [/<code\b[^>]*>/g, 'code'],
     [/<small class="(?:later|faint)[^"]*"[^>]*>/g, 'small'],
+    /* `<span class="stepnum"><b>3.</b>Run plan</span>` -- the "3." is which step this
+       is, the same kind of thing as the "1." on a list item above. Every builder
+       screen carries four, so leaving them in meant twelve entries of noise in a
+       report whose whole value is that every line in it is real. */
+    [/<span class="stepnum"[^>]*>/g, 'span'],
 ];
 
 /**

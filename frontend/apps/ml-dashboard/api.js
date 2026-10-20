@@ -916,6 +916,39 @@
   }
 
   /**
+   * `GET /api/v2/ml_models/:id/versions` -- the chain a model belongs to, oldest first.
+   *
+   * A model is always in its own chain, so a one-element answer means "not versioned"
+   * rather than "not found". Nothing in this database sets `parent_model_id` yet, so
+   * every chain is currently one long -- which the Inference screen says out loud
+   * rather than offering a version picker with one entry.
+   *
+   * @param {number|string} id - Any model in the chain.
+   * @returns {Promise<Object[]>}
+   */
+  function listModelVersions(id) {
+    return serve('models',
+      () => request(`/ml_models/${encodeURIComponent(id)}/versions`),
+      () => []);
+  }
+
+  /**
+   * `GET /api/v2/ml_models/:id/species` -- the classes a model can detect.
+   *
+   * **An empty array is a real answer**: a registered model nothing has mapped yet.
+   * The spread is wide -- one model here maps a single species and another maps 499 --
+   * which is why "all 8 species" could never have been markup.
+   *
+   * @param {number|string} id - The model.
+   * @returns {Promise<Object[]>}
+   */
+  function listModelSpecies(id) {
+    return serve('models',
+      () => request(`/ml_models/${encodeURIComponent(id)}/species`),
+      () => []);
+  }
+
+  /**
    * `GET /api/v2/dataset` -- saved datasets, as a plain array.
    *
    * A `Dataset` carries `status` since #260: draft, building, ready or failed.
@@ -1201,6 +1234,8 @@
     listJobs,
     getJob,
     listModels,
+    listModelVersions,
+    listModelSpecies,
     listDatasets,
     listProjects,
     listUsers,

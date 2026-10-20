@@ -437,6 +437,55 @@ class DatasetRepository {
         }
     }
 
+    /**
+     * The species a model can detect, by common name.
+     *
+     * `model_species` has held this since the schema was written and nothing
+     * served it, so the Inference screen's class picker listed eight invented
+     * corals and the summary beside it said "all 8 species" whatever the model
+     * was. The real spread is wide -- one model here maps a single species and
+     * another maps 499 -- which is exactly why the number cannot be a constant.
+     *
+     * **Joined to `species` rather than returning the linkage rows**, because a
+     * `species_id` is not something a person can choose from. `species_list`
+     * rides along because a common name identifies an organism only within its
+     * list, and a model spanning two lists can otherwise offer the same label
+     * twice with no way to tell them apart.
+     *
+     * The per-species training figures on the linkage -- `dataset_size`,
+     * `precision_mean`, `recall_mean`, `f1_mean` -- come too. They are free from
+     * the same row, and they are what makes a class list worth reading: a class
+     * the model recalls poorly is one somebody may want to leave out of a run.
+     *
+     * @async
+     * @param {number|string} modelId - The model.
+     * @returns {Promise<Array<Object>>} The species, by common name.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getModelSpecies(modelId) {
+        try {
+            return await this.db.sequelize.query(
+                `SELECT s.id                AS species_id,
+                        s.comname,
+                        s.species,
+                        s.species_list,
+                        ms.dataset_size,
+                        ms.balance_weight,
+                        ms.precision_mean,
+                        ms.recall_mean,
+                        ms.f1_mean
+                   FROM model_species ms
+                   JOIN species s ON s.id = ms.species_id
+                  WHERE ms.model_id = :modelId
+                  ORDER BY s.comname ASC, s.id ASC`,
+                { replacements: { modelId }, type: QueryTypes.SELECT }
+            );
+        } catch (err) {
+            console.error(`Error in getModelSpecies(${modelId}):`, err);
+            throw err;
+        }
+    }
+
 
 
     /**
