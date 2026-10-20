@@ -1783,6 +1783,14 @@ class GpuService {
 
         requiredString(spec.engine, 'spec.engine');
 
+        /* A training job is a different shape and splits into nothing. Branched
+           here, before the video validation, because `video` and `range` are
+           required for everything below this line and a training job has
+           neither -- it has a dataset. */
+        if (kind === 'training') {
+            return this.submitTrainingJob(body, spec, principal);
+        }
+
         if (!spec.video || typeof spec.video !== 'object' || Array.isArray(spec.video)) {
             invalid('spec.video is required and must be an object.');
         }
@@ -1893,6 +1901,107 @@ class GpuService {
         }
 
         return answer;
+    }
+
+
+    /**
+     * Queue one training job over a packaged dataset.
+     *
+     * **One job, never a batch.** An inference job splits because a video is a
+     * range and ten machines can each take a piece. A training run is not
+     * divisible that way: splitting it would produce several models rather than
+     * one, and combining them is a different piece of science nobody has asked
+     * for. So there is no `piece_frames` here and no `batch_id`.
+     *
+     * The dataset is resolved the way video is resolved for an inference job
+     * (A8): MARP looks it up and puts a locator plus a hash in the spec, and the
+     * worker fetches what it is told to fetch without knowing what is serving
+     * it. That is what lets the file server in #120 take over later without the
+     * worker changing.
+     *
+     * @async
+     * @param {Object} body - The submission body.
+     * @param {Object} spec - `body.spec`, already known to be an object.
+     * @param {Object|null} principal - Who submitted it.
+     * @returns {Promise<Object>} `{batch_id: null, jobs}`.
+     */
+    async submitTrainingJob(body, spec, principal) {
+        this.validateSubmittedModel(spec.model);
+
+        const dataset = spec.dataset && typeof spec.dataset === 'object' && !Array.isArray(spec.dataset)
+            ? spec.dataset
+            : invalid('spec.dataset is required for a training job and must be an object.');
+
+        const datasetId = requiredInteger(dataset.dataset_id, 'spec.dataset.dataset_id');
+
+        /* The archive is the whole point: a dataset row that describes images on
+           somebody's laptop is not something a worker can train on, and saying so
+           here is far better than a job that leases, fails to fetch, and retries
+           twice before anybody looks. */
+        const archive = await gpuRepository.getDatasetArchiveById(datasetId);
+
+        if (!archive) {
+            invalid(`No dataset ${datasetId}.`);
+        }
+        if (!archive.archive_path || !archive.archive_sha256) {
+            invalid(
+                `Dataset ${datasetId} ("${archive.name}") has not been packaged, so no worker can fetch it. `
+                + 'Run scripts/package-dataset.js against its folder first.'
+            );
+        }
+
+        if (spec.video || spec.range) {
+            invalid('A training job carries a dataset, not a video and a range.');
+        }
+
+        const priority = optionalInteger(body.priority, 'priority', 0);
+        const maxAttempts = optionalInteger(body.max_attempts, 'max_attempts', 3);
+
+        if (maxAttempts < 1) {
+            invalid('max_attempts must be at least 1.');
+        }
+
+        let name = null;
+
+        if (body.name !== undefined && body.name !== null && String(body.name).trim() !== '') {
+            name = requiredString(body.name, 'name');
+
+            if (name.length > MAX_JOB_NAME_LENGTH) {
+                invalid(`name must be ${MAX_JOB_NAME_LENGTH} characters or fewer.`);
+            }
+        }
+
+        /* Composed here rather than taken from the submitter. The locator is
+           coordinator-relative, exactly as a model artifact's is, so a worker
+           resolves it against whichever MARP it is enrolled with and a spec
+           cannot name somewhere else. */
+        const jobSpec = {
+            ...spec,
+            dataset: {
+                dataset_id: datasetId,
+                name: archive.name,
+                url: `/api/v2/gpu/datasets/${datasetId}/archive`,
+                sha256: String(archive.archive_sha256).toLowerCase(),
+            },
+        };
+
+        const createdBy = principal && principal.type === 'user' ? principal.id : null;
+        const jobs = await gpuRepository.createJobs([{
+            batch_id: null,
+            name,
+            kind: 'training',
+            spec: jobSpec,
+            state: 'queued',
+            priority,
+            attempts_made: 0,
+            max_attempts: maxAttempts,
+            published_attempt_id: null,
+            created_by: createdBy,
+            created_at: new Date(),
+            updated_at: new Date(),
+        }]);
+
+        return { batch_id: null, jobs };
     }
 
     /**

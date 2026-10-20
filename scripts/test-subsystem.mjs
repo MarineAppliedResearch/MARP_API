@@ -48,6 +48,10 @@ const SUBSYSTEMS = {
             'gpu-job-list',
             'gpu-pool-telemetry',
             'gpu-telemetry-series',
+            // #67: training as a job -- serving the dataset, and queueing a run
+            // over it rather than over a span of a video.
+            'gpu-dataset-archive',
+            'gpu-training-submit',
             'worker-provisioning',
         ],
     },
