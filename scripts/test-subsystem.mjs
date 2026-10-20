@@ -52,6 +52,7 @@ const SUBSYSTEMS = {
             // over it rather than over a span of a video.
             'gpu-dataset-archive',
             'gpu-training-submit',
+            'gpu-training-run-record',
             'worker-provisioning',
         ],
     },

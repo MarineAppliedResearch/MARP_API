@@ -710,6 +710,19 @@ class GpuService {
      * @throws {Error} When either resolution fails.
      */
     async resolveSpecForLease(spec) {
+        /* A training job has no video, no frame range and no session to file
+           observations into, so three of the four steps below have nothing to
+           work on and `resolveVideoForLease` would refuse the lease outright.
+           Told apart by the dataset, not by the engine name: the engine is a
+           free string the submitter chose, and a typo in it must not decide
+           which resolution runs.
+
+           The model's class names still matter, and arguably matter more here:
+           they are what the finished weights will be registered with. */
+        if (spec && typeof spec === 'object' && spec.dataset) {
+            return this.declareModelClassesForLease(spec);
+        }
+
         return this.declareModelClassesForLease(
             await this.describeSessionForLease(
                 await this.resolveDataTypeForLease(await this.resolveVideoForLease(spec))
@@ -1933,6 +1946,16 @@ class GpuService {
             : invalid('spec.dataset is required for a training job and must be an object.');
 
         const datasetId = requiredInteger(dataset.dataset_id, 'spec.dataset.dataset_id');
+
+        /* The starting model has to be one MARP knows, because the run that comes
+           out of it is recorded against it and `training_runs.model_id` is NOT
+           NULL. Refused here, where it is one clear message, rather than at the
+           first epoch -- there it would fail an event batch, and a failed event
+           batch takes the whole running job down with it. */
+        requiredInteger(
+            spec.model && spec.model.ml_model_id,
+            'spec.model.ml_model_id'
+        );
 
         /* The archive is the whole point: a dataset row that describes images on
            somebody's laptop is not something a worker can train on, and saying so

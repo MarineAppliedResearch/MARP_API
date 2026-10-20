@@ -30,6 +30,7 @@ const ARCHIVE_SHA = 'a'.repeat(64);
 /** Rows this file created. */
 let packagedDatasetId;
 let unpackagedDatasetId;
+let modelId;
 const createdJobIds = [];
 
 /**
@@ -43,7 +44,14 @@ function trainingSubmission(datasetId) {
         kind: 'training',
         spec: {
             engine: 'marp_training',
-            model: { name: 'yolo11m.pt', sha256: 'b'.repeat(64), url: '/api/v2/model/91/artifact' },
+            model: {
+                name: 'yolo11m.pt',
+                sha256: 'b'.repeat(64),
+                url: '/api/v2/model/91/artifact',
+                // Required for a training job: the run is recorded against
+                // the model it started from, and that column is NOT NULL.
+                ml_model_id: modelId,
+            },
             dataset: { dataset_id: datasetId },
             params: { epochs: 3, imgsz: 640 },
         },
@@ -51,6 +59,14 @@ function trainingSubmission(datasetId) {
 }
 
 beforeAll(async () => {
+    const [model] = await db.sequelize.query(
+        `INSERT INTO ml_models (name, model_type, architecture_version, status, created_at, updated_at)
+         VALUES (:name, 'detection', 'yolo11m', 'ready', now(), now())
+         RETURNING id`,
+        { replacements: { name: `jest-trainsubmit-model-${runId}` }, type: db.Sequelize.QueryTypes.INSERT, logging: false }
+    );
+    modelId = model[0].id;
+
     const [packaged] = await db.sequelize.query(
         `INSERT INTO datasets (name, location, num_samples, num_classes, source, status,
                                archive_path, archive_sha256, archive_bytes, created_at, updated_at)
@@ -91,6 +107,9 @@ afterAll(async () => {
     await db.sequelize.query('DELETE FROM datasets WHERE id IN (:ids)', {
         replacements: { ids: [packagedDatasetId, unpackagedDatasetId].filter(Boolean) },
         logging: false,
+    });
+    await db.sequelize.query('DELETE FROM ml_models WHERE id = :modelId', {
+        replacements: { modelId }, logging: false,
     });
 });
 
@@ -161,6 +180,19 @@ describe('POST /api/v2/gpu/jobs with kind=training', () => {
         const response = await global.api.post('/api/v2/gpu/jobs').send(submission);
 
         expect(response.status).toBe(400);
+    });
+
+    test('refuses a training job whose model MARP does not know', async () => {
+        const submission = trainingSubmission(packagedDatasetId);
+        delete submission.spec.model.ml_model_id;
+
+        const response = await global.api.post('/api/v2/gpu/jobs').send(submission);
+
+        // Caught at submit, where it is one clear message. At the first epoch it
+        // would fail an event batch instead, and a failed event batch takes the
+        // whole running job down with it.
+        expect(response.status).toBe(400);
+        expect(JSON.stringify(response.body)).toMatch(/ml_model_id/);
     });
 
     test('still queues an inference job exactly as before', async () => {
