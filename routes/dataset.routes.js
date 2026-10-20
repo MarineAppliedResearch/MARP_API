@@ -16,6 +16,7 @@
 const path = require('path');
 const datasetController = require('../controller/dataset.controller');
 const modelArtifactService = require('../service/model-artifact.service');
+const datasetBuildRepository = require('../repository/dataset-build.repository');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
@@ -89,6 +90,89 @@ function registerDatasetRoutes(app) {
             }
 
             res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'datasets:write',
+        path: '/api/dataset/build',
+        summary: 'Queue a dataset build from a mosaic query',
+        description:
+            'Builds a training dataset out of the observations MARP holds: selects them with the same filters the mosaic screens use, '
+            + 'cuts the frames they point at from the video, writes YOLO labels, and packages one content-addressed archive that '
+            + '`GET /gpu/datasets/:id/archive` can serve to a worker. **It also records what the dataset is made of** -- '
+            + '`dataset_observations` and the ordered class vocabulary -- which nothing has ever written, so a dataset in MARP today '
+            + 'says how many classes it has and cannot say which. '
+            + '**Answers immediately with the dataset and the job**, because a real build cuts tens of thousands of frames and takes '
+            + 'hours. Watch it on the job: it carries progress, it can be cancelled, and it appears on the Jobs screen like any other. '
+            + 'The job is a `gpu_jobs` row of kind `dataset_build` that **the API runs rather than the pool** -- streaming the video to '
+            + 'a worker so it can re-download it makes no sense, and workers deliberately have no video access. '
+            + 'Observations with no keyframes or no species are left out: there is nothing to extract or no class to call it.',
+        tags: ['V1 · MachineLearning'],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['name'],
+                        properties: {
+                            name: { type: 'string', example: 'CAMPA 2024 anemones v1' },
+                            description: { type: 'string', nullable: true },
+                            filters: { $ref: '#/components/schemas/MosaicQueryFilters' },
+                            splits: {
+                                type: 'object',
+                                description:
+                                    'Shares, normalised here, keyed by split name. The archive carries `train` and `eval`, which is '
+                                    + 'the shape the worker already trains on. Whole connected groups of observations are placed '
+                                    + 'together, so a frame holding two animals cannot land in both.',
+                                example: { train: 0.8, eval: 0.2 },
+                                additionalProperties: { type: 'number' },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: 'The dataset row, and the job that will build it.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                dataset: { $ref: '#/components/schemas/Dataset' },
+                                job: { $ref: '#/components/schemas/GpuJob' },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const { name, description, filters, splits } = req.body || {};
+
+            if (!name || !String(name).trim()) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A dataset name is required.');
+            }
+
+            /* A service client can queue a build; only a person is recorded as having
+               asked for it, the same way every other `created_by` here works. */
+            const createdBy = req.principal && req.principal.type === 'user' ? req.principal.id : null;
+
+            const queued = await datasetBuildRepository.queueBuild({
+                name: String(name).trim(),
+                description: description ? String(description) : null,
+                filters: filters || {},
+                splits,
+                createdBy,
+            });
+
+            res.status(201).json(queued);
         }),
     });
 
