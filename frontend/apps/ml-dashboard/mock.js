@@ -4826,12 +4826,16 @@ async function fillSavedDatasets(body) {
   body.innerHTML = datasets.map((set) => '<tr>'
     + `<td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">${set.name}</span></span></td>`
     + `<td class="jscope">${set.description || ''}</td>`
-    + `<td class="num" data-sort="${set.num_samples}">${set.num_samples.toLocaleString()}</td>`
+    /* Null until a build finishes, and a build now takes hours -- so this row exists
+       while the counts do not. `toLocaleString()` on the null threw and took the whole
+       table with it, which is how queueing a build from this screen first failed. */
+    + `<td class="num" data-sort="${set.num_samples ?? -1}">`
+    + `${set.num_samples == null ? NOT_IN_DATASET : set.num_samples.toLocaleString()}</td>`
     /* Frames is not a column on `Dataset`. `num_samples` is the only count it
        has, and calling it frames as well would be one number pretending to be
        two different measurements. */
     + `<td class="num" data-sort="-1">${NOT_IN_DATASET}</td>`
-    + `<td class="num" data-sort="${set.num_classes}">${set.num_classes}</td>`
+    + `<td class="num" data-sort="${set.num_classes ?? -1}">${set.num_classes ?? NOT_IN_DATASET}</td>`
     + `<td class="jtime" data-sort="${set.created_at}">${stamp(set.created_at)}</td>`
     + `<td class="jtime" data-sort="${set.updated_at}">${stamp(set.updated_at)}</td>`
     + '<td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button></span></td>'
@@ -4872,10 +4876,13 @@ function renderDatasetsSummary(ready, builds) {
     if (s) s.innerHTML = `<span>${sub}</span>`;
   };
 
-  set('Building now', building, 'builds are not tracked by the API');
-  set('Queued builds', queued, 'builds are not tracked by the API');
+  /* These three said "builds are not tracked by the API" until #268 made a build a job.
+     They are tracked now -- a `gpu_jobs` row with progress, cancellation and a place on
+     the Jobs screen -- so the subtitle says where to watch one instead. */
+  set('Building now', building, building ? 'cutting frames · watch on Jobs' : 'nothing building');
+  set('Queued builds', queued, queued ? 'waiting for the builder' : 'nothing waiting');
   set('Ready datasets', ready, 'saved in MARP');
-  set('Needs attention', attention, 'builds are not tracked by the API');
+  set('Needs attention', attention, attention ? 'builds that failed' : 'nothing failed');
 
   const parts = [['running', building, 'Building'], ['queued', queued, 'Queued'], ['done', ready, 'Ready'], ['failed', attention, 'Needs attention']];
 
@@ -5928,6 +5935,9 @@ function wireDatasetBuilder() {
     row.dataset.unique = String(result.observations);
     row.dataset.split = selectedSplit;
     row.dataset.species = JSON.stringify((result.speciesCounts || []).map((s) => [s.label, s.count]));
+    /* The filters that produced it, so queueing a build sends what was asked for rather
+       than the ids one browser happened to count. `key` is already that JSON. */
+    row.dataset.filters = result.key;
     row.dataset.subsetLabel = `${result.query.dsproj} \u00b7 ${result.query.dsspecies}`;
 
     const title = document.createElement('span');
@@ -5971,6 +5981,71 @@ function wireDatasetBuilder() {
   };
 
   $('[data-run-dataset-query]')?.addEventListener('click', runQuery);
+  /**
+   * Queue a build of whatever is in the subset list.
+   *
+   * **The filters go, not the observation ids.** A build re-runs the query server-side,
+   * so the dataset is a record of what was asked for rather than of what one browser
+   * happened to count a minute earlier. It is also the only version that works: a list
+   * of a hundred thousand ids is not a request body.
+   *
+   * Each subset carries its own filters and its own split, which is what makes the
+   * three-step builder mean anything -- "these dives into train, those into eval" is a
+   * sentence the API has to be told, not one it can infer from a merged filter.
+   */
+  const queueBuild = async () => {
+    const rows = $$('li', list);
+
+    if (!rows.length) {
+      setStatus('Add at least one query before building. A dataset with no observations has nothing to train on.', 'warning');
+      return;
+    }
+
+    const name = $('#dsname')?.value.trim();
+
+    if (!name) {
+      setStatus('Give the dataset a name first; it is how anybody finds it again.', 'warning');
+      $('#dsname')?.focus();
+      return;
+    }
+
+    const button = $('[data-queue-build]');
+
+    if (button) button.disabled = true;
+
+    setStatus('Queueing the build…');
+
+    try {
+      const subsets = rows.map((row) => ({
+        filters: JSON.parse(row.dataset.filters || '{}'),
+        split: row.dataset.split || 'train',
+      }));
+
+      const queued = await window.MarpApi.queueDatasetBuild({
+        name,
+        description: $('#dsdesc')?.value.trim() || null,
+        subsets,
+        /* Sent as well as the per-subset splits, because a build with one subset and no
+           split named still has to divide into something. */
+        splits: { train: 0.8, eval: 0.2 },
+      });
+
+      setStatus(`Build queued as job ${queued.job.id}. It cuts the frames, writes the labels and `
+        + 'packages the archive; watch it on the Jobs screen, where it can be cancelled.', 'success');
+
+      /* The saved list is where a building dataset appears, so refresh it rather than
+         leaving the reader to wonder whether anything happened. */
+      const body = $('#saved-datasets tbody');
+      if (body) await fillSavedDatasets(body);
+    } catch (error) {
+      setStatus(`Could not queue the build (${error.status || 'no answer'}). Nothing was started.`, 'warning');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  };
+
+  $('[data-queue-build]')?.addEventListener('click', queueBuild);
+
   const destinationButtons = $$('[data-dataset-destination]');
   destinationButtons.forEach((button) => button.addEventListener('click', () => {
     selectedSplit = button.dataset.datasetDestination;

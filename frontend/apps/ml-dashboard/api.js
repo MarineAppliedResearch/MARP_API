@@ -916,6 +916,25 @@
   }
 
   /**
+   * `POST /api/v2/dataset/build` -- build a dataset out of the matching observations.
+   *
+   * **Answers immediately with the dataset and the job, not with a dataset.** A real
+   * build cuts tens of thousands of frames out of video and takes hours, so what comes
+   * back is something to watch: the job carries progress, can be cancelled, and appears
+   * on the Jobs screen like any other.
+   *
+   * @param {Object} build - `{name, description, filters, splits}`.
+   * @returns {Promise<{dataset: Object, job: Object}>}
+   */
+  function queueDatasetBuild(build) {
+    // Not `request`: that is this module's transport, and shadowing it here would make
+    // the call unable to reach the thing it is trying to call.
+    return serve('datasets',
+      () => request('/dataset/build', { method: 'POST', body: build || {} }),
+      () => ({ dataset: { id: 0, status: 'building' }, job: { id: 0, state: 'queued' } }));
+  }
+
+  /**
    * `GET /api/v2/ml_models/:id/versions` -- the chain a model belongs to, oldest first.
    *
    * A model is always in its own chain, so a one-element answer means "not versioned"
@@ -1222,6 +1241,7 @@
     mosaicCounts,
     mosaicFacets,
     mosaicFrames,
+    queueDatasetBuild,
     mosaicPages,
     listSessions,
     listVideoLibraries,

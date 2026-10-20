@@ -121,6 +121,21 @@ function registerDatasetRoutes(app) {
                             name: { type: 'string', example: 'CAMPA 2024 anemones v1' },
                             description: { type: 'string', nullable: true },
                             filters: { $ref: '#/components/schemas/MosaicQueryFilters' },
+                            subsets: {
+                                type: 'array',
+                                description:
+                                    'The builder is a union of queries, each sent to a split by the person assembling it. Sent in the '
+                                    + 'order they were added, because that is what "first" means: an observation matched by two subsets '
+                                    + 'belongs to the earlier one, and a connected frame group spanning two splits is pulled whole into '
+                                    + 'the one its earliest member claimed. Use this **or** `filters`, not both.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        filters: { $ref: '#/components/schemas/MosaicQueryFilters' },
+                                        split: { type: 'string', example: 'train' },
+                                    },
+                                },
+                            },
                             splits: {
                                 type: 'object',
                                 description:
@@ -154,7 +169,7 @@ function registerDatasetRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            const { name, description, filters, splits } = req.body || {};
+            const { name, description, filters, splits, subsets } = req.body || {};
 
             if (!name || !String(name).trim()) {
                 throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A dataset name is required.');
@@ -168,6 +183,7 @@ function registerDatasetRoutes(app) {
                 name: String(name).trim(),
                 description: description ? String(description) : null,
                 filters: filters || {},
+                subsets: Array.isArray(subsets) && subsets.length ? subsets : null,
                 splits,
                 createdBy,
             });

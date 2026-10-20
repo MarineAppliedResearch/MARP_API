@@ -10140,6 +10140,22 @@
                   "filters": {
                     "$ref": "#/components/schemas/MosaicQueryFilters"
                   },
+                  "subsets": {
+                    "type": "array",
+                    "description": "The builder is a union of queries, each sent to a split by the person assembling it. Sent in the order they were added, because that is what \"first\" means: an observation matched by two subsets belongs to the earlier one, and a connected frame group spanning two splits is pulled whole into the one its earliest member claimed. Use this **or** `filters`, not both.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "filters": {
+                          "$ref": "#/components/schemas/MosaicQueryFilters"
+                        },
+                        "split": {
+                          "type": "string",
+                          "example": "train"
+                        }
+                      }
+                    }
+                  },
                   "splits": {
                     "type": "object",
                     "description": "Shares, normalised here, keyed by split name. The archive carries `train` and `eval`, which is the shape the worker already trains on. Whole connected groups of observations are placed together, so a frame holding two animals cannot land in both.",

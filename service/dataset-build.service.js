@@ -224,17 +224,37 @@ async function runOne() {
     try {
         await buildRepository.reportProgress(attempt.id, { phase: 'selecting', unit: 'frames' });
 
-        const rows = await mosaicRepository.selectForBuild({ filters: spec.filters || {} });
+        /* Two shapes, because the builder has two. A dashboard build is a union of
+           queries each sent to a split by the person assembling it, and the splits it
+           declared are honoured. A build that only named filters gets the ratios. */
+        let rows;
+        let splits;
+
+        if (Array.isArray(spec.subsets) && spec.subsets.length) {
+            const selected = [];
+
+            for (const subset of spec.subsets) {
+                selected.push({
+                    split: subset.split || 'train',
+                    rows: await mosaicRepository.selectForBuild({ filters: subset.filters || {} }),
+                });
+            }
+
+            splits = plan.assignFromSubsets(selected);
+            rows = [...splits.values()].flat();
+        } else {
+            rows = await mosaicRepository.selectForBuild({ filters: spec.filters || {} });
+            splits = plan.assignSplits(
+                plan.connectedGroups(rows),
+                spec.splits || { train: 0.8, eval: 0.2 }
+            );
+        }
 
         if (!rows.length) {
             throw new Error('Those filters match no promoted observation with keyframes and a species.');
         }
 
         const classes = plan.vocabulary(rows);
-        const splits = plan.assignSplits(
-            plan.connectedGroups(rows),
-            spec.splits || { train: 0.8, eval: 0.2 }
-        );
         const videos = plan.extractionPlan(splits, classes);
         const total = [...videos.values()].reduce((sum, entry) => sum + entry.frames.size, 0);
 

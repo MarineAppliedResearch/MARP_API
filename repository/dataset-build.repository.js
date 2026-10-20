@@ -86,7 +86,7 @@ async function apiWorkerId() {
  * @returns {Promise<{dataset: Object, job: Object}>} Both rows.
  * @throws {Error} Re-throws any database failure.
  */
-async function queueBuild({ name, description = null, filters = {}, splits, createdBy = null }) {
+async function queueBuild({ name, description = null, filters = {}, subsets = null, splits, createdBy = null }) {
     const transaction = await db.sequelize.transaction();
 
     try {
@@ -105,7 +105,7 @@ async function queueBuild({ name, description = null, filters = {}, splits, crea
             {
                 replacements: {
                     name: `Build ${name}`,
-                    spec: JSON.stringify({ dataset_id: dataset.id, filters, splits }),
+                    spec: JSON.stringify({ dataset_id: dataset.id, filters, subsets, splits }),
                     createdBy,
                 },
                 type: QueryTypes.SELECT,

@@ -140,6 +140,81 @@ function assignSplits(groups, ratios = { train: 0.8, eval: 0.2 }) {
 }
 
 /**
+ * Place observations in the splits their subsets asked for.
+ *
+ * The builder is a union of queries, each sent to a split by the person assembling it --
+ * "these dives into train, those into eval" is a sentence they said, not a ratio for the
+ * server to guess at. So this honours what was declared, and {@link assignSplits} is only
+ * for a build that declared nothing.
+ *
+ * Two rules decide the overlaps, and the screen states both:
+ *
+ * - **"If a match is already assigned elsewhere, its first split assignment is kept."**
+ *   An observation matched by two subsets belongs to the earlier one. Re-querying the
+ *   same dives into a second split should not move what is already placed.
+ * - **"An observation or connected frame group keeps its first split assignment."** A
+ *   group that ends up spanning two splits is pulled whole into the one its earliest
+ *   member claimed -- otherwise a frame holding two animals is in both, and the
+ *   evaluation is scored on pictures the model trained on.
+ *
+ * @param {Array<{split: string, rows: Array<Object>}>} subsets - In the order they were
+ * added, which is what "first" means.
+ * @returns {Map<string, Array<Object>>} Split name to its observations.
+ */
+function assignFromSubsets(subsets) {
+    /* First wins, so a later subset never moves what an earlier one placed. */
+    const splitOf = new Map();
+    const rowOf = new Map();
+
+    for (const subset of subsets) {
+        for (const row of subset.rows) {
+            const id = Number(row.observation_id);
+
+            if (splitOf.has(id)) continue;
+
+            splitOf.set(id, subset.split);
+            rowOf.set(id, row);
+        }
+    }
+
+    /* Group coherence is repaired after placement rather than prevented during it: the
+       groups are only knowable once every subset has contributed, because two subsets
+       can each hold half of one overlapping run. */
+    const rows = [...rowOf.values()].sort(
+        (a, b) => String(a.video_source).localeCompare(String(b.video_source))
+            || a.first_framenum - b.first_framenum
+            || a.observation_id - b.observation_id
+    );
+
+    /* Rank once. "Earliest" is insertion order into `splitOf`, and recomputing that
+       inside the loop is a scan of every placed observation per row -- quadratic over a
+       build that can hold a hundred thousand of them. */
+    const rank = new Map();
+    let next = 0;
+
+    for (const id of splitOf.keys()) rank.set(id, next++);
+
+    const out = new Map();
+
+    for (const group of connectedGroups(rows)) {
+        const owner = group.reduce(
+            (first, row) => (rank.get(Number(row.observation_id)) < rank.get(Number(first.observation_id))
+                ? row
+                : first),
+            group[0]
+        );
+
+        const split = splitOf.get(Number(owner.observation_id));
+
+        if (!out.has(split)) out.set(split, []);
+
+        out.get(split).push(...group);
+    }
+
+    return out;
+}
+
+/**
  * The class index each species gets.
  *
  * **By common name, not by id and not by frequency.** The same selection has to produce
@@ -270,6 +345,7 @@ function boxAt(boxes, frame) {
 }
 
 module.exports = {
+    assignFromSubsets,
     assignSplits,
     boxAt,
     connectedGroups,

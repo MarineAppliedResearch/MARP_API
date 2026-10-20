@@ -22,6 +22,7 @@
  */
 
 const {
+    assignFromSubsets,
     assignSplits,
     boxAt,
     connectedGroups,
@@ -203,6 +204,82 @@ describe('split assignment (#268)', () => {
 
     test('a split asking for nothing is refused rather than silently emptied', () => {
         expect(() => assignSplits([], { train: 0, eval: 0 })).toThrow(/above zero/i);
+    });
+});
+
+describe('splits the builder declared (#268)', () => {
+
+    /** Where each observation ended up. */
+    const placement = (splits) => {
+        const where = new Map();
+
+        for (const [name, rows] of splits) {
+            for (const row of rows) where.set(row.observation_id, name);
+        }
+
+        return where;
+    };
+
+    test('each subset goes to the split it asked for', () => {
+        const where = placement(assignFromSubsets([
+            { split: 'train', rows: [observation({ id: 1, first: 100, last: 200 })] },
+            { split: 'eval', rows: [observation({ id: 2, first: 9000, last: 9100 })] },
+        ]));
+
+        expect(where.get(1)).toBe('train');
+        expect(where.get(2)).toBe('eval');
+    });
+
+    test('an observation matched by two subsets keeps the first one', () => {
+        // Re-querying the same dives into a second split must not move what is placed.
+        const shared = observation({ id: 1, first: 100, last: 200 });
+
+        const where = placement(assignFromSubsets([
+            { split: 'train', rows: [shared] },
+            { split: 'eval', rows: [shared, observation({ id: 2, first: 9000, last: 9100 })] },
+        ]));
+
+        expect(where.get(1)).toBe('train');
+        expect(where.get(2)).toBe('eval');
+    });
+
+    test('a group spanning two splits is pulled whole into the earlier one', () => {
+        /* The case the rule exists for: two animals in overlapping frames, sent to
+           different splits by different queries. Leaving them apart puts the same
+           picture in train and eval, and the evaluation is then scored on what the
+           model memorised. */
+        const where = placement(assignFromSubsets([
+            { split: 'train', rows: [observation({ id: 1, first: 100, last: 200 })] },
+            { split: 'eval', rows: [observation({ id: 2, first: 150, last: 250 })] },
+        ]));
+
+        expect(where.get(2)).toBe('train');
+        expect(where.get(1)).toBe('train');
+    });
+
+    test('no frame ends up in two splits, whatever the subsets asked for', () => {
+        const splits = assignFromSubsets([
+            { split: 'train', rows: [observation({ id: 1, first: 0, last: 100 })] },
+            { split: 'eval', rows: [observation({ id: 2, first: 90, last: 190 })] },
+            { split: 'train', rows: [observation({ id: 3, first: 180, last: 280 })] },
+            { split: 'eval', rows: [observation({ id: 4, first: 5000, last: 5100 })] },
+        ]);
+
+        const seen = new Map();
+
+        for (const [name, rows] of splits) {
+            for (const row of rows) {
+                for (let f = row.first_framenum; f <= row.last_framenum; f++) {
+                    const key = `${row.video_source}:${f}`;
+
+                    if (seen.has(key)) expect(seen.get(key)).toBe(name);
+                    else seen.set(key, name);
+                }
+            }
+        }
+
+        // 1, 2 and 3 are one chain; 4 is on its own in eval.
+        expect(splits.get('eval').map((r) => r.observation_id)).toEqual([4]);
     });
 });
 
