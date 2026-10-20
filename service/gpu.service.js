@@ -33,6 +33,7 @@ const observationIngestService = require('./observation-ingest.service');
 const logger = require('../logger/api.logger');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const {
+    DATASET_DIRECTORY,
     HEARTBEAT_SECONDS,
     MEDIA_CLIENT_IDENTITY,
     LEASE_SECONDS,
@@ -2079,11 +2080,16 @@ class GpuService {
                 `Dataset ${id} has not been packaged; run scripts/package-dataset.js.`);
         }
 
-        /* Resolved against the storage root and then checked to still be inside it.
-           `archive_path` is written by our own packaging script, but it is a database
-           value, and a database value that becomes a filesystem path is exactly the
-           shape of a traversal bug. */
-        const storageRoot = path.resolve(path.join(__dirname, '..', 'storage'));
+        /* Resolved against the configured dataset directory and then checked to still be
+           inside it. `archive_path` is written by our own packaging script, but it is a
+           database value, and a database value that becomes a filesystem path is exactly
+           the shape of a traversal bug.
+
+           The root is `DATASET_DIRECTORY`'s parent rather than the checkout's `storage/`,
+           because the archives and the rows that name them are one unit and may not live
+           beside this copy of the code -- a 404 here is a worker failing minutes into a
+           job, far from the cause. */
+        const storageRoot = path.resolve(DATASET_DIRECTORY, '..');
         const absolutePath = path.resolve(storageRoot, dataset.archive_path);
         if (!absolutePath.startsWith(storageRoot + path.sep)) {
             throw new ApiError(404, ERROR_CODES.NOT_FOUND, `Dataset ${id} archive path is not under storage.`);

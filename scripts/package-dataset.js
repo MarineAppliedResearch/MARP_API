@@ -45,11 +45,10 @@ const { execFileSync } = require('child_process');
 
 const db = require('../model');
 
-/** Where packaged archives live, under the API's storage root. */
-const ARCHIVE_DIRECTORY = path.join(__dirname, '..', 'storage', 'datasets');
+// One definition, shared with the route that serves these, so the writer and the
+// reader can never disagree about where archives are.
+const { DATASET_DIRECTORY: ARCHIVE_DIRECTORY, DATASET_PATH_PREFIX: ARCHIVE_PATH_PREFIX } = require('../config/gpu-orchestration');
 
-/** The path recorded on the row, relative to the storage root so the root can move. */
-const ARCHIVE_PATH_PREFIX = 'datasets';
 
 /** The splits that make up a training archive, as <archive member> => <source folder>. */
 const SPLITS = [['train', 'train'], ['eval', 'eval']];
@@ -237,10 +236,16 @@ async function main() {
             await db.sequelize.query(
                 `UPDATE datasets SET location = :location, num_samples = :samples,
                         num_classes = :classes, status = 'ready', archive_path = :archivePath,
-                        archive_sha256 = :sha256, archive_bytes = :bytes, updated_at = now()
+                        archive_sha256 = :sha256, archive_bytes = :bytes,
+                        class_names = :classNames::jsonb, updated_at = now()
                  WHERE id = :id`,
                 {
-                    replacements: { id: datasetId, location: dir, samples, classes, archivePath, sha256, bytes },
+                    replacements: {
+                        id: datasetId, location: dir, samples, classes, archivePath, sha256, bytes,
+                        /* In index order. A YOLO label file carries a class index, and
+                           an index means nothing without the list it indexes into. */
+                        classNames: JSON.stringify(names),
+                    },
                     logging: false,
                 }
             );
@@ -248,9 +253,10 @@ async function main() {
             const [inserted] = await db.sequelize.query(
                 `INSERT INTO datasets (name, description, location, num_samples, num_classes,
                                        source, status, archive_path, archive_sha256, archive_bytes,
-                                       created_at, updated_at)
+                                       class_names, created_at, updated_at)
                  VALUES (:name, :description, :location, :samples, :classes,
-                         'legacy import', 'ready', :archivePath, :sha256, :bytes, now(), now())
+                         'legacy import', 'ready', :archivePath, :sha256, :bytes,
+                         :classNames::jsonb, now(), now())
                  RETURNING id`,
                 {
                     replacements: {
@@ -262,6 +268,7 @@ async function main() {
                         archivePath,
                         sha256,
                         bytes,
+                        classNames: JSON.stringify(names),
                     },
                     type: db.Sequelize.QueryTypes.INSERT,
                     logging: false,

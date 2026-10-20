@@ -1,5 +1,5 @@
 ---
-task: MarineAppliedResearch/MARP_API#257
+task: MarineAppliedResearch/MARP_API#265
 repos: [MARP_API]
 status: design
 needs: []
@@ -7,107 +7,94 @@ needs: []
 
 ## Goal
 
-Make a hole in the data tell you it is a hole. `cancelled` means two things
-today — *"we changed our mind"* and *"this never got done"* — so nothing can
-safely act on it. This milestone splits them and then fills what is owed.
+A finished training run produces a model MARP can then run inference with. Today it
+produces a 136 MB file recorded as an artifact against a job, and nothing else: the pool
+can train a model and cannot use one. Somebody wanting to run the thing they just trained
+has no row to name in a job spec. When this is done, a run that succeeds ends with an
+`ml_models` row, its species, and bytes an inference job can fetch.
 
 ## Requirements
 
-- **R1** — A new job state, **`interrupted`**: the job stopped part-way and the
-  frames it did not reach are owed.
-- **R2** — `cancelled` means a human changed their mind. Nothing is missing, and
-  nothing is ever requeued from it.
-- **R3** — A worker reporting `cancelled` for a job that is **not already
-  cancelled** is a worker stopping of its own accord. That is `interrupted`.
-  Where the job is already `cancelled`, the human's decision is propagating and
-  it stays `cancelled`.
-- **R4** — `POST /api/gpu/jobs/:id/cancel` is unchanged: it is the human path
-  and it produces `cancelled`.
-- **R5** — The coverage view counts an `interrupted` job's unreached frames as a
-  gap, which it already does, since coverage is computed from what was reported
-  rather than from job state.
-- **R6** — Requeueing an owed range creates real queued work over exactly the
-  frames nobody covered: never the whole original range, and never frames a
-  succeeded job already did.
-- **R6a** — `interrupted` work is requeued automatically. Nobody has to notice
-  that a volunteer paused.
-- **R6b** — `failed` work is **never** requeued automatically. It stays visible
-  as `failed`, and the route lets a human requeue it once they have looked.
-- **R7** — Requeueing twice does not queue the same frames twice.
-- **R8** — The historical 5,329 `cancelled` jobs stay `cancelled`. The
-  distinction starts the day it ships; the development database is development
-  data and production has not used any of this.
+- **R1** — A successful training job registers an `ml_models` row pointing at the weights
+  it published, with the model it started from recorded as its parent.
+- **R2** — The registered model is fetchable by a worker through the same route an
+  inference job already uses to get its weights. A row naming bytes nobody can fetch is
+  the state we are leaving, not arriving at.
+- **R3** — The model records which species it was trained on, as `model_species` rows,
+  resolved from the class names the dataset was packaged with. A name that resolves to
+  no species, or to more than one, fails the registration loudly rather than quietly
+  registering a model with a hole in its vocabulary.
+  The tracking engine refuses weights whose vocabulary disagrees with what MARP registered
+  for them, so a model with no species is a model that cannot be run.
+- **R4** — A failed or cancelled training job registers nothing. A model that exists
+  because a run crashed is worse than no model.
+- **R5** — Registering twice is not possible. A job that publishes, is re-ingested, or is
+  reported again produces one model, not two.
+- **R6** — Nothing about an existing model changes. Inference jobs naming a model
+  registered by hand keep working exactly as they do.
 
 ## Open assumptions
 
-- [x] **A1 · behavioural · blocking** — answered 2026-10-15: **`failed` is
-      never requeued automatically.** Isaac: *"if something fails a certain
-      amount of times we shouldn't automatically keep requeuing it, but if it
-      goes to failed status, the user can notice the failed status, and try to
-      requeue it or recreate the job manually."*
+- [x] **A1 · product · blocking** — answered 2026-10-20: MARP composes the name. Proposed
+      shape `<dataset>-<date>`, e.g. `rockfish5-2026-10-20`, with a suffix when that is
+      already taken. Isaac raised letting a person nickname it from the dashboard later;
+      that is a separate piece of work and not in this issue.
+- [x] **A2 · architectural · blocking** — answered 2026-10-20: the bytes go where the API
+      already serves model files from — `MODEL_STORAGE_ROOT`, which the existing
+      `/api/v2/model/:id/artifact` route resolves. So registration copies the published
+      artifact into the model store and `storage_path` names it there. The duplicate 136 MB
+      is accepted deliberately: it keeps one serving path rather than two, and the file
+      server in #120 is what later takes both over.
+- [x] **A3 · scientific · blocking** — answered 2026-10-20, **and the assumed route does
+      not work.** The design is `datasets` → `dataset_observations` → `observations` →
+      species, and that join is correct in the schema. It is also empty:
+      `dataset_observations` holds **0 rows for 0 datasets**. Nothing has ever written to
+      it — the legacy builder's code for it is commented out in
+      `model_training_live.py`. So it cannot be the source today, for rockfish5 or for
+      anything else.
 
-      A job that has exhausted its attempts has already been retried as much as
-      retrying is worth; doing it again on a schedule spends GPU time on
-      something that is probably broken rather than unlucky. It stays visible as
-      `failed` and a human decides.
-- [x] **A2 · product/UI · blocking** — answered 2026-10-15: **both, and they
-      differ by what they are allowed to touch.** Isaac: *"i think both can
-      reque, like i just said kinda"*.
+      What does work, checked against the catalogue: the class names in the archive's
+      `data.yaml` resolve against `species.comname` **11 of 11 exactly, with no
+      ambiguity**, for rockfish5. So the dataset records the class names it was packaged
+      with, and registration resolves those to species ids.
 
-      - **Automatic**, over `interrupted` work only: a volunteer pausing or a
-        worker stopping is an ordinary event and the frames should simply get
-        done. Nobody should have to remember.
-      - **A route**, for a human, which can also requeue a `failed` job: that is
-        the path A1 describes, taken deliberately after somebody has looked.
-- [ ] **A5 · behavioural · non-blocking** — **What stops an automatic requeue
-      looping?** A requeue makes a *new* job, which starts with a fresh
-      `max_attempts`, so a range that is interrupted every time could be
-      requeued for ever. Each interruption is legitimate on its own -- a
-      volunteer paused -- so a plain attempt cap is the wrong instrument.
-      Proposed: carry a requeue count forward on the spec, and stop requeueing
-      automatically past a small number, leaving it `interrupted` and visible.
-      That is exactly A1's shape, one level up.
-- [ ] **A3 · behavioural · non-blocking** — Does an `expired` lease become
-      `interrupted`? Today the job returns to the queue by itself, so it is
-      already owed and already being dealt with. Proposed: no, leave it.
-- [ ] **A4 · API contract · non-blocking** — `interrupted` is a new value in
-      `JOB_STATES`, which the job-list filter and the OpenAPI enum both expose.
-      Proposed: add it to both; it is additive and no existing value changes
-      meaning.
+      This adds `datasets.class_names`; `scripts/package-dataset.js` already parses the
+      names out of the YAML, so recording them is nearly free. Populating
+      `dataset_observations` properly belongs with dataset *building*, which is a
+      different piece of work.
+- [x] **A4 · product · blocking** — answered 2026-10-20: a freshly trained model is usable
+      immediately, so it registers with an active status and can be named by an inference
+      job at once. **`preferred` is read narrowly and left alone**: it decides which model
+      is picked by default, and a new model quietly becoming the default would change what
+      the next job runs before anybody had looked at it. Say so if that reading is wrong.
+- [ ] **A5 · behavioural · non-blocking** — Should the metrics from the final validation
+      land on `model_species` (`precision_mean`, `recall_mean`, `f1_mean`) or only on
+      `metrics_summary`? Both exist and the columns are per species, which the per-class
+      table Ultralytics prints would fill exactly.
 
 ## Decisions
 
-- **2026-10-15** — `cancelled` means nothing is missing; `interrupted` means a
-  hole. Isaac: *"something cancelled should mean nothing is missing, we should
-  have another term for yes, there's a hole in the data because of this"*.
-  `interrupted` says what happened rather than how anyone feels about it, and
-  avoids `abandoned`, which already means a lease that blew past its cap.
-- **2026-10-15** — The conflation is named in the code today: *"The job is
-  cancelled whether or not the cancel came from a human -- a worker that stops
-  of its own accord and calls it cancelled is saying the same thing."* They are
-  not the same thing, and job 14372 is the evidence: twelve thousand frames
-  done, the rest never processed, recorded as though nobody wanted them.
+- **2026-10-20** — Registration happens where the run is closed, in the same transaction
+  as `closeTrainingRun`. A model that exists while its run is still open, or that is
+  missing after a run that succeeded, are both states somebody would have to reconcile by
+  hand.
 
 ## Plan
 
-1. `interrupted` in `JOB_STATES`, and in the OpenAPI enum the job filter uses.
-2. The worker-reported branch in `publishResult` chooses `interrupted` over
-   `cancelled` when the job was not already cancelled.
-3. A repository query for owed ranges: the gaps from the coverage work,
-   narrowed to videos with an `interrupted` job over them.
-4. Requeue: submit jobs over those gaps, reusing the submission path so a
-   requeued job is an ordinary job with an ordinary spec.
-5. A route for it, per A2.
+1. `datasets.class_names`, and `package-dataset.js` recording them. Backfill rockfish5.
+2. Compose the name, copy the artifact into the model store, write `ml_models`.
+3. Resolve the class names to species and write `model_species`.
+4. Wire it into `closeTrainingRun`, so it happens in the same transaction.
+5. Tests at the API tier, including that a failed job registers nothing and that
+   re-reporting does not register twice.
 
 ## Acceptance criteria
 
-- A worker reporting cancelled on a live job leaves the job `interrupted`.
-- A human cancelling leaves it `cancelled`, and a worker's later report does
-  not change that.
-- The coverage view shows an interrupted job's unreached frames as a gap.
-- Requeueing that video queues jobs covering exactly the gap.
-- Requeueing again queues nothing.
-- Nothing requeues from a `cancelled` job.
+- A succeeded training job leaves exactly one `ml_models` row, with its parent, its
+  species, and a `storage_path` a worker can fetch.
+- An inference job naming that model leases and runs.
+- A failed training job leaves none.
+- Re-reporting a finished job does not produce a second model.
 
 ## Test plan
 
@@ -115,9 +102,6 @@ Filled in at G3.
 
 ## Status
 
-- **Gate:** design -- both blocking assumptions answered
-- **Notes:** Settled. The shape is that automatic requeueing is for things that
-  are nobody's fault and will simply work next time, and everything else waits
-  for a human to look at it. A5 is the same question one level up and is
-  answered the same way; it is non-blocking because the first version can
-  requeue once and be watched.
+- **Gate:** design
+- **Notes:** G1. Four blocking assumptions with Isaac. The worker half of training merged
+  as `marp-inference-worker#68`; this is the piece that makes what it produces usable.

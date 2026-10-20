@@ -189,10 +189,20 @@ const MAX_ARTIFACT_BYTES = 4 * 1024 * 1024 * 1024;
  * On disk rather than in the database, the same arrangement as species pictures.
  * `storage/` is git-ignored, so nothing here becomes a repository file.
  *
+ * **Configurable, for the reason `THUMBNAIL_STORAGE_DIR` is.** Five places assume an
+ * artifact is on this machine in this checkout: the upload route writes here, the result
+ * and check calls test for the bytes here, the ingest opens an observations file here, and
+ * registering a trained model copies weights out of here. That holds while one API process
+ * both receives uploads and ingests them, which is the deployment today -- and stops
+ * holding the moment there are two, or storage moves off the checkout, which #120 records
+ * as an unanswered deployment question. Unset, it is what it always was.
+ *
  * @constant
  * @type {string}
  */
-const ARTIFACT_DIRECTORY = path.join(__dirname, '..', 'storage', 'gpu-artifacts');
+const ARTIFACT_DIRECTORY = process.env.ARTIFACT_STORAGE_DIR
+    ? path.resolve(process.env.ARTIFACT_STORAGE_DIR)
+    : path.join(__dirname, '..', 'storage', 'gpu-artifacts');
 
 /**
  * What `artifacts.path` says for a staged artifact: this prefix and the hash,
@@ -203,6 +213,35 @@ const ARTIFACT_DIRECTORY = path.join(__dirname, '..', 'storage', 'gpu-artifacts'
  * @type {string}
  */
 const ARTIFACT_PATH_PREFIX = 'gpu-artifacts';
+
+/**
+ * Where packaged dataset archives live.
+ *
+ * **Configurable, unlike the artifact directory beside it, and for the reason
+ * `THUMBNAIL_STORAGE_DIR` is.** A dataset archive is paired with the `datasets` row that
+ * names it: the row holds a path relative to this root, so a database and the archives it
+ * points at are one unit. An API serving that database from a second checkout -- a
+ * worktree, another machine, a testing database -- resolved this relative to its own tree,
+ * found nothing, and answered 404. The worker then failed minutes into a job, at
+ * `fetching_dataset`, which is a long way from the cause.
+ *
+ * Unset, it is what it always was, so nothing existing changes.
+ *
+ * @constant
+ * @type {string}
+ */
+const DATASET_DIRECTORY = process.env.DATASET_STORAGE_DIR
+    ? path.resolve(process.env.DATASET_STORAGE_DIR)
+    : path.join(__dirname, '..', 'storage', 'datasets');
+
+/**
+ * What `datasets.archive_path` says, relative to the dataset directory's parent.
+ *
+ * @constant
+ * @type {string}
+ */
+const DATASET_PATH_PREFIX = 'datasets';
+
 
 /**
  * How MARP identifies itself to Jellyfin when it resolves a video for a lease.
@@ -409,6 +448,8 @@ module.exports = {
     MAX_ARTIFACT_BYTES,
     ARTIFACT_DIRECTORY,
     ARTIFACT_PATH_PREFIX,
+    DATASET_DIRECTORY,
+    DATASET_PATH_PREFIX,
     MEDIA_CLIENT_IDENTITY,
     WORKER_STATES,
     JOB_KINDS,
