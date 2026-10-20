@@ -55,6 +55,8 @@ const db = require('../model');
  * @constant
  * @type {Object}
  */
+const { registerTrainedModel } = require('./trained-model.repository');
+
 const logger = require('../logger/api.logger');
 
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
@@ -2185,6 +2187,12 @@ class GpuRepository {
                     // Left open, the dashboard cannot tell a run still going from
                     // one that finished three days ago.
                     await this.closeTrainingRun(job, transaction);
+
+                    // And the weights it produced become a model somebody can
+                    // actually run. Same transaction deliberately: a run that
+                    // succeeded and left no model, or a model whose run is still
+                    // open, are both states somebody has to reconcile by hand.
+                    await registerTrainedModel({ db: this.db, job, transaction });
                 } else {
                     await this.appendCoordinatorNote(
                         attempt.id,
