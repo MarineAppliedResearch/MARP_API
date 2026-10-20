@@ -3603,6 +3603,80 @@
           }
         }
       },
+      "GpuThroughputSeries": {
+        "type": "object",
+        "description": "Work completed per bucket, with the current backlog. The series is a rate derived from kept readings; the backlog is a single figure, because nothing records what it used to be.",
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "minute",
+              "hour",
+              "day"
+            ],
+            "example": "minute"
+          },
+          "kind": {
+            "type": "string",
+            "nullable": true,
+            "example": "inference",
+            "description": "The job kind this was narrowed to, or null for all of them."
+          },
+          "queued": {
+            "type": "object",
+            "description": "What is waiting right now.",
+            "properties": {
+              "units": {
+                "type": "integer",
+                "example": 184320,
+                "description": "Units of work left across unfinished jobs: what each expects, less what its latest attempt has done."
+              },
+              "jobs": {
+                "type": "integer",
+                "example": 21,
+                "description": "How many unfinished jobs that is spread over."
+              }
+            }
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "Start of the bucket."
+                },
+                "units_done": {
+                  "type": "integer",
+                  "example": 714,
+                  "description": "Units completed in this bucket, summed across attempts. Positive differences only: a retried attempt counts from zero again."
+                },
+                "attempts": {
+                  "type": "integer",
+                  "example": 3,
+                  "description": "How many attempts contributed."
+                },
+                "unit": {
+                  "type": "string",
+                  "nullable": true,
+                  "example": "frames",
+                  "description": "What is being counted, as the worker named it."
+                }
+              }
+            }
+          }
+        }
+      },
       "GpuHeartbeatResponse": {
         "type": "object",
         "description": "The one channel by which MARP tells a worker to do anything. Cancel, pause and abandon are delivered only here, because there is no route from MARP to a worker.",
@@ -14241,6 +14315,161 @@
       "get": {
         "summary": "What the pool's GPUs were doing, over a window",
         "description": "Per-bucket GPU readings taken **while machines were working**. The worker reports NVML on every heartbeat and MARP keeps one row per machine per minute; this averages across the machines in each bucket and carries the maximum with it, because an average over a pool where one card is saturated and nine are idle hides the one fact worth seeing. Only machines that were working appear at all — a reading exists because a heartbeat wrote it, and a heartbeat only happens during an attempt — so this is utilization of the machines doing work rather than of the pool's whole capacity, and a screen drawing it should say so. Distinct from the snapshot on `GET /gpu/workers`, which the **poll** writes before a job starts and which therefore reads near-idle. Readings are kept for 30 days. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Start of the window. Defaults to 24 hours before `until`."
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "End of the window. Defaults to now."
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "minute",
+                "hour",
+                "day"
+              ],
+              "default": "hour"
+            },
+            "description": "Bucket size."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The series, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuSeries"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/throughput/series": {
+      "get": {
+        "summary": "How fast work went through, and how much is waiting",
+        "description": "Units of work completed per bucket -- frames, usually -- with the current backlog beside it. **Throughput is a rate and rates need two readings**: an attempt's `progress_done` is overwritten by every heartbeat, so MARP now keeps it per attempt per minute and this is the difference between consecutive readings. Only positive differences count, because a retried attempt reports from zero again and that is not work being undone. The backlog is counted in *units*, not jobs: a thousand queued jobs of ten frames is not the same as ten of a hundred thousand. It is a single current figure rather than a series, because nothing records what the backlog was, only what it is. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Start of the window. Defaults to 24 hours before `until`."
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "End of the window. Defaults to now."
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "minute",
+                "hour",
+                "day"
+              ],
+              "default": "hour"
+            },
+            "description": "Bucket size."
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inference",
+                "tracking",
+                "training",
+                "diagnostic"
+              ]
+            },
+            "description": "Narrow to one kind of job, so inference throughput can be read apart from training."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The series, oldest first, with the current backlog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuThroughputSeries"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/registry/series": {
+      "get": {
+        "summary": "How the model registry grew",
+        "description": "Registered model versions per bucket, cumulative, with how many were added in each. Counted straight out of `ml_models.created_at` — the rows have carried their own history all along, so nothing had to be recorded for this. **Two things the Models chart also asks for are absent and cannot be served yet**: `preferred` is a current flag with no record of when it changed, and nothing anywhere records which machine holds which model cached. Both need recording before they can be drawn. Requires the `models:read` permission.",
         "tags": [
           "V2 · GpuCompute"
         ],

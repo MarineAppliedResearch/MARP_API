@@ -162,6 +162,30 @@ class GpuController {
     }
 
     /**
+     * How fast work went through, with what is waiting now.
+     *
+     * @async
+     * @param {Object} query - `{since, until, bucket, kind}`.
+     * @returns {Promise<Object>} `{since, until, bucket, kind, points, queued}`.
+     */
+    async throughputSeries(query) {
+        logger.info('Controller: throughputSeries');
+        return gpuService.throughputSeries(query);
+    }
+
+    /**
+     * How the model registry grew.
+     *
+     * @async
+     * @param {Object} query - `{since, until, bucket}`.
+     * @returns {Promise<Object>} `{since, until, bucket, points}`.
+     */
+    async registrySeries(query) {
+        logger.info('Controller: registrySeries');
+        return gpuService.registrySeries(query);
+    }
+
+    /**
      * List jobs.
      *
      * @async

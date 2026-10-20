@@ -1657,6 +1657,46 @@ class GpuService {
     }
 
     /**
+     * How fast work went through, with what is waiting now.
+     *
+     * The backlog is a single current figure rather than a series: nothing records what it
+     * was, only what it is. Returned beside the series because the screen draws both and
+     * asking twice would let them disagree.
+     *
+     * @async
+     * @param {Object} query - `{since, until, bucket, kind}`.
+     * @returns {Promise<Object>} `{since, until, bucket, points, queued}`.
+     * @throws {ApiError} 400 for a bad window or an unknown kind.
+     */
+    async throughputSeries(query) {
+        const window = this.seriesWindow(query);
+        const kind = query.kind === undefined
+            ? undefined
+            : requiredEnum(query.kind, 'kind', JOB_KINDS);
+
+        const [points, queued] = await Promise.all([
+            gpuRepository.throughputSeries({ ...window, kind }),
+            gpuRepository.queuedUnits(kind),
+        ]);
+
+        return { ...window, kind: kind || null, points, queued };
+    }
+
+    /**
+     * How the model registry grew.
+     *
+     * @async
+     * @param {Object} query - `{since, until, bucket}`.
+     * @returns {Promise<Object>} `{since, until, bucket, points}`.
+     * @throws {ApiError} 400 for a bad window.
+     */
+    async registrySeries(query) {
+        const window = this.seriesWindow(query);
+
+        return { ...window, points: await gpuRepository.registrySeries(window) };
+    }
+
+    /**
      * List jobs.
      *
      * @async

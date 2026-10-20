@@ -551,6 +551,142 @@ class GpuRepository {
     }
 
     /**
+     * How fast work went through, and how much was still waiting.
+     *
+     * **Throughput is a delta.** `gpu_attempt_progress` keeps a cumulative count per attempt
+     * per minute, so the rate is the difference between consecutive readings of the same
+     * attempt. Only *positive* differences count: an attempt that is retried reports from
+     * zero again, and treating that as negative throughput would subtract real work that
+     * really happened.
+     *
+     * **Queued is frames, not jobs.** The Inference screen asks what is waiting in units of
+     * work rather than units of submission -- a thousand queued jobs of ten frames is not
+     * the same backlog as ten of a hundred thousand. It is the total each unfinished job
+     * expects, less whatever its latest attempt has already done.
+     *
+     * @async
+     * @param {Object} window
+     * @param {Date} window.since - Start of the window.
+     * @param {Date} window.until - End of the window.
+     * @param {string} window.bucket - minute, hour or day.
+     * @param {string} [window.kind] - Narrow to one job kind.
+     * @returns {Promise<Array<Object>>} One row per bucket, oldest first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async throughputSeries({ since, until, bucket, kind }) {
+        try {
+            return await this.db.sequelize.query(
+                `WITH stepped AS (
+                        SELECT p.at,
+                               p.attempt_id,
+                               p.progress_unit,
+                               p.progress_done
+                                 - lag(p.progress_done) OVER (PARTITION BY p.attempt_id ORDER BY p.at)
+                                 AS delta
+                          FROM gpu_attempt_progress p
+                         WHERE p.at >= :since AND p.at < :until
+                           ${kind ? 'AND p.job_kind = :kind' : ''}
+                 )
+                 SELECT date_trunc('${bucket}', s.at) AS at,
+                        /* Positive only: a retry restarts the count, and that is
+                           not work being undone. */
+                        COALESCE(sum(s.delta) FILTER (WHERE s.delta > 0), 0)::bigint AS units_done,
+                        count(DISTINCT s.attempt_id)::int AS attempts,
+                        max(s.progress_unit) AS unit
+                   FROM stepped s
+                  GROUP BY 1
+                  ORDER BY 1 ASC`,
+                { replacements: { since, until, kind }, type: QueryTypes.SELECT }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * How much work is waiting right now, counted in units rather than in jobs.
+     *
+     * A single number rather than a series: nothing records what the backlog *was*, only
+     * what it is. Drawing it over time would need the same treatment progress just got, and
+     * is worth doing when somebody wants to see a backlog growing rather than its size.
+     *
+     * @async
+     * @param {string} [kind] - Narrow to one job kind.
+     * @returns {Promise<Object>} `{units, jobs}`.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async queuedUnits(kind) {
+        try {
+            const [row] = await this.db.sequelize.query(
+                `SELECT COALESCE(sum(GREATEST(0,
+                            COALESCE((j.spec->'range'->>'end_frame')::bigint, 0)
+                          - COALESCE((j.spec->'range'->>'start_frame')::bigint, 0)
+                          - COALESCE(a.progress_done, 0))), 0)::bigint AS units,
+                        count(*)::int AS jobs
+                   FROM gpu_jobs j
+                   LEFT JOIN LATERAL (
+                        SELECT progress_done FROM gpu_job_attempts
+                         WHERE job_id = j.id ORDER BY id DESC LIMIT 1
+                   ) a ON TRUE
+                  WHERE j.finished_at IS NULL
+                    ${kind ? 'AND j.kind = :kind' : ''}`,
+                { replacements: { kind }, type: QueryTypes.SELECT }
+            );
+
+            return { units: Number(row.units), jobs: row.jobs };
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * How the model registry grew.
+     *
+     * Cumulative registrations per bucket, counted straight out of `ml_models.created_at`
+     * with nothing recorded specially -- the rows have carried their own history all along.
+     *
+     * **`preferred` and cache coverage are deliberately absent.** Both are specified on the
+     * Models chart and neither can be answered: `preferred` is a current flag with no record
+     * of when it changed, and nothing anywhere records which machine holds which model. They
+     * need recording before they can be drawn, and inventing a number for them here is what
+     * this whole pass has been undoing.
+     *
+     * @async
+     * @param {Object} window
+     * @param {Date} window.since - Start of the window.
+     * @param {Date} window.until - End of the window.
+     * @param {string} window.bucket - minute, hour or day.
+     * @returns {Promise<Array<Object>>} One row per bucket, oldest first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async registrySeries({ since, until, bucket }) {
+        try {
+            return await this.db.sequelize.query(
+                `WITH buckets AS (
+                        SELECT generate_series(
+                                   date_trunc('${bucket}', :since::timestamptz),
+                                   date_trunc('${bucket}', :until::timestamptz),
+                                   ('1 ${bucket}')::interval) AS at
+                 )
+                 SELECT b.at,
+                        (SELECT count(*)::int FROM ml_models m
+                          WHERE m.created_at < b.at + ('1 ${bucket}')::interval) AS registered,
+                        (SELECT count(*)::int FROM ml_models m
+                          WHERE m.created_at >= b.at
+                            AND m.created_at < b.at + ('1 ${bucket}')::interval) AS added
+                   FROM buckets b
+                  ORDER BY b.at ASC`,
+                { replacements: { since, until }, type: QueryTypes.SELECT }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
      * Throw away GPU readings older than the retention window.
      *
      * One row per machine per minute is cheap and unbounded, which is the shape
@@ -1375,6 +1511,35 @@ class GpuRepository {
                                and a reading is a fact about the machine that
                                outlives it. What was running then is the thing
                                worth keeping. */
+                            jobKind: job ? job.kind : null,
+                        },
+                        transaction,
+                    }
+                );
+            }
+
+            /* Progress, kept over time so a rate can be worked out. The attempt
+               row holds only the latest value -- every heartbeat overwrites it --
+               so without this there is no second reading to subtract from.
+               Written whenever the heartbeat carried progress at all, with or
+               without telemetry: an older worker sends no GPU reading and its
+               throughput is still worth drawing. */
+            if (progress && progress.done !== undefined && progress.done !== null) {
+                await this.db.sequelize.query(
+                    `INSERT INTO gpu_attempt_progress
+                            (attempt_id, at, progress_done, progress_total, progress_unit, job_kind)
+                     VALUES (:attemptId, date_trunc('minute', NOW()), :done, :total, :unit, :jobKind)
+                     ON CONFLICT (attempt_id, at)
+                     DO UPDATE SET progress_done = EXCLUDED.progress_done,
+                                   progress_total = EXCLUDED.progress_total,
+                                   progress_unit = EXCLUDED.progress_unit,
+                                   job_kind = EXCLUDED.job_kind`,
+                    {
+                        replacements: {
+                            attemptId: attempt.id,
+                            done: progress.done,
+                            total: progress.total ?? null,
+                            unit: progress.unit ?? null,
                             jobKind: job ? job.kind : null,
                         },
                         transaction,

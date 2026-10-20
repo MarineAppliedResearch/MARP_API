@@ -2727,6 +2727,36 @@ const buildOpenApiSpec = () => {
                             },
                         },
                     },
+                    GpuThroughputSeries: {
+                        type: 'object',
+                        description: 'Work completed per bucket, with the current backlog. The series is a rate derived from kept readings; the backlog is a single figure, because nothing records what it used to be.',
+                        properties: {
+                            since: { type: 'string', format: 'date-time' },
+                            until: { type: 'string', format: 'date-time' },
+                            bucket: { type: 'string', enum: ['minute', 'hour', 'day'], example: 'minute' },
+                            kind: { type: 'string', nullable: true, example: 'inference', description: 'The job kind this was narrowed to, or null for all of them.' },
+                            queued: {
+                                type: 'object',
+                                description: 'What is waiting right now.',
+                                properties: {
+                                    units: { type: 'integer', example: 184320, description: 'Units of work left across unfinished jobs: what each expects, less what its latest attempt has done.' },
+                                    jobs: { type: 'integer', example: 21, description: 'How many unfinished jobs that is spread over.' },
+                                },
+                            },
+                            points: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        at: { type: 'string', format: 'date-time', description: 'Start of the bucket.' },
+                                        units_done: { type: 'integer', example: 714, description: 'Units completed in this bucket, summed across attempts. Positive differences only: a retried attempt counts from zero again.' },
+                                        attempts: { type: 'integer', example: 3, description: 'How many attempts contributed.' },
+                                        unit: { type: 'string', nullable: true, example: 'frames', description: 'What is being counted, as the worker named it.' },
+                                    },
+                                },
+                            },
+                        },
+                    },
                     GpuHeartbeatResponse: {
                         type: 'object',
                         description:
