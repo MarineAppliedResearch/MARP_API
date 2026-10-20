@@ -5542,6 +5542,150 @@ function wireTopbarAutohide() {
  *
  * @returns {Promise<void>}
  */
+/**
+ * The Workers screen's pool-capacity chart, split by what the compute was spent on.
+ *
+ * Four lines the design asks for: inference, training, VRAM pressure and queued work.
+ *
+ * **The split is real as of 2026-10-20.** It could not be drawn before, because a GPU
+ * reading said how hard a card was working and not what it was working on. The sample now
+ * records `job_kind` at heartbeat time, so `GET /gpu/telemetry/series` can report what the
+ * machines running inference were doing separately from the ones training. Averaging them
+ * together gave a number describing neither: a bucket with nine machines inferring at 90%
+ * and one training at 98% reads 83% blended, which is true of nothing on the pool.
+ *
+ * Queued work comes from the job series rather than the telemetry one — it is a fact about
+ * the queue, not about a card — so the two are fetched together.
+ *
+ * @returns {Promise<void>}
+ */
+async function wirePoolCapacity() {
+  const root = $('[data-ops-activity="workers"]');
+  if (!root || !$('.ops-chart', root)) return;
+
+  const RANGES = {
+    '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
+    '5h': { hours: 5, bucket: 'minute', label: 'the last 5 hours' },
+    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+  };
+
+  const lines = Object.fromEntries($$('[data-ops-line]', root).map((l) => [l.dataset.opsLine, l]));
+  const area = $('[data-ops-area]', root);
+  const buttons = $$('[data-ops-range]', root);
+  const chart = $('.ops-chart', root);
+  const leftAxis = $$('.inference-axis.left text:not(.axis-title):not([data-ops-time])', root);
+  const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
+
+  const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
+  const y = (v, max) => 196 - 168 * (v / Math.max(1, max));
+  const pathOf = (values, max) => values
+    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
+  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`;
+
+  const clock = (iso) => {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  async function choose(next) {
+    buttons.forEach((b) => {
+      const on = b.dataset.opsRange === next;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+
+    const { hours, bucket, label } = RANGES[next] || RANGES['5h'];
+    const until = new Date();
+    const since = new Date(until.getTime() - hours * 3600 * 1000);
+    const span = { since: since.toISOString(), until: until.toISOString(), bucket };
+
+    try {
+      const [gpu, jobs] = await Promise.all([
+        window.MarpApi.gpuSeries(span),
+        window.MarpApi.jobSeries(span),
+      ]);
+
+      const points = gpu.points || [];
+      const queuedBy = new Map((jobs.points || []).map((p) => [String(p.at), p.waiting || 0]));
+
+      const samples = {
+        inference: points.map((p) => p.avg_inference_utilization_percent || 0),
+        training: points.map((p) => p.avg_training_utilization_percent || 0),
+        vram: points.map((p) => p.avg_memory_percent_used || 0),
+        queued: points.map((p) => queuedBy.get(String(p.at)) || 0),
+      };
+
+      const anyReading = points.some((p) => p.machines > 0);
+
+      if (!points.length || !anyReading) {
+        [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
+        leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
+        if (chart) {
+          chart.setAttribute('aria-label',
+            `No GPU readings in ${label}. A machine reports while it works, and a worker has to be `
+            + 'running a build that sends telemetry on its heartbeat.');
+        }
+        root.classList.add('is-quiet');
+        return;
+      }
+
+      root.classList.remove('is-quiet');
+
+      /* Utilization and VRAM are percentages and share the left axis; the queue
+         is a count and keeps the right one.
+
+         Rounded up to a whole number of ticks, so a quiet queue does not produce
+         an axis reading 1, 1, 1, 0, 0 -- a scale whose labels repeat says less
+         than no scale at all. */
+      const queueSteps = Math.max(1, rightAxis.length - 1);
+      const queuePeak = Math.max(...samples.queued, 0);
+      const maxQueued = Math.max(queueSteps, Math.ceil(queuePeak / queueSteps) * queueSteps);
+
+      if (lines.inference) lines.inference.setAttribute('d', pathOf(samples.inference, 100));
+      if (area) area.setAttribute('d', areaOf(samples.inference, 100));
+      if (lines.training) lines.training.setAttribute('d', pathOf(samples.training, 100));
+      if (lines.vram) lines.vram.setAttribute('d', pathOf(samples.vram, 100));
+      if (lines.queued) lines.queued.setAttribute('d', pathOf(samples.queued, maxQueued));
+
+      const ticks = (nodes, top, format) => nodes.forEach((t, i) => {
+        const steps = Math.max(1, nodes.length - 1);
+        t.textContent = format(top * (steps - i) / steps);
+      });
+
+      ticks(leftAxis, 100, (v) => `${Math.round(v)}%`);
+      ticks(rightAxis, maxQueued, (v) => String(Math.round(v)));
+
+      $$('[data-ops-time]', root).forEach((t, i) => {
+        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][i];
+        if (at) t.textContent = i === 2 ? 'Now' : clock(at.at);
+      });
+
+      const last = points.at(-1);
+      const current = {
+        inference: `${Math.round(last.avg_inference_utilization_percent || 0)}%`,
+        training: `${Math.round(last.avg_training_utilization_percent || 0)}%`,
+        vram: `${Math.round(last.avg_memory_percent_used || 0)}%`,
+        queued: String(samples.queued.at(-1)),
+      };
+
+      $$('[data-ops-current]', root).forEach((node) => {
+        if (current[node.dataset.opsCurrent] !== undefined) node.textContent = current[node.dataset.opsCurrent];
+      });
+
+      if (chart) {
+        chart.setAttribute('aria-label', `Pool capacity over ${label}: inference ${current.inference}, `
+          + `training ${current.training}, VRAM ${current.vram}, ${current.queued} waiting`);
+      }
+    } catch (error) {
+      [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
+      if (chart) chart.setAttribute('aria-label', `Could not load pool capacity (${error.status || 'no answer'})`);
+    }
+  }
+
+  buttons.forEach((b) => b.addEventListener('click', () => choose(b.dataset.opsRange)));
+  await choose('5h');
+}
+
 async function wireOperationalActivity() {
   const root = $('[data-ops-activity="history"]');
   if (!root || !$('.ops-chart', root)) return;
@@ -5623,8 +5767,16 @@ async function wireOperationalActivity() {
       if (lines.issues) lines.issues.setAttribute('d', pathOf(issues, 100));
       if (lines.turnaround) lines.turnaround.setAttribute('d', pathOf(turnaround, maxTurn));
 
-      leftAxis.forEach((t, i) => { t.textContent = String(Math.round(maxJobs * (3 - i) / 3)); });
-      rightAxis.forEach((t, i) => { t.textContent = hours(Math.round(maxTurn * (3 - i) / 3)); });
+      /* Steps from the tick count the markup actually has. Assuming four gave
+         the Workers chart a fifth label reading -33%, which is a utilization
+         nothing can have. */
+      const ticks = (nodes, top, format) => nodes.forEach((t, i) => {
+        const steps = Math.max(1, nodes.length - 1);
+        t.textContent = format(top * (steps - i) / steps);
+      });
+
+      ticks(leftAxis, maxJobs, (v) => String(Math.round(v)));
+      ticks(rightAxis, maxTurn, (v) => hours(Math.round(v)));
 
       $$('[data-ops-time]', root).forEach((t, i) => {
         const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][i];
@@ -5709,6 +5861,7 @@ wireInferenceActivity();
 wireTrainingActivity();
 wireDatasetActivity();
 wireOperationalActivity();
+wirePoolCapacity();
 wireModelRegistration();
 wireSliders();
 wireInferenceForm();

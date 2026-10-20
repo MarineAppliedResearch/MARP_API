@@ -458,7 +458,20 @@ class GpuRepository {
                         round(avg(d.util), 1)::float AS avg_utilization_percent,
                         max(d.util)::int AS max_utilization_percent,
                         round(avg(d.mem), 1)::float AS avg_memory_percent_used,
-                        round(avg(d.watts), 1)::float AS avg_power_usage_watts
+                        round(avg(d.watts), 1)::float AS avg_power_usage_watts,
+                        /* The pool's compute, split by what it was spent on.
+                           Averaged over the readings of that kind, so a bucket
+                           where one machine trained and nine inferred reports
+                           what each was doing rather than one blended number
+                           that describes neither. */
+                        round(avg(d.util) FILTER (WHERE s.job_kind IN ('inference', 'tracking')), 1)::float
+                            AS avg_inference_utilization_percent,
+                        round(avg(d.util) FILTER (WHERE s.job_kind = 'training'), 1)::float
+                            AS avg_training_utilization_percent,
+                        count(DISTINCT s.worker_id) FILTER (WHERE s.job_kind IN ('inference', 'tracking'))::int
+                            AS inference_machines,
+                        count(DISTINCT s.worker_id) FILTER (WHERE s.job_kind = 'training')::int
+                            AS training_machines
                    FROM gpu_worker_samples s
                    CROSS JOIN LATERAL (
                         SELECT (device->>'gpu_utilization_percent')::numeric AS util,
@@ -1346,15 +1359,23 @@ class GpuRepository {
             // reason this table exists.
             if (telemetry && Array.isArray(telemetry.devices) && telemetry.devices.length) {
                 await this.db.sequelize.query(
-                    `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices)
-                     VALUES (:workerId, :attemptId, date_trunc('minute', NOW()), :devices)
+                    `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, job_kind)
+                     VALUES (:workerId, :attemptId, date_trunc('minute', NOW()), :devices, :jobKind)
                      ON CONFLICT (worker_id, at)
-                     DO UPDATE SET devices = EXCLUDED.devices, attempt_id = EXCLUDED.attempt_id`,
+                     DO UPDATE SET devices = EXCLUDED.devices,
+                                   attempt_id = EXCLUDED.attempt_id,
+                                   job_kind = EXCLUDED.job_kind`,
                     {
                         replacements: {
                             workerId,
                             attemptId: attempt.id,
                             devices: JSON.stringify(telemetry.devices),
+                            /* Written onto the sample rather than joined at read
+                               time: the attempt is nulled when a job is cleared,
+                               and a reading is a fact about the machine that
+                               outlives it. What was running then is the thing
+                               worth keeping. */
+                            jobKind: job ? job.kind : null,
                         },
                         transaction,
                     }

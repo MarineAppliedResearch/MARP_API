@@ -3544,6 +3544,30 @@
                   "nullable": true,
                   "example": 298.7
                 },
+                "avg_inference_utilization_percent": {
+                  "type": "number",
+                  "nullable": true,
+                  "example": 91.2,
+                  "description": "Utilization series: the pool's compute spent on inference and tracking. Averaged over the readings taken while that kind of work was running, so a bucket where one machine trained and nine inferred reports what each was doing rather than one blended number describing neither. Null when no machine ran that kind in the bucket."
+                },
+                "avg_training_utilization_percent": {
+                  "type": "number",
+                  "nullable": true,
+                  "example": 97.8,
+                  "description": "Utilization series: the same, for training."
+                },
+                "inference_machines": {
+                  "type": "integer",
+                  "nullable": true,
+                  "example": 9,
+                  "description": "Utilization series: how many machines ran inference or tracking in this bucket."
+                },
+                "training_machines": {
+                  "type": "integer",
+                  "nullable": true,
+                  "example": 1,
+                  "description": "Utilization series: how many ran training."
+                },
                 "created": {
                   "type": "integer",
                   "nullable": true,

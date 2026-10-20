@@ -689,7 +689,21 @@
     const url = new URL(`/api/v2${path}`, location.origin);
 
     for (const [key, value] of Object.entries(query || {})) {
-      if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, value);
+      if (value === undefined || value === null || value === '') continue;
+
+      /* **Scalars only.** A caller that passes an object gets it stringified into
+         the query, and the one time that happened the object was `window` -- so
+         the request carried every global as a parameter, ran to several thousand
+         characters, and came back 431 with a reason that said nothing about the
+         mistake. Skipping is better than a URL nobody meant to build. */
+      const kind = typeof value;
+
+      if (kind !== 'string' && kind !== 'number' && kind !== 'boolean') {
+        console.warn(`MarpApi: ignoring query parameter "${key}" of type ${kind}`);
+        continue;
+      }
+
+      url.searchParams.set(key, value);
     }
 
     let response;
