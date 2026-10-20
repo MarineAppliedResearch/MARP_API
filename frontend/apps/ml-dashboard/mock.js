@@ -3785,90 +3785,244 @@ function wireJobsOverview() {
   choose(range);
 }
 
-/* Inference needs an operational graph, not another count of jobs. Throughput
-   and backlog share time but not units, so each keeps an explicit axis. Their
-   relationship answers the useful question: is processing catching up? */
-function wireInferenceActivity() {
-  const root = $('[data-inference-activity]');
+/**
+ * Draw one of the operational charts from a series.
+ *
+ * The four charts on this app share an SVG: a left axis, a right axis, three time labels,
+ * some `<path>`s keyed by name, and a run of current readings underneath. Only the data and
+ * the labels differ, so the drawing lives here once rather than a fourth time.
+ *
+ * @param {Object} spec
+ * @param {Element} spec.root - The panel.
+ * @param {string} spec.prefix - The dataset prefix its markup uses: `inference`, `ops`.
+ * @param {Object} spec.ranges - `{button: {since(), bucket, label}}`.
+ * @param {string} spec.initial - Which range to open on.
+ * @param {function(Object): Promise<Object>} spec.fetch - Given `{since, until, bucket}`, the answer.
+ * @param {function(Object): Object} spec.read - Turns that answer into `{series, scales, current, quiet}`.
+ * @returns {Promise<void>}
+ */
+async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read }) {
   if (!root) return;
-  /* Same reason as wireDatasetActivity: no chart means the panel is saying the
-     series does not exist, and there is nothing here to animate. */
-  if (!$('.inference-chart svg', root)) return;
-  const ranges = {
-    '24h': { labels: ['24h ago', '12h ago', 'Now'], throughput: [48,52,55,51,58,62,59,65,69,63,67,72,70,74,76,73,79,82,77,81,84,80,76,78], backlog: [7.6,7.7,7.5,7.4,7.3,7.2,7.1,7.2,7.0,6.9,6.8,6.7,6.8,6.6,6.5,6.4,6.2,6.3,6.1,6.0,5.9,5.8,5.9,5.8] },
-    '5h': { labels: ['5h ago', '2.5h ago', 'Now'], throughput: [61,64,67,65,69,72,70,74,76,73,77,80,78,82,85,81,79,83,86,82,80,79,77,78], backlog: [6.9,6.8,6.8,6.7,6.6,6.6,6.5,6.4,6.3,6.3,6.2,6.1,6.1,6.0,5.9,5.9,5.8,5.8,5.7,5.7,5.8,5.7,5.8,5.8] },
-    '1h': { labels: ['1h ago', '30m ago', 'Now'], throughput: [72,74,73,76,79,77,80,82,81,84,83,81,79,82,85,84,82,80,79,81,80,79,77,78], backlog: [6.0,6.0,5.9,5.9,5.8,5.8,5.8,5.7,5.7,5.7,5.6,5.6,5.6,5.7,5.7,5.7,5.8,5.8,5.8,5.7,5.7,5.8,5.8,5.8] }
-  };
-  const buttons = $$('[data-inference-range]', root);
-  const lines = Object.fromEntries($$('[data-inference-line]', root).map((line) => [line.dataset.inferenceLine, line]));
-  const area = $('[data-inference-area="throughput"]', root);
-  const chart = $('.inference-chart', root);
-  let range = '5h';
-  let samples;
-  let tick = 0;
-  const coords = (values, scale) => values.map((value, index) => {
-    const x = 54 + 672 * index / (values.length - 1);
-    const y = scale === 'throughput'
-      ? 196 - 168 * Math.max(0, Math.min(120, value)) / 120
-      : 196 - 168 * Math.max(0, Math.min(6, value - 2)) / 6;
-    return [x, y];
+
+  const camel = (name) => prefix + name[0].toUpperCase() + name.slice(1);
+  const lines = Object.fromEntries($$(`[data-${prefix}-line]`, root)
+    .map((l) => [l.dataset[camel('line')], l]));
+  const area = $(`[data-${prefix}-area]`, root);
+  const areaKey = area ? area.dataset[camel('area')] : null;
+  const buttons = $$(`[data-${prefix}-range]`, root);
+  const chart = $('.inference-chart, .ops-chart', root);
+  const leftAxis = $$('.inference-axis.left text:not(.axis-title)', root)
+    .filter((t) => !t.hasAttribute(`data-${prefix}-time`));
+  const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
+
+  const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
+  const y = (v, max) => 196 - 168 * (v / Math.max(1, max));
+  const pathOf = (values, max) => values
+    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
+  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`;
+
+  /** Ticks from however many the markup has, not from an assumed four. */
+  const ticks = (nodes, top, format) => nodes.forEach((t, i) => {
+    const steps = Math.max(1, nodes.length - 1);
+    t.textContent = format(top * (steps - i) / steps);
   });
-  const pathOf = (values, scale) => coords(values, scale)
-    .map(([x, y], index) => `${index ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  const draw = () => {
-    const throughputPath = pathOf(samples.throughput, 'throughput');
-    lines.throughput.setAttribute('d', throughputPath);
-    lines.backlog.setAttribute('d', pathOf(samples.backlog, 'backlog'));
-    area.setAttribute('d', `${throughputPath} L726,196 L54,196 Z`);
-    $('[data-inference-current="throughput"]', root).textContent = `${Math.round(samples.throughput.at(-1))}k`;
-    $('[data-inference-current="backlog"]', root).textContent = `${samples.backlog.at(-1).toFixed(1)}M`;
-    const label = `Inference activity over the last ${range}: ${Math.round(samples.throughput.at(-1))} thousand frames processed per minute and ${samples.backlog.at(-1).toFixed(1)} million frames queued`;
-    chart.setAttribute('aria-label', label);
-    chart.title = label;
+
+  const blank = () => {
+    [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
+    leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
+    $$(`[data-${prefix}-time]`, root).forEach((t) => { t.textContent = ''; });
   };
-  const choose = (next) => {
-    range = next;
-    samples = { throughput: [...ranges[range].throughput], backlog: [...ranges[range].backlog] };
-    buttons.forEach((button) => {
-      const on = button.dataset.inferenceRange === range;
-      button.classList.toggle('on', on);
-      button.setAttribute('aria-pressed', String(on));
+
+  async function choose(next) {
+    buttons.forEach((b) => {
+      const on = b.dataset[camel('range')] === next;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
     });
-    $$('[data-inference-time]', root).forEach((label, index) => { label.textContent = ranges[range].labels[index]; });
-    draw();
-  };
-  buttons.forEach((button) => button.addEventListener('click', () => choose(button.dataset.inferenceRange)));
-  const highlightButtons = $$('[data-inference-highlight]', root);
-  const highlight = (name = '') => {
-    const active = root.dataset.highlight === name ? '' : name;
-    root.dataset.highlight = active;
-    root.classList.toggle('is-highlighted', Boolean(active));
-    highlightButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.inferenceHighlight === active)));
-    $$('.inference-line, .inference-area', root).forEach((line) => line.classList.toggle('highlighted', Boolean(active) && line.classList.contains(active)));
-  };
-  highlightButtons.forEach((button) => {
-    button.title = `Highlight only ${button.textContent.trim()} on this graph; select it again or press Escape to restore both series`;
-    button.setAttribute('aria-pressed', 'false');
-    button.addEventListener('click', () => highlight(button.dataset.inferenceHighlight));
-  });
-  root.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && root.classList.contains('is-highlighted')) {
-      const selected = highlightButtons.find((button) => button.getAttribute('aria-pressed') === 'true');
-      highlight('');
-      selected?.focus();
+
+    const range = ranges[next] || ranges[initial];
+    const until = new Date();
+    const span = {
+      since: range.since(until).toISOString(),
+      until: until.toISOString(),
+      bucket: range.bucket,
+    };
+
+    try {
+      const answer = await ask(span);
+      const { series, scales, current, quiet, points } = read(answer);
+
+      if (quiet) {
+        blank();
+        root.classList.add('is-quiet');
+        if (chart) chart.setAttribute('aria-label', `${range.empty || 'Nothing recorded'} in ${range.label}`);
+        return;
+      }
+
+      root.classList.remove('is-quiet');
+
+      for (const [name, values] of Object.entries(series)) {
+        const max = scales[name] || 1;
+        if (lines[name]) lines[name].setAttribute('d', pathOf(values, max));
+        if (area && areaKey === name) area.setAttribute('d', areaOf(values, max));
+      }
+
+      /* A line the data cannot fill is left undrawn rather than flattened to
+         zero: an empty track says "not recorded", a line along the floor says
+         "recorded, and none". */
+      for (const [name, line] of Object.entries(lines)) {
+        if (!series[name]) line.removeAttribute('d');
+      }
+
+      ticks(leftAxis, scales.left ?? 1, scales.formatLeft || ((v) => String(Math.round(v))));
+      ticks(rightAxis, scales.right ?? 1, scales.formatRight || ((v) => String(Math.round(v))));
+
+      $$(`[data-${prefix}-time]`, root).forEach((t, i) => {
+        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][i];
+        if (!at) return;
+        const d = new Date(at.at);
+        t.textContent = i === 2 ? 'Now'
+          : (range.bucket === 'day'
+            ? d.toISOString().slice(5, 10)
+            : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+      });
+
+      $$(`[data-${prefix}-current]`, root).forEach((node) => {
+        const value = current[node.dataset[camel('current')]];
+        node.textContent = value === undefined ? '' : value;
+      });
+
+      if (chart && current.aria) chart.setAttribute('aria-label', current.aria);
+    } catch (error) {
+      blank();
+      if (chart) chart.setAttribute('aria-label', `Could not load this chart (${error.status || 'no answer'})`);
     }
-  });
-  choose(range);
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const throughputMovement = [1, -1, 2, -2, 1, 0];
-    const backlogMovement = [-.1, 0, -.1, .1, 0, 0];
-    window.setInterval(() => {
-      samples.throughput = [...samples.throughput.slice(1), Math.max(38, Math.min(105, samples.throughput.at(-1) + throughputMovement[tick % throughputMovement.length]))];
-      samples.backlog = [...samples.backlog.slice(1), Math.max(2.2, Math.min(7.8, samples.backlog.at(-1) + backlogMovement[tick % backlogMovement.length]))];
-      tick += 1;
-      draw();
-    }, 2500);
   }
+
+  buttons.forEach((b) => b.addEventListener('click', () => choose(b.dataset[camel('range')])));
+  await choose(initial);
+}
+
+/** Thousands separated, and shortened once the numbers get long. */
+function compactCount(value) {
+  const n = Number(value) || 0;
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 10000) return `${Math.round(n / 1000)}k`;
+  return n.toLocaleString();
+}
+
+/**
+ * The Inference screen's throughput chart.
+ *
+ * Frames processed per minute against what is still queued. The rate is a difference
+ * between kept readings of each attempt's progress -- see `GET /gpu/throughput/series`.
+ *
+ * **The backlog is drawn as a current figure, not a line**, and that is a decision rather
+ * than an omission: MARP records what is queued now and has never recorded what was queued
+ * then. Reconstructing it per bucket is possible now that progress is kept, and is worth
+ * doing when somebody wants to watch a backlog grow rather than read its size.
+ *
+ * @returns {Promise<void>}
+ */
+function wireInferenceThroughput() {
+  const root = $('[data-inference-activity]');
+  if (!root || !$('.inference-chart svg', root)) return;
+
+  return drawSeriesChart({
+    root,
+    prefix: 'inference',
+    initial: '5h',
+    ranges: {
+      '1h': { since: (u) => new Date(u - 3600e3), bucket: 'minute', label: 'the last hour', empty: 'No frames processed' },
+      '5h': { since: (u) => new Date(u - 5 * 3600e3), bucket: 'minute', label: 'the last 5 hours', empty: 'No frames processed' },
+      '24h': { since: (u) => new Date(u - 24 * 3600e3), bucket: 'hour', label: 'the last 24 hours', empty: 'No frames processed' },
+    },
+    fetch: (span) => window.MarpApi.throughputSeries({ ...span, kind: 'inference' }),
+    read: (answer) => {
+      const points = answer.points || [];
+      const done = points.map((p) => Number(p.units_done) || 0);
+      const peak = Math.max(...done, 0);
+      const unit = points.find((p) => p.unit)?.unit || 'units';
+      const queued = answer.queued || { units: 0, jobs: 0 };
+
+      return {
+        points,
+        quiet: !points.length || peak === 0,
+        series: { throughput: done },
+        scales: {
+          throughput: Math.max(1, peak),
+          left: Math.max(1, peak),
+          right: Math.max(1, queued.units),
+          formatLeft: compactCount,
+          formatRight: compactCount,
+        },
+        current: {
+          throughput: compactCount(done.at(-1)),
+          backlog: compactCount(queued.units),
+          aria: `Inference throughput: ${compactCount(done.at(-1))} ${unit} in the last bucket, `
+            + `${compactCount(queued.units)} queued across ${queued.jobs} jobs`,
+        },
+      };
+    },
+  });
+}
+
+/**
+ * The Models screen's registry chart.
+ *
+ * Versions registered over time, and how many of them anything actually ran.
+ *
+ * **`in_use` is here instead of the `preferred` line the mockup asked for.** A flag somebody
+ * flips occasionally makes a poor chart; a registry filling with models nothing runs is
+ * worth seeing. `DESIGN.md`, *Decisions*, 2026-10-20.
+ *
+ * **Cache coverage is left undrawn**, because nothing records which machine holds which
+ * model. It stays on the design: it answers where a job can start without downloading
+ * weights, which is a scheduling question.
+ *
+ * @returns {Promise<void>}
+ */
+function wireRegistryTrend() {
+  const root = $('[data-ops-activity="models"]');
+  if (!root || !$('.ops-chart svg', root)) return;
+
+  return drawSeriesChart({
+    root,
+    prefix: 'ops',
+    initial: '90d',
+    ranges: {
+      '30d': { since: (u) => new Date(u - 30 * 86400e3), bucket: 'day', label: 'the last 30 days', empty: 'No models registered' },
+      '90d': { since: (u) => new Date(u - 90 * 86400e3), bucket: 'day', label: 'the last 90 days', empty: 'No models registered' },
+      '1y': { since: (u) => new Date(u - 365 * 86400e3), bucket: 'day', label: 'the last year', empty: 'No models registered' },
+    },
+    fetch: (span) => window.MarpApi.registrySeries(span),
+    read: (answer) => {
+      const points = answer.points || [];
+      const registered = points.map((p) => p.registered || 0);
+      const inUse = points.map((p) => p.in_use || 0);
+      const peak = Math.max(...registered, 0);
+
+      return {
+        points,
+        quiet: !points.length || peak === 0,
+        series: { registered, in_use: inUse },
+        scales: {
+          registered: Math.max(1, peak),
+          in_use: Math.max(1, peak),
+          left: Math.max(1, peak),
+          right: 100,
+          formatRight: () => '',
+        },
+        current: {
+          registered: String(registered.at(-1) ?? 0),
+          in_use: String(inUse.at(-1) ?? 0),
+          coverage: '—',
+          aria: `Model registry: ${registered.at(-1) ?? 0} versions registered, `
+            + `${inUse.at(-1) ?? 0} of them run in the last bucket. Cache coverage is not recorded.`,
+        },
+      };
+    },
+  });
 }
 
 /* Training activity is operational rather than scientific: losses and mAP from
@@ -5848,28 +6002,61 @@ function wireModelRegistration() {
 
 /* ==================================================================== boot */
 
-document.body.dataset.rail = 'closed';
-mountSprite();
-mountRail();
-mountTopbar();
-wireTopbarAutohide();
-wireRailSheet();
+/**
+ * Run one piece of wiring, and do not let it take the others with it.
+ *
+ * **Every screen is wired by one long run of calls in a single script.** A throw anywhere in
+ * it stops the script, so everything after that line never runs -- and because the failure
+ * is usually in a chart nobody is looking at, what a person sees is a *table* that never
+ * filled. That reads as "the API is down", which is the wrong place to look.
+ *
+ * It happened three times on 2026-10-20 alone: a chart wiring that still expected an SVG
+ * that had been replaced by an empty state; a function removed by an edit whose call was
+ * left behind; and a helper renamed in one place. Each time the visible symptom was a blank
+ * table on a page whose own data was fine.
+ *
+ * So each piece is isolated. A broken chart is a broken chart.
+ *
+ * @param {string} name - What is being wired, for the message.
+ * @param {Function} wire - The wiring.
+ * @returns {void}
+ */
+function boot(name, wire) {
+  try {
+    const result = wire();
+    /* An async wiring rejects rather than throws, and would otherwise be an
+       unhandled rejection nobody sees. */
+    if (result && typeof result.catch === 'function') {
+      result.catch((error) => console.error(`MarpDashboard: ${name} failed —`, error));
+    }
+  } catch (error) {
+    console.error(`MarpDashboard: ${name} failed —`, error);
+  }
+}
 
-wireSwitchers();
-wirePoolUtilization();
-wireInferenceActivity();
-wireTrainingActivity();
-wireDatasetActivity();
-wireOperationalActivity();
-wirePoolCapacity();
-wireModelRegistration();
-wireSliders();
-wireInferenceForm();
-wireAccordions();
-wireDatasetBuilder();
-wireSplit();
-wireLineage();
-wireRowSelect();
+document.body.dataset.rail = 'closed';
+boot('sprite', mountSprite);
+boot('rail', mountRail);
+boot('topbar', mountTopbar);
+boot('topbar autohide', wireTopbarAutohide);
+boot('rail sheet', wireRailSheet);
+
+boot('switchers', wireSwitchers);
+boot('pool utilization', wirePoolUtilization);
+boot('inference throughput', wireInferenceThroughput);
+boot('registry trend', wireRegistryTrend);
+boot('training activity', wireTrainingActivity);
+boot('dataset activity', wireDatasetActivity);
+boot('completion activity', wireOperationalActivity);
+boot('pool capacity', wirePoolCapacity);
+boot('model registration', wireModelRegistration);
+boot('sliders', wireSliders);
+boot('inference form', wireInferenceForm);
+boot('accordions', wireAccordions);
+boot('dataset builder', wireDatasetBuilder);
+boot('split', wireSplit);
+boot('lineage', wireLineage);
+boot('row select', wireRowSelect);
 
 /* **Rows first, then the wiring that needs rows.** The Jobs table is filled
    from the data layer, which is asynchronous because it has to be -- swapping

@@ -1065,6 +1065,39 @@
       () => ({ since: null, until: null, bucket: (query && query.bucket) || 'hour', points: [] }));
   }
 
+  /**
+   * `GET /api/v2/gpu/throughput/series` -- how fast work went through.
+   *
+   * `units_done` per bucket, differenced from the cumulative progress MARP keeps per
+   * attempt per minute, plus the current backlog in units rather than jobs. A rate needs
+   * two readings and the attempt row only ever holds the latest, which is why this is a
+   * route rather than a sum over the job list.
+   *
+   * @param {Object} [query] - `{since, until, bucket, kind}`.
+   * @returns {Promise<Object>} `{since, until, bucket, kind, points, queued}`.
+   */
+  function throughputSeries(query) {
+    return serve('series',
+      () => request('/gpu/throughput/series', { query: query || {} }),
+      () => ({ points: [], queued: { units: 0, jobs: 0 } }));
+  }
+
+  /**
+   * `GET /api/v2/gpu/registry/series` -- how the model registry grew.
+   *
+   * `registered` cumulative, `added` per bucket, and `in_use`: how many distinct models
+   * anything actually ran. The screen originally asked for `preferred` over time; see
+   * `DESIGN.md`, *Decisions*, for why it does not.
+   *
+   * @param {Object} [query] - `{since, until, bucket}`.
+   * @returns {Promise<Object>} `{since, until, bucket, points}`.
+   */
+  function registrySeries(query) {
+    return serve('series',
+      () => request('/gpu/registry/series', { query: query || {} }),
+      () => ({ points: [] }));
+  }
+
   window.MarpApi = {
     whoAmI,
     listSessions,
@@ -1072,6 +1105,8 @@
     listVideoChildren,
     jobSeries,
     gpuSeries,
+    throughputSeries,
+    registrySeries,
     listWorkers,
     listJobs,
     getJob,

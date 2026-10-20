@@ -89,8 +89,29 @@
                 <button type="button" data-inference-range="1h">1h</button>
               </div>
             </header>
-            <div class="panel-bd">
-              <p class="nodata">Inference throughput over time is not recorded. Current jobs and ranges can be counted into a snapshot, but no sampled frames-per-minute or queued-frame series exists, so there is nothing to plot against time. See <code>DESIGN.md</code> gap 18.</p>
+            <div class="panel-bd inference-flow-bd">
+              <div class="inference-chart" data-result-graph role="img" aria-label="Inference throughput and queued frame backlog over the last 5 hours">
+                <svg viewBox="0 0 780 248" aria-hidden="true">
+                  <g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g>
+                  <g class="inference-axis left"><text x="46" y="32"></text><text x="46" y="88"></text><text x="46" y="144"></text><text x="46" y="200"></text><text x="54" y="225" data-inference-time></text><text x="390" y="225" data-inference-time></text><text x="726" y="225" data-inference-time></text><text class="axis-title" x="54" y="15">FRAMES PROCESSED / MIN</text></g>
+                  <g class="inference-axis right"><text x="734" y="32"></text><text x="734" y="88"></text><text x="734" y="144"></text><text x="734" y="200"></text><text class="axis-title" x="726" y="15">QUEUED FRAMES</text></g>
+                  <path class="inference-area throughput" data-inference-area="throughput"/>
+                  <path class="inference-line throughput" data-inference-line="throughput"/>
+                  <path class="inference-line backlog" data-inference-line="backlog"/>
+                </svg>
+              </div>
+              <div class="inference-flow-foot">
+                <div class="inference-chart-key result-legend">
+                  <button type="button" class="throughput" data-inference-highlight="throughput">Processing throughput</button>
+                  <button type="button" class="backlog" data-inference-highlight="backlog">Queued frames</button>
+                </div>
+                <div class="inference-current" aria-label="Current inference activity">
+                  <span><b data-inference-current="throughput"></b> frames/min</span>
+                  <span><b data-inference-current="backlog"></b> queued</span>
+                  <span class="clearing"><b>Clearing</b> ~16k frames/min</span>
+                  <span class="live"><i class="dot"></i>Live</span>
+                </div>
+              </div>
             </div>
           </article>
         </section>
