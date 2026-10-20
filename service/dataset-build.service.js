@@ -35,11 +35,17 @@ const buildRepository = require('../repository/dataset-build.repository');
 const extraction = require('./thumbnail-extraction.service');
 const plan = require('./dataset-build-plan');
 
-/** Where packaged archives live. The same directory `package-dataset.js` writes to. */
-const ARCHIVE_DIRECTORY = path.join(__dirname, '..', 'storage', 'datasets');
-
-/** The path recorded on the row, relative to the storage root so the root can move. */
-const ARCHIVE_PATH_PREFIX = 'datasets';
+/*
+ * Where packaged archives live, and what the row says about them.
+ *
+ * Taken from the orchestration config rather than computed here, because #269 made the
+ * root configurable with `DATASET_STORAGE_DIR` -- a database and the archives it names
+ * are one unit, and an API serving that database from a second checkout resolved its own
+ * tree, found nothing and answered 404. Two definitions of this path would put a build's
+ * output somewhere the route serving it does not look.
+ */
+const { DATASET_DIRECTORY: ARCHIVE_DIRECTORY, DATASET_PATH_PREFIX: ARCHIVE_PATH_PREFIX } =
+    require('../config/gpu-orchestration');
 
 /** Identifies this API to Jellyfin, the way the thumbnail path does. */
 const MEDIA_CLIENT_IDENTITY = { client: 'MARP API', device: 'dataset-build' };
