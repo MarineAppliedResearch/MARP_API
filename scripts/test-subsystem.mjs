@@ -53,6 +53,7 @@ const SUBSYSTEMS = {
             'gpu-dataset-archive',
             'gpu-training-submit',
             'gpu-training-run-record',
+            'gpu-trained-model-registration',
             'worker-provisioning',
         ],
     },

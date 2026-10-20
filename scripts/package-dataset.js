@@ -237,10 +237,16 @@ async function main() {
             await db.sequelize.query(
                 `UPDATE datasets SET location = :location, num_samples = :samples,
                         num_classes = :classes, status = 'ready', archive_path = :archivePath,
-                        archive_sha256 = :sha256, archive_bytes = :bytes, updated_at = now()
+                        archive_sha256 = :sha256, archive_bytes = :bytes,
+                        class_names = :classNames::jsonb, updated_at = now()
                  WHERE id = :id`,
                 {
-                    replacements: { id: datasetId, location: dir, samples, classes, archivePath, sha256, bytes },
+                    replacements: {
+                        id: datasetId, location: dir, samples, classes, archivePath, sha256, bytes,
+                        /* In index order. A YOLO label file carries a class index, and
+                           an index means nothing without the list it indexes into. */
+                        classNames: JSON.stringify(names),
+                    },
                     logging: false,
                 }
             );
@@ -248,9 +254,10 @@ async function main() {
             const [inserted] = await db.sequelize.query(
                 `INSERT INTO datasets (name, description, location, num_samples, num_classes,
                                        source, status, archive_path, archive_sha256, archive_bytes,
-                                       created_at, updated_at)
+                                       class_names, created_at, updated_at)
                  VALUES (:name, :description, :location, :samples, :classes,
-                         'legacy import', 'ready', :archivePath, :sha256, :bytes, now(), now())
+                         'legacy import', 'ready', :archivePath, :sha256, :bytes,
+                         :classNames::jsonb, now(), now())
                  RETURNING id`,
                 {
                     replacements: {
@@ -262,6 +269,7 @@ async function main() {
                         archivePath,
                         sha256,
                         bytes,
+                        classNames: JSON.stringify(names),
                     },
                     type: db.Sequelize.QueryTypes.INSERT,
                     logging: false,
