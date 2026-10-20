@@ -1,123 +1,115 @@
----
-task: MarineAppliedResearch/MARP_API#257
-repos: [MARP_API]
-status: design
-needs: []
----
+# Build training datasets from the ML Dashboard
+
+Issue: MarineAppliedResearch/MARP_API#268
+Branch: `104-dashboard-reads-marp`
+Related: #104 (the dashboard's design), #265 (registering a trained model), #120 (the
+file server), `MarineAppliedResearch/marp-inference-worker#68` (the training half, merged)
 
 ## Goal
 
-Make a hole in the data tell you it is a hole. `cancelled` means two things
-today — *"we changed our mind"* and *"this never got done"* — so nothing can
-safely act on it. This milestone splits them and then fills what is owed.
+Build a training dataset out of MARP's own observations, from the ML Dashboard, ending in
+an archive the API can already serve to a worker — and **record what it is made of**, which
+is the part nothing has ever done.
+
+`dataset_observations` holds 0 rows for 0 datasets. Every dataset in MARP today says how
+many classes it has and nothing about which, and cannot say which observations it came
+from. #265 works around that by resolving packaged class names against `species.comname`,
+which happens to work for `rockfish5` and is not a design.
 
 ## Requirements
 
-- **R1** — A new job state, **`interrupted`**: the job stopped part-way and the
-  frames it did not reach are owed.
-- **R2** — `cancelled` means a human changed their mind. Nothing is missing, and
-  nothing is ever requeued from it.
-- **R3** — A worker reporting `cancelled` for a job that is **not already
-  cancelled** is a worker stopping of its own accord. That is `interrupted`.
-  Where the job is already `cancelled`, the human's decision is propagating and
-  it stays `cancelled`.
-- **R4** — `POST /api/gpu/jobs/:id/cancel` is unchanged: it is the human path
-  and it produces `cancelled`.
-- **R5** — The coverage view counts an `interrupted` job's unreached frames as a
-  gap, which it already does, since coverage is computed from what was reported
-  rather than from job state.
-- **R6** — Requeueing an owed range creates real queued work over exactly the
-  frames nobody covered: never the whole original range, and never frames a
-  succeeded job already did.
-- **R6a** — `interrupted` work is requeued automatically. Nobody has to notice
-  that a volunteer paused.
-- **R6b** — `failed` work is **never** requeued automatically. It stays visible
-  as `failed`, and the route lets a human requeue it once they have looked.
-- **R7** — Requeueing twice does not queue the same frames twice.
-- **R8** — The historical 5,329 `cancelled` jobs stay `cancelled`. The
-  distinction starts the day it ships; the development database is development
-  data and production has not used any of this.
+- **R1 — A build is a job, not a request.** `rockfish5` is 11,845 images and 4.9 GB;
+  `CAMPA_STAR_TEST3` is 20 GB. A build gets a `gpu_jobs` row so it has progress somebody
+  can watch, cancellation, retry, and a record of what it produced — and so the Jobs and
+  History screens show it with no new rendering.
+- **R2 — The API runs it, not a worker.** Settled by the human on 2026-10-20: *"It doesn't
+  really make sense to be streaming the video over to a worker and then to re-download the
+  entire thing when it can just be a background thread on the API."* `POST /gpu/poll` never
+  offers `dataset_build` to a worker.
+- **R3 — Membership is recorded.** Every observation that went in gets a
+  `dataset_observations` row naming its split.
+- **R4 — The vocabulary is recorded, in order.** A class index in a YOLO label file is
+  meaningless without the ordered list it indexes. `datasets.num_classes` cannot carry it.
+- **R5 — Frames come from the video, with YOLO labels.** A keyframe is a box at a frame
+  number; the frames between two keyframes are interpolated and are trained on as well
+  (settled 2026-10-20, and the reason `/mosaic/observations/frames` counts the span).
+- **R6 — The archive is the shape `scripts/package-dataset.js` already produces**:
+  `train/images`, `train/labels`, `eval/images`, `eval/labels` and a `data.yaml` carrying
+  `names`, `nc`, `train: train/images`, `val: eval/images`. Content-addressed by SHA-256,
+  recorded on `datasets.archive_path` / `archive_sha256` / `archive_bytes`.
+- **R7 — No frame leaks across splits.** The Datasets screen states the rule: *"An
+  observation or connected frame group keeps its first split assignment."* Two observations
+  that share any frame are one group and go to one split.
+- **R8 — A failed or cancelled build leaves nothing half-served.** The archive may be
+  gigabytes by the time it fails. The dataset ends `failed`, with no `archive_*` set and no
+  partial file left behind.
 
 ## Open assumptions
 
-- [x] **A1 · behavioural · blocking** — answered 2026-10-15: **`failed` is
-      never requeued automatically.** Isaac: *"if something fails a certain
-      amount of times we shouldn't automatically keep requeuing it, but if it
-      goes to failed status, the user can notice the failed status, and try to
-      requeue it or recreate the job manually."*
-
-      A job that has exhausted its attempts has already been retried as much as
-      retrying is worth; doing it again on a schedule spends GPU time on
-      something that is probably broken rather than unlucky. It stays visible as
-      `failed` and a human decides.
-- [x] **A2 · product/UI · blocking** — answered 2026-10-15: **both, and they
-      differ by what they are allowed to touch.** Isaac: *"i think both can
-      reque, like i just said kinda"*.
-
-      - **Automatic**, over `interrupted` work only: a volunteer pausing or a
-        worker stopping is an ordinary event and the frames should simply get
-        done. Nobody should have to remember.
-      - **A route**, for a human, which can also requeue a `failed` job: that is
-        the path A1 describes, taken deliberately after somebody has looked.
-- [ ] **A5 · behavioural · non-blocking** — **What stops an automatic requeue
-      looping?** A requeue makes a *new* job, which starts with a fresh
-      `max_attempts`, so a range that is interrupted every time could be
-      requeued for ever. Each interruption is legitimate on its own -- a
-      volunteer paused -- so a plain attempt cap is the wrong instrument.
-      Proposed: carry a requeue count forward on the spec, and stop requeueing
-      automatically past a small number, leaving it `interrupted` and visible.
-      That is exactly A1's shape, one level up.
-- [ ] **A3 · behavioural · non-blocking** — Does an `expired` lease become
-      `interrupted`? Today the job returns to the queue by itself, so it is
-      already owed and already being dealt with. Proposed: no, leave it.
-- [ ] **A4 · API contract · non-blocking** — `interrupted` is a new value in
-      `JOB_STATES`, which the job-list filter and the OpenAPI enum both expose.
-      Proposed: add it to both; it is additive and no existing value changes
-      meaning.
+- [x] **A1 · architectural · blocking** — **Who executes a build.** Answered by the human
+  2026-10-20: the API, as a background runner. Not a GPU worker, and the worker-side framing
+  in #268 was the other agent's presupposition rather than his intent. A `gpu_jobs` row is
+  still the record, because progress, cancel, retry and the dashboard already work on one.
+- [x] **A2 · database/schema · blocking** — **Where the ordered vocabulary lives.** A new
+  `dataset_classes` table: `dataset_id`, `class_index`, `species_id`. A table rather than a
+  JSONB column because #265 needs to resolve a model's species *by join*, which is the whole
+  reason the gap was noticed. Decided, not asked: `datasets` has no column that could carry
+  an ordered list and inventing a delimited string in `notes` is the alternative.
+- [x] **A3 · data-meaning · non-blocking** — **What `dataset_observations.inclusion_type`
+  means.** Nothing has ever written the column, so there is no existing meaning to preserve
+  and nothing downstream to break. Defined here as the split: `train` or `eval`.
+  `selection_method` records how the observation was chosen, which for a dashboard build is
+  the saved query.
+- [ ] **A4 · product/UI · non-blocking** — **Whether a built dataset is immutable.** #104
+  describes saved datasets as immutable with a fingerprint, and the archive is already
+  content-addressed, so this implementation does not edit in place: a rebuild produces a new
+  archive. Flagged rather than asked because nothing here depends on the answer; it matters
+  the first time somebody wants to add observations to a dataset that exists.
+- [ ] **A5 · performance · non-blocking** — **Extraction concurrency.** The thumbnail
+  extractor has a measured ceiling that exists to protect Jellyfin (`task-118`, R20). A
+  build is a second consumer of the same media server and should share that ceiling rather
+  than set its own. Not blocking: one build at a time, inside the existing limit, is
+  correct and is what this implements.
+- [ ] **A6 · environment · non-blocking** — **Eviction.** Built archives accumulate on the
+  API host and nothing removes them. Same shape as #65 for job workspaces. Out of scope
+  here, and named so it is not mistaken for finished.
 
 ## Decisions
 
-- **2026-10-15** — `cancelled` means nothing is missing; `interrupted` means a
-  hole. Isaac: *"something cancelled should mean nothing is missing, we should
-  have another term for yes, there's a hole in the data because of this"*.
-  `interrupted` says what happened rather than how anyone feels about it, and
-  avoids `abandoned`, which already means a lease that blew past its cap.
-- **2026-10-15** — The conflation is named in the code today: *"The job is
-  cancelled whether or not the cancel came from a human -- a worker that stops
-  of its own accord and calls it cancelled is saying the same thing."* They are
-  not the same thing, and job 14372 is the evidence: twelve thousand frames
-  done, the rest never processed, recorded as though nobody wanted them.
+- **2026-10-20 · A `gpu_jobs` row for work no GPU touches.** The table is named for its
+  first use, not its only one. What a build needs — a queue, a state machine, attempts,
+  progress, cancel, and a row the Jobs screen can draw — is exactly what `gpu_jobs` is, and
+  the alternative was a second table carrying all of it again plus new rendering.
+  `dataset_build` is excluded from what `poll` offers, the way `INGESTIBLE_JOB_KINDS`
+  already subsets kinds for a different reason.
+- **2026-10-20 · The build reuses `service/thumbnail-extraction.service.js`.** It already
+  cuts a set of frames from one video in a single ffmpeg pass, already talks to Jellyfin,
+  and already interpolates a box between two keyframes. #268 predicted a dataset build
+  would be a second consumer of that capability; it is.
 
 ## Plan
 
-1. `interrupted` in `JOB_STATES`, and in the OpenAPI enum the job filter uses.
-2. The worker-reported branch in `publishResult` chooses `interrupted` over
-   `cancelled` when the job was not already cancelled.
-3. A repository query for owed ranges: the gaps from the coverage work,
-   narrowed to videos with an `interrupted` job over them.
-4. Requeue: submit jobs over those gaps, reusing the submission path so a
-   requeued job is an ordinary job with an ordinary spec.
-5. A route for it, per A2.
+1. Migration: `dataset_classes`, and `dataset_build` accepted as a job kind.
+2. `repository/dataset-build.repository.js` — selection, membership, vocabulary.
+3. `service/dataset-build.service.js` — the runner: select, extract, label, split, package.
+4. Route: queue a build from a saved query; the existing job routes do the rest.
+5. The Datasets screen's *Queue dataset build* button calls it.
 
 ## Acceptance criteria
 
-- A worker reporting cancelled on a live job leaves the job `interrupted`.
-- A human cancelling leaves it `cancelled`, and a worker's later report does
-  not change that.
-- The coverage view shows an interrupted job's unreached frames as a gap.
-- Requeueing that video queues jobs covering exactly the gap.
-- Requeueing again queues nothing.
-- Nothing requeues from a `cancelled` job.
+- A build queued from the dashboard produces an archive `GET /gpu/datasets/:id/archive`
+  serves, which the worker's existing verification accepts.
+- `dataset_observations` has one row per included observation, naming its split.
+- `dataset_classes` gives the ordered vocabulary, and its order matches `data.yaml`'s
+  `names`.
+- Two observations sharing a frame are in the same split, always.
+- A cancelled build leaves `status = 'failed'`, no `archive_*`, and no partial file.
 
 ## Test plan
 
-Filled in at G3.
+Written in full at G3, before anything is run. Tiers that can see this: the repository and
+service against a seeded database (fast), and one end-to-end build over a short real video.
 
 ## Status
 
-- **Gate:** design -- both blocking assumptions answered
-- **Notes:** Settled. The shape is that automatic requeueing is for things that
-  are nobody's fault and will simply work next time, and everything else waits
-  for a human to look at it. A5 is the same question one level up and is
-  answered the same way; it is non-blocking because the first version can
-  requeue once and be watched.
+G1 — spec written, A1 and A2 settled. Not yet implemented.

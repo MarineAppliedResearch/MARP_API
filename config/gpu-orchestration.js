@@ -232,7 +232,26 @@ const WORKER_STATES = ['online', 'offline', 'paused'];
  * @constant
  * @type {Array<string>}
  */
-const JOB_KINDS = ['inference', 'tracking', 'training', 'diagnostic'];
+const JOB_KINDS = ['inference', 'tracking', 'training', 'diagnostic', 'dataset_build'];
+
+/**
+ * Job kinds a worker may lease.
+ *
+ * **`dataset_build` is a job that no GPU touches.** It gets a `gpu_jobs` row because what
+ * a build needs is exactly what this table is -- a queue, a state machine, attempts,
+ * progress, cancellation, and a row the Jobs screen can already draw -- but the API runs
+ * it, not the pool. Settled by the human on 2026-10-20: *"it doesn't really make sense to
+ * be streaming the video over to a worker and then to re-download the entire thing when it
+ * can just be a background thread on the API."* Handing one to a worker would also give
+ * that worker video access, which A8 deliberately took away.
+ *
+ * So `POST /gpu/poll` filters on this list rather than on `JOB_KINDS`. A kind absent from
+ * here is invisible to the pool and is somebody else's to run.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const LEASABLE_JOB_KINDS = ['inference', 'tracking', 'training', 'diagnostic'];
 
 /**
  * Job states.
@@ -412,6 +431,7 @@ module.exports = {
     MEDIA_CLIENT_IDENTITY,
     WORKER_STATES,
     JOB_KINDS,
+    LEASABLE_JOB_KINDS,
     INGESTIBLE_JOB_KINDS,
     ENGINE_DATA_TYPES,
     JOB_STATES,

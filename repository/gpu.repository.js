@@ -68,6 +68,7 @@ const {
     TERMINAL_JOB_STATES,
     RESULT_OUTCOMES,
     SAMPLE_RETENTION_DAYS,
+    LEASABLE_JOB_KINDS,
 } = require('../config/gpu-orchestration');
 
 /**
@@ -86,6 +87,9 @@ const LIVE_ATTEMPT_STATES_SQL = LIVE_ATTEMPT_STATES.map((state) => `'${state}'`)
  * @type {string}
  */
 const TERMINAL_JOB_STATES_SQL = TERMINAL_JOB_STATES.map((state) => `'${state}'`).join(', ');
+
+/** The kinds a worker may lease, for the claim query's WHERE. */
+const LEASABLE_JOB_KINDS_SQL = LEASABLE_JOB_KINDS.map((kind) => `'${kind}'`).join(', ');
 
 /**
  * Keeps `gpu_jobs.finished_at` in step with a state this statement is setting
@@ -1251,10 +1255,14 @@ class GpuRepository {
      * @throws {Error} Re-throws any database failure.
      */
     async selectClaimableJobRow(transaction) {
+        /* A kind the pool does not run is invisible to this query. `dataset_build` is
+           the first: it is a `gpu_jobs` row for the queue, the attempts and the
+           progress, and the API runs it rather than a worker. */
         const [job] = await this.db.sequelize.query(
             `SELECT *
                FROM gpu_jobs
               WHERE state = 'queued'
+                AND kind IN (${LEASABLE_JOB_KINDS_SQL})
                 AND ${ATTEMPTS_SPENT_SQL} < max_attempts
               ORDER BY priority DESC, created_at ASC, id ASC
               LIMIT 1
