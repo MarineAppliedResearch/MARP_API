@@ -2249,14 +2249,26 @@ const buildOpenApiSpec = () => {
                     GpuJobSpec: {
                         type: 'object',
                         description:
-                            'The whole of what a worker is being asked to do. `range` is always present, even for a whole video, so nothing has to special-case the undivided case. Additional properties are allowed: the engine-specific parts of a spec belong to the worker, and MARP validates only the parts it schedules on.',
-                        required: ['engine', 'video', 'range'],
+                            'The whole of what a worker is being asked to do, in one of two shapes. An inference or tracking job carries `video` and `range`, and the range is always present even for a whole video so nothing has to special-case the undivided case. A training job carries `dataset` instead and has neither, because it is not a span of a video. Only `engine` is required of both; which of the rest are required follows from `kind`, and the submit endpoint refuses a spec that is neither shape rather than guessing. Additional properties are allowed: the engine-specific parts of a spec belong to the worker, and MARP validates only the parts it schedules on.',
+                        required: ['engine'],
                         additionalProperties: true,
                         properties: {
                             engine: {
                                 type: 'string',
                                 example: 'ultralytics',
                                 description: 'Which inference engine is to run this.',
+                            },
+                            dataset: {
+                                type: 'object',
+                                description:
+                                    'The packaged dataset a training job learns from. Present only on a training job, and composed by MARP rather than by the submitter: the submitter names `dataset_id` and MARP fills in the locator and the hash from the row, exactly as it resolves a video. A dataset that has never been packaged is refused at submit, because a worker cannot fetch a folder sitting on another machine.',
+                                required: ['url', 'sha256'],
+                                properties: {
+                                    dataset_id: { type: 'integer', example: 294, description: 'The `datasets.id` this came from.' },
+                                    name: { type: 'string', example: 'rockfish5', description: 'What MARP calls it, for the record.' },
+                                    url: { type: 'string', example: '/api/v2/gpu/datasets/294/archive', description: 'Coordinator-relative locator the worker fetches the archive from.' },
+                                    sha256: { type: 'string', description: 'What the archive must hash to. Verified before anything is unpacked.' },
+                                },
                             },
                             model: {
                                 type: 'object',
@@ -2321,6 +2333,7 @@ const buildOpenApiSpec = () => {
                                 properties: {
                                     start_frame: { type: 'integer', minimum: 0, example: 0, description: 'First frame to process, included.' },
                                     end_frame: { type: 'integer', minimum: 1, example: 9000, description: 'One past the last frame to process, excluded. `[0, 9000)` is nine thousand frames.' },
+                                    job_start_frame: { type: 'integer', minimum: 0, example: 0, description: 'Where the **job** begins, as against where this lease does. Present only on a lease of a job somebody already worked part of: MARP moves `start_frame` forward to the resume point, and this says what it moved. Never accepted on submission and never stored -- the submitted spec is left exactly as it was sent. A worker uses it to show the frames an earlier attempt covered as covered rather than skipped.' },
                                 },
                             },
                             params: {
@@ -2487,9 +2500,10 @@ const buildOpenApiSpec = () => {
                             spec: { $ref: '#/components/schemas/GpuJobSpec' },
                             state: {
                                 type: 'string',
-                                enum: ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'expired'],
+                                enum: ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'interrupted', 'expired'],
                                 example: 'leased',
-                                description: '`expired` is distinct from `failed`: nothing went wrong with the work, MARP simply stopped hearing from every machine that tried it.',
+                                description: '`expired` is distinct from `failed`: nothing went wrong with the work, MARP simply stopped hearing from every machine that tried it.\n\n'
+                                    + '`cancelled` and `interrupted` are also distinct, and the difference decides what gets redone. `cancelled` is a human changing their mind: nothing is missing and it is never requeued. `interrupted` is the job stopping part-way -- a volunteer pausing, a worker giving up -- so the frames it never reached are owed, and those are requeued automatically. A `failed` job is never requeued automatically: it has already been retried as far as retrying is worth, and it stays visible for somebody to look at.',
                             },
                             priority: { type: 'integer', example: 0, description: 'Higher is claimed first.' },
                             attempts_made: { type: 'integer', example: 1, description: 'How many times this job has been leased; also the current attempt\'s lease epoch.' },
@@ -2955,6 +2969,33 @@ const buildOpenApiSpec = () => {
                                 type: 'boolean',
                                 example: true,
                                 description: 'False for a job that had already finished, which is not an error -- cancelling something finished simply does nothing.',
+                            },
+                        },
+                    },
+                    GpuRequeueRequest: {
+                        type: 'object',
+                        description: 'Which video to requeue owed frames for. Omit both fields to requeue every video with interrupted work.',
+                        properties: {
+                            jellyfin_item_id: { type: 'string', example: '937c5062e9186e878f8e99673edc84b4' },
+                            source_name: { type: 'string', example: '20240727_185645 Fwd.mp4' },
+                        },
+                    },
+                    GpuRequeueResponse: {
+                        type: 'object',
+                        description: 'What was queued. A video whose length is unknown is skipped and says why, rather than being given work over frames that may not exist.',
+                        properties: {
+                            jobs_queued: { type: 'integer', example: 2, description: 'Total jobs created across every video.' },
+                            videos: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        video: { type: 'object', description: 'The video, as it was identified.' },
+                                        session_id: { type: 'integer', nullable: true, example: 755 },
+                                        queued: { type: 'array', items: { type: 'integer' }, example: [15071, 15072], description: 'Jobs created over the owed frames. Empty when nothing was owed.' },
+                                        skipped: { type: 'string', example: 'the video could not be sized', description: 'Present only when nothing was queued for a reason worth saying.' },
+                                    },
+                                },
                             },
                         },
                     },

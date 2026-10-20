@@ -210,6 +210,19 @@ class GpuController {
     }
 
     /**
+     * Queue the frames interrupted work left owed (#257).
+     *
+     * @async
+     * @param {Object} body - Optional narrowing to one video.
+     * @param {Object} principal - Who asked.
+     * @returns {Promise<Object>} What was queued, per video.
+     */
+    async requeueInterrupted(body, principal) {
+        logger.info('Controller: requeueInterrupted');
+        return gpuService.requeueInterrupted(body, principal);
+    }
+
+    /**
      * Fetch one job with its attempts and artifacts.
      *
      * @async
@@ -244,6 +257,19 @@ class GpuController {
     async cancelJob(jobId) {
         logger.info('Controller: cancelJob');
         return gpuService.cancelJob(jobId);
+    }
+
+
+    /**
+     * Where a dataset's archive is, for streaming to a worker.
+     *
+     * @async
+     * @param {number|string} datasetId - Dataset identifier from the path.
+     * @returns {Promise<Object>} `{absolutePath, sha256, bytes, name}`.
+     */
+    async datasetArchive(datasetId) {
+        logger.info('Controller: datasetArchive');
+        return gpuService.datasetArchive(datasetId);
     }
 
     /**

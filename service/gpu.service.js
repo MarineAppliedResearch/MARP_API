@@ -710,6 +710,19 @@ class GpuService {
      * @throws {Error} When either resolution fails.
      */
     async resolveSpecForLease(spec) {
+        /* A training job has no video, no frame range and no session to file
+           observations into, so three of the four steps below have nothing to
+           work on and `resolveVideoForLease` would refuse the lease outright.
+           Told apart by the dataset, not by the engine name: the engine is a
+           free string the submitter chose, and a typo in it must not decide
+           which resolution runs.
+
+           The model's class names still matter, and arguably matter more here:
+           they are what the finished weights will be registered with. */
+        if (spec && typeof spec === 'object' && spec.dataset) {
+            return this.declareModelClassesForLease(spec);
+        }
+
         return this.declareModelClassesForLease(
             await this.describeSessionForLease(
                 await this.resolveDataTypeForLease(await this.resolveVideoForLease(spec))
@@ -845,6 +858,14 @@ class GpuService {
      * producing an empty or inverted range -- that would mean the job is
      * finished, which is not this function's decision to make.
      *
+     * **It also says where the job itself began**, as `job_start_frame`, which
+     * is the start it has just moved. Without it the worker cannot tell a
+     * resumed attempt from a fresh one -- it is handed a range beginning
+     * part-way through a dive and nothing to say why -- so the watch window's
+     * timeline draws the earlier attempt's frames as work this job skipped.
+     * Added for MarineAppliedResearch/marp-inference-worker#60; a worker that
+     * does not read it is unaffected, because nothing else in the spec moves.
+     *
      * @param {Object} job - The `gpu_jobs` row being leased.
      * @returns {Object} The spec to resolve and hand over.
      */
@@ -863,7 +884,14 @@ class GpuService {
             return spec;
         }
 
-        return { ...spec, range: { ...spec.range, start_frame: resumeFrom } };
+        return {
+            ...spec,
+            range: {
+                ...spec.range,
+                start_frame: resumeFrom,
+                job_start_frame: startFrame,
+            },
+        };
     }
 
     /**
@@ -1818,6 +1846,14 @@ class GpuService {
 
         requiredString(spec.engine, 'spec.engine');
 
+        /* A training job is a different shape and splits into nothing. Branched
+           here, before the video validation, because `video` and `range` are
+           required for everything below this line and a training job has
+           neither -- it has a dataset. */
+        if (kind === 'training') {
+            return this.submitTrainingJob(body, spec, principal);
+        }
+
         if (!spec.video || typeof spec.video !== 'object' || Array.isArray(spec.video)) {
             invalid('spec.video is required and must be an object.');
         }
@@ -1930,6 +1966,117 @@ class GpuService {
         return answer;
     }
 
+
+    /**
+     * Queue one training job over a packaged dataset.
+     *
+     * **One job, never a batch.** An inference job splits because a video is a
+     * range and ten machines can each take a piece. A training run is not
+     * divisible that way: splitting it would produce several models rather than
+     * one, and combining them is a different piece of science nobody has asked
+     * for. So there is no `piece_frames` here and no `batch_id`.
+     *
+     * The dataset is resolved the way video is resolved for an inference job
+     * (A8): MARP looks it up and puts a locator plus a hash in the spec, and the
+     * worker fetches what it is told to fetch without knowing what is serving
+     * it. That is what lets the file server in #120 take over later without the
+     * worker changing.
+     *
+     * @async
+     * @param {Object} body - The submission body.
+     * @param {Object} spec - `body.spec`, already known to be an object.
+     * @param {Object|null} principal - Who submitted it.
+     * @returns {Promise<Object>} `{batch_id: null, jobs}`.
+     */
+    async submitTrainingJob(body, spec, principal) {
+        this.validateSubmittedModel(spec.model);
+
+        const dataset = spec.dataset && typeof spec.dataset === 'object' && !Array.isArray(spec.dataset)
+            ? spec.dataset
+            : invalid('spec.dataset is required for a training job and must be an object.');
+
+        const datasetId = requiredInteger(dataset.dataset_id, 'spec.dataset.dataset_id');
+
+        /* The starting model has to be one MARP knows, because the run that comes
+           out of it is recorded against it and `training_runs.model_id` is NOT
+           NULL. Refused here, where it is one clear message, rather than at the
+           first epoch -- there it would fail an event batch, and a failed event
+           batch takes the whole running job down with it. */
+        requiredInteger(
+            spec.model && spec.model.ml_model_id,
+            'spec.model.ml_model_id'
+        );
+
+        /* The archive is the whole point: a dataset row that describes images on
+           somebody's laptop is not something a worker can train on, and saying so
+           here is far better than a job that leases, fails to fetch, and retries
+           twice before anybody looks. */
+        const archive = await gpuRepository.getDatasetArchiveById(datasetId);
+
+        if (!archive) {
+            invalid(`No dataset ${datasetId}.`);
+        }
+        if (!archive.archive_path || !archive.archive_sha256) {
+            invalid(
+                `Dataset ${datasetId} ("${archive.name}") has not been packaged, so no worker can fetch it. `
+                + 'Run scripts/package-dataset.js against its folder first.'
+            );
+        }
+
+        if (spec.video || spec.range) {
+            invalid('A training job carries a dataset, not a video and a range.');
+        }
+
+        const priority = optionalInteger(body.priority, 'priority', 0);
+        const maxAttempts = optionalInteger(body.max_attempts, 'max_attempts', 3);
+
+        if (maxAttempts < 1) {
+            invalid('max_attempts must be at least 1.');
+        }
+
+        let name = null;
+
+        if (body.name !== undefined && body.name !== null && String(body.name).trim() !== '') {
+            name = requiredString(body.name, 'name');
+
+            if (name.length > MAX_JOB_NAME_LENGTH) {
+                invalid(`name must be ${MAX_JOB_NAME_LENGTH} characters or fewer.`);
+            }
+        }
+
+        /* Composed here rather than taken from the submitter. The locator is
+           coordinator-relative, exactly as a model artifact's is, so a worker
+           resolves it against whichever MARP it is enrolled with and a spec
+           cannot name somewhere else. */
+        const jobSpec = {
+            ...spec,
+            dataset: {
+                dataset_id: datasetId,
+                name: archive.name,
+                url: `/api/v2/gpu/datasets/${datasetId}/archive`,
+                sha256: String(archive.archive_sha256).toLowerCase(),
+            },
+        };
+
+        const createdBy = principal && principal.type === 'user' ? principal.id : null;
+        const jobs = await gpuRepository.createJobs([{
+            batch_id: null,
+            name,
+            kind: 'training',
+            spec: jobSpec,
+            state: 'queued',
+            priority,
+            attempts_made: 0,
+            max_attempts: maxAttempts,
+            published_attempt_id: null,
+            created_by: createdBy,
+            created_at: new Date(),
+            updated_at: new Date(),
+        }]);
+
+        return { batch_id: null, jobs };
+    }
+
     /**
      * Cancel a job.
      *
@@ -1947,6 +2094,63 @@ class GpuService {
 
         return result;
     }
+
+
+    /**
+     * Where a dataset's archive is on disk, for the route to stream.
+     *
+     * **Why a worker may read this at all.** The permission is `jobs:execute`, the
+     * same one the worker already holds to poll and lease, because fetching the
+     * dataset a job names is part of executing that job. `datasets:read` would be
+     * the wrong instrument: it is the human-facing permission for browsing the
+     * dataset catalogue, and granting it to every worker would widen what a
+     * compromised worker token reaches, for no gain.
+     *
+     * The row is the authority for the hash, not the filename. The file is named
+     * for its hash because content addressing makes re-packaging idempotent, but
+     * what a worker verifies against is the value the job spec carried, which came
+     * from this column.
+     *
+     * @async
+     * @param {number|string} datasetId - `datasets.id` from the path.
+     * @returns {Promise<Object>} `{absolutePath, sha256, bytes, name}`.
+     * @throws {ApiError} 404 when the dataset, the archive record, or the file is absent.
+     */
+    async datasetArchive(datasetId) {
+        const id = Number(datasetId);
+        if (!Number.isInteger(id) || id <= 0) invalid('dataset id must be a positive integer.');
+
+        const dataset = await gpuRepository.getDatasetArchiveById(id);
+        if (!dataset) {
+            throw new ApiError(404, ERROR_CODES.NOT_FOUND, `No dataset ${id}.`);
+        }
+        if (!dataset.archive_path) {
+            throw new ApiError(404, ERROR_CODES.NOT_FOUND,
+                `Dataset ${id} has not been packaged; run scripts/package-dataset.js.`);
+        }
+
+        /* Resolved against the storage root and then checked to still be inside it.
+           `archive_path` is written by our own packaging script, but it is a database
+           value, and a database value that becomes a filesystem path is exactly the
+           shape of a traversal bug. */
+        const storageRoot = path.resolve(path.join(__dirname, '..', 'storage'));
+        const absolutePath = path.resolve(storageRoot, dataset.archive_path);
+        if (!absolutePath.startsWith(storageRoot + path.sep)) {
+            throw new ApiError(404, ERROR_CODES.NOT_FOUND, `Dataset ${id} archive path is not under storage.`);
+        }
+        if (!fs.existsSync(absolutePath)) {
+            throw new ApiError(404, ERROR_CODES.NOT_FOUND,
+                `Dataset ${id} is recorded as packaged but its archive is missing from storage.`);
+        }
+
+        return {
+            absolutePath,
+            sha256: dataset.archive_sha256,
+            bytes: Number(dataset.archive_bytes || fs.statSync(absolutePath).size),
+            name: dataset.name,
+        };
+    }
+
 
     /**
      * Ingest one job's observations on request.
@@ -2536,6 +2740,135 @@ class GpuService {
                 : undefined,
         };
     }
+
+    /**
+     * Queue the frames that interrupted work left owed (#257).
+     *
+     * **Only `interrupted`.** A `cancelled` job means a human changed their mind
+     * and nothing is missing. A `failed` one has already been retried as far as
+     * retrying is worth, and requeueing it on a schedule spends GPU time on
+     * something that is probably broken rather than unlucky -- it stays visible
+     * as `failed` and a human decides, which is what `jobIds` is for.
+     *
+     * The spec is copied from the interrupted job rather than invented: what is
+     * owed is the rest of *that* work, with the same model, params and
+     * reduction. Only the range differs.
+     *
+     * Requeueing twice queues nothing the second time, because the gaps are
+     * recomputed from coverage each time and queued work is not coverage -- a
+     * range already waiting in the queue is not owed again.
+     *
+     * @async
+     * @param {Object} [body] - Narrowing. `jellyfin_item_id` or `source_name`
+     *   for one video; omitted, every video with interrupted work.
+     * @param {Object} [principal] - Who asked, recorded on the jobs created.
+     * @returns {Promise<Object>} What was queued, per video.
+     */
+    async requeueInterrupted(body = {}, principal = null) {
+        const jellyfinItemId = body.jellyfin_item_id ? String(body.jellyfin_item_id) : null;
+        const sourceName = body.source_name ? String(body.source_name) : null;
+
+        const owed = await gpuRepository.interruptedWork({ jellyfinItemId, sourceName });
+        const videos = [];
+
+        for (const work of owed) {
+            const identity = work.item_id
+                ? { jellyfin_item_id: work.item_id }
+                : { source_name: work.source_name };
+
+            const seen = await this.coverage({
+                ...(work.item_id ? { jellyfin_item_id: work.item_id } : { source_name: work.source_name }),
+                session_id: work.session_id,
+            });
+
+            // No extent means no gap list, and a requeue guessing where a video
+            // ends would queue work over frames that do not exist.
+            if (seen.gaps === null) {
+                videos.push({ video: identity, session_id: work.session_id, queued: [], skipped: 'the video could not be sized' });
+                continue;
+            }
+
+            // Take off what is already waiting. Coverage counts work that
+            // finished, so a range sitting in the queue is not covered -- but
+            // it is not owed either, because somebody has already asked for it.
+            // Without this, calling twice piles a second copy of every gap onto
+            // the pool, which a test caught rather than a reading of the code.
+            const pending = await gpuRepository.pendingRanges({
+                jellyfinItemId: work.item_id || null,
+                sourceName: work.item_id ? null : work.source_name,
+                sessionId: work.session_id,
+            });
+
+            const queued = [];
+
+            for (const gap of subtractRanges(seen.gaps, pending)) {
+                const submitted = await this.submitJobs({
+                    kind: 'inference',
+                    spec: {
+                        ...work.spec,
+                        range: { start_frame: gap.start_frame, end_frame: gap.end_frame },
+                    },
+                }, principal);
+
+                queued.push(...submitted.jobs.map((job) => job.id));
+            }
+
+            videos.push({ video: identity, session_id: work.session_id, queued });
+        }
+
+        return {
+            videos,
+            jobs_queued: videos.reduce((sum, video) => sum + video.queued.length, 0),
+        };
+    }
+}
+
+/**
+ * What is left of `spans` once `taken` is removed from them.
+ *
+ * Used to keep a requeue from asking for frames somebody has already asked for:
+ * the gaps say what is unfinished, and this removes the part of that which is
+ * already queued or leased.
+ *
+ * Both sides are half-open. A span may be cut into two when something is taken
+ * out of its middle, which is why this builds a list rather than trimming ends.
+ *
+ * @param {Array<{start_frame: number, end_frame: number}>} spans - What is owed.
+ * @param {Array<{start_frame: number, end_frame: number}>} taken - What is already asked for.
+ * @returns {Array<{start_frame: number, end_frame: number}>} The remainder.
+ */
+function subtractRanges(spans, taken) {
+    const result = [];
+
+    for (const span of spans) {
+        let pieces = [{ start_frame: span.start_frame, end_frame: span.end_frame }];
+
+        for (const cut of taken) {
+            const next = [];
+
+            for (const piece of pieces) {
+                // No overlap: the piece survives whole.
+                if (cut.end_frame <= piece.start_frame || cut.start_frame >= piece.end_frame) {
+                    next.push(piece);
+                    continue;
+                }
+
+                if (cut.start_frame > piece.start_frame) {
+                    next.push({ start_frame: piece.start_frame, end_frame: cut.start_frame });
+                }
+
+                if (cut.end_frame < piece.end_frame) {
+                    next.push({ start_frame: cut.end_frame, end_frame: piece.end_frame });
+                }
+            }
+
+            pieces = next;
+        }
+
+        result.push(...pieces.filter((piece) => piece.end_frame > piece.start_frame));
+    }
+
+    return result;
 }
 
 /**

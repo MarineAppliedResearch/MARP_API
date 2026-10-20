@@ -1219,6 +1219,30 @@ describe('GPU attempt yielded', () => {
         expect(resumed.body.spec.range.end_frame).toBe(100);
     });
 
+    it('tells the worker where the job itself began', async () => {
+        const { job } = await leaseAndYield(40);
+
+        const resumed = await pollOnce();
+
+        // The worker is handed 40..100 and, without this, nothing to say that
+        // 0..40 was ever done -- so the window it shows a volunteer draws the
+        // first forty frames as frames this job skipped rather than as an
+        // earlier attempt's work. MarineAppliedResearch/marp-inference-worker#60.
+        expect(resumed.body.spec.range.job_start_frame).toBe(0);
+        expect(resumed.body.spec.range.start_frame).toBe(40);
+        expect(resumed.body.job_id).toBe(job.id);
+    });
+
+    it('says nothing about a job start on a first lease', async () => {
+        const { lease } = await submitAndLease();
+
+        // A job nobody has worked on began where it says it begins. Sending the
+        // field anyway would make every fresh job look resumed from its own
+        // start, which is a distinction the window draws.
+        expect(lease.spec.range.job_start_frame).toBeUndefined();
+        expect(lease.spec.range.start_frame).toBe(0);
+    });
+
     it('does not rewrite the stored spec when it resumes', async () => {
         const { job } = await leaseAndYield(40);
 
@@ -1314,7 +1338,7 @@ describe('GPU attempt yielded', () => {
         expect(row.resume_from_frame).toBe(60);
     });
 
-    it('leaves a cancelled result cancelling the job, exactly as before', async () => {
+    it('leaves a cancelled result interrupting the job, and not yielding it', async () => {
         const { job, lease } = await submitAndLease();
 
         const reported = await global.api
@@ -1326,15 +1350,22 @@ describe('GPU attempt yielded', () => {
             });
 
         expect(reported.status).toBe(200);
-        expect(reported.body.job_state).toBe('cancelled');
+        expect(reported.body.job_state).toBe('interrupted');
 
         const [row] = await query(
             'SELECT state, yields_made FROM gpu_jobs WHERE id = :id', { id: job.id }
         );
 
-        // The regression guard for the whole change: adding a fourth word must
-        // not quietly turn the third one into it.
-        expect(row.state).toBe('cancelled');
+        // Still the regression guard for `yielded`: adding a word must not
+        // quietly turn a neighbouring one into it.
+        //
+        // The expected state changed from `cancelled` to `interrupted` in #257,
+        // deliberately. A worker stopping of its own accord is not a human
+        // changing their mind, and recording both as `cancelled` is what let
+        // job 14372 lose twelve thousand frames with nothing saying so. A
+        // *human* cancelling still produces `cancelled`, which
+        // 'leaves a job a human cancelled as cancelled' covers.
+        expect(row.state).toBe('interrupted');
         expect(row.yields_made).toBe(0);
     });
 
@@ -2235,5 +2266,268 @@ describe('what is left of a video of known length', () => {
         expect(body.covered).toHaveLength(1);
         expect(body.extent).toBeNull();
         expect(body.gaps).toBeNull();
+    });
+});
+
+/**
+ * `cancelled` and `interrupted` are different things (#257).
+ *
+ * They were one word until this issue, and job 14372 is what that cost: twelve
+ * thousand frames processed, the rest never done, recorded as though nobody
+ * had wanted them. Only `interrupted` is ever requeued.
+ */
+describe('interrupted work, as distinct from cancelled', () => {
+    it('records a worker stopping of its own accord as interrupted', async () => {
+        const { job, lease } = await submitAndLease();
+
+        const reported = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'cancelled',
+                completed_through_frame: 30,
+            });
+
+        expect(reported.status).toBe(200);
+
+        const [row] = await query('SELECT state FROM gpu_jobs WHERE id = :id', { id: job.id });
+
+        // Not `cancelled`. Nobody changed their mind -- the worker stopped and
+        // frames 30-100 are owed.
+        expect(row.state).toBe('interrupted');
+    });
+
+    it('leaves a job a human cancelled as cancelled', async () => {
+        const { job, lease } = await submitAndLease();
+
+        const cancelled = await global.api.post(`/api/v2/gpu/jobs/${job.id}/cancel`).send({});
+        expect(cancelled.status).toBe(200);
+
+        // The worker finds out through its heartbeat and reports back. That
+        // report must not turn a deliberate cancel into owed work.
+        await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'cancelled',
+                completed_through_frame: 10,
+            });
+
+        const [row] = await query('SELECT state FROM gpu_jobs WHERE id = :id', { id: job.id });
+
+        expect(row.state).toBe('cancelled');
+    });
+
+    it('still records what an interrupted attempt covered', async () => {
+        const { lease } = await submitAndLease();
+
+        await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'cancelled',
+                completed_through_frame: 30,
+            });
+
+        const [attempt] = await query(
+            'SELECT completed_through_frame FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        // Without this the requeue would redo frames that were already done.
+        expect(attempt.completed_through_frame).toBe(30);
+    });
+});
+
+/**
+ * Requeueing what interrupted work left owed (#257).
+ *
+ * These need a video of known length, so the extent is stubbed rather than
+ * reaching the media server -- CI has none, and a test that skipped there
+ * would look green while proving nothing.
+ */
+describe('requeueing owed frames', () => {
+    const jellyfinRepository = require('../repository/jellyfin.repository');
+
+    let sized;
+    let streamed;
+    let rated;
+    let sessionsBefore;
+    let projectsBefore;
+    let modelsBefore;
+
+    /**
+     * The highest id in a table, or 0 when it is empty.
+     *
+     * @param {string} table - Table name.
+     * @param {string} column - Its primary key.
+     * @returns {Promise<number>} The high-water mark.
+     */
+    async function topOf(table, column) {
+        const [row] = await query(`SELECT COALESCE(MAX(${column}), 0)::int AS top FROM ${table}`);
+        return row.top;
+    }
+
+    beforeAll(async () => {
+        sessionsBefore = await topOf('sessions', 'session_id');
+        projectsBefore = await topOf('projects', 'project_id');
+        modelsBefore = await topOf('ml_models', 'id');
+    });
+
+    beforeEach(() => {
+        sized = jest.spyOn(jellyfinRepository, 'getVideoExtent').mockResolvedValue({
+            frames: 100, durationSeconds: 4, averageFrameRate: 25,
+        });
+
+        // Leasing a job whose video is a Jellyfin item resolves that item to a
+        // playable URL, and the API refuses a spec carrying both an item id and
+        // a url -- so a test about coverage over a Jellyfin item cannot avoid
+        // the resolution, it can only stand in for it. A runner has no media
+        // server, and these four tests passed on a machine that does and failed
+        // in CI for exactly that reason.
+        streamed = jest.spyOn(jellyfinRepository, 'buildDirectStreamUrl')
+            .mockResolvedValue(`http://jest.invalid/media/jest-gpu-${runId}.mp4`);
+        rated = jest.spyOn(jellyfinRepository, 'getVideoFrameRate')
+            .mockResolvedValue({ realFrameRate: 25 });
+    });
+
+    afterEach(() => {
+        if (sized) sized.mockRestore();
+        if (streamed) streamed.mockRestore();
+        if (rated) rated.mockRestore();
+    });
+
+    afterAll(async () => {
+        // Jobs go with the suite's own teardown; these are what ingest made.
+        await query('DELETE FROM sessions WHERE session_id > :mark', { mark: sessionsBefore });
+        await query('DELETE FROM ml_models WHERE id > :mark', { mark: modelsBefore });
+        await query('DELETE FROM projects WHERE project_id > :mark', { mark: projectsBefore });
+    });
+
+    /**
+     * Lease a job over one video and have the worker stop part-way.
+     *
+     * @param {string} itemId - Jellyfin item id for the video.
+     * @param {number} completedThroughFrame - How far it got.
+     * @returns {Promise<Object>} The job.
+     */
+    async function interrupt(itemId, completedThroughFrame) {
+        const base = specFor({ start_frame: 0, end_frame: 100 });
+
+        // The url stays on the spec beside the item id, and that is not
+        // decoration: a lease whose video is only a Jellyfin item has to be
+        // resolved through Jellyfin, which a CI runner cannot reach -- the
+        // lease is then given up and the poll answers 204. These four tests
+        // passed on a machine where Jellyfin is reachable and failed in CI for
+        // exactly that reason. Coverage is still keyed by the item id.
+        const { job, lease } = await submitAndLease({
+            spec: {
+                ...base,
+                // The source name is submitted rather than looked up: with it,
+                // resolution never calls Jellyfin for the item's path. The url
+                // is dropped because the API refuses both keys at once.
+                video: { jellyfin_item_id: itemId, source_name: base.video.source_name },
+            },
+        });
+
+        await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                outcome: 'cancelled',
+                completed_through_frame: completedThroughFrame,
+            });
+
+        return job;
+    }
+
+    /**
+     * Ask for owed frames to be queued, for one video.
+     *
+     * @param {string} itemId - The video.
+     * @returns {Promise<Object>} The response body.
+     */
+    async function requeue(itemId) {
+        const response = await global.api
+            .post('/api/v2/gpu/requeue-interrupted')
+            .send({ jellyfin_item_id: itemId });
+
+        expect(response.status).toBe(200);
+
+        for (const video of response.body.videos || []) {
+            createdJobIds.push(...(video.queued || []));
+        }
+
+        return response.body;
+    }
+
+    it('queues exactly the frames nobody covered', async () => {
+        const item = `jest-requeue-gap-${runId}`;
+
+        await interrupt(item, 30);
+
+        const body = await requeue(item);
+
+        expect(body.jobs_queued).toBe(1);
+
+        const [queued] = await query(
+            `SELECT (spec->'range'->>'start_frame')::int AS lo,
+                    (spec->'range'->>'end_frame')::int   AS hi
+               FROM gpu_jobs WHERE id = :id`,
+            { id: body.videos[0].queued[0] }
+        );
+
+        // 0-30 was done. Not the whole original range, and not a frame of it.
+        expect(queued.lo).toBe(30);
+        expect(queued.hi).toBe(100);
+    });
+
+    it('queues nothing the second time', async () => {
+        const item = `jest-requeue-twice-${runId}`;
+
+        await interrupt(item, 40);
+        const first = await requeue(item);
+        const second = await requeue(item);
+
+        expect(first.jobs_queued).toBe(1);
+
+        // The gap is now queued work, and queued work is not a gap to fill
+        // again -- otherwise every call would pile another copy on the pool.
+        expect(second.jobs_queued).toBe(0);
+    });
+
+    it('never requeues a job a human cancelled', async () => {
+        const item = `jest-requeue-cancelled-${runId}`;
+
+        const cancelled = specFor({ start_frame: 0, end_frame: 100 });
+        const { job } = await submitAndLease({
+            spec: {
+                ...cancelled,
+                video: { jellyfin_item_id: item, source_name: cancelled.video.source_name },
+            },
+        });
+
+        await global.api.post(`/api/v2/gpu/jobs/${job.id}/cancel`).send({});
+
+        const body = await requeue(item);
+
+        // Nothing is missing: somebody decided they did not want it.
+        expect(body.jobs_queued).toBe(0);
+    });
+
+    it('skips a video it cannot size rather than guessing where it ends', async () => {
+        const item = `jest-requeue-unsizeable-${runId}`;
+
+        await interrupt(item, 20);
+        sized.mockResolvedValue(null);
+
+        const body = await requeue(item);
+
+        expect(body.jobs_queued).toBe(0);
+        expect(body.videos[0].skipped).toBe('the video could not be sized');
     });
 });

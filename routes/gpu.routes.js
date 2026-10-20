@@ -492,6 +492,68 @@ function registerGpuRoutes(app) {
         }),
     });
 
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:execute',
+        path: '/api/gpu/datasets/:id/archive',
+        summary: 'Fetch a packaged dataset, for a worker about to train on it',
+        description:
+            'The dataset a training job names, as one file. A dataset is built as a tree of images and labels on whichever machine built it, with a YAML naming absolute paths on that machine; `scripts/package-dataset.js` turns that into an uncompressed tar carrying `train/`, `eval/` and a `data.yaml` whose paths are relative, and records its hash on the row. This serves those bytes.\n\nGated on `jobs:execute` rather than `datasets:read`: fetching the dataset a job names is part of executing that job, and it is the permission the worker already holds. The catalogue permission is for people browsing datasets and would be a wider grant for no gain.\n\n**Range requests are supported, and that is not decoration.** A packaged dataset is several gigabytes and a volunteer is on a home connection, so a transfer that cannot resume is a transfer that may never finish. The archive is immutable -- it is named for its own hash, and re-packaging the same dataset produces the same file -- so the ETag is strong and the caching is `immutable`.\n\nThis is the narrow version of MarineAppliedResearch/MARP_API#120, which is where one way in and one way out belongs for pictures, models and artifacts alike. It is deliberately not a general file route.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The `datasets.id` the job spec named.' },
+            { in: 'header', name: 'Range', required: false, schema: { type: 'string' }, description: 'A single byte range, as `bytes=<first>-<last>`, to resume an interrupted fetch.' },
+        ],
+        responses: {
+            200: { description: 'The archive.', content: { 'application/x-tar': { schema: { type: 'string', format: 'binary' } } } },
+            206: { description: 'The requested byte range of the archive.', content: { 'application/x-tar': { schema: { type: 'string', format: 'binary' } } } },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const archive = await gpuController.datasetArchive(req.params.id);
+
+            // Named for its own hash, so the hash is the strongest validator there is.
+            res.setHeader('Content-Type', 'application/x-tar');
+            res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+            res.setHeader('ETag', `"dataset-archive-${archive.sha256}"`);
+            res.setHeader('Accept-Ranges', 'bytes');
+
+            // A conditional fetch of an immutable file can always be answered from cache.
+            if (req.headers['if-none-match'] === `"dataset-archive-${archive.sha256}"`) {
+                res.status(304).end();
+                return;
+            }
+
+            const total = archive.bytes;
+            const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+
+            // No range, or one this does not understand: send the whole thing. A
+            // multi-range request is answered whole rather than refused, because the
+            // only client is a worker resuming a download and whole is always correct.
+            if (!range) {
+                res.setHeader('Content-Length', String(total));
+                fs.createReadStream(archive.absolutePath).pipe(res);
+                return;
+            }
+
+            // An open-ended range (`bytes=1000-`) is what a resume actually sends.
+            const first = range[1] === '' ? total - Number(range[2]) : Number(range[1]);
+            const last = range[1] === '' || range[2] === '' ? total - 1 : Number(range[2]);
+
+            if (!Number.isFinite(first) || first < 0 || first > last || last >= total) {
+                res.setHeader('Content-Range', `bytes */${total}`);
+                res.status(416).end();
+                return;
+            }
+
+            res.status(206);
+            res.setHeader('Content-Range', `bytes ${first}-${last}/${total}`);
+            res.setHeader('Content-Length', String(last - first + 1));
+            fs.createReadStream(archive.absolutePath, { start: first, end: last }).pipe(res);
+        }),
+    });
+
     // ---------------------------------------------------------------
     // Human-facing: the pool, the jobs, submit, cancel
     // ---------------------------------------------------------------
@@ -801,6 +863,35 @@ function registerGpuRoutes(app) {
         },
         handler: asyncHandler(async (req, res) => {
             const data = await gpuController.coverage(req.query || {});
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
+        path: '/api/gpu/requeue-interrupted',
+        summary: 'Queue the frames that interrupted work left owed',
+        description:
+            'Finds work that stopped part-way and queues jobs over exactly the frames nobody covered. The spec is copied from the interrupted job rather than decided afresh -- same model, same params, same reduction -- because what is owed is the rest of that work.\n\n'
+            + '**Only `interrupted` work.** A `cancelled` job means a human changed their mind and nothing is missing. A `failed` job has already been retried as far as retrying is worth, and requeueing it on a schedule would spend GPU time on something that is probably broken rather than unlucky; it stays visible as `failed` for somebody to look at and resubmit deliberately.\n\n'
+            + 'Safe to call twice: gaps are recomputed from coverage each time, and a range already waiting in the queue is not covered, so nothing is queued over it again.\n\n'
+            + 'A video Jellyfin cannot size is skipped and says so, rather than being given work over frames that may not exist.',
+        tags: [GPU_TAG],
+        requestBody: {
+            required: false,
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuRequeueRequest' } } },
+        },
+        responses: {
+            200: {
+                description: 'What was queued, per video.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuRequeueResponse' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.requeueInterrupted(req.body || {}, req.principal);
             res.json(data);
         }),
     });

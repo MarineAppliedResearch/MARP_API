@@ -345,6 +345,30 @@ class GpuRepository {
      * @returns {Promise<Object|null>} The worker row, or null when there is no such worker.
      * @throws {Error} Re-throws any database failure.
      */
+    /**
+     * The packaged archive recorded for a dataset, or null.
+     *
+     * Only the columns a fetch needs. A dataset nobody has packaged has no
+     * `archive_path`, which is the honest way to ask whether it can be trained
+     * on remotely at all.
+     *
+     * @async
+     * @param {number|string} datasetId - `datasets.id`.
+     * @returns {Promise<Object|null>} `{id, name, archive_path, archive_sha256, archive_bytes}` or null.
+     */
+    async getDatasetArchiveById(datasetId) {
+        try {
+            const dataset = await this.db.datasets.findByPk(datasetId, {
+                attributes: ['id', 'name', 'archive_path', 'archive_sha256', 'archive_bytes'],
+            });
+
+            return dataset ? dataset.get({ plain: true }) : null;
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
     async getWorkerById(workerId) {
         try {
             const worker = await this.db.gpu_workers.findByPk(workerId);
@@ -1789,6 +1813,162 @@ class GpuRepository {
         return existing;
     }
 
+
+
+    /**
+     * Marks a training run finished, if this job opened one.
+     *
+     * `total_epochs` is set from what was actually recorded rather than from what
+     * the job asked for. A run that was stopped, or that stopped early on
+     * `patience`, did fewer -- and the column is read as "how long was this
+     * trained for", which the request cannot answer.
+     *
+     * Does nothing for a job that is not training, or that never reported an
+     * epoch: a run with nothing in it is not something to open and immediately
+     * close.
+     *
+     * @async
+     * @param {Object} job - The job row, with `id` and `kind`.
+     * @param {Object} transaction - The open transaction.
+     * @returns {Promise<void>} Resolves when the run is closed, or skipped.
+     */
+    async closeTrainingRun(job, transaction) {
+        if (!job || job.kind !== 'training') return;
+
+        await this.db.sequelize.query(
+            `UPDATE training_runs
+                SET end_time = NOW(),
+                    total_epochs = (SELECT COUNT(*) FROM epochs WHERE training_run_id = training_runs.id),
+                    updated_at = NOW()
+              WHERE job_id = :jobId
+                AND end_time IS NULL`,
+            { replacements: { jobId: job.id }, transaction }
+        );
+    }
+
+    /**
+     * Writes one epoch of a training run, opening the run if this is its first.
+     *
+     * **Why this exists at all.** The ML schema -- `training_runs`, `epochs`,
+     * `metrics_summary` -- was written for the legacy desktop script and nothing
+     * in the job path has ever filled it in. An event stream is enough to watch a
+     * job, and not enough to answer "what did this model learn, and when", which
+     * is what the dashboard and anybody comparing two models is actually asking.
+     *
+     * Silently does nothing for an inference job. Every job sends metrics; only a
+     * training job has epochs, and deciding that here rather than at the call
+     * site keeps one rule in one place.
+     *
+     * @async
+     * @param {number} attemptId - The attempt the event arrived on.
+     * @param {Object} event - The accepted metric event.
+     * @param {Object} transaction - The open transaction to write inside.
+     * @returns {Promise<void>} Resolves when the epoch is written, or skipped.
+     */
+    async recordTrainingEpoch(attemptId, event, transaction) {
+        const payload = event.payload || {};
+        const metrics = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : null;
+
+        // An epoch needs a number to be an epoch. A metric event without one is
+        // a progress sample, which the event stream already holds.
+        const epochNumber = Number(payload.step);
+        if (!metrics || !Number.isInteger(epochNumber)) return;
+
+        const [job] = await this.db.sequelize.query(
+            `SELECT j.id, j.kind, j.spec
+               FROM gpu_job_attempts a
+               JOIN gpu_jobs j ON j.id = a.job_id
+              WHERE a.id = :attemptId`,
+            { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
+        );
+
+        if (!job || job.kind !== 'training') return;
+
+        const spec = job.spec || {};
+        const params = spec.params || {};
+
+        /* `training_runs.model_id` is NOT NULL, so without one there is no run to
+           open. Submission refuses a training job that has no registered model,
+           which makes this unreachable for anything queued since -- but a job
+           queued before that check, or by something else, must not have its
+           event batch fail over the record. The events are still written; only
+           the projection is skipped. */
+        const modelId = spec.model && spec.model.ml_model_id;
+        if (!modelId) return;
+
+        // One run per job. `FOR UPDATE` because two heartbeats carrying metrics
+        // can arrive close together and both would otherwise open a run.
+        const [existing] = await this.db.sequelize.query(
+            'SELECT id FROM training_runs WHERE job_id = :jobId ORDER BY id LIMIT 1 FOR UPDATE',
+            { replacements: { jobId: job.id }, type: QueryTypes.SELECT, transaction }
+        );
+
+        let trainingRunId = existing && existing.id;
+
+        if (!trainingRunId) {
+            const [opened] = await this.db.sequelize.query(
+                `INSERT INTO training_runs (job_id, model_id, dataset_id, start_time,
+                                            total_epochs, batch_size, learning_rate, optimizer,
+                                            notes, created_at, updated_at)
+                 VALUES (:jobId, :modelId, :datasetId, NOW(),
+                         :totalEpochs, :batchSize, :learningRate, :optimizer,
+                         :notes, NOW(), NOW())
+                 RETURNING id`,
+                {
+                    replacements: {
+                        jobId: job.id,
+                        /* The model the run STARTED from. The model it produces does
+                           not exist yet and will be registered from the published
+                           weights, so putting it here would be a guess at a row id
+                           that may never be created. */
+                        modelId,
+                        datasetId: (spec.dataset && spec.dataset.dataset_id) || null,
+                        totalEpochs: Number.isFinite(Number(params.epochs)) ? Number(params.epochs) : null,
+                        batchSize: Number.isFinite(Number(params.batch)) ? Number(params.batch) : null,
+                        learningRate: Number.isFinite(Number(params.lr0)) ? Number(params.lr0) : null,
+                        optimizer: params.optimizer ? String(params.optimizer) : null,
+                        notes: `Opened by GPU job ${job.id}.`,
+                    },
+                    type: QueryTypes.SELECT,
+                    transaction,
+                }
+            );
+            trainingRunId = opened.id;
+        }
+
+        /* Ultralytics names its metrics by task and version, which is why the
+           event payload is free-form. These five are the ones `epochs` has
+           columns for; everything else stays in the event, which is the record
+           that does not lose what it was not expecting. */
+        const value = (name) => {
+            const raw = metrics[name];
+            const asNumber = Number(raw);
+            return Number.isFinite(asNumber) ? asNumber : null;
+        };
+
+        await this.db.sequelize.query(
+            `INSERT INTO epochs (training_run_id, epoch_number, precision, recall,
+                                 box_loss, cls_loss, dfl_loss, timestamp, created_at, updated_at)
+             SELECT :runId, :epochNumber, :precision, :recall,
+                    :boxLoss, :clsLoss, :dflLoss, NOW(), NOW(), NOW()
+              WHERE NOT EXISTS (
+                  SELECT 1 FROM epochs WHERE training_run_id = :runId AND epoch_number = :epochNumber
+              )`,
+            {
+                replacements: {
+                    runId: trainingRunId,
+                    epochNumber,
+                    precision: value('metrics/precision(B)'),
+                    recall: value('metrics/recall(B)'),
+                    boxLoss: value('train/box_loss'),
+                    clsLoss: value('train/cls_loss'),
+                    dflLoss: value('train/dfl_loss'),
+                },
+                transaction,
+            }
+        );
+    }
+
     /**
      * Append a batch of worker events, ignoring any the coordinator already has.
      *
@@ -1849,6 +2029,14 @@ class GpuRepository {
                     // arrives with the same seq and must not be recorded twice.
                     if (event.settings) {
                         await this.recordAttemptSettings(attemptId, event.settings, transaction);
+                    }
+
+                    // A training job's metrics are also the scientific record of
+                    // the run, not only an event stream. Projected here, inside
+                    // the same transaction and only for a newly accepted event,
+                    // so a replayed batch cannot write an epoch twice.
+                    if (event.kind === 'metric') {
+                        await this.recordTrainingEpoch(attemptId, event, transaction);
                     }
                 }
             }
@@ -1984,6 +2172,11 @@ class GpuRepository {
                         artifacts: artifacts || [],
                         transaction,
                     });
+
+                    // A training run ends when the job that opened it publishes.
+                    // Left open, the dashboard cannot tell a run still going from
+                    // one that finished three days ago.
+                    await this.closeTrainingRun(job, transaction);
                 } else {
                     await this.appendCoordinatorNote(
                         attempt.id,
@@ -2150,26 +2343,47 @@ class GpuRepository {
                     transaction,
                 });
             } else {
-                // Cancelled. The job is cancelled whether or not the cancel came
-                // from a human -- a worker that stops of its own accord and calls
-                // it cancelled is saying the same thing.
+                // Cancelled by the worker.
+                //
+                // This used to make the job `cancelled` on the reasoning that "a
+                // worker that stops of its own accord and calls it cancelled is
+                // saying the same thing" as a human cancelling. It is not the
+                // same thing, and the difference is the whole of #257: a human
+                // cancelling means nothing is missing, while a worker stopping
+                // part-way leaves frames nobody did.
+                //
+                // Which one this is, is already knowable here. If the job is
+                // *already* cancelled, this report is the human's decision
+                // coming back round and the job stays cancelled. If it is not,
+                // the worker stopped on its own and the job is `interrupted` --
+                // the state that gets requeued.
                 await this.db.sequelize.query(
                     `UPDATE gpu_job_attempts
                         SET state = 'cancelled',
+                            completed_through_frame = COALESCE(:completedThroughFrame, completed_through_frame),
                             failure_reason = :failureReason,
                             finished_at = NOW()
                       WHERE id = :attemptId`,
                     {
-                        replacements: { attemptId: attempt.id, failureReason: failureReason || null },
+                        replacements: {
+                            attemptId: attempt.id,
+                            failureReason: failureReason || null,
+                            completedThroughFrame: completedThroughFrame === undefined ? null : completedThroughFrame,
+                        },
                         transaction,
                     }
                 );
 
                 if (!TERMINAL_JOB_STATES.includes(job.state)) {
-                    jobState = 'cancelled';
+                    jobState = 'interrupted';
 
                     await this.db.sequelize.query(
-                        "UPDATE gpu_jobs SET state = 'cancelled', updated_at = NOW(), finished_at = NOW() WHERE id = :jobId",
+                        // `interrupted` rather than `cancelled`, and it still
+                        // finishes: the job stopped here and the frames it owed
+                        // are requeued as new work rather than resumed in place,
+                        // so `finished_at` means the same as it does for the
+                        // cancel this used to be (#257, and #104's finish time).
+                        "UPDATE gpu_jobs SET state = 'interrupted', updated_at = NOW(), finished_at = NOW() WHERE id = :jobId",
                         { replacements: { jobId: job.id }, transaction }
                     );
                 }
@@ -2696,6 +2910,94 @@ class GpuRepository {
             published_attempt_id: job.published_attempt_id,
             artifacts_recorded: counted.n,
         };
+    }
+
+    /**
+     * Frame ranges over one video that are already waiting to be done.
+     *
+     * Coverage counts work that *finished*, so a range sitting in the queue is
+     * not covered -- correctly, because nothing has processed it yet. It is
+     * still not owed, though: somebody has already asked for it. Without this,
+     * requeueing twice piles a second copy of every gap onto the pool, which a
+     * test caught rather than a reading of the code (#257 R7).
+     *
+     * @async
+     * @param {Object} params - Which video.
+     * @param {string} [params.jellyfinItemId] - By Jellyfin item id.
+     * @param {string} [params.sourceName] - By source name.
+     * @param {number} [params.sessionId] - Narrow to one session.
+     * @returns {Promise<Array<{start_frame: number, end_frame: number}>>}
+     *   Ranges of jobs that are queued or leased, ascending.
+     */
+    async pendingRanges({ jellyfinItemId = null, sourceName = null, sessionId = null }) {
+        const rows = await this.db.sequelize.query(
+            `SELECT (spec->'range'->>'start_frame')::int AS start_frame,
+                    (spec->'range'->>'end_frame')::int   AS end_frame
+               FROM gpu_jobs
+              WHERE kind = 'inference'
+                AND state IN ('queued', 'leased')
+                AND (:jellyfinItemId::text IS NULL
+                     OR spec->'video'->>'jellyfin_item_id' = :jellyfinItemId)
+                AND (:sourceName::text IS NULL
+                     OR spec->'video'->>'source_name' = :sourceName)
+                AND (:sessionId::int IS NULL
+                     OR (spec->'session'->>'session_id')::int = :sessionId)
+              ORDER BY start_frame`,
+            {
+                replacements: { jellyfinItemId, sourceName, sessionId },
+                type: QueryTypes.SELECT,
+            }
+        );
+
+        return rows.map((row) => ({
+            start_frame: Number(row.start_frame),
+            end_frame: Number(row.end_frame),
+        }));
+    }
+
+    /**
+     * Videos with work that was interrupted, and the spec to redo it from.
+     *
+     * Only `interrupted`. A `cancelled` job means a human changed their mind and
+     * nothing is missing; a `failed` one has already been retried as far as
+     * retrying is worth and waits for somebody to look at it (#257).
+     *
+     * The newest interrupted job per video supplies the spec a requeue copies --
+     * its model, params and reduction -- because what is owed is the rest of
+     * *that* work, not a fresh decision about how to do it.
+     *
+     * @async
+     * @param {Object} [params] - Narrowing.
+     * @param {string} [params.jellyfinItemId] - One video, by item id.
+     * @param {string} [params.sourceName] - One video, by source name.
+     * @returns {Promise<Array<Object>>} One row per video: its identity, the
+     *   session, and the spec of the most recent interrupted job over it.
+     */
+    async interruptedWork({ jellyfinItemId = null, sourceName = null } = {}) {
+        return this.db.sequelize.query(
+            `SELECT DISTINCT ON (item_id, source_name, session_id)
+                    item_id, source_name, session_id, spec, job_id
+               FROM (
+                     SELECT j.spec->'video'->>'jellyfin_item_id'    AS item_id,
+                            j.spec->'video'->>'source_name'         AS source_name,
+                            (j.spec->'session'->>'session_id')::int AS session_id,
+                            j.spec                                  AS spec,
+                            j.id                                    AS job_id,
+                            j.created_at
+                       FROM gpu_jobs j
+                      WHERE j.kind = 'inference'
+                        AND j.state = 'interrupted'
+                        AND (:jellyfinItemId::text IS NULL
+                             OR j.spec->'video'->>'jellyfin_item_id' = :jellyfinItemId)
+                        AND (:sourceName::text IS NULL
+                             OR j.spec->'video'->>'source_name' = :sourceName)
+                   ) AS interrupted
+              ORDER BY item_id, source_name, session_id, created_at DESC, job_id DESC`,
+            {
+                replacements: { jellyfinItemId, sourceName },
+                type: QueryTypes.SELECT,
+            }
+        );
     }
 
     /**
