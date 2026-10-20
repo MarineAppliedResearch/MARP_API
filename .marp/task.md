@@ -20,7 +20,10 @@ has no row to name in a job spec. When this is done, a run that succeeds ends wi
 - **R2** — The registered model is fetchable by a worker through the same route an
   inference job already uses to get its weights. A row naming bytes nobody can fetch is
   the state we are leaving, not arriving at.
-- **R3** — The model records which species it was trained on, as `model_species` rows.
+- **R3** — The model records which species it was trained on, as `model_species` rows,
+  resolved from the class names the dataset was packaged with. A name that resolves to
+  no species, or to more than one, fails the registration loudly rather than quietly
+  registering a model with a hole in its vocabulary.
   The tracking engine refuses weights whose vocabulary disagrees with what MARP registered
   for them, so a model with no species is a model that cannot be run.
 - **R4** — A failed or cancelled training job registers nothing. A model that exists
@@ -32,35 +35,38 @@ has no row to name in a job spec. When this is done, a run that succeeds ends wi
 
 ## Open assumptions
 
-- [ ] **A1 · product · blocking** — **What is a trained model called?** `ml_models.name` is
-      NOT NULL and is what a person picks from. Three answers: the submitter names it when
-      queuing the training job, the way they can already name the job; MARP composes one
-      from the dataset and the date (`rockfish5-2026-10-20`); or the worker reports one.
-      There is precedent for the first — `gpu_jobs.name` is nullable specifically because
-      "a name MARP invented would be indistinguishable from one a person chose" — but a
-      nullable job name is survivable and a nullable model name is not.
-- [ ] **A2 · architectural · blocking** — **Where do the bytes live, and under which
-      root?** The published weights are already stored, content-addressed, at
-      `storage/gpu-artifacts/<sha256>`. But `ml_models.storage_path` is resolved by
-      `model-artifact.service.js` under `MODEL_STORAGE_ROOT`, which defaults to
-      `.marp/local` — a different tree entirely. So one of: copy the artifact into the
-      model store (simple, doubles 136 MB per model); point `storage_path` at the artifact
-      and teach the model route to resolve both roots; or make the model route serve
-      artifacts by hash. The third is closest to #120 and the furthest from a quick fix.
-- [ ] **A3 · scientific · blocking** — **How are the species worked out?** `model_species`
-      needs species ids, and the class names live in the dataset archive's `data.yaml`,
-      which MARP never reads — `datasets` records `num_classes` but not the names. Options:
-      record the class names at packaging time (`scripts/package-dataset.js` already parses
-      them, so this is cheap and honest); derive them from `dataset_observations` through
-      `observations.comname`, which is empty for a legacy import like rockfish5; or have
-      the worker report the loaded vocabulary with the weights, which it already knows.
-      **The first two disagree for rockfish5 specifically**, which is the dataset we are
-      testing with.
-- [ ] **A4 · product · blocking** — **Is a newly trained model usable immediately?**
-      `ml_models.status` and `preferred` both exist. A model nobody has evaluated becoming
-      `preferred` would quietly change which weights the next inference job runs. Proposed:
-      registered as not preferred, with a status that says it has not been assessed, and
-      promoting it is a human act.
+- [x] **A1 · product · blocking** — answered 2026-10-20: MARP composes the name. Proposed
+      shape `<dataset>-<date>`, e.g. `rockfish5-2026-10-20`, with a suffix when that is
+      already taken. Isaac raised letting a person nickname it from the dashboard later;
+      that is a separate piece of work and not in this issue.
+- [x] **A2 · architectural · blocking** — answered 2026-10-20: the bytes go where the API
+      already serves model files from — `MODEL_STORAGE_ROOT`, which the existing
+      `/api/v2/model/:id/artifact` route resolves. So registration copies the published
+      artifact into the model store and `storage_path` names it there. The duplicate 136 MB
+      is accepted deliberately: it keeps one serving path rather than two, and the file
+      server in #120 is what later takes both over.
+- [x] **A3 · scientific · blocking** — answered 2026-10-20, **and the assumed route does
+      not work.** The design is `datasets` → `dataset_observations` → `observations` →
+      species, and that join is correct in the schema. It is also empty:
+      `dataset_observations` holds **0 rows for 0 datasets**. Nothing has ever written to
+      it — the legacy builder's code for it is commented out in
+      `model_training_live.py`. So it cannot be the source today, for rockfish5 or for
+      anything else.
+
+      What does work, checked against the catalogue: the class names in the archive's
+      `data.yaml` resolve against `species.comname` **11 of 11 exactly, with no
+      ambiguity**, for rockfish5. So the dataset records the class names it was packaged
+      with, and registration resolves those to species ids.
+
+      This adds `datasets.class_names`; `scripts/package-dataset.js` already parses the
+      names out of the YAML, so recording them is nearly free. Populating
+      `dataset_observations` properly belongs with dataset *building*, which is a
+      different piece of work.
+- [x] **A4 · product · blocking** — answered 2026-10-20: a freshly trained model is usable
+      immediately, so it registers with an active status and can be named by an inference
+      job at once. **`preferred` is read narrowly and left alone**: it decides which model
+      is picked by default, and a new model quietly becoming the default would change what
+      the next job runs before anybody had looked at it. Say so if that reading is wrong.
 - [ ] **A5 · behavioural · non-blocking** — Should the metrics from the final validation
       land on `model_species` (`precision_mean`, `recall_mean`, `f1_mean`) or only on
       `metrics_summary`? Both exist and the columns are per species, which the per-class
@@ -75,7 +81,12 @@ has no row to name in a job spec. When this is done, a run that succeeds ends wi
 
 ## Plan
 
-Written once A1 to A4 are answered; each of them changes what is written and where.
+1. `datasets.class_names`, and `package-dataset.js` recording them. Backfill rockfish5.
+2. Compose the name, copy the artifact into the model store, write `ml_models`.
+3. Resolve the class names to species and write `model_species`.
+4. Wire it into `closeTrainingRun`, so it happens in the same transaction.
+5. Tests at the API tier, including that a failed job registers nothing and that
+   re-reporting does not register twice.
 
 ## Acceptance criteria
 
