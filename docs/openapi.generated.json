@@ -5271,6 +5271,24 @@
           }
         }
       },
+      "MosaicFrameCounts": {
+        "type": "object",
+        "description": "How much video a question covers. `keyframes` counts the frames somebody or something drew a box on; `frames` adds the frames interpolated between them, which a dataset trains on as well, and is therefore the number to size a training run against. **Counted per observation**: two animals tracked through the same stretch of video contribute their frames twice, which is right for training examples and wrong for image files. Unlike the counts route beside it, **the status filters apply here**.",
+        "properties": {
+          "observations": {
+            "type": "integer",
+            "example": 115
+          },
+          "keyframes": {
+            "type": "integer",
+            "example": 486
+          },
+          "frames": {
+            "type": "integer",
+            "example": 24892
+          }
+        }
+      },
       "Artifact": {
         "type": "object",
         "description": "A tracked output file (weights, log, plot, export, etc.) produced during a training run, including its path, size, checksum, and optional contextual metadata.\n",
@@ -15506,6 +15524,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MosaicStatusCounts"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/frames": {
+      "post": {
+        "summary": "How much video a mosaic question covers",
+        "description": "Answers how many frames a dataset built from this question would contain. `keyframes` is what somebody or something drew a box on; **`frames` adds the frames interpolated between them**, because those are trained on as well, and it is the number a training run is sized against. The span of one observation is its last keyframe minus its first, plus one -- the same figure as summing the gap between each keyframe and the next, since the gaps tile the span. **Counted per observation rather than per picture**: two animals tracked through the same stretch of video contribute those frames twice, which is what \"how many training examples\" means and is not what \"how many image files\" means. A route of its own rather than fields on the counts route beside it, for the same reason the facets route is one: that response is a fixed six-and-a-total over a set the status filters deliberately do not touch, and **the status filters do apply here** -- a dataset is built from promoted work specifically, so a frame count ignoring that would answer a question nobody asked. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  }
+                },
+                "description": "The same filters object the page query takes, status dimensions included."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The observation, keyframe and frame counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicFrameCounts"
                 }
               }
             }

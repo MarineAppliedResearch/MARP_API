@@ -3402,6 +3402,20 @@ const buildOpenApiSpec = () => {
                             excluded: { type: 'integer', example: 160 },
                         },
                     },
+                    MosaicFrameCounts: {
+                        type: 'object',
+                        description:
+                            'How much video a question covers. `keyframes` counts the frames somebody or something drew a box on; '
+                            + '`frames` adds the frames interpolated between them, which a dataset trains on as well, and is therefore '
+                            + 'the number to size a training run against. **Counted per observation**: two animals tracked through the '
+                            + 'same stretch of video contribute their frames twice, which is right for training examples and wrong for '
+                            + 'image files. Unlike the counts route beside it, **the status filters apply here**.',
+                        properties: {
+                            observations: { type: 'integer', example: 115 },
+                            keyframes: { type: 'integer', example: 486 },
+                            frames: { type: 'integer', example: 24892 },
+                        },
+                    },
                 },
                 responses: {
                     BadRequestError: {

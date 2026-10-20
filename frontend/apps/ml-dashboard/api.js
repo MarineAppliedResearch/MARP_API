@@ -1146,6 +1146,25 @@
   }
 
   /**
+   * `POST /api/v2/mosaic/observations/frames` -- how much video a question covers.
+   *
+   * `frames` is the keyframes **plus the frames interpolated between them**, because a
+   * dataset trains on those too, so it is the number a training run is sized against --
+   * not `keyframes`, which is only where somebody drew a box.
+   *
+   * **The status filters apply here**, unlike the counts route, so a question asking
+   * about promoted work gets the frames of promoted work.
+   *
+   * @param {Object} filters - A `MosaicQueryFilters`.
+   * @returns {Promise<Object>} `{observations, keyframes, frames}`.
+   */
+  function mosaicFrames(filters) {
+    return serve('mosaic',
+      () => request('/mosaic/observations/frames', { method: 'POST', body: { filters: filters || {} } }),
+      () => ({ observations: 0, keyframes: 0, frames: 0 }));
+  }
+
+  /**
    * `POST /api/v2/mosaic/observations/pages` -- rows, for the sample thumbnails.
    *
    * One page of one, asked for small: the preview shows six pictures and has no use
@@ -1169,6 +1188,7 @@
     whoAmI,
     mosaicCounts,
     mosaicFacets,
+    mosaicFrames,
     mosaicPages,
     listSessions,
     listVideoLibraries,

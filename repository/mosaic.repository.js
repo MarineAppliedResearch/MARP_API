@@ -1058,6 +1058,81 @@ SELECT count(*)::int                                          AS total,
 }
 
 /**
+ * How many frames a question's observations cover.
+ *
+ * **Three numbers, because they answer three different questions.** `observations` is
+ * how many rows matched. `keyframes` is how many frames a person or a detector actually
+ * drew a box on. `frames` is what a dataset built from this question would contain --
+ * the keyframes *plus the frames interpolated between them*, which are trained on as
+ * well. That third one is the number somebody plans a training run against, and it is
+ * the one neither `counts` nor `facets` can answer.
+ *
+ * **The span is `max(framenum) - min(framenum) + 1` per observation**, and that is the
+ * same number as summing the gap between each keyframe and the next, because the gaps
+ * tile the span exactly. Written as min/max because it is one pass and no ordering.
+ *
+ * **Counted per observation, not per picture.** Two observations tracking two animals
+ * through the same stretch of video cover the same frames, and both are counted -- which
+ * is right for "how many training examples", and wrong for "how many image files". The
+ * second is a different question and needs the frames expanded and de-duplicated per
+ * session; it is not what the screen asks.
+ *
+ * Unlike {@link buildCountsQuery} the status filters **do** apply here. The dataset
+ * builder asks about promoted work specifically, and a frame count over everything the
+ * non-status filters reach would be an answer to a question nobody asked.
+ *
+ * @param {Object} request - `{filters}`.
+ * @returns {{sql: string, bind: Array}} The statement and its parameters.
+ * @throws {MosaicRequestError} If a filter cannot be served.
+ */
+function buildFramesQuery({ filters = {} }) {
+    const bind = binder();
+    const where = predicates(filters, bind);
+
+    const sql = `
+SELECT count(*)::int                             AS observations,
+       coalesce(sum(k.keyframes), 0)::int        AS keyframes,
+       coalesce(sum(k.span), 0)::int             AS frames
+  FROM observations o
+  LEFT JOIN sessions s ON s.session_id = o.session_id
+  LEFT JOIN projects p ON p.project_id = o.project_id
+  LEFT JOIN observation_review_current rc
+         ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
+  LEFT JOIN observation_review_current rt
+         ON rt.observation_id = o.observation_id AND rt.purpose = 'training'
+  LEFT JOIN LATERAL (
+         SELECT count(*)::int                                  AS keyframes,
+                (max(kf.framenum) - min(kf.framenum) + 1)::int  AS span
+           FROM keyframes kf
+          WHERE kf.observation_id = o.observation_id
+       ) k ON TRUE
+ ${where.length ? `WHERE ${where.join('\n   AND ')}` : ''}`;
+
+    return { sql, bind: bind.values };
+}
+
+/**
+ * How many frames a question covers.
+ *
+ * `POST /api/v2/mosaic/observations/frames`.
+ *
+ * @async
+ * @param {Object} [request] - `{filters}`.
+ * @returns {Promise<{observations: number, keyframes: number, frames: number}>}
+ * @throws {MosaicRequestError} If a filter cannot be served.
+ */
+async function frames(request = {}) {
+    const { sql, bind } = buildFramesQuery(request);
+
+    const [row] = await db.sequelize.query(sql, {
+        bind,
+        type: db.Sequelize.QueryTypes.SELECT,
+    });
+
+    return row;
+}
+
+/**
  * A `pageSize` that can be served.
  *
  * @param {*} value - The request's `pageSize`.
@@ -1200,9 +1275,11 @@ module.exports = {
     STATUS_DIMENSIONS,
     buildCountsQuery,
     buildFacetQuery,
+    buildFramesQuery,
     buildPageSetQuery,
     buildVideoObservationsQuery,
     counts,
     facets,
+    frames,
     queryPages,
 };

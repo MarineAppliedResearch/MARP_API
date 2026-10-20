@@ -50,15 +50,26 @@ functional and easy to use, not just what the mockup is, or what the api already
 - **2026-10-20 — throughput is kept as a count, not a rate.** `gpu_attempt_progress` stores
   the cumulative figure per attempt per minute and the route differences it. A rate computed
   at write time cannot be re-bucketed afterwards, and the screen asks for three ranges.
-- **2026-10-20 — the dataset match preview reads the mosaic routes, and `frames` is left
-  blank.** Observations, videos, species, the class breakdown and the sample pictures all
-  come from `/mosaic/observations/counts`, `/facets` and `/pages`, which already answer this
-  question for the reviewer and answer it the same way here. The fourth box asks for "key
-  frames plus the interpolated frames between them" and none of the three can say: `keyframes`
-  holds a `framenum` per keyframe, so the count and the interpolated span are both derivable,
-  but *whether a dataset trains on the interpolated frames* is a question about how MARP
-  builds datasets rather than one to settle from the schema. The box says it is not counted
-  rather than showing a number somebody would plan against.
+- **2026-10-20 — the dataset match preview reads the mosaic routes.** Observations, videos,
+  species, the class breakdown and the sample pictures all come from
+  `/mosaic/observations/counts`, `/facets` and `/pages`, which already answer this question
+  for the reviewer and answer it the same way here.
+- **2026-10-20 — a dataset trains on the interpolated frames, so `frames` counts the span.**
+  The fourth box asks for "key frames plus the interpolated frames between them" and none of
+  the three routes above could say. Asked rather than inferred, and answered by the human:
+  *"a dataset trains on the interpolated frames too, so count the span between a keyframe and
+  the next."* `POST /mosaic/observations/frames` is that count — `max(framenum) - min(framenum)
+  + 1` per observation, which is the same figure as summing the gaps because the gaps tile the
+  span. On this database 115 promoted observations carry 2,458 keyframes and cover 13,380
+  frames, which is the scale of the difference and the reason the keyframe count is the wrong
+  number to size a training run against.
+
+  **A route of its own, not fields on `counts`.** That response is a fixed six-and-a-total
+  over a set the status dimensions deliberately do not touch; this one applies them, because
+  a dataset is built from promoted work. Counted **per observation**, so two animals tracked
+  through the same stretch of video contribute those frames twice — right for "how many
+  training examples", wrong for "how many image files", and the second is a different
+  question nothing asks yet.
 - **2026-10-20 — no overlap between subsets is claimed.** Adding a query used to report that
   six to fifteen per cent of its matches were duplicates, from a hash. Knowing the real figure
   means comparing observation ids across subsets and the page route caps at 600 rows, so the

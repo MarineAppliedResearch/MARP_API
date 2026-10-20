@@ -5490,10 +5490,9 @@ function wireDatasetBuilder() {
    *   This one *does* apply the status filters, so its species counts are promoted
    *   work and its sum agrees with the headline.
    * - **pages** for six sample pictures.
-   *
-   * `frames` is left unanswered: nothing in these routes counts keyframes, let alone
-   * the interpolated frames between them, and a plausible number in that box would be
-   * read as a fact about how much the dataset will contain.
+   * - **frames** for how much video it covers. Its `frames` is the keyframes *plus*
+   *   the frames interpolated between them, which is what a dataset built from this
+   *   question would contain and therefore what a training run is sized against.
    *
    * @returns {Promise<Object|null>} The result, or null if MARP could not answer.
    */
@@ -5504,10 +5503,11 @@ function wireDatasetBuilder() {
     setStatus('Counting what these filters match…');
 
     try {
-      const [counts, facets, pageSet] = await Promise.all([
+      const [counts, facets, pageSet, frames] = await Promise.all([
         window.MarpApi.mosaicCounts(filters),
         window.MarpApi.mosaicFacets(filters, ['species', 'session']),
         window.MarpApi.mosaicPages(filters, 6),
+        window.MarpApi.mosaicFrames(filters),
       ]);
 
       const species = facets.species || [];
@@ -5519,6 +5519,8 @@ function wireDatasetBuilder() {
         key: JSON.stringify(filters),
         hash: hashFor(JSON.stringify(filters)),
         observations,
+        frames: frames.frames || 0,
+        keyframes: frames.keyframes || 0,
         videos: sessions.length,
         species: species.length,
         // Kept so the dataset's own composition can be summed from its subsets
@@ -5531,10 +5533,13 @@ function wireDatasetBuilder() {
       if (resultFields.species) resultFields.species.textContent = currentResult.species.toLocaleString('en-US');
 
       if (resultFields.frames) {
-        resultFields.frames.textContent = '—';
+        resultFields.frames.textContent = currentResult.frames.toLocaleString('en-US');
+        /* The tooltip says where the number comes from, because the gap between it and
+           the keyframe count is large and surprising -- a few hundred boxes become tens
+           of thousands of frames, and that is the point rather than a mistake. */
         resultFields.frames.closest('span')?.setAttribute('title',
-          'Not counted yet: nothing in the observation routes reports keyframes or the '
-          + 'interpolated frames between them.');
+          `${currentResult.keyframes.toLocaleString('en-US')} key frames, plus the frames `
+          + 'interpolated between them, which are trained on as well');
       }
 
       drawQueryComposition($('[data-query-composition]'), species, observations);

@@ -61,6 +61,10 @@ const SUBSYSTEMS = {
             // and the row's reviewer ids. Same group as the query it rides beside --
             // both are the read path the mosaic client joins to.
             'mosaic-facets',
+            // #104: the frame count the dataset builder sizes a training run against.
+            // Here rather than with the dashboard's own suites, because it is the same
+            // read path over the same filters as the query and the facets beside it.
+            'mosaic-frames',
             // #181: the source-video inspector's read, which rides beside the query.
             'mosaic-video-context',
             'mosaic-video',
