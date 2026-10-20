@@ -50,13 +50,35 @@ functional and easy to use, not just what the mockup is, or what the api already
 - **2026-10-20 — throughput is kept as a count, not a rate.** `gpu_attempt_progress` stores
   the cumulative figure per attempt per minute and the route differences it. A rate computed
   at write time cannot be re-bucketed afterwards, and the screen asks for three ranges.
+- **2026-10-20 — the dataset match preview reads the mosaic routes, and `frames` is left
+  blank.** Observations, videos, species, the class breakdown and the sample pictures all
+  come from `/mosaic/observations/counts`, `/facets` and `/pages`, which already answer this
+  question for the reviewer and answer it the same way here. The fourth box asks for "key
+  frames plus the interpolated frames between them" and none of the three can say: `keyframes`
+  holds a `framenum` per keyframe, so the count and the interpolated span are both derivable,
+  but *whether a dataset trains on the interpolated frames* is a question about how MARP
+  builds datasets rather than one to settle from the schema. The box says it is not counted
+  rather than showing a number somebody would plan against.
+- **2026-10-20 — no overlap between subsets is claimed.** Adding a query used to report that
+  six to fifteen per cent of its matches were duplicates, from a hash. Knowing the real figure
+  means comparing observation ids across subsets and the page route caps at 600 rows, so the
+  screen now says duplicates are resolved when the build runs, and the total is the sum. A
+  checkable number was replaced by an honest one rather than by a better guess.
 
 ## What this app is, and is not
 
-It is a **mockup with real operation**: fixture data, real filtering, real navigation,
-real form behaviour. It is not wired to the API and does not run a job. Wiring is a later
-phase, and `src/data.js` is the seam where the API will arrive — the same seam the Picture
-Mosaic Reviewer uses.
+It **reads MARP**. Every screen fetches from `/api/v2` through `api.js`, which is the one
+seam the API arrives at; `?mock=all` serves a generated corpus instead, for the design
+review and the screenshot tool, which need a page that draws without a database behind it.
+
+What it does not yet do is *write*. Submitting a job, queueing a dataset build and
+downloading weights are drawn and inert. Where a panel has no route behind it at all, it
+says so on screen rather than drawing something plausible — `tools/markup-check.mjs`
+enforces that by failing on any number a renderer does not own.
+
+This paragraph used to say the opposite, and said it for weeks after it stopped being
+true. A document that describes the app's wiring cannot observe the wiring, which is the
+same trap *Documentation that states an environment fact* names in `AGENTS.md`.
 
 ## The rules that are not style preferences
 

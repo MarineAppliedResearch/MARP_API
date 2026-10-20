@@ -1098,8 +1098,78 @@
       () => ({ points: [] }));
   }
 
+  /**
+   * `POST /api/v2/mosaic/observations/counts` -- how a question divides across the
+   * review states.
+   *
+   * **The status filters are ignored here**, deliberately and by the route: it
+   * returns all six counts whether or not a status is selected. So the dataset
+   * builder, which only ever wants promoted observations, reads `promoted` from the
+   * answer rather than filtering for it and reading `total`. Those are two different
+   * numbers over two different sets and substituting one for the other is the
+   * mistake the route's own description warns about.
+   *
+   * @param {Object} filters - A `MosaicQueryFilters`.
+   * @returns {Promise<Object>} `{total, unreviewed, reviewed, flagged, undecided, promoted, excluded}`.
+   */
+  function mosaicCounts(filters) {
+    return serve('mosaic',
+      () => request('/mosaic/observations/counts', { method: 'POST', body: { filters: filters || {} } }),
+      () => ({ total: 0, unreviewed: 0, reviewed: 0, flagged: 0, undecided: 0, promoted: 0, excluded: 0 }));
+  }
+
+  /**
+   * `POST /api/v2/mosaic/observations/facets` -- the values each dimension can still
+   * offer under the filters already chosen.
+   *
+   * Unlike the counts route this one **does** apply the status filters, so asking it
+   * with `trainingDisposition: ['promoted']` gives the species breakdown of promoted
+   * work and nothing else. `count` rides along, which is what makes it a breakdown
+   * rather than a list.
+   *
+   * The route answers `{facets: {...}}`; the envelope is unwrapped here so a screen
+   * reads `species` rather than `facets.species` and cannot silently get an empty
+   * list by forgetting the wrapper -- which reads on screen as "MARP has no species".
+   *
+   * @param {Object} filters - A `MosaicQueryFilters`.
+   * @param {string[]} [dimensions] - Which to answer for. Absent means all of them.
+   * @returns {Promise<Object>} One `{value, label, count, list?}[]` per dimension.
+   */
+  function mosaicFacets(filters, dimensions) {
+    const body = { filters: filters || {} };
+    if (dimensions) body.dimensions = dimensions;
+
+    return serve('mosaic',
+      () => request('/mosaic/observations/facets', { method: 'POST', body })
+        .then((answer) => (answer && answer.facets) || {}),
+      () => ({}));
+  }
+
+  /**
+   * `POST /api/v2/mosaic/observations/pages` -- rows, for the sample thumbnails.
+   *
+   * One page of one, asked for small: the preview shows six pictures and has no use
+   * for the 45 the route serves by default.
+   *
+   * @param {Object} filters - A `MosaicQueryFilters`.
+   * @param {number} pageSize - How many rows.
+   * @returns {Promise<Object>} The route's page set.
+   */
+  function mosaicPages(filters, pageSize) {
+    return serve('mosaic',
+      () => request('/mosaic/observations/pages', {
+        method: 'POST',
+        // 1-based. Page 0 is not the first page, it is a 400.
+        body: { filters: filters || {}, pages: [1], pageSize },
+      }),
+      () => ({ pages: [] }));
+  }
+
   window.MarpApi = {
     whoAmI,
+    mosaicCounts,
+    mosaicFacets,
+    mosaicPages,
     listSessions,
     listVideoLibraries,
     listVideoChildren,

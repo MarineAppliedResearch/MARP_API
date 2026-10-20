@@ -181,29 +181,25 @@
             <div class="panel-bd">
 
               <div class="quad" data-query-metrics>
-                <span title="Observations these filters match"><b data-result="observations">12,486</b>observations</span>
-                <span title="Key frames plus the interpolated frames between them, which are trained on as well"><b data-result="frames">24,892</b>frames</span>
-                <span title="Videos and dives they come from"><b data-result="videos">67</b>videos</span>
-                <span title="Distinct species present"><b data-result="species">12</b>species</span>
+                <span title="Observations these filters match"><b data-result="observations" data-rendered></b>observations</span>
+                <span title="Key frames plus the interpolated frames between them, which are trained on as well"><b data-result="frames" data-rendered></b>frames</span>
+                <span title="Videos and dives they come from"><b data-result="videos" data-rendered></b>videos</span>
+                <span title="Distinct species present"><b data-result="species" data-rendered></b>species</span>
               </div>
 
               <div class="field" style="margin-top:15px">
-                <label>Class breakdown <span class="faint">(top 5)</span>
+                <label>Class breakdown <span class="faint">(largest first)</span>
                   <button class="more" title="Every class in the result">All classes
                     <svg class="ico sm"><use href="#i-arrow"/></svg></button></label>
-                <div class="dist pct" data-query-composition>
-<span class="k">Rockfish</span><span class="b"><i style="width:100%"></i></span><span class="v">3,248</span><span class="p">26%</span><span class="k">Lingcod</span><span class="b"><i style="width:87%"></i></span><span class="v">2,814</span><span class="p">23%</span><span class="k">Canary rockfish</span><span class="b"><i style="width:61%"></i></span><span class="v">1,986</span><span class="p">16%</span><span class="k">Kelp greenling</span><span class="b"><i style="width:46%"></i></span><span class="v">1,492</span><span class="p">12%</span><span class="k">Invertebrate</span><span class="b"><i style="width:37%"></i></span><span class="v">1,210</span><span class="p">10%</span><span class="k">Other (7 classes)</span><span class="b"><i style="width:53%"></i></span><span class="v">1,736</span><span class="p">14%</span>
-                </div>
+                <div class="dist pct" data-query-composition data-rendered></div>
               </div>
 
               <div class="field">
                 <label>Sample images
                   <button class="more" title="More samples from this result">More samples
                     <svg class="ico sm"><use href="#i-arrow"/></svg></button></label>
-                <div class="thumbs">
-<figure title="CAMPA2024 Dive 1 opening frame"><img src="/api/v2/jellyfin/items/9f66020c16c80d2800560a76d4417080/images/Primary" alt="Opening frame from CAMPA2024 Dive 1 video 20240727 141923"><figcaption>141923 &middot; Dive 1</figcaption></figure><figure title="CAMPA2024 Dive 1 opening frame"><img src="/api/v2/jellyfin/items/847c5f1034d01cf3a7aa2427fa7af4b4/images/Primary" alt="Opening frame from CAMPA2024 Dive 1 video 20240727 154643"><figcaption>154643 &middot; Dive 1</figcaption></figure><figure title="CAMPA2024 Dive 1 opening frame"><img src="/api/v2/jellyfin/items/f53860e0fbee24ceec374c12dd1f22a9/images/Primary" alt="Opening frame from CAMPA2024 Dive 1 video 20240727 163021"><figcaption>163021 &middot; Dive 1</figcaption></figure><figure title="CAMPA2024 Dive 1 opening frame"><img src="/api/v2/jellyfin/items/e8d220bb309bda85b77da70451cdb896/images/Primary" alt="Opening frame from CAMPA2024 Dive 1 video 20240727 171404"><figcaption>171404 &middot; Dive 1</figcaption></figure><figure title="CAMPA2024 Dive 1 opening frame"><img src="/api/v2/jellyfin/items/74e5c479eeec61456fbc15d4a00eadf3/images/Primary" alt="Opening frame from CAMPA2024 Dive 1 video 20240727 174909"><figcaption>174909 &middot; Dive 1</figcaption></figure><figure title="CAMPA2024 Dive 1 opening frame"><img src="/api/v2/jellyfin/items/76006d79adfb276192e5acffd5a596db/images/Primary" alt="Opening frame from CAMPA2024 Dive 1 video 20240727 181958"><figcaption>181958 &middot; Dive 1</figcaption></figure>
-                </div>
-                <span class="hint" data-query-sample-note>Six of 12,486 matches. Duplicates are ignored when adding.</span>
+                <div class="thumbs" data-rendered></div>
+                <span class="hint" data-query-sample-note data-rendered>Duplicates are ignored when adding.</span>
               </div>
 
               <div class="field dataset-destination">
@@ -241,18 +237,17 @@
                 <textarea class="inp wide" id="dsdesc" rows="2">Rockfish and associated species from CAMPA 2024 (promoted observations, high confidence)</textarea>
               </div>
               <div class="field">
-                <label>Added subsets <span class="faint" data-subset-count>(3)</span>
+                <label>Added subsets <span class="faint" data-subset-count data-rendered></span>
                   <button class="more" data-add-query title="Add the current query result">Add from query
                     <svg class="ico sm"><use href="#i-arrow"/></svg></button></label>
                 <ul class="subsets" data-subset-list aria-label="Queries added to this dataset">
-<li class="g1" data-query-key="fixture-rockfish" data-raw="5842" data-unique="5700" data-split="train"><span class="s1">1. CAMPA 2024 &middot; Rockfish (high conf) <i class="subset-split train">Train</i></span><span class="s2">Dive 0123&ndash;0140 &nbsp;|&nbsp; Confidence &ge; 0.70</span><span class="s3">5,842<em>observations</em></span><button class="btn sm icon" data-remove-subset aria-label="Remove CAMPA 2024 Rockfish query" title="Take this query out of the dataset"><svg class="ico sm"><use href="#i-x"/></svg></button></li><li class="g2" data-query-key="fixture-lingcod" data-raw="4128" data-unique="3960" data-split="validation"><span class="s1">2. Lingcod &amp; Greenling <i class="subset-split validation">Validation</i></span><span class="s2">All dives &nbsp;|&nbsp; 2026-06-01 &ndash; 2026-07-15</span><span class="s3">4,128<em>observations</em></span><button class="btn sm icon" data-remove-subset aria-label="Remove Lingcod and Greenling query" title="Take this query out of the dataset"><svg class="ico sm"><use href="#i-x"/></svg></button></li><li class="g3" data-query-key="fixture-invertebrates" data-raw="2516" data-unique="2322" data-split="test"><span class="s1">3. Invertebrates (MARP-Det-v3 2.0.0) <i class="subset-split test">Test</i></span><span class="s2">All dives &nbsp;|&nbsp; Confidence &ge; 0.60</span><span class="s3">2,516<em>observations</em></span><button class="btn sm icon" data-remove-subset aria-label="Remove Invertebrates query" title="Take this query out of the dataset"><svg class="ico sm"><use href="#i-x"/></svg></button></li>
                 </ul>
                 <span class="subset-scroll-note" data-subset-scroll-note hidden>Scroll this list to review every added subset.</span>
               </div>
 
               <div class="totalrow" title="The union of the subsets above, each observation counted once">
                 <span class="k">Total (deduplicated)</span>
-                <span class="v" data-dataset-total data-total="11982">11,982</span>
+                <span class="v" data-dataset-total data-total="0" data-rendered></span>
                 <span class="n"></span>
               </div>
               <p class="okline"><svg class="ico sm"><use href="#i-check"/></svg>
@@ -260,10 +255,8 @@
 
               <div class="field" style="margin-top:14px">
                 <label>Dataset composition
-                  <span class="faint" data-dataset-composition-summary>&middot; 12 classes &middot; imbalance 4.2 : 1</span></label>
-                <div class="dist pct" data-dataset-composition>
-<span class="k">Rockfish</span><span class="b"><i style="width:100%"></i></span><span class="v">5,102</span><span class="p">26%</span><span class="k">Lingcod</span><span class="b"><i style="width:48%"></i></span><span class="v">2,468</span><span class="p">21%</span><span class="k">Canary rockfish</span><span class="b"><i style="width:36%"></i></span><span class="v">1,842</span><span class="p">15%</span><span class="k">Kelp greenling</span><span class="b"><i style="width:26%"></i></span><span class="v">1,336</span><span class="p">11%</span><span class="k">Invertebrate</span><span class="b"><i style="width:22%"></i></span><span class="v">1,124</span><span class="p">9%</span><span class="k">Other (7 classes)</span><span class="b"><i style="width:41%"></i></span><span class="v">2,110</span><span class="p">18%</span>
-                </div>
+                  <span class="faint" data-dataset-composition-summary data-rendered></span></label>
+                <div class="dist pct" data-dataset-composition data-rendered></div>
               </div>
 
               <div class="btnrow" style="margin-top:14px">

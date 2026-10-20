@@ -26,6 +26,13 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+/* Text from MARP reaches these screens as markup, so it is escaped on the way in.
+   A species common name is typed by a person and an apostrophe is enough to break
+   an attribute; `&` first, or the escaping undoes itself. */
+const escapeHtml = (text) => String(text ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 /* ================================================================== icons */
 
 /* One 16x16 grid, stroked with currentColor so a class or a [data-state]
@@ -4453,11 +4460,20 @@ async function fillDatasetPickers() {
 
   if (!pickers.dsproj && !pickers.dsmodel) return;
 
-  /** Append options, keeping whatever "all" choice the markup opens on. */
+  /**
+   * Append options, keeping whatever "all" choice the markup opens on.
+   *
+   * A plain string is its own value. `{value, label}` separates the two, which the
+   * model picker needs: the mosaic filters take `ml_model_id` and only that, so a
+   * picker offering names would send something the API rejects.
+   */
   const add = (select, values) => {
     if (!select) return;
+    const esc = (v) => String(v).replace(/"/g, '&quot;');
     select.insertAdjacentHTML('beforeend', values
-      .map((v) => `<option value="${String(v).replace(/"/g, '&quot;')}">${v}</option>`).join(''));
+      .map((v) => (typeof v === 'object'
+        ? `<option value="${esc(v.value)}">${v.label}</option>`
+        : `<option value="${esc(v)}">${v}</option>`)).join(''));
   };
 
   try {
@@ -4476,7 +4492,10 @@ async function fillDatasetPickers() {
 
     add(pickers.dsdive, dives);
     add(pickers.dsline, lines);
-    add(pickers.dsmodel, models.map((m) => m.name).filter(Boolean).sort());
+    add(pickers.dsmodel, models
+      .filter((m) => m.name && m.id !== undefined)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((m) => ({ value: m.id, label: m.name })));
   } catch (error) {
     /* A picker that could not be filled says so, rather than silently offering
        only "All projects" and looking like MARP has nothing. */
@@ -5296,21 +5315,21 @@ function wireDatasetBuilder() {
   const filterIds = ['dsproj', 'dsdive', 'dsline', 'dsspecies', 'dsmodel', 'dsconf',
     'dsconfmax', 'dsfrom', 'dsto', 'dsreview', 'dsann', 'dsminarea',
     'dsexcludeds', 'dsexcludecorrected'];
-  const classNames = ['Rockfish', 'Lingcod', 'Canary rockfish', 'Kelp greenling',
-    'Invertebrate', 'Other (7 classes)'];
-  const datasetShares = [26, 21, 15, 11, 9, 18];
   const splitLabels = { train: 'Train', validation: 'Validation', test: 'Test' };
   let selectedSplit = 'train';
   let currentResult = null;
 
+  /* The *label*, not the value. A snapshot names a subset on screen, and the values
+     stopped being readable the moment the model picker started carrying ids. The
+     filters sent to MARP are built separately, by `mosaicFilters`. */
   const valueOf = (el) => {
     if (!el) return '';
     if (el.type === 'checkbox') return el.checked ? 'yes' : 'no';
     if (el.tagName === 'BUTTON') return el.textContent.trim();
+    if (el.tagName === 'SELECT') return (el.selectedOptions[0]?.textContent || '').trim();
     return (el.value ?? el.textContent).trim();
   };
   const snapshot = () => Object.fromEntries(filterIds.map((id) => [id, valueOf($('#' + id))]));
-  const keyFor = (query) => JSON.stringify(query);
   const hashFor = (text) => {
     let hash = 2166136261;
     for (let i = 0; i < text.length; i++) {
@@ -5319,72 +5338,222 @@ function wireDatasetBuilder() {
     }
     return hash >>> 0;
   };
-  const makeResult = (query) => {
-    const hash = hashFor(keyFor(query));
-    let observations = 6200 + hash % 9200;
-    if (query.dsproj === 'All projects') observations += 7400;
-    if (query.dsdive !== 'All dives') observations = Math.round(observations * .46);
-    if (query.dsline !== 'All lines') observations = Math.round(observations * .58);
-    if (query.dsmodel === 'Human annotation only') observations = Math.round(observations * .71);
-    const minConfidence = Math.max(0, Math.min(1, Number(query.dsconf) || 0));
-    observations = Math.max(240, Math.round(observations * (1.18 - minConfidence * .36)));
-    return {
-      query,
-      key: keyFor(query),
-      observations,
-      frames: Math.round(observations * (1.72 + (hash % 37) / 100)),
-      videos: Math.max(4, Math.round(observations / (155 + hash % 70))),
-      species: query.dsspecies === 'All species' ? 8 + hash % 5 : 1,
-      hash
+  /**
+   * The form, as the filters the mosaic routes take.
+   *
+   * **`trainingDisposition` is always `promoted` and the form cannot say otherwise** --
+   * step 1 is headed "Query promoted observations" and says so again in a locked note,
+   * because promotion is what makes an observation eligible for training at all.
+   *
+   * The selects carry what the API takes rather than what the reader sees: a project is
+   * filtered by name, a model by `ml_model_id`. That is why `fillDatasetPickers` puts
+   * the model's id in the option value.
+   *
+   * @returns {Object} A `MosaicQueryFilters`.
+   */
+  const mosaicFilters = () => {
+    const filters = { trainingDisposition: ['promoted'] };
+    const one = (id, key) => {
+      const value = $('#' + id)?.value;
+      if (value) filters[key] = [value];
     };
+
+    one('dsproj', 'project');
+    one('dsdive', 'dive');
+    one('dsline', 'line');
+
+    /* "Human annotation only" is the absence of a model, and the filter takes ids --
+       there is no id for "none". Left unsent rather than sent as something that would
+       quietly match everything.
+
+       The empty string is tested before the number: `Number('')` is 0, `Number.isInteger(0)`
+       is true, and "Any model" therefore filtered on model id 0 and matched nothing at
+       all -- a query that looks like an answer. */
+    const model = ($('#dsmodel')?.value || '').trim();
+    if (model && Number.isInteger(Number(model))) filters.model = [Number(model)];
+
+    const from = Number($('#dsconf')?.value);
+    const to = Number($('#dsconfmax')?.value);
+    const confidence = {};
+    if (Number.isFinite(from)) confidence.from = from;
+    if (Number.isFinite(to)) confidence.to = to;
+    if (Object.keys(confidence).length) filters.confidence = confidence;
+
+    return filters;
   };
-  const distribute = (total, shares) => {
-    let used = 0;
-    return shares.map((share, index) => {
-      const count = index === shares.length - 1 ? total - used : Math.round(total * share / 100);
-      used += count;
-      return count;
-    });
-  };
-  const drawDistribution = (container, total, shares) => {
+  /**
+   * The class breakdown, from the species facet.
+   *
+   * Top five by count, then one "Other" row carrying the rest. The remainder is
+   * computed against the **total** rather than against the facet's own sum, so an
+   * observation with no species lands in Other instead of disappearing -- the two
+   * numbers would otherwise disagree with the headline count sitting directly above
+   * them, which is exactly the kind of thing a reader notices and nobody can explain.
+   *
+   * Rebuilt rather than filled in place: the markup carried six rows because the
+   * fixture always had six classes, and a question matching two species should draw
+   * two bars, not two bars and four leftovers.
+   *
+   * @param {Element} container - The `.dist` element.
+   * @param {Object[]} species - The facet's entries, `{label, count}`.
+   * @param {number} total - The headline match count.
+   */
+  const drawQueryComposition = (container, species, total) => {
     if (!container) return;
-    const counts = distribute(total, shares);
-    const max = Math.max(...counts, 1);
-    const keys = $$('.k', container);
-    const bars = $$('.b i', container);
-    const values = $$('.v', container);
-    const pcts = $$('.p', container);
-    counts.forEach((count, index) => {
-      if (keys[index]) keys[index].textContent = classNames[index];
-      if (bars[index]) bars[index].style.width = (count / max * 100).toFixed(1) + '%';
-      if (values[index]) values[index].textContent = count.toLocaleString('en-US');
-      if (pcts[index]) pcts[index].textContent = shares[index] + '%';
-    });
+
+    const sorted = [...species].sort((a, b) => b.count - a.count);
+    const top = sorted.slice(0, 5);
+    const rest = sorted.slice(5);
+    const counted = top.reduce((sum, s) => sum + s.count, 0);
+    const remainder = Math.max(0, total - counted);
+    const rows = top.map((s) => ({ label: s.label || 'Unnamed species', count: s.count }));
+
+    /* Only when there is something left over. "Other (0 classes)" is noise, and a
+       question that matched nothing should draw an empty panel rather than one row
+       claiming a hundred per cent of nothing. */
+    if (remainder > 0) {
+      const classes = rest.length;
+      rows.push({
+        label: classes ? `Other (${classes} ${classes === 1 ? 'class' : 'classes'})` : 'Other',
+        count: remainder,
+      });
+    }
+
+    if (!rows.length) {
+      container.innerHTML = '<span class="nodata">Nothing matches these filters.</span>';
+      return;
+    }
+
+    const max = Math.max(...rows.map((r) => r.count), 1);
+
+    container.innerHTML = rows.map((r) => {
+      const pct = total ? Math.round(r.count / total * 100) : 0;
+      return `<span class="k">${escapeHtml(r.label)}</span>`
+        + `<span class="b"><i style="width:${(r.count / max * 100).toFixed(1)}%"></i></span>`
+        + `<span class="v">${r.count.toLocaleString('en-US')}</span>`
+        + `<span class="p">${pct}%</span>`;
+    }).join('');
   };
-  const queryShares = (hash) => {
-    const first = 22 + hash % 10;
-    const second = 18 + (hash >>> 3) % 8;
-    const third = 13 + (hash >>> 6) % 6;
-    const fourth = 9 + (hash >>> 9) % 5;
-    const fifth = 7 + (hash >>> 12) % 5;
-    return [first, second, third, fourth, fifth, 100 - first - second - third - fourth - fifth];
+
+  /**
+   * Six sample pictures from the matching observations.
+   *
+   * `thumbnail_status` decides whether a row can be drawn: `storage/` is restored
+   * separately from the database, so a recorded thumbnail whose file is gone answers
+   * 404, and six broken image icons look like a broken screen rather than a missing
+   * file.
+   *
+   * @param {Object[]} rows - Rows from the page query.
+   * @param {number} total - The headline match count.
+   */
+  const drawSamples = (rows, total) => {
+    const note = $('[data-query-sample-note]');
+    // Five elements on this page carry `.thumbs`; the one this renderer owns is the
+    // one beside the note. Taking the first on the page filled a different panel.
+    const thumbs = note?.parentElement?.querySelector('.thumbs');
+    const usable = rows.filter((r) => r.thumbnail_status === 'ready');
+
+    if (thumbs) {
+      thumbs.innerHTML = usable.length
+        ? usable.map((r) => {
+          const scope = [r.dive && `Dive ${r.dive}`, r.line && `Line ${r.line}`].filter(Boolean).join(' · ');
+          const name = r.species_comname || r.comname || 'Observation';
+          return `<figure title="${escapeHtml(`${name}${scope ? ` — ${scope}` : ''}`)}">`
+            + `<img src="/api/v2/observations/${encodeURIComponent(r.observation_id)}/thumbnail" `
+            + `alt="${escapeHtml(`${name} observed on ${scope || 'an unrecorded dive'}`)}" loading="lazy">`
+            + `<figcaption>${escapeHtml(name)}</figcaption></figure>`;
+        }).join('')
+        : '<span class="nodata">No pictures for these matches yet.</span>';
+    }
+
+    if (note) {
+      note.textContent = usable.length
+        ? `${usable.length} of ${total.toLocaleString('en-US')} matches. Duplicates are ignored when adding.`
+        : 'Duplicates are ignored when adding.';
+    }
   };
   const setStatus = (message, kind = '') => {
     if (!status) return;
     status.textContent = message;
     status.dataset.kind = kind;
   };
-  const runQuery = () => {
-    currentResult = makeResult(snapshot());
-    Object.entries(resultFields).forEach(([name, el]) => {
-      if (el) el.textContent = currentResult[name].toLocaleString('en-US');
-    });
-    drawDistribution($('[data-query-composition]'), currentResult.observations,
-      queryShares(currentResult.hash));
-    const sampleNote = $('[data-query-sample-note]');
-    if (sampleNote) sampleNote.textContent = `Six of ${currentResult.observations.toLocaleString('en-US')} matches. Duplicates are ignored when adding.`;
-    setStatus('Query refreshed. Add these matches as a new subset, or change the filters and run another query.');
-    return currentResult;
+  /**
+   * Ask MARP what these filters match.
+   *
+   * Three questions in one pass, because they are three different routes answering
+   * three different things:
+   *
+   * - **counts** for the headline. `promoted` rather than `total`: the counts route
+   *   ignores the status dimensions by design and returns all six, so `total` here is
+   *   every observation the non-status filters reach, promoted or not.
+   * - **facets** for the breakdown and for how many videos and species are in reach.
+   *   This one *does* apply the status filters, so its species counts are promoted
+   *   work and its sum agrees with the headline.
+   * - **pages** for six sample pictures.
+   *
+   * `frames` is left unanswered: nothing in these routes counts keyframes, let alone
+   * the interpolated frames between them, and a plausible number in that box would be
+   * read as a fact about how much the dataset will contain.
+   *
+   * @returns {Promise<Object|null>} The result, or null if MARP could not answer.
+   */
+  const runQuery = async () => {
+    const filters = mosaicFilters();
+    const query = snapshot();
+
+    setStatus('Counting what these filters match…');
+
+    try {
+      const [counts, facets, pageSet] = await Promise.all([
+        window.MarpApi.mosaicCounts(filters),
+        window.MarpApi.mosaicFacets(filters, ['species', 'session']),
+        window.MarpApi.mosaicPages(filters, 6),
+      ]);
+
+      const species = facets.species || [];
+      const sessions = facets.session || [];
+      const observations = counts.promoted || 0;
+
+      currentResult = {
+        query,
+        key: JSON.stringify(filters),
+        hash: hashFor(JSON.stringify(filters)),
+        observations,
+        videos: sessions.length,
+        species: species.length,
+        // Kept so the dataset's own composition can be summed from its subsets
+        // rather than asked for again once they are assembled.
+        speciesCounts: species.map((s) => ({ label: s.label || 'Unnamed species', count: s.count })),
+      };
+
+      if (resultFields.observations) resultFields.observations.textContent = observations.toLocaleString('en-US');
+      if (resultFields.videos) resultFields.videos.textContent = currentResult.videos.toLocaleString('en-US');
+      if (resultFields.species) resultFields.species.textContent = currentResult.species.toLocaleString('en-US');
+
+      if (resultFields.frames) {
+        resultFields.frames.textContent = '—';
+        resultFields.frames.closest('span')?.setAttribute('title',
+          'Not counted yet: nothing in the observation routes reports keyframes or the '
+          + 'interpolated frames between them.');
+      }
+
+      drawQueryComposition($('[data-query-composition]'), species, observations);
+      drawSamples(pageSet.pages?.[0]?.rows || [], observations);
+
+      setStatus(observations
+        ? 'Query refreshed. Add these matches as a new subset, or change the filters and run another query.'
+        : 'Nothing promoted matches these filters. Widen them, or promote more observations in the mosaic.',
+        observations ? '' : 'warning');
+
+      return currentResult;
+    } catch (error) {
+      currentResult = null;
+      for (const el of Object.values(resultFields)) if (el) el.textContent = '—';
+      const composition = $('[data-query-composition]');
+      if (composition) composition.innerHTML = '';
+      setStatus(`Could not count the matches (${error.status || 'no answer'}). The filters were not changed.`, 'warning');
+      return null;
+    }
   };
   const reindex = () => {
     $$('li', list).forEach((row, index) => {
@@ -5412,9 +5581,29 @@ function wireDatasetBuilder() {
     list.classList.toggle('is-scrollable', rows.length > 4);
     const scrollNote = $('[data-subset-scroll-note]');
     if (scrollNote) scrollNote.hidden = rows.length <= 4;
-    drawDistribution($('[data-dataset-composition]'), total, datasetShares);
+    /* Summed from what each subset actually matched, rather than from a fixed set of
+       shares. Two subsets that overlap count the shared observations twice here, the
+       same way the total above does -- the build is what resolves that, and saying so
+       is better than a number that looks exact and is not. */
+    const tally = new Map();
+    for (const row of rows) {
+      for (const [label, count] of JSON.parse(row.dataset.species || '[]')) {
+        tally.set(label, (tally.get(label) || 0) + count);
+      }
+    }
+
+    const classes = [...tally].map(([label, count]) => ({ label, count }));
+    drawQueryComposition($('[data-dataset-composition]'), classes, total);
+
     const summary = $('[data-dataset-composition-summary]');
-    if (summary) summary.textContent = total ? '\u00b7 12 classes \u00b7 imbalance 4.2 : 1' : '\u00b7 no observations added';
+    if (summary) {
+      const counts = classes.map((c) => c.count).sort((a, b) => b - a);
+      const imbalance = counts.length > 1 && counts.at(-1) > 0
+        ? ` \u00b7 imbalance ${(counts[0] / counts.at(-1)).toFixed(1)} : 1` : '';
+      summary.textContent = total
+        ? `\u00b7 ${counts.length} ${counts.length === 1 ? 'class' : 'classes'}${imbalance}`
+        : '\u00b7 no observations added';
+    }
     document.dispatchEvent(new CustomEvent('dataset-total-change', { detail: { total } }));
   };
   const appendSubset = (result) => {
@@ -5422,21 +5611,17 @@ function wireDatasetBuilder() {
       setStatus('That exact query is already in this dataset. Change a filter to add another subset.', 'warning');
       return;
     }
-    const overlapRate = 6 + result.hash % 9;
-    const overlap = Math.round(result.observations * overlapRate / 100);
-    const existingRows = $$('li', list);
-    const existingTotal = existingRows.reduce((sum, item) => sum + Number(item.dataset.unique || 0), 0);
-    const otherSplitTotal = existingRows
-      .filter((item) => item.dataset.split !== selectedSplit)
-      .reduce((sum, item) => sum + Number(item.dataset.unique || 0), 0);
-    const crossSplitOverlap = existingTotal
-      ? Math.min(overlap, Math.round(overlap * otherSplitTotal / existingTotal)) : 0;
-    const unique = Math.max(0, result.observations - overlap);
+    /* **No overlap is claimed.** This used to invent one -- six to fifteen per cent of
+       the match, from a hash -- and report it as "5 duplicates were ignored", which is
+       a number nobody can check and everybody would believe. Knowing the real overlap
+       means comparing observation ids across subsets, and the page route caps at 600
+       rows, so the honest answer is that duplicates are resolved when the build runs. */
     const row = document.createElement('li');
     row.dataset.queryKey = result.key;
     row.dataset.raw = String(result.observations);
-    row.dataset.unique = String(unique);
+    row.dataset.unique = String(result.observations);
     row.dataset.split = selectedSplit;
+    row.dataset.species = JSON.stringify((result.speciesCounts || []).map((s) => [s.label, s.count]));
     row.dataset.subsetLabel = `${result.query.dsproj} \u00b7 ${result.query.dsspecies}`;
 
     const title = document.createElement('span');
@@ -5467,12 +5652,17 @@ function wireDatasetBuilder() {
     list.append(row);
     reindex();
     recalc();
-    const held = crossSplitOverlap
-      ? ` ${crossSplitOverlap.toLocaleString('en-US')} overlapping matches kept their earlier split assignment.` : '';
-    setStatus(`Added ${unique.toLocaleString('en-US')} new observations to ${splitLabels[selectedSplit]}; ${overlap.toLocaleString('en-US')} duplicates were ignored.${held}`, 'success');
+    setStatus(`Added ${result.observations.toLocaleString('en-US')} matching observations to `
+      + `${splitLabels[selectedSplit]}. An observation matched by more than one subset is `
+      + 'counted once, and keeps its first split, when the build runs.', 'success');
     row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   };
-  const addCurrent = () => appendSubset(runQuery());
+  /* Re-run before adding, so a subset is never assembled from a count taken before
+     the filters were last touched. A failed count adds nothing. */
+  const addCurrent = async () => {
+    const result = await runQuery();
+    if (result) appendSubset(result);
+  };
 
   $('[data-run-dataset-query]')?.addEventListener('click', runQuery);
   const destinationButtons = $$('[data-dataset-destination]');
