@@ -110,11 +110,10 @@ const { execFileSync } = require('child_process');
 
 const db = require('../model');
 
-/** Where packaged archives live, under the API's storage root. */
-const ARCHIVE_DIRECTORY = path.join(__dirname, '..', 'storage', 'datasets');
+// One definition, shared with the route that serves these, so the writer and the
+// reader can never disagree about where archives are.
+const { DATASET_DIRECTORY: ARCHIVE_DIRECTORY, DATASET_PATH_PREFIX: ARCHIVE_PATH_PREFIX } = require('../config/gpu-orchestration');
 
-/** The path recorded on the row, relative to the storage root so the root can move. */
-const ARCHIVE_PATH_PREFIX = 'datasets';
 
 /** The splits that make up a training archive, as &lt;archive member> => &lt;source folder>. */
 const SPLITS = [['train', 'train'], ['eval', 'eval']];

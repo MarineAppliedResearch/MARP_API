@@ -196,13 +196,13 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Directory the staged artifact bytes live in.On disk rather than in the database, the same arrangement as species pictures.`storage/` is git-ignored, so nothing here becomes a repository file.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Directory the staged artifact bytes live in.On disk rather than in the database, the same arrangement as species pictures.`storage/` is git-ignored, so nothing here becomes a repository file.**Configurable, for the reason `THUMBNAIL_STORAGE_DIR` is.** Five places assume anartifact is on this machine in this checkout: the upload route writes here, the resultand check calls test for the bytes here, the ingest opens an observations file here, andregistering a trained model copies weights out of here. That holds while one API processboth receives uploads and ingests them, which is the deployment today -- and stopsholding the moment there are two, or storage moves off the checkout, which #120 recordsas an unanswered deployment question. Unset, it is what it always was.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line195">line 195</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line203">line 203</a>
     </li></ul></dd>
     
 
@@ -242,7 +242,7 @@
 
 
 <div class="description usertext">
-    Directory the staged artifact bytes live in.On disk rather than in the database, the same arrangement as species pictures.`storage/` is git-ignored, so nothing here becomes a repository file.
+    Directory the staged artifact bytes live in.On disk rather than in the database, the same arrangement as species pictures.`storage/` is git-ignored, so nothing here becomes a repository file.**Configurable, for the reason `THUMBNAIL_STORAGE_DIR` is.** Five places assume anartifact is on this machine in this checkout: the upload route writes here, the resultand check calls test for the bytes here, the ingest opens an observations file here, andregistering a trained model copies weights out of here. That holds while one API processboth receives uploads and ingests them, which is the deployment today -- and stopsholding the moment there are two, or storage moves off the checkout, which #120 recordsas an unanswered deployment question. Unset, it is what it always was.
 </div>
 
 
@@ -280,7 +280,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line205">line 205</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line215">line 215</a>
     </li></ul></dd>
     
 
@@ -436,7 +436,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line306">line 306</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line345">line 345</a>
     </li></ul></dd>
     
 
@@ -514,7 +514,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line393">line 393</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line432">line 432</a>
     </li></ul></dd>
     
 
@@ -577,6 +577,162 @@
 
         
             
+<h4 class="name" id="~DATASET_DIRECTORY"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>DATASET_DIRECTORY<span class="type-signature"> :string</span></h4>
+
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Where packaged dataset archives live.**Configurable, unlike the artifact directory beside it, and for the reason`THUMBNAIL_STORAGE_DIR` is.** A dataset archive is paired with the `datasets` row thatnames it: the row holds a path relative to this root, so a database and the archives itpoints at are one unit. An API serving that database from a second checkout -- aworktree, another machine, a testing database -- resolved this relative to its own tree,found nothing, and answered 404. The worker then failed minutes into a job, at`fetching_dataset`, which is a long way from the cause.Unset, it is what it always was, so nothing existing changes.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line233">line 233</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+<div class="description usertext">
+    Where packaged dataset archives live.**Configurable, unlike the artifact directory beside it, and for the reason`THUMBNAIL_STORAGE_DIR` is.** A dataset archive is paired with the `datasets` row thatnames it: the row holds a path relative to this root, so a database and the archives itpoints at are one unit. An API serving that database from a second checkout -- aworktree, another machine, a testing database -- resolved this relative to its own tree,found nothing, and answered 404. The worker then failed minutes into a job, at`fetching_dataset`, which is a long way from the cause.Unset, it is what it always was, so nothing existing changes.
+</div>
+
+
+
+    <h5 class="h5-types">Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">string</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+
+        
+            
+<h4 class="name" id="~DATASET_PATH_PREFIX"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>DATASET_PATH_PREFIX<span class="type-signature"> :string</span></h4>
+
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>What `datasets.archive_path` says, relative to the dataset directory's parent.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line243">line 243</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+<div class="description usertext">
+    What `datasets.archive_path` says, relative to the dataset directory's parent.
+</div>
+
+
+
+    <h5 class="h5-types">Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">string</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+
+        
+            
 <h4 class="name" id="~ENGINE_DATA_TYPES"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>ENGINE_DATA_TYPES<span class="type-signature"> :Array.&lt;string></span></h4>
 
 
@@ -592,7 +748,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line287">line 287</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line326">line 326</a>
     </li></ul></dd>
     
 
@@ -670,7 +826,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line338">line 338</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line377">line 377</a>
     </li></ul></dd>
     
 
@@ -826,7 +982,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line263">line 263</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line302">line 302</a>
     </li></ul></dd>
     
 
@@ -904,7 +1060,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line235">line 235</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line274">line 274</a>
     </li></ul></dd>
     
 
@@ -982,7 +1138,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line252">line 252</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line291">line 291</a>
     </li></ul></dd>
     
 
@@ -1216,7 +1372,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line318">line 318</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line357">line 357</a>
     </li></ul></dd>
     
 
@@ -1762,7 +1918,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line219">line 219</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line258">line 258</a>
     </li></ul></dd>
     
 
@@ -1996,7 +2152,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line329">line 329</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line368">line 368</a>
     </li></ul></dd>
     
 
@@ -2074,7 +2230,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line381">line 381</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line420">line 420</a>
     </li></ul></dd>
     
 
@@ -2230,7 +2386,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line366">line 366</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line405">line 405</a>
     </li></ul></dd>
     
 
@@ -2308,7 +2464,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line357">line 357</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line396">line 396</a>
     </li></ul></dd>
     
 
@@ -2386,7 +2542,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line298">line 298</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line337">line 337</a>
     </li></ul></dd>
     
 
@@ -2464,7 +2620,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line348">line 348</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line387">line 387</a>
     </li></ul></dd>
     
 
@@ -2620,7 +2776,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line227">line 227</a>
+        <a href="config_gpu-orchestration.js.html">config/gpu-orchestration.js</a>, <a href="config_gpu-orchestration.js.html#line266">line 266</a>
     </li></ul></dd>
     
 
