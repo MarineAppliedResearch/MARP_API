@@ -143,6 +143,12 @@ const SUBSYSTEMS = {
                trade: a suite that is expected and missing says so, where a suite nobody
                registered is one no fast loop would ever run. */
             'dataset-build-progress',
+            /* #268: the builder and the thumbnail extractor must mean the same thing by
+               `keyframes.x, y`, and did not for a day. Here rather than beside the
+               thumbnail suites in `mosaic` because the drift was the builder's and the
+               next one is likelier to be too -- the extractor's reading is older than
+               this issue and was confirmed three times before it. */
+            'keyframe-box-meaning',
             'model_species',
             'training_runs',
         ],

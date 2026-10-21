@@ -60,6 +60,35 @@ let stub;
 const made = { datasetIds: [], jobIds: [], archives: [], workerCreated: false };
 
 /**
+ * How many frames the builder asks for in one ffmpeg pass.
+ *
+ * **Read out of the source**, because `FRAMES_PER_PASS` is not exported and the batching
+ * test needs to be bigger than it without being enormous. The alternative was a fixed
+ * span chosen to beat whatever the constant was that week: 802 frames to beat 400, which
+ * cost eight hundred image encodes and would have silently stopped forcing a second pass
+ * the day somebody raised it.
+ *
+ * It fails loudly rather than guessing if the constant is renamed or exported, because a
+ * test that quietly fell back to a default would go on passing while measuring nothing.
+ *
+ * @returns {number} The batch size the builder is using.
+ */
+function passSize() {
+    const source = fs.readFileSync(require.resolve('../service/dataset-build.service'), 'utf8');
+    const found = source.match(/^const FRAMES_PER_PASS = (\d+);/m);
+
+    if (!found) {
+        throw new Error(
+            'FRAMES_PER_PASS could not be read out of service/dataset-build.service.js. '
+            + 'If it was renamed or exported, teach tests/dataset-build-runner.test.js to '
+            + 'read it the new way rather than deleting this.'
+        );
+    }
+
+    return Number(found[1]);
+}
+
+/**
  * Runs one statement and returns its rows.
  *
  * @param {string} sql - The statement.
@@ -813,15 +842,16 @@ describe('a subset that is divided rather than sent to one split (#268)', () => 
 describe('a video with more frames than one ffmpeg pass can ask for (#268)', () => {
 
     /**
-     * The frames this video wants.
+     * The frames this video wants: **two full passes and a short third**, whatever the
+     * builder's batch size happens to be.
      *
-     * **Sized to force more than one pass** at the builder's current batch size, which
-     * is not exported and is deliberately not written here -- the shape of the batching
-     * is asserted below from what the extractor was actually asked for. If the batch
-     * size is ever raised above this span, the first assertion fails: give the fixture a
-     * longer video rather than deleting the test.
+     * It used to be a flat 802 frames, chosen to beat a batch size of 400. That made it
+     * the most expensive test in the group for no added confidence, and it would have
+     * quietly stopped testing anything the day somebody raised the batch size past it.
+     * Three passes is the smallest number that distinguishes a dropped middle batch from
+     * a dropped last one, so the video is sized to produce exactly three.
      */
-    const SPAN = { first: 1000, last: 1801 };
+    const SPAN = { first: 1000, last: 1000 + (2 * passSize()) + 1 };
 
     /** How many frames that is. */
     const WANTED = SPAN.last - SPAN.first + 1;
@@ -880,6 +910,10 @@ describe('a video with more frames than one ffmpeg pass can ask for (#268)', () 
         expect(stub.calls.extractions.length).toBeGreaterThan(1);
 
         const sizes = stub.calls.extractions.map((call) => call.frames.length);
+
+        /* Three, by construction: the video is two full passes and a short third, so a
+           dropped middle batch is distinguishable from a dropped last one. */
+        expect(sizes).toHaveLength(3);
 
         // Full batches, then a last one that is whatever is left.
         expect(Math.max(...sizes)).toBeLessThan(WANTED);
