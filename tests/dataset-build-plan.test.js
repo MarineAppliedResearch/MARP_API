@@ -22,6 +22,7 @@
  */
 
 const {
+    NEAR_MISS_FRAMES,
     assignFromSubsets,
     assignSplits,
     boxAt,
@@ -78,9 +79,12 @@ describe('connected frame groups (#268)', () => {
     });
 
     test('observations that do not overlap are separate groups', () => {
+        /* Far enough apart to be a different scene. One frame apart used to be enough
+           for this test; it is not any more, because a frame apart is the same picture
+           and the near-miss buffer now says so. */
         const rows = selected([
             observation({ id: 1, first: 100, last: 200 }),
-            observation({ id: 2, first: 201, last: 300 }),
+            observation({ id: 2, first: 200 + NEAR_MISS_FRAMES + 1, last: 400 }),
         ]);
 
         expect(connectedGroups(rows)).toHaveLength(2);
@@ -130,6 +134,203 @@ describe('connected frame groups (#268)', () => {
         ]);
 
         expect(connectedGroups(rows)).toHaveLength(1);
+    });
+});
+
+describe('near-miss leakage (#268)', () => {
+
+    /* Frame-exact overlap is the obvious leak. Two observations a few frames apart are
+       nearly the same picture -- same seabed, same lighting, the animal barely moved --
+       and splitting those across train and eval scores the model on what it memorised.
+       Isaac: "we don't want to think our training is better than it is." */
+
+    test('observations within the buffer are one scene', () => {
+        const rows = selected([
+            observation({ id: 1, first: 100, last: 200 }),
+            // Five frames later: a different observation, the same picture.
+            observation({ id: 2, first: 205, last: 300 }),
+        ]);
+
+        expect(connectedGroups(rows)).toHaveLength(1);
+    });
+
+    test('observations beyond the buffer are separate', () => {
+        const rows = selected([
+            observation({ id: 1, first: 100, last: 200 }),
+            observation({ id: 2, first: 200 + NEAR_MISS_FRAMES + 1, last: 900 }),
+        ]);
+
+        expect(connectedGroups(rows)).toHaveLength(2);
+    });
+
+    test('the buffer can be set, because the right distance is empirical', () => {
+        const rows = selected([
+            observation({ id: 1, first: 100, last: 200 }),
+            observation({ id: 2, first: 260, last: 300 }),
+        ]);
+
+        // 60 apart: one scene at the default, two with no buffer at all.
+        expect(connectedGroups(rows, NEAR_MISS_FRAMES)).toHaveLength(1);
+        expect(connectedGroups(rows, 0)).toHaveLength(2);
+    });
+
+    test('the buffer never joins across videos', () => {
+        // Frame numbers are per video; proximity between two of them means nothing.
+        const rows = selected([
+            observation({ id: 1, video: 'a.mp4', first: 100, last: 200 }),
+            observation({ id: 2, video: 'b.mp4', first: 201, last: 300 }),
+        ]);
+
+        expect(connectedGroups(rows)).toHaveLength(2);
+    });
+});
+
+describe('stratified splits (#268)', () => {
+
+    /** Frames of one species in one split. */
+    const framesOf = (rows, species) => rows
+        .filter((r) => r.species_id === species)
+        .reduce((sum, r) => sum + (r.last_framenum - r.first_framenum + 1), 0);
+
+    /**
+     * The real shape, taken from the build this was written for.
+     *
+     * **Synthetic fixtures were too tidy to show the failure.** Even groups of similar
+     * size spread a rare species acceptably by accident, so a size-only split passed
+     * every tidy test. On the real selection it does not: the test split gets *none* of
+     * the rarest species and validation gets 8 per cent where it asked for 20.
+     *
+     * What matters here and was missing before: sizes spanning 31 to 1,319 frames, and
+     * groups carrying two species at once. Those are what make a size-only split follow
+     * the common species and drag the rare one wherever it happens to go.
+     *
+     * Counts are frames per species per connected group, from the 115 promoted
+     * observations at confidence 0.5 and above.
+     */
+    const REAL_GROUPS = [
+        { W: 140 }, { C: 325 }, { C: 476 }, { C: 111 }, { C: 88, W: 88 }, { C: 121 },
+        { W: 115 }, { C: 480 }, { C: 98 }, { W: 342, C: 133 }, { F: 490, C: 906 },
+        { C: 79, W: 33 }, { F: 120 }, { F: 202 }, { C: 135 }, { F: 206 }, { F: 200 },
+        { C: 144 }, { C: 172, W: 60 }, { C: 144 }, { C: 1207, F: 163 }, { F: 78 },
+        { F: 63 }, { W: 38 }, { W: 62 }, { W: 427 }, { W: 398 }, { W: 1319 }, { F: 253 },
+        { F: 70 }, { F: 51 }, { C: 106 }, { F: 41, C: 71 }, { F: 76 }, { C: 48 },
+        { F: 79 }, { F: 116 }, { C: 123 }, { C: 202 }, { C: 73 }, { F: 81, W: 34 },
+        { C: 138 }, { C: 50 }, { C: 31 }, { C: 175 }, { C: 152 }, { C: 520 }, { C: 127 },
+        { C: 122 }, { W: 168 }, { C: 304 }, { W: 518 }, { W: 185 }, { C: 102 },
+        { W: 201 },
+    ];
+
+    /** Species ids, and which is rarest. */
+    const SPECIES = { C: 1, W: 2, F: 3 };
+
+    /** The real groups as rows, each group its own scene. */
+    const realCorpus = () => {
+        const rows = [];
+        let at = 0;
+        let id = 1;
+
+        for (const group of REAL_GROUPS) {
+            /* Every observation of a group starts at the same frame, so the group holds
+               together whatever the buffer is, and the next group starts well clear. */
+            const start = at;
+            let longest = 0;
+
+            for (const [key, size] of Object.entries(group)) {
+                rows.push(observation({
+                    id: id++, first: start, last: start + size - 1,
+                    species: SPECIES[key], comname: key,
+                }));
+                longest = Math.max(longest, size);
+            }
+
+            at = start + longest + NEAR_MISS_FRAMES + 1000;
+        }
+
+        return selected(rows);
+    };
+
+    test('on the real shape, every species lands close to its requested share', () => {
+        /* The failure, measured: without stratification this selection gives the test
+           split 0 per cent of the rarest species and validation 8 per cent of a
+           requested 20. A model evaluated on a species its test set has none of tells
+           you nothing about that species at all. */
+        const splits = assignSplits(
+            connectedGroups(realCorpus()),
+            { train: 0.7, validation: 0.2, test: 0.1 }
+        );
+
+        for (const species of Object.values(SPECIES)) {
+            const total = [...splits.values()].reduce((sum, rows) => sum + framesOf(rows, species), 0);
+
+            expect(framesOf(splits.get('train'), species) / total).toBeCloseTo(0.7, 1);
+            expect(framesOf(splits.get('validation'), species) / total).toBeCloseTo(0.2, 1);
+            expect(framesOf(splits.get('test'), species) / total).toBeCloseTo(0.1, 1);
+        }
+    });
+
+    /** Many groups, one species far rarer than the other. */
+    const corpus = () => selected([
+        ...Array.from({ length: 30 }, (unused, i) => observation({
+            id: i + 1, first: i * 2000, last: i * 2000 + 300, species: 1, comname: 'Common',
+        })),
+        /* Twelve groups of a rare species, scattered so each is its own scene.
+           **Twelve rather than four, and that is a real limit rather than a tuned
+           fixture.** Groups are placed whole, so a split asking for a tenth of four
+           groups gets none of them -- no stratification can divide four things into
+           70/20/10. Worth knowing when a build covers few encounters of a rare
+           species: its smallest split may legitimately hold none. */
+        ...Array.from({ length: 12 }, (unused, i) => observation({
+            id: 100 + i, first: 500000 + i * 5000, last: 500000 + i * 5000 + 200,
+            species: 2, comname: 'Rare',
+        })),
+    ]);
+
+    test('a rare species reaches every split', () => {
+        /* The failure this exists to prevent: four groups of a rare species, placed by
+           overall size alone, can all land in train -- and the model is then evaluated
+           on a species eval has none of, which tells you nothing about either. */
+        const splits = assignSplits(connectedGroups(corpus()), { train: 0.7, eval: 0.3 });
+
+        for (const [, rows] of splits) {
+            expect(framesOf(rows, 2)).toBeGreaterThan(0);
+        }
+    });
+
+    test('the rare species is split close to the requested shares', () => {
+        const splits = assignSplits(connectedGroups(corpus()), { train: 0.75, eval: 0.25 });
+        const rare = [...splits.values()].reduce((sum, rows) => sum + framesOf(rows, 2), 0);
+
+        expect(framesOf(splits.get('train'), 2) / rare).toBeCloseTo(0.75, 1);
+    });
+
+    test('the overall shares are still close to what was asked for', () => {
+        // Stratifying must not cost the thing it was added beside.
+        const splits = assignSplits(connectedGroups(corpus()), { train: 0.7, eval: 0.3 });
+        const frames = (rows) => rows.reduce((s, r) => s + (r.last_framenum - r.first_framenum + 1), 0);
+        const total = frames([...splits.values()].flat());
+
+        expect(frames(splits.get('train')) / total).toBeCloseTo(0.7, 1);
+    });
+
+    test('three splits work, because train/validation/test is the real case', () => {
+        const splits = assignSplits(
+            connectedGroups(corpus()),
+            { train: 0.7, validation: 0.2, test: 0.1 }
+        );
+
+        expect([...splits.keys()].sort()).toEqual(['test', 'train', 'validation']);
+        for (const [, rows] of splits) expect(framesOf(rows, 2)).toBeGreaterThan(0);
+    });
+
+    test('the same query rebuilds the same dataset', () => {
+        /* Isaac: "we want to be able to rebuild the same exact dataset using the same
+           queries." Stratifying must not introduce any randomness. */
+        const ids = (m, name) => m.get(name).map((r) => r.observation_id).sort((a, b) => a - b);
+        const once = assignSplits(connectedGroups(corpus()), { train: 0.7, eval: 0.3 });
+        const again = assignSplits(connectedGroups(corpus()), { train: 0.7, eval: 0.3 });
+
+        expect(ids(once, 'train')).toEqual(ids(again, 'train'));
+        expect(ids(once, 'eval')).toEqual(ids(again, 'eval'));
     });
 });
 

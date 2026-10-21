@@ -22,6 +22,28 @@
  */
 
 /**
+ * How far apart two groups must be before they are different scenes.
+ *
+ * **Frame-exact overlap is not the only leak.** Two observations five frames apart in
+ * one video are nearly the same picture: the same patch of seabed, the same lighting,
+ * the animal barely moved. Put one in train and the other in eval and the evaluation is
+ * partly scored on pictures the model trained on, so the number comes back flattering
+ * and nothing downstream can tell.
+ *
+ * 125 frames is five seconds at 25fps, which is a long time in slow ROV transect video
+ * and short enough that genuinely separate encounters stay separate. **The right number
+ * is empirical**, not a constant somebody derived, which is why a build can ask for
+ * another -- raise it where the camera is near-stationary.
+ *
+ * Isaac, 2026-10-21, asked for it: *"we want to watch out for near miss leakage, we
+ * don't want to think our training is better than it is."*
+ *
+ * @constant
+ * @type {number}
+ */
+const NEAR_MISS_FRAMES = 125;
+
+/**
  * The connected groups of observations that share frames.
  *
  * Two observations are connected when they are in the same video and their frame spans
@@ -37,9 +59,11 @@
  *
  * @param {Array<Object>} rows - Selected observations, ordered by `video_source` then
  * `first_framenum`.
+ * @param {number} [buffer] - Frames of separation below which two groups are treated
+ * as one scene. See {@link NEAR_MISS_FRAMES}.
  * @returns {Array<Array<Object>>} The groups, in the order their first row appeared.
  */
-function connectedGroups(rows) {
+function connectedGroups(rows, buffer = NEAR_MISS_FRAMES) {
     const groups = [];
     let current = null;
     let reach = -1;
@@ -53,7 +77,12 @@ function connectedGroups(rows) {
            frame numbers are per video and comparing them across two is meaningless. */
         const sameVideo = row.video_source === video;
 
-        if (!current || !sameVideo || first > reach) {
+        /* `+ buffer`, not just `>`: two observations five frames apart are nearly the
+           same picture -- same scene, same lighting, the animal barely moved -- so
+           splitting them across train and eval scores the model on what it memorised.
+           Frame-exact overlap is the obvious leak; this is the one that quietly
+           flatters the number. */
+        if (!current || !sameVideo || first > reach + buffer) {
             current = [];
             groups.push(current);
             reach = last;
@@ -71,10 +100,22 @@ function connectedGroups(rows) {
 /**
  * Assign each group to a split, keeping the requested proportions.
  *
- * **Groups are placed whole and largest first.** Whole, because that is the rule. Largest
- * first, because placing a 400-frame group after the quota is nearly full overshoots by
- * however much is left of it -- greedy-largest keeps the realised proportions close to
- * the requested ones, which taking them in arrival order does not.
+ * **Groups are placed whole, and stratified by species.** Whole, because that is the
+ * rule. Stratified because a proportional split measured only in frames can put most of
+ * a rare species in one split and leave another without it -- with three species and
+ * seventy-three groups that is not a remote risk, and a model evaluated on a species it
+ * barely trained on tells you nothing useful about either.
+ *
+ * The method is **iterative stratification** (Sechidis et al., 2011), which is the
+ * established answer for multi-label data: a connected group can carry several species,
+ * so it cannot be put in one species' bucket. Each group goes to whichever split is
+ * furthest below its share *of the rarest species that group contains*, because the
+ * common species come out proportional whatever you do and the rare ones are what a
+ * naive split gets wrong. Ties fall back to overall frames, which keeps the sizes right.
+ *
+ * Measured in frames rather than observations throughout: frames are what the model
+ * sees, and one observation spanning 400 frames is not the contribution of one spanning
+ * two.
  *
  * Each group goes wherever it leaves the result closest to the requested share, measured
  * in frames rather than observations: frames are what the model sees, and one observation
@@ -104,29 +145,72 @@ function assignSplits(groups, ratios = { train: 0.8, eval: 0.2 }) {
         (sum, row) => sum + (Number(row.last_framenum) - Number(row.first_framenum) + 1), 0
     );
 
-    const ordered = groups
-        .map((group) => ({ group, size: frames(group) }))
-        .sort((a, b) => b.size - a.size || a.group[0].observation_id - b.group[0].observation_id);
+    /* Frames per species, per group and overall. A group is multi-label -- one stretch
+       of video can hold three species -- which is why simple stratified sampling does
+       not apply and why this is counted rather than bucketed. */
+    const speciesOf = (group) => {
+        const counted = new Map();
+
+        for (const row of group) {
+            const id = Number(row.species_id);
+            const span = Number(row.last_framenum) - Number(row.first_framenum) + 1;
+
+            counted.set(id, (counted.get(id) || 0) + span);
+        }
+
+        return counted;
+    };
+
+    const wanted = new Map();
+    const measured = groups.map((group) => {
+        const species = speciesOf(group);
+
+        for (const [id, count] of species) wanted.set(id, (wanted.get(id) || 0) + count);
+
+        return { group, size: frames(group), species };
+    });
+
+    /* Held per split per species, so "starved" is a question that can be asked. */
+    const heldSpecies = Object.fromEntries(names.map((name) => [name, new Map()]));
+
+    /* **Rarest first.** Iterative stratification: the examples carrying the scarcest
+       species are placed while every split still has room, because those are the ones a
+       proportional split gets wrong. A rare species placed last lands wherever is left
+       over, which is how train ends up without one. */
+    const rarity = (entry) => Math.min(...[...entry.species.keys()].map((id) => wanted.get(id) || 0));
+
+    const ordered = measured.sort((a, b) =>
+        rarity(a) - rarity(b)
+        || b.size - a.size
+        || a.group[0].observation_id - b.group[0].observation_id);
 
     let placed = 0;
 
-    for (const { group, size } of ordered) {
-        /* Where does this group leave the realised shares closest to the requested ones?
-           Measured after placing it, so a split that is already over its share stops
-           attracting groups rather than being topped up to the end. */
+    for (const entry of ordered) {
+        const { group, size, species } = entry;
+
+        /* Which split is furthest from its share **of the rarest species this group
+           carries**, falling back to overall frames when that cannot separate them.
+           Deciding on the rarest species rather than on the total is the whole point:
+           the common ones come out proportional whatever you do. */
+        const scarcest = [...species.keys()]
+            .sort((a, b) => (wanted.get(a) || 0) - (wanted.get(b) || 0))[0];
+
         let best = null;
-        let bestError = Infinity;
+        let bestShortfall = -Infinity;
 
         for (const name of names) {
-            const after = placed + size;
-            const error = names.reduce((sum, other) => {
-                const share = (held[other] + (other === name ? size : 0)) / (after || 1);
+            const have = heldSpecies[name].get(scarcest) || 0;
+            const target = (wanted.get(scarcest) || 0) * want[name];
+            const shortfall = target - have;
 
-                return sum + Math.abs(share - want[other]);
-            }, 0);
+            /* Ties -- and at the start every split is equally starved -- are broken by
+               overall frames, so the sizes stay proportional too. */
+            const overall = (placed + size) * want[name] - held[name];
+            const score = shortfall + overall / 1e6;
 
-            if (error < bestError) {
-                bestError = error;
+            if (score > bestShortfall) {
+                bestShortfall = score;
                 best = name;
             }
         }
@@ -134,6 +218,10 @@ function assignSplits(groups, ratios = { train: 0.8, eval: 0.2 }) {
         out.get(best).push(...group);
         held[best] += size;
         placed += size;
+
+        for (const [id, count] of species) {
+            heldSpecies[best].set(id, (heldSpecies[best].get(id) || 0) + count);
+        }
     }
 
     return out;
@@ -345,6 +433,7 @@ function boxAt(boxes, frame) {
 }
 
 module.exports = {
+    NEAR_MISS_FRAMES,
     assignFromSubsets,
     assignSplits,
     boxAt,
