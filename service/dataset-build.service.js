@@ -28,6 +28,8 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+const sharp = require('sharp');
+
 const logger = require('../logger/api.logger');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const mosaicRepository = require('../repository/mosaic.repository');
@@ -90,6 +92,65 @@ function directoryFor(split) {
     return directory;
 }
 
+/**
+ * How a training frame is written, and the one place that decides it.
+ *
+ * **JPEG, because every dataset MARP has ever trained on is JPEG.**
+ * `MARE_Video_Annotations/datasets/rockfish5/train` is JPEG at about 364 KB a frame, the
+ * pretrained weights everyone fine-tunes from learned on JPEG (COCO, VOC, Open Images),
+ * and the source here is H.264 video that has already discarded far more detail than
+ * JPEG does -- writing PNG preserves the video's own compression artifacts exactly, at
+ * nearly seven times the size. Measured on the same 219 frames: 1,690 KB each as PNG
+ * against 246 KB at quality 90.
+ *
+ * At the 50,000-frame datasets this is for, that is the difference between about 20 GB
+ * and about 85 GB.
+ *
+ * **Quality 95 rather than 90**, so a dataset built now is not *more* compressed than the
+ * ones the existing models learned on: 90 came out at 246 KB against the legacy's 364.
+ *
+ * **Switchable per build**, because this is a judgement about today's evidence rather
+ * than a law. If somebody later finds small distant animals need lossless frames, a
+ * build asks for `{format: 'png'}` and nothing else has to change.
+ */
+const DEFAULT_IMAGE = { format: 'jpeg', quality: 95 };
+
+/** The formats a build may ask for. */
+const IMAGE_FORMATS = ['jpeg', 'png'];
+
+/**
+ * Settle how this build writes its frames.
+ *
+ * Refuses an unknown format rather than quietly falling back, because a dataset built in
+ * a format nobody asked for is one somebody has to rebuild to find out.
+ *
+ * @param {Object} [asked] - `{format, quality}` from the job spec.
+ * @returns {{format: string, quality: number, extension: string}} What to write.
+ * @throws {Error} When the format is not one of {@link IMAGE_FORMATS}.
+ */
+function imageSettings(asked) {
+    const format = String((asked && asked.format) || DEFAULT_IMAGE.format).toLowerCase();
+
+    if (!IMAGE_FORMATS.includes(format)) {
+        throw new Error(`"${format}" is not an image format this builds in; it writes ${IMAGE_FORMATS.join(' or ')}`);
+    }
+
+    const asksQuality = asked && asked.quality !== undefined && asked.quality !== null;
+    const quality = asksQuality ? Number(asked.quality) : DEFAULT_IMAGE.quality;
+
+    if (!Number.isFinite(quality) || quality < 1 || quality > 100) {
+        throw new Error(`image quality must be between 1 and 100, not ${asked.quality}`);
+    }
+
+    // PNG is lossless, so a quality asked for alongside it would be ignored and the
+    // asker would never know. Say so instead.
+    if (format === 'png' && asksQuality) {
+        throw new Error('png is lossless, so it takes no quality; drop it or ask for jpeg');
+    }
+
+    return { format, quality, extension: format === 'jpeg' ? 'jpg' : 'png' };
+}
+
 /** Identifies this API to Jellyfin, the way the thumbnail path does. */
 const MEDIA_CLIENT_IDENTITY = { client: 'MARP API', device: 'dataset-build' };
 
@@ -134,9 +195,10 @@ function dataYaml(classes, directories = ['train', 'eval']) {
  * @async
  * @param {Object} entry - One `extractionPlan` entry: `{split, video, frames}`.
  * @param {string} staging - The build's staging directory.
+ * @param {Object} [image] - From {@link imageSettings}; how to write each frame.
  * @returns {Promise<{written: number, missing: number}>} What it managed.
  */
-async function cutVideo(entry, staging) {
+async function cutVideo(entry, staging, image = imageSettings()) {
     const resolved = await jellyfinRepository.resolveVideoSource(entry.video, 1, MEDIA_CLIENT_IDENTITY);
     const streamUrl = await jellyfinRepository.buildDirectStreamUrl(resolved.item.id, MEDIA_CLIENT_IDENTITY);
     const probe = await extraction.probeStream(streamUrl);
@@ -180,7 +242,16 @@ async function cutVideo(entry, staging) {
                in one split both have a frame 1200, and one would overwrite the other. */
             const stem = `${path.parse(entry.video).name}_${String(frame).padStart(8, '0')}`;
 
-            fs.renameSync(produced, path.join(images, `${stem}.png`));
+            /* The extractor writes PNG, because a thumbnail is cropped and re-processed
+               afterwards. A training frame is not, so it is re-encoded here -- see
+               `DEFAULT_IMAGE` for why that is JPEG and how to ask for something else. */
+            const destination = path.join(images, `${stem}.${image.extension}`);
+
+            if (image.format === 'png') fs.renameSync(produced, destination);
+            else {
+                await sharp(produced).jpeg({ quality: image.quality, mozjpeg: true }).toFile(destination);
+                fs.rmSync(produced, { force: true });
+            }
             fs.writeFileSync(path.join(labels, `${stem}.txt`), `${entry.frames.get(frame).join('\n')}\n`, 'utf8');
             written += 1;
         }
@@ -276,6 +347,10 @@ async function runOne() {
     const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'marp-dataset-'));
 
     try {
+        /* Settled before anything is cut, so a bad format fails in a second rather than
+           after an hour of extraction. */
+        const image = imageSettings(spec.image);
+
         await buildRepository.reportProgress(attempt.id, { phase: 'selecting', unit: 'frames' });
 
         /* Two shapes, because the builder has two. A dashboard build is a union of
@@ -332,7 +407,7 @@ async function runOne() {
                 return { cancelled: true, jobId: job.id };
             }
 
-            const cut = await cutVideo(entry, staging);
+            const cut = await cutVideo(entry, staging, image);
 
             done += cut.written;
             missing += cut.missing;
@@ -471,9 +546,12 @@ function stop() {
 
 module.exports = {
     ARCHIVE_DIRECTORY,
+    DEFAULT_IMAGE,
+    IMAGE_FORMATS,
     SPLIT_DIRECTORIES,
     cutVideo,
     directoryFor,
+    imageSettings,
     dataYaml,
     packageArchive,
     runOne,

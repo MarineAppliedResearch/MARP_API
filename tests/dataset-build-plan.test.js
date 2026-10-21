@@ -30,7 +30,13 @@ const {
     vocabulary,
 } = require('../service/dataset-build-plan');
 
-const { SPLIT_DIRECTORIES, dataYaml, directoryFor } = require('../service/dataset-build.service');
+const {
+    DEFAULT_IMAGE,
+    SPLIT_DIRECTORIES,
+    dataYaml,
+    directoryFor,
+    imageSettings,
+} = require('../service/dataset-build.service');
 
 /**
  * One selected observation.
@@ -334,6 +340,53 @@ describe('every split reaches the archive (#268)', () => {
         for (const split of Object.keys(SPLIT_DIRECTORIES)) {
             expect(Object.values(SPLIT_DIRECTORIES)).toContain(directoryFor(split));
         }
+    });
+});
+
+describe('how a frame is written (#268)', () => {
+
+    /* JPEG by default because every dataset MARP has trained on is JPEG and the source
+       is already-lossy H.264 -- but switchable, because that is today's evidence rather
+       than a law, and these datasets run to 50,000 frames where the difference is about
+       20 GB against about 85 GB. */
+
+    test('the default is JPEG, and it writes .jpg', () => {
+        expect(DEFAULT_IMAGE.format).toBe('jpeg');
+        expect(imageSettings().extension).toBe('jpg');
+        expect(imageSettings().quality).toBe(DEFAULT_IMAGE.quality);
+    });
+
+    test('the default quality is not below what the legacy datasets were built at', () => {
+        // rockfish5's frames are about 364 KB; quality 90 measured 246 KB on the same
+        // frames, so a new dataset at 90 would be more compressed than the ones the
+        // existing models learned on.
+        expect(DEFAULT_IMAGE.quality).toBeGreaterThan(90);
+    });
+
+    test('png can be asked for, and writes .png', () => {
+        const settings = imageSettings({ format: 'png' });
+
+        expect(settings.format).toBe('png');
+        expect(settings.extension).toBe('png');
+    });
+
+    test('the quality can be set', () => {
+        expect(imageSettings({ format: 'jpeg', quality: 85 }).quality).toBe(85);
+    });
+
+    test('an unknown format is refused rather than quietly defaulted', () => {
+        // A dataset built in a format nobody asked for is one somebody has to rebuild
+        // to find out about.
+        expect(() => imageSettings({ format: 'webp' })).toThrow(/not an image format/i);
+    });
+
+    test('a quality outside 1-100 is refused', () => {
+        expect(() => imageSettings({ quality: 0 })).toThrow(/between 1 and 100/i);
+        expect(() => imageSettings({ quality: 101 })).toThrow(/between 1 and 100/i);
+    });
+
+    test('png with a quality is refused, because png would ignore it', () => {
+        expect(() => imageSettings({ format: 'png', quality: 90 })).toThrow(/lossless/i);
     });
 });
 

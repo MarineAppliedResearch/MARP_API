@@ -136,6 +136,20 @@ function registerDatasetRoutes(app) {
                                     },
                                 },
                             },
+                            image: {
+                                type: 'object',
+                                description:
+                                    'How the frames are written. Defaults to JPEG at quality 95, which is what every dataset MARP '
+                                    + 'has trained on and what the pretrained weights learned from -- and the source is H.264 video, '
+                                    + 'which has already discarded more than JPEG does. Measured on the same 219 frames, PNG was 1,690 KB '
+                                    + 'each against 246 KB at quality 90, which at 50,000 frames is about 85 GB against about 20 GB. '
+                                    + '**Switchable because it is a judgement, not a law**: ask for `png` if lossless frames turn out to '
+                                    + 'matter. PNG takes no quality and saying both is refused rather than ignored.',
+                                properties: {
+                                    format: { type: 'string', enum: ['jpeg', 'png'], example: 'jpeg' },
+                                    quality: { type: 'integer', minimum: 1, maximum: 100, example: 95 },
+                                },
+                            },
                             splits: {
                                 type: 'object',
                                 description:
@@ -169,7 +183,7 @@ function registerDatasetRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            const { name, description, filters, splits, subsets } = req.body || {};
+            const { name, description, filters, splits, subsets, image } = req.body || {};
 
             if (!name || !String(name).trim()) {
                 throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A dataset name is required.');
@@ -184,6 +198,7 @@ function registerDatasetRoutes(app) {
                 description: description ? String(description) : null,
                 filters: filters || {},
                 subsets: Array.isArray(subsets) && subsets.length ? subsets : null,
+                image: image || null,
                 splits,
                 createdBy,
             });
