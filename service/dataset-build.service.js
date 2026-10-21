@@ -579,6 +579,13 @@ async function loop() {
 
     try {
         live.running = true;
+
+        /* Before taking new work, return anything a dead process left behind. A build
+           abandoned by a restart sits `running` with nobody running it, and the dataset
+           sits `building` for ever -- which is what the first fifty-minute build did,
+           three times, while `npm run dev` restarted on file changes. */
+        await buildRepository.reclaimAbandonedBuilds();
+
         worked = Boolean(await runOne());
     } catch (error) {
         logger.error(`Dataset build loop: ${error && error.message}`);

@@ -134,6 +134,77 @@ async function queueBuild({ name, description = null, filters = {}, subsets = nu
  * @returns {Promise<?{job: Object, attempt: Object}>} The claimed build, or null.
  * @throws {Error} Re-throws any database failure.
  */
+/**
+ * Return builds whose runner is gone to the queue.
+ *
+ * **A build does not survive the API restarting, and nothing noticed.** The process
+ * holding it dies, the attempt row stays `running`, the dataset stays `building`, and
+ * nobody is working on either -- for ever. Found during the first build long enough for
+ * it to happen: `npm run dev` restarted three times on file changes during a fifty-minute
+ * run, and each restart silently abandoned the work.
+ *
+ * **Decided by the lease, not by "this process just started".** A second API process
+ * would make startup a lie -- its own fresh start says nothing about whether another
+ * machine is mid-build -- whereas a lease that has not been extended for an hour means
+ * nobody is reporting progress on it, whichever process that was. `reportProgress`
+ * extends the lease on every pass, so a live build never looks abandoned.
+ *
+ * A reclaimed build goes back to `queued` and starts again from the beginning, because
+ * its staging directory went with the process that died. The attempt is kept, marked
+ * `abandoned` -- a state this table already had and which is exactly the word -- so the
+ * history shows the build was tried and lost rather than never run.
+ * Once the attempts are spent the job fails for good and says why.
+ *
+ * @async
+ * @returns {Promise<number>} How many were reclaimed.
+ */
+async function reclaimAbandonedBuilds() {
+    const [reclaimed] = await db.sequelize.query(
+        `WITH abandoned AS (
+                SELECT j.id AS job_id, a.id AS attempt_id,
+                       j.attempts_made < j.max_attempts AS retryable
+                  FROM gpu_jobs j
+                  JOIN gpu_job_attempts a ON a.job_id = j.id
+                 WHERE j.kind = 'dataset_build'
+                   AND j.state = 'leased'
+                   AND a.state = 'running'
+                   AND a.lease_expires_at < NOW()
+                   FOR UPDATE OF j SKIP LOCKED
+         ),
+         closed AS (
+                UPDATE gpu_job_attempts a
+                   SET state = 'abandoned',
+                       finished_at = NOW(),
+                       failure_reason = 'The API stopped while this build was running, so it was abandoned.'
+                  FROM abandoned ab
+                 WHERE a.id = ab.attempt_id
+                 RETURNING ab.job_id, ab.retryable
+         ),
+         requeued AS (
+                UPDATE gpu_jobs j
+                   SET state = CASE WHEN c.retryable THEN 'queued' ELSE 'failed' END,
+                       finished_at = CASE WHEN c.retryable THEN NULL ELSE NOW() END,
+                       updated_at = NOW()
+                  FROM closed c
+                 WHERE j.id = c.job_id
+                 RETURNING j.id, j.spec->>'dataset_id' AS dataset_id, c.retryable
+         )
+         UPDATE datasets d
+            SET status = CASE WHEN r.retryable THEN 'building' ELSE 'failed' END,
+                updated_at = NOW()
+           FROM requeued r
+          WHERE d.id = (r.dataset_id)::int
+          RETURNING d.id`,
+        { type: db.Sequelize.QueryTypes.SELECT }
+    );
+
+    const count = Array.isArray(reclaimed) ? reclaimed.length : (reclaimed ? 1 : 0);
+
+    if (count) logger.info(`Reclaimed ${count} dataset build(s) abandoned by a restart.`);
+
+    return count;
+}
+
 async function claimBuild() {
     const workerId = await apiWorkerId();
     const transaction = await db.sequelize.transaction();
@@ -423,6 +494,7 @@ module.exports = {
     failBuild,
     isCancelled,
     queueBuild,
+    reclaimAbandonedBuilds,
     recordBuild,
     reportProgress,
 };
