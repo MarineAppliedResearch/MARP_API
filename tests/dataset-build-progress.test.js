@@ -24,6 +24,7 @@
 const { QueryTypes } = require('sequelize');
 
 const db = require('../model');
+const buildRepository = require('../repository/dataset-build.repository');
 
 describe('GET /api/v2/dataset/builds', () => {
 
@@ -174,6 +175,13 @@ describe('GET /api/v2/dataset/builds', () => {
             await db.sequelize.query('DELETE FROM dataset_observations WHERE dataset_id = :id',
                 { replacements: { id } });
             await db.sequelize.query('DELETE FROM dataset_classes WHERE dataset_id = :id',
+                { replacements: { id } });
+        }
+
+        /* A reading hangs off an attempt, so it goes first -- and it is a row this file
+           created just as much as the attempt is. */
+        for (const id of made.attempts) {
+            await db.sequelize.query('DELETE FROM gpu_attempt_progress WHERE attempt_id = :id',
                 { replacements: { id } });
         }
 
@@ -389,6 +397,133 @@ describe('GET /api/v2/dataset/builds', () => {
 
         expect(res.status).toBe(200);
         expect(res.body.some((build) => build.job_id === job.id)).toBe(false);
+    });
+
+    /**
+     * Keeping a reading per minute, which is what makes a *rate* answerable.
+     *
+     * The attempt row holds where a build is now and is overwritten by every report, so it
+     * can never say how fast anything went. `gpu_attempt_progress` is the second reading,
+     * and `GET /gpu/throughput/series` differences consecutive ones. The pool's heartbeat
+     * has written it since `20261020130000`; a build wrote only to the attempt, so the
+     * Datasets screen's Build activity panel had no series and said so on screen.
+     */
+    describe('keeping a reading so a rate can be worked out', () => {
+        /** The readings this file's own attempt produced. */
+        const readings = (attemptId) => db.sequelize.query(
+            `SELECT at, progress_done, progress_total, progress_unit, job_kind
+               FROM gpu_attempt_progress WHERE attempt_id = :attemptId ORDER BY at`,
+            { replacements: { attemptId }, type: QueryTypes.SELECT }
+        );
+
+        it('writes a reading carrying the build kind, so the series can be narrowed', async () => {
+            const worker = await seedWorker();
+            const { jobId } = await seedBuild({ name: 'jest-sampled', state: 'leased' });
+            const attemptId = await seedAttempt({ jobId, workerId: worker, epoch: 1 });
+
+            await buildRepository.reportProgress(attemptId, {
+                phase: 'extracting', done: 400, total: 1456, unit: 'frames',
+            });
+
+            const kept = await readings(attemptId);
+
+            expect(kept).toHaveLength(1);
+            expect(Number(kept[0].progress_done)).toBe(400);
+            expect(Number(kept[0].progress_total)).toBe(1456);
+            expect(kept[0].progress_unit).toBe('frames');
+            /* Without this the reading is invisible to `?kind=dataset_build`, which is how
+               the panel tells build work from the pool's. */
+            expect(kept[0].job_kind).toBe('dataset_build');
+        });
+
+        /**
+         * One row per attempt per minute. The runner reports once per 400-frame pass, which
+         * on a fast video is several times a minute, and a chart cannot draw more than a
+         * point a minute anyway -- so the later reading replaces the earlier rather than
+         * adding to it. The unique key on `(attempt_id, at)` is what enforces it, and an
+         * insert that did not say `ON CONFLICT` would throw on the second pass and, because
+         * this runs inside the extraction loop, take the build with it.
+         */
+        it('replaces rather than adds when two reports land in the same minute', async () => {
+            const worker = await seedWorker();
+            const { jobId } = await seedBuild({ name: 'jest-sampled-twice', state: 'leased' });
+            const attemptId = await seedAttempt({ jobId, workerId: worker, epoch: 1 });
+
+            await buildRepository.reportProgress(attemptId, { phase: 'extracting', done: 400, total: 1456, unit: 'frames' });
+            await buildRepository.reportProgress(attemptId, { phase: 'extracting', done: 800, total: 1456, unit: 'frames' });
+
+            const kept = await readings(attemptId);
+
+            expect(kept).toHaveLength(1);
+            expect(Number(kept[0].progress_done)).toBe(800);
+        });
+
+        /**
+         * The *selecting* phase reports a phase and no counts, because the total is not
+         * knowable until the observations and their videos are resolved. A row claiming zero
+         * there reads as "no frames in that minute" rather than "not counting yet" -- a line
+         * along the floor instead of no line at all.
+         */
+        it('keeps no reading for a report that carries no count', async () => {
+            const worker = await seedWorker();
+            const { jobId } = await seedBuild({ name: 'jest-selecting-sample', state: 'leased' });
+            const attemptId = await seedAttempt({ jobId, workerId: worker, epoch: 1 });
+
+            await buildRepository.reportProgress(attemptId, { phase: 'selecting', unit: 'frames' });
+
+            expect(await readings(attemptId)).toHaveLength(0);
+        });
+
+        /**
+         * **A sample that cannot be written must not fail the build.** This runs inside the
+         * extraction loop, and a build is hours of ffmpeg; losing a point off a graph is not
+         * a reason to throw that away. An attempt id with no row is the cheapest way to make
+         * the insert fail -- the foreign key refuses it -- and the call still resolves.
+         */
+        it('does not fail a build when the reading cannot be written', async () => {
+            await expect(buildRepository.sampleProgress(-1, { done: 400, total: 1456, unit: 'frames' }))
+                .resolves.toBeUndefined();
+        });
+
+        /**
+         * And the point of all of it: the reading reaches the route the panel reads, as a
+         * difference between two of them rather than as a total. Two readings a minute
+         * apart, so they land in different buckets and the second differences against the
+         * first.
+         */
+        it('reaches GET /gpu/throughput/series as a difference, under the build kind', async () => {
+            const worker = await seedWorker();
+            const { jobId } = await seedBuild({ name: 'jest-series', state: 'leased' });
+            const attemptId = await seedAttempt({ jobId, workerId: worker, epoch: 1 });
+
+            /* Written at two chosen minutes rather than through `sampleProgress`, which
+               stamps `now`: a test that waited a minute for the second bucket would take a
+               minute. The shape is the one `sampleProgress` writes. */
+            for (const [minutesAgo, done] of [[2, 400], [1, 1456]]) {
+                await db.sequelize.query(
+                    `INSERT INTO gpu_attempt_progress
+                            (attempt_id, at, progress_done, progress_total, progress_unit, job_kind)
+                     VALUES (:attemptId,
+                             date_trunc('minute', NOW() - make_interval(mins => :minutesAgo)),
+                             :done, 1456, 'frames', 'dataset_build')`,
+                    { replacements: { attemptId, minutesAgo, done } }
+                );
+            }
+
+            const res = await global.api
+                .get('/api/v2/gpu/throughput/series')
+                .query({ kind: 'dataset_build', bucket: 'minute' });
+
+            expect(res.status).toBe(200);
+
+            /* Scoped to the figure this test seeded rather than to the whole answer: a real
+               build on the machine running the suite is an ordinary thing, and an assertion
+               about the total would pass on an idle database and fail on a busy one. The
+               difference is 1456 - 400, which is the work done between the two readings. */
+            const differences = (res.body.points || []).map((p) => Number(p.units_done));
+
+            expect(differences).toContain(1056);
+        });
     });
 
     /**

@@ -4209,104 +4209,119 @@ function wireTrainingActivity() {
   }
 }
 
-/* Dataset creation is long-running system work. The aggregate chart uses a
-   throughput scale for materialized frames and a job-count scale for running,
-   queued and completed build jobs. */
+/**
+ * The Datasets screen's Build activity chart.
+ *
+ * Frames extracted per bucket, against how many builds were waiting and how many finished.
+ * **Two routes, because they measure two different things**, asked in parallel and drawn on
+ * one pair of axes: the rate comes from `GET /gpu/throughput/series`, which differences the
+ * per-minute readings in `gpu_attempt_progress`, and the counts come from
+ * `GET /gpu/jobs/series`, which counts `gpu_jobs` rows and reconstructs what was waiting.
+ * Both take `kind=dataset_build`, so neither sees the pool's own work.
+ *
+ * This panel used to say, on screen, that none of it was recorded -- true when a build was
+ * not a job, and false since #268 made it one. What it drew behind that paragraph was worse:
+ * an animated fixture of invented frame counts that only stayed hidden because the markup
+ * had no SVG for it to find.
+ *
+ * **Concurrency is not drawn, and that is a decision rather than a gap.** The panel asked
+ * for it, but `service/dataset-build.service.js` takes builds one at a time on purpose -- a
+ * build is a second consumer of the media server the thumbnail extractor protects with a
+ * concurrency ceiling -- so the number can only ever be 0 or 1 and a chart of it is a square
+ * wave that tells a reader what the design already decided. The subtitle names the three
+ * things this draws instead of promising a fourth. See `DESIGN.md`, *Decisions*.
+ *
+ * **Queue pressure is counted in builds, not in frames.** `GET /gpu/throughput/series` also
+ * answers a backlog, but it measures it in units of work read out of `spec.range`, which is
+ * an inference job's shape -- a build's spec carries filters, and how many frames it will
+ * cut is not known until it has selected them. So that figure is always zero for a build,
+ * and the honest backlog is how many builds have not finished.
+ *
+ * @returns {Promise<void>}
+ */
 function wireDatasetActivity() {
   const root = $('[data-dataset-activity]');
-  if (!root) return;
-  /* **The guard has to be on the chart, not on the panel.** The panel can now
-     carry an honest "not recorded yet" body instead of a fabricated series, and
-     when it does the SVG this animates is gone. Guarding only on the panel let
-     this run anyway, throw on a missing element, and take the rest of the boot
-     script with it -- so the tables below never rendered and it looked like the
-     API had failed. */
-  if (!$('.dataset-chart svg', root)) return;
-  const ranges = {
-    '24h': { labels: ['24h ago', '12h ago', 'Now'],
-      throughput: [0,0,180,260,420,610,720,840,910,760,620,500,390,460,580,740,920,1040,980,850,690,720,760,780],
-      running: [0,0,1,1,1,2,2,2,3,3,2,2,1,1,2,2,3,3,3,2,2,2,2,2],
-      queued: [1,1,1,2,2,3,3,4,4,4,3,3,2,2,3,4,5,5,4,4,4,3,3,3],
-      completed: [0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0] },
-    '7d': { labels: ['7d ago', '3.5d ago', 'Now'],
-      throughput: [310,460,620,540,180,0,240,590,810,760,390,120,360,680,940,870,510,280,440,790,1020,900,560,330,520,840,730,780],
-      running: [1,2,2,2,1,0,1,2,3,3,1,1,1,2,3,3,2,1,2,3,4,3,2,1,2,3,2,2],
-      queued: [2,2,3,3,2,1,1,3,4,4,3,2,2,4,5,5,4,3,3,5,6,5,4,3,3,4,3,3],
-      completed: [0,1,0,1,0,0,1,0,1,0,1,0,0,1,1,0,1,0,1,0,1,1,0,1,0,1,0,1] },
-    '30d': { labels: ['30d ago', '15d ago', 'Now'],
-      throughput: [220,510,430,680,790,540,210,0,390,720,860,610,330,170,460,780,990,820,490,260,570,910,1080,870,520,300,620,900,740,780],
-      running: [1,2,2,3,3,2,1,0,1,3,3,2,1,1,2,3,4,3,2,1,2,3,4,3,2,1,2,3,2,2],
-      queued: [1,2,3,4,4,3,2,1,2,3,5,4,3,2,3,4,5,5,3,2,4,5,6,5,4,3,4,5,4,3],
-      completed: [0,1,0,1,1,0,1,0,0,1,1,0,1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1,0,1] }
-  };
-  const buttons = $$('[data-dataset-range]', root);
-  const lines = Object.fromEntries($$('[data-dataset-line]', root).map((line) => [line.dataset.datasetLine, line]));
-  const area = $('[data-dataset-area="throughput"]', root);
-  const bars = $('[data-dataset-bars="completed"]', root);
-  const chart = $('.dataset-chart', root);
-  let range = '24h';
-  let samples;
-  let tick = 0;
-  const coords = (values, scale) => values.map((value, index) => {
-    const x = 54 + 672 * index / Math.max(1, values.length - 1);
-    const max = scale === 'throughput' ? 1200 : 8;
-    return [x, 196 - 168 * Math.max(0, Math.min(max, value)) / max];
+  /* **The guard is on the chart, not on the panel.** This threw on a missing SVG once and
+     took the rest of the boot script with it, so the tables below never rendered and it
+     looked like the API had failed. */
+  if (!root || !$('.dataset-chart svg', root)) return;
+
+  return drawSeriesChart({
+    root,
+    prefix: 'dataset',
+    initial: '24h',
+    ranges: {
+      '24h': { since: (u) => new Date(u - 24 * 3600e3), bucket: 'hour', label: 'the last 24 hours', empty: 'No build activity' },
+      '7d': { since: (u) => new Date(u - 7 * 24 * 3600e3), bucket: 'day', label: 'the last 7 days', empty: 'No build activity' },
+      '30d': { since: (u) => new Date(u - 30 * 24 * 3600e3), bucket: 'day', label: 'the last 30 days', empty: 'No build activity' },
+    },
+    fetch: (span) => Promise.all([
+      window.MarpApi.throughputSeries({ ...span, kind: 'dataset_build' }),
+      window.MarpApi.jobSeries({ ...span, kind: 'dataset_build' }),
+    ]).then(([rate, jobs]) => ({ rate, jobs })),
+    read: ({ rate, jobs }) => {
+      /* The two routes bucket the same window the same way, but only the jobs route
+         generates a row per bucket -- the rate route groups what it found, so a bucket
+         where nothing was extracted is simply absent. Keyed by instant and read back
+         along the jobs series, so the two lines cannot slide against each other. */
+      const extracted = new Map((rate.points || [])
+        .map((p) => [new Date(p.at).getTime(), Number(p.units_done) || 0]));
+
+      const points = jobs.points || [];
+      const frames = points.map((p) => extracted.get(new Date(p.at).getTime()) || 0);
+      const waiting = points.map((p) => Number(p.waiting) || 0);
+      /* **`succeeded`, not `finished`.** A build that failed has finished, and counting it
+         under a line labelled *completed* would say a dataset came out of it. The failures
+         are not hidden -- *Needs attention* above counts them -- and the two numbers
+         disagreeing is the point: seven builds ended here and five produced an archive. */
+      const finished = points.map((p) => Number(p.succeeded) || 0);
+
+      const peakFrames = Math.max(...frames, 0);
+      const peakBuilds = Math.max(...waiting, ...finished, 0);
+
+      /* Nothing extracted *and* nothing queued or finished. Either one alone is worth
+         drawing: a build selecting its observations has cut no frames yet and is still
+         activity, and a window of finished builds with no extraction in it is a window
+         whose work happened earlier. */
+      const quiet = !points.length || (peakFrames === 0 && peakBuilds === 0);
+
+      /* `waiting` is reconstructed per bucket, so the current backlog is the last one
+         rather than a sum -- adding them would count one waiting build once per hour it
+         waited. `finished` is a count of events, so that one does sum. */
+      const waitingNow = waiting.at(-1) || 0;
+      const completed = finished.reduce((sum, n) => sum + n, 0);
+
+      return {
+        points,
+        quiet,
+        series: { rate: frames, waiting, finished },
+        scales: {
+          rate: Math.max(1, peakFrames),
+          waiting: Math.max(1, peakBuilds),
+          finished: Math.max(1, peakBuilds),
+          left: Math.max(1, peakFrames),
+          right: Math.max(1, peakBuilds),
+          /* Rounded before formatting. The axis divides the peak into four, so a peak
+             of 1,456 gives a tick of 970.666..., and `compactCount` formats a count
+             rather than rounding one -- the axis read `970.667`. */
+          formatLeft: (v) => compactCount(Math.round(v)),
+          /* Builds are counted in ones and the axis has four ticks, so a thousands
+             separator never fires and a fractional tick would be a build and a half. */
+          formatRight: (v) => String(Math.round(v)),
+        },
+        current: {
+          rate: compactCount(frames.at(-1)),
+          waiting: String(waitingNow),
+          finished: String(completed),
+          aria: `Dataset build activity: ${compactCount(frames.at(-1))} frames extracted in the last bucket, `
+            + `${waitingNow} build${waitingNow === 1 ? '' : 's'} waiting, ${completed} completed`,
+          /* Said only while something is in flight, because "0 building" is what the
+             cards above already say and a second copy of it is noise. */
+          building: waitingNow ? `${waitingNow} in flight` : '',
+        },
+      };
+    },
   });
-  const pathOf = (values, scale) => coords(values, scale)
-    .map(([x, y], index) => `${index ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  const barsOf = (values) => {
-    const width = Math.min(14, 480 / values.length);
-    return coords(values, 'jobs').map(([x, y], index) => values[index]
-      ? `M${(x - width / 2).toFixed(1)},196 V${y.toFixed(1)} H${(x + width / 2).toFixed(1)} V196 Z` : '').join(' ');
-  };
-  const draw = () => {
-    const throughputPath = pathOf(samples.throughput, 'throughput');
-    lines.throughput.setAttribute('d', throughputPath);
-    lines.running.setAttribute('d', pathOf(samples.running, 'jobs'));
-    lines.queued.setAttribute('d', pathOf(samples.queued, 'jobs'));
-    area.setAttribute('d', `${throughputPath} L726,196 L54,196 Z`);
-    bars.setAttribute('d', barsOf(samples.completed));
-    const completed = samples.completed.reduce((sum, value) => sum + value, 0);
-    $('[data-dataset-current="throughput"]', root).textContent = Math.round(samples.throughput.at(-1));
-    $('[data-dataset-current="running"]', root).textContent = samples.running.at(-1);
-    $('[data-dataset-current="queued"]', root).textContent = samples.queued.at(-1);
-    $('[data-dataset-current="completed"]', root).textContent = completed;
-    const label = `All dataset build activity over ${range}: ${Math.round(samples.throughput.at(-1))} frames materialized per minute, ${samples.running.at(-1)} building, ${samples.queued.at(-1)} queued and ${completed} builds completed`;
-    chart.setAttribute('aria-label', label);
-    chart.title = label;
-  };
-  const choose = (next) => {
-    range = next;
-    samples = Object.fromEntries(Object.entries(ranges[range]).filter(([name]) => name !== 'labels')
-      .map(([name, values]) => [name, [...values]]));
-    buttons.forEach((button) => { const on = button.dataset.datasetRange === range; button.classList.toggle('on', on); button.setAttribute('aria-pressed', String(on)); });
-    $$('[data-dataset-time]', root).forEach((label, index) => { label.textContent = ranges[range].labels[index]; });
-    draw();
-  };
-  buttons.forEach((button) => button.addEventListener('click', () => choose(button.dataset.datasetRange)));
-  const highlightButtons = $$('[data-dataset-highlight]', root);
-  const highlight = (name = '') => {
-    const active = root.dataset.highlight === name ? '' : name;
-    root.dataset.highlight = active;
-    root.classList.toggle('is-highlighted', Boolean(active));
-    highlightButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.datasetHighlight === active)));
-    $$('.dataset-line, .dataset-area, .dataset-bars', root).forEach((mark) => mark.classList.toggle('highlighted', Boolean(active) && mark.classList.contains(active)));
-  };
-  highlightButtons.forEach((button) => {
-    button.title = `Highlight only ${button.textContent.trim()} on this graph; select it again or press Escape to restore all series`;
-    button.setAttribute('aria-pressed', 'false');
-    button.addEventListener('click', () => highlight(button.dataset.datasetHighlight));
-  });
-  root.addEventListener('keydown', (event) => { if (event.key === 'Escape' && root.classList.contains('is-highlighted')) highlight(''); });
-  choose(range);
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const movement = [18, -12, 8, -6, 12, -8];
-    window.setInterval(() => {
-      samples.throughput[samples.throughput.length - 1] = Math.max(0, Math.min(1200, samples.throughput.at(-1) + movement[tick % movement.length]));
-      tick += 1;
-      draw();
-    }, 3000);
-  }
 }
 
 /**

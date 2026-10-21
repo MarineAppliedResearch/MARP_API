@@ -261,6 +261,14 @@ async function claimBuild() {
  * build runs for hours and a lease that expired mid-way would have the job requeued
  * underneath it.
  *
+ * **Two writes, because they answer two different questions.** The attempt row holds where
+ * the build is *now*, which is what the Datasets screen reads while somebody watches it;
+ * `gpu_attempt_progress` keeps a reading per minute, which is the only way a *rate* can be
+ * worked out afterwards. A rate needs two readings, and the attempt row has one -- every
+ * report overwrites it. The pool's heartbeat has written both since `20261020130000`; a
+ * build reported onto the attempt and nothing else, so the Build activity panel had no
+ * series to draw and said so on screen.
+ *
  * @async
  * @param {number} attemptId - The attempt.
  * @param {Object} progress - `{done, total, unit, phase}`.
@@ -286,6 +294,58 @@ async function reportProgress(attemptId, progress) {
             },
         }
     );
+
+    await sampleProgress(attemptId, progress);
+}
+
+/**
+ * Keep this reading, so the rate can be worked out later.
+ *
+ * One row per attempt per minute, upserted -- the same grain and the same conflict rule
+ * the pool's heartbeat uses, because `GET /gpu/throughput/series` differences these rows
+ * and cannot tell one writer from another. `job_kind` is what lets that route answer for
+ * dataset builds apart from inference.
+ *
+ * **Only a reading with a count.** The *selecting* phase reports a phase and no numbers --
+ * the total is not knowable until the observations and their videos are resolved -- and a
+ * row claiming zero there would be read as "no frames in that minute" rather than "not
+ * counting yet", which is a flat line at the floor instead of no line at all.
+ *
+ * **A failure here never fails the build.** This is a sample for a chart; the build is
+ * hours of extraction, and losing a point off a graph is not a reason to throw it away.
+ * The attempt row above is the record a reader actually depends on, and it is already
+ * written by the time this runs.
+ *
+ * @async
+ * @param {number} attemptId - The attempt this reading belongs to.
+ * @param {Object} progress - `{done, total, unit}`; a null `done` is not sampled.
+ * @returns {Promise<void>}
+ */
+async function sampleProgress(attemptId, progress) {
+    if (progress.done === undefined || progress.done === null) return;
+
+    try {
+        await db.sequelize.query(
+            `INSERT INTO gpu_attempt_progress
+                    (attempt_id, at, progress_done, progress_total, progress_unit, job_kind)
+             VALUES (:attemptId, date_trunc('minute', NOW()), :done, :total, :unit, 'dataset_build')
+             ON CONFLICT (attempt_id, at)
+             DO UPDATE SET progress_done = EXCLUDED.progress_done,
+                           progress_total = EXCLUDED.progress_total,
+                           progress_unit = EXCLUDED.progress_unit,
+                           job_kind = EXCLUDED.job_kind`,
+            {
+                replacements: {
+                    attemptId,
+                    done: progress.done,
+                    total: progress.total ?? null,
+                    unit: progress.unit ?? null,
+                },
+            }
+        );
+    } catch (error) {
+        logger.error(`Dataset build progress sample for attempt ${attemptId}: ${error && error.message}`);
+    }
 }
 
 /**
@@ -497,4 +557,5 @@ module.exports = {
     reclaimAbandonedBuilds,
     recordBuild,
     reportProgress,
+    sampleProgress,
 };
