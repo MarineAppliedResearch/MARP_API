@@ -5214,7 +5214,24 @@ function fillSavedDatasets(body, datasets, builds) {
     return `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
   };
 
-  body.innerHTML = datasets.map((set) => {
+  /* **Newest first, which is what the column header has always claimed.** The CREATED
+     header carries `aria-sort="descending"` and nothing sorted anything: the rows arrived
+     in whatever order `GET /dataset` returned, which is Postgres's physical order and is
+     not an order at all. A build queued a minute ago landed third. Sorted on a copy, so
+     the caller's array is not reordered underneath it.
+
+     `created_at` rather than `updated_at`: a build that reports progress touches
+     `updated_at` every few seconds, so sorting on that would shuffle the table under
+     somebody reading it. When it was queued is a fact that stays still. */
+  const newestFirst = [...datasets].sort((a, b) => {
+    const at = Date.parse(b.created_at) - Date.parse(a.created_at);
+
+    /* Two datasets created in the same millisecond is a tie the id breaks, so the order
+       is total and a re-render cannot reshuffle equal rows. */
+    return at || (b.id - a.id);
+  });
+
+  body.innerHTML = newestFirst.map((set) => {
     const build = builds.get(set.id) || null;
     const frames = buildFramesCell(build, set);
 
@@ -5344,7 +5361,9 @@ function patchBuildRows(body, builds) {
       cell.dataset.sort = String(frames.sort);
     }
 
-    const pill = $('.jstatus .pill', head);
+    /* The text node only. Writing `textContent` on the pill removed the dot with it, so
+       the first poll after a row was drawn stopped it pulsing. */
+    const pill = $('.jstatus .pill [data-pill-text]', head);
     if (pill) pill.textContent = datasetBuildLabel(head.dataset.datasetStatus, build);
 
     const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
@@ -5403,6 +5422,27 @@ function tickBuildClocks(detail, build) {
 
   const reported = $('[data-build-reported]', detail);
   if (reported) reported.textContent = buildReported(build) || NOT_STARTED_TEXT;
+}
+
+/**
+ * The pill for a build row: a pulsing dot while it is running, then the label.
+ *
+ * **The dot is the Jobs screen's, not a second one.** `.st[data-state="running"] .dot`
+ * has pulsed there all along; this screen drew a bare pill, so a build that was extracting
+ * looked exactly like one that had stopped. Reusing it means one answer to what *running*
+ * looks like, and the reduced-motion guard comes with it.
+ *
+ * `leased`, not merely "has a build": a failed build keeps its last phase, and a pulsing
+ * dot on it would say it is still going.
+ *
+ * @param {string} status - This screen's own status vocabulary.
+ * @param {?Object} build - The build behind the row, if there is one.
+ * @returns {string} The pill's inner HTML.
+ */
+function datasetPillContents(status, build) {
+  const dot = build && build.state === 'leased' ? '<span class="dot"></span>' : '';
+
+  return `${dot}<span data-pill-text>${datasetBuildLabel(status, build)}</span>`;
 }
 
 /** What a build row's pill says: the phase while it runs, the state otherwise. */
@@ -5508,7 +5548,7 @@ async function wireDatasetPage() {
          watching a four-hour build wants from the one piece of prose on the row, and
          *Building* is what they already knew from opening the screen. The filter still
          keys on `data-dataset-status`, so filtering by Building is unchanged. */
-      state.innerHTML = `<span class="pill" data-state="${stateTone}">${datasetBuildLabel(status, build)}</span>`;
+      state.innerHTML = `<span class="pill" data-state="${stateTone}">${datasetPillContents(status, build)}</span>`;
       task.after(state);
       const expand = document.createElement('td');
       expand.className = 'ex';
@@ -5589,7 +5629,7 @@ async function wireDatasetPage() {
         detail.className = 'runrow-body dataset-row-detail';
         detail.hidden = true;
         detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}">`
-          + `<header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">${datasetBuildLabel(status, build)}</span></header>`
+          + `<header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">${datasetPillContents(status, build)}</span></header>`
           + `<div class="dataset-build-progress">${bar}<span class="build-frames">${frames} frames</span></div>`
           + note
           + `<div class="jobmetrics">${metrics}</div>`

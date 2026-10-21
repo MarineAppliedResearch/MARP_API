@@ -922,7 +922,12 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .st { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
       color: var(--s); font-weight: 500; }
 .st[data-state="running"] .dot,
-.st[data-state="cancelling"] .dot { animation: pulse 2s ease-in-out infinite; }
+.st[data-state="cancelling"] .dot,
+/* The Datasets screen says a build is running with a pill rather than an `.st`, and a
+   running build looked identical to a finished one -- it said `Extracting` and then sat
+   there. Same dot, same pulse, same reduced-motion guard as the Jobs screen: the two
+   screens drawing one state differently was the bug. */
+.pill[data-state="running"] .dot { animation: pulse 2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
 
