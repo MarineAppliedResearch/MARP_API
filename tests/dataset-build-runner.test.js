@@ -259,7 +259,11 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
     test('progress counts across videos rather than restarting at each one', async () => {
         const done = progress.mock.calls
             .map(([, report]) => report)
-            .filter((report) => report.phase === 'extracting')
+            /* `startsWith`, not equality: the phase carries which video and how far
+               through the list -- "extracting 2/6 …163021_Fwd" -- because a build sits
+               on one video for minutes and a bare "extracting" gave no way to tell
+               working from wedged. */
+            .filter((report) => String(report.phase || '').startsWith('extracting'))
             .map((report) => report.done);
 
         /* Three videos, and the count that is reported is the build's, not this video's.
@@ -736,7 +740,7 @@ describe('a video with more frames than one ffmpeg pass can ask for (#268)', () 
     test('progress moves while the video is still being cut, not only when it is done', async () => {
         const extracting = progress.mock.calls
             .map(([, report]) => report)
-            .filter((report) => report.phase === 'extracting' && report.total === WANTED);
+            .filter((report) => String(report.phase || '').startsWith('extracting') && report.total === WANTED);
 
         /* A four-hour build over a handful of long videos reported nothing between
            videos, so the number sat still for an hour at a time. Reported per pass, it
