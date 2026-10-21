@@ -76,6 +76,8 @@ route was built against for the sake of two functions.
 | **observations ≠ frames** | `dataset-build-runner` · *observations and frames are two numbers, and neither stands in for the other* | integration | `num_samples` stays images, which is what it has meant since `package-dataset.js`, and `num_observations` is the new fact. The corpus is four observations and nine frames **on purpose**: a corpus where they happened to be equal would pass with them the wrong way round, which is how they came to be carried in one column. |
 | the batched extraction | `dataset-build-runner` · *is cut in several passes rather than one enormous one*, *every frame is asked for exactly once, in order*, *every pass writes into its own directory*, *the archive holds every frame, once* | integration | An 802-frame video, which is more than one pass. `extractFrames` builds a `select` term per frame, so one pass over 8,408 frames made a ~340 KB command line and the build died with `spawn ENAMETOOLONG` after minutes of work — the bug that would have killed the 50,000-frame target. The batch size is **not** written into the test; the shape is read back from what the extractor was asked for. |
 | progress | `dataset-build-runner` · *progress moves while the video is still being cut*, *progress counts across videos rather than restarting at each one* | integration | One long video reports strictly inside itself; three short ones report a count that never goes backwards and ends at nine. A per-video reset is a bar that jumps back to the start whenever a video ends. |
+| **label geometry** | `dataset-build-runner` · *a frame two observations share carries both of their boxes*, *a box running off the edge is written as the part that is in the picture* | integration | `keyframes.x, y` is the **centre**, and the builder added half a width and half a height to it until 2026-10-21 — every label it had ever written was half a box right and down of the animal. Both tests assert the exact label text, which is what catches it; the fixture's box is interior and the edge one overruns the right edge, so the clipped values are asserted too. |
+| label sanity | `dataset-build-runner` · *every coordinate in every label is inside the picture* | integration | Every coordinate in 0..1 and every class index inside the vocabulary, over a whole archive. **Read the note under *Proved red by mutation* before relying on this one**: clipping now makes the coordinate half of it true by construction. |
 | the split dial | `dataset-build-queue` · *a subset carries shares as readily as a split* | endpoint | Whichever the person said is carried verbatim; the division is the runner's, because it needs the rows to divide. |
 | the split dial | `dataset-build-runner` · *shares divide one query across the splits they name*, *a share of zero means that split gets none*, *an observation two subsets match still lands in exactly one split* | integration | Shares are divided **before** the subsets are reconciled, so a query matching everything cannot move what an earlier subset claimed — `first` stays in `test` and pulls `second` with it, because they share frames. Each build also asserts every observation appears exactly once: a divided subset putting one in two places would be invisible in the archive, where the second copy overwrites the first by name. |
 | **the legacy `R` note** | `legacy-r-promotion` · 16 tests | migration, on its own database | See below. |
@@ -131,6 +133,27 @@ tests failed, naming the pre-checks it promoted:
 ```
 
 The migration file was restored and `git status` confirmed clean.
+
+**The centre-origin reading was proved red by the defect it replaced**, and the result
+says something about tiering that is worth more than the proof. `boxAt` was changed back
+to adding half a width and half a height, and **two** tests failed — both of them
+exact-value assertions:
+
+```
+✗ a frame two observations share carries both of their boxes
+    - "0.400000"  + "0.500000"
+✗ a box running off the edge is written as the part that is in the picture
+    - "0.925000"  + "0.975000"
+```
+
+*every coordinate in every label is inside the picture* **did not fail**, and cannot: the
+old reading puts the centre at 1.05, clipping trims the box to 0.95–1.0 and re-centres it
+at 0.975, and 0.975 is in range. That assertion caught the defect in the real-video suite
+precisely because it ran **before** clipping existed. Now that clipping is there, the
+invariant is true by construction for coordinates, and only the exact-value assertions can
+see a geometry error. It is kept because it still watches the class index and would catch
+a clipping regression, and it is written down here because a reader would otherwise assume
+it guards what it used to guard.
 
 The same holds for the mid-video cancellation: against the builder that checked between
 videos, *stops between passes rather than finishing the video first* fails, because a

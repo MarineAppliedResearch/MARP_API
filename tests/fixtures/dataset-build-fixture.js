@@ -127,6 +127,8 @@ async function seedCorpus(runId) {
             /* For the batching test, which seeds its own long observation in its own
                session so the builds above cannot see it. */
             long: `jest-build-long-${runId}.mp4`,
+            /* And for the edge-of-frame labels, likewise in a session of their own. */
+            edge: `jest-build-edge-${runId}.mp4`,
         },
         names: {},
     };
@@ -243,6 +245,21 @@ async function addObservation(seeded, { obsID, speciesId, video, sessionId }) {
 }
 
 /**
+ * The box every keyframe carries unless a test asks for another.
+ *
+ * **`x, y` is the centre**, not the top-left — `service/thumbnail-geometry.js` F1, and
+ * the builder read it the other way until 2026-10-21, which put every label half a box
+ * right and down of the animal it named.
+ *
+ * Interior, and interior on purpose: 0.3–0.5 across and 0.45–0.75 down, so it is clear
+ * of every edge and the expected label is the keyframe's own numbers. The fixture used
+ * to carry `0.25, 0.25, 0.5, 0.5`, which read as a centre sits flush in the corner —
+ * a box touching two edges is a poor thing to assert ordinary geometry against, and
+ * `labels at the edge of the frame` covers the edges deliberately instead.
+ */
+const DEFAULT_BOX = { x: 0.4, y: 0.6, width: 0.2, height: 0.3 };
+
+/**
  * Draw keyframes on an observation at the given frame numbers.
  *
  * The box is the same at both ends on purpose: the frames between are interpolated, and
@@ -252,18 +269,28 @@ async function addObservation(seeded, { obsID, speciesId, video, sessionId }) {
  * @param {Object} seeded - The accumulating fixture.
  * @param {number} observationId - Which observation.
  * @param {number[]} framenums - Where the boxes are.
+ * @param {Object} [box] - `{x, y, width, height}`, centre-origin. Defaults to
+ * {@link DEFAULT_BOX}.
  * @returns {Promise<void>}
  */
-async function addKeyframes(seeded, observationId, framenums) {
+async function addKeyframes(seeded, observationId, framenums, box = DEFAULT_BOX) {
     for (const framenum of framenums) {
         const [inserted] = await q(
             `INSERT INTO keyframes
                  (observation_id, subset, comname, type, framenum, x, y, width, height,
                   "createdAt", "updatedAt")
              VALUES (:observationId, 'train', :comname, 'box', :framenum,
-                     0.25, 0.25, 0.5, 0.5, NOW(), NOW())
+                     :x, :y, :width, :height, NOW(), NOW())
              RETURNING keyframe_id`,
-            { observationId, framenum, comname: `Jest Build ${seeded.runId}` }
+            {
+                observationId,
+                framenum,
+                comname: `Jest Build ${seeded.runId}`,
+                x: box.x,
+                y: box.y,
+                width: box.width,
+                height: box.height,
+            }
         );
 
         seeded.keyframeIds.push(inserted.keyframe_id);
@@ -391,6 +418,7 @@ function stagingDirectories() {
 }
 
 module.exports = {
+    DEFAULT_BOX,
     FPS,
     addKeyframes,
     addObservation,
