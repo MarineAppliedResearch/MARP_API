@@ -48,9 +48,10 @@ route was built against for the sake of two functions.
 | R6 | `dataset-build-runner` · *the archive is named for its own digest and is the size the row claims* | integration | `archive_path`, `archive_sha256` and `archive_bytes` describe the file that is actually there. |
 | R7 — no frame leaks across splits | `dataset-build-runner` · *the connected group stayed whole, in the split its earliest member claimed* | integration | The subsets are chosen to cut **across** a connected group: `first` is claimed by train and `second`, which shares frames 101–102 with it, is matched by validation. A naive build leaks two frames into eval. |
 | **R8 — nothing half-served** | `dataset-build-lifecycle` · *a build that is cancelled stops between videos, returns the dataset to draft, and leaves nothing staged* | integration | Cancelled through the job's state in the database, which is where `isCancelled` looks. Asserts the second video was **never opened**, the dataset is `draft` with no `archive_*`, no membership, no staged frames, no new tar. |
-| R8 | `dataset-build-lifecycle` · *a build that fails ends failed, with no archive columns set and no partial file behind* | integration | `failed`, `archive_*` null, no `building-*.tar`, nothing staged. |
+| R8 | `dataset-build-lifecycle` · *a build that fails ends failed, with no archive columns set and no partial file behind* | integration | `failed`, `archive_*` null, no `building-*.tar`, nothing staged. It fails on the **second** video, so a video's frames and labels are already staged when it dies — a build that died before cutting anything leaves nothing behind whatever the cleanup does, and so cannot tell you the cleanup works. |
 | R8 | `dataset-build-lifecycle` · *filters that match nothing fail the build* | integration | An empty dataset that is `ready` is worse than a failure. |
-| R8 | `dataset-build-lifecycle` · *an image format nobody builds in fails before a single frame is cut* | integration | The format is settled before extraction: a second, not an hour. |
+| R8 | `dataset-build-lifecycle` · *an image format nobody builds in fails before a single frame is cut* | integration | The **runner's own** guard, reached by writing the two rows the route would have written — because the route refuses this spec now, and that refusal is tested where it lives (`dataset-build-progress`, all three cases). Defence in depth is only in depth if the second line is tested too: a job queued by a seeder, a retry or a future caller still meets this one. |
+| **R8 — cancelled mid-video** | `dataset-build-lifecycle` · *stops between passes rather than finishing the video first* | integration | One video of 802 frames, cancelled during the first pass: one pass runs, not three. Checked between videos, a single-video build has nothing left to check and would cut every frame and succeed — which is what this test does against the older builder, so it pins the change rather than describing it. |
 | retry | `dataset-build-lifecycle` · *a second attempt replaces the first attempt's rows rather than doubling them* | integration | Four members and three classes before and after; two attempts recorded with epochs 1 and 2; the dataset names the **second** attempt's archive. |
 | the extractor's own gaps | `dataset-build-runner` · *a frame the extractor could not produce costs that frame, not the build* | integration | A truncated video costs frames at the end; the dataset is still `ready`, and the gap in the archive is the frame that was lost rather than the one after it. |
 | **observations ≠ frames** | `dataset-build-runner` · *observations and frames are two numbers, and neither stands in for the other* | integration | `num_samples` stays images, which is what it has meant since `package-dataset.js`, and `num_observations` is the new fact. The corpus is four observations and nine frames **on purpose**: a corpus where they happened to be equal would pass with them the wrong way round, which is how they came to be carried in one column. |
@@ -96,18 +97,11 @@ batched, observation-counting builder, six tests fail — among them a single 80
 observation reporting **802** where the observation count belongs, which is the defect in
 one number.
 
-## Blocked
-
-`recordBuild` writes `num_observations` and **no migration creates that column**. It
-appears in `repository/dataset-build.repository.js` and nowhere else in the repository, so
-every build now fails at the recording step, after cutting every frame:
-
-```
-column "num_observations" of relation "datasets" does not exist
-```
-
-These suites reproduce it deterministically — 28 failures, every one that error — and are
-red until the column exists. They are the tripwire for it rather than the cause of it.
+The same holds for the mid-video cancellation: against the builder that checked between
+videos, *stops between passes rather than finishing the video first* fails, because a
+single-video build has nothing left to check and runs to a successful finish. Each of
+these tests was watched failing on the code before the change and passing on the code
+after it, rather than only passing.
 
 ## Requirements with no test
 
@@ -125,14 +119,9 @@ drive, and a unit test of `recordBuild` would assert the same rows one layer low
   "building the same dataset twice is the same file"; a tar records each entry's
   modification time and the frames are rewritten on every attempt, so the digest moves.
   The retry test records this instead of asserting it.
-- **The route does not validate `image`.** An unknown format is accepted with 201 and the
-  build fails minutes later. Covered as it behaves, not as it should; the fix belongs to
-  whoever owns `routes/dataset.routes.js`, and a route-level refusal test belongs with
-  `dataset-build-queue` once it lands.
-- **Nothing covers a *batched* cancellation.** Cancellation is checked between videos,
-  not between passes, so a single long video cannot be interrupted until it is finished.
-  That is the builder's behaviour rather than an untested path, and it is worth knowing:
-  on an 8,000-frame video it is minutes between the cancel and the stop.
+- **The route's own refusal of a bad image format is not tested here**, deliberately: it
+  lives in `tests/dataset-build-progress.test.js`, which covers all three cases and that
+  nothing is queued. This file tests the runner's guard behind it.
 - **Permissions are not tested here.** Every suite runs as the fixture user, which holds
   every permission; the refusals are the auth suites' subject.
 - **Nothing covers two builds at once**, because the poller is one at a time by
