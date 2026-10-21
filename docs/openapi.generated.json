@@ -10387,6 +10387,107 @@
         }
       }
     },
+    "/v2/dataset/builds": {
+      "get": {
+        "summary": "Fetch the dataset builds that are still running",
+        "description": "How far every dataset build in flight has got: frames done against total, and which phase it is in. **A route of its own rather than a field on `GET /api/dataset`**, for three reasons. The progress is not a property of a dataset -- it belongs to the latest attempt of the `dataset_build` job building it, and what the dataset itself records is `status`, plus `num_samples` once the build finishes. the `Dataset` schema is generated from the Sequelize model, so a `build` object on the row could not be described without a hand-maintained parallel schema. And this is the route a screen polls: `GET /api/dataset` is unpaged and grows without bound, while this answers only about work in flight and answers `[]` the moment there is none -- which is the answer that stops the polling. **`queued` is returned as well as `leased`**, without an attempt and so without progress: `datasets.status` is `building` from the instant a build is queued, so the dataset alone cannot distinguish waiting from started. At most one row per dataset, newest job first. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "responses": {
+          "200": {
+            "description": "Every build that is queued or running, at most one per dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "dataset_id": {
+                        "type": "integer",
+                        "description": "The dataset being built."
+                      },
+                      "job_id": {
+                        "type": "integer",
+                        "description": "The `dataset_build` job, on the Jobs screen like any other."
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "queued",
+                          "leased"
+                        ],
+                        "description": "`queued` is waiting to start and has no attempt; `leased` is running."
+                      },
+                      "attempts_made": {
+                        "type": "integer"
+                      },
+                      "max_attempts": {
+                        "type": "integer"
+                      },
+                      "queued_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "attempt_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Null while the build is still queued."
+                      },
+                      "progress_done": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Frames written so far. Null until the extracting phase begins, which is not the same as zero."
+                      },
+                      "progress_total": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Frames the build intends to cut. Not known until selection finishes, which on a large query is minutes."
+                      },
+                      "progress_unit": {
+                        "type": "string",
+                        "nullable": true,
+                        "example": "frames"
+                      },
+                      "progress_phase": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                          "selecting",
+                          "extracting",
+                          "packaging"
+                        ],
+                        "description": "What it is doing. A build sits in `selecting` with no counts at all, so a reader seeing no number needs this to tell waiting from stuck."
+                      },
+                      "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                      },
+                      "last_heartbeat_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/dataset/{id}": {
       "get": {
         "summary": "Fetch a dataset by id",

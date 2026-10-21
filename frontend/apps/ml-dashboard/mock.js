@@ -4806,61 +4806,179 @@ async function fillDatasetPickers() {
   }
 }
 
-async function fillSavedDatasets(body) {
-  if (!window.MarpApi) return;
+/* ---------------------------------------------------------------- builds */
 
-  let datasets;
-  try {
-    datasets = await window.MarpApi.listDatasets();
-  } catch (error) {
-    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load datasets (${error.status || 'no answer'}).</td></tr>`;
-    return 0;
+/**
+ * How long the Datasets screen waits between asking how a build is getting on.
+ *
+ * The runner reports once per video, and a video is minutes of extraction, so a faster
+ * poll redraws a table that has not changed. Slower and the first report after
+ * *selecting* -- the one that finally puts a total on screen -- arrives late enough to
+ * look like nothing happened.
+ */
+const DATASET_POLL_MS = 5000;
+
+/** What the runner's phases are called on screen. */
+const BUILD_PHASES = { selecting: 'Selecting', extracting: 'Extracting', packaging: 'Packaging' };
+
+/**
+ * A `datasets.status` as this screen's own vocabulary, given the job building it.
+ *
+ * Two columns answer different halves of one question and neither answers it alone.
+ * `datasets.status` is `building` from the instant a build is queued, so it cannot say
+ * whether anything has started; the job's state can, and *Queued* rather than *0 frames*
+ * is the difference between waiting and stuck.
+ *
+ * A dataset that says `building` with no job in flight keeps saying so rather than being
+ * promoted to a failure. The job may have been cancelled, or finished without the row
+ * catching up; either way this screen does not know which, and guessing *Needs attention*
+ * would be a diagnosis it cannot make.
+ *
+ * @param {Object} set - The dataset row.
+ * @param {?Object} build - Its in-flight build, from `GET /dataset/builds`.
+ * @returns {string} One of `building`, `queued`, `attention`, `ready`, `draft`.
+ */
+function datasetScreenStatus(set, build) {
+  if (build) return build.state === 'queued' ? 'queued' : 'building';
+  if (set.status === 'failed') return 'attention';
+  if (set.status === 'building') return 'building';
+  if (set.status === 'draft') return 'draft';
+  return 'ready';
+}
+
+/**
+ * What the FRAMES cell says, which is the whole point of #268's item 1.2.
+ *
+ * Three different kinds of nothing, and collapsing them is what made this column useless:
+ *
+ * - **Not building.** `Dataset` has no frame count at all -- `num_samples` is images, and
+ *   calling it frames as well would be one number pretending to be two measurements.
+ * - **Queued.** Nothing has started, so there is nothing to count.
+ * - **Selecting.** Running, and the total is not known yet: the runner has to resolve the
+ *   observations and their videos before it can say how many frames it intends to cut,
+ *   which on a large query is minutes. A reader seeing a dash here needs the phase beside
+ *   it, or they conclude the build is stuck.
+ *
+ * @param {?Object} build - The in-flight build, or null.
+ * @returns {{html: string, sort: number}} The cell's contents and its sort key.
+ */
+function buildFramesCell(build) {
+  if (!build) return { html: NOT_IN_DATASET, sort: -1 };
+
+  if (build.state === 'queued') {
+    return { html: '<span class="dash" title="Waiting to start: no attempt has been opened">Not started</span>', sort: -1 };
   }
 
+  const done = build.progress_done;
+  const total = build.progress_total;
+
+  if (done == null || total == null) {
+    return {
+      html: '<span class="dash" title="Running: the frame count is not known until selection finishes">Counting</span>',
+      sort: 0,
+    };
+  }
+
+  return {
+    html: `${done.toLocaleString()} <span class="of">/</span> ${total.toLocaleString()}`,
+    sort: done,
+  };
+}
+
+/** How far along a build is, or -1 when nothing has measured anything. */
+function buildPercent(build) {
+  if (!build || build.state === 'queued') return -1;
+  const { progress_done: done, progress_total: total } = build;
+  if (done == null || !total) return -1;
+  return Math.min(100, Math.round((done / total) * 100));
+}
+
+/** How long a build has been running, from the instant its attempt was opened. */
+function buildElapsed(build) {
+  if (!build || !build.started_at) return null;
+  const seconds = Math.max(0, Math.round((Date.now() - Date.parse(build.started_at)) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+/**
+ * Put the saved datasets, and whatever is building, into the lifecycle table.
+ *
+ * **The six build rows that used to be prepended here were fixture.** They carried
+ * invented names, invented frame counts and invented per-cent progress, and the summary
+ * cards counted them -- so a screen with nothing building showed two builds in flight, and
+ * a real build appeared underneath them indistinguishable from the inventions. #268 made a
+ * build a `gpu_jobs` row with progress on its attempt, so there is a real answer now and
+ * the fixtures are gone.
+ *
+ * @param {Element} body - The table body.
+ * @param {Object[]} datasets - From `GET /api/v2/dataset`.
+ * @param {Map<number, Object>} builds - In-flight builds by dataset id.
+ * @returns {void}
+ */
+function fillSavedDatasets(body, datasets, builds) {
   const stamp = (iso) => {
     const d = new Date(iso);
     return `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
   };
 
-  const written = datasets.length;
-  body.innerHTML = datasets.map((set) => '<tr>'
-    + `<td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">${set.name}</span></span></td>`
-    + `<td class="jscope">${set.description || ''}</td>`
-    /* Null until a build finishes, and a build now takes hours -- so this row exists
-       while the counts do not. `toLocaleString()` on the null threw and took the whole
-       table with it, which is how queueing a build from this screen first failed. */
-    + `<td class="num" data-sort="${set.num_samples ?? -1}">`
-    + `${set.num_samples == null ? NOT_IN_DATASET : set.num_samples.toLocaleString()}</td>`
-    /* Frames is not a column on `Dataset`. `num_samples` is the only count it
-       has, and calling it frames as well would be one number pretending to be
-       two different measurements. */
-    + `<td class="num" data-sort="-1">${NOT_IN_DATASET}</td>`
-    + `<td class="num" data-sort="${set.num_classes ?? -1}">${set.num_classes ?? NOT_IN_DATASET}</td>`
-    + `<td class="jtime" data-sort="${set.created_at}">${stamp(set.created_at)}</td>`
-    + `<td class="jtime" data-sort="${set.updated_at}">${stamp(set.updated_at)}</td>`
-    + '<td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button></span></td>'
-    + '</tr>').join('');
-  return written;
+  body.innerHTML = datasets.map((set) => {
+    const build = builds.get(set.id) || null;
+    const frames = buildFramesCell(build);
+
+    /* The real status travels on the row, so the decoration below reads what MARP says
+       rather than defaulting every API row to `ready` -- which is what it did, so a
+       dataset that was building drew a green *Ready* pill while it was being built. */
+    return `<tr data-dataset-id="${set.id}" data-dataset-status="${datasetScreenStatus(set, build)}">`
+      + `<td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">${set.name}</span></span></td>`
+      + `<td class="jscope">${set.description || ''}</td>`
+      /* Null until a build finishes, and a build now takes hours -- so this row exists
+         while the counts do not. `toLocaleString()` on the null threw and took the whole
+         table with it, which is how queueing a build from this screen first failed. */
+      + `<td class="num" data-sort="${set.num_samples ?? -1}">`
+      + `${set.num_samples == null ? NOT_IN_DATASET : set.num_samples.toLocaleString()}</td>`
+      /* Frames is not a column on `Dataset`, so a dataset that is not being built has no
+         answer here. One that is being built does: its attempt counts them. */
+      + `<td class="num" data-frames data-sort="${frames.sort}">${frames.html}</td>`
+      + `<td class="num" data-sort="${set.num_classes ?? -1}">${set.num_classes ?? NOT_IN_DATASET}</td>`
+      + `<td class="jtime" data-sort="${set.created_at}">${stamp(set.created_at)}</td>`
+      + `<td class="jtime" data-sort="${set.updated_at}">${stamp(set.updated_at)}</td>`
+      + '<td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button></span></td>'
+      + '</tr>';
+  }).join('');
 }
 
 /**
  * The four cards and the status donut.
  *
- * **Only one of the four numbers is an API fact.** Ready datasets is a count of
- * `GET /api/v2/dataset`. Building, queued and needing attention are builds in
- * flight, and MARP records none of them — a dataset build is not a GPU job and
- * `Dataset` has no status column — so those three are counted from the fixture
- * rows, and the cards say where they come from. Gap 19.
+ * **All four are API facts now.** Building, queued and needing attention used to be
+ * counted from the fixture rows above the table, because MARP recorded no build at all --
+ * gap 19, and the cards said so. A build is a job with an attempt now, so *queued* and
+ * *building* are its state and *needs attention* is `datasets.status = 'failed'`.
  *
- * @param {number} ready - Saved datasets, from the API.
- * @param {Object[]} builds - The in-flight build fixtures.
+ * @param {Object[]} datasets - From `GET /api/v2/dataset`.
+ * @param {Map<number, Object>} builds - In-flight builds by dataset id.
  */
-function renderDatasetsSummary(ready, builds) {
-  const count = (status) => builds.filter((b) => b.status === status).length;
+function renderDatasetsSummary(datasets, builds) {
+  const states = datasets.map((set) => datasetScreenStatus(set, builds.get(set.id) || null));
+  const count = (what) => states.filter((state) => state === what).length;
   const building = count('building');
   const queued = count('queued');
+  const ready = count('ready');
   const attention = count('attention');
-  const total = ready + builds.length;
+  const total = states.length;
+
+  /* What the builds in flight are actually doing, so the card says more than a number.
+     Counted rather than listed: three builds extracting is one phrase, three names is a
+     card trying to be the table underneath it. */
+  const phases = [...builds.values()]
+    .filter((build) => build.state !== 'queued' && build.progress_phase)
+    .map((build) => BUILD_PHASES[build.progress_phase] || build.progress_phase);
+  const phrase = phases.length
+    ? [...new Set(phases)].map((p) => p.toLowerCase()).join(' · ')
+    : 'nothing building';
 
   const byLabel = {};
   for (const card of $$('.stat')) {
@@ -4876,10 +4994,7 @@ function renderDatasetsSummary(ready, builds) {
     if (s) s.innerHTML = `<span>${sub}</span>`;
   };
 
-  /* These three said "builds are not tracked by the API" until #268 made a build a job.
-     They are tracked now -- a `gpu_jobs` row with progress, cancellation and a place on
-     the Jobs screen -- so the subtitle says where to watch one instead. */
-  set('Building now', building, building ? 'cutting frames · watch on Jobs' : 'nothing building');
+  set('Building now', building, building ? phrase : 'nothing building');
   set('Queued builds', queued, queued ? 'waiting for the builder' : 'nothing waiting');
   set('Ready datasets', ready, 'saved in MARP');
   set('Needs attention', attention, attention ? 'builds that failed' : 'nothing failed');
@@ -4909,19 +5024,72 @@ function renderDatasetsSummary(ready, builds) {
   }
 }
 
+/**
+ * Move the numbers on the rows that are building, without rebuilding the table.
+ *
+ * **A full re-render every five seconds would close whatever the reader had open.** The
+ * only things that move while a build runs are its frame count, its phase and how long it
+ * has been going; the row set changes when a build starts or finishes, and *that* is what
+ * earns a re-render. So this patches and the caller decides.
+ *
+ * @param {Element} body - The table body.
+ * @param {Map<number, Object>} builds - In-flight builds by dataset id.
+ * @returns {void}
+ */
+function patchBuildRows(body, builds) {
+  for (const head of $$(':scope > tr[data-dataset-id]', body)) {
+    const build = builds.get(Number(head.dataset.datasetId));
+    if (!build) continue;
+
+    const frames = buildFramesCell(build);
+    const cell = $('[data-frames]', head);
+    if (cell) {
+      cell.innerHTML = frames.html;
+      cell.dataset.sort = String(frames.sort);
+    }
+
+    const pill = $('.jstatus .pill', head);
+    if (pill) pill.textContent = datasetBuildLabel(head.dataset.datasetStatus, build);
+
+    const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
+      ? head.nextElementSibling : null;
+    if (!detail) continue;
+
+    const pct = buildPercent(build);
+    const bar = $('.prog .bar i', detail);
+    if (bar && pct >= 0) {
+      bar.style.width = `${pct}%`;
+      $('.prog .bar', detail)?.setAttribute('aria-valuenow', String(pct));
+      const label = $('.prog .pct', detail);
+      if (label) label.textContent = `${pct}%`;
+    }
+    const written = $('.build-frames', detail);
+    if (written) written.innerHTML = `${frames.html} frames`;
+    const elapsed = $('[data-build-elapsed]', detail);
+    if (elapsed) elapsed.textContent = buildElapsed(build) || NOT_STARTED_TEXT;
+  }
+}
+
+/** What a build row's pill says: the phase while it runs, the state otherwise. */
+function datasetBuildLabel(status, build) {
+  if (build && build.state !== 'queued' && build.progress_phase) {
+    return BUILD_PHASES[build.progress_phase] || build.progress_phase;
+  }
+  return { building: 'Building', queued: 'Queued', attention: 'Needs attention', ready: 'Ready', draft: 'Draft' }[status] || 'Ready';
+}
+
+/** The dash a build that has not started draws, as plain text. */
+const NOT_STARTED_TEXT = '—';
+
 async function wireDatasetPage() {
   const table = $('table#saved-datasets');
   if (!table) return;
   const body = $('tbody', table);
 
-  /* The saved rows come from the API before anything decorates them, so the
-     Task, Status and expander cells are added to real rows rather than to the
-     five that used to be typed into the markup. */
   /* The pickers do not block the table: a builder whose dropdowns are still
      filling is usable, and a saved-dataset list that waited for them would not be. */
   fillDatasetPickers();
 
-  const savedCount = await fillSavedDatasets(body);
   const samples = [
     ['/api/v2/jellyfin/items/9f66020c16c80d2800560a76d4417080/images/Primary', 'CAMPA2024 Dive 1 · 141923'],
     ['/api/v2/jellyfin/items/847c5f1034d01cf3a7aa2427fa7af4b4/images/Primary', 'CAMPA2024 Dive 1 · 154643'],
@@ -4935,171 +5103,160 @@ async function wireDatasetPage() {
     ALL_Projects_Inverts_v5: { task: 'Detection', format: 'YOLO bounding boxes', project: 'All projects', queries: '7 saved query batches', groups: '2,816 overlap groups', split: '70 / 20 / 10', build: '4h 37m', size: '26.7 GB', fingerprint: 'ds-7c15de90', classes: 'Sea cucumber 22% · Urchin 18% · Sea star 17%' },
     SALT_2024_Habitat_v2: { task: 'Classification', format: 'Class-labelled images', project: 'SALT 2024', queries: '4 saved query batches', groups: '592 source groups', split: '70 / 20 / 10', build: '1h 31m', size: '8.6 GB', fingerprint: 'ds-a8315f42', classes: 'Bedrock 28% · Mixed substrate 23% · Sand 19%' }
   };
-  const buildJobs = [
-    { name: 'CAMPA_2024_Rockfish_v4', description: 'Expanded rockfish set with 2026 review promotions', task: 'Detection', status: 'building', observations: '31,640', frames: '42,816 / 63,200', frameSort: 42816, classes: '12', classSummary: 'Rockfish 28% · Lingcod 19% · Canary rockfish 14%', created: '2026-09-14 07:42', updated: '18 sec ago', project: 'CAMPA 2024', queries: '4 saved query batches', groups: '2,031 overlap groups', split: '70 / 20 / 10', build: '2h 18m elapsed', size: '12.6 GB so far', fingerprint: 'pending', format: 'YOLO bounding boxes', job: 'DS-2048', progress: 68, eta: '~1h 05m', worker: 'gpu-build-02' },
-    { name: 'GULF_Invertebrates_v3', description: 'New Gulf survey invertebrate training corpus', task: 'Detection', status: 'building', observations: '18,920', frames: '9,408 / 45,120', frameSort: 9408, classes: '8', created: '2026-09-14 09:26', updated: '31 sec ago', project: 'GULF 2025', queries: '3 saved query batches', groups: '1,126 overlap groups', split: '70 / 20 / 10', build: '34m elapsed', size: '2.9 GB so far', fingerprint: 'pending', format: 'YOLO bounding boxes', job: 'DS-2049', progress: 21, eta: '~2h 09m', worker: 'gpu-build-04' },
-    { name: 'PACIFIC_2023_RareFish_v1', description: 'Rare-fish validation set across reviewed dives', task: 'Detection', status: 'queued', observations: '8,412', frames: '0 / 17,960', frameSort: 0, classes: '6', created: '2026-09-14 10:02', updated: '10:02 today', project: 'PACIFIC 2023', queries: '5 saved query batches', groups: '614 overlap groups', split: '70 / 20 / 10', build: 'Waiting for worker', size: 'Not materialized', fingerprint: 'pending', format: 'YOLO bounding boxes', job: 'DS-2050', progress: 0, eta: '~52m after start', worker: 'Unassigned' },
-    { name: 'CAMPA_2025_Habitat_v1', description: 'Habitat classification frames from promoted observations', task: 'Classification', status: 'queued', observations: '12,104', frames: '0 / 24,208', frameSort: 0, classes: '7', created: '2026-09-14 10:08', updated: '10:08 today', project: 'CAMPA 2025', queries: '2 saved query batches', groups: '806 source groups', split: '70 / 20 / 10', build: 'Waiting for worker', size: 'Not materialized', fingerprint: 'pending', format: 'Class-labelled images', job: 'DS-2051', progress: 0, eta: '~1h 14m after start', worker: 'Unassigned' },
-    { name: 'GULF_2024_CoralMasks_v2', description: 'Instance masks for coral and sponge classes', task: 'Segmentation', status: 'queued', observations: '6,780', frames: '0 / 13,560', frameSort: 0, classes: '9', created: '2026-09-14 10:11', updated: '10:11 today', project: 'GULF 2024', queries: '2 saved query batches', groups: '488 overlap groups', split: '70 / 20 / 10', build: 'Waiting for worker', size: 'Not materialized', fingerprint: 'pending', format: 'YOLO instance polygons', job: 'DS-2052', progress: 0, eta: '~46m after start', worker: 'Unassigned' },
-    { name: 'SALT_2025_Substrate_v1', description: 'Substrate classification build stopped during thumbnail reads', task: 'Classification', status: 'attention', observations: '9,330', frames: '6,104 / 18,660', frameSort: 6104, classes: '7', created: '2026-09-13 16:44', updated: '2026-09-13 17:19', project: 'SALT 2025', queries: '3 saved query batches', groups: '622 source groups', split: '70 / 20 / 10', build: '35m before failure', size: '1.8 GB partial', fingerprint: 'pending', format: 'Class-labelled images', job: 'DS-2042', progress: 33, eta: 'Retry available', worker: 'gpu-build-01' }
-  ];
-  buildJobs.slice().reverse().forEach((item) => {
-    fixtures[item.name] = item;
-    const row = document.createElement('tr');
-    /* No link into Jobs: a dataset build is not in that queue, and its detail
-       is this row's own expansion. The icon is the Datasets one for the same
-       reason -- the jobs icon claimed a home it does not have. */
-    row.innerHTML = '<td class="jname"><span class="name dataset-build-name"><svg class="ico datasets"><use href="#i-datasets"/></svg><span class="t">' + item.name + '</span></span></td>'
-      + '<td class="jscope">' + item.description + '</td>'
-      + '<td class="num" data-sort="' + item.observations.replaceAll(',', '') + '">' + item.observations + '</td>'
-      + '<td class="num" data-sort="' + item.frameSort + '">' + item.frames + '</td>'
-      + '<td class="num" data-sort="' + item.classes + '">' + item.classes + '</td>'
-      + '<td class="jtime" data-sort="' + item.created + '"><span class="two"><span class="a">' + item.created.slice(11) + '</span><span class="b">' + item.created.slice(0, 10) + '</span></span></td>'
-      + '<td class="jtime" data-sort="' + item.updated + '"><span class="two"><span class="a">' + item.updated + '</span></span></td>'
-      + '<td class="jacts"><button class="btn sm dataset-build-open" type="button" aria-label="Show build detail for ' + item.name + '" title="Show build progress, worker and diagnostics"><svg class="ico sm"><use href="#i-right"/></svg>Build detail</button></td>';
-    body.prepend(row);
-  });
-  renderDatasetsSummary(savedCount || 0, buildJobs);
 
-  const heads = $$(':scope > tr', body);
-  heads.forEach((head) => {
-    const original = [...head.children];
-    const name = $('.jname .t', head)?.textContent.trim() || 'Saved dataset';
-    /* **A row from the API gets the API's own blanks, not another dataset's
-       fixture.** This used to fall back to `CAMPA_2024_Rockfish_v3`, so any
-       dataset the fixtures did not name borrowed that one's task, project,
-       queries, overlap groups and split -- five invented facts per row, each
-       of them plausible and none of them true. A `Dataset` carries `name`,
-       `description`, `location`, `num_samples`, `num_classes`, `source` and
-       the timestamps; everything else on this panel is gap 16. */
-    const cfg = fixtures[name] || {
-      task: 'Unassigned',
-      fromApi: true,
-      status: head.dataset.datasetStatus || 'ready',
-      format: NOT_IN_DATASET,
-      project: NOT_IN_DATASET,
-      queries: NOT_IN_DATASET,
-      groups: NOT_IN_DATASET,
-      split: NOT_IN_DATASET,
-      build: NOT_IN_DATASET,
-      size: NOT_IN_DATASET,
-      fingerprint: NOT_IN_DATASET,
-      worker: NOT_IN_DATASET,
-      eta: NOT_IN_DATASET,
-      progress: -1,
-      job: null,
-    };
-    const description = original[1]?.textContent.trim() || '';
-    const observations = original[2]?.textContent.trim() || '';
-    const frames = original[3]?.textContent.trim() || '';
-    const classes = original[4]?.textContent.trim() || '';
-    const status = cfg.status || 'ready';
-    const isBuild = status !== 'ready';
-    head.classList.add('runrow-head');
-    head.dataset.datasetTask = cfg.task.toLowerCase();
-    head.dataset.datasetStatus = status;
-    head.dataset.search = `${name} ${description} ${cfg.task} ${cfg.project} ${status} ${cfg.job || ''}`.toLowerCase();
-    const task = document.createElement('td');
-    task.className = 'jtype';
-    task.dataset.sort = cfg.task;
-    task.innerHTML = `<span class="task-pill" data-task="${cfg.task.toLowerCase()}">${cfg.task}</span>`;
-    original[1].after(task);
-    const state = document.createElement('td');
-    state.className = 'jstatus';
-    state.dataset.sort = status;
-    const stateLabel = { building: 'Building', queued: 'Queued', attention: 'Needs attention', ready: 'Ready' }[status];
-    const stateTone = { building: 'running', queued: 'queued', attention: 'failed', ready: 'done' }[status];
-    state.innerHTML = `<span class="pill" data-state="${stateTone}">${stateLabel}</span>`;
-    task.after(state);
-    const expand = document.createElement('td');
-    expand.className = 'ex';
-    /* **A build expands here, on Datasets.** It used to carry a mark linking
-       into Jobs, because a dataset build was drawn as a job in the GPU queue.
-       It is not one -- settled 2026-10-14 in #128 -- so its progress, its
-       worker and its diagnostics have to live where the build does, which is
-       this row. The structure is deliberately the same as a Ready row's, a
-       `runrow-head` with a `runrow-body` after it, so the existing expander
-       wires it without knowing the difference. */
-    if (isBuild) {
-      head.classList.add('dataset-build-row');
+  /**
+   * Decorate the rows the API just produced: task, status, the expander and its detail.
+   *
+   * Run again after every re-render, because the rows are replaced rather than edited.
+   *
+   * @param {Map<number, Object>} builds - In-flight builds by dataset id.
+   */
+  const decorate = (builds) => {
+    for (const head of $$(':scope > tr[data-dataset-id]', body)) {
+      const original = [...head.children];
+      const name = $('.jname .t', head)?.textContent.trim() || 'Saved dataset';
+      const build = builds.get(Number(head.dataset.datasetId)) || null;
+      const status = head.dataset.datasetStatus || 'ready';
+      /* **A row from the API gets the API's own blanks, not another dataset's
+         fixture.** This used to fall back to `CAMPA_2024_Rockfish_v3`, so any
+         dataset the fixtures did not name borrowed that one's task, project,
+         queries, overlap groups and split -- five invented facts per row, each
+         of them plausible and none of them true. A `Dataset` carries `name`,
+         `description`, `location`, `num_samples`, `num_classes`, `source` and
+         the timestamps; everything else on this panel is gap 16. */
+      const cfg = fixtures[name] || {
+        task: 'Unassigned',
+        fromApi: true,
+        format: NOT_IN_DATASET,
+        project: NOT_IN_DATASET,
+        queries: NOT_IN_DATASET,
+        groups: NOT_IN_DATASET,
+        split: NOT_IN_DATASET,
+        build: NOT_IN_DATASET,
+        size: NOT_IN_DATASET,
+        fingerprint: NOT_IN_DATASET,
+        classes: NOT_IN_DATASET,
+      };
+      const description = original[1]?.textContent.trim() || '';
+      const observations = original[2]?.textContent.trim() || '';
+      const frames = original[3]?.textContent.trim() || '';
+      const classes = original[4]?.textContent.trim() || '';
+      const isBuild = status === 'building' || status === 'queued' || status === 'attention';
+      head.classList.add('runrow-head');
+      head.dataset.datasetTask = cfg.task.toLowerCase();
+      head.dataset.search = `${name} ${description} ${cfg.task} ${cfg.project} ${status} ${build ? build.job_id : ''}`.toLowerCase();
+      const task = document.createElement('td');
+      task.className = 'jtype';
+      task.dataset.sort = cfg.task;
+      task.innerHTML = `<span class="task-pill" data-task="${cfg.task.toLowerCase()}">${cfg.task}</span>`;
+      original[1].after(task);
+      const state = document.createElement('td');
+      state.className = 'jstatus';
+      state.dataset.sort = status;
+      const stateTone = { building: 'running', queued: 'queued', attention: 'failed', ready: 'done', draft: 'queued' }[status];
+      /* **The pill says the phase while a build runs.** *Extracting* is what somebody
+         watching a four-hour build wants from the one piece of prose on the row, and
+         *Building* is what they already knew from opening the screen. The filter still
+         keys on `data-dataset-status`, so filtering by Building is unchanged. */
+      state.innerHTML = `<span class="pill" data-state="${stateTone}">${datasetBuildLabel(status, build)}</span>`;
+      task.after(state);
+      const expand = document.createElement('td');
+      expand.className = 'ex';
+      /* **A build expands here, on Datasets.** It used to carry a mark linking
+         into Jobs, because a dataset build was drawn as a job in the GPU queue.
+         It is not one -- settled 2026-10-14 in #128 -- so its progress, its
+         worker and its diagnostics have to live where the build does, which is
+         this row. The structure is deliberately the same as a Ready row's, a
+         `runrow-head` with a `runrow-body` after it, so the existing expander
+         wires it without knowing the difference. */
+      if (isBuild) {
+        head.classList.add('dataset-build-row');
+        head.setAttribute('aria-expanded', 'false');
+        expand.innerHTML = `<button class="exbtn" type="button" aria-label="Expand ${name}" title="Show build progress and phase"><svg class="ico sm"><use href="#i-right"/></svg></button>`;
+        head.prepend(expand);
+
+        const failed = status === 'attention';
+        const pct = buildPercent(build);
+
+        /* Queued work has not measured anything, and neither has a build still
+           selecting -- so both draw a dash rather than a 0% bar, the same rule
+           the Jobs table follows. */
+        const bar = pct < 0
+          ? `<span class="dash">${status === 'queued' ? 'Not started' : 'No count yet'}</span>`
+          : `<span class="prog" data-state="${stateTone}"><span class="bar" role="progressbar" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span><span class="pct">${pct}%</span></span>`;
+
+        const fact = (label, value) => `<div class="jobmetric"><span>${label}</span><b>${value}</b></div>`;
+        const note = failed
+          ? `<div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${description}</h4><p>Materialized frames are kept; only the unread remainder needs to run again.</p></div></div>`
+          : '';
+        const actions = failed
+          ? '<button class="btn sm" type="button">Retry build</button><button class="btn sm ghost" type="button">Discard</button>'
+          : status === 'queued'
+            ? '<button class="btn sm" type="button">Start now</button><button class="btn sm ghost" type="button">Cancel build</button>'
+            : '<button class="btn sm ghost" type="button">Cancel build</button>';
+
+        /* **Five facts, not nine.** Worker, remaining time, materialized size and
+           fingerprint were fixture: the API records none of them for a build in flight,
+           and a dataset build has no worker to name because the API runs it rather than
+           the pool. What an attempt does carry is the phase, the count, when it started
+           and which try this is. */
+        const metrics = [
+          fact('Phase', build && build.progress_phase ? (BUILD_PHASES[build.progress_phase] || build.progress_phase) : NOT_STARTED_TEXT),
+          fact('Frames', frames),
+          fact('Elapsed', `<span data-build-elapsed>${buildElapsed(build) || NOT_STARTED_TEXT}</span>`),
+          fact('Attempt', build ? `${build.attempts_made} of ${build.max_attempts}` : NOT_STARTED_TEXT),
+          fact('Build job', build ? `#${build.job_id}` : NOT_IN_DATASET),
+        ].join('');
+
+        const detail = document.createElement('tr');
+        detail.className = 'runrow-body dataset-row-detail';
+        detail.hidden = true;
+        detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}">`
+          + `<header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">${datasetBuildLabel(status, build)}</span></header>`
+          + `<div class="dataset-build-progress">${bar}<span class="build-frames">${frames} frames</span></div>`
+          + note
+          + `<div class="jobmetrics">${metrics}</div>`
+          + '</div></td>';
+        head.after(detail);
+        continue;
+      }
       head.setAttribute('aria-expanded', 'false');
-      expand.innerHTML = `<button class="exbtn" type="button" aria-label="Expand ${name}" title="Show build progress, worker and diagnostics"><svg class="ico sm"><use href="#i-right"/></svg></button>`;
+      expand.innerHTML = `<button class="exbtn" type="button" aria-label="Expand ${name}" title="Show provenance, composition, split and sample images"><svg class="ico sm"><use href="#i-right"/></svg></button>`;
       head.prepend(expand);
-
-      const failed = status === 'attention';
-      const pct = Math.max(0, cfg.progress || 0);
-      const tone = { building: 'running', queued: 'queued', attention: 'failed' }[status];
-
-      /* Queued work has not measured anything, so it draws a dash rather than
-         a 0% bar -- the same rule the Jobs table follows. */
-      const bar = status === 'queued'
-        ? '<span class="dash">Not started</span>'
-        : `<span class="prog" data-state="${tone}"><span class="bar" role="progressbar" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span><span class="pct">${pct}%</span></span>`;
-
-      const fact = (label, value) => `<div class="jobmetric"><span>${label}</span><b>${value}</b></div>`;
-      const note = failed
-        ? `<div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${cfg.description}</h4><p>Materialized frames are kept; only the unread remainder needs to run again.</p></div></div>`
-        : '';
-      const actions = failed
-        ? '<button class="btn sm" type="button">Retry build</button><button class="btn sm ghost" type="button">Discard</button>'
-        : status === 'queued'
-          ? '<button class="btn sm" type="button">Start now</button><button class="btn sm ghost" type="button">Cancel build</button>'
-          : '<button class="btn sm ghost" type="button">Cancel build</button>';
-
+      /* **Not `loading="lazy"`.** These sit inside a row that is collapsed until
+         somebody opens it, and a lazy image revealed that way is never fetched:
+         the load is deferred and the deferral never resolves, so the strip stays
+         blank with no error anywhere -- the browser simply never asked. Twenty-six
+         thumbnails on a page is a cost worth paying over a panel that silently
+         shows nothing. */
+      const thumbs = samples.map(([src, alt]) => `<figure><img src="${src}" alt="Opening source frame from ${alt}"><figcaption>${alt}</figcaption></figure>`).join('');
       const detail = document.createElement('tr');
       detail.className = 'runrow-body dataset-row-detail';
       detail.hidden = true;
-      detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}">`
-        + `<header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${tone}">${stateLabel}</span></header>`
-        + `<div class="dataset-build-progress">${bar}<span class="build-frames">${frames} frames</span></div>`
-        + note
-        + `<div class="jobmetrics">${fact('Worker', cfg.worker)}${fact('Elapsed', cfg.build)}${fact('Remaining', cfg.eta)}${fact('Materialized', cfg.size)}${fact('Split', cfg.split)}${fact('Fingerprint', cfg.fingerprint)}</div>`
-        + `<dl class="kv"><dt>Project</dt><dd>${cfg.project}</dd><dt>Queries</dt><dd>${cfg.queries}</dd><dt>Overlap groups</dt><dd>${cfg.groups}</dd><dt>Output format</dt><dd>${cfg.format}</dd></dl>`
-        + `<div class="jobstate-actions">${actions}</div>`
-        + '</div></td>';
+      const readyActions = `<button class="btn sm" type="button" title="Use these immutable queries and split as a new starting point"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup</button><button class="btn sm" type="button" title="Open Training with this dataset selected"><svg class="ico"><use href="#i-training"/></svg>Use for training</button><button class="btn sm" type="button" title="Download the built images, labels and manifest"><svg class="ico"><use href="#i-download"/></svg>Download archive</button>`;
+      detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}"><header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header><div class="dataset-detail-grid"><section><h4>Build record</h4><dl class="kv"><dt>Task / format</dt><dd>${cfg.task} &middot; ${cfg.format}</dd><dt>Source</dt><dd>${cfg.project} &middot; promoted observations only</dd><dt>Membership</dt><dd>${cfg.queries} &middot; deduplicated</dd><dt>Build result</dt><dd>${cfg.build} &middot; completed cleanly</dd><dt>Fingerprint</dt><dd class="mono">${cfg.fingerprint}</dd></dl></section><section><h4>Composition and split</h4><div class="dataset-facts"><span><b>${observations}</b> observations</span><span><b>${frames}</b> frames</span><span><b>${classes}</b> classes</span><span><b>${cfg.size}</b> archive</span></div><div class="splitbar" role="img" aria-label="${cfg.split} train validation test split"><i class="tr" style="width:70%"><span>70%</span></i><i class="va" style="width:20%"><span>20%</span></i><i class="te" style="width:10%"><span>10%</span></i></div><p class="dataset-class-summary">${cfg.classes}</p><span class="hint">${cfg.groups}; connected frames stay in one split.</span></section><section class="dataset-samples"><h4>Sample images <span>design preview</span></h4><div class="thumbs">${thumbs}</div></section></div><footer>${readyActions}</footer></div></td>`;
       head.after(detail);
-
-      /* The row's own click handler ignores buttons, so the action has to ask
-         the expander itself -- the same arrangement a Ready row uses. */
-      const open = $('.dataset-build-open', head);
+      const open = $('[aria-label="Open"]', head);
       if (open) {
-        open.addEventListener('click', (event) => {
-          event.stopPropagation();
-          $('.exbtn', head)?.click();
-        });
+        open.setAttribute('aria-label', `Show details for ${name}`);
+        open.title = 'Show provenance, composition, split and sample images';
+        open.addEventListener('click', () => $('.exbtn', head)?.click());
       }
-      return;
     }
-    head.setAttribute('aria-expanded', 'false');
-    expand.innerHTML = `<button class="exbtn" type="button" aria-label="Expand ${name}" title="Show provenance, composition, split and sample images"><svg class="ico sm"><use href="#i-right"/></svg></button>`;
-    head.prepend(expand);
-    /* **Not `loading="lazy"`.** These sit inside a row that is collapsed until
-       somebody opens it, and a lazy image revealed that way is never fetched:
-       the load is deferred and the deferral never resolves, so the strip stays
-       blank with no error anywhere -- the browser simply never asked. Twenty-six
-       thumbnails on a page is a cost worth paying over a panel that silently
-       shows nothing. */
-    const thumbs = samples.map(([src, alt]) => `<figure><img src="${src}" alt="Opening source frame from ${alt}"><figcaption>${alt}</figcaption></figure>`).join('');
-    const detail = document.createElement('tr');
-    detail.className = 'runrow-body dataset-row-detail';
-    detail.hidden = true;
-    const readyActions = `<button class="btn sm" type="button" title="Use these immutable queries and split as a new starting point"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup</button><button class="btn sm" type="button" title="Open Training with this dataset selected"><svg class="ico"><use href="#i-training"/></svg>Use for training</button><button class="btn sm" type="button" title="Download the built images, labels and manifest"><svg class="ico"><use href="#i-download"/></svg>Download archive</button>`;
-    detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}"><header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header><div class="dataset-detail-grid"><section><h4>Build record</h4><dl class="kv"><dt>Task / format</dt><dd>${cfg.task} &middot; ${cfg.format}</dd><dt>Source</dt><dd>${cfg.project} &middot; promoted observations only</dd><dt>Membership</dt><dd>${cfg.queries} &middot; deduplicated</dd><dt>Build result</dt><dd>${cfg.build} &middot; completed cleanly</dd><dt>Fingerprint</dt><dd class="mono">${cfg.fingerprint}</dd></dl></section><section><h4>Composition and split</h4><div class="dataset-facts"><span><b>${observations}</b> observations</span><span><b>${frames}</b> frames</span><span><b>${classes}</b> classes</span><span><b>${cfg.size}</b> archive</span></div><div class="splitbar" role="img" aria-label="${cfg.split} train validation test split"><i class="tr" style="width:70%"><span>70%</span></i><i class="va" style="width:20%"><span>20%</span></i><i class="te" style="width:10%"><span>10%</span></i></div><p class="dataset-class-summary">${cfg.classes}</p><span class="hint">${cfg.groups}; connected frames stay in one split.</span></section><section class="dataset-samples"><h4>Sample images <span>design preview</span></h4><div class="thumbs">${thumbs}</div></section></div><footer>${readyActions}</footer></div></td>`;
-    head.after(detail);
-    const open = $('[aria-label="Open"]', head);
-    if (open) {
-      open.setAttribute('aria-label', `Show details for ${name}`);
-      open.title = 'Show provenance, composition, split and sample images';
-      open.addEventListener('click', () => $('.exbtn', head)?.click());
-    }
-  });
+  };
 
   const search = $('[data-dataset-search]');
   const task = $('[data-dataset-task]');
   const status = $('[data-dataset-status]');
   const count = $('[data-dataset-count]');
   const footer = $('#saved-datasets-panel .panel-ft > span');
+
+  /* **Reads the rows out of the DOM every time, rather than closing over a list.** The
+     table is rebuilt when a build starts or finishes, so a captured node list is stale
+     from the first completion onwards -- it would go on filtering rows that are no
+     longer on the page and ignoring the ones that are. */
   const filter = () => {
+    const heads = $$(':scope > tr.runrow-head', body);
     const query = search.value.trim().toLowerCase();
     const wanted = task.value;
     const wantedStatus = status.value;
@@ -5120,16 +5277,88 @@ async function wireDatasetPage() {
     count.textContent = `(${shown} shown of ${heads.length})`;
     if (footer) footer.innerHTML = `Showing <b class="strong">${shown}</b> of ${heads.length} builds and datasets`;
   };
-  /* **Bound here, not in the boot list.** `wireAccordions` runs before this
-     function resolves -- these rows come from the API, so they did not exist
-     when it swept the page -- and without this the expander on every dataset
-     did nothing at all. */
-  wireAccordions();
+
+  /** What the table was last drawn from, so a poll can tell a move from a change. */
+  let drawn = '';
+
+  /**
+   * Ask MARP, and redraw only when the answer is a different table.
+   *
+   * @param {boolean} first - True for the initial draw, which always renders.
+   * @returns {Promise<boolean>} Whether anything is still building.
+   */
+  const refresh = async (first) => {
+    let datasets;
+    let inFlight;
+
+    try {
+      [datasets, inFlight] = await Promise.all([
+        window.MarpApi.listDatasets(),
+        window.MarpApi.listDatasetBuilds(),
+      ]);
+    } catch (error) {
+      /* Only on the first draw. A poll that fails is a blip, and replacing a table
+         somebody is reading with an error because one request in a hundred timed out is
+         worse than leaving the last good answer on screen until the next one lands. */
+      if (first) {
+        body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load datasets (${error.status || 'no answer'}).</td></tr>`;
+      }
+      return false;
+    }
+
+    const builds = new Map(inFlight.map((build) => [build.dataset_id, build]));
+
+    /* The shape of the table: which datasets, in which state. The counts are
+       deliberately left out -- they move constantly and moving them is what the patch
+       below is for. */
+    const shape = datasets.map((set) => `${set.id}:${datasetScreenStatus(set, builds.get(set.id) || null)}:${set.num_samples ?? ''}:${set.num_classes ?? ''}`).join('|');
+
+    if (first || shape !== drawn) {
+      drawn = shape;
+      fillSavedDatasets(body, datasets, builds);
+      decorate(builds);
+      /* **Bound here, not in the boot list.** `wireAccordions` runs before this
+         function resolves -- these rows come from the API, so they did not exist
+         when it swept the page -- and without this the expander on every dataset
+         did nothing at all. */
+      wireAccordions();
+      filter();
+    } else {
+      patchBuildRows(body, builds);
+    }
+
+    renderDatasetsSummary(datasets, builds);
+
+    return builds.size > 0;
+  };
+
+  let timer = null;
+
+  /**
+   * Keep asking while anything is building, and stop when nothing is.
+   *
+   * **The timer is not started on a screen with nothing in flight**, and it stops itself
+   * the moment the last build leaves -- which is the whole of #268's *poll while anything
+   * is building*. `setTimeout` rather than `setInterval` so a slow answer cannot stack a
+   * queue of requests behind itself.
+   */
+  const poll = async () => {
+    timer = null;
+    const busy = await refresh(false);
+    if (busy) timer = setTimeout(poll, DATASET_POLL_MS);
+  };
+
+  if (await refresh(true)) timer = setTimeout(poll, DATASET_POLL_MS);
+
+  /* A queued build is in flight from the instant the button answers, so the screen starts
+     watching without waiting for the next whole poll interval. */
+  document.addEventListener('marp:dataset-build-queued', () => {
+    if (!timer) timer = setTimeout(poll, 0);
+  });
 
   search.addEventListener('input', filter);
   task.addEventListener('change', filter);
   status.addEventListener('change', filter);
-  filter();
 }
 
 function wireAccordions() {
@@ -6031,12 +6260,14 @@ function wireDatasetBuilder() {
       });
 
       setStatus(`Build queued as job ${queued.job.id}. It cuts the frames, writes the labels and `
-        + 'packages the archive; watch it on the Jobs screen, where it can be cancelled.', 'success');
+        + 'packages the archive; it appears in the table below with its frame count and phase, '
+        + 'and can be cancelled from the Jobs screen.', 'success');
 
-      /* The saved list is where a building dataset appears, so refresh it rather than
-         leaving the reader to wonder whether anything happened. */
-      const body = $('#saved-datasets tbody');
-      if (body) await fillSavedDatasets(body);
+      /* The saved list is where a building dataset appears, so tell the table rather than
+         leaving the reader to wonder whether anything happened. An event rather than a
+         call, because the table owns its own polling now: it refreshes, notices the new
+         build and starts watching, instead of this handler reaching inside it. */
+      document.dispatchEvent(new CustomEvent('marp:dataset-build-queued'));
     } catch (error) {
       setStatus(`Could not queue the build (${error.status || 'no answer'}). Nothing was started.`, 'warning');
     } finally {

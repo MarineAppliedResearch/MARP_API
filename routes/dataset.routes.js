@@ -17,6 +17,7 @@ const path = require('path');
 const datasetController = require('../controller/dataset.controller');
 const modelArtifactService = require('../service/model-artifact.service');
 const datasetBuildRepository = require('../repository/dataset-build.repository');
+const datasetRepository = require('../repository/dataset.repository');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
@@ -297,6 +298,81 @@ function registerDatasetRoutes(app) {
         handler: asyncHandler(async (req, res) => {
             const data = await datasetController.getDatasets();
             res.json(data);
+        }),
+    });
+
+    /*
+     * **Registered before `/api/dataset/:id`, and that is load-bearing.** Express matches
+     * in registration order, so after it this path is a dataset whose id is the word
+     * "builds" -- which reaches `findByPk('builds')` and comes back a 500 about an integer.
+     */
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/builds',
+        summary: 'Fetch the dataset builds that are still running',
+        description:
+            'How far every dataset build in flight has got: frames done against total, and which phase it is in. '
+            + '**A route of its own rather than a field on `GET /api/dataset`**, for three reasons. The progress is not a property '
+            + 'of a dataset -- it belongs to the latest attempt of the `dataset_build` job building it, and what the dataset itself '
+            + 'records is `status`, plus `num_samples` once the build finishes. the `Dataset` schema is generated from the Sequelize '
+            + 'model, so a `build` object on the row could not be described without a hand-maintained parallel schema. And this is '
+            + 'the route a screen polls: `GET /api/dataset` is unpaged and grows without bound, while this answers only about work '
+            + 'in flight and answers `[]` the moment there is none -- which is the answer that stops the polling. '
+            + '**`queued` is returned as well as `leased`**, without an attempt and so without progress: `datasets.status` is '
+            + '`building` from the instant a build is queued, so the dataset alone cannot distinguish waiting from started. '
+            + 'At most one row per dataset, newest job first.',
+        tags: ['V1 · MachineLearning'],
+        responses: {
+            200: {
+                description: 'Every build that is queued or running, at most one per dataset.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    dataset_id: { type: 'integer', description: 'The dataset being built.' },
+                                    job_id: { type: 'integer', description: 'The `dataset_build` job, on the Jobs screen like any other.' },
+                                    state: {
+                                        type: 'string',
+                                        enum: ['queued', 'leased'],
+                                        description: '`queued` is waiting to start and has no attempt; `leased` is running.',
+                                    },
+                                    attempts_made: { type: 'integer' },
+                                    max_attempts: { type: 'integer' },
+                                    queued_at: { type: 'string', format: 'date-time' },
+                                    attempt_id: { type: 'integer', nullable: true, description: 'Null while the build is still queued.' },
+                                    progress_done: {
+                                        type: 'integer',
+                                        nullable: true,
+                                        description: 'Frames written so far. Null until the extracting phase begins, which is not the same as zero.',
+                                    },
+                                    progress_total: {
+                                        type: 'integer',
+                                        nullable: true,
+                                        description: 'Frames the build intends to cut. Not known until selection finishes, which on a large query is minutes.',
+                                    },
+                                    progress_unit: { type: 'string', nullable: true, example: 'frames' },
+                                    progress_phase: {
+                                        type: 'string',
+                                        nullable: true,
+                                        enum: ['selecting', 'extracting', 'packaging'],
+                                        description: 'What it is doing. A build sits in `selecting` with no counts at all, so a reader seeing no number needs this to tell waiting from stuck.',
+                                    },
+                                    started_at: { type: 'string', format: 'date-time', nullable: true },
+                                    last_heartbeat_at: { type: 'string', format: 'date-time', nullable: true },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await datasetRepository.getBuildsInFlight());
         }),
     });
 
