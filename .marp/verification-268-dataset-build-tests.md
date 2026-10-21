@@ -205,19 +205,26 @@ not.** It was offered as having seen three `marp-build-*` directories deleted la
 afternoon, and that cannot be what happened — all three were created hours before the run,
 so they were in the opening snapshot and filtered out by construction.
 
-The run is bounded to seventeen seconds, 21:26:59–21:27:16 UTC, and the obvious candidate
-— somebody else's build starting inside it — was then **checked against the development
-database and failed**: no `dataset_build` job was created between 21:10 and 21:45, the
-nearest being 21:09:18 (`test2`, dead by 21:10:27) and 22:09:02 (`test3`). Nothing of
-anybody else's was starting or running in that window.
+**Both sightings are now explained, and by the same thing: two jest runs of these suites
+on one machine at the same time.**
 
-So the honest reading has moved, and it moved **toward** this suite rather than away from
-it: with no foreign build to blame, the likeliest remaining explanation is that one of
-this file's own builds genuinely failed to remove its staging. That is not far-fetched —
-a 238.7 MB `marp-build-*` directory survived its `finally` the same afternoon when ffmpeg
-was killed mid-pass, so removal failing on Windows is demonstrated rather than theoretical.
-It has happened once in many runs and has not been reproduced. **Left open, and pointing
-here.**
+The two failing runs overlapped. One started 21:26:59.610 UTC and ran 16.9s, ending
+21:27:16; the other's log is written at 21:27:24.296 after 21.8s, so it started 21:27:02.5
+— fourteen seconds of overlap, two processes, each running this file's eight real builds
+through `runOne`, each creating `marp-dataset-*` staging in the same `%TEMP%`. Each one
+snapshotted at its own start and then watched the other's directories appear. Both fired;
+both were right that a directory appeared and stayed; neither was a leak.
+
+The foreign-*product*-build candidate was checked and failed first, which is what forced
+the right answer: no `dataset_build` job was created on the development database between
+21:10 and 21:45 UTC, and none on the other workspace's database in the whole hour. Nothing
+but these suites was building.
+
+The two databases were different — 5462 and 5464 — which is exactly why it was hard to
+see. **Workspace isolation covers the database and the ports and stops at `os.tmpdir()`.**
+A per-process staging directory, `%TEMP%/marp-builds/<pid>/`, would have made this
+impossible to mistake, and is the same control that would stop a prefix sweep reaching a
+live build.
 
 The check is kept, because the alternative is not noticing a real leak. What changed is
 the failure text: it now names the directories **and** says to check for another build
