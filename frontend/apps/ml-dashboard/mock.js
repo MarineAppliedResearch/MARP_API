@@ -5626,17 +5626,14 @@ async function wireDatasetPage() {
       const classes = original[4]?.textContent.trim() || '';
       const isBuild = status === 'building' || status === 'queued' || status === 'attention';
       head.classList.add('runrow-head');
-      head.dataset.datasetTask = cfg.task ? cfg.task.toLowerCase() : '';
-      head.dataset.search = `${name} ${description} ${cfg.task || ''} ${cfg.project} ${status} ${build ? build.job_id : ''}`.toLowerCase();
-      const task = document.createElement('td');
-      task.className = 'jtype';
-      task.dataset.sort = cfg.task || '';
-      /* No pill when there is no task. A pill is a value; a dash is the absence of one,
-         and drawing an empty pill would be a third thing meaning neither. */
-      task.innerHTML = cfg.task
-        ? `<span class="task-pill" data-task="${cfg.task.toLowerCase()}">${cfg.task}</span>`
-        : NOT_IN_DATASET;
-      original[1].after(task);
+      head.dataset.search = `${name} ${description} ${cfg.project} ${status} ${build ? build.job_id : ''}`.toLowerCase();
+      /* **No TASK column.** It meant the training task -- detection, classification,
+         segmentation -- and `Dataset` records none, so it was a dash on every row that
+         came from MARP. It said "Unassigned" before that, which claimed somebody had
+         failed to assign one. Isaac, 2026-10-21: *"it'll never have a value"*, so the
+         column is gone rather than better at being empty. The filter beside it went with
+         it: without the cell there is no `data-dataset-task` to match, so the only thing
+         it could still do is hide every row. */
       const state = document.createElement('td');
       state.className = 'jstatus';
       state.dataset.sort = status;
@@ -5646,7 +5643,8 @@ async function wireDatasetPage() {
          *Building* is what they already knew from opening the screen. The filter still
          keys on `data-dataset-status`, so filtering by Building is unchanged. */
       state.innerHTML = `<span class="pill" data-state="${stateTone}">${datasetPillContents(status, build)}</span>`;
-      task.after(state);
+      /* After the description, which is where the Task cell used to sit. */
+      original[1].after(state);
       const expand = document.createElement('td');
       expand.className = 'ex';
       /* **A build expands here, on Datasets.** It used to carry a mark linking
@@ -5725,7 +5723,7 @@ async function wireDatasetPage() {
         const detail = document.createElement('tr');
         detail.className = 'runrow-body dataset-row-detail';
         detail.hidden = true;
-        detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}">`
+        detail.innerHTML = `<td colspan="10"><div class="dataset-detail" data-status="${status}">`
           + `<header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">${datasetPillContents(status, build)}</span></header>`
           + `<div class="dataset-build-progress">${bar}<span class="build-frames">${frames} frames</span></div>`
           + note
@@ -5748,7 +5746,7 @@ async function wireDatasetPage() {
       detail.className = 'runrow-body dataset-row-detail';
       detail.hidden = true;
       const readyActions = `<button class="btn sm" type="button" title="Use these immutable queries and split as a new starting point"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup</button><button class="btn sm" type="button" title="Open Training with this dataset selected"><svg class="ico"><use href="#i-training"/></svg>Use for training</button><button class="btn sm" type="button" title="Download the built images, labels and manifest"><svg class="ico"><use href="#i-download"/></svg>Download archive</button>`;
-      detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}"><header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header><div class="dataset-detail-grid"><section><h4>Build record</h4><dl class="kv"><dt>Task / format</dt><dd>${cfg.task || NOT_IN_DATASET} &middot; ${cfg.format}</dd><dt>Source</dt><dd>${cfg.project} &middot; promoted observations only</dd><dt>Membership</dt><dd>${cfg.queries} &middot; deduplicated</dd><dt>Build result</dt><dd>${cfg.build} &middot; completed cleanly</dd><dt>Fingerprint</dt><dd class="mono">${cfg.fingerprint}</dd></dl></section><section><h4>Composition and split</h4><div class="dataset-facts"><span><b>${observations}</b> observations</span><span><b>${frames}</b> frames</span><span><b>${classes}</b> classes</span><span><b>${cfg.size}</b> archive</span></div><div class="splitbar" role="img" aria-label="${cfg.split} train validation test split"><i class="tr" style="width:70%"><span>70%</span></i><i class="va" style="width:20%"><span>20%</span></i><i class="te" style="width:10%"><span>10%</span></i></div><p class="dataset-class-summary">${cfg.classes}</p><span class="hint">${cfg.groups}; connected frames stay in one split.</span></section><section class="dataset-samples"><h4>Sample images <span>design preview</span></h4><div class="thumbs">${thumbs}</div></section></div><footer>${readyActions}</footer></div></td>`;
+      detail.innerHTML = `<td colspan="10"><div class="dataset-detail" data-status="${status}"><header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header><div class="dataset-detail-grid"><section><h4>Build record</h4><dl class="kv"><dt>Task / format</dt><dd>${cfg.task || NOT_IN_DATASET} &middot; ${cfg.format}</dd><dt>Source</dt><dd>${cfg.project} &middot; promoted observations only</dd><dt>Membership</dt><dd>${cfg.queries} &middot; deduplicated</dd><dt>Build result</dt><dd>${cfg.build} &middot; completed cleanly</dd><dt>Fingerprint</dt><dd class="mono">${cfg.fingerprint}</dd></dl></section><section><h4>Composition and split</h4><div class="dataset-facts"><span><b>${observations}</b> observations</span><span><b>${frames}</b> frames</span><span><b>${classes}</b> classes</span><span><b>${cfg.size}</b> archive</span></div><div class="splitbar" role="img" aria-label="${cfg.split} train validation test split"><i class="tr" style="width:70%"><span>70%</span></i><i class="va" style="width:20%"><span>20%</span></i><i class="te" style="width:10%"><span>10%</span></i></div><p class="dataset-class-summary">${cfg.classes}</p><span class="hint">${cfg.groups}; connected frames stay in one split.</span></section><section class="dataset-samples"><h4>Sample images <span>design preview</span></h4><div class="thumbs">${thumbs}</div></section></div><footer>${readyActions}</footer></div></td>`;
       head.after(detail);
       const open = $('[aria-label="Open"]', head);
       if (open) {
@@ -5760,7 +5758,6 @@ async function wireDatasetPage() {
   };
 
   const search = $('[data-dataset-search]');
-  const task = $('[data-dataset-task]');
   const status = $('[data-dataset-status]');
   const count = $('[data-dataset-count]');
   const footer = $('#saved-datasets-panel .panel-ft > span');
@@ -5772,12 +5769,10 @@ async function wireDatasetPage() {
   const filter = () => {
     const heads = $$(':scope > tr.runrow-head', body);
     const query = search.value.trim().toLowerCase();
-    const wanted = task.value;
     const wantedStatus = status.value;
     let shown = 0;
     heads.forEach((head) => {
       const match = (!query || head.dataset.search.includes(query))
-        && (wanted === 'all' || head.dataset.datasetTask === wanted)
         && (wantedStatus === 'all' || head.dataset.datasetStatus === wantedStatus);
       head.hidden = !match;
       const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
@@ -5815,7 +5810,7 @@ async function wireDatasetPage() {
          somebody is reading with an error because one request in a hundred timed out is
          worse than leaving the last good answer on screen until the next one lands. */
       if (first) {
-        body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load datasets (${error.status || 'no answer'}).</td></tr>`;
+        body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="10">Could not load datasets (${error.status || 'no answer'}).</td></tr>`;
       }
       return false;
     }
@@ -5930,7 +5925,6 @@ async function wireDatasetPage() {
   });
 
   search.addEventListener('input', filter);
-  task.addEventListener('change', filter);
   status.addEventListener('change', filter);
 }
 
