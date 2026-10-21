@@ -203,9 +203,28 @@ The first is explained: a run of this group by another session, which saw four
 `marp-dataset-*` directories that session then deleted four minutes later. **The second is
 not.** It was offered as having seen three `marp-build-*` directories deleted later that
 afternoon, and that cannot be what happened — all three were created hours before the run,
-so they were in the opening snapshot and filtered out by construction. Something appeared
-during that run and stayed; what, is not established, and a build elsewhere on the machine
-is the likeliest candidate rather than a demonstrated one.
+so they were in the opening snapshot and filtered out by construction.
+
+**Both sightings are now explained, and by the same thing: two jest runs of these suites
+on one machine at the same time.**
+
+The two failing runs overlapped. One started 21:26:59.610 UTC and ran 16.9s, ending
+21:27:16; the other's log is written at 21:27:24.296 after 21.8s, so it started 21:27:02.5
+— fourteen seconds of overlap, two processes, each running this file's eight real builds
+through `runOne`, each creating `marp-dataset-*` staging in the same `%TEMP%`. Each one
+snapshotted at its own start and then watched the other's directories appear. Both fired;
+both were right that a directory appeared and stayed; neither was a leak.
+
+The foreign-*product*-build candidate was checked and failed first, which is what forced
+the right answer: no `dataset_build` job was created on the development database between
+21:10 and 21:45 UTC, and none on the other workspace's database in the whole hour. Nothing
+but these suites was building.
+
+The two databases were different — 5462 and 5464 — which is exactly why it was hard to
+see. **Workspace isolation covers the database and the ports and stops at `os.tmpdir()`.**
+A per-process staging directory, `%TEMP%/marp-builds/<pid>/`, would have made this
+impossible to mistake, and is the same control that would stop a prefix sweep reaching a
+live build.
 
 The check is kept, because the alternative is not noticing a real leak. What changed is
 the failure text: it now names the directories **and** says to check for another build
