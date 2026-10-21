@@ -4765,7 +4765,7 @@ const NOT_IN_DATASET = '<span class="dash" title="Not carried by the dataset rec
  * @returns {Promise<void>}
  */
 async function fillPromotedCount() {
-  const node = $('[data-promoted-count]');
+  const node = $('[data-promoted-note]');
 
   if (!node || !window.MarpApi) return;
 
@@ -4774,13 +4774,128 @@ async function fillPromotedCount() {
     const promoted = counts.promoted || 0;
     const total = counts.total || 0;
 
-    node.textContent = promoted
-      ? ` MARP holds ${promoted.toLocaleString('en-US')} promoted of `
+    /* Appended to the explanation rather than replacing it: the hover says what
+       promotion is, and this says how much of it there is, which is the difference
+       between "query away" and "go and promote some first". */
+    node.title = `${node.title} ${promoted
+      ? `MARP holds ${promoted.toLocaleString('en-US')} promoted of `
         + `${total.toLocaleString('en-US')} observations.`
-      : ' Nothing is promoted yet, so no query here can match anything.';
+      : 'Nothing is promoted yet, so no query here can match anything.'}`;
   } catch {
     /* Context, not the rule. */
   }
+}
+
+/**
+ * The species picker: any combination, across every species list.
+ *
+ * It was a button that opened nothing. Isaac, trying to use it: *"i hit the species drop
+ * down, and there is nothing there"*.
+ *
+ * **Grouped by species list, because a common name only identifies an organism within
+ * one.** Two lists can both hold a "Sea star", and a picker that showed one row would be
+ * asking somebody to choose between two things it had drawn identically. The facets route
+ * carries `list` for exactly this reason.
+ *
+ * **It offers what is reachable, not the whole catalogue.** The list comes from
+ * `/mosaic/observations/facets` under the filters already chosen, so every row has a count
+ * and choosing any combination of them returns something. MARP holds hundreds of species
+ * and 174 promoted observations; a picker listing all of them would be mostly rows that
+ * match nothing, which is the failure the mosaic's own rail was designed to avoid.
+ *
+ * **Refilled when the other filters change**, so it never keeps offering a species that
+ * the project or dive you just picked has ruled out.
+ *
+ * @param {Object} [filters] - The rest of the question, so the list stays reachable.
+ * @returns {Promise<void>}
+ */
+async function fillSpeciesPicker(filters) {
+  const menu = $('[data-species-menu]');
+  const label = $('[data-species-label]');
+
+  if (!menu || !window.MarpApi) return;
+
+  /* What was already ticked, so refilling after another filter changed does not quietly
+     discard a choice that is still available. */
+  const held = new Set($$('input:checked', menu).map((box) => Number(box.dataset.speciesId)));
+
+  menu.innerHTML = '<label class="nodata">Loading species…</label>';
+
+  let species = [];
+
+  try {
+    const facets = await window.MarpApi.mosaicFacets(
+      { ...(filters || {}), species: null, trainingDisposition: ['promoted'] },
+      ['species']
+    );
+
+    species = facets.species || [];
+  } catch (error) {
+    menu.innerHTML = `<label class="nodata">Could not load species (${error.status || 'no answer'}).</label>`;
+    return;
+  }
+
+  if (!species.length) {
+    menu.innerHTML = '<label class="nodata">No promoted observations match the rest of this query, '
+      + 'so there is no species to choose from.</label>';
+    if (label) label.textContent = 'None available';
+    return;
+  }
+
+  const byList = new Map();
+
+  for (const entry of species) {
+    const list = entry.list || 'Unlisted';
+
+    if (!byList.has(list)) byList.set(list, []);
+
+    byList.get(list).push(entry);
+  }
+
+  const lists = [...byList.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+  menu.innerHTML = lists.map(([list, entries]) => {
+    const rows = entries
+      .sort((a, b) => String(a.label).localeCompare(String(b.label)))
+      .map((entry) => {
+        const on = held.size === 0 || held.has(Number(entry.value));
+
+        return `<label><input type="checkbox" data-species-id="${entry.value}"${on ? ' checked' : ''}>`
+          + `${escapeHtml(entry.label || `Species ${entry.value}`)}`
+          + `<small>${Number(entry.count || 0).toLocaleString('en-US')}</small></label>`;
+      }).join('');
+
+    /* One heading per list with its own all/none, because picking "every invertebrate"
+       is the move somebody actually makes and ticking nineteen boxes is not it. */
+    return `<div class="species-list"><p class="species-list-head">${escapeHtml(list)}`
+      + `<button type="button" class="text-action" data-species-all="${escapeHtml(list)}">all</button>`
+      + `<button type="button" class="text-action" data-species-none="${escapeHtml(list)}">none</button>`
+      + `</p>${rows}</div>`;
+  }).join('');
+
+  refreshSpeciesLabel();
+}
+
+/**
+ * What the collapsed picker says it has chosen.
+ *
+ * "All species" when every box is ticked, because that is what no filter means and
+ * saying "12 of 12" invites somebody to look for the twelve they are missing.
+ */
+function refreshSpeciesLabel() {
+  const menu = $('[data-species-menu]');
+  const label = $('[data-species-label]');
+
+  if (!menu || !label) return;
+
+  const boxes = $$('input[data-species-id]', menu);
+  const picked = boxes.filter((box) => box.checked);
+
+  if (!boxes.length) return;
+
+  label.textContent = picked.length === boxes.length
+    ? `All ${boxes.length} species`
+    : (picked.length ? `${picked.length} of ${boxes.length} species` : 'No species chosen');
 }
 
 async function fillDatasetPickers() {
@@ -5135,6 +5250,7 @@ async function wireDatasetPage() {
      filling is usable, and a saved-dataset list that waited for them would not be. */
   fillDatasetPickers();
   fillPromotedCount();
+  fillSpeciesPicker();
 
   const samples = [
     ['/api/v2/jellyfin/items/9f66020c16c80d2800560a76d4417080/images/Primary', 'CAMPA2024 Dive 1 · 141923'],
@@ -5910,6 +6026,7 @@ function wireDatasetBuilder() {
     if (el.type === 'checkbox') return el.checked ? 'yes' : 'no';
     if (el.tagName === 'BUTTON') return el.textContent.trim();
     if (el.tagName === 'SELECT') return (el.selectedOptions[0]?.textContent || '').trim();
+    if (el.tagName === 'DETAILS') return ($('[data-species-label]', el)?.textContent || '').trim();
     return (el.value ?? el.textContent).trim();
   };
   const snapshot = () => Object.fromEntries(filterIds.map((id) => [id, valueOf($('#' + id))]));
@@ -5954,6 +6071,16 @@ function wireDatasetBuilder() {
        all -- a query that looks like an answer. */
     const model = ($('#dsmodel')?.value || '').trim();
     if (model && Number.isInteger(Number(model))) filters.model = [Number(model)];
+
+    /* Only when it is a real narrowing. Every box ticked is the same question as no
+       species filter at all, and sending all of them would turn "anything" into a list
+       that silently excludes a species promoted a minute later. */
+    const boxes = $$('[data-species-menu] input[data-species-id]');
+    const picked = boxes.filter((box) => box.checked);
+
+    if (picked.length && picked.length < boxes.length) {
+        filters.species = picked.map((box) => Number(box.dataset.speciesId));
+    }
 
     const from = Number($('#dsconf')?.value);
     const to = Number($('#dsconfmax')?.value);
@@ -6322,6 +6449,35 @@ function wireDatasetBuilder() {
   };
 
   $('[data-queue-build]')?.addEventListener('click', queueBuild);
+
+  /* The species menu is rebuilt whenever the question around it changes, so its rows
+     are delegated rather than bound. */
+  document.addEventListener('change', (event) => {
+    if (event.target.matches('[data-species-menu] input[data-species-id]')) refreshSpeciesLabel();
+  });
+
+  document.addEventListener('click', (event) => {
+    const all = event.target.closest('[data-species-all]');
+    const none = event.target.closest('[data-species-none]');
+
+    if (!all && !none) return;
+
+    const group = (all || none).closest('.species-list');
+
+    $$('input[data-species-id]', group).forEach((box) => { box.checked = Boolean(all); });
+    refreshSpeciesLabel();
+  });
+
+  /* The reachable species depend on the rest of the question, so narrowing the project
+     or the dive narrows what is on offer. Without this the picker keeps showing species
+     that the dive you just chose has ruled out, and ticking one returns nothing. */
+  for (const id of ['dsproj', 'dsdive', 'dsline', 'dsmodel']) {
+    $('#' + id)?.addEventListener('change', () => {
+      const { species, ...rest } = mosaicFilters();
+
+      fillSpeciesPicker(rest);
+    });
+  }
 
   const destinationButtons = $$('[data-dataset-destination]');
   destinationButtons.forEach((button) => button.addEventListener('click', () => {

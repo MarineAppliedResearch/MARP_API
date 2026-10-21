@@ -77,17 +77,10 @@
             </header>
             <div class="panel-bd">
 
-              <p class="locked-note">
+              <p class="locked-note" data-rendered data-promoted-note
+                 title="A reviewer promotes an observation in the Mosaic Reviewer when its picture and its box are good enough to learn from — not occluded, not too small, the box not too loose. That is a separate judgement from whether the species is right, which is what reviewing decides. Nothing that has not been promoted can enter a dataset.">
                 <svg class="ico sm"><use href="#i-check"/></svg>
                 <span>Promoted observations only <span class="ro-tag">always</span></span></p>
-              <p class="muted locked-why">
-                A reviewer <b>promotes</b> an observation in the Mosaic Reviewer when its
-                picture and its box are good enough to learn from &mdash; not occluded, not
-                too small, the box not too loose. That is a separate judgement from whether
-                the species is right, which is what reviewing decides. Nothing that has not
-                been promoted can enter a dataset.
-                <span data-rendered data-promoted-count></span>
-              </p>
 
               <div class="field">
                 <label for="dsproj">Project</label>
@@ -110,10 +103,11 @@
                 </div>
               </div>
               <div class="field">
-                <label for="dsspecies">Species</label>
-                <button class="sel wide picker" id="dsspecies" type="button"
-                        title="Choose which species to include">All species
-                  <svg class="ico sm"><use href="#i-right"/></svg></button>
+                <label>Species</label>
+                <details class="multi-pick" id="dsspecies">
+                  <summary><span>Species</span><b data-rendered data-species-label></b></summary>
+                  <div class="multi-menu species-menu" data-rendered data-species-menu></div>
+                </details>
               </div>
               <div class="field">
                 <label for="dsmodel">Generating model</label>

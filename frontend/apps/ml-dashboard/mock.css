@@ -1901,14 +1901,22 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
   color: var(--mint-300); font-size: 11.5px; font-weight: 600;
 }
 
-/* The rule above states a constraint; this says what the constraint means. Kept
-   immediately under it and quieter, so it reads as the explanation rather than as a
-   second rule. */
-.locked-why {
-  margin: 0 0 15px; padding: 0 2px;
-  font-size: 11.5px; line-height: 1.55; color: var(--muted);
+/* The rule carries its own explanation on hover, so the panel stays short. The cursor
+   says there is something to read; without it nobody hovers a line of text. */
+.locked-note { cursor: help; }
+
+/* Species, grouped by the list each belongs to: a common name identifies an organism
+   only within its list, so the grouping is the disambiguation rather than decoration. */
+.species-menu { max-height: 320px; overflow-y: auto; }
+.species-list + .species-list { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--hairline); }
+.species-list-head {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 3px; padding: 0 2px;
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint);
 }
-.locked-why b { color: var(--mint-300); font-weight: 650; }
+.species-list-head .text-action { margin: 0; font-size: 10px; font-weight: 600; }
+.species-list-head .text-action:first-of-type { margin-left: auto; }
+.species-menu .nodata { padding: 6px 2px; color: var(--muted); font-size: 11px; }
 
 /* The class breakdown with a share column as well as a count. */
 .dist.wide, .dist.pct { grid-template-columns: auto minmax(36px, 1fr) auto auto; }
