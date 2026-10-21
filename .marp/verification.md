@@ -325,3 +325,15 @@ simply retire more.**
 extractor is **paused**, persistently, with the reason recorded in
 `thumbnail_extraction_state.note`. They resume where they left off whenever somebody resumes
 it. The port 3001 process was stopped; port 3000 was never touched and is still serving.
+
+**The 28 rows are deliberately left damaged**, decided 2026-10-21: repairing them before the
+401 is reclassified would just feed them back to the thing that retired them. The order is
+fix, then repair, then resume -- and the repair is one statement whose `WHERE` clause is
+written out above, so whoever does it does not have to reconstruct the boundary.
+
+Three things are therefore true of this database until that work lands, and all three are
+deliberate rather than forgotten:
+
+- thumbnail extraction is paused,
+- 62 rows are queued and waiting,
+- 28 observations are marked permanently failed and are not.

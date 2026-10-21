@@ -270,6 +270,17 @@ schema, the schedule, or what gets deleted.
   taken as written, and three of four had moved. Recorded above under *What investigation
   found* so the next reader does not re-derive it.
 
+- **2026-10-21** -- **The first real run found a defect this issue makes dangerous, and the
+  order of the repair was settled rather than assumed.** `resolveVideoSource` records a
+  Jellyfin **401** as a *permanent* failure, and permanent means both *Ask again* and the
+  sweeper refuse the row. Unattended, a sweep landing inside a 401 window retires up to 200
+  good observations in one pass and the flag suppresses any sign of it. 28 rows were lost that
+  way, on two videos that demonstrably resolve.
+
+  Extraction is paused, and the 28 are **left damaged on purpose**: repairing them first would
+  hand them straight back to the thing that retired them. Fix the classification, then repair,
+  then resume. The defect is out of this task's scope and is not fixed here.
+
 ## Plan
 
 Written for the shape the recommendations above imply. It changes if the answers do.
