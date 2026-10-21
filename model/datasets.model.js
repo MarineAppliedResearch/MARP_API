@@ -121,12 +121,27 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       num_samples: {
-        // Number of image or video samples in this dataset
+        // How many images are in this dataset -- one per extracted frame.
+        //
+        // This used to say "images, frames, or observations", and all three are not one
+        // quantity: 115 observations here produce 13,380 images. `package-dataset.js`
+        // has always written its `images:` count into this column, so that is what every
+        // existing row means and that is what it keeps meaning.
         type: DataTypes.INTEGER,
         allowNull: true,
-        comment: 'Total number of samples (images, frames, or observations) included in this dataset.',
+        comment: 'How many images are in this dataset: one per extracted frame. Not the observation count, which is num_observations and is much smaller -- a keyframe is a box at a frame number and the frames between two keyframes are interpolated and trained on as well.',
         jsonSchema: {
-            description: 'Total number of samples (images, frames, or observations) included in this dataset.',
+            description: 'How many images are in this dataset: one per extracted frame. Not the observation count, which is num_observations and is much smaller -- a keyframe is a box at a frame number and the frames between two keyframes are interpolated and trained on as well.',
+        },
+      },
+
+      num_observations: {
+        // The new half of the pair. See migration 20261021120000.
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: 'How many observations went into this dataset, as recorded when it was built. Null for a dataset built before MARP recorded membership, which is not the same as zero.',
+        jsonSchema: {
+            description: 'How many observations went into this dataset, as recorded when it was built. Null for a dataset built before MARP recorded membership, which is not the same as zero.',
         },
       },
 

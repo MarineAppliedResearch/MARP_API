@@ -17,6 +17,7 @@ const path = require('path');
 const datasetController = require('../controller/dataset.controller');
 const modelArtifactService = require('../service/model-artifact.service');
 const datasetBuildRepository = require('../repository/dataset-build.repository');
+const { imageSettings } = require('../service/dataset-build.service');
 const datasetRepository = require('../repository/dataset.repository');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
@@ -188,6 +189,26 @@ function registerDatasetRoutes(app) {
 
             if (!name || !String(name).trim()) {
                 throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A dataset name is required.');
+            }
+
+            /* **Settled here, not minutes later in the runner.** `imageSettings` is what
+               the build calls before it cuts anything, and it throws the useful message
+               for an unknown format, a quality out of range, and png asked for with a
+               quality. Calling it at the route turns all three into a 400 on the request
+               that made the mistake -- without it, `{"format":"webp"}` answered 201, left
+               a dataset row saying `building`, and then failed in a job the asker had to
+               go and find. The thrown text is the message, because it already names the
+               mistake and what is allowed.
+
+               Only the format is settled here. Everything else the spec carries is about
+               which observations to select, and that is a question the build has to run
+               to answer. */
+            if (image !== undefined && image !== null) {
+                try {
+                    imageSettings(image);
+                } catch (error) {
+                    throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, error.message);
+                }
             }
 
             /* A service client can queue a build; only a person is recorded as having

@@ -358,6 +358,57 @@ describe('GET /api/v2/dataset/builds', () => {
     });
 
     /**
+     * The image format is settled at the request, not minutes later in the runner.
+     *
+     * `{"format":"webp"}` used to answer 201 and then fail inside a job the asker had to
+     * go and find -- a long way from the mistake, and after a dataset row had already been
+     * created saying `building`. The route calls the same `imageSettings` the build calls,
+     * so there is one answer to what a format is rather than two that can drift.
+     */
+    describe('refusing an image format the build cannot write', () => {
+        const queue = (image) => global.api
+            .post('/api/v2/dataset/build')
+            .send({ name: `jest-image-${stamp}-${Math.random().toString(36).slice(2, 8)}`, image });
+
+        /** Nothing was queued, so there is no dataset left saying `building` for ever. */
+        async function nothingWasQueued(before) {
+            const after = await db.sequelize.query(
+                "SELECT count(*)::int AS n FROM gpu_jobs WHERE kind = 'dataset_build'",
+                { type: QueryTypes.SELECT }
+            );
+
+            expect(after[0].n).toBe(before);
+        }
+
+        it('refuses a format it does not write, and queues nothing', async () => {
+            const [{ n: before }] = await db.sequelize.query(
+                "SELECT count(*)::int AS n FROM gpu_jobs WHERE kind = 'dataset_build'",
+                { type: QueryTypes.SELECT }
+            );
+
+            const res = await queue({ format: 'webp' });
+
+            expect(res.status).toBe(400);
+            expect(res.body.error.message).toMatch(/webp/);
+            await nothingWasQueued(before);
+        });
+
+        it('refuses a quality outside 1 to 100', async () => {
+            const res = await queue({ format: 'jpeg', quality: 140 });
+
+            expect(res.status).toBe(400);
+            expect(res.body.error.message).toMatch(/quality/i);
+        });
+
+        it('refuses png with a quality rather than ignoring it', async () => {
+            const res = await queue({ format: 'png', quality: 95 });
+
+            expect(res.status).toBe(400);
+            expect(res.body.error.message).toMatch(/png/i);
+        });
+    });
+
+    /**
      * Every route in this API requires a permission, and this one reads datasets. Asserted
      * because the screen fetches it on a timer: a route that answered anonymously would put
      * which surveys are being trained on in front of anybody who opened the page.

@@ -583,8 +583,15 @@
         location: `datasets/${i}/`,
         /* Null until a build finishes. The counts are written when the archive is
            packaged, so a row that exists while they do not is the normal case for
-           hours, and it is the case that threw when the screen assumed a number. */
+           hours, and it is the case that threw when the screen assumed a number.
+
+           **Two quantities, not one.** `num_samples` is images -- one per extracted
+           frame -- and `num_observations` is how many observations went in. The second
+           is far smaller, because the frames between two keyframes are interpolated and
+           trained on as well, so a corpus that made them equal would hide the column
+           that was being filled with the wrong one. */
         num_samples: status === 'ready' ? int(r, 2000, 60000) : null,
+        num_observations: status === 'ready' ? int(r, 40, 900) : null,
         num_classes: status === 'ready' ? classes : null,
         source: 'mosaic review',
         status,
