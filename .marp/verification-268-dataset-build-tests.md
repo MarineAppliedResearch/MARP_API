@@ -217,17 +217,29 @@ There were **three** firings on 2026-10-21, not two, and all six directories are
 | 21:26:59 (another workspace) | `marp-build-4ITKD3`, `marp-dataset-r2AR2H` |
 | 21:27:02 (here) | `marp-dataset-KYAslZ` |
 
-**None of those names was ever deleted by anybody.** The two sweeps that afternoon list
-what they removed — `marp-dataset-{0OlwhT,BusBwF,OohISE,V0X3fB}` at ~21:09 and
-`marp-build-{7zmxkg,QLPM68,c5AIj4}` at ~21:52 — and no sighted name is among them. The
-second sweep matched `marp-dataset-*` too, so had `r2AR2H` or `KYAslZ` still existed at
-21:52 it would have taken them and said so. **All six are gone now**, removed by nothing
-anyone did.
+**Four of the six demonstrably vanished with nobody deleting them**, which is what
+establishes the mechanism:
+
+- `UFO5fS` was sighted at the end of the 21:04:36 run and is absent from the ~21:09
+  sweep's complete listing two minutes later.
+- `zbt8Hu` and `4ITKD3` are `marp-build-*`; the ~21:09 sweep did not match that prefix,
+  and the ~21:52 sweep listed only `marp-build-{7zmxkg,QLPM68,c5AIj4}`. Both were gone
+  before it ran.
+- `0OlwhT` is accounted for: deleted at ~21:09, and present in a log here from 18:07, so
+  an old one.
 
 That is what a build finishing normally looks like, and it is the one thing the leak
-reading cannot survive: a staging directory whose `finally` did not run would still be
-there. None is. So the firings were transients — another process's build, live at the
-instant this one looked, tidy a moment later.
+reading cannot survive for those firings: a staging directory whose `finally` did not run
+would still be there. The 21:04:36 firing saw **both** its directories self-clean within
+two minutes, so the transient mechanism is demonstrated on its own.
+
+**`r2AR2H` and `KYAslZ` cannot be cleared, and the record should not pretend otherwise.**
+Only the first sweep listed what it took; the later ones ran `rm` against
+`marp-build-* marp-dataset-*` with no `ls` or `du` on the second half, so a
+`marp-dataset-*` surviving until ~21:52 would have been removed silently. `KYAslZ` is this
+file's own firing, so **whether that one was a transient or a genuine leak is not
+individually decidable** — it is consistent with either. The mechanism is established; this
+instance is not, and does not need to be for the general reading to hold.
 
 The 21:26:59 and 21:27:02 runs overlapped by fourteen seconds and each reported one of the
 other's directories, which is the mechanism seen directly rather than inferred.
