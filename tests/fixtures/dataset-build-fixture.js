@@ -248,6 +248,20 @@ async function addObservation(seeded, { obsID, speciesId, video, sessionId }) {
  * The box is the same at both ends on purpose: the frames between are interpolated, and
  * a box that does not move makes every interpolated label a value the test can predict.
  *
+ * **Centred at 0.5, and that is load-bearing.** `keyframes.x, y` is the *centre* of the
+ * box, not its top-left corner -- confirmed in `service/thumbnail-geometry.js` and now
+ * said so on the model. This seeded (0.25, 0.25) while the runner still read a corner,
+ * which was consistent then and became two different things afterwards: read as a centre,
+ * a box of size 0.5 at (0.25, 0.25) sits flush against the top and left edges, so it was
+ * silently running through the clipping path and the expected label changed from
+ * `0.5 0.5 0.5 0.5` to `0.25 0.25 0.5 0.5`.
+ *
+ * Recentred rather than rewriting that expectation. A box centred at 0.5 and half the
+ * frame wide spans 0.25 to 0.75, touches no edge, and needs no clipping -- so the label
+ * is the fixture's own numbers, which is what makes it predictable. Clipping has its own
+ * coverage in the real-video suite, which is what found the corner-origin bug by
+ * asserting every coordinate lies in 0..1 and getting 1.012.
+ *
  * @async
  * @param {Object} seeded - The accumulating fixture.
  * @param {number} observationId - Which observation.
@@ -261,7 +275,7 @@ async function addKeyframes(seeded, observationId, framenums) {
                  (observation_id, subset, comname, type, framenum, x, y, width, height,
                   "createdAt", "updatedAt")
              VALUES (:observationId, 'train', :comname, 'box', :framenum,
-                     0.25, 0.25, 0.5, 0.5, NOW(), NOW())
+                     0.5, 0.5, 0.5, 0.5, NOW(), NOW())
              RETURNING keyframe_id`,
             { observationId, framenum, comname: `Jest Build ${seeded.runId}` }
         );
