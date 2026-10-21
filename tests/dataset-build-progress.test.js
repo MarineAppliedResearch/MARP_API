@@ -276,6 +276,62 @@ describe('GET /api/v2/dataset/builds', () => {
     });
 
     /**
+     * The phase carries which video the build is on, and the route hands it back whole.
+     *
+     * `progress_phase` was a bare word; it now reads `extracting 2/6 …name`, because a
+     * reader watching a four-hour build could not tell working from wedged. The screen
+     * splits it on the first space — the phase goes in the pill, the rest on its own
+     * line — so what matters here is that the route does not touch it: a phase mangled
+     * on the way out would put a filename in a status pill, or lose the video entirely.
+     */
+    it('hands back a phase that names the video, exactly as it was written', async () => {
+        const worker = await seedWorker();
+        const { jobId } = await seedBuild({ name: 'jest-phase-video', state: 'leased' });
+        const phase = 'extracting 2/6 …0727_163021_Fwd';
+
+        await seedAttempt({
+            jobId, workerId: worker, epoch: 1, done: 400, total: 4760, phase,
+        });
+
+        const build = (await mine([made.datasets.at(-1)])).get(made.datasets.at(-1));
+
+        expect(build).toBeDefined();
+        expect(build.progress_phase).toBe(phase);
+        /* And the first word is still the phase, which is the half the pill reads. */
+        expect(build.progress_phase.split(' ')[0]).toBe('extracting');
+    });
+
+    /**
+     * `progress_phase` is `varchar(64)`, and the runner trims a long video name from the
+     * left to fit — the end of a Jellyfin name is the distinguishing part. A phase at
+     * exactly the column's width has to survive, because that is the case the trimming
+     * aims at and the one a shorter column would silently cut.
+     */
+    it('keeps a phase that fills the column', async () => {
+        const [column] = await db.sequelize.query(
+            `SELECT character_maximum_length AS width
+               FROM information_schema.columns
+              WHERE table_name = 'gpu_job_attempts' AND column_name = 'progress_phase'`,
+            { type: QueryTypes.SELECT }
+        );
+
+        expect(column.width).toBeGreaterThanOrEqual(64);
+
+        const worker = await seedWorker();
+        const { jobId } = await seedBuild({ name: 'jest-phase-wide', state: 'leased' });
+        const phase = `extracting 6/6 ${'x'.repeat(column.width - 15)}`;
+
+        expect(phase).toHaveLength(column.width);
+
+        await seedAttempt({ jobId, workerId: worker, epoch: 1, done: 1, total: 2, phase });
+
+        const build = (await mine([made.datasets.at(-1)])).get(made.datasets.at(-1));
+
+        expect(build.progress_phase).toHaveLength(column.width);
+        expect(build.progress_phase).toBe(phase);
+    });
+
+    /**
      * A retry opens a second attempt on the same job, and the one worth drawing is the
      * latest. Reporting the first would show a build going backwards — the count from a
      * run that has already failed.
@@ -496,6 +552,18 @@ describe('GET /api/v2/dataset/builds', () => {
             const { jobId } = await seedBuild({ name: 'jest-series', state: 'leased' });
             const attemptId = await seedAttempt({ jobId, workerId: worker, epoch: 1 });
 
+            /* Taken before anything is seeded, so the assertion below is about the
+               difference this test made rather than about the whole answer. */
+            const measured = (async () => {
+                const res = await global.api
+                    .get('/api/v2/gpu/throughput/series')
+                    .query({ kind: 'dataset_build', bucket: 'minute' });
+
+                return (res.body.points || []).reduce((sum, p) => sum + Number(p.units_done), 0);
+            })();
+
+            await measured;
+
             /* Written at two chosen minutes rather than through `sampleProgress`, which
                stamps `now`: a test that waited a minute for the second bucket would take a
                minute. The shape is the one `sampleProgress` writes. */
@@ -510,19 +578,27 @@ describe('GET /api/v2/dataset/builds', () => {
                 );
             }
 
-            const res = await global.api
-                .get('/api/v2/gpu/throughput/series')
-                .query({ kind: 'dataset_build', bucket: 'minute' });
+            const total = async () => {
+                const res = await global.api
+                    .get('/api/v2/gpu/throughput/series')
+                    .query({ kind: 'dataset_build', bucket: 'minute' });
 
-            expect(res.status).toBe(200);
+                expect(res.status).toBe(200);
 
-            /* Scoped to the figure this test seeded rather than to the whole answer: a real
-               build on the machine running the suite is an ordinary thing, and an assertion
-               about the total would pass on an idle database and fail on a busy one. The
-               difference is 1456 - 400, which is the work done between the two readings. */
-            const differences = (res.body.points || []).map((p) => Number(p.units_done));
+                return (res.body.points || []).reduce((sum, p) => sum + Number(p.units_done), 0);
+            };
 
-            expect(differences).toContain(1056);
+            const before = await measured;
+            const after = await total();
+
+            /* **The difference this test made, not the figure it produced.** A bucket is
+               shared: the route groups by minute across every attempt of the kind, so an
+               assertion that some bucket equals 1056 passes on an idle database and fails
+               the moment a real build reports in the same minute — which is exactly how it
+               failed inside `npm run test:ml` while passing on its own. 1456 - 400 is the
+               work done between the two readings, and it is what this adds to the answer
+               whatever else is in there. */
+            expect(after - before).toBe(1056);
         });
     });
 

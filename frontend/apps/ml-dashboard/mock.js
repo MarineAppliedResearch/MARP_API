@@ -5034,6 +5034,58 @@ const DATASET_POLL_MS = 5000;
 const BUILD_PHASES = { selecting: 'Selecting', extracting: 'Extracting', packaging: 'Packaging' };
 
 /**
+ * The phase, and whatever the runner said after it.
+ *
+ * `progress_phase` was a bare word and now carries what the build is working on --
+ * `extracting 2/6 …0727_163021_Fwd`, which video of how many, trimmed from the left to
+ * fit the column because the end of a Jellyfin name is the distinguishing part. Isaac
+ * asked for it on 2026-10-21: he could not tell a build that was working from one that
+ * was wedged.
+ *
+ * **Split rather than printed whole.** The pill on the table row has room for one word,
+ * and a reader scanning the table wants the phase; the video belongs in the expanded
+ * detail where there is a line for it. Reading the first word also means this keeps
+ * working against a build that is still reporting the bare phase, which is what an API
+ * that has not been restarted yet is doing.
+ *
+ * @param {?Object} build - The in-flight build.
+ * @returns {{phase: string, detail: string}} The phase, titled, and the rest.
+ */
+function phaseOf(build) {
+  const raw = (build && build.progress_phase) || '';
+  const at = raw.indexOf(' ');
+  const word = at === -1 ? raw : raw.slice(0, at);
+
+  return {
+    phase: BUILD_PHASES[word] || word,
+    detail: at === -1 ? '' : raw.slice(at + 1).trim(),
+  };
+}
+
+/**
+ * How long since the build last said anything, which is what tells working from wedged.
+ *
+ * **Not how long since the screen last asked.** A poll that succeeds against a build
+ * that has stopped reporting would still look alive, and the question is whether the
+ * build is moving, not whether the browser is. Counted from `last_heartbeat_at`, which
+ * the runner writes on every report.
+ *
+ * @param {?Object} build - The in-flight build.
+ * @returns {string} A short phrase, or '' when nothing has reported yet.
+ */
+function buildReported(build) {
+  if (!build || !build.last_heartbeat_at) return '';
+
+  const seconds = Math.max(0, Math.round((Date.now() - Date.parse(build.last_heartbeat_at)) / 1000));
+
+  if (seconds < 90) return `${seconds}s ago`;
+
+  const minutes = Math.floor(seconds / 60);
+
+  return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ago`;
+}
+
+/**
  * A `datasets.status` as this screen's own vocabulary, given the job building it.
  *
  * Two columns answer different halves of one question and neither answers it alone.
@@ -5198,9 +5250,11 @@ function renderDatasetsSummary(datasets, builds) {
   /* What the builds in flight are actually doing, so the card says more than a number.
      Counted rather than listed: three builds extracting is one phrase, three names is a
      card trying to be the table underneath it. */
+  /* The phase alone. `progress_phase` carries which video after it, and a summary card
+     is not where a Jellyfin filename goes -- it read "extracting 2/6 …0727_163021_fwd". */
   const phases = [...builds.values()]
     .filter((build) => build.state !== 'queued' && build.progress_phase)
-    .map((build) => BUILD_PHASES[build.progress_phase] || build.progress_phase);
+    .map((build) => phaseOf(build).phase);
   const phrase = phases.length
     ? [...new Set(phases)].map((p) => p.toLowerCase()).join(' · ')
     : 'nothing building';
@@ -5290,15 +5344,56 @@ function patchBuildRows(body, builds) {
     }
     const written = $('.build-frames', detail);
     if (written) written.innerHTML = `${frames.html} frames`;
-    const elapsed = $('[data-build-elapsed]', detail);
-    if (elapsed) elapsed.textContent = buildElapsed(build) || NOT_STARTED_TEXT;
+
+    /* The same count the cell above shows, from the same answer, so the two cannot
+       disagree -- which they did, because this one used to be written once. */
+    const framesFact = $('[data-build-frames]', detail);
+    if (framesFact) framesFact.innerHTML = frames.html;
+
+    const phase = phaseOf(build);
+    const phaseFact = $('[data-build-phase]', detail);
+    if (phaseFact) phaseFact.textContent = phase.phase || NOT_STARTED_TEXT;
+
+    /* The video row is created only when there was one to name, so a build that starts
+       reporting it mid-way needs the row to arrive rather than be filled. A redraw is
+       what brings it, and the phase changing is what triggers one. */
+    const videoFact = $('[data-build-video]', detail);
+    if (videoFact) {
+      videoFact.textContent = phase.detail;
+      videoFact.closest('.jobmetric').hidden = !phase.detail;
+    }
+
+    tickBuildClocks(detail, build);
   }
+}
+
+/**
+ * The two figures that move on their own, between polls.
+ *
+ * **Both are read off instants the API already sent**, so this is a clock rather than an
+ * animation: elapsed counts from the attempt's `leased_at` and *Reported* from its
+ * `last_heartbeat_at`. Nothing here invents progress -- the frame count only ever moves
+ * when a poll brings a new one -- but a reader watching a four-hour build needs something
+ * that says the page is still alive, and *Reported* climbing past a minute is also how
+ * they see that the build is not.
+ *
+ * @param {Element} detail - The expanded row.
+ * @param {?Object} build - Its in-flight build.
+ */
+function tickBuildClocks(detail, build) {
+  const elapsed = $('[data-build-elapsed]', detail);
+  if (elapsed) elapsed.textContent = buildElapsed(build) || NOT_STARTED_TEXT;
+
+  const reported = $('[data-build-reported]', detail);
+  if (reported) reported.textContent = buildReported(build) || NOT_STARTED_TEXT;
 }
 
 /** What a build row's pill says: the phase while it runs, the state otherwise. */
 function datasetBuildLabel(status, build) {
   if (build && build.state !== 'queued' && build.progress_phase) {
-    return BUILD_PHASES[build.progress_phase] || build.progress_phase;
+    /* The phase alone. `progress_phase` carries the video after it now, and a pill in a
+       table cell is not where a Jellyfin filename goes. */
+    return phaseOf(build).phase;
   }
   return { building: 'Building', queued: 'Queued', attention: 'Needs attention', ready: 'Ready', draft: 'Draft' }[status] || 'Ready';
 }
@@ -5412,7 +5507,7 @@ async function wireDatasetPage() {
           ? `<span class="dash">${status === 'queued' ? 'Not started' : 'No count yet'}</span>`
           : `<span class="prog" data-state="${stateTone}"><span class="bar" role="progressbar" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span><span class="pct">${pct}%</span></span>`;
 
-        const fact = (label, value) => `<div class="jobmetric"><span>${label}</span><b>${value}</b></div>`;
+        const fact = (label, value, omit, hide) => (omit ? '' : `<div class="jobmetric"${hide ? ' hidden' : ''}><span>${label}</span><b>${value}</b></div>`);
         const note = failed
           ? `<div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${description}</h4><p>Materialized frames are kept; only the unread remainder needs to run again.</p></div></div>`
           : '';
@@ -5427,10 +5522,26 @@ async function wireDatasetPage() {
            and a dataset build has no worker to name because the API runs it rather than
            the pool. What an attempt does carry is the phase, the count, when it started
            and which try this is. */
+        /* **Every fact that moves carries a hook, and that is the whole lesson here.**
+           `Frames` was the FRAMES cell's text captured when the row was drawn and never
+           touched again, so a row opened during *selecting* went on saying `0 / 10,361`
+           while the cell four lines above it climbed -- two numbers for one thing, which
+           Isaac read as neither being trustworthy. A fact that can change is patched. */
+        const phase = phaseOf(build);
+        const reported = buildReported(build);
+
         const metrics = [
-          fact('Phase', build && build.progress_phase ? (BUILD_PHASES[build.progress_phase] || build.progress_phase) : NOT_STARTED_TEXT),
-          fact('Frames', frames),
+          fact('Phase', `<span data-build-phase>${build ? (phase.phase || NOT_STARTED_TEXT) : NOT_STARTED_TEXT}</span>`),
+          fact('Frames', `<span data-build-frames>${frames}</span>`),
+          /* Where the build has got to in the list of videos. **Always built, hidden when
+             there is nothing to name**, because the runner starts reporting it part-way
+             through and a row that has to be created later cannot be: the detail is drawn
+             once and patched thereafter. Hidden rather than dashed -- an empty *Video*
+             reads as a video it could not name. */
+          fact('Video', `<span data-build-video>${escapeHtml(phase.detail)}</span>`, false,
+            !phase.detail),
           fact('Elapsed', `<span data-build-elapsed>${buildElapsed(build) || NOT_STARTED_TEXT}</span>`),
+          fact('Reported', `<span data-build-reported>${reported || NOT_STARTED_TEXT}</span>`, !build),
           fact('Attempt', build ? `${build.attempts_made} of ${build.max_attempts}` : NOT_STARTED_TEXT),
           fact('Build job', build ? `#${build.job_id}` : NOT_IN_DATASET),
         ].join('');
@@ -5556,6 +5667,9 @@ async function wireDatasetPage() {
 
     renderDatasetsSummary(datasets, builds);
 
+    watching = builds;
+    if (builds.size) startClock();
+
     return builds.size > 0;
   };
 
@@ -5569,18 +5683,66 @@ async function wireDatasetPage() {
    * is building*. `setTimeout` rather than `setInterval` so a slow answer cannot stack a
    * queue of requests behind itself.
    */
+  /** What the last poll said, so the clocks between polls have instants to count from. */
+  let watching = new Map();
+
+  /**
+   * A second-by-second clock, running only while something is building.
+   *
+   * **It moves two figures and no others.** Elapsed and *Reported* are both durations
+   * since an instant the API already sent, so counting them locally is reading a clock,
+   * not guessing at progress: the frame count still moves only when a poll brings a new
+   * one. Isaac asked for a screen that looks alive while a four-hour build runs, and the
+   * honest version of that is a figure that is genuinely changing every second -- with the
+   * side effect that a build which has stopped reporting shows it, because *Reported*
+   * keeps climbing.
+   */
+  let clock = null;
+  const stopClock = () => { if (clock) { clearInterval(clock); clock = null; } };
+  const startClock = () => {
+    if (clock) return;
+    clock = setInterval(() => {
+      for (const head of $$(':scope > tr[data-dataset-id]', body)) {
+        const build = watching.get(Number(head.dataset.datasetId));
+        const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
+          ? head.nextElementSibling : null;
+        /* Only what is on screen. A collapsed row's clocks are redrawn when it opens. */
+        if (build && detail && !detail.hidden) tickBuildClocks(detail, build);
+      }
+    }, 1000);
+  };
+
   const poll = async () => {
     timer = null;
     const busy = await refresh(false);
     if (busy) timer = setTimeout(poll, DATASET_POLL_MS);
+    else stopClock();
   };
 
-  if (await refresh(true)) timer = setTimeout(poll, DATASET_POLL_MS);
+  if (await refresh(true)) {
+    timer = setTimeout(poll, DATASET_POLL_MS);
+    startClock();
+  }
 
   /* A queued build is in flight from the instant the button answers, so the screen starts
      watching without waiting for the next whole poll interval. */
   document.addEventListener('marp:dataset-build-queued', () => {
     if (!timer) timer = setTimeout(poll, 0);
+  });
+
+  /* A row opened between polls gets its clocks filled straight away rather than waiting
+     up to a second for the next tick -- an expander that shows a dash and then a figure
+     looks like it failed and recovered. */
+  body.addEventListener('click', (event) => {
+    if (!event.target.closest('.exbtn')) return;
+    window.setTimeout(() => {
+      for (const head of $$(':scope > tr[data-dataset-id]', body)) {
+        const build = watching.get(Number(head.dataset.datasetId));
+        const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
+          ? head.nextElementSibling : null;
+        if (build && detail && !detail.hidden) tickBuildClocks(detail, build);
+      }
+    }, 0);
   });
 
   search.addEventListener('input', filter);
