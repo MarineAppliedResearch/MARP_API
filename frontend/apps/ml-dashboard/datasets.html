@@ -443,10 +443,6 @@
                 <input class="inp" type="search" placeholder="Search datasets&hellip;"
                        aria-label="Search dataset builds and saved datasets" data-dataset-search title="Filter by name, description, task, status or project">
               </span>
-              <select class="sel" aria-label="Training task" data-dataset-task title="Show only datasets compatible with one training task">
-                <option value="all">All tasks</option><option value="detection">Detection</option>
-                <option value="classification">Classification</option><option value="segmentation">Segmentation</option>
-              </select>
               <select class="sel" aria-label="Build status" data-dataset-status title="Show builds or saved datasets in one lifecycle state">
                 <option value="all">All statuses</option><option value="building">Building</option>
                 <option value="queued">Queued</option><option value="attention">Needs attention</option><option value="ready">Ready</option>
@@ -462,7 +458,6 @@
                     <th class="ex"><span class="vh">Destination</span></th>
                     <th class="hjob sortable">Name</th>
                     <th class="hscope sortable">Description</th>
-                    <th class="htype sortable">Task</th>
                     <th class="hstatus sortable">Status</th>
                     <th class="htype sortable num">Observations</th>
                     <th class="htype sortable num">Frames</th>
