@@ -4751,6 +4751,38 @@ const NOT_IN_DATASET = '<span class="dash" title="Not carried by the dataset rec
  *
  * @returns {Promise<void>}
  */
+/**
+ * How much promoted work there is to build from.
+ *
+ * The panel says promoted observations are the only eligible ones. Saying how many there
+ * are turns that from a rule into a fact somebody can act on: 174 against 114,924 is the
+ * difference between "query away" and "go and promote some first", and a reader who does
+ * not know that spends their time narrowing filters that were never going to match.
+ *
+ * Silent on failure. It is context beside a rule, not the rule itself, and a sentence
+ * that could not finish is better absent than carrying an error.
+ *
+ * @returns {Promise<void>}
+ */
+async function fillPromotedCount() {
+  const node = $('[data-promoted-count]');
+
+  if (!node || !window.MarpApi) return;
+
+  try {
+    const counts = await window.MarpApi.mosaicCounts({});
+    const promoted = counts.promoted || 0;
+    const total = counts.total || 0;
+
+    node.textContent = promoted
+      ? ` MARP holds ${promoted.toLocaleString('en-US')} promoted of `
+        + `${total.toLocaleString('en-US')} observations.`
+      : ' Nothing is promoted yet, so no query here can match anything.';
+  } catch {
+    /* Context, not the rule. */
+  }
+}
+
 async function fillDatasetPickers() {
   const pickers = {
     dsproj: $('[data-fills="dsproj"]'),
@@ -5102,6 +5134,7 @@ async function wireDatasetPage() {
   /* The pickers do not block the table: a builder whose dropdowns are still
      filling is usable, and a saved-dataset list that waited for them would not be. */
   fillDatasetPickers();
+  fillPromotedCount();
 
   const samples = [
     ['/api/v2/jellyfin/items/9f66020c16c80d2800560a76d4417080/images/Primary', 'CAMPA2024 Dive 1 · 141923'],

@@ -1895,11 +1895,20 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 /* A condition that is not a choice. It looks like a setting because a person
    will look for one, and says it is fixed. */
 .locked-note {
-  display: flex; align-items: center; gap: 9px; margin: 0 0 15px;
+  display: flex; align-items: center; gap: 9px; margin: 0 0 7px;
   padding: 9px 11px; border-radius: var(--r-sm);
   background: rgba(70, 217, 154, 0.07); border: 1px solid rgba(70, 217, 154, 0.26);
   color: var(--mint-300); font-size: 11.5px; font-weight: 600;
 }
+
+/* The rule above states a constraint; this says what the constraint means. Kept
+   immediately under it and quieter, so it reads as the explanation rather than as a
+   second rule. */
+.locked-why {
+  margin: 0 0 15px; padding: 0 2px;
+  font-size: 11.5px; line-height: 1.55; color: var(--muted);
+}
+.locked-why b { color: var(--mint-300); font-weight: 650; }
 
 /* The class breakdown with a share column as well as a count. */
 .dist.wide, .dist.pct { grid-template-columns: auto minmax(36px, 1fr) auto auto; }

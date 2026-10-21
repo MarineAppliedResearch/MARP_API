@@ -77,9 +77,17 @@
             </header>
             <div class="panel-bd">
 
-              <p class="locked-note" title="Training promotion is what makes an observation eligible. Nothing else can enter a dataset.">
+              <p class="locked-note">
                 <svg class="ico sm"><use href="#i-check"/></svg>
                 <span>Promoted observations only <span class="ro-tag">always</span></span></p>
+              <p class="muted locked-why">
+                A reviewer <b>promotes</b> an observation in the Mosaic Reviewer when its
+                picture and its box are good enough to learn from &mdash; not occluded, not
+                too small, the box not too loose. That is a separate judgement from whether
+                the species is right, which is what reviewing decides. Nothing that has not
+                been promoted can enter a dataset.
+                <span data-rendered data-promoted-count></span>
+              </p>
 
               <div class="field">
                 <label for="dsproj">Project</label>
