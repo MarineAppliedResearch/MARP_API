@@ -4723,7 +4723,7 @@ function wireInferenceForm() {
  * hides the list.
  */
 /** `Dataset` does not carry this. Distinct from "not measured yet". */
-const NOT_IN_DATASET = '<span class="dash" title="Not carried by the dataset record: it has name, description, location, num_samples, num_classes, source and timestamps, and nothing else (gap 16)">&mdash;</span>';
+const NOT_IN_DATASET = '<span class="dash" title="Not carried by the dataset record: it has name, description, location, num_samples, num_observations, num_classes, source, status and timestamps, and nothing else (gap 16)">&mdash;</span>';
 
 /**
  * Puts the saved datasets from `GET /api/v2/dataset` into the lifecycle table.
@@ -4849,21 +4849,33 @@ function datasetScreenStatus(set, build) {
 /**
  * What the FRAMES cell says, which is the whole point of #268's item 1.2.
  *
- * Three different kinds of nothing, and collapsing them is what made this column useless:
+ * **A finished dataset says how many images it holds**, which is `num_samples` -- one per
+ * extracted frame. That column used to be drawn under OBSERVATIONS, so a dataset built
+ * from 5 observations into 333 images read as 333 observations and no frames at all,
+ * exactly backwards. `num_observations` is the observation count now and this is the
+ * images one.
  *
- * - **Not building.** `Dataset` has no frame count at all -- `num_samples` is images, and
- *   calling it frames as well would be one number pretending to be two measurements.
+ * While a build runs, the same cell counts up instead. Three different kinds of nothing,
+ * and collapsing them is what made this column useless:
+ *
  * - **Queued.** Nothing has started, so there is nothing to count.
  * - **Selecting.** Running, and the total is not known yet: the runner has to resolve the
  *   observations and their videos before it can say how many frames it intends to cut,
  *   which on a large query is minutes. A reader seeing a dash here needs the phase beside
  *   it, or they conclude the build is stuck.
+ * - **Never built.** A draft, or a dataset imported before MARP counted anything.
  *
  * @param {?Object} build - The in-flight build, or null.
+ * @param {Object} [set] - The dataset, for the finished count.
  * @returns {{html: string, sort: number}} The cell's contents and its sort key.
  */
-function buildFramesCell(build) {
-  if (!build) return { html: NOT_IN_DATASET, sort: -1 };
+function buildFramesCell(build, set) {
+  if (!build) {
+    const images = set && set.num_samples;
+    return images == null
+      ? { html: NOT_IN_DATASET, sort: -1 }
+      : { html: images.toLocaleString(), sort: images };
+  }
 
   if (build.state === 'queued') {
     return { html: '<span class="dash" title="Waiting to start: no attempt has been opened">Not started</span>', sort: -1 };
@@ -4926,7 +4938,7 @@ function fillSavedDatasets(body, datasets, builds) {
 
   body.innerHTML = datasets.map((set) => {
     const build = builds.get(set.id) || null;
-    const frames = buildFramesCell(build);
+    const frames = buildFramesCell(build, set);
 
     /* The real status travels on the row, so the decoration below reads what MARP says
        rather than defaulting every API row to `ready` -- which is what it did, so a
@@ -4934,13 +4946,14 @@ function fillSavedDatasets(body, datasets, builds) {
     return `<tr data-dataset-id="${set.id}" data-dataset-status="${datasetScreenStatus(set, build)}">`
       + `<td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">${set.name}</span></span></td>`
       + `<td class="jscope">${set.description || ''}</td>`
-      /* Null until a build finishes, and a build now takes hours -- so this row exists
-         while the counts do not. `toLocaleString()` on the null threw and took the whole
-         table with it, which is how queueing a build from this screen first failed. */
-      + `<td class="num" data-sort="${set.num_samples ?? -1}">`
-      + `${set.num_samples == null ? NOT_IN_DATASET : set.num_samples.toLocaleString()}</td>`
-      /* Frames is not a column on `Dataset`, so a dataset that is not being built has no
-         answer here. One that is being built does: its attempt counts them. */
+      /* **`num_observations`, not `num_samples`.** This column is headed OBSERVATIONS and
+         used to be filled with the image count, which is a different and much larger
+         quantity -- 5 observations became 333 images and the row said 333 observations.
+         Null until a build finishes, and for every dataset built before MARP recorded
+         membership at all. `toLocaleString()` on that null threw and took the whole table
+         with it, which is how queueing a build from this screen first failed. */
+      + `<td class="num" data-sort="${set.num_observations ?? -1}">`
+      + `${set.num_observations == null ? NOT_IN_DATASET : set.num_observations.toLocaleString()}</td>`
       + `<td class="num" data-frames data-sort="${frames.sort}">${frames.html}</td>`
       + `<td class="num" data-sort="${set.num_classes ?? -1}">${set.num_classes ?? NOT_IN_DATASET}</td>`
       + `<td class="jtime" data-sort="${set.created_at}">${stamp(set.created_at)}</td>`
@@ -5311,7 +5324,7 @@ async function wireDatasetPage() {
     /* The shape of the table: which datasets, in which state. The counts are
        deliberately left out -- they move constantly and moving them is what the patch
        below is for. */
-    const shape = datasets.map((set) => `${set.id}:${datasetScreenStatus(set, builds.get(set.id) || null)}:${set.num_samples ?? ''}:${set.num_classes ?? ''}`).join('|');
+    const shape = datasets.map((set) => `${set.id}:${datasetScreenStatus(set, builds.get(set.id) || null)}:${set.num_samples ?? ''}:${set.num_observations ?? ''}:${set.num_classes ?? ''}`).join('|');
 
     if (first || shape !== drawn) {
       drawn = shape;
