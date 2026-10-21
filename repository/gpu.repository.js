@@ -549,7 +549,8 @@ class GpuRepository {
                  SELECT b.at,
                         (SELECT count(*)::int FROM gpu_jobs j
                           WHERE j.created_at >= b.at
-                            AND j.created_at < b.at + ('1 ${bucket}')::interval) AS created,
+                            AND j.created_at < b.at + ('1 ${bucket}')::interval
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS created,
                         (SELECT count(*)::int FROM gpu_jobs j
                           WHERE j.finished_at >= b.at
                             AND j.finished_at < b.at + ('1 ${bucket}')::interval
@@ -565,14 +566,24 @@ class GpuRepository {
                             ${kind ? 'AND j.kind = :kind' : ''}) AS waiting,
                         /* Median rather than mean: one job that sat in the queue
                            over a weekend drags an average into meaninglessness,
-                           and the question is what a typical job took. */
+                           and the question is what a typical job took.
+
+                           **Every one of these five narrows by kind.** The created count
+                           and this one did not until 2026-10-21: asking for one kind gave
+                           that kind's finished, succeeded and waiting beside *every*
+                           kind's created and turnaround, so the Jobs, Training and
+                           Dashboard charts all drew a created line counting work they
+                           were not about. Found by the session building the Datasets
+                           activity chart, by inserting one inference job and watching a
+                           dataset_build question count it. */
                         (SELECT round(percentile_cont(0.5) WITHIN GROUP (
                                     ORDER BY EXTRACT(EPOCH FROM (j.finished_at - j.created_at))
                                 ))::int
                            FROM gpu_jobs j
                           WHERE j.finished_at >= b.at
                             AND j.finished_at < b.at + ('1 ${bucket}')::interval
-                            AND j.finished_at > j.created_at) AS median_turnaround_s
+                            AND j.finished_at > j.created_at
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS median_turnaround_s
                    FROM buckets b
                   ORDER BY b.at ASC`,
                 { replacements: { since, until, kind }, type: QueryTypes.SELECT }

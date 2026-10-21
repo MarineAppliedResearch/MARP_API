@@ -620,6 +620,22 @@ async function loop() {
 function start() {
     if (live.started) return { started: true };
 
+    /* **An off switch, because this poller claims work and nothing else here does.**
+       Before #268 an API beside a test run only ever read, so a developer's dev server
+       and `npm test` against one database did not interfere. Now any suite that inserts
+       a queued build is racing a poller that will claim it within fifteen seconds --
+       open an attempt, write an event -- and the corpus guard then reports the *test
+       file* as having changed the database, which is a long way from the cause. It
+       happened, to a suite that had done nothing wrong.
+
+       `DATASET_BUILDS=off` is for an API that should serve but not build: a second dev
+       server, or one left running beside a test run. */
+    if (String(process.env.DATASET_BUILDS || '').toLowerCase() === 'off') {
+        logger.info('Dataset builds are off (DATASET_BUILDS=off); this API serves but does not build.');
+
+        return { started: false, reason: 'DATASET_BUILDS=off' };
+    }
+
     live.started = true;
     live.timer = setTimeout(loop, 0);
 
