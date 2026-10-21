@@ -271,9 +271,15 @@ const DEFAULT_BOX = { x: 0.4, y: 0.6, width: 0.2, height: 0.3 };
  * 2026-10-21 and so taught the builder to shift every label half a box.
  *
  * {@link DEFAULT_BOX} is interior and deliberately asymmetric, so the expected label is
- * the fixture's own numbers and a swapped axis cannot pass. Clipping has its own
- * coverage in the real-video suite, which is what found the corner-origin bug by
- * asserting every coordinate lies in 0..1 and getting 1.012.
+ * the fixture's own numbers and a swapped axis cannot pass.
+ *
+ * **Clipping is covered without a video**, by `tests/dataset-build-plan.test.js` and by
+ * `labels at the edge of the frame` in the runner suite, which builds from a box at
+ * `x 0.95, width 0.2`. The real-video suite is what *found* the corner-origin bug — by
+ * asserting every coordinate lies in 0..1 and getting 1.012 — but it could not find it
+ * again, and nor could that assertion anywhere else: clipping trims the old reading's
+ * 1.05 back to 0.975 before anything looks. What catches a reading error now is the
+ * exact label text, and `tests/keyframe-box-meaning.test.js`.
  *
  * @async
  * @param {Object} seeded - The accumulating fixture.
