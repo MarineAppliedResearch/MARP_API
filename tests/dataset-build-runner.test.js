@@ -298,12 +298,14 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
 
         expect(dataset.status).toBe('ready');
 
-        /* **`num_samples` is observations.** Four observations expanded to nine frames,
-           and this column is the four: it is what the Datasets screen draws under
-           OBSERVATIONS and what every legacy row already means by it. The frame count
-           is recorded beside it -- see the test below, which is the tripwire. */
-        expect(Number(dataset.num_samples)).toBe(4);
-        expect(dataset.notes).toBe('9 frames extracted from 4 observations.');
+        /* **Two counts, in two columns.** Four observations expanded to nine frames.
+           `num_samples` is the nine, which is what it has meant since before MARP built
+           datasets -- `package-dataset.js` writes the image count, and that is why
+           rockfish5 is known as 11,845 images. `num_observations` is the four, and is
+           the new fact: nothing recorded it before #268 because `dataset_observations`
+           was empty. See the tripwire below for why they are asserted apart. */
+        expect(Number(dataset.num_samples)).toBe(9);
+        expect(Number(dataset.num_observations)).toBe(4);
         expect(Number(dataset.num_classes)).toBe(3);
         expect(dataset.archive_sha256).toBe(built.archive.sha256);
         expect(dataset.archive_path).toBe(`datasets/${built.archive.sha256}.tar`);
@@ -311,13 +313,14 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
     });
 
     test('observations and frames are two numbers, and neither stands in for the other', async () => {
-        /* The tripwire. These two were silently swapped -- `num_samples` carried the
-           frame count, so a finished dataset read 1,367 observations and no frames at
-           all, which is both numbers wrong at once and nothing noticed.
+        /* The tripwire. The two were briefly carried in one column, so a finished
+           dataset read its frame count as its observation count -- 1,367 observations
+           and no frames at all, both numbers wrong at once, and nothing noticed.
+
            The corpus is chosen so they cannot be confused: four observations, nine
            frames. A test built on a corpus where they happened to be equal would pass
-           with them the wrong way round. */
-        const [dataset] = await q('SELECT num_samples, notes FROM datasets WHERE id = :id', {
+           with them the wrong way round, which is the whole failure. */
+        const [dataset] = await q('SELECT num_samples, num_observations FROM datasets WHERE id = :id', {
             id: built.datasetId,
         });
 
@@ -326,15 +329,13 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
             { id: built.datasetId }
         );
 
-        const frames = Number((dataset.notes.match(/^(\d+) frames/) || [])[1]);
-
         // They differ, so the assertions below can tell them apart at all.
         expect(members.n).not.toBe(built.images);
 
         // An observation is what a person selected; a frame is what it expanded to.
-        expect(Number(dataset.num_samples)).toBe(members.n);
-        expect(frames).toBe(built.images);
-        expect(frames).toBeGreaterThan(Number(dataset.num_samples));
+        expect(Number(dataset.num_observations)).toBe(members.n);
+        expect(Number(dataset.num_samples)).toBe(built.images);
+        expect(Number(dataset.num_samples)).toBeGreaterThan(Number(dataset.num_observations));
     });
 
     test('the archive is named for its own digest and is the size the row claims', async () => {
@@ -575,16 +576,18 @@ describe('what a build does with what it could not cut (#268)', () => {
         expect(result.images).toBe(5);
         expect(result.missing).toBe(1);
 
-        const [dataset] = await q('SELECT status, num_samples, notes FROM datasets WHERE id = :id', {
-            id: queued.dataset.id,
-        });
+        const [dataset] = await q(
+            'SELECT status, num_samples, num_observations FROM datasets WHERE id = :id',
+            { id: queued.dataset.id }
+        );
 
         expect(dataset.status).toBe('ready');
 
-        /* Two observations, five frames: the observation count does not drop because a
-           frame could not be cut. Both of them are still in the dataset. */
-        expect(Number(dataset.num_samples)).toBe(2);
-        expect(dataset.notes).toBe('5 frames extracted from 2 observations.');
+        /* Five frames from two observations: the image count drops by the frame that
+           could not be cut and the observation count does not, because both
+           observations are still in the dataset. */
+        expect(Number(dataset.num_samples)).toBe(5);
+        expect(Number(dataset.num_observations)).toBe(2);
 
         const unpacked = unpack(result.archive.sha256);
 
@@ -720,13 +723,14 @@ describe('a video with more frames than one ffmpeg pass can ask for (#268)', () 
 
     test('and the dataset counts it as one observation', async () => {
         /* The other side of the tripwire above, at the scale that makes the distinction
-           obvious: eight hundred frames, one observation. */
-        const [dataset] = await q('SELECT num_samples, notes FROM datasets WHERE id = :id', {
+           obvious: eight hundred frames, one observation. Carried in one column, this
+           dataset claimed 802 observations. */
+        const [dataset] = await q('SELECT num_samples, num_observations FROM datasets WHERE id = :id', {
             id: built.datasetId,
         });
 
-        expect(Number(dataset.num_samples)).toBe(1);
-        expect(dataset.notes).toBe(`${WANTED} frames extracted from 1 observations.`);
+        expect(Number(dataset.num_samples)).toBe(WANTED);
+        expect(Number(dataset.num_observations)).toBe(1);
     });
 
     test('progress moves while the video is still being cut, not only when it is done', async () => {

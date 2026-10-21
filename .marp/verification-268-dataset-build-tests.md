@@ -53,7 +53,7 @@ route was built against for the sake of two functions.
 | R8 | `dataset-build-lifecycle` · *an image format nobody builds in fails before a single frame is cut* | integration | The format is settled before extraction: a second, not an hour. |
 | retry | `dataset-build-lifecycle` · *a second attempt replaces the first attempt's rows rather than doubling them* | integration | Four members and three classes before and after; two attempts recorded with epochs 1 and 2; the dataset names the **second** attempt's archive. |
 | the extractor's own gaps | `dataset-build-runner` · *a frame the extractor could not produce costs that frame, not the build* | integration | A truncated video costs frames at the end; the dataset is still `ready`, and the gap in the archive is the frame that was lost rather than the one after it. |
-| **observations ≠ frames** | `dataset-build-runner` · *observations and frames are two numbers, and neither stands in for the other* | integration | `num_samples` is the membership count and the frame count is recorded beside it. The corpus is four observations and nine frames **on purpose**: a corpus where they happened to be equal would pass with them the wrong way round, which is how they came to be swapped. |
+| **observations ≠ frames** | `dataset-build-runner` · *observations and frames are two numbers, and neither stands in for the other* | integration | `num_samples` stays images, which is what it has meant since `package-dataset.js`, and `num_observations` is the new fact. The corpus is four observations and nine frames **on purpose**: a corpus where they happened to be equal would pass with them the wrong way round, which is how they came to be carried in one column. |
 | the batched extraction | `dataset-build-runner` · *is cut in several passes rather than one enormous one*, *every frame is asked for exactly once, in order*, *every pass writes into its own directory*, *the archive holds every frame, once* | integration | An 802-frame video, which is more than one pass. `extractFrames` builds a `select` term per frame, so one pass over 8,408 frames made a ~340 KB command line and the build died with `spawn ENAMETOOLONG` after minutes of work — the bug that would have killed the 50,000-frame target. The batch size is **not** written into the test; the shape is read back from what the extractor was asked for. |
 | progress | `dataset-build-runner` · *progress moves while the video is still being cut*, *progress counts across videos rather than restarting at each one* | integration | One long video reports strictly inside itself; three short ones report a count that never goes backwards and ends at nine. A per-video reset is a bar that jumps back to the start whenever a video ends. |
 | everything, against real video | `dataset-build-real` | slow | That the frames MARP asks for are frames the video can produce, at the frame rate it reports, through the URL the coordinator resolved — ending in a range request to `GET /gpu/datasets/:id/archive`, which is what a worker calls. |
@@ -92,8 +92,22 @@ batched builder, so nobody's working copy was touched:
 | the per-pass progress callback disabled | *progress moves while the video is still being cut* — and nothing else |
 
 And the whole set is pinned to the change itself: against the branch **without** the
-batched, observation-counting builder, six tests fail — among them `num_samples` reading
-**802** for a single 802-frame observation, which is the defect in one number.
+batched, observation-counting builder, six tests fail — among them a single 802-frame
+observation reporting **802** where the observation count belongs, which is the defect in
+one number.
+
+## Blocked
+
+`recordBuild` writes `num_observations` and **no migration creates that column**. It
+appears in `repository/dataset-build.repository.js` and nowhere else in the repository, so
+every build now fails at the recording step, after cutting every frame:
+
+```
+column "num_observations" of relation "datasets" does not exist
+```
+
+These suites reproduce it deterministically — 28 failures, every one that error — and are
+red until the column exists. They are the tripwire for it rather than the cause of it.
 
 ## Requirements with no test
 
