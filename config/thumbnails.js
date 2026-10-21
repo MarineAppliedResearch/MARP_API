@@ -210,6 +210,94 @@ const CLAIM_BATCH_SIZE = 45;
 const IDLE_POLL_INTERVAL_MS = 1000;
 
 /**
+ * How often the background sweeper looks for work, in milliseconds (#121 R1, A3).
+ *
+ * Five minutes, and the number matters less than it looks: the sweep **skips
+ * itself entirely while anything is queued** (`SWEEP_ONLY_WHEN_IDLE`), so this is
+ * the interval between *offers* rather than between extractions. A shorter one
+ * would find the queue busy and do nothing; a longer one would leave a drained
+ * queue idle for no reason.
+ *
+ * **Zero switches the sweeper off** without touching the code, which is R10. A
+ * deployment that blames the sweeper for a struggling media server sets
+ * `THUMBNAIL_SWEEP_INTERVAL_MS=0` in `.env` and restarts the API; pausing the
+ * extractor through `POST .../thumbnails/control` stops it too, but stops the
+ * reviewer's own retries with it, which is a different thing to want.
+ *
+ * @constant
+ * @type {number}
+ */
+const SWEEP_INTERVAL_MS = Number.isFinite(Number(process.env.THUMBNAIL_SWEEP_INTERVAL_MS))
+    ? Math.max(0, Number(process.env.THUMBNAIL_SWEEP_INTERVAL_MS))
+    : 300000;
+
+/**
+ * How many rows one sweep pass may enqueue, per kind (#121 A3).
+ *
+ * 200 is a little over four claim batches, so a pass gives the drain loop a few
+ * minutes of work and then stops. The bound is what keeps the sweeper from
+ * turning a quiet afternoon into a queue of 3,567 rows standing between a
+ * reviewer's page and the media server.
+ *
+ * @constant
+ * @type {number}
+ */
+const SWEEP_BATCH_SIZE = 200;
+
+/**
+ * Whether a sweep refuses to run while any row is already queued (#121 A3).
+ *
+ * True, and this is the whole of how background work yields to interactive work.
+ * `request_priority` already puts a reviewer ahead of the sweeper within the
+ * queue, but it cannot help the *first* ordinary row behind 200 swept ones. So
+ * the sweeper only ever tops up an empty queue, and the queue it tops up drains
+ * before it is offered more.
+ *
+ * @constant
+ * @type {boolean}
+ */
+const SWEEP_ONLY_WHEN_IDLE = true;
+
+/**
+ * How many times the sweeper may re-queue one row before it stops offering it
+ * (#121 A1, R4).
+ *
+ * Ten, answered by the human. It is a cap on *background* generosity only: a
+ * reviewer pressing *Ask again* goes through `requeue()`, which does not read
+ * this and does not write `sweep_attempts`, so a person can always ask for a row
+ * the sweeper has given up on.
+ *
+ * @constant
+ * @type {number}
+ */
+const SWEEP_MAX_ATTEMPTS = 10;
+
+/**
+ * The first wait before a failed row is offered again, in minutes (#121 A1).
+ *
+ * The wait doubles with each sweep attempt -- 1 h, 2 h, 4 h ... -- until
+ * `SWEEP_BACKOFF_MAX_MINUTES`. An hour to start because the failures this is for
+ * are a media server that was unreachable or slow, and a minute later it usually
+ * still is.
+ *
+ * @constant
+ * @type {number}
+ */
+const SWEEP_BACKOFF_BASE_MINUTES = 60;
+
+/**
+ * The longest the backoff grows to, in minutes (#121 A1).
+ *
+ * One week. Doubling from an hour reaches it at the eighth attempt, so the last
+ * few of the ten are a weekly knock rather than an ever-receding one -- a video
+ * that comes back after a fortnight is still picked up.
+ *
+ * @constant
+ * @type {number}
+ */
+const SWEEP_BACKOFF_MAX_MINUTES = 10080;
+
+/**
  * Seconds of video decoded before the earliest wanted frame in a batch, so the
  * decoder is settled by the time it matters. The spike's value, which landed all
  * six frames with a pts delta of 0 (F36).
@@ -377,6 +465,12 @@ module.exports = {
     CLAIM_TIMEOUT_SECONDS,
     CLAIM_BATCH_SIZE,
     IDLE_POLL_INTERVAL_MS,
+    SWEEP_INTERVAL_MS,
+    SWEEP_BATCH_SIZE,
+    SWEEP_ONLY_WHEN_IDLE,
+    SWEEP_MAX_ATTEMPTS,
+    SWEEP_BACKOFF_BASE_MINUTES,
+    SWEEP_BACKOFF_MAX_MINUTES,
     SEEK_LEAD_SECONDS,
     FFMPEG_TIMEOUT_MS,
     STORAGE_DIR,

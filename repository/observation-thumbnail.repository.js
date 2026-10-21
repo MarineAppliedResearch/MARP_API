@@ -24,7 +24,14 @@
 'use strict';
 
 const db = require('../model');
-const { CLAIM_TIMEOUT_SECONDS, CLAIM_BATCH_SIZE } = require('../config/thumbnails');
+const {
+    CLAIM_TIMEOUT_SECONDS,
+    CLAIM_BATCH_SIZE,
+    SWEEP_BATCH_SIZE,
+    SWEEP_MAX_ATTEMPTS,
+    SWEEP_BACKOFF_BASE_MINUTES,
+    SWEEP_BACKOFF_MAX_MINUTES,
+} = require('../config/thumbnails');
 
 const { QueryTypes } = db.Sequelize;
 
@@ -53,6 +60,8 @@ const ROW_COLUMNS = `
     source_height,
     generation,
     attempts,
+    sweep_attempts,
+    swept_at,
     request_priority,
     candidate_index,
     last_error,
@@ -294,6 +303,187 @@ async function requestRefresh(observationId) {
             { replacements: { observationId }, type: QueryTypes.UPDATE, transaction }
         );
     });
+}
+
+/**
+ * Whether anything is waiting to be extracted right now (#121 A3).
+ *
+ * `EXISTS` rather than a count, and it matters: this is asked on every sweep
+ * tick, forever, and the two partial indexes on `status = 'queued'` and
+ * `full_frame_status = 'queued'` answer it without reading a row. A count would
+ * scan the matching rows to produce a number nothing needs.
+ *
+ * Both kinds count, because both come out of one `claimBatch` and both hold one
+ * of the three Jellyfin streams while they run.
+ *
+ * @async
+ * @returns {Promise<boolean>} True while any thumbnail or full frame is queued.
+ */
+async function hasQueuedWork() {
+    const [row] = await db.sequelize.query(
+        `SELECT EXISTS (
+                    SELECT 1 FROM observation_thumbnails WHERE status = 'queued'
+                ) OR EXISTS (
+                    SELECT 1 FROM observation_thumbnails WHERE full_frame_status = 'queued'
+                ) AS busy`,
+        { type: QueryTypes.SELECT }
+    );
+
+    return Boolean(row.busy);
+}
+
+/**
+ * Offers a bounded batch of **transient** failures to the queue again (#121 R2).
+ *
+ * This is the half of #121 that turned out to matter. The development corpus held
+ * 3,567 rows that are `failed` with `permanent = false` -- Jellyfin refusing a
+ * connection, ffmpeg timing out after two minutes -- and nothing retried any of
+ * them. `permanent` already drew the line; this is the first thing to act on it.
+ *
+ * Three exclusions, each of which is the whole reason a column exists:
+ *
+ * - **`permanent`** is never offered. That is what the flag is for, and without it
+ *   an observation with no keyframes is asked for every five minutes for ever.
+ * - **`thumbnail_evicted_at IS NOT NULL` is never offered, and this one nearly
+ *   became a loop.** `markFileEvicted` leaves exactly the shape this query looks
+ *   for -- `failed`, not permanent -- because an evicted picture *is* re-derivable
+ *   and a reviewer who opens its page does get it back. But a sweeper that
+ *   re-extracts it would undo the eviction that freed the disk, and the evictor
+ *   would free it again, and the two would trade the same bytes against the media
+ *   server the concurrency bound exists to protect. Eviction is a decision; the
+ *   sweeper does not get to overrule it.
+ * - **`sweep_attempts` at the cap** is given up on (R4). A reviewer pressing *Ask
+ *   again* still works: `requeue` reads neither of these columns and writes
+ *   neither.
+ *
+ * The wait doubles from {@link SWEEP_BACKOFF_BASE_MINUTES}, capped at
+ * {@link SWEEP_BACKOFF_MAX_MINUTES}. Measured from `swept_at` rather than
+ * `completed_at` **because the reviewer path writes `completed_at`** -- a backoff
+ * read from it would restart its clock every time somebody pressed the button, so
+ * the wait would never actually grow.
+ *
+ * `request_priority` is left at 0. #134 already declares 0 as ordinary
+ * page/background work and 1 as a reviewer waiting, and `claimBatch` already
+ * orders by it -- so R3 needed no schema change and no change to the claim query.
+ * `candidate_index` is deliberately **not** advanced: a connection refused says
+ * nothing about the frame that was chosen, and moving off a good candidate because
+ * the network was down is how a tile ends up showing the wrong moment.
+ *
+ * @async
+ * @param {number} [limit] - How many rows this pass may offer.
+ * @returns {Promise<Array<number>>} The observation ids put back in the queue.
+ */
+async function sweepRetryable(limit = SWEEP_BATCH_SIZE, transaction) {
+    const rows = await db.sequelize.query(
+        `WITH due AS (
+             SELECT observation_thumbnail_id
+               FROM observation_thumbnails
+              WHERE status = 'failed'
+                AND permanent = false
+                AND thumbnail_evicted_at IS NULL
+                AND sweep_attempts < :maxAttempts
+                AND (swept_at IS NULL
+                     OR swept_at < NOW() - make_interval(mins => LEAST(
+                            :base * (2 ^ sweep_attempts), :maxMinutes)::int))
+              ORDER BY swept_at NULLS FIRST, observation_id
+              LIMIT :limit
+                FOR UPDATE SKIP LOCKED
+         )
+         UPDATE observation_thumbnails t
+            SET status         = 'queued',
+                claimed_at     = NULL,
+                completed_at   = NULL,
+                requested_at   = NOW(),
+                sweep_attempts = t.sweep_attempts + 1,
+                swept_at       = NOW(),
+                updated_at     = NOW()
+           FROM due d
+          WHERE t.observation_thumbnail_id = d.observation_thumbnail_id
+      RETURNING t.observation_id`,
+        {
+            replacements: {
+                limit,
+                maxAttempts: SWEEP_MAX_ATTEMPTS,
+                base: SWEEP_BACKOFF_BASE_MINUTES,
+                maxMinutes: SWEEP_BACKOFF_MAX_MINUTES,
+            },
+            type: QueryTypes.SELECT,
+            transaction,
+        }
+    );
+
+    return rows.map((row) => row.observation_id);
+}
+
+/**
+ * Enqueues a bounded batch of observations that have no thumbnail record at all
+ * (#121 R5).
+ *
+ * **Finding nothing is the normal outcome and is not a failure.** Two mechanisms
+ * already cover this: `keyframes_enqueue_thumbnail_trigger` writes a row when a
+ * keyframe is written, and `mosaic.repository.js` enqueues what a served page is
+ * missing. On the development corpus all 114,924 observations already had a row.
+ *
+ * It is kept because neither mechanism is exhaustive. `discardQueue()` -- the
+ * `stop` control -- *deletes* queued rows; a corpus restored by
+ * `scripts/load-corpus.js` carries whatever rows its dump held; and an observation
+ * whose keyframes were written before the trigger existed has never been offered
+ * to anything but a page view. This is the guard that notices, rather than the
+ * thing that does the work.
+ *
+ * `ON CONFLICT DO NOTHING` for the same reason `enqueueMissing` has it: two
+ * producers must be safe rather than a race, and a `ready` row must never be reset
+ * by one.
+ *
+ * @async
+ * @param {number} [limit] - How many rows this pass may enqueue.
+ * @returns {Promise<Array<number>>} The observation ids newly enqueued.
+ */
+async function sweepBackfill(limit = SWEEP_BATCH_SIZE, transaction) {
+    const rows = await db.sequelize.query(
+        `INSERT INTO observation_thumbnails
+             (observation_id, status, permanent, generation, attempts,
+              requested_at, created_at, updated_at)
+         SELECT o.observation_id, 'queued', false, 1, 0, NOW(), NOW(), NOW()
+           FROM observations o
+          WHERE NOT EXISTS (
+                    SELECT 1 FROM observation_thumbnails t
+                     WHERE t.observation_id = o.observation_id
+                )
+          ORDER BY o.observation_id
+          LIMIT :limit
+         ON CONFLICT (observation_id) DO NOTHING
+         RETURNING observation_id`,
+        { replacements: { limit }, type: QueryTypes.SELECT, transaction }
+    );
+
+    return rows.map((row) => row.observation_id);
+}
+
+/**
+ * One sweep: offer retryable failures, then backfill what has no record (#121).
+ *
+ * Both halves in **one transaction**, so a pass is all or nothing. A sweeper that
+ * died between them would leave rows re-queued with nothing recording that the
+ * backfill half never ran -- harmless once, and the kind of thing that is
+ * impossible to reason about when it happens on the night somebody is debugging
+ * something else.
+ *
+ * The transaction is also the seam the tests use. The two queries are deliberately
+ * **unscoped** -- a sweeper that only swept rows it was handed would not be a
+ * sweeper -- so a test that ran one against the development database would offer
+ * every real failure in it. Running them inside a transaction the test rolls back
+ * is what makes them assertable without touching the corpus (#142).
+ *
+ * @async
+ * @param {number} [limit] - How many rows each half may enqueue.
+ * @returns {Promise<Object>} `{ retried, backfilled }` counts.
+ */
+async function sweep(limit = SWEEP_BATCH_SIZE) {
+    return db.sequelize.transaction(async (transaction) => ({
+        retried: (await sweepRetryable(limit, transaction)).length,
+        backfilled: (await sweepBackfill(limit, transaction)).length,
+    }));
 }
 
 /**
@@ -828,6 +1018,10 @@ async function writeRunState(runState, userId, note = null) {
 module.exports = {
     enqueueMissing,
     claimBatch,
+    hasQueuedWork,
+    sweep,
+    sweepBackfill,
+    sweepRetryable,
     discardQueue,
     findByObservationId,
     keyframesFor,
