@@ -186,6 +186,44 @@ drive, and a unit test of `recordBuild` would assert the same rows one layer low
 - **Nothing covers two builds at once**, because the poller is one at a time by
   construction and no test starts a second process.
 
+## Recorded, not chased: `test:ml` then `test:mosaic` fails where neither does alone
+
+Reported by the design-review session on 2026-10-21, written down here so it is found by
+whoever picks it up rather than rediscovered in CI with no context. **Not chased on the
+day**, deliberately: it is a test-ordering question and the dashboard was being used.
+
+```
+npm run test:ml && npm run test:mosaic      # one command, one database
+tests/mosaic-query.test.js:566   toEqual
+  ... "training_reviewer_initials": null,
+      "version": 1,
+```
+
+Each is green on its own — `mosaic-query` alone 53 passed, `test:mosaic` 15 suites / 354
+passed, `test:ml` 16 suites / 197 passed — so it needs the ordering.
+
+**It is not the `expireStaleLeases` flake.** That one trips the corpus guard at file level
+with a modified attempt row and one added event; this is a `toEqual` inside a test body on
+review fields. Different signature, different mechanism.
+
+What a first look rules out, so nobody repeats it:
+
+- **No suite in the `ml` group writes observation review state or `observations.version`.**
+  Grepped across all sixteen for `observation_review`, `observation_reviews` and
+  `UPDATE observations`: zero hits. So "an `ml` suite leaves a review changed and
+  `mosaic-query` asserts on it" does not survive contact — whatever moves, it is not
+  written by these suites directly.
+- **The thumbnail sweeper is not started by anything `app.js` reaches**, which is the more
+  interesting hypothesis the report offers (it would affect CI too). Checked narrowly, for
+  a start/interval/schedule in `service/thumbnail-extraction.service.js` and
+  `config/thumbnails.js` — worth redoing properly before relying on it.
+
+Where to start: `training_reviewer_initials` comes from a join to the reviewer, so a null
+where a value was expected can mean the review row moved **or** the user row did. The
+fixture user that `tests/setup/authenticated-agent.js` creates and deletes per file is a
+reviewer-shaped row appearing and disappearing between groups, and that is the first thing
+to look at before anything in the `ml` suites themselves.
+
 ## Manual steps
 
 Run the real build where the corpus and the media server are reachable:
