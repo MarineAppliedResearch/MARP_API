@@ -138,6 +138,10 @@ deferring (contention for the Jellyfin ceiling) is answered by an existing field
   likely to be blamed when Jellyfin is struggling.
 - **R11** -- Every limit is one constant in `config/thumbnails.js`, for the reason that file
   already gives about `MAX_CONCURRENT_STREAMS`.
+- **R12** -- A failure to resolve a video is recorded as **permanent only when retrying
+  genuinely cannot help**. The media server being unreachable, unauthenticated or unhappy is
+  transient; a library that answered and has no match, or an observation naming no video at
+  all, stays permanent. Added after the first real run, which is where it was found.
 
 ## Open assumptions
 
@@ -281,6 +285,21 @@ schema, the schedule, or what gets deleted.
   hand them straight back to the thing that retired them. Fix the classification, then repair,
   then resume. The defect is out of this task's scope and is not fixed here.
 
+- **2026-10-21** -- **R12: the classification was already on the error and was being thrown
+  away.** `jellyfin.repository.js` states its error contract in its own header and keeps to
+  it -- 404/`RESOURCE_NOT_FOUND` for an item the library does not have, 502/`UPSTREAM_ERROR`
+  for the server being unreachable or unhappy, which is where the 401 lands after
+  `_authenticatedRequest` has already re-authenticated and retried once. `extractVideoGroup`
+  caught the error, flattened it to a message and passed `true` regardless. So the fix reads
+  `error.code` rather than parsing text, and the message now follows the classification
+  instead of contradicting it: a row that failed because the server could not be reached no
+  longer says no video matched.
+
+  **The default is the fix.** Unrecognised now means transient, because being wrong that way
+  costs a bounded number of retries against a cap, and being wrong the other way silently and
+  permanently loses an observation's picture. 404 and the empty `video_source` stay permanent,
+  which leaves #118's A8 exactly as it was.
+
 ## Plan
 
 Written for the shape the recommendations above imply. It changes if the answers do.
@@ -332,18 +351,19 @@ them.
 ## Status
 
 - **Gate:** verifying
-- **Notes:** G0-G4 complete. All eight assumptions answered 2026-10-21 and implemented as
-  answered. 340 tests green in `npm run test:mosaic`, 20 of them new; two tripwires proved
-  red before being trusted. **Not pushed, no pull request** -- that is G5 and it is the
-  human's.
+- **Notes:** G0-G4 complete, and the defect the first real run exposed is fixed here rather
+  than deferred (R12). 108 tests green in `tests/thumbnails.test.js`, 25 of them new, three
+  tripwires proved red before being trusted. **Not pushed, no pull request** -- that is G5.
+
+  The development database is back to an ordinary state: extraction running, nothing queued,
+  38 permanent failures and every one genuine. Net result of the real runs is **+91
+  thumbnails** (111,319 -> 111,410).
 
   Two things a reader should know rather than discover:
 
   - **The corpus guard is unreliable on this machine while a GPU worker is running**, and it
-    fails identically on unmodified `develop`. Checked, including a first baseline run that
-    was clean and misleading. `.marp/verification.md` has both runs verbatim. It means the
-    guard could not be used as evidence here, which is a gap rather than a pass.
-  - **The sweeper has not yet made a single picture.** Everything verified is the row
-    reaching the queue in the right state and the right order. Whether a re-offered row then
-    extracts depends on Jellyfin and is the manual step, with the 3,567 baseline recorded so
-    the next run has something to compare against.
+    fails identically on unmodified `develop`. Both runs are in `.marp/verification.md`
+    verbatim. It means the guard could not be used as evidence here, which is a gap rather
+    than a pass.
+  - **The API on port 3000 predates this branch** and still runs the old classification. It
+    needs a restart to pick up R12.

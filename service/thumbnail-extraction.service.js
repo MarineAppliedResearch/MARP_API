@@ -66,6 +66,7 @@ const logger = require('../logger/api.logger');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const thumbnailRepository = require('../repository/observation-thumbnail.repository');
 const reviewImageryStorage = require('./review-imagery-storage.service');
+const { ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { parseTimeSpan, absoluteFrame, ASSUMED_FPS } = require('../db/timecode');
 const { thumbnailFilename } = require('../db/thumbnail-filename');
 const { cropRectangle, interpolateBox, thumbnailCandidates } = require('./thumbnail-geometry');
@@ -605,15 +606,25 @@ async function extractVideoGroup(videoSource, claims) {
         // consulted: the worker contract calls it opaque and never resolved.
         resolved = await jellyfinRepository.resolveVideoSource(videoSource, 1, MEDIA_CLIENT_IDENTITY);
     } catch (error) {
-        // No candidate at all. Retrying asks the same question of the same
-        // library and gets the same answer, so this is permanent (R9).
+        // **Why this asks rather than assumes.** This used to record every
+        // resolution failure as permanent, on the reasoning that retrying asks the
+        // same question of the same library and gets the same answer. That holds
+        // for a library that answered and had no match. It does not hold for a
+        // library that did not answer -- and #121's first real sweep hit exactly
+        // that, retiring 28 observations on a Jellyfin 401 that lasted minutes.
+        const permanent = resolutionIsPermanent(error);
+
+        // The message follows the classification instead of contradicting it. A
+        // row that failed because the media server was unreachable did not fail
+        // because no video matched, and saying so sent the next reader looking for
+        // a missing file that was there all along.
+        const reason = permanent
+            ? `No Jellyfin video matched video_source ${JSON.stringify(videoSource)}: ${elideToken(error.message)}`
+            : `Could not ask Jellyfin about video_source ${JSON.stringify(videoSource)}: ${elideToken(error.message)}`;
+
         for (const id of ids) {
             const claim = claims.find((item) => item.observation_id === id);
-            await recordClaimFailure(
-                claim,
-                `No Jellyfin video matched video_source ${JSON.stringify(videoSource)}: ${elideToken(error.message)}`,
-                true
-            );
+            await recordClaimFailure(claim, reason, permanent);
         }
 
         outcome.failed = ids.length;
@@ -802,6 +813,53 @@ async function extractVideoGroup(videoSource, claims) {
 
     await reviewImageryStorage.enforceLimit();
     return outcome;
+}
+
+/**
+ * Whether a failure to resolve a video means the picture can **never** be made
+ * (#121 R12).
+ *
+ * `permanent` is the strongest thing this service can say about a row: the retry
+ * route refuses it and the sweeper skips it, so a row marked permanently failed is
+ * unreachable by every recovery path and comes back only by hand. It has to be
+ * earned.
+ *
+ * It was not being earned. Every resolution failure was recorded as permanent, on
+ * the reasoning that *"retrying asks the same question of the same library and gets
+ * the same answer"* -- which is true of a library that answered and had no match,
+ * and false of a library that did not answer at all. The first real sweep found the
+ * difference the expensive way: Jellyfin returned **401** for a few minutes, twenty
+ * eight observations were permanently retired, and two of the videos involved have
+ * thousands of working thumbnails between them. Unattended, one pass can retire two
+ * hundred that way, and the flag is what stops anybody noticing.
+ *
+ * **The distinction was already on the error and was being thrown away.**
+ * `jellyfin.repository.js` states its error contract at the top of the file and
+ * keeps to it: 404/`RESOURCE_NOT_FOUND` for an item the library does not have,
+ * 502/`UPSTREAM_ERROR` for the server being unreachable or unhappy -- including the
+ * 401 case, which it already retries once after re-authenticating before giving up.
+ * So this reads the code rather than the message text, and the message text is now
+ * derived from it rather than the other way round.
+ *
+ * - **`VALIDATION_ERROR`** -- an empty `video_source`. No amount of asking fixes a
+ *   row that names no video. Permanent, and it is what the oldest permanent rows in
+ *   the corpus carry.
+ * - **`RESOURCE_NOT_FOUND`** -- the library was asked and has nothing that matches.
+ *   Permanent, which is #118's own A8 decision and is deliberately unchanged here.
+ * - **anything else** -- the media server did not answer the question. Transient.
+ *
+ * The default is the inversion, and it is the fix: **unrecognised means transient**,
+ * because the cost of being wrong in that direction is a bounded number of retries
+ * against a cap, and the cost of being wrong the other way is silent, permanent loss
+ * of a scientific observation's picture.
+ *
+ * @param {Error} error - Whatever `resolveVideoSource` threw.
+ * @returns {boolean} True only when retrying genuinely cannot help.
+ */
+function resolutionIsPermanent(error) {
+    return error
+        && (error.code === ERROR_CODES.RESOURCE_NOT_FOUND
+            || error.code === ERROR_CODES.VALIDATION_ERROR);
 }
 
 /**
@@ -1273,6 +1331,7 @@ async function control(action, userId, note = null) {
 
 module.exports = {
     control,
+    resolutionIsPermanent,
     sweepOnce,
     cropToTile,
     cutChosenPicture,

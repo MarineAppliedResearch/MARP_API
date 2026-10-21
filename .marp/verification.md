@@ -28,6 +28,11 @@ known gap and is a manual step rather than a passing test.
 | R9 | `distinguishes a sweep that has not run from one that found nothing` | http+db | `lastSweep: null` vs `lastSweep.retried === 0`. |
 | R9 | `reports what the last sweep did` | http+db | The counters reach the status body. |
 | R10 | `is switched off by a zero interval` | unit | `sweep.enabled` is false and no timer is armed. |
+| R12 | `does not give up when the media server could not be asked` | unit | A Jellyfin 401 is transient — the regression that cost 28 observations. |
+| R12 | `does not give up when the media server was unreachable` | unit | A network failure is transient. |
+| R12 | `still gives up when the library has no such video` | unit | #118's A8 is unchanged. |
+| R12 | `still gives up when the observation names no video at all` | unit | An empty `video_source` stays permanent. |
+| R12 | `treats an unrecognised failure as worth retrying` | unit | The default inverted, which is the fix. |
 | R11 | — | — | Not a test. Every limit is a named export of `config/thumbnails.js`; a second copy is visible in review, not in a run. |
 
 **Choosing the tier is the decision that matters.** Every sweep rule above is an SQL
@@ -319,6 +324,49 @@ What it did was drive an existing misclassification hard enough to be visible, w
 something, but it is not a trade worth repeating. **Resuming before the 401 is settled would
 simply retire more.**
 
+### The 401 fix, and the run that followed it
+
+`resolutionIsPermanent` now reads `error.code` instead of assuming. Proved red before it was
+trusted: reverted to the old `return true` and the 401 test failed, then restored.
+
+```
+  which Jellyfin failures are permanent (#121 R12) ... 5 passed
+  Tests       : 108 passed, 0 failed, 0 skipped, 108 total
+```
+
+All 28 rows were then reset -- `permanent AND last_error LIKE '%401%'`, exactly the boundary
+recorded above, 28 matched and 28 repaired -- and extraction resumed. The queue drained to
+empty with nothing wrongly retired:
+
+| | T+0 | T+45s | T+90s |
+| --- | --- | --- | --- |
+| queued | 49 | 33 | **0** |
+| ready | 111,361 | 111,377 | **111,410** |
+| permanent | 38 | 38 | **38** |
+
+**Final state against the baseline: 111,319 -> 111,410 ready, a net +91 pictures.** Permanent
+failures are back to 38 and every one is genuine -- 28 naming no video, 10 with no keyframes.
+Retryable failures are 3,476 against 3,447 before, because the drain also recorded fresh
+transient failures; that is the system working rather than regressing. Nothing is queued and
+the extractor is running.
+
+Jellyfin also stopped timing out partway through, which is why the last 49 rows went from
+hopeless to finished in ninety seconds. That matters for the 40-hour estimate above: it was
+measured inside a bad window, and the media server's mood is the variable rather than
+anything here.
+
+**One honest limit on all of this.** The API still serving on port 3000 was started before
+this branch existed and runs the **old** classification. It did not retire anything this time
+because the 401 window had passed, not because it is fixed. The fix protects a process running
+this branch; that one needs a restart to pick it up.
+
+**And one thing the pause exposed that is not fixed.** `refuses a run-state change to a
+caller who is not an admin` asserts the run state is literally `running`, so the whole file
+fails for anybody whose extractor is legitimately paused -- which this feature's own control
+surface makes more likely, not less. It passes again now only because the extractor was
+resumed. Comparing against the state the suite already records in `runStateBefore` would fix
+it; left alone deliberately, because it is somebody else's test and the human decides.
+
 ### State left behind
 
 62 rows are still `queued` with `sweep_attempts = 1`, and nothing is draining them: the
@@ -326,14 +374,7 @@ extractor is **paused**, persistently, with the reason recorded in
 `thumbnail_extraction_state.note`. They resume where they left off whenever somebody resumes
 it. The port 3001 process was stopped; port 3000 was never touched and is still serving.
 
-**The 28 rows are deliberately left damaged**, decided 2026-10-21: repairing them before the
-401 is reclassified would just feed them back to the thing that retired them. The order is
-fix, then repair, then resume -- and the repair is one statement whose `WHERE` clause is
-written out above, so whoever does it does not have to reconstruct the boundary.
-
-Three things are therefore true of this database until that work lands, and all three are
-deliberate rather than forgotten:
-
-- thumbnail extraction is paused,
-- 62 rows are queued and waiting,
-- 28 observations are marked permanently failed and are not.
+**All three of those are now resolved**, in the order that was settled: the 401 was
+reclassified, the 28 rows were repaired, and extraction was resumed. The database is back to
+an ordinary state -- running, nothing queued, 38 permanent failures and every one of them
+genuine.

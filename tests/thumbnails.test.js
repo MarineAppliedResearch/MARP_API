@@ -62,6 +62,7 @@ const {
 } = require('../config/thumbnails');
 
 const { QueryTypes } = db.Sequelize;
+const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 
 /** Where the routes actually answer. They are declared without the prefix. */
 const STATUS = '/api/v2/observations/thumbnails/status';
@@ -1883,6 +1884,66 @@ describe('observation thumbnails (#118)', () => {
             expect(extraction.elideToken(noisy)).toContain('api_key=<elided>');
         });
     });
+
+        describe('which Jellyfin failures are permanent (#121 R12)', () => {
+
+            // `permanent` is the strongest claim this service makes: the retry
+            // route refuses such a row and the sweeper skips it, so it is
+            // unreachable by every recovery path and comes back only by hand.
+            // These are unit tests over the classification alone, which is the
+            // only tier that can see it -- reproducing a real Jellyfin 401
+            // would mean breaking the media server on purpose.
+
+            it('does not give up when the media server could not be asked', () => {
+                // The case that cost 28 observations. `_authenticatedRequest`
+                // already re-authenticates once and retries on a 401; when the
+                // retry also fails it reports the upstream status, and that is
+                // a server having a bad few minutes rather than a missing video.
+                const error = new ApiError(
+                    502, ERROR_CODES.UPSTREAM_ERROR, 'Jellyfin request failed with status 401.'
+                );
+
+                expect(extraction.resolutionIsPermanent(error)).toBe(false);
+            });
+
+            it('does not give up when the media server was unreachable', () => {
+                const error = new ApiError(
+                    502, ERROR_CODES.UPSTREAM_ERROR, 'Could not reach the Jellyfin server.'
+                );
+
+                expect(extraction.resolutionIsPermanent(error)).toBe(false);
+            });
+
+            it('still gives up when the library has no such video', () => {
+                // #118's A8, deliberately unchanged. A library that answered and
+                // had nothing will answer the same way tomorrow, and re-asking
+                // for ever costs the media server the concurrency bound exists
+                // to protect.
+                const error = new ApiError(
+                    404,
+                    ERROR_CODES.RESOURCE_NOT_FOUND,
+                    'No sufficiently confident Jellyfin match was found for this video source.'
+                );
+
+                expect(extraction.resolutionIsPermanent(error)).toBe(true);
+            });
+
+            it('still gives up when the observation names no video at all', () => {
+                const error = new ApiError(
+                    400, ERROR_CODES.VALIDATION_ERROR, 'A video source value is required.'
+                );
+
+                expect(extraction.resolutionIsPermanent(error)).toBe(true);
+            });
+
+            it('treats an unrecognised failure as worth retrying', () => {
+                // The default is the fix. Being wrong this way costs a bounded
+                // number of retries against a cap; being wrong the other way
+                // silently and permanently loses an observation's picture.
+                expect(extraction.resolutionIsPermanent(new Error('boom'))).toBe(false);
+                expect(extraction.resolutionIsPermanent(null)).toBeFalsy();
+            });
+        });
 
     describe('the control surface (R23, R24, R25, R26)', () => {
 
