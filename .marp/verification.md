@@ -91,6 +91,18 @@ doubts. R10 is the exception and is genuinely a unit question: whether a timer w
 - **The backoff is tested by moving `swept_at` backwards, not by waiting an hour.** That is
   the only practical way, and it means the test proves the predicate rather than the clock.
 
+  **This is where CI caught something the local runs could not.** The first version built
+  that timestamp with `Date.now()` and set it to exactly the backoff ago -- so the comparison
+  was a JavaScript clock measured against SQL `NOW()`, which locally is one machine and in CI
+  is two containers. It passed here every time and failed there on a few milliseconds of
+  skew: a coin flip wearing a test's clothes. Every relative `swept_at` is now written by the
+  database itself, `NOW() - make_interval(...)`, so one clock decides both sides of the
+  comparison, and the margins are whole backoff periods rather than hairs. Fixed instants are
+  still built in JavaScript, because no plausible skew spans six years.
+
+  Worth saying plainly: "340 green locally" did not catch this and could not have. It took
+  the slower tier on different hardware, which is the argument for having one.
+
 ## Manual steps
 
 Needs the development Jellyfin reachable (`needs: [jellyfin]`), and it is the end-of-phase
