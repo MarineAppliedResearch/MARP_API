@@ -5,9 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MARP Machine Learning Dashboard</title>
 <link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
-<!-- The screens live in mockups/. This is the door: the Dashboard is where a
-     person entering the application should land. -->
-<meta http-equiv="refresh" content="0; url=./mockups/dashboard.html">
+<!-- This is the door: the Dashboard is where a person entering the application
+     should land.
+
+     It pointed at ./mockups/dashboard.html until 2026-10-21, which stopped existing
+     when the screens moved out of mockups/ and became the application. The only link
+     to this app, from the main dashboard, therefore led to a 404 -- and it survived
+     because every check and every test here addresses a screen directly, so nothing
+     ever asked for the door itself. -->
+<meta http-equiv="refresh" content="0; url=./dashboard.html">
 <link rel="canonical" href="./dashboard.html">
 <link rel="stylesheet" href="../../shared/assets/css/tokens.css">
 <style>
