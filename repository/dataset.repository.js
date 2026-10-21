@@ -73,6 +73,18 @@ class DatasetRepository {
      * whether anything has started; the job's state can, and a row that says *Queued*
      * rather than *0 frames* is the difference between waiting and stuck.
      *
+     * **And a build that failed, with the reason it failed.** That is not a contradiction
+     * of "in flight": the Datasets screen draws a failed build as *Needs attention*, and
+     * until this carried `failure_reason` the panel under it could only say that something
+     * had gone wrong. Isaac, looking at one: *"which isn't telling me ANYTHING about why
+     * it needs attention"*. The real one reads `...train/images/20240727_163021_Fwd_000
+     * 29982.jpg: unable to open for write`, which is a thing somebody can act on.
+     *
+     * **Polling is keyed on the state, not on this answer being empty.** A failed build
+     * stays failed, so a screen that polled while this returned anything would poll for
+     * ever; what it watches for is a row that is `queued` or `leased`. Answering `[]` is
+     * no longer what stops it.
+     *
      * `DISTINCT ON (dataset_id)` because a consumer keys by dataset: a retry reuses the
      * same job, so one row per dataset is normally true anyway, and making it always true
      * saves every caller the same reduction.
@@ -100,7 +112,8 @@ class DatasetRepository {
                     a.progress_unit,
                     a.progress_phase,
                     a.leased_at                  AS started_at,
-                    a.last_heartbeat_at
+                    a.last_heartbeat_at,
+                    a.failure_reason
                FROM gpu_jobs j
                LEFT JOIN LATERAL (
                     SELECT *
@@ -110,7 +123,12 @@ class DatasetRepository {
                      LIMIT 1
                ) a ON TRUE
               WHERE j.kind = 'dataset_build'
-                AND j.state IN ('queued', 'leased')
+                /* cancelled belongs here with failed: the runner cancels by failing the
+                   build, the dataset ends up failed either way, and a reader asking why a
+                   row needs attention deserves "Cancelled while extracting" rather than
+                   silence. A build that succeeded is not here -- its dataset says ready
+                   and carries its own counts. */
+                AND j.state IN ('queued', 'leased', 'failed', 'cancelled')
                 AND j.spec->>'dataset_id' ~ '^[0-9]+$'
               ORDER BY (j.spec->>'dataset_id')::int, j.id DESC`,
             { type: QueryTypes.SELECT }

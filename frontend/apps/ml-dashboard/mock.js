@@ -5112,7 +5112,12 @@ function buildReported(build) {
  * @returns {string} One of `building`, `queued`, `attention`, `ready`, `draft`.
  */
 function datasetScreenStatus(set, build) {
-  if (build) return build.state === 'queued' ? 'queued' : 'building';
+  /* **Only a build that is still going says what this row is.** The answer carries failed
+     and cancelled builds too, for their reason -- and reading any build as *building* made
+     a dead one draw a running row: an *Extracting* pill on a build that stopped an hour ago,
+     with no alert under it, because the row never reached the failed branch at all. */
+  if (build && build.state === 'queued') return 'queued';
+  if (build && build.state === 'leased') return 'building';
   if (set.status === 'failed') return 'attention';
   if (set.status === 'building') return 'building';
   if (set.status === 'draft') return 'draft';
@@ -5262,7 +5267,7 @@ function renderDatasetsSummary(datasets, builds) {
   /* The phase alone. `progress_phase` carries which video after it, and a summary card
      is not where a Jellyfin filename goes -- it read "extracting 2/6 …0727_163021_fwd". */
   const phases = [...builds.values()]
-    .filter((build) => build.state !== 'queued' && build.progress_phase)
+    .filter((build) => build.state === 'leased' && build.progress_phase)
     .map((build) => phaseOf(build).phase);
   const phrase = phases.length
     ? [...new Set(phases)].map((p) => p.toLowerCase()).join(' · ')
@@ -5327,7 +5332,10 @@ function renderDatasetsSummary(datasets, builds) {
 function patchBuildRows(body, builds) {
   for (const head of $$(':scope > tr[data-dataset-id]', body)) {
     const build = builds.get(Number(head.dataset.datasetId));
-    if (!build) continue;
+    /* A failed build is in this answer for its reason, which the detail drew once and
+       which cannot change. Patching its row would overwrite the dashes it ends on with
+       the last figures it reached, which reads as a build still going. */
+    if (!build || (build.state !== 'queued' && build.state !== 'leased')) continue;
 
     const frames = buildFramesCell(build);
     const cell = $('[data-frames]', head);
@@ -5399,7 +5407,9 @@ function tickBuildClocks(detail, build) {
 
 /** What a build row's pill says: the phase while it runs, the state otherwise. */
 function datasetBuildLabel(status, build) {
-  if (build && build.state !== 'queued' && build.progress_phase) {
+  /* `leased`, not "anything but queued". A failed build keeps the phase it died in, and
+     a pill reading *Extracting* on it says it is still going. */
+  if (build && build.state === 'leased' && build.progress_phase) {
     /* The phase alone. `progress_phase` carries the video after it now, and a pill in a
        table cell is not where a Jellyfin filename goes. */
     return phaseOf(build).phase;
@@ -5456,7 +5466,12 @@ async function wireDatasetPage() {
          `description`, `location`, `num_samples`, `num_classes`, `source` and
          the timestamps; everything else on this panel is gap 16. */
       const cfg = fixtures[name] || {
-        task: 'Unassigned',
+        /* **Not "Unassigned", which claimed somebody had failed to assign one.** The
+           column means the training task -- detection, classification, segmentation --
+           and `Dataset` has no column for it, so for every row that came from MARP it is
+           simply not recorded. Isaac on seeing it: it makes no sense on a dataset build.
+           It takes the same dash as every other field this screen cannot answer. */
+        task: null,
         fromApi: true,
         format: NOT_IN_DATASET,
         project: NOT_IN_DATASET,
@@ -5474,12 +5489,16 @@ async function wireDatasetPage() {
       const classes = original[4]?.textContent.trim() || '';
       const isBuild = status === 'building' || status === 'queued' || status === 'attention';
       head.classList.add('runrow-head');
-      head.dataset.datasetTask = cfg.task.toLowerCase();
-      head.dataset.search = `${name} ${description} ${cfg.task} ${cfg.project} ${status} ${build ? build.job_id : ''}`.toLowerCase();
+      head.dataset.datasetTask = cfg.task ? cfg.task.toLowerCase() : '';
+      head.dataset.search = `${name} ${description} ${cfg.task || ''} ${cfg.project} ${status} ${build ? build.job_id : ''}`.toLowerCase();
       const task = document.createElement('td');
       task.className = 'jtype';
-      task.dataset.sort = cfg.task;
-      task.innerHTML = `<span class="task-pill" data-task="${cfg.task.toLowerCase()}">${cfg.task}</span>`;
+      task.dataset.sort = cfg.task || '';
+      /* No pill when there is no task. A pill is a value; a dash is the absence of one,
+         and drawing an empty pill would be a third thing meaning neither. */
+      task.innerHTML = cfg.task
+        ? `<span class="task-pill" data-task="${cfg.task.toLowerCase()}">${cfg.task}</span>`
+        : NOT_IN_DATASET;
       original[1].after(task);
       const state = document.createElement('td');
       state.className = 'jstatus';
@@ -5592,7 +5611,7 @@ async function wireDatasetPage() {
       detail.className = 'runrow-body dataset-row-detail';
       detail.hidden = true;
       const readyActions = `<button class="btn sm" type="button" title="Use these immutable queries and split as a new starting point"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup</button><button class="btn sm" type="button" title="Open Training with this dataset selected"><svg class="ico"><use href="#i-training"/></svg>Use for training</button><button class="btn sm" type="button" title="Download the built images, labels and manifest"><svg class="ico"><use href="#i-download"/></svg>Download archive</button>`;
-      detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}"><header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header><div class="dataset-detail-grid"><section><h4>Build record</h4><dl class="kv"><dt>Task / format</dt><dd>${cfg.task} &middot; ${cfg.format}</dd><dt>Source</dt><dd>${cfg.project} &middot; promoted observations only</dd><dt>Membership</dt><dd>${cfg.queries} &middot; deduplicated</dd><dt>Build result</dt><dd>${cfg.build} &middot; completed cleanly</dd><dt>Fingerprint</dt><dd class="mono">${cfg.fingerprint}</dd></dl></section><section><h4>Composition and split</h4><div class="dataset-facts"><span><b>${observations}</b> observations</span><span><b>${frames}</b> frames</span><span><b>${classes}</b> classes</span><span><b>${cfg.size}</b> archive</span></div><div class="splitbar" role="img" aria-label="${cfg.split} train validation test split"><i class="tr" style="width:70%"><span>70%</span></i><i class="va" style="width:20%"><span>20%</span></i><i class="te" style="width:10%"><span>10%</span></i></div><p class="dataset-class-summary">${cfg.classes}</p><span class="hint">${cfg.groups}; connected frames stay in one split.</span></section><section class="dataset-samples"><h4>Sample images <span>design preview</span></h4><div class="thumbs">${thumbs}</div></section></div><footer>${readyActions}</footer></div></td>`;
+      detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}"><header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header><div class="dataset-detail-grid"><section><h4>Build record</h4><dl class="kv"><dt>Task / format</dt><dd>${cfg.task || NOT_IN_DATASET} &middot; ${cfg.format}</dd><dt>Source</dt><dd>${cfg.project} &middot; promoted observations only</dd><dt>Membership</dt><dd>${cfg.queries} &middot; deduplicated</dd><dt>Build result</dt><dd>${cfg.build} &middot; completed cleanly</dd><dt>Fingerprint</dt><dd class="mono">${cfg.fingerprint}</dd></dl></section><section><h4>Composition and split</h4><div class="dataset-facts"><span><b>${observations}</b> observations</span><span><b>${frames}</b> frames</span><span><b>${classes}</b> classes</span><span><b>${cfg.size}</b> archive</span></div><div class="splitbar" role="img" aria-label="${cfg.split} train validation test split"><i class="tr" style="width:70%"><span>70%</span></i><i class="va" style="width:20%"><span>20%</span></i><i class="te" style="width:10%"><span>10%</span></i></div><p class="dataset-class-summary">${cfg.classes}</p><span class="hint">${cfg.groups}; connected frames stay in one split.</span></section><section class="dataset-samples"><h4>Sample images <span>design preview</span></h4><div class="thumbs">${thumbs}</div></section></div><footer>${readyActions}</footer></div></td>`;
       head.after(detail);
       const open = $('[aria-label="Open"]', head);
       if (open) {
@@ -5688,9 +5707,16 @@ async function wireDatasetPage() {
     renderDatasetsSummary(datasets, builds);
 
     watching = builds;
-    if (builds.size) startClock();
 
-    return builds.size > 0;
+    /* **In flight, not merely present.** The answer carries failed builds too now, so
+       that the alert on a *Needs attention* row can say why -- and a failed build stays
+       failed, so polling on `builds.size` would poll for ever. */
+    const building = [...builds.values()]
+      .some((build) => build.state === 'queued' || build.state === 'leased');
+
+    if (building) startClock();
+
+    return building;
   };
 
   let timer = null;
@@ -6544,7 +6570,7 @@ function wireDatasetBuilder() {
 
     if (note) {
       note.textContent = usable.length
-        ? `${usable.length} of ${total.toLocaleString('en-US')} matches. Duplicates are ignored when adding.`
+        ? `${usable.length} of ${total.toLocaleString('en-US')} matches. The build cuts the full frame behind each one. Duplicates are ignored when adding.`
         : 'Duplicates are ignored when adding.';
     }
   };

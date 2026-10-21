@@ -110,16 +110,16 @@ describe('GET /api/v2/dataset/builds', () => {
      * @param {?string} [options.phase] - selecting, extracting or packaging.
      * @returns {Promise<number>} The attempt id.
      */
-    async function seedAttempt({ jobId, workerId, epoch, done = null, total = null, phase = null }) {
+    async function seedAttempt({ jobId, workerId, epoch, done = null, total = null, phase = null, failureReason = null }) {
         const [attempt] = await db.sequelize.query(
             `INSERT INTO gpu_job_attempts
                  (job_id, worker_id, slot_index, lease_epoch, state, leased_at, lease_expires_at,
-                  progress_done, progress_total, progress_unit, progress_phase)
+                  progress_done, progress_total, progress_unit, progress_phase, failure_reason)
              VALUES (:jobId, :workerId, 0, :epoch, 'running', NOW(), NOW() + INTERVAL '1 hour',
-                     :done, :total, 'frames', :phase)
+                     :done, :total, 'frames', :phase, :failureReason)
              RETURNING id`,
             {
-                replacements: { jobId, workerId, epoch, done, total, phase },
+                replacements: { jobId, workerId, epoch, done, total, phase, failureReason },
                 type: QueryTypes.SELECT,
             }
         );
@@ -393,20 +393,34 @@ describe('GET /api/v2/dataset/builds', () => {
     });
 
     /**
-     * P4 — the screen polls while anything is building and stops when nothing is, so a
-     * build that has finished, failed or been cancelled must leave this answer. A route
-     * that kept reporting it would poll for ever.
+     * **A build that succeeded is gone; one that failed is kept, for its reason.**
+     *
+     * The screen draws a failed build as *Needs attention*, and until this answer carried
+     * `failure_reason` the panel under that row could only say something had gone wrong —
+     * *"which isn't telling me ANYTHING about why it needs attention"*. A build that
+     * worked needs nothing from here: its dataset says `ready` and carries its own counts.
+     *
+     * P4 still holds, and this is where the distinction lives: **polling is keyed on the
+     * state, not on the answer being empty.** A failed build stays failed, so a screen
+     * watching for a non-empty answer would poll for ever; it watches for `queued` or
+     * `leased`, and the test below pins that those are the only two that mean *running*.
      */
-    it('leaves out a build that has finished, failed or been cancelled', async () => {
+    it('keeps a failed build for its reason, and drops one that succeeded', async () => {
         const worker = await seedWorker();
-        const terminal = {};
+        const seeded = {};
 
         for (const state of ['succeeded', 'failed', 'cancelled']) {
             const { datasetId, jobId } = await seedBuild({ name: `jest-${state}`, state });
             await seedAttempt({
-                jobId, workerId: worker, epoch: 1, done: 1367, total: 1367, phase: 'packaging',
+                jobId,
+                workerId: worker,
+                epoch: 1,
+                done: 1367,
+                total: 1367,
+                phase: 'packaging',
+                failureReason: state === 'succeeded' ? null : `jest: ${state} on purpose`,
             });
-            terminal[state] = datasetId;
+            seeded[state] = datasetId;
         }
 
         /* And one still running beside them, so an empty answer cannot pass this test by
@@ -416,13 +430,36 @@ describe('GET /api/v2/dataset/builds', () => {
             jobId: runningJob, workerId: worker, epoch: 1, done: 10, total: 1367, phase: 'extracting',
         });
 
-        const found = await mine([...Object.values(terminal), running]);
+        const found = await mine([...Object.values(seeded), running]);
 
-        for (const [state, datasetId] of Object.entries(terminal)) {
-            expect(`${state}: ${found.has(datasetId)}`).toBe(`${state}: false`);
+        expect(`succeeded: ${found.has(seeded.succeeded)}`).toBe('succeeded: false');
+
+        for (const state of ['failed', 'cancelled']) {
+            const build = found.get(seeded[state]);
+
+            expect(`${state}: ${Boolean(build)}`).toBe(`${state}: true`);
+            expect(build.failure_reason).toBe(`jest: ${state} on purpose`);
         }
 
-        expect(found.has(running)).toBe(true);
+        expect(found.get(running).failure_reason).toBeNull();
+    });
+
+    /**
+     * What the screen polls on. Two states mean a build is still going, and a reader
+     * watching a four-hour build depends on the timer stopping when it is over — a failed
+     * build in the answer must not keep it running.
+     */
+    it('marks a finished build with a state that is not queued or leased', async () => {
+        const worker = await seedWorker();
+        const { datasetId, jobId } = await seedBuild({ name: 'jest-not-running', state: 'failed' });
+
+        await seedAttempt({
+            jobId, workerId: worker, epoch: 1, failureReason: 'jest: over',
+        });
+
+        const build = (await mine([datasetId])).get(datasetId);
+
+        expect(['queued', 'leased']).not.toContain(build.state);
     });
 
     /**
