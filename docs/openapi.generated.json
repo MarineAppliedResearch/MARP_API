@@ -6494,6 +6494,22 @@
             "description": "Source or method of dataset creation (e.g., \"auto-compiled\", \"manual curation\", \"legacy import\").",
             "example": "auto-compiled"
           },
+          "archive_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Where the packaged archive is, relative to the storage root. Null until a build finishes. `GET /api/v2/gpu/datasets/{id}/archive` serves these bytes."
+          },
+          "archive_sha256": {
+            "type": "string",
+            "nullable": true,
+            "description": "SHA-256 of the packaged archive. It names the file as well as verifying it, so a re-package of the same dataset produces the same hash."
+          },
+          "archive_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Size of the packaged archive in bytes. Null until a build finishes."
+          },
           "status": {
             "type": "string",
             "maxLength": 16,
@@ -10577,6 +10593,90 @@
           },
           "403": {
             "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/dataset/{id}/composition": {
+      "get": {
+        "summary": "What a dataset is made of: its splits and its classes",
+        "description": "Counts of included observations per split, and the ordered class vocabulary. Both have been recorded since #268 -- `dataset_observations` holds a row per included observation and `dataset_classes` the vocabulary a label index refers to -- and neither was served, so the Datasets screen drew a split bar hardcoded to 70/20/10 and a class breakdown keyed on five invented dataset names. **The split is `inclusion_type`.** That column predates the build path and its name is about why an observation is in a dataset; the builder writes the split name into it, which is the name `data.yaml` uses. Counted now rather than taken from `num_observations`, which is what was recorded at build time: membership can lose rows to the observation cascade, and the two disagreeing is a fact worth being able to see. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The dataset."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Its splits and its classes. Both arrays are empty for a dataset built before membership was recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "splits": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "split": {
+                            "type": "string",
+                            "example": "train"
+                          },
+                          "observations": {
+                            "type": "integer",
+                            "example": 49
+                          }
+                        }
+                      }
+                    },
+                    "classes": {
+                      "type": "array",
+                      "description": "In class-index order, which is the order a YOLO label file indexes.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "class_index": {
+                            "type": "integer",
+                            "example": 0
+                          },
+                          "species_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "comname": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "California sea cucumber"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

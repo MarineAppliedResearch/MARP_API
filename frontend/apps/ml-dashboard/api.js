@@ -1074,6 +1074,26 @@
    *
    * @returns {Promise<Object[]>}
    */
+  /**
+   * `GET /api/v2/dataset/:id/composition` -- what one dataset is made of.
+   *
+   * Splits counted out of `dataset_observations`, and the class vocabulary out of
+   * `dataset_classes` in index order. Asked when a row is expanded rather than for every
+   * row the table draws: it answers about one dataset and only a person opening one needs
+   * it.
+   *
+   * Both arrays come back empty for a dataset built before membership was recorded, which
+   * is every legacy import -- the panel says so rather than drawing an empty bar.
+   *
+   * @param {number|string} id - The dataset.
+   * @returns {Promise<{splits: Object[], classes: Object[]}>}
+   */
+  function datasetComposition(id) {
+    return serve('datasets',
+      () => request(`/dataset/${encodeURIComponent(id)}/composition`),
+      () => ({ splits: [], classes: [] }));
+  }
+
   function listDatasetBuilds() {
     return serve('datasets',
       () => request('/dataset/builds'),
@@ -1359,6 +1379,7 @@
     listModelSpecies,
     listDatasets,
     listDatasetBuilds,
+    datasetComposition,
     listProjects,
     listUsers,
     submitJob,

@@ -59,6 +59,51 @@ class DatasetRepository {
 
 
     /**
+     * What one dataset is actually made of: its splits, and its class vocabulary.
+     *
+     * **Both are recorded and neither was served.** `dataset_observations` has held a row
+     * per included observation since #268 and `dataset_classes` the ordered vocabulary,
+     * while the Datasets screen drew a split bar hardcoded to 70/20/10 and a class
+     * breakdown keyed on the dataset's *name* against five invented ones. A bar that says
+     * 70/20/10 whatever the dataset is worse than no bar.
+     *
+     * **The split lives in `inclusion_type`.** The column predates the build path and its
+     * name is about why an observation is in a dataset; the builder writes the split name
+     * into it, which is what `recordBuild` records and what `data.yaml` names.
+     *
+     * Counted rather than derived from `num_observations`: a dataset's membership can
+     * lose rows to the observation cascade, and the honest answer to "what is in it" is
+     * what is in it now, beside the count recorded when it was built.
+     *
+     * @async
+     * @param {number|string} datasetId - The dataset.
+     * @returns {Promise<{splits: Object[], classes: Object[]}>}
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getDatasetComposition(datasetId) {
+        const splits = await this.db.sequelize.query(
+            `SELECT inclusion_type AS split, count(*)::int AS observations
+               FROM dataset_observations
+              WHERE dataset_id = :datasetId
+              GROUP BY inclusion_type
+              ORDER BY inclusion_type`,
+            { replacements: { datasetId }, type: QueryTypes.SELECT }
+        );
+
+        const classes = await this.db.sequelize.query(
+            `SELECT c.class_index, c.species_id, s.comname
+               FROM dataset_classes c
+               LEFT JOIN species s ON s.id = c.species_id
+              WHERE c.dataset_id = :datasetId
+              ORDER BY c.class_index`,
+            { replacements: { datasetId }, type: QueryTypes.SELECT }
+        );
+
+        return { splits, classes };
+    }
+
+
+    /**
      * Every dataset build that is still in flight, with how far it has got.
      *
      * **The progress is on the attempt, not on the job and not on the dataset.** A

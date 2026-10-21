@@ -917,7 +917,13 @@ function rowFor(view) {
     + ` data-attempts="${job.attempts_made ?? 0}"`
     + ` data-max-attempts="${job.max_attempts ?? 0}"`
     + ` data-priority="${job.priority ?? 0}"`
-    + ` data-by="${job.created_by ?? ''}">`
+    + ` data-by="${job.created_by ?? ''}"`
+    /* **Which dataset a build built.** The Jobs detail shows job-level facts and the
+       Datasets screen shows dataset-level ones, which is right -- but nothing said the
+       two were about the same thing, so the screens read as though they disagreed. The
+       id travels on the row because the detail is built from the row rather than from
+       the job object. */
+    + ` data-dataset="${job.kind === 'dataset_build' && job.spec && job.spec.dataset_id != null ? job.spec.dataset_id : ''}">`
     + `<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job ${job.id}"></td>`
     + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
     + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
@@ -3483,6 +3489,16 @@ function wireJobsOverview() {
     const submitted = $('.jtime', head)?.textContent.trim().replace(/\s+/g, ' ') || '—';
     const isTraining = type.toLowerCase() === 'training';
     const isDatasetBuild = type.toLowerCase() === 'dataset build';
+
+    /* The dataset this build produced, as a link into the screen that owns it. The
+       receiver on that side expands the row it lands on, so the reader arrives at the
+       composition rather than at a table to search. No id, no link -- the same rule the
+       Dashboard's rows follow. */
+    const builtDataset = head.dataset.dataset;
+    const datasetLink = isDatasetBuild && builtDataset
+      ? `<p class="jobdetail-dataset">Built <a href="./datasets.html?dataset=${encodeURIComponent(builtDataset)}">dataset ${escapeHtml(builtDataset)}</a></p>`
+      : '';
+
     let operational;
 
     if (state === 'running' || state === 'paused' || state === 'cancelling') {
@@ -3559,7 +3575,7 @@ function wireJobsOverview() {
     detail.className = 'runrow-body';
     detail.hidden = true;
     detail.innerHTML = `<td colspan="11"><div class="rundetail jobdetail">
-      <div class="jobdetail-head"><div><b>${name}</b><span>Job ${id} · ${type}</span></div><span class="st" data-state="${state}"><span class="dot"></span>${status}</span></div>
+      <div class="jobdetail-head"><div><b>${name}</b><span>Job ${id} · ${type}</span>${datasetLink}</div><span class="st" data-state="${state}"><span class="dot"></span>${status}</span></div>
       <div class="jobdetail-grid jobidentity">
         <dl class="kv"><dt>Job ID</dt><dd class="mono">${id}</dd><dt>Type</dt><dd>${type}</dd><dt>Scope</dt><dd>${scope}${scopeContext ? ` <span class="faint">· ${scopeContext}</span>` : ''}</dd><dt>${isDatasetBuild ? 'Build output' : 'Locked model'}</dt><dd>${model} <span class="faint">${modelVersion}</span><div class="locked">Immutable from submission</div></dd></dl>
         <dl class="kv"><dt>Submitted</dt><dd>${submitted}</dd><dt>Submitted by</dt><dd>${submittedBy}</dd><dt>Priority</dt><dd>${priority}</dd><dt>Attempt policy</dt><dd>Up to ${maxAttempts} attempt${maxAttempts === 1 ? '' : 's'}</dd></dl>
@@ -5481,6 +5497,81 @@ function tickBuildClocks(detail, build) {
  * @param {?Object} build - The build behind the row, if there is one.
  * @returns {string} The pill's inner HTML.
  */
+/** Bytes as a person reads them. The archive is hundreds of megabytes to tens of GB. */
+function archiveSize(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return '';
+
+  const GB = 1024 ** 3;
+
+  return n >= GB ? `${(n / GB).toFixed(1)} GB` : `${Math.round(n / (1024 ** 2))} MB`;
+}
+
+/** How long a finished build took, from the two timestamps on its dataset row. */
+function buildTook(set) {
+  if (!set || !set.created_at || !set.updated_at) return '';
+
+  const seconds = Math.round((Date.parse(set.updated_at) - Date.parse(set.created_at)) / 1000);
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  if (seconds < 90) return `${seconds}s`;
+
+  const minutes = Math.floor(seconds / 60);
+
+  return minutes < 60
+    ? `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`
+    : `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+/**
+ * A row of the Build record list, or nothing at all.
+ *
+ * **Nothing rather than a dash with a sentence beside it.** The panel used to assert
+ * "promoted observations only", "deduplicated" and "completed cleanly" next to em dashes
+ * for values it did not have, about a dataset nobody had checked. A field MARP cannot
+ * answer is now absent, which is the difference between not knowing and claiming.
+ *
+ * @param {string} label - The term.
+ * @param {string} value - Already-escaped text, or '' to omit the row entirely.
+ * @returns {string}
+ */
+function recordRow(label, value) {
+  return value ? `<dt>${label}</dt><dd>${value}</dd>` : '';
+}
+
+/**
+ * The split bar, drawn from what is actually in the dataset.
+ *
+ * It was three hardcoded widths -- 70%, 20%, 10% -- on every dataset regardless, which is
+ * worse than no bar: it is a measurement nobody took, in the place a reader looks for one.
+ * The real shares come from `GET /dataset/:id/composition`, which counts
+ * `dataset_observations` by split.
+ *
+ * @param {Object[]} splits - `{split, observations}`, as the route returns them.
+ * @returns {string} The bar, or '' when there is no membership recorded.
+ */
+function splitBar(splits) {
+  const rows = (splits || []).filter((s) => Number(s.observations) > 0);
+  if (!rows.length) return '';
+
+  const total = rows.reduce((sum, s) => sum + Number(s.observations), 0);
+  /* The class on each band is what colours it; an unexpected split name gets the neutral
+     one rather than no class at all, which would be an invisible band. */
+  const tone = { train: 'tr', validation: 'va', val: 'va', eval: 'va', test: 'te' };
+
+  const label = rows.map((s) => `${s.split} ${Math.round(s.observations / total * 100)} per cent`).join(', ');
+  const bands = rows.map((s) => {
+    const share = Math.round(Number(s.observations) / total * 100);
+
+    return `<i class="${tone[s.split] || 'tr'}" style="width:${share}%"><span>${share}%</span></i>`;
+  }).join('');
+
+  /* `escapeHtml` on an attribute, which is the bug this had: `NOT_IN_DATASET` is markup,
+     and interpolating it into `aria-label` closed the attribute early and spilled
+     `train validation test split">` onto the screen as text. Nothing that reaches an
+     attribute here is markup any more, and it is escaped as well. */
+  return `<div class="splitbar" role="img" aria-label="${escapeHtml(label)}">${bands}</div>`;
+}
+
 function datasetPillContents(status, build) {
   const dot = build && build.state === 'leased' ? '<span class="dot"></span>' : '';
 
@@ -5537,7 +5628,12 @@ function openRequestedDataset() {
      hidden by a filter the reader left set, and a click handler would toggle it shut
      if something else had already opened it. */
   head.setAttribute('aria-expanded', 'true');
-  if (detail) detail.hidden = false;
+
+  if (detail) {
+    detail.hidden = false;
+    /* A ready row fetches its splits and classes when it opens; this is the open. */
+    if (typeof detail.loadComposition === 'function') detail.loadComposition();
+  }
 
   /* **Scrolled twice, and the second one is the one that works.** Everything above this
      table — the pickers, the match counts, the sample thumbnails — fills in after the
@@ -5589,9 +5685,13 @@ async function wireDatasetPage() {
    *
    * @param {Map<number, Object>} builds - In-flight builds by dataset id.
    */
-  const decorate = (builds) => {
+  const decorate = (builds, byId) => {
     for (const head of $$(':scope > tr[data-dataset-id]', body)) {
       const original = [...head.children];
+      /* The dataset this row was drawn from. The detail panel reads real columns off it
+         now -- the archive's hash and size, the source, the two timestamps -- and this
+         loop walks DOM rows, so the row has to be able to find its own record. */
+      const set = byId.get(Number(head.dataset.datasetId)) || { id: Number(head.dataset.datasetId) };
       const name = $('.jname .t', head)?.textContent.trim() || 'Saved dataset';
       const build = builds.get(Number(head.dataset.datasetId)) || null;
       const status = head.dataset.datasetStatus || 'ready';
@@ -5741,12 +5841,119 @@ async function wireDatasetPage() {
          blank with no error anywhere -- the browser simply never asked. Twenty-six
          thumbnails on a page is a cost worth paying over a panel that silently
          shows nothing. */
-      const thumbs = samples.map(([src, alt]) => `<figure><img src="${src}" alt="Opening source frame from ${alt}"><figcaption>${alt}</figcaption></figure>`).join('');
+      /* The four sample pictures that used to sit here were four hardcoded Jellyfin item
+         ids -- the same four on every dataset. Removed rather than relabelled: the real
+         frames are inside the archive and serving them is its own piece of work. */
       const detail = document.createElement('tr');
       detail.className = 'runrow-body dataset-row-detail';
       detail.hidden = true;
-      const readyActions = `<button class="btn sm" type="button" title="Use these immutable queries and split as a new starting point"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup</button><button class="btn sm" type="button" title="Open Training with this dataset selected"><svg class="ico"><use href="#i-training"/></svg>Use for training</button><button class="btn sm" type="button" title="Download the built images, labels and manifest"><svg class="ico"><use href="#i-download"/></svg>Download archive</button>`;
-      detail.innerHTML = `<td colspan="10"><div class="dataset-detail" data-status="${status}"><header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header><div class="dataset-detail-grid"><section><h4>Build record</h4><dl class="kv"><dt>Task / format</dt><dd>${cfg.task || NOT_IN_DATASET} &middot; ${cfg.format}</dd><dt>Source</dt><dd>${cfg.project} &middot; promoted observations only</dd><dt>Membership</dt><dd>${cfg.queries} &middot; deduplicated</dd><dt>Build result</dt><dd>${cfg.build} &middot; completed cleanly</dd><dt>Fingerprint</dt><dd class="mono">${cfg.fingerprint}</dd></dl></section><section><h4>Composition and split</h4><div class="dataset-facts"><span><b>${observations}</b> observations</span><span><b>${frames}</b> frames</span><span><b>${classes}</b> classes</span><span><b>${cfg.size}</b> archive</span></div><div class="splitbar" role="img" aria-label="${cfg.split} train validation test split"><i class="tr" style="width:70%"><span>70%</span></i><i class="va" style="width:20%"><span>20%</span></i><i class="te" style="width:10%"><span>10%</span></i></div><p class="dataset-class-summary">${cfg.classes}</p><span class="hint">${cfg.groups}; connected frames stay in one split.</span></section><section class="dataset-samples"><h4>Sample images <span>design preview</span></h4><div class="thumbs">${thumbs}</div></section></div><footer>${readyActions}</footer></div></td>`;
+      /* **Download is a link, not a button.** The archive is hundreds of megabytes --
+         541 MB for the first real one -- so the browser streams it to disk; pulling it
+         through `fetch` into a blob would hold it all in memory first. Same-origin, so
+         the session cookie goes with it the way every other request on this screen is
+         authenticated; no token in a query string.
+
+         **Drawn only when there is something to download.** `archive_path` is null until
+         a build finishes, and a button that 404s is worse than one that is absent.
+
+         The route is gated on `jobs:execute` rather than `datasets:read`, because
+         fetching a dataset is part of running the job that names it -- so a reader who
+         can see this screen may still be refused the file. That is the route's decision
+         and not this screen's to work around. */
+      /* Declared before the link below names it in its title, not with the rest of the
+         Build record further down: a `const` read above its own declaration is a
+         ReferenceError, and it took the whole detail row with it. */
+      const size = archiveSize(set && set.archive_bytes);
+      const downloadable = status === 'ready' && set && set.archive_path;
+      const download = downloadable
+        ? `<a class="btn sm" href="/api/v2/gpu/datasets/${encodeURIComponent(set.id)}/archive" download title="Download the built images, labels and manifest${size ? ` — ${size}` : ''}"><svg class="ico"><use href="#i-download"/></svg>Download archive</a>`
+        : '';
+
+      /* Duplicate setup and Use for training are still inert, and deliberately left so:
+         wiring them has not been asked for, and two more half-working buttons is worse
+         than two that are obviously not finished. They carry a `later` chip, which is
+         what this app uses for a control with nothing behind it. */
+      const readyActions = `<button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup <span class="chip">later</span></button><button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-training"/></svg>Use for training <span class="chip">later</span></button>${download}`;
+      /* **The Build record, from the dataset row rather than from its name.** This block
+         was a lookup keyed on five invented dataset names — `CAMPA_2024_Rockfish_v3` and
+         friends — so anything MARP actually built fell through to a wall of em dashes
+         with confident sentences beside them: "promoted observations only",
+         "deduplicated", "completed cleanly", about a dataset nobody had checked. Every
+         line here is now either a column on `datasets` or absent.
+
+         Task is gone for the same reason it left the table: a dataset records no training
+         task and never will. */
+      const took = buildTook(set);
+      const fingerprint = set && set.archive_sha256
+        ? `<span class="mono">${escapeHtml(String(set.archive_sha256).slice(0, 16))}</span>`
+        : '';
+
+      const record = [
+        /* Only for a dataset this builder made. A legacy import's shape is whatever the
+           desktop script produced, and `source` is what tells them apart. */
+        recordRow('Format', set && set.source === 'ml-dashboard'
+          ? 'YOLO bounding boxes &middot; one label file per image'
+          : ''),
+        recordRow('Source', set && set.source ? escapeHtml(set.source) : ''),
+        recordRow('Built in', took),
+        recordRow('Fingerprint', fingerprint),
+        recordRow('Archive', size),
+      ].join('');
+
+      detail.innerHTML = `<td colspan="10"><div class="dataset-detail" data-status="${status}">`
+        + `<header><div><h3>${name}</h3><p>${description}</p></div>`
+        + `<span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header>`
+        + '<div class="dataset-detail-grid">'
+        + `<section><h4>Build record</h4><dl class="kv">${record}</dl></section>`
+        + '<section><h4>Composition and split</h4>'
+        + '<div class="dataset-facts">'
+        + `<span><b>${observations}</b> observations</span>`
+        + `<span><b>${frames}</b> images</span>`
+        + `<span><b>${classes}</b> classes</span>`
+        + (size ? `<span><b>${size}</b> archive</span>` : '')
+        + '</div>'
+        /* Filled when the row is opened, from `GET /dataset/:id/composition`. Asking for
+           every row the table draws would be a request per row to draw one page. */
+        + '<div data-dataset-composition></div>'
+        + '</section></div>'
+        + `<footer>${readyActions}</footer></div></td>`;
+
+      /* **Asked on first open, once.** The splits and the vocabulary cannot change for a
+         dataset that is built — the archive is addressed by its own hash — so one fetch
+         per row for as long as the page is open is the whole of it. */
+      let composed = false;
+      const compose = async () => {
+        if (composed) return;
+        composed = true;
+
+        const into = $('[data-dataset-composition]', detail);
+        if (!into) return;
+
+        try {
+          const { splits, classes: vocabulary } = await window.MarpApi.datasetComposition(set.id);
+          const bar = splitBar(splits);
+          const named = (vocabulary || [])
+            .map((entry) => escapeHtml(entry.comname || `Species ${entry.species_id}`));
+
+          /* Nothing recorded is a real answer and a common one: every dataset built
+             before #268 wrote membership has neither, and saying so beats an empty bar. */
+          into.innerHTML = (bar || named.length)
+            ? bar + (named.length
+              ? `<p class="dataset-class-summary">${named.join(' &middot; ')}</p>`
+              : '')
+            : '<span class="hint">No membership was recorded for this dataset.</span>';
+        } catch (error) {
+          into.innerHTML = `<span class="hint">Could not load its composition (${error.status || 'no answer'}).</span>`;
+        }
+      };
+
+      head.addEventListener('click', compose);
+
+      /* **Also reachable without a click.** A row opened by `?dataset=` is expanded
+         directly rather than by clicking it, so a composer hung only on the click
+         listener never ran and the panel arrived with its split bar missing. Kept on the
+         detail element so the closure stays with the row it belongs to. */
+      detail.loadComposition = compose;
       head.after(detail);
       const open = $('[aria-label="Open"]', head);
       if (open) {
@@ -5825,7 +6032,7 @@ async function wireDatasetPage() {
     if (first || shape !== drawn) {
       drawn = shape;
       fillSavedDatasets(body, datasets, builds);
-      decorate(builds);
+      decorate(builds, new Map(datasets.map((set) => [set.id, set])));
       /* **Bound here, not in the boot list.** `wireAccordions` runs before this
          function resolves -- these rows come from the API, so they did not exist
          when it swept the page -- and without this the expander on every dataset
