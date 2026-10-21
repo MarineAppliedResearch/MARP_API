@@ -30,6 +30,8 @@ const {
     vocabulary,
 } = require('../service/dataset-build-plan');
 
+const { SPLIT_DIRECTORIES, dataYaml, directoryFor } = require('../service/dataset-build.service');
+
 /**
  * One selected observation.
  *
@@ -280,6 +282,58 @@ describe('splits the builder declared (#268)', () => {
 
         // 1, 2 and 3 are one chain; 4 is on its own in eval.
         expect(splits.get('eval').map((r) => r.observation_id)).toEqual([4]);
+    });
+});
+
+describe('every split reaches the archive (#268)', () => {
+
+    /* The screen offers Train, Validation and Test. The archive said `train` and `eval`.
+       A subset sent to either of the other two was cut, recorded as a member of the
+       dataset, and then left out of the tar -- so the dataset claimed observations its
+       own archive did not hold, and nothing said so. */
+
+    test('every split the screen offers has a place in the archive', () => {
+        for (const offered of ['train', 'validation', 'test']) {
+            expect(() => directoryFor(offered)).not.toThrow();
+        }
+    });
+
+    test('validation goes where val: already points', () => {
+        // `val:` *means* validation. A third directory would have the worker reading
+        // one split and the dataset describing another.
+        expect(directoryFor('validation')).toBe(directoryFor('eval'));
+    });
+
+    test('test gets a directory of its own', () => {
+        expect(directoryFor('test')).toBe('test');
+        expect(directoryFor('test')).not.toBe(directoryFor('train'));
+    });
+
+    test('an unknown split is refused, not given a directory nobody packages', () => {
+        expect(() => directoryFor('holdout')).toThrow(/not a split/i);
+    });
+
+    test('data.yaml names the test split only when there is one', () => {
+        const classes = [{ species_id: 1, comname: 'Anemone', class_index: 0 }];
+
+        expect(dataYaml(classes, ['train', 'eval'])).not.toMatch(/^test:/m);
+        expect(dataYaml(classes, ['train', 'eval', 'test'])).toMatch(/^test: test\/images$/m);
+    });
+
+    test('a two-split yaml is unchanged by the test split existing as an option', () => {
+        const classes = [{ species_id: 1, comname: 'Anemone', class_index: 0 }];
+
+        expect(dataYaml(classes)).toBe(
+            ['names:', '- Anemone', 'nc: 1', 'train: train/images', 'val: eval/images', ''].join('\n')
+        );
+    });
+
+    test('the directories packaged are every one a split can write', () => {
+        // The guard against the original bug: the packager takes this set, so a split
+        // that can be written is a split that is packaged.
+        for (const split of Object.keys(SPLIT_DIRECTORIES)) {
+            expect(Object.values(SPLIT_DIRECTORIES)).toContain(directoryFor(split));
+        }
     });
 });
 

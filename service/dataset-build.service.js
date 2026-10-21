@@ -47,6 +47,49 @@ const plan = require('./dataset-build-plan');
 const { DATASET_DIRECTORY: ARCHIVE_DIRECTORY, DATASET_PATH_PREFIX: ARCHIVE_PATH_PREFIX } =
     require('../config/gpu-orchestration');
 
+/**
+ * What the builder's splits are called inside the archive.
+ *
+ * **The screen says Train, Validation and Test; the archive has always said `train` and
+ * `eval`.** Validation *is* what `val:` means, so it maps onto the directory the worker
+ * already reads rather than inventing a third. Test is genuinely a third split and gets
+ * its own, named in `data.yaml` where Ultralytics looks for it.
+ *
+ * Until this existed, `cutVideo` wrote `validation/` and `test/` directories that
+ * `packageArchive` then did not include, so those frames were cut, recorded as members
+ * and silently dropped.
+ */
+const SPLIT_DIRECTORIES = {
+    train: 'train',
+    eval: 'eval',
+    validation: 'eval',
+    test: 'test',
+};
+
+/**
+ * The archive directory one split writes into.
+ *
+ * Refuses an unknown name rather than inventing a directory for it: an unrecognised
+ * split is a request that cannot be honoured, and the failure anybody wants is the build
+ * saying so, not an archive quietly missing a third of itself.
+ *
+ * @param {string} split - The split's name, as the builder sent it.
+ * @returns {string} The directory inside the archive.
+ * @throws {Error} When the name is not one the archive has a place for.
+ */
+function directoryFor(split) {
+    const directory = SPLIT_DIRECTORIES[split];
+
+    if (!directory) {
+        throw new Error(
+            `"${split}" is not a split this archive has a place for; `
+            + `it holds ${Object.keys(SPLIT_DIRECTORIES).join(', ')}`
+        );
+    }
+
+    return directory;
+}
+
 /** Identifies this API to Jellyfin, the way the thumbnail path does. */
 const MEDIA_CLIENT_IDENTITY = { client: 'MARP API', device: 'dataset-build' };
 
@@ -60,15 +103,21 @@ const MEDIA_CLIENT_IDENTITY = { client: 'MARP API', device: 'dataset-build' };
  * @param {Array<Object>} classes - From `vocabulary`, index order.
  * @returns {string} The file's text.
  */
-function dataYaml(classes) {
-    return [
+function dataYaml(classes, directories = ['train', 'eval']) {
+    const lines = [
         'names:',
         ...classes.map((entry) => `- ${entry.comname}`),
         `nc: ${classes.length}`,
         'train: train/images',
         'val: eval/images',
-        '',
-    ].join('\n');
+    ];
+
+    /* Ultralytics reads `test:` and leaves it alone unless asked to evaluate against it,
+       which is what a held-out split is for. Written only when there is one, so a
+       two-split dataset's yaml is byte-identical to what it was before. */
+    if (directories.includes('test')) lines.push('test: test/images');
+
+    return [...lines, ''].join('\n');
 }
 
 /**
@@ -97,8 +146,9 @@ async function cutVideo(entry, staging) {
     }
 
     const wanted = [...entry.frames.keys()].sort((a, b) => a - b);
-    const images = path.join(staging, entry.split, 'images');
-    const labels = path.join(staging, entry.split, 'labels');
+    const directory = directoryFor(entry.split);
+    const images = path.join(staging, directory, 'images');
+    const labels = path.join(staging, directory, 'labels');
 
     fs.mkdirSync(images, { recursive: true });
     fs.mkdirSync(labels, { recursive: true });
@@ -148,7 +198,7 @@ async function cutVideo(entry, staging) {
  * a rebuild is not a way to accumulate copies. Hashed by streaming, because the archive
  * is gigabytes and must never be held in memory.
  *
- * @param {string} staging - The directory holding `train/`, `eval/` and `data.yaml`.
+ * @param {string} staging - The directory holding the splits and `data.yaml`.
  * @returns {{path: string, sha256: string, bytes: number}} Where it went and what it is.
  */
 function packageArchive(staging) {
@@ -156,7 +206,11 @@ function packageArchive(staging) {
 
     const partialName = `building-${process.pid}-${Date.now()}.tar`;
     const partial = path.join(ARCHIVE_DIRECTORY, partialName);
-    const present = ['train', 'eval', 'data.yaml'].filter(
+
+    /* Every split directory that was actually written, not a fixed pair. The fixed pair
+       is how a subset sent to Test was cut, recorded as a member and then left out of
+       the tar -- the dataset claiming observations its own archive did not hold. */
+    const present = [...new Set(Object.values(SPLIT_DIRECTORIES)), 'data.yaml'].filter(
         (name) => fs.existsSync(path.join(staging, name))
     );
 
@@ -292,7 +346,9 @@ async function runOne() {
             throw new Error('No frame could be cut from any of the videos these observations name.');
         }
 
-        fs.writeFileSync(path.join(staging, 'data.yaml'), dataYaml(classes), 'utf8');
+        const written = [...new Set([...splits.keys()].map(directoryFor))];
+
+        fs.writeFileSync(path.join(staging, 'data.yaml'), dataYaml(classes, written), 'utf8');
 
         await buildRepository.reportProgress(attempt.id, { phase: 'packaging', done, total, unit: 'frames' });
 
@@ -415,7 +471,9 @@ function stop() {
 
 module.exports = {
     ARCHIVE_DIRECTORY,
+    SPLIT_DIRECTORIES,
     cutVideo,
+    directoryFor,
     dataYaml,
     packageArchive,
     runOne,
