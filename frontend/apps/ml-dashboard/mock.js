@@ -917,7 +917,13 @@ function rowFor(view) {
     + ` data-attempts="${job.attempts_made ?? 0}"`
     + ` data-max-attempts="${job.max_attempts ?? 0}"`
     + ` data-priority="${job.priority ?? 0}"`
-    + ` data-by="${job.created_by ?? ''}">`
+    + ` data-by="${job.created_by ?? ''}"`
+    /* **Which dataset a build built.** The Jobs detail shows job-level facts and the
+       Datasets screen shows dataset-level ones, which is right -- but nothing said the
+       two were about the same thing, so the screens read as though they disagreed. The
+       id travels on the row because the detail is built from the row rather than from
+       the job object. */
+    + ` data-dataset="${job.kind === 'dataset_build' && job.spec && job.spec.dataset_id != null ? job.spec.dataset_id : ''}">`
     + `<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job ${job.id}"></td>`
     + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
     + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
@@ -3483,6 +3489,16 @@ function wireJobsOverview() {
     const submitted = $('.jtime', head)?.textContent.trim().replace(/\s+/g, ' ') || '—';
     const isTraining = type.toLowerCase() === 'training';
     const isDatasetBuild = type.toLowerCase() === 'dataset build';
+
+    /* The dataset this build produced, as a link into the screen that owns it. The
+       receiver on that side expands the row it lands on, so the reader arrives at the
+       composition rather than at a table to search. No id, no link -- the same rule the
+       Dashboard's rows follow. */
+    const builtDataset = head.dataset.dataset;
+    const datasetLink = isDatasetBuild && builtDataset
+      ? `<p class="jobdetail-dataset">Built <a href="./datasets.html?dataset=${encodeURIComponent(builtDataset)}">dataset ${escapeHtml(builtDataset)}</a></p>`
+      : '';
+
     let operational;
 
     if (state === 'running' || state === 'paused' || state === 'cancelling') {
@@ -3559,7 +3575,7 @@ function wireJobsOverview() {
     detail.className = 'runrow-body';
     detail.hidden = true;
     detail.innerHTML = `<td colspan="11"><div class="rundetail jobdetail">
-      <div class="jobdetail-head"><div><b>${name}</b><span>Job ${id} · ${type}</span></div><span class="st" data-state="${state}"><span class="dot"></span>${status}</span></div>
+      <div class="jobdetail-head"><div><b>${name}</b><span>Job ${id} · ${type}</span>${datasetLink}</div><span class="st" data-state="${state}"><span class="dot"></span>${status}</span></div>
       <div class="jobdetail-grid jobidentity">
         <dl class="kv"><dt>Job ID</dt><dd class="mono">${id}</dd><dt>Type</dt><dd>${type}</dd><dt>Scope</dt><dd>${scope}${scopeContext ? ` <span class="faint">· ${scopeContext}</span>` : ''}</dd><dt>${isDatasetBuild ? 'Build output' : 'Locked model'}</dt><dd>${model} <span class="faint">${modelVersion}</span><div class="locked">Immutable from submission</div></dd></dl>
         <dl class="kv"><dt>Submitted</dt><dd>${submitted}</dd><dt>Submitted by</dt><dd>${submittedBy}</dd><dt>Priority</dt><dd>${priority}</dd><dt>Attempt policy</dt><dd>Up to ${maxAttempts} attempt${maxAttempts === 1 ? '' : 's'}</dd></dl>

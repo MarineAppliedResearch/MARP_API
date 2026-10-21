@@ -537,6 +537,12 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
    the renderer stayed on screen. The build detail's *Video* row is hidden until the
    runner names one. */
 .jobmetric[hidden] { display: none; }
+/* The dataset a build produced, named under the job's own title on the Jobs screen.
+   The two screens show different halves of one thing -- job-level facts here,
+   dataset-level ones there -- and nothing said they were about the same build. */
+.jobdetail-dataset { margin: 3px 0 0; font-size: 11px; color: var(--muted); }
+.jobdetail-dataset a { color: var(--cyan-300); text-decoration: none; }
+.jobdetail-dataset a:hover { text-decoration: underline; }
 .jobmetric:last-child { border-right: 0; }
 .jobmetric > span { color: var(--faint); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .jobmetric > b { color: var(--white); font-size: 14px; overflow-wrap: anywhere; }
