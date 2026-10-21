@@ -6186,6 +6186,21 @@ function wireDatasetBuilder() {
 
     const max = Math.max(...rows.map((r) => r.count), 1);
 
+    /* A share cannot exceed the whole. When one did -- "White-plumed anemone 53, 129%",
+       an unfiltered count over a filtered total -- the panel drew it without complaint
+       and the only reason anybody knew was that Isaac read it. A breakdown that does not
+       add up is a breakdown of two different questions, so say so instead of drawing a
+       number that cannot be true. */
+    const drawn = rows.reduce((sum, r) => sum + r.count, 0);
+
+    if (total && drawn > total) {
+      console.error(`MarpDashboard: a class breakdown of ${drawn} over a total of ${total}`);
+      container.innerHTML = '<span class="nodata">These counts do not add up, so the '
+        + 'breakdown is not shown. Run the query again.</span>';
+
+      return;
+    }
+
     container.innerHTML = rows.map((r) => {
       const pct = total ? Math.round(r.count / total * 100) : 0;
       return `<span class="k">${escapeHtml(r.label)}</span>`
@@ -6270,7 +6285,20 @@ function wireDatasetBuilder() {
         window.MarpApi.mosaicFrames(filters),
       ]);
 
-      const species = facets.species || [];
+      /* **The facets route leaves a dimension out of its own predicate**, deliberately:
+         a dive list narrowed by the dives already chosen would only ever offer what is
+         already chosen. That is right for the picker and wrong here. This is a breakdown
+         of what matched, so a query asking only for sea cucumbers must not report the
+         anemones beside them -- which it did, with the anemone's unfiltered count over
+         the filtered total, giving "53, 129%".
+
+         Narrowed here rather than by asking the route differently, because each species'
+         own count is already correct: the species filter cannot change how many of
+         species X there are, only whether X is included. */
+      const chosen = filters.species && filters.species.length ? new Set(filters.species) : null;
+      const species = (facets.species || [])
+        .filter((entry) => !chosen || chosen.has(Number(entry.value)));
+
       const sessions = facets.session || [];
       const observations = counts.promoted || 0;
 
@@ -6403,7 +6431,16 @@ function wireDatasetBuilder() {
     title.textContent = `${result.query.dsproj} \u00b7 ${result.query.dsspecies} `;
     const splitBadge = document.createElement('i');
     splitBadge.className = `subset-split ${selectedSplit}`;
-    splitBadge.textContent = splitLabels[selectedSplit];
+    /* The badge says what the subset actually does. A divided one labelled "Train" is
+       the same lie the split panel was telling. */
+    const badgeShares = splitShares();
+
+    splitBadge.textContent = badgeShares
+      ? Object.entries(badgeShares)
+        .map(([name, value]) => `${name[0].toUpperCase()}${value}`).join(' / ')
+      : splitLabels[selectedSplit];
+
+    if (badgeShares) splitBadge.className = 'subset-split divided';
     title.append(splitBadge);
     const detail = document.createElement('span');
     detail.className = 's2';
@@ -6426,9 +6463,13 @@ function wireDatasetBuilder() {
     list.append(row);
     reindex();
     recalc();
-    setStatus(`Added ${result.observations.toLocaleString('en-US')} matching observations to `
-      + `${splitLabels[selectedSplit]}. An observation matched by more than one subset is `
-      + 'counted once, and keeps its first split, when the build runs.', 'success');
+    const where = badgeShares
+      ? `divided across ${Object.keys(badgeShares).join(', ')}`
+      : `to ${splitLabels[selectedSplit]}`;
+
+    setStatus(`Added ${result.observations.toLocaleString('en-US')} matching observations `
+      + `${where}. An observation matched by more than one subset is counted once, and `
+      + 'keeps its first split, when the build runs.', 'success');
     row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   };
   /* Re-run before adding, so a subset is never assembled from a count taken before
@@ -6675,20 +6716,50 @@ function wireSplit() {
 
   const draw = () => {
     const rows = $$('li', list);
-    const counts = splitNames.map((split) => rows
-      .filter((row) => row.dataset.split === split)
-      .reduce((sum, row) => sum + Number(row.dataset.unique || 0), 0));
+
+    /* A subset either names one split or carries shares to be divided by. This counted
+       only the first, so a subset added as "divided across 3 splits" showed its whole
+       count under Train -- which is what Isaac saw: 41 in train, 0 and 0 beside it.
+
+       The division itself happens server-side at build time, over whole connected
+       groups, so these are estimates: the real split moves a group at a time and cannot
+       land on an exact percentage. Saying so is better than showing a number that will
+       not be the one in the archive. */
+    let estimated = false;
+
+    const counts = splitNames.map((split) => rows.reduce((sum, row) => {
+      const unique = Number(row.dataset.unique || 0);
+
+      if (!row.dataset.shares) return sum + (row.dataset.split === split ? unique : 0);
+
+      const shares = JSON.parse(row.dataset.shares);
+      const whole = Object.values(shares).reduce((a, b) => a + b, 0) || 1;
+
+      if (shares[split]) estimated = true;
+
+      return sum + Math.round(unique * (shares[split] || 0) / whole);
+    }, 0));
+
     const total = counts.reduce((sum, count) => sum + count, 0);
     counts.forEach((count, index) => {
       const pct = total ? count / total * 100 : 0;
       if (bars[index]) bars[index].style.width = pct.toFixed(2) + '%';
       if (pcs[index]) pcs[index].textContent = Math.round(pct) + '%';
       if (nums[index]) nums[index].textContent = count.toLocaleString('en-US');
-      const subsetCount = rows.filter((row) => row.dataset.split === splitNames[index]).length;
-      const subsetLabel = $(`[data-split-subsets="${splitNames[index]}"]`);
+      const split = splitNames[index];
+      const subsetCount = rows.filter((row) => (row.dataset.shares
+        ? Boolean(JSON.parse(row.dataset.shares)[split])
+        : row.dataset.split === split)).length;
+      const subsetLabel = $(`[data-split-subsets="${split}"]`);
       if (subsetLabel) subsetLabel.textContent = `${subsetCount} subset${subsetCount === 1 ? '' : 's'}`;
     });
-    if (note) note.textContent = 'First assignment wins; later overlaps never cross splits';
+
+    if (note) {
+      note.textContent = estimated
+        ? 'Estimated: whole groups of overlapping frames move together, so the build '
+          + 'lands near these shares rather than exactly on them.'
+        : 'First assignment wins; later overlaps never cross splits';
+    }
   };
 
   document.addEventListener('dataset-total-change', draw);

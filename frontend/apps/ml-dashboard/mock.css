@@ -1930,6 +1930,10 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .split-shares label > i { font-style: normal; color: var(--faint); }
 .split-shares .hint { flex-basis: 100%; margin: 2px 0 0; }
 
+/* A subset divided across splits belongs to all of them, so it takes none of their
+   colours. */
+.subset-split.divided { background: var(--sunk); color: var(--muted); border: 1px solid var(--hairline-2); }
+
 /* The class breakdown with a share column as well as a count. */
 .dist.wide, .dist.pct { grid-template-columns: auto minmax(36px, 1fr) auto auto; }
 .dist .p { color: var(--faint); font-size: 10.5px; text-align: right; min-width: 30px; }
