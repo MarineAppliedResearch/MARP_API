@@ -459,9 +459,15 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
         expect(lines.map((line) => line.split(' ')[0]).sort()).toEqual(['0', '1']);
 
         /* The fixture's box does not move between its two keyframes, so every
-           interpolated label is the same box: a centre of 0.5, half the frame wide. */
+           interpolated label is the same box -- and it is **the keyframe's own numbers**,
+           because `keyframes.x, y` is the centre and YOLO wants the centre.
+
+           These four read `0.500000 0.500000 0.500000 0.500000` until 2026-10-21, when
+           the builder added half a width and half a height to a coordinate that was
+           already the centre. Every label it had ever written was half a box right and
+           down of the animal, and this test agreed with it. */
         for (const line of lines) {
-            expect(line.split(' ').slice(1)).toEqual(['0.500000', '0.500000', '0.500000', '0.500000']);
+            expect(line.split(' ').slice(1)).toEqual(['0.400000', '0.600000', '0.200000', '0.300000']);
         }
     });
 
@@ -607,6 +613,110 @@ describe('what a build does with what it could not cut (#268)', () => {
             fs.rmSync(unpacked.root, { recursive: true, force: true });
         }
     }, 120000);
+});
+
+describe('labels at the edge of the frame (#268)', () => {
+
+    /**
+     * A box whose right half is outside the picture.
+     *
+     * Centre 0.95 with a width of 0.2 reaches 1.05, and boxes really do run off the
+     * edge -- measured over 78 real keyframes they span [-0.0105, 1.0275] horizontally
+     * (`service/thumbnail-geometry.js`, F3). The label carries the part that is in the
+     * picture, re-centred on it: 0.85 to 1.0, so a centre of 0.925 and a width of 0.15.
+     */
+    const EDGE_BOX = { x: 0.95, y: 0.5, width: 0.2, height: 0.2 };
+
+    /** This group's stub, build and unpacked archive. */
+    let stub;
+    let built;
+    let archive;
+    let edgeObservation;
+
+    beforeAll(async () => {
+        const sessionId = await fixture.addSession(seeded, 'E');
+
+        edgeObservation = await fixture.addObservation(seeded, {
+            obsID: 7,
+            speciesId: seeded.speciesIds[0],
+            video: seeded.videos.edge,
+            sessionId,
+        });
+
+        await fixture.addKeyframes(seeded, edgeObservation, [500, 502], EDGE_BOX);
+
+        /* An ordinary box in the same build, so the archive holds both shapes and the
+           invariant below is not asserted over edge cases alone. */
+        const interior = await fixture.addObservation(seeded, {
+            obsID: 8,
+            speciesId: seeded.speciesIds[1],
+            video: seeded.videos.edge,
+            sessionId,
+        });
+
+        await fixture.addKeyframes(seeded, interior, [600, 601]);
+
+        stub = fixture.stubExtraction({ jellyfin, extraction });
+
+        const queued = await queueBuild({
+            name: `Jest Build Edge ${runId}`,
+            filters: { session: [sessionId] },
+            splits: { train: 1 },
+        });
+
+        built = await runBuild(queued.job.id);
+
+        expect(built.reason).toBeUndefined();
+
+        archive = unpack(built.archive.sha256);
+    }, 120000);
+
+    afterAll(() => {
+        if (stub) stub.restore();
+        if (archive && fs.existsSync(archive.root)) fs.rmSync(archive.root, { recursive: true, force: true });
+    });
+
+    test('a box running off the edge is written as the part that is in the picture', () => {
+        const label = path.join(
+            archive.root, 'train', 'labels',
+            `${path.parse(seeded.videos.edge).name}_00000500.txt`
+        );
+
+        const [line] = fs.readFileSync(label, 'utf8').trim().split('\n');
+
+        // Clipped to 0.85..1.0 and re-centred on it, rather than clamped: clamping the
+        // centre keeps a width that reaches outside and describes a bigger animal.
+        expect(line.split(' ').slice(1)).toEqual(['0.925000', '0.500000', '0.150000', '0.200000']);
+    });
+
+    test('every coordinate in every label is inside the picture', () => {
+        /* **This is the assertion that caught the centre-origin defect**, and it caught
+           it in the real-video suite -- which asserts the same thing -- on its first run
+           anywhere, reading 1.012 at a right edge. It is here now because it did not
+           need a real video: it needed a box near an edge, and this fixture has one.
+           A class index outside the vocabulary is checked beside it, since a label is
+           two claims and only one of them is a coordinate. */
+        const labels = archive.entries.filter((name) => name.endsWith('.txt'));
+
+        expect(labels.length).toBeGreaterThan(0);
+
+        for (const name of labels) {
+            const text = fs.readFileSync(path.join(archive.root, name), 'utf8').trim();
+
+            for (const line of text.split('\n')) {
+                const [index, ...box] = line.split(' ');
+
+                expect(Number(index)).toBeGreaterThanOrEqual(0);
+                expect(Number(index)).toBeLessThan(built.classes);
+                expect(box).toHaveLength(4);
+
+                for (const value of box) {
+                    expect(Number(value)).toBeGreaterThanOrEqual(0);
+                    expect(Number(value)).toBeLessThanOrEqual(1);
+                }
+            }
+        }
+    });
 });
 
 describe('a subset that is divided rather than sent to one split (#268)', () => {

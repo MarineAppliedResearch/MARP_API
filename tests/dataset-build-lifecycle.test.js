@@ -328,11 +328,25 @@ describe('a build cancelled inside one long video (#268 R8)', () => {
 
         expect(result.cancelled).toBe(true);
 
-        /* **One pass, not the whole video.** Somebody who pressed cancel on an
-           8,000-frame video used to wait minutes while frames they had already given up
-           on kept being written. A pass is seconds. */
-        expect(stub.calls.extractions).toHaveLength(1);
-        expect(stub.calls.extractions[0].frames.length).toBeLessThan(SPAN.last - SPAN.first + 1);
+        /* **It stopped inside the video, not at the end of it.** Somebody who pressed
+           cancel on an 8,000-frame video used to wait minutes while frames they had
+           already given up on kept being written.
+
+           Read back rather than counted: the number of passes is `FRAMES_PER_PASS`,
+           which has already moved from 400 to 100 because a report every ninety seconds
+           was not often enough to tell working from wedged, and will move again. What is
+           true at any batch size is that fewer frames were asked for than the video
+           holds -- and that is exactly what fails if the check goes back to being made
+           between videos, because then the whole video is cut before anything looks. */
+        const asked = stub.calls.extractions.flatMap((call) => call.frames);
+        const whole = SPAN.last - SPAN.first + 1;
+
+        expect(stub.calls.extractions.length).toBeGreaterThan(0);
+        expect(asked.length).toBeLessThan(whole);
+
+        // And what it did cut is the start of the video, not a scattering of it.
+        expect(asked[0]).toBe(SPAN.first);
+        expect(asked.every((frame, i) => i === 0 || frame === asked[i - 1] + 1)).toBe(true);
 
         const [dataset] = await q('SELECT status, archive_path FROM datasets WHERE id = :id', {
             id: queued.dataset.id,
