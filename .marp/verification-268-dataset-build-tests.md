@@ -197,9 +197,15 @@ else's build.
 `os.tmpdir()` is shared by every workspace on the machine and by whatever server a person
 is using, and a staging directory is named by `mkdtemp`, carrying nothing that says which
 process owns it. A build started elsewhere during this file is indistinguishable from a
-leak by this one. Both sightings were that: one in a run of this group by another session,
-one here, neither reproducible, and both explained once the machine's other builds were
-accounted for.
+leak by this one. There were two sightings on that day, neither reproducible.
+
+The first is explained: a run of this group by another session, which saw four
+`marp-dataset-*` directories that session then deleted four minutes later. **The second is
+not.** It was offered as having seen three `marp-build-*` directories deleted later that
+afternoon, and that cannot be what happened — all three were created hours before the run,
+so they were in the opening snapshot and filtered out by construction. Something appeared
+during that run and stayed; what, is not established, and a build elsewhere on the machine
+is the likeliest candidate rather than a demonstrated one.
 
 The check is kept, because the alternative is not noticing a real leak. What changed is
 the failure text: it now names the directories **and** says to check for another build
