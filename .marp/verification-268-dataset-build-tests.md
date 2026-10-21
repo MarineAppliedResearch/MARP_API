@@ -48,11 +48,15 @@ route was built against for the sake of two functions.
 | R6 | `dataset-build-runner` · *the archive is named for its own digest and is the size the row claims* | integration | `archive_path`, `archive_sha256` and `archive_bytes` describe the file that is actually there. |
 | R7 — no frame leaks across splits | `dataset-build-runner` · *the connected group stayed whole, in the split its earliest member claimed* | integration | The subsets are chosen to cut **across** a connected group: `first` is claimed by train and `second`, which shares frames 101–102 with it, is matched by validation. A naive build leaks two frames into eval. |
 | **R8 — nothing half-served** | `dataset-build-lifecycle` · *a build that is cancelled stops between videos, returns the dataset to draft, and leaves nothing staged* | integration | Cancelled through the job's state in the database, which is where `isCancelled` looks. Asserts the second video was **never opened**, the dataset is `draft` with no `archive_*`, no membership, no staged frames, no new tar. |
-| R8 | `dataset-build-lifecycle` · *a build that fails ends failed, with no archive columns set and no partial file behind* | integration | `failed`, `archive_*` null, no `building-*.tar`, nothing staged. |
+| R8 | `dataset-build-lifecycle` · *a build that fails ends failed, with no archive columns set and no partial file behind* | integration | `failed`, `archive_*` null, no `building-*.tar`, nothing staged. It fails on the **second** video, so a video's frames and labels are already staged when it dies — a build that died before cutting anything leaves nothing behind whatever the cleanup does, and so cannot tell you the cleanup works. |
 | R8 | `dataset-build-lifecycle` · *filters that match nothing fail the build* | integration | An empty dataset that is `ready` is worse than a failure. |
-| R8 | `dataset-build-lifecycle` · *an image format nobody builds in fails before a single frame is cut* | integration | The format is settled before extraction: a second, not an hour. |
+| R8 | `dataset-build-lifecycle` · *an image format nobody builds in fails before a single frame is cut* | integration | The **runner's own** guard, reached by writing the two rows the route would have written — because the route refuses this spec now, and that refusal is tested where it lives (`dataset-build-progress`, all three cases). Defence in depth is only in depth if the second line is tested too: a job queued by a seeder, a retry or a future caller still meets this one. |
+| **R8 — cancelled mid-video** | `dataset-build-lifecycle` · *stops between passes rather than finishing the video first* | integration | One video of 802 frames, cancelled during the first pass: one pass runs, not three. Checked between videos, a single-video build has nothing left to check and would cut every frame and succeed — which is what this test does against the older builder, so it pins the change rather than describing it. |
 | retry | `dataset-build-lifecycle` · *a second attempt replaces the first attempt's rows rather than doubling them* | integration | Four members and three classes before and after; two attempts recorded with epochs 1 and 2; the dataset names the **second** attempt's archive. |
 | the extractor's own gaps | `dataset-build-runner` · *a frame the extractor could not produce costs that frame, not the build* | integration | A truncated video costs frames at the end; the dataset is still `ready`, and the gap in the archive is the frame that was lost rather than the one after it. |
+| **observations ≠ frames** | `dataset-build-runner` · *observations and frames are two numbers, and neither stands in for the other* | integration | `num_samples` stays images, which is what it has meant since `package-dataset.js`, and `num_observations` is the new fact. The corpus is four observations and nine frames **on purpose**: a corpus where they happened to be equal would pass with them the wrong way round, which is how they came to be carried in one column. |
+| the batched extraction | `dataset-build-runner` · *is cut in several passes rather than one enormous one*, *every frame is asked for exactly once, in order*, *every pass writes into its own directory*, *the archive holds every frame, once* | integration | An 802-frame video, which is more than one pass. `extractFrames` builds a `select` term per frame, so one pass over 8,408 frames made a ~340 KB command line and the build died with `spawn ENAMETOOLONG` after minutes of work — the bug that would have killed the 50,000-frame target. The batch size is **not** written into the test; the shape is read back from what the extractor was asked for. |
+| progress | `dataset-build-runner` · *progress moves while the video is still being cut*, *progress counts across videos rather than restarting at each one* | integration | One long video reports strictly inside itself; three short ones report a count that never goes backwards and ends at nine. A per-video reset is a bar that jumps back to the start whenever a video ends. |
 | everything, against real video | `dataset-build-real` | slow | That the frames MARP asks for are frames the video can produce, at the frame rate it reports, through the URL the coordinator resolved — ending in a range request to `GET /gpu/datasets/:id/archive`, which is what a worker calls. |
 
 ## Proved red by mutation
@@ -79,6 +83,26 @@ live in `service/dataset-build.service.js`, which this branch was told not to to
 they are **not** proved by mutation. Both read real artefacts (an unpacked tar, the job's
 own state) rather than a stub's return value.
 
+**The batching tests were proved red three ways**, in a throwaway worktree carrying the
+batched builder, so nobody's working copy was touched:
+
+| Mutation | What failed |
+| --- | --- |
+| every pass writes into one directory (`batchDir = cut`) | *every pass writes into its own directory* — **and nothing else**. The archive still held 802 images: with batches sharing a directory, pass two's `frame-0001.png` overwrites pass one's, so the images come out right in number and wrong in content. Only this test can see it. |
+| an overlapping batch boundary (`at += FRAMES_PER_PASS - 1`) | five tests, including *every frame is asked for exactly once, in order* |
+| the per-pass progress callback disabled | *progress moves while the video is still being cut* — and nothing else |
+
+And the whole set is pinned to the change itself: against the branch **without** the
+batched, observation-counting builder, six tests fail — among them a single 802-frame
+observation reporting **802** where the observation count belongs, which is the defect in
+one number.
+
+The same holds for the mid-video cancellation: against the builder that checked between
+videos, *stops between passes rather than finishing the video first* fails, because a
+single-video build has nothing left to check and runs to a successful finish. Each of
+these tests was watched failing on the code before the change and passing on the code
+after it, rather than only passing.
+
 ## Requirements with no test
 
 None of R1–R8 is untested. `repository/dataset-build.repository.js` is covered through
@@ -95,8 +119,9 @@ drive, and a unit test of `recordBuild` would assert the same rows one layer low
   "building the same dataset twice is the same file"; a tar records each entry's
   modification time and the frames are rewritten on every attempt, so the digest moves.
   The retry test records this instead of asserting it.
-- **The route does not validate `image`.** An unknown format is accepted with 201 and the
-  build fails minutes later. Covered as it behaves, not as it should.
+- **The route's own refusal of a bad image format is not tested here**, deliberately: it
+  lives in `tests/dataset-build-progress.test.js`, which covers all three cases and that
+  nothing is queued. This file tests the runner's guard behind it.
 - **Permissions are not tested here.** Every suite runs as the fixture user, which holds
   every permission; the refusals are the auth suites' subject.
 - **Nothing covers two builds at once**, because the poller is one at a time by

@@ -6406,7 +6406,12 @@
           "num_samples": {
             "type": "integer",
             "nullable": true,
-            "description": "Total number of samples (images, frames, or observations) included in this dataset."
+            "description": "How many images are in this dataset: one per extracted frame. Not the observation count, which is num_observations and is much smaller -- a keyframe is a box at a frame number and the frames between two keyframes are interpolated and trained on as well."
+          },
+          "num_observations": {
+            "type": "integer",
+            "nullable": true,
+            "description": "How many observations went into this dataset, as recorded when it was built. Null for a dataset built before MARP recorded membership, which is not the same as zero."
           },
           "num_classes": {
             "type": "integer",

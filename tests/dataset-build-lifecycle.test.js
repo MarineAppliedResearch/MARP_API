@@ -101,6 +101,49 @@ async function runBuild(jobId) {
     return result;
 }
 
+/**
+ * Put a build in the queue without going through the route.
+ *
+ * **Only for a spec the route will not accept.** The route settles the image format on
+ * the way in now, so `{format: 'webp'}` is a 400 and never reaches the queue -- which is
+ * the better behaviour and is covered at the route in
+ * `tests/dataset-build-progress.test.js`. The runner keeps its own guard, and that guard
+ * is what a job queued by anything else -- a seeder, a retry, a future caller -- runs
+ * into. Testing it needs a job the route would have refused, so this writes the two rows
+ * the route would have written.
+ *
+ * @async
+ * @param {Object} spec - The job's spec, beside `dataset_id`.
+ * @param {string} name - The dataset's name.
+ * @returns {Promise<{dataset: Object, job: Object}>} Both rows.
+ */
+async function queueBuildDirectly(name, spec) {
+    const [dataset] = await q(
+        `INSERT INTO datasets (name, description, status, source, created_at, updated_at)
+         VALUES (:name, 'Queued past the route by tests/dataset-build-lifecycle.test.js',
+                 'building', 'ml-dashboard', NOW(), NOW())
+         RETURNING *`,
+        { name }
+    );
+
+    made.datasetIds.push(dataset.id);
+
+    const [job] = await q(
+        `INSERT INTO gpu_jobs (kind, name, spec, state, priority, attempts_made, max_attempts,
+                               created_by, created_at, updated_at)
+         VALUES ('dataset_build', :name, :spec, 'queued', 5000, 0, 3, NULL, NOW(), NOW())
+         RETURNING *`,
+        {
+            name: `Build ${name}`,
+            spec: JSON.stringify({ dataset_id: dataset.id, ...spec }),
+        }
+    );
+
+    made.jobIds.push(job.id);
+
+    return { dataset, job };
+}
+
 /** Every tar in the dataset directory right now. @returns {string[]} The filenames. */
 const archivesOnDisk = () => fs.existsSync(ARCHIVE_DIRECTORY)
     ? fs.readdirSync(ARCHIVE_DIRECTORY).sort()
@@ -234,6 +277,90 @@ describe('a build that is cancelled while it runs (#268 R8)', () => {
     }, 120000);
 });
 
+describe('a build cancelled inside one long video (#268 R8)', () => {
+
+    /** This group's own stub, its own session and its own long observation. */
+    let stub;
+
+    /** The frames that one video wants: more than one pass, so it can be stopped. */
+    const SPAN = { first: 2000, last: 2801 };
+
+    afterAll(() => {
+        if (stub) stub.restore();
+    });
+
+    test('stops between passes rather than finishing the video first', async () => {
+        const sessionId = await fixture.addSession(seeded, 'C');
+        const observationId = await fixture.addObservation(seeded, {
+            obsID: 6,
+            speciesId: seeded.speciesIds[0],
+            video: seeded.videos.long,
+            sessionId,
+        });
+
+        await fixture.addKeyframes(seeded, observationId, [SPAN.first, SPAN.last]);
+
+        const queued = await queueBuild({
+            name: `Jest Build Cancelled Midvideo ${runId}`,
+            filters: { session: [sessionId] },
+            splits: { train: 1 },
+        });
+
+        const stagedBefore = new Set(fixture.stagingDirectories());
+        const archivesBefore = archivesOnDisk();
+
+        /* Cancelled during the first pass, so the cancellation is waiting when the pass
+           ends. There is only one video here, which is the point: checked between
+           videos, this build has nothing left to check before it finishes, so it would
+           cut every frame and succeed. */
+        stub = fixture.stubExtraction({ jellyfin, extraction }, {
+            onExtract: async (nth) => {
+                if (nth !== 1) return;
+
+                await db.sequelize.query(
+                    "UPDATE gpu_jobs SET state = 'cancelled', updated_at = NOW() WHERE id = :id",
+                    { replacements: { id: queued.job.id } }
+                );
+            },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(result.cancelled).toBe(true);
+
+        /* **One pass, not the whole video.** Somebody who pressed cancel on an
+           8,000-frame video used to wait minutes while frames they had already given up
+           on kept being written. A pass is seconds. */
+        expect(stub.calls.extractions).toHaveLength(1);
+        expect(stub.calls.extractions[0].frames.length).toBeLessThan(SPAN.last - SPAN.first + 1);
+
+        const [dataset] = await q('SELECT status, archive_path FROM datasets WHERE id = :id', {
+            id: queued.dataset.id,
+        });
+
+        expect(dataset.status).toBe('draft');
+        expect(dataset.archive_path).toBeNull();
+
+        const [attempt] = await q(
+            'SELECT state, failure_reason FROM gpu_job_attempts WHERE job_id = :id',
+            { id: queued.job.id }
+        );
+
+        expect(attempt.state).toBe('cancelled');
+        expect(attempt.failure_reason).toBe('Cancelled while extracting.');
+
+        // Nothing recorded, and the frames of the pass it did cut are gone.
+        const [members] = await q(
+            'SELECT count(*)::int AS n FROM dataset_observations WHERE dataset_id = :id',
+            { id: queued.dataset.id }
+        );
+
+        expect(members.n).toBe(0);
+        expect(fixture.stagingDirectories().filter((name) => !stagedBefore.has(name))).toEqual([]);
+        expect(archivesOnDisk()).toEqual(archivesBefore);
+    }, 180000);
+});
+
 describe('a build that fails (#268 R8)', () => {
 
     /** This group's stub. */
@@ -249,9 +376,14 @@ describe('a build that fails (#268 R8)', () => {
         const stagedBefore = new Set(fixture.stagingDirectories());
         const archivesBefore = archivesOnDisk();
 
+        /* **It fails on the second video, not the first.** A build that dies before
+           cutting anything leaves nothing behind whatever the cleanup does, so it cannot
+           tell you the cleanup works. By the time this one throws, one video's frames
+           and labels are written into the staging directory -- which is what the
+           assertions at the end are actually about. */
         stub = fixture.stubExtraction({ jellyfin, extraction }, {
-            onExtract: async () => {
-                throw new Error('ffmpeg exited 1: jest made it so');
+            onExtract: async (nth) => {
+                if (nth === 2) throw new Error('ffmpeg exited 1: jest made it so');
             },
         });
 
@@ -259,6 +391,9 @@ describe('a build that fails (#268 R8)', () => {
 
         expect(result.failed).toBe(true);
         expect(result.reason).toContain('jest made it so');
+
+        // It really did get past the first video, so there were frames to clean up.
+        expect(stub.calls.extractions).toHaveLength(2);
 
         const [dataset] = await q('SELECT * FROM datasets WHERE id = :id', { id: queued.dataset.id });
 
@@ -306,10 +441,17 @@ describe('a build that fails (#268 R8)', () => {
     }, 60000);
 
     test('an image format nobody builds in fails before a single frame is cut', async () => {
-        const queued = await queueBuild({
-            name: `Jest Build Webp ${runId}`,
+        /* Queued past the route on purpose. The route refuses this spec now -- and the
+           refusal is tested where it lives, in `tests/dataset-build-progress.test.js` --
+           so the only way to reach the runner's own guard is to put the job in the queue
+           the way anything other than this route would: a seeder, a retry, a caller that
+           does not exist yet. Defence in depth is only in depth if the second line is
+           tested too. */
+        const queued = await queueBuildDirectly(`Jest Build Webp ${runId}`, {
             filters: everything(),
+            subsets: null,
             image: { format: 'webp' },
+            splits: undefined,
         });
 
         const counting = fixture.stubExtraction({ jellyfin, extraction });
