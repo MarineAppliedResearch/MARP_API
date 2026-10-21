@@ -62,30 +62,15 @@ const made = { datasetIds: [], jobIds: [], archives: [], workerCreated: false };
 /**
  * How many frames the builder asks for in one ffmpeg pass.
  *
- * **Read out of the source**, because `FRAMES_PER_PASS` is not exported and the batching
- * test needs to be bigger than it without being enormous. The alternative was a fixed
- * span chosen to beat whatever the constant was that week: 802 frames to beat 400, which
- * cost eight hundred image encodes and would have silently stopped forcing a second pass
- * the day somebody raised it.
- *
- * It fails loudly rather than guessing if the constant is renamed or exported, because a
- * test that quietly fell back to a default would go on passing while measuring nothing.
+ * Taken from the module, which exports it. This read the constant out of the source text
+ * for a day, because it was not exported and the batching build below has to be bigger
+ * than it without being enormous — the alternative being a span chosen to beat whatever
+ * the constant was that week, which is how it came to be 802 frames to beat 400.
  *
  * @returns {number} The batch size the builder is using.
  */
 function passSize() {
-    const source = fs.readFileSync(require.resolve('../service/dataset-build.service'), 'utf8');
-    const found = source.match(/^const FRAMES_PER_PASS = (\d+);/m);
-
-    if (!found) {
-        throw new Error(
-            'FRAMES_PER_PASS could not be read out of service/dataset-build.service.js. '
-            + 'If it was renamed or exported, teach tests/dataset-build-runner.test.js to '
-            + 'read it the new way rather than deleting this.'
-        );
-    }
-
-    return Number(found[1]);
+    return buildService.FRAMES_PER_PASS;
 }
 
 /**
