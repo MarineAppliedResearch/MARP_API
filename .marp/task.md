@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#121
 repos: [MARP_API]
-status: design
+status: verifying
 needs: [jellyfin]
 ---
 
@@ -320,9 +320,19 @@ them.
 
 ## Status
 
-- **Gate:** design
-- **Notes:** G0/G1 complete. Four blocking assumptions open (A1, A2, A4, A6); nothing
-  implemented. The investigation changed what the issue is about: backfill is already covered
-  by two mechanisms and has nothing to walk, eviction already exists with a budget seven times
-  larger than the projected corpus, and the live gap is 3,567 retryable failures that nothing
-  retries.
+- **Gate:** verifying
+- **Notes:** G0-G4 complete. All eight assumptions answered 2026-10-21 and implemented as
+  answered. 340 tests green in `npm run test:mosaic`, 20 of them new; two tripwires proved
+  red before being trusted. **Not pushed, no pull request** -- that is G5 and it is the
+  human's.
+
+  Two things a reader should know rather than discover:
+
+  - **The corpus guard is unreliable on this machine while a GPU worker is running**, and it
+    fails identically on unmodified `develop`. Checked, including a first baseline run that
+    was clean and misleading. `.marp/verification.md` has both runs verbatim. It means the
+    guard could not be used as evidence here, which is a gap rather than a pass.
+  - **The sweeper has not yet made a single picture.** Everything verified is the row
+    reaching the queue in the right state and the right order. Whether a re-offered row then
+    extracts depends on Jellyfin and is the manual step, with the 3,567 baseline recorded so
+    the next run has something to compare against.

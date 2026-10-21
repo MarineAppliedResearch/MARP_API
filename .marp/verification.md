@@ -111,4 +111,89 @@ run rather than part of a change loop.
 
 ## Results
 
-<!-- Filled in from the real output of `npm run test:mosaic`. -->
+Run on 2026-10-21 against the development PostgreSQL, on branch `121-thumbnail-sweeper`.
+
+### `npx jest tests/thumbnails.test.js`
+
+```
+  Test Suites : 1 passed, 0 failed, 1 total
+  Tests       : 103 passed, 0 failed, 0 skipped, 103 total
+  Duration    : 19.2s
+
+  Result: ALL TESTS PASSED
+```
+
+83 of those were already there; the 20 new ones are the table above.
+
+### The tripwires, proved red before they were trusted
+
+Two of the new tests were run against deliberately broken code, because a test that has
+never failed is a claim rather than evidence. `thumbnail_evicted_at IS NULL` and the whole
+backoff clause were removed from `sweepRetryable`, and:
+
+```
+  the background sweeper (#121) > never re-offers what the evictor just freed ... FAIL
+  Tests       : 0 passed, 1 failed, 102 skipped, 103 total
+
+  the background sweeper (#121) > waits out the backoff before offering ... FAIL
+  Tests       : 0 passed, 1 failed, 102 skipped, 103 total
+```
+
+The code was restored from a copy taken before the edit and the file re-verified.
+
+### `npm run test:mosaic` — the group this change belongs to
+
+```
+  Test Suites : 13 passed, 1 failed, 14 total
+  Tests       : 340 passed, 0 failed, 0 skipped, 340 total
+```
+
+**Zero tests failed. The suite-level failure is the corpus guard, and it is environmental.**
+It reported:
+
+```
+  tests/video-player-vendor.test.js changed the database.
+    - gpu_workers: row(s) modified, count unchanged at 13
+    - service_clients: row(s) modified, count unchanged at 15
+    - service_tokens: row(s) modified, count unchanged at 54
+```
+
+Nothing in the mosaic group writes to `gpu_workers`. A real GPU worker was heartbeating
+against this database throughout — `ABYSS-fba6be1a`, last seen 25 seconds before the run —
+and it authenticates with a service token on each poll, which moves all three tables. The
+guard cannot tell a live worker from a leaking test, and says so.
+
+**This was checked rather than assumed, and the first check was wrong.** An unmodified
+`develop` worktree was built at `0ba9ed86` and the same group run in it. The first run was
+clean, which looked like evidence that the failures were mine. A second run of the *same
+unmodified develop* was not:
+
+```
+  Test Suites : 11 passed, 3 failed, 14 total
+  Tests       : 320 passed, 0 failed, 0 skipped, 320 total
+
+  tests/listen.test.js changed the database.
+    - datasets: row(s) modified, count unchanged at 2
+    - gpu_job_attempts: row(s) modified, count unchanged at 6855
+    - gpu_jobs: row(s) modified, count unchanged at 9563
+  tests/mosaic-query.test.js changed the database.
+    - gpu_workers, service_clients, service_tokens: row(s) modified
+  tests/mosaic-correction.test.js changed the database.
+    - datasets, gpu_job_attempts: row(s) modified
+```
+
+Those tables belong to a GPU worker and to another agent's dataset work, and the mosaic
+group touches none of them. So the guard fails intermittently on this machine right now,
+identically with and without this change, and which files it names is a matter of when the
+worker's poll lands. **The one clean run was the luck; the failures are the normal state
+while a worker is running.**
+
+What that costs this verification, stated plainly: the guard could not be used to prove that
+these tests leave the database unchanged. The narrower evidence that they do is that
+`tests/thumbnails.test.js` passes the guard when run on its own, repeatedly, and that every
+sweep test runs inside a transaction it rolls back. That is weaker than a green group run
+and it is what there is.
+
+### What was not run
+
+The manual steps above. No picture has been extracted, and the 3,567 figure has not moved.
