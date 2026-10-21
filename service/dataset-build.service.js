@@ -171,6 +171,21 @@ function imageSettings(asked) {
  */
 const FRAMES_PER_PASS = 100;
 
+/**
+ * The gap past which a pass ends and the next one seeks instead.
+ *
+ * Decoding through a gap costs the whole gap; seeking past it costs one seek. 250 frames
+ * is ten seconds at 25fps -- long enough that the seek is worth it, short enough that
+ * frames of one animal stay in one pass.
+ *
+ * Without this a pass could span minutes of video for a hundred frames and be killed by
+ * the extractor's 120-second timeout, which is exactly what happened.
+ *
+ * @constant
+ * @type {number}
+ */
+const SEEK_RATHER_THAN_DECODE = 250;
+
 /** Identifies this API to Jellyfin, the way the thumbnail path does. */
 const MEDIA_CLIENT_IDENTITY = { client: 'MARP API', device: 'dataset-build' };
 
@@ -199,6 +214,45 @@ function dataYaml(classes, directories = ['train', 'eval']) {
     if (directories.includes('test')) lines.push('test: test/images');
 
     return [...lines, ''].join('\n');
+}
+
+/**
+ * Split the wanted frames into passes ffmpeg can serve without timing out.
+ *
+ * **A pass costs what it decodes, not what it keeps.** `extractFrames` seeks to the
+ * first frame and decodes forward to the last, so a hundred frames spread across a video
+ * makes ffmpeg read the whole span between them. Taking a hundred *by count* produced a
+ * pass covering four and a half minutes of video, which the extractor's 120-second
+ * timeout killed -- after it had already produced all hundred frames.
+ *
+ * So a pass breaks on a gap as well as on a count. Frames within one observation are
+ * contiguous; the gaps are between observations, and skipping one with a fresh seek is
+ * far cheaper than decoding through it.
+ *
+ * Found by the real-video suite on the second thing it caught, both times in work of
+ * mine that every synthetic fixture had passed.
+ *
+ * @param {Array<number>} wanted - Frame numbers, ascending.
+ * @returns {Array<Array<number>>} The passes, in order.
+ */
+function passes(wanted) {
+    const out = [];
+    let current = [];
+
+    for (const frame of wanted) {
+        const gap = current.length ? frame - current[current.length - 1] : 0;
+
+        if (current.length && (current.length >= FRAMES_PER_PASS || gap > SEEK_RATHER_THAN_DECODE)) {
+            out.push(current);
+            current = [];
+        }
+
+        current.push(frame);
+    }
+
+    if (current.length) out.push(current);
+
+    return out;
 }
 
 /**
@@ -257,11 +311,10 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
            And it makes progress move *within* a video rather than only between videos,
            which over a four-hour build is the difference between a number that climbs
            and one that sits still. */
-        for (let at = 0; at < wanted.length; at += FRAMES_PER_PASS) {
-            const batch = wanted.slice(at, at + FRAMES_PER_PASS);
+        for (const batch of passes(wanted)) {
 
             // Its own directory, so position-within-batch stays the addressing.
-            const batchDir = path.join(cut, String(at));
+            const batchDir = path.join(cut, String(batch[0]));
 
             fs.mkdirSync(batchDir, { recursive: true });
             await extraction.extractFrames(streamUrl, batch, probe.fps, batchDir);
@@ -694,13 +747,16 @@ function stop() {
 module.exports = {
     ARCHIVE_DIRECTORY,
     DEFAULT_IMAGE,
+    FRAMES_PER_PASS,
     IMAGE_FORMATS,
+    SEEK_RATHER_THAN_DECODE,
     SPLIT_DIRECTORIES,
     cutVideo,
     directoryFor,
     imageSettings,
     dataYaml,
     packageArchive,
+    passes,
     runOne,
     start,
     stop,

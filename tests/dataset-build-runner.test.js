@@ -810,6 +810,79 @@ describe('a subset that is divided rather than sent to one split (#268)', () => 
     }, 120000);
 });
 
+describe('where one ffmpeg pass ends (#268)', () => {
+
+    /* The batching rule on its own, in milliseconds and without a database. The pass
+       boundary has now caused two separate failures of a real build -- `ENAMETOOLONG`
+       from too many frames in one command, and the extractor's 120-second timeout from
+       too much video in one pass -- and both were found by running a build rather than
+       by a test. This is the tier that can see the rule itself. */
+
+    const { passes, FRAMES_PER_PASS, SEEK_RATHER_THAN_DECODE } = buildService;
+
+    /** Every frame, once, in order: the invariant no boundary rule may break. */
+    function asked(wanted) {
+        return passes(wanted).flat();
+    }
+
+    test('keeps a run of frames together up to the count', () => {
+        const wanted = Array.from({ length: FRAMES_PER_PASS }, (unused, at) => 1000 + at);
+
+        expect(passes(wanted)).toHaveLength(1);
+    });
+
+    test('breaks on the count', () => {
+        const wanted = Array.from({ length: FRAMES_PER_PASS + 1 }, (unused, at) => 1000 + at);
+        const split = passes(wanted);
+
+        expect(split).toHaveLength(2);
+        expect(split[0]).toHaveLength(FRAMES_PER_PASS);
+        expect(split[1]).toEqual([1000 + FRAMES_PER_PASS]);
+    });
+
+    test('breaks on a gap, well short of the count', () => {
+        /* The defect. Two frames an hour apart were one pass, so ffmpeg decoded the
+           hour to produce two pictures and was killed at 120 seconds -- having already
+           written both. Seeking past the gap costs one seek. */
+        const wanted = [1000, 1001, 1002, 1002 + SEEK_RATHER_THAN_DECODE + 1];
+        const split = passes(wanted);
+
+        expect(split).toHaveLength(2);
+        expect(split[0]).toEqual([1000, 1001, 1002]);
+    });
+
+    test('decodes through a gap it is cheaper to decode than to seek', () => {
+        const wanted = [1000, 1000 + SEEK_RATHER_THAN_DECODE];
+
+        expect(passes(wanted)).toHaveLength(1);
+    });
+
+    test('bounds what any one pass makes ffmpeg read', () => {
+        /* What the timeout actually cares about: not how many frames a pass keeps, but
+           how much video it has to read to reach the last one. */
+        const wanted = [];
+        for (let group = 0; group < 40; group += 1) {
+            const start = group * 5000;                     // Far apart, like real observations.
+            for (let at = 0; at < 30; at += 1) wanted.push(start + at);
+        }
+
+        for (const pass of passes(wanted)) {
+            expect(pass[pass.length - 1] - pass[0]).toBeLessThanOrEqual(
+                (FRAMES_PER_PASS - 1) * SEEK_RATHER_THAN_DECODE,
+            );
+        }
+
+        expect(asked(wanted)).toEqual(wanted);
+    });
+
+    test('asks for every frame exactly once however it breaks', () => {
+        const wanted = [1, 2, 3, 900, 901, 1500, 1501, 1502, 9000];
+
+        expect(asked(wanted)).toEqual(wanted);
+        expect(passes([])).toEqual([]);
+    });
+});
+
 describe('a video with more frames than one ffmpeg pass can ask for (#268)', () => {
 
     /**
