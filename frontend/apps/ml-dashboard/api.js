@@ -99,10 +99,22 @@
      by tools/api-contract-check.mjs instead, which fails when they drift. */
 
   /** @type {string[]} */
-  const JOB_KINDS = ['inference', 'tracking', 'training', 'diagnostic'];
+  const JOB_KINDS = ['inference', 'tracking', 'training', 'diagnostic', 'dataset_build'];
+
+  /**
+   * The kinds the generated corpus actually produces for the GPU queue.
+   *
+   * **Not every kind belongs in the pool's queue.** A `dataset_build` is a `gpu_jobs`
+   * row the API runs itself, and it has its own place on Datasets -- so the corpus does
+   * not scatter builds through the Jobs screen, while `JOB_KINDS` above still matches
+   * MARP exactly, which is what the contract check compares.
+   *
+   * @type {string[]}
+   */
+  const QUEUE_KINDS = ['inference', 'tracking', 'training', 'diagnostic'];
 
   /** @type {string[]} */
-  const JOB_STATES = ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'expired'];
+  const JOB_STATES = ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'interrupted', 'expired'];
 
   /** @type {string[]} */
   const WORKER_STATES = ['online', 'offline', 'paused'];
@@ -239,7 +251,7 @@
          screen could go a whole page without showing any of it. A state the
          design is built around has to be on the first page. */
       const placed = i <= 2 ? { kind: 'training', state: 'succeeded', recent: true } : null;
-      const kind = placed ? placed.kind : (r() < 0.62 ? 'inference' : pick(r, JOB_KINDS));
+      const kind = placed ? placed.kind : (r() < 0.62 ? 'inference' : pick(r, QUEUE_KINDS));
 
       /* **State first, then when it happened** -- not the other way round. The
          first cut of this drew a time and then let the time decide the state,
