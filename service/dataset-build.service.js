@@ -212,7 +212,7 @@ function dataYaml(classes, directories = ['train', 'eval']) {
  * @param {Object} [image] - From {@link imageSettings}; how to write each frame.
  * @param {Function} [onBatch] - Called with the running count after each pass, so a
  * long video reports progress while it is still being cut rather than only when it
- * is finished.
+ * is finished. Returning exactly `false` stops the cut after that pass.
  * @returns {Promise<{written: number, missing: number}>} What it managed.
  */
 async function cutVideo(entry, staging, image = imageSettings(), onBatch = null) {
@@ -294,7 +294,18 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
             // staging would otherwise hold every PNG it ever cut.
             fs.rmSync(batchDir, { recursive: true, force: true });
 
-            if (onBatch) await onBatch(written);
+            /* The hook may stop the cut, not merely watch it. Cancellation used to be
+               checked only between videos, so on an 8,000-frame video somebody pressing
+               cancel waited minutes for a build they had already abandoned -- and the
+               frames kept being written in the meantime. A pass is the natural place:
+               it is seconds, and the staging directory is in a consistent state. */
+            /* **Exactly `false`, not merely falsy, and that is deliberate.** A watcher
+               that forgets to return anything gives `undefined`, which does not stop the
+               cut -- so adding a second `onBatch` for logging cannot silently cancel
+               somebody's four-hour build. Stopping is a thing a caller has to say. */
+            if (onBatch && await onBatch(written) === false) {
+                return { written, missing, stopped: true };
+            }
         }
 
         return { written, missing };
@@ -453,12 +464,30 @@ async function runOne() {
                before the video it is on is finished. `done` is the count before this
                video; the batch reports its own running total on top. */
             const before = done;
-            const cut = await cutVideo(entry, staging, image, (soFar) => buildRepository.reportProgress(
-                attempt.id, { phase: 'extracting', done: before + soFar, total, unit: 'frames' }
-            ));
+            const cut = await cutVideo(entry, staging, image, async (soFar) => {
+                await buildRepository.reportProgress(
+                    attempt.id, { phase: 'extracting', done: before + soFar, total, unit: 'frames' }
+                );
+
+                // Checked per pass rather than per video: a long video is minutes, and
+                // somebody who pressed cancel should not wait out the rest of it.
+                return !await buildRepository.isCancelled(job.id);
+            });
 
             done += cut.written;
             missing += cut.missing;
+
+            if (cut.stopped) {
+                await buildRepository.failBuild({
+                    jobId: job.id,
+                    attemptId: attempt.id,
+                    datasetId,
+                    reason: 'Cancelled while extracting.',
+                    cancelled: true,
+                });
+
+                return { cancelled: true, jobId: job.id };
+            }
 
             await buildRepository.reportProgress(attempt.id, {
                 phase: 'extracting', done, total, unit: 'frames',
