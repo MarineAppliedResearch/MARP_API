@@ -2687,6 +2687,40 @@ function renderDashboardPool(workers) {
 }
 
 /**
+ * Where a job on the Dashboard opens, so the row can be a link to it.
+ *
+ * **The addressing is the one `jobs.html` already reads**: `?job=<id>`, which it finds,
+ * moves to the top, expands and scrolls to — the behaviour summary links from Inference
+ * have used for a while. The Datasets screen lists datasets rather than jobs, so a build
+ * addresses the thing that page holds, `?dataset=<id>`; it is the same rule, not a second
+ * one, and it is what makes a link to a *finished* build work, since a build that
+ * succeeded has left `GET /dataset/builds` and could not be resolved from a job id.
+ *
+ * **A kind with nowhere to land stays unlinked.** Training and Inference have screens but
+ * neither lists jobs as rows that can be addressed, so a training job opens on Jobs — its
+ * own page, with its own detail — rather than somewhere that would merely look right.
+ *
+ * @param {Object} job - The raw job.
+ * @returns {?string} An address, or null when there is nothing to open.
+ */
+function jobDestination(job) {
+  if (!job || job.id === undefined || job.id === null) return null;
+
+  if (job.kind === 'dataset_build') {
+    /* The build's own row is the dataset it is building. `spec.dataset_id` is written
+       when the build is queued and never changes, so it addresses the row whether the
+       build is still running or finished months ago. */
+    const dataset = job.spec && job.spec.dataset_id;
+
+    return dataset == null
+      ? null
+      : `./datasets.html?dataset=${encodeURIComponent(dataset)}`;
+  }
+
+  return `./jobs.html?job=${encodeURIComponent(job.id)}`;
+}
+
+/**
  * The short Current and recent jobs preview.
  *
  * Deliberately not the Jobs list: running work first, then anything needing
@@ -2734,8 +2768,16 @@ function renderDashboardActivity(jobs) {
   body.innerHTML = shown.map((view) => {
     const progress = progressCell(view.job, view.state);
     const updated = new Date(view.job.updated_at);
+    const opens = jobDestination(view.job);
+    /* The name is the link, not the row: a row-wide handler would swallow a future
+       control in another cell, and an `<a>` is what makes middle-click, copy-link and
+       open-in-new-tab work without this screen implementing any of them. */
+    const name = `<span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span>`;
+
     return `<tr data-job="${view.job.id}">`
-      + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+      + `<td class="jname">${opens
+        ? `<a class="jobopen" href="${opens}" title="Open this ${view.kindLabel.toLowerCase()} and expand it">${name}</a>`
+        : name}</td>`
       + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
       + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
@@ -5460,6 +5502,61 @@ function datasetBuildLabel(status, build) {
 /** The dash a build that has not started draws, as plain text. */
 const NOT_STARTED_TEXT = '—';
 
+/**
+ * Open the dataset a link asked for: `datasets.html?dataset=<id>`.
+ *
+ * The other half of the Dashboard's *Current and recent jobs* rows. `jobs.html` has read
+ * `?job=` for a while and does exactly this — find the row, expand it, scroll to it — so
+ * this is that behaviour for the screen that lists datasets rather than jobs.
+ *
+ * **Only once, and only if the row is there.** It runs after a full render, which also
+ * happens when a build starts or finishes; re-expanding then would fight a reader who had
+ * just closed the row. A dataset id that matches nothing is left alone rather than
+ * reported: a link can outlive the dataset it names, and the table is still the right
+ * answer to "where is it".
+ *
+ * @returns {void}
+ */
+let openedRequestedDataset = false;
+
+function openRequestedDataset() {
+  if (openedRequestedDataset) return;
+
+  const wanted = new URLSearchParams(window.location.search).get('dataset');
+  if (!wanted) return;
+
+  const head = $(`#saved-datasets tbody tr[data-dataset-id="${CSS.escape(wanted)}"]`);
+  if (!head) return;
+
+  openedRequestedDataset = true;
+
+  const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
+    ? head.nextElementSibling : null;
+
+  /* Expanded the way the expander does it, rather than by calling it: the row may be
+     hidden by a filter the reader left set, and a click handler would toggle it shut
+     if something else had already opened it. */
+  head.setAttribute('aria-expanded', 'true');
+  if (detail) detail.hidden = false;
+
+  /* **Scrolled twice, and the second one is the one that works.** Everything above this
+     table — the pickers, the match counts, the sample thumbnails — fills in after the
+     first paint and grows as it does, so a scroll on the next frame is computed against a
+     layout that is about to move and leaves the page at the top. The second attempt is
+     late enough to land and is skipped when the row is already in view, so a reader who
+     scrolled away in the meantime is not yanked back. */
+  const bring = () => head.scrollIntoView({ block: 'center' });
+  const settled = () => {
+    const box = head.getBoundingClientRect();
+    const port = $('.content')?.clientHeight || window.innerHeight;
+
+    if (box.top < 0 || box.bottom > port) bring();
+  };
+
+  requestAnimationFrame(bring);
+  window.setTimeout(settled, 400);
+}
+
 async function wireDatasetPage() {
   const table = $('table#saved-datasets');
   if (!table) return;
@@ -5740,6 +5837,7 @@ async function wireDatasetPage() {
          did nothing at all. */
       wireAccordions();
       filter();
+      openRequestedDataset();
     } else {
       patchBuildRows(body, builds);
     }
