@@ -257,6 +257,28 @@ dominant outcome is a 120-second timeout rather than a 1.5-second decode. At tha
 constraint and tuning `SWEEP_BATCH_SIZE` would not help; Jellyfin is the constraint, exactly
 as #118 said it would be.
 
+### The repair, and what it revealed
+
+Asked for and done 2026-10-21: observations 258 and 308 were reset to
+`permanent = false`, with `sweep_attempts` back to 0 and `swept_at` cleared, so both *Ask
+again* and the sweeper can reach them again. `status` and `last_error` were left alone, so
+the record of why still reads.
+
+Checked before touching them rather than assumed: **2,531 observations on that same
+`20240730_171520_Fwd.mp4` already have ready thumbnails**, so the video resolves perfectly
+well and the 401 was spurious. The repair restores a true state rather than masking a real
+refusal.
+
+It also turned up that **those two were not the only ones.** Sixteen rows on that one video
+carry the identical permanent failure, so fourteen were retired this way before this work
+started — on a video with 2,531 working pictures. They were left alone: the ask was for two.
+
+**And it is still happening.** The API on port 3000 kept draining the queue the sweep filled,
+and fourteen further rows were permanently retired between the run being stopped and this
+being written, the newest at 21:17:38, all carrying the same 401. Pausing the extractor
+through `thumbnail_extraction_state` is the designed control for exactly this and is one
+reversible write, but it is a shared resource and was left to the human.
+
 ### State left behind
 
 189 rows are still `queued` with `sweep_attempts = 1`. The API on port 3000 is still running
