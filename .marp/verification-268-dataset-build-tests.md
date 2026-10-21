@@ -205,47 +205,51 @@ not.** It was offered as having seen three `marp-build-*` directories deleted la
 afternoon, and that cannot be what happened — all three were created hours before the run,
 so they were in the opening snapshot and filtered out by construction.
 
-**Two readings survive, and both are left open.** What is established is that two jest
-runs of these suites were in flight on one machine at the same time: one started
-21:26:59.610 UTC and ran 16.9s, ending 21:27:16; the other's log is written at
-21:27:24.296 after 21.8s, so it started 21:27:02.5 — fourteen seconds of overlap, two
-processes, each running this file's eight real builds through `runOne`, each creating
-`marp-dataset-*` staging in the same `%TEMP%`, each against a different database (5463 and
-5464).
+**Resolved: the check was catching other processes' live staging, and every one tidied
+itself.** It took the directory *names*, which were in the logs the whole time and which
+nobody compared until the inferences had been argued three ways.
 
-- **Overlap.** Each snapshotted at its own start and then watched the other's directories
-  appear. Both fired, both were right that a directory appeared and stayed, neither was a
-  leak.
-- **A leak.** If the earlier run really finished at 21:27:16, its staging should have been
-  gone before the later one compared at the end — so the later one seeing it still there
-  means its cleanup did not run. A 238.7 MB `marp-build-*` survived its `finally` the same
-  afternoon, so that failure mode is demonstrated rather than theoretical.
+There were **three** firings on 2026-10-21, not two, and all six directories are distinct:
 
-Which it was depends on whether the first run's cleanup ran, and nothing recorded that.
-**Do not close on either.**
+| firing | saw |
+| --- | --- |
+| 21:04:36 (another workspace) | `marp-build-zbt8Hu`, `marp-dataset-UFO5fS` |
+| 21:26:59 (another workspace) | `marp-build-4ITKD3`, `marp-dataset-r2AR2H` |
+| 21:27:02 (here) | `marp-dataset-KYAslZ` |
 
-**A caveat that matters more than the conclusion.** The product-build candidate was killed
-by querying three databases for a `dataset_build` job in the window and finding none. That
-result is real *for product builds* and **says nothing whatever about these suites**: this
-file deletes every row it creates in `afterAll`, because `corpus-guard` fails the file
-otherwise and the file passed. So "no build in the window" is the expected answer in every
-database whether or not a suite build was the cause. Anyone reaching for that query again
-should know it cannot distinguish this suite from anything else.
+**Four of the six demonstrably vanished with nobody deleting them**, which is what
+establishes the mechanism:
 
-**The instrument that would settle it**, agreed with the progress session and not yet
-written: when the check fires, read each surviving directory's mtime and contents before
-failing. A staging root created seconds earlier with `train/images` inside it names itself
-as a build of that run; an older one with foreign contents does not. One `readdirSync` in
-the failure path, and it would have answered both of today's sightings on the spot. Left
-unwritten deliberately — it is failure-path code that a passing run cannot exercise, and
-verifying it means running builds, which is not safe to do while somebody is using the
-dashboard.
+- `UFO5fS` was sighted at the end of the 21:04:36 run and is absent from the ~21:09
+  sweep's complete listing two minutes later.
+- `zbt8Hu` and `4ITKD3` are `marp-build-*`; the ~21:09 sweep did not match that prefix,
+  and the ~21:52 sweep listed only `marp-build-{7zmxkg,QLPM68,c5AIj4}`. Both were gone
+  before it ran.
+- `0OlwhT` is accounted for: deleted at ~21:09, and present in a log here from 18:07, so
+  an old one.
 
-The two databases were different — 5462 and 5464 — which is exactly why it was hard to
-see. **Workspace isolation covers the database and the ports and stops at `os.tmpdir()`.**
-A per-process staging directory, `%TEMP%/marp-builds/<pid>/`, would have made this
-impossible to mistake, and is the same control that would stop a prefix sweep reaching a
-live build.
+That is what a build finishing normally looks like, and it is the one thing the leak
+reading cannot survive for those firings: a staging directory whose `finally` did not run
+would still be there. The 21:04:36 firing saw **both** its directories self-clean within
+two minutes, so the transient mechanism is demonstrated on its own.
+
+**`r2AR2H` and `KYAslZ` cannot be cleared, and the record should not pretend otherwise.**
+Only the first sweep listed what it took; the later ones ran `rm` against
+`marp-build-* marp-dataset-*` with no `ls` or `du` on the second half, so a
+`marp-dataset-*` surviving until ~21:52 would have been removed silently. `KYAslZ` is this
+file's own firing, so **whether that one was a transient or a genuine leak is not
+individually decidable** — it is consistent with either. The mechanism is established; this
+instance is not, and does not need to be for the general reading to hold.
+
+The 21:26:59 and 21:27:02 runs overlapped by fourteen seconds and each reported one of the
+other's directories, which is the mechanism seen directly rather than inferred.
+
+**What no query could have reached**, and the trap worth remembering: a `dataset_build`
+job in the window is the obvious thing to look for and it proves nothing, because this
+file deletes every row it creates in `afterAll` — `corpus-guard` fails the file otherwise,
+and the file passed. "No build in the window" is the expected answer in every database
+whether or not a suite build was the cause. It killed the *product*-build candidate, which
+was worth killing, and nothing more.
 
 The check is kept, because the alternative is not noticing a real leak. What changed is
 the failure text: it now names the directories **and** says to check for another build
