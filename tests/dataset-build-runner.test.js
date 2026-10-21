@@ -609,6 +609,97 @@ describe('what a build does with what it could not cut (#268)', () => {
     }, 120000);
 });
 
+describe('a subset that is divided rather than sent to one split (#268)', () => {
+
+    /** This group's stub, restored so the batching group gets a clean one. */
+    let stub;
+
+    beforeAll(() => {
+        stub = fixture.stubExtraction({ jellyfin, extraction });
+    });
+
+    afterAll(() => {
+        if (stub) stub.restore();
+    });
+
+    /**
+     * Build one dataset and read back which split each observation landed in.
+     *
+     * @async
+     * @param {string} label - Distinguishes this build's dataset.
+     * @param {Array<Object>} subsets - The subsets to build from.
+     * @returns {Promise<Map<number, string>>} Observation id to split.
+     */
+    async function splitsOf(label, subsets) {
+        const queued = await queueBuild({ name: `Jest Build ${label} ${runId}`, subsets });
+        const result = await runBuild(queued.job.id);
+
+        expect(result.reason).toBeUndefined();
+
+        const members = await q(
+            'SELECT observation_id, inclusion_type FROM dataset_observations WHERE dataset_id = :id',
+            { id: queued.dataset.id }
+        );
+
+        /* Exactly once each, which is the invariant underneath every split question: a
+           divided subset must not put an observation in two places, and the archive
+           would not show it -- the second copy overwrites the first by name. */
+        expect(new Set(members.map((row) => row.observation_id)).size).toBe(members.length);
+
+        return new Map(members.map((row) => [row.observation_id, row.inclusion_type]));
+    }
+
+    test('shares divide one query across the splits they name', async () => {
+        /* "Divide this query 70/20/10" is a sentence somebody says, and a builder that
+           only understood "these dives into train" made them run the same query three
+           times to say it. */
+        const placed = await splitsOf('Shares', [
+            { filters: { session: [seeded.sessionId] }, shares: { train: 0.5, test: 0.5 } },
+        ]);
+
+        expect(placed.size).toBe(4);
+
+        const used = new Set(placed.values());
+
+        /* Both of the splits it named, and only those. If this ever fails with one
+           split, the division put everything in one place -- which for a 50/50 of four
+           observations in three groups is a bug in the division, not a close call. */
+        expect(used).toEqual(new Set(['train', 'test']));
+    }, 120000);
+
+    test('a share of zero means that split gets none', async () => {
+        const placed = await splitsOf('Zero Share', [
+            { filters: { session: [seeded.sessionId] }, shares: { train: 1, eval: 0 } },
+        ]);
+
+        // Asked for none, given none -- rather than a rounding error's worth.
+        expect(new Set(placed.values())).toEqual(new Set(['train']));
+        expect(placed.size).toBe(4);
+    }, 120000);
+
+    test('an observation two subsets match still lands in exactly one split', async () => {
+        /* The first-assignment rule has to survive a divided subset: shares are divided
+           before the subsets are reconciled, so a query that matches everything cannot
+           move what an earlier subset already claimed. */
+        const placed = await splitsOf('Shares Overlap', [
+            { split: 'test', filters: { session: [seeded.sessionId], species: [seeded.speciesIds[0]] } },
+            { filters: { session: [seeded.sessionId] }, shares: { train: 0.5, eval: 0.5 } },
+        ]);
+
+        expect(placed.size).toBe(4);
+
+        /* `first` was claimed by the earlier subset, and `second` shares frames with it,
+           so the group goes whole to where its earliest member went -- even though the
+           divided subset matched both of them too. */
+        expect(placed.get(seeded.first)).toBe('test');
+        expect(placed.get(seeded.second)).toBe('test');
+
+        // And the two the divided subset was left to place are in the splits it named.
+        expect(['train', 'eval']).toContain(placed.get(seeded.third));
+        expect(['train', 'eval']).toContain(placed.get(seeded.fourth));
+    }, 120000);
+});
+
 describe('a video with more frames than one ffmpeg pass can ask for (#268)', () => {
 
     /**

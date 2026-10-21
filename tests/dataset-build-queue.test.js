@@ -184,6 +184,20 @@ describe('POST /api/v2/dataset/build (#268)', () => {
         expect(response.body.job.spec.subsets).toEqual(subsets);
     });
 
+    test('a subset carries shares as readily as a split', async () => {
+        /* A subset names one or the other: "these dives into train", or "divide this
+           query 70/20/10". The route carries whichever was said, because the division
+           is the runner's to do -- it needs the rows to divide. */
+        const subsets = [
+            { filters: { session: [11] }, shares: { train: 0.7, eval: 0.2, test: 0.1 } },
+            { filters: { session: [22] }, split: 'test' },
+        ];
+        const response = await queue({ name: `Jest Build Shares ${runId}`, subsets });
+
+        expect(response.status).toBe(201);
+        expect(response.body.job.spec.subsets).toEqual(subsets);
+    });
+
     test('an empty subsets array is not a subsets build', async () => {
         const response = await queue({
             name: `Jest Build Empty Subsets ${runId}`,

@@ -10,6 +10,25 @@ repository**. The two real defects found so far were both found by running it by
 being cut, recorded as members and then left out of the archive. Both were invisible from
 the rows, and both now have a tripwire.
 
+## A third tier, for the migration
+
+`migrations/20261021140000-an-r-in-the-note-meant-promoted.js` rewrites a decade of
+approvals in the production database and had no automated test. It gets one, and it
+**builds and drops its own database** — about five seconds, from the baseline and the
+migrations, exactly as `marp db up` and CI do.
+
+That is not caution, it is the only way the test can exist. `up()` promotes **every**
+observation in the database whose note is the mark, and `down()` deletes **every** review
+carrying the migration's reason. Pointed at a development corpus where the migration has
+already run, `down()` would quietly withdraw the real migration's work; pointed at one
+where it has not, `up()` would write hundreds of real decisions. **No amount of seeding
+scopes that**, which is what makes this different from every other suite here.
+
+`up` and `down` are called directly rather than driven through `sequelize-cli`: the CLI
+would refuse to run it a second time, since the ledger already records it from the build —
+and *running it twice* is one of the properties being asserted.
+`tests/corpus-guard.test.js` is the precedent for the mechanics.
+
 ## The tiering, which is the decision that matters
 
 A real build opens an H.264 stream from the central media server and runs ffmpeg over it
@@ -57,6 +76,9 @@ route was built against for the sake of two functions.
 | **observations ≠ frames** | `dataset-build-runner` · *observations and frames are two numbers, and neither stands in for the other* | integration | `num_samples` stays images, which is what it has meant since `package-dataset.js`, and `num_observations` is the new fact. The corpus is four observations and nine frames **on purpose**: a corpus where they happened to be equal would pass with them the wrong way round, which is how they came to be carried in one column. |
 | the batched extraction | `dataset-build-runner` · *is cut in several passes rather than one enormous one*, *every frame is asked for exactly once, in order*, *every pass writes into its own directory*, *the archive holds every frame, once* | integration | An 802-frame video, which is more than one pass. `extractFrames` builds a `select` term per frame, so one pass over 8,408 frames made a ~340 KB command line and the build died with `spawn ENAMETOOLONG` after minutes of work — the bug that would have killed the 50,000-frame target. The batch size is **not** written into the test; the shape is read back from what the extractor was asked for. |
 | progress | `dataset-build-runner` · *progress moves while the video is still being cut*, *progress counts across videos rather than restarting at each one* | integration | One long video reports strictly inside itself; three short ones report a count that never goes backwards and ends at nine. A per-video reset is a bar that jumps back to the start whenever a video ends. |
+| the split dial | `dataset-build-queue` · *a subset carries shares as readily as a split* | endpoint | Whichever the person said is carried verbatim; the division is the runner's, because it needs the rows to divide. |
+| the split dial | `dataset-build-runner` · *shares divide one query across the splits they name*, *a share of zero means that split gets none*, *an observation two subsets match still lands in exactly one split* | integration | Shares are divided **before** the subsets are reconciled, so a query matching everything cannot move what an earlier subset claimed — `first` stays in `test` and pulls `second` with it, because they share frames. Each build also asserts every observation appears exactly once: a divided subset putting one in two places would be invisible in the archive, where the second copy overwrites the first by name. |
+| **the legacy `R` note** | `legacy-r-promotion` · 16 tests | migration, on its own database | See below. |
 | everything, against real video | `dataset-build-real` | slow | That the frames MARP asks for are frames the video can produce, at the frame rate it reports, through the URL the coordinator resolved — ending in a range request to `GET /gpu/datasets/:id/archive`, which is what a worker calls. |
 
 ## Proved red by mutation
@@ -96,6 +118,19 @@ And the whole set is pinned to the change itself: against the branch **without**
 batched, observation-counting builder, six tests fail — among them a single 802-frame
 observation reporting **802** where the observation count belongs, which is the defect in
 one number.
+
+**The `R` migration's case rule was proved red by the defect it was written against.**
+`LEGACY_MARK` was changed to `upper(btrim(o.note)) = 'R'` — the first draft — and two
+tests failed, naming the pre-checks it promoted:
+
+```
+✗ a lowercase r is not an approval and is left undecided
+    Received: {"decision": "promoted", "reason": "Legacy note \"R\" meant approved for training", ...}
+✗ promotes exactly the two it should, and says so
+    Expected: 2   Received: 4
+```
+
+The migration file was restored and `git status` confirmed clean.
 
 The same holds for the mid-video cancellation: against the builder that checked between
 videos, *stops between passes rather than finishing the video first* fails, because a
