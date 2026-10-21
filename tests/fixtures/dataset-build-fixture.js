@@ -265,6 +265,16 @@ const DEFAULT_BOX = { x: 0.4, y: 0.6, width: 0.2, height: 0.3 };
  * The box is the same at both ends on purpose: the frames between are interpolated, and
  * a box that does not move makes every interpolated label a value the test can predict.
  *
+ * **The box is centre-origin**, and that is load-bearing. `keyframes.x, y` is the
+ * *centre*, not the top-left corner -- confirmed in `service/thumbnail-geometry.js` and
+ * now said so on the model itself, which described it as the left edge until
+ * 2026-10-21 and so taught the builder to shift every label half a box.
+ *
+ * {@link DEFAULT_BOX} is interior and deliberately asymmetric, so the expected label is
+ * the fixture's own numbers and a swapped axis cannot pass. Clipping has its own
+ * coverage in the real-video suite, which is what found the corner-origin bug by
+ * asserting every coordinate lies in 0..1 and getting 1.012.
+ *
  * @async
  * @param {Object} seeded - The accumulating fixture.
  * @param {number} observationId - Which observation.

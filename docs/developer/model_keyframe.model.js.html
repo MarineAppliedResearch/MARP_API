@@ -193,23 +193,23 @@ module.exports = (sequelize, DataTypes) => {
             examples: [18520],
         },
       },
-      // X-coordinate of the annotation rectangle
+      // Centre x of the annotation rectangle. NOT the left edge -- see the description.
       x: {
         type: DataTypes.DOUBLE,
         allowNull: false,
         jsonSchema: {
-            schema: { type: 'number', format: 'double', minimum: 0, maximum: 1 },
-            description: 'Normalized left coordinate of the annotation box (0..1).',
+            schema: { type: 'number', format: 'double' },
+            description: 'Normalized **centre** x of the annotation box, not its left edge. A box is read as centre-origin everywhere in MARP: `service/thumbnail-geometry.js` crops `x * sourceWidth` as the centre, and that reading was confirmed three times in two other repositories and then by eye -- the centre-origin box sits on the animal, the top-left box is shifted half a box right and down onto bare rubble. This said "left coordinate" until 2026-10-21, and the dataset builder believed it: every YOLO label it wrote was shifted half a box. Values slightly outside 0..1 are real and expected for a box that runs off the frame edge; measured over 78 keyframes they span -0.0105 to 1.0275 horizontally.',
             examples: [0.423],
         },
       },
-      // Y-coordinate of the annotation rectangle
+      // Centre y of the annotation rectangle. NOT the top edge.
       y: {
         type: DataTypes.DOUBLE,
         allowNull: false,
         jsonSchema: {
-            schema: { type: 'number', format: 'double', minimum: 0, maximum: 1 },
-            description: 'Normalized top coordinate of the annotation box (0..1).',
+            schema: { type: 'number', format: 'double' },
+            description: 'Normalized **centre** y of the annotation box, not its top edge. Centre-origin, for the reasons recorded on `x`, and likewise able to fall slightly outside 0..1 where a box runs off the frame edge.',
             examples: [0.318],
         },
       },
