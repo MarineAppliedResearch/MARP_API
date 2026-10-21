@@ -6064,6 +6064,80 @@ function applyTips() {
  * deterministic fixture, but the interaction is real: queries can be rerun,
  * added more than once when their filters differ, removed, and deduplicated.
  */
+/**
+ * Where the Mosaic Reviewer lives, and the question this screen is asking, as an address.
+ *
+ * **The reviewer keeps its question in the URL and nowhere else** -- decided 2026-09-06,
+ * because two stores that can disagree about where a reviewer was is a bug waiting to be
+ * written. That makes a link a first-class way in rather than a trick, which is why
+ * *More samples* opens the reviewer on this query instead of this screen growing a second
+ * sample viewer.
+ *
+ * The format is `marp-mosaic-review/src/model/query-url.js` and the keys are the same
+ * vocabulary `mosaicFilters` already sends to `POST /mosaic/observations/*`, so the
+ * translation is almost a copy. Three things about it are not obvious and each one would
+ * land the reader on the wrong question:
+ *
+ * - **`trainingDisposition=promoted` has to be written.** Training mode opens at
+ *   `undecided` -- `modes.js`, `defaultStatus` -- so a link that leaves it out lands on
+ *   the observations nobody has judged yet, which is the opposite of what a dataset
+ *   builder is looking at. `toQuery` writes a mode's own status dimension only when it
+ *   differs from that default, and `promoted` does.
+ * - **A set is comma-joined and percent-encoded per value**, so a species whose common
+ *   name contains a comma still reads back as one value. `encodeURIComponent` escapes the
+ *   colon as well, which the reviewer undoes because a time reads better as `22:00`; no
+ *   value here carries one, and leaving it encoded would still parse.
+ * - **A range is `from..to`**, and either end may be empty. A value outside a dimension's
+ *   declared bounds makes the reviewer discard the whole range rather than clamp it, so
+ *   confidence is written only as the two numbers the controls hold, which are 0 to 1.
+ *
+ * The parameter order follows `toQuery`'s own -- mode, then the declared dimensions, then
+ * the status ones -- so an address built here is the same string the reviewer would write
+ * for the same question, rather than a permutation of it that merely parses the same.
+ *
+ * @param {Object} filters - From `mosaicFilters()`.
+ * @returns {string} An address, ready for `href`.
+ */
+function mosaicReviewUrl(filters) {
+  /* The reviewer's own encoder: a colon is legal in a query value and reads better
+     unescaped, and commas stay escaped so splitting a set on them is unambiguous. */
+  const enc = (v) => encodeURIComponent(String(v)).replace(/%3A/g, ':');
+  const parts = ['mode=training'];
+
+  /* `query-url.js`'s declaration order, so the address matches what the reviewer writes.
+     `sessionType`, `session`, `timeOfDay` and `date` are in that list and this screen has
+     no control for them; they are named here so the next person adding one can see where
+     it goes rather than appending it to the end. */
+  const SETS = ['project', 'dive', 'line', 'sessionType', 'session', 'species', 'model'];
+  const ORDER = ['project', 'dive', 'line', 'sessionType', 'session', 'species',
+    'confidence', 'timeOfDay', 'date', 'model'];
+
+  for (const key of ORDER) {
+    const value = filters[key];
+    if (value == null) continue;
+
+    if (SETS.includes(key)) {
+      if (!Array.isArray(value) || !value.length) continue;
+      parts.push(`${key}=${value.map(enc).join(',')}`);
+      continue;
+    }
+
+    /* A range. Both ends may be absent, and a range narrowing neither end is not a
+       filter -- writing `..` would be read back as nothing anyway, so it is left out. */
+    const from = value.from == null ? '' : enc(value.from);
+    const to = value.to == null ? '' : enc(value.to);
+    if (from === '' && to === '') continue;
+    parts.push(`${key}=${from}..${to}`);
+  }
+
+  /* Last, the way `toQuery` writes the mode's status dimensions after the declared ones. */
+  if (Array.isArray(filters.trainingDisposition) && filters.trainingDisposition.length) {
+    parts.push(`trainingDisposition=${filters.trainingDisposition.map(enc).join(',')}`);
+  }
+
+  return `/apps/marp-mosaic-review/?${parts.join('&')}`;
+}
+
 function wireDatasetBuilder() {
   const list = $('[data-subset-list]');
   const totalEl = $('[data-dataset-total]');
@@ -6173,15 +6247,45 @@ function wireDatasetBuilder() {
    * @param {Object[]} species - The facet's entries, `{label, count}`.
    * @param {number} total - The headline match count.
    */
-  const drawQueryComposition = (container, species, total) => {
+  /** Whether the step 2 breakdown is showing every class or the largest five. */
+  let compositionExpanded = false;
+
+  /**
+   * Show or hide the *All classes* control, and say which way it is pointing.
+   *
+   * **Hidden when it would do nothing.** A question matching five classes or fewer has
+   * nothing to expand, and a control that is always there and sometimes inert is how this
+   * screen ended up with two dead buttons in the first place.
+   *
+   * @param {number} hidden - How many classes the breakdown is not showing.
+   */
+  const updateCompositionToggle = (hidden) => {
+    const button = $('[data-composition-toggle]');
+    if (!button) return;
+
+    button.hidden = hidden <= 0 && !compositionExpanded;
+    button.setAttribute('aria-expanded', String(compositionExpanded));
+    button.firstChild.textContent = compositionExpanded ? 'Top five ' : 'All classes ';
+    button.title = compositionExpanded
+      ? 'Show the largest five classes instead of every one'
+      : 'Show every class in the result instead of the largest five';
+  };
+
+  const drawQueryComposition = (container, species, total, expandable) => {
     if (!container) return;
 
     const sorted = [...species].sort((a, b) => b.count - a.count);
-    const top = sorted.slice(0, 5);
-    const rest = sorted.slice(5);
+    /* Expanded means every class, with no Other row to fold the rest into. The remainder
+       below is then whatever the facet does not account for at all -- an observation with
+       no species -- which is a real row and not a fold. */
+    const expanded = Boolean(expandable) && compositionExpanded;
+    const top = expanded ? sorted : sorted.slice(0, 5);
+    const rest = expanded ? [] : sorted.slice(5);
     const counted = top.reduce((sum, s) => sum + s.count, 0);
     const remainder = Math.max(0, total - counted);
     const rows = top.map((s) => ({ label: s.label || 'Unnamed species', count: s.count }));
+
+    if (expandable) updateCompositionToggle(sorted.length - top.length);
 
     /* Only when there is something left over. "Other (0 classes)" is noise, and a
        question that matched nothing should draw an empty panel rather than one row
@@ -6345,7 +6449,7 @@ function wireDatasetBuilder() {
           + 'interpolated between them, which are trained on as well');
       }
 
-      drawQueryComposition($('[data-query-composition]'), species, observations);
+      drawQueryComposition($('[data-query-composition]'), species, observations, true);
       drawSamples(pageSet.pages?.[0]?.rows || [], observations);
 
       setStatus(observations
@@ -6677,6 +6781,19 @@ function wireDatasetBuilder() {
     refreshSpeciesLabel();
   });
 
+  /**
+   * Point *More samples* at the Mosaic Reviewer, on whatever the filters currently say.
+   *
+   * **Kept current as the controls move, not computed on click.** It is a real link, so a
+   * reader may middle-click it, copy its address or open it in a new tab without ever
+   * firing a click handler -- and all three have to arrive at the same question the panel
+   * beside them is describing.
+   */
+  const refreshMosaicLink = () => {
+    const link = $('[data-mosaic-link]');
+    if (link) link.href = mosaicReviewUrl(mosaicFilters());
+  };
+
   /* The reachable species depend on the rest of the question, so narrowing the project
      or the dive narrows what is on offer. Without this the picker keeps showing species
      that the dive you just chose has ruled out, and ticking one returns nothing. */
@@ -6687,6 +6804,36 @@ function wireDatasetBuilder() {
       fillSpeciesPicker(rest);
     });
   }
+
+  /* Every control that is part of the question. `filterIds` is the list the snapshot
+     already keeps, so a filter added later is caught here by having been added there --
+     one list rather than two that drift. The species menu is checkboxes rather than a
+     field, so it is listened to where it lives. */
+  for (const id of filterIds) {
+    const el = $('#' + id);
+    if (!el) continue;
+    el.addEventListener('change', refreshMosaicLink);
+    if (el.tagName === 'INPUT') el.addEventListener('input', refreshMosaicLink);
+  }
+  $('[data-species-menu]')?.addEventListener('change', refreshMosaicLink);
+  refreshMosaicLink();
+
+  /**
+   * *All classes* expands the breakdown in place rather than opening anything.
+   *
+   * Isaac, 2026-10-21: *"I'm not sure all classes is even needed as a link."* It is not a
+   * link -- there is nowhere for it to go that the panel underneath is not already
+   * showing -- but the breakdown folds everything past the fifth class into one Other row,
+   * and a reader deciding what a dataset is made of sometimes wants the tail. So it
+   * expands, and it is hidden entirely when there is no tail to show.
+   */
+  $('[data-composition-toggle]')?.addEventListener('click', () => {
+    compositionExpanded = !compositionExpanded;
+    /* `speciesCounts`, not `species` -- the latter is how *many* species matched, and
+       passing a number where the rows are expected drew an empty breakdown. */
+    drawQueryComposition($('[data-query-composition]'), currentResult?.speciesCounts || [],
+      currentResult?.observations || 0, true);
+  });
 
   const destinationButtons = $$('[data-dataset-destination]');
   destinationButtons.forEach((button) => button.addEventListener('click', () => {

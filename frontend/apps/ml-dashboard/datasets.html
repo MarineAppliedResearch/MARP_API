@@ -214,15 +214,18 @@
 
               <div class="field" style="margin-top:15px">
                 <label>Class breakdown <span class="faint">(largest first)</span>
-                  <button class="more" title="Every class in the result">All classes
+                  <button class="more" type="button" data-composition-toggle aria-expanded="false"
+                          title="Show every class in the result instead of the largest five" hidden>All classes
                     <svg class="ico sm"><use href="#i-arrow"/></svg></button></label>
                 <div class="dist pct" data-query-composition data-rendered></div>
               </div>
 
               <div class="field">
                 <label>Sample images
-                  <button class="more" title="More samples from this result">More samples
-                    <svg class="ico sm"><use href="#i-arrow"/></svg></button></label>
+                  <a class="more" data-mosaic-link target="_blank" rel="noopener"
+                     href="/apps/marp-mosaic-review/?mode=training&amp;trainingDisposition=promoted"
+                     title="Open the Mosaic Reviewer on this exact query, in a new tab">More samples
+                    <svg class="ico sm"><use href="#i-arrow"/></svg></a></label>
                 <div class="thumbs" data-rendered></div>
                 <span class="hint" data-query-sample-note data-rendered>Duplicates are ignored when adding.</span>
               </div>

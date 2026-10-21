@@ -527,6 +527,103 @@ describe('GET /api/v2/dataset/builds', () => {
     });
 
     /**
+     * The Datasets screen's *More samples* opens the Mosaic Reviewer on the query the panel
+     * is describing, by writing that query as an address. The reviewer keeps its question in
+     * the URL and nowhere else, so a link is a first-class way in — but it means a key
+     * renamed on either side lands the reader on a *different question* rather than on an
+     * error, and nothing in a browser would say so.
+     *
+     * These read the two declarations off disk and compare them. No database and no server:
+     * what is under test is an agreement between three files.
+     */
+    describe('the Mosaic Reviewer link keeps the vocabulary it is written in', () => {
+        const fs = require('fs');
+        const path = require('path');
+
+        const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
+
+        /** The keys `mosaicReviewUrl` writes, taken from the arrays it writes them from. */
+        function keysTheLinkWrites() {
+            const source = read('frontend', 'apps', 'ml-dashboard', 'mock.js');
+            const order = /const ORDER = \[([\s\S]*?)\];/.exec(source);
+
+            expect(order).not.toBeNull();
+
+            return order[1].split(',')
+                .map((piece) => piece.trim().replace(/^'|'$/g, ''))
+                .filter(Boolean);
+        }
+
+        /** The dimension keys the reviewer declares, which is what it reads an address with. */
+        function keysTheReviewerReads() {
+            const source = read('frontend', 'apps', 'marp-mosaic-review', 'src', 'model', 'dimensions.js');
+
+            return [...source.matchAll(/^\s*key: '([a-zA-Z]+)'/gm)].map((m) => m[1]);
+        }
+
+        it('writes only dimensions the reviewer declares', () => {
+            const declared = keysTheReviewerReads();
+
+            expect(declared.length).toBeGreaterThan(5);
+
+            /* A key the reviewer does not declare is ignored by `fromQuery`, so the filter
+               silently does not apply and the reader reviews a wider set than the panel
+               they came from was describing. */
+            for (const key of keysTheLinkWrites()) {
+                expect(`${key}: ${declared.includes(key)}`).toBe(`${key}: true`);
+            }
+        });
+
+        /**
+         * Both vocabularies are the same one. The link is built from what the screen already
+         * sends to `POST /mosaic/observations/*`, so the filter keys and the URL keys have to
+         * stay the same words or the translation stops being a copy and becomes a mapping
+         * somebody has to maintain.
+         */
+        it('writes dimensions the mosaic query filters also accept', () => {
+            const contract = JSON.parse(read('docs', 'openapi.generated.json'));
+            const accepted = Object.keys(contract.components.schemas.MosaicQueryFilters.properties);
+
+            /* `timeOfDay` and `date` are the two the screen has no control for yet; they are
+               in the written order so the next person adding one can see where it goes.
+               `date` is a reviewer dimension the filters do not take, and naming it here is
+               what stops that being discovered by a link that quietly drops it. */
+            const notInTheApi = ['date'];
+
+            for (const key of keysTheLinkWrites()) {
+                if (notInTheApi.includes(key)) continue;
+                expect(`${key}: ${accepted.includes(key)}`).toBe(`${key}: true`);
+            }
+        });
+
+        /**
+         * **The link must carry `trainingDisposition=promoted`, and this is why.** Training
+         * mode opens at `undecided`, and `toQuery` writes a mode's own status dimension only
+         * when it differs from that default — so a link that left it out would land on the
+         * observations nobody has judged yet, which is the opposite of what a dataset builder
+         * is looking at. If that default ever becomes `promoted`, the link stops needing to
+         * say it and this test is where that is noticed.
+         */
+        it('cannot rely on the reviewer defaulting to promoted', () => {
+            const modes = read('frontend', 'apps', 'marp-mosaic-review', 'src', 'model', 'modes.js');
+            const training = /training: \{[\s\S]*?\n  \}/.exec(modes);
+
+            expect(training).not.toBeNull();
+            expect(training[0]).toContain("statusKey: 'trainingDisposition'");
+
+            const defaults = /defaultStatus: \[([^\]]*)\]/.exec(training[0]);
+
+            expect(defaults).not.toBeNull();
+            expect(defaults[1]).not.toContain('promoted');
+
+            /* And the link does say it. */
+            const source = read('frontend', 'apps', 'ml-dashboard', 'mock.js');
+
+            expect(source).toContain('trainingDisposition=${filters.trainingDisposition.map(enc).join(\',\')}');
+        });
+    });
+
+    /**
      * The image format is settled at the request, not minutes later in the runner.
      *
      * `{"format":"webp"}` used to answer 201 and then fail inside a job the asker had to
