@@ -25,6 +25,12 @@
  * was ever right. Clearing it would make the transformation irreversible in substance
  * even though `down` removes the rows.
  *
+ * **A lowercase `r` is not an approval and is left alone.** It records that somebody who
+ * was not qualified to decide had a look, which is a different thing from a decision and
+ * has no home in a schema whose training dimension holds promoted, excluded, or the
+ * absence of either. Those observations stay undecided, and this reports how many there
+ * are so the number is visible rather than silently nothing.
+ *
  * **An existing decision always wins.** If somebody has since promoted *or excluded* an
  * observation in the Mosaic Reviewer, that is a person looking at the picture today and
  * it outranks a letter typed years ago -- so this inserts only where the training
@@ -45,8 +51,24 @@
 
 const { guardDataIntegrity } = require('../db/data-integrity');
 
-/** What the convention looks like: an R, whatever the case or surrounding space. */
-const LEGACY_MARK = "upper(btrim(o.note)) = 'R'";
+/**
+ * The mark, and **the case is the meaning**.
+ *
+ * `R` is a qualified person saying this is good and approved for training. `r` is
+ * somebody *not* qualified having pre-checked it, which is not an approval and must not
+ * become one. Isaac, 2026-10-21: *"R means it's promoted and good, 'r' means someone not
+ * qualified pre-checked it"*.
+ *
+ * The first draft of this matched `upper(btrim(note)) = 'R'` and would have promoted
+ * every pre-check as though a qualified reviewer had approved it -- hundreds of
+ * observations entering training datasets on an authority nobody gave them, with nothing
+ * afterwards able to tell which were which. Surrounding space is still forgiven; case
+ * never is.
+ */
+const LEGACY_MARK = "btrim(o.note) = 'R'";
+
+/** The pre-check, counted so it is visible, and deliberately left undecided. */
+const PRECHECK_MARK = "btrim(o.note) = 'r'";
 
 /**
  * Said on every row this writes, so the provenance travels with the decision -- and so
@@ -90,11 +112,24 @@ module.exports = {
                         { type: QueryTypes.SELECT, transaction }
                     );
 
+                    const [{ prechecked }] = await sequelize.query(
+                        `SELECT count(*)::int AS prechecked FROM observations o WHERE ${PRECHECK_MARK}`,
+                        { type: QueryTypes.SELECT, transaction }
+                    );
+
                     console.log(`[legacy R promotion] ${marked} observations carry the mark`);
                     console.log(`[legacy R promotion]   ${undecided} have no training decision yet`);
                     console.log(
                         `[legacy R promotion]   ${marked - undecided} already decided, left alone`
                     );
+
+                    if (prechecked) {
+                        console.log(
+                            `[legacy R promotion]   ${prechecked} carry a lowercase "r" and are `
+                            + 'left undecided: a pre-check by somebody not qualified to decide is '
+                            + 'not an approval'
+                        );
+                    }
 
                     if (unattributable) {
                         console.log(
