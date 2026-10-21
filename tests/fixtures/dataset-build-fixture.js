@@ -64,6 +64,34 @@ const { QueryTypes } = db.Sequelize;
 const FPS = 25;
 
 /**
+ * One encoded 8x8 PNG, made once and written many times.
+ *
+ * The frames have to be real images because the builder re-encodes them, and the
+ * batching test asks for more than eight hundred of them -- encoding each one through
+ * `sharp` made the stub cost more than the code it stands in for. The bytes are
+ * identical for every frame, which no assertion depends on.
+ *
+ * @type {?Buffer}
+ */
+let framePng = null;
+
+/**
+ * The PNG every stubbed frame is written from.
+ *
+ * @async
+ * @returns {Promise<Buffer>} The encoded image.
+ */
+async function pngBytes() {
+    if (!framePng) {
+        framePng = await sharp({
+            create: { width: 8, height: 8, channels: 3, background: { r: 10, g: 120, b: 200 } },
+        }).png().toBuffer();
+    }
+
+    return framePng;
+}
+
+/**
  * Runs one statement and returns its rows.
  *
  * @param {string} sql - The statement.
@@ -86,6 +114,9 @@ async function seedCorpus(runId) {
         runId,
         projectId: null,
         sessionId: null,
+        /* Every session, so a test that wants observations the other builds cannot see
+           can add one and still be cleaned up by `removeCorpus`. */
+        sessionIds: [],
         speciesIds: [],
         observationIds: [],
         keyframeIds: [],
@@ -93,6 +124,9 @@ async function seedCorpus(runId) {
             one: `jest-build-one-${runId}.mp4`,
             two: `jest-build-two-${runId}.mp4`,
             three: `jest-build-three-${runId}.mp4`,
+            /* For the batching test, which seeds its own long observation in its own
+               session so the builds above cannot see it. */
+            long: `jest-build-long-${runId}.mp4`,
         },
         names: {},
     };
@@ -105,14 +139,7 @@ async function seedCorpus(runId) {
 
     seeded.projectId = project.project_id;
 
-    const [session] = await q(
-        `INSERT INTO sessions (project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
-         VALUES (:projectId, 1, :dive, 'L1', :lineId, 'transect', NOW(), NOW())
-         RETURNING session_id`,
-        { projectId: seeded.projectId, dive: `JB${runId}`.slice(-6), lineId: `LID-JB-${runId}` }
-    );
-
-    seeded.sessionId = session.session_id;
+    seeded.sessionId = await addSession(seeded, 'A');
 
     /* Named A, B and C so the vocabulary's order -- assigned by common name -- is
        something the tests can state rather than discover. `taxserial` is unique and
@@ -152,6 +179,35 @@ async function seedCorpus(runId) {
 }
 
 /**
+ * Insert one session under the fixture's project, and record it for cleanup.
+ *
+ * A second session is how a test gets observations the other builds cannot see: every
+ * build here filters on `session`, so rows in another session are invisible to them
+ * without any test having to know what the others selected.
+ *
+ * @async
+ * @param {Object} seeded - The accumulating fixture.
+ * @param {string} label - Distinguishes this session from the fixture's others.
+ * @returns {Promise<number>} The new session id.
+ */
+async function addSession(seeded, label) {
+    const [session] = await q(
+        `INSERT INTO sessions (project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+         VALUES (:projectId, 1, :dive, 'L1', :lineId, 'transect', NOW(), NOW())
+         RETURNING session_id`,
+        {
+            projectId: seeded.projectId,
+            dive: `J${label}${seeded.runId}`.slice(-6),
+            lineId: `LID-JB-${label}-${seeded.runId}`,
+        }
+    );
+
+    seeded.sessionIds.push(session.session_id);
+
+    return session.session_id;
+}
+
+/**
  * Insert one observation and record it for cleanup.
  *
  * SQL rather than `db.observations.create`, because the model declares the key without
@@ -160,10 +216,10 @@ async function seedCorpus(runId) {
  *
  * @async
  * @param {Object} seeded - The accumulating fixture.
- * @param {Object} row - `{obsID, speciesId, video}`.
+ * @param {Object} row - `{obsID, speciesId, video, sessionId}`.
  * @returns {Promise<number>} The new observation id.
  */
-async function addObservation(seeded, { obsID, speciesId, video }) {
+async function addObservation(seeded, { obsID, speciesId, video, sessionId }) {
     const [inserted] = await q(
         `INSERT INTO observations
              (session_id, project_id, "obsID", confidence, comname, species_id, video_source, tc,
@@ -172,7 +228,7 @@ async function addObservation(seeded, { obsID, speciesId, video }) {
                  NOW(), NOW())
          RETURNING observation_id`,
         {
-            sessionId: seeded.sessionId,
+            sessionId: sessionId || seeded.sessionId,
             projectId: seeded.projectId,
             obsID,
             comname: `Jest Build ${seeded.runId}`,
@@ -242,9 +298,9 @@ async function removeCorpus(seeded) {
         });
     }
 
-    if (seeded.sessionId) {
-        await db.sequelize.query('DELETE FROM sessions WHERE session_id = :id', {
-            replacements: { id: seeded.sessionId },
+    if (seeded.sessionIds.length) {
+        await db.sequelize.query('DELETE FROM sessions WHERE session_id IN (:ids)', {
+            replacements: { ids: seeded.sessionIds },
         });
     }
 
@@ -291,6 +347,7 @@ function stubExtraction({ jellyfin, extraction }, behaviour = {}) {
             if (behaviour.onExtract) await behaviour.onExtract(calls.extractions.length, frames);
 
             const files = [];
+            const bytes = await pngBytes();
 
             for (let i = 0; i < frames.length; i++) {
                 /* `omit` is how "the extractor could not produce that frame" is said: the
@@ -300,10 +357,7 @@ function stubExtraction({ jellyfin, extraction }, behaviour = {}) {
 
                 const file = path.join(destination, `frame-${String(i + 1).padStart(4, '0')}.png`);
 
-                await sharp({
-                    create: { width: 8, height: 8, channels: 3, background: { r: 10, g: 120, b: 200 } },
-                }).png().toFile(file);
-
+                fs.writeFileSync(file, bytes);
                 files.push(file);
             }
 
@@ -340,6 +394,7 @@ module.exports = {
     FPS,
     addKeyframes,
     addObservation,
+    addSession,
     removeCorpus,
     seedCorpus,
     stagingDirectories,

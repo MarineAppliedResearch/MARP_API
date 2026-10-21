@@ -38,6 +38,7 @@ const db = require('../model');
 const jellyfin = require('../repository/jellyfin.repository');
 const extraction = require('../service/thumbnail-extraction.service');
 const buildService = require('../service/dataset-build.service');
+const buildRepository = require('../repository/dataset-build.repository');
 
 const fixture = require('./fixtures/dataset-build-fixture');
 
@@ -217,9 +218,15 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
      */
     let stagedBefore;
 
+    /** Every progress report this build made, so the sequence can be read back. */
+    let progress;
+
     beforeAll(async () => {
         stagedBefore = new Set(fixture.stagingDirectories());
         stub = fixture.stubExtraction({ jellyfin, extraction });
+
+        // Wrapped, not replaced: the rows are written for real and the calls recorded.
+        progress = jest.spyOn(buildRepository, 'reportProgress');
 
         /* Three subsets, one per split the screen offers. Deliberately *not* aligned
            with the connected group: `first` is claimed by the train subset and `second`
@@ -245,7 +252,23 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
     }, 120000);
 
     afterAll(() => {
+        if (progress) progress.mockRestore();
         if (archive && fs.existsSync(archive.root)) fs.rmSync(archive.root, { recursive: true, force: true });
+    });
+
+    test('progress counts across videos rather than restarting at each one', async () => {
+        const done = progress.mock.calls
+            .map(([, report]) => report)
+            .filter((report) => report.phase === 'extracting')
+            .map((report) => report.done);
+
+        /* Three videos, and the count that is reported is the build's, not this video's.
+           A report that restarted per video would send the number backwards twice here
+           and finish at two rather than nine -- and on a real build it is a progress bar
+           that jumps back to the start whenever a video ends. */
+        expect(done.every((value, i) => i === 0 || value >= done[i - 1])).toBe(true);
+        expect(done[0]).toBe(0);
+        expect(done[done.length - 1]).toBe(9);
     });
 
     test('one ffmpeg pass per video and split, not one per observation', async () => {
@@ -274,11 +297,44 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
         const [dataset] = await q('SELECT * FROM datasets WHERE id = :id', { id: built.datasetId });
 
         expect(dataset.status).toBe('ready');
-        expect(Number(dataset.num_samples)).toBe(9);
+
+        /* **`num_samples` is observations.** Four observations expanded to nine frames,
+           and this column is the four: it is what the Datasets screen draws under
+           OBSERVATIONS and what every legacy row already means by it. The frame count
+           is recorded beside it -- see the test below, which is the tripwire. */
+        expect(Number(dataset.num_samples)).toBe(4);
+        expect(dataset.notes).toBe('9 frames extracted from 4 observations.');
         expect(Number(dataset.num_classes)).toBe(3);
         expect(dataset.archive_sha256).toBe(built.archive.sha256);
         expect(dataset.archive_path).toBe(`datasets/${built.archive.sha256}.tar`);
         expect(Number(dataset.archive_bytes)).toBeGreaterThan(0);
+    });
+
+    test('observations and frames are two numbers, and neither stands in for the other', async () => {
+        /* The tripwire. These two were silently swapped -- `num_samples` carried the
+           frame count, so a finished dataset read 1,367 observations and no frames at
+           all, which is both numbers wrong at once and nothing noticed.
+           The corpus is chosen so they cannot be confused: four observations, nine
+           frames. A test built on a corpus where they happened to be equal would pass
+           with them the wrong way round. */
+        const [dataset] = await q('SELECT num_samples, notes FROM datasets WHERE id = :id', {
+            id: built.datasetId,
+        });
+
+        const [members] = await q(
+            'SELECT count(*)::int AS n FROM dataset_observations WHERE dataset_id = :id',
+            { id: built.datasetId }
+        );
+
+        const frames = Number((dataset.notes.match(/^(\d+) frames/) || [])[1]);
+
+        // They differ, so the assertions below can tell them apart at all.
+        expect(members.n).not.toBe(built.images);
+
+        // An observation is what a person selected; a frame is what it expanded to.
+        expect(Number(dataset.num_samples)).toBe(members.n);
+        expect(frames).toBe(built.images);
+        expect(frames).toBeGreaterThan(Number(dataset.num_samples));
     });
 
     test('the archive is named for its own digest and is the size the row claims', async () => {
@@ -519,12 +575,16 @@ describe('what a build does with what it could not cut (#268)', () => {
         expect(result.images).toBe(5);
         expect(result.missing).toBe(1);
 
-        const [dataset] = await q('SELECT status, num_samples FROM datasets WHERE id = :id', {
+        const [dataset] = await q('SELECT status, num_samples, notes FROM datasets WHERE id = :id', {
             id: queued.dataset.id,
         });
 
         expect(dataset.status).toBe('ready');
-        expect(Number(dataset.num_samples)).toBe(5);
+
+        /* Two observations, five frames: the observation count does not drop because a
+           frame could not be cut. Both of them are still in the dataset. */
+        expect(Number(dataset.num_samples)).toBe(2);
+        expect(dataset.notes).toBe('5 frames extracted from 2 observations.');
 
         const unpacked = unpack(result.archive.sha256);
 
@@ -540,4 +600,154 @@ describe('what a build does with what it could not cut (#268)', () => {
             fs.rmSync(unpacked.root, { recursive: true, force: true });
         }
     }, 120000);
+});
+
+describe('a video with more frames than one ffmpeg pass can ask for (#268)', () => {
+
+    /**
+     * The frames this video wants.
+     *
+     * **Sized to force more than one pass** at the builder's current batch size, which
+     * is not exported and is deliberately not written here -- the shape of the batching
+     * is asserted below from what the extractor was actually asked for. If the batch
+     * size is ever raised above this span, the first assertion fails: give the fixture a
+     * longer video rather than deleting the test.
+     */
+    const SPAN = { first: 1000, last: 1801 };
+
+    /** How many frames that is. */
+    const WANTED = SPAN.last - SPAN.first + 1;
+
+    /** This group's own stub and its own session, invisible to the builds above. */
+    let stub;
+    let progress;
+    let built;
+    let archive;
+
+    beforeAll(async () => {
+        const sessionId = await fixture.addSession(seeded, 'L');
+        const observationId = await fixture.addObservation(seeded, {
+            obsID: 5,
+            speciesId: seeded.speciesIds[0],
+            video: seeded.videos.long,
+            sessionId,
+        });
+
+        await fixture.addKeyframes(seeded, observationId, [SPAN.first, SPAN.last]);
+
+        stub = fixture.stubExtraction({ jellyfin, extraction });
+
+        /* Wrapped rather than replaced -- `jest.spyOn` calls through -- so the rows are
+           written for real and the calls are recorded. Progress is the only way to see
+           that a long video reports while it is still being cut. */
+        progress = jest.spyOn(buildRepository, 'reportProgress');
+
+        const queued = await queueBuild({
+            name: `Jest Build Batched ${runId}`,
+            filters: { session: [sessionId] },
+            splits: { train: 1 },
+        });
+
+        built = await runBuild(queued.job.id);
+        built.datasetId = queued.dataset.id;
+
+        expect(built.reason).toBeUndefined();
+
+        archive = unpack(built.archive.sha256);
+    }, 300000);
+
+    afterAll(() => {
+        if (progress) progress.mockRestore();
+        if (stub) stub.restore();
+        if (archive && fs.existsSync(archive.root)) fs.rmSync(archive.root, { recursive: true, force: true });
+    });
+
+    test('is cut in several passes rather than one enormous one', () => {
+        /* The bug this is for: `extractFrames` builds a `select` expression with a term
+           per frame, so a video wanting 8,408 frames produced a command line of roughly
+           340 KB against an operating-system limit near 32 KB, and the build died with
+           `spawn ENAMETOOLONG` **after minutes of extraction**. Every build run by hand
+           before that was a few hundred frames, which is why it had never shown -- and
+           it is the 50,000-frame datasets this is all for that would have hit it. */
+        expect(stub.calls.extractions.length).toBeGreaterThan(1);
+
+        const sizes = stub.calls.extractions.map((call) => call.frames.length);
+
+        // Full batches, then a last one that is whatever is left.
+        expect(Math.max(...sizes)).toBeLessThan(WANTED);
+        expect(sizes.slice(0, -1).every((size) => size === sizes[0])).toBe(true);
+        expect(sizes[sizes.length - 1]).toBeLessThanOrEqual(sizes[0]);
+        expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(WANTED);
+    });
+
+    test('every frame is asked for exactly once, in order, across the passes', () => {
+        const asked = stub.calls.extractions.flatMap((call) => call.frames);
+
+        /* Disjoint and contiguous. A batch boundary is where an off-by-one costs a
+           frame or asks for one twice, and either is invisible in the archive's size
+           alone -- a duplicate overwrites and the count still looks right. */
+        expect(asked).toHaveLength(WANTED);
+        expect(new Set(asked).size).toBe(WANTED);
+        expect(asked[0]).toBe(SPAN.first);
+        expect(asked[asked.length - 1]).toBe(SPAN.last);
+        expect(asked.every((frame, i) => i === 0 || frame === asked[i - 1] + 1)).toBe(true);
+    });
+
+    test('every pass writes into its own directory, so position stays the addressing', () => {
+        const directories = stub.calls.extractions.map((call) => call.destination);
+
+        /* The extractor names its output `frame-%04d.png` by position in the list it was
+           given. Two passes writing into one directory would have the second pass
+           overwrite the first's frames 1..n, and the images would be right in number and
+           wrong in content -- which nothing downstream could tell. */
+        expect(new Set(directories).size).toBe(directories.length);
+    });
+
+    test('the archive holds every frame, once', () => {
+        const images = archive.entries.filter((name) => name.endsWith('.jpg'));
+        const labels = archive.entries.filter((name) => name.endsWith('.txt'));
+
+        expect(built.images).toBe(WANTED);
+        expect(images).toHaveLength(WANTED);
+        expect(labels).toHaveLength(WANTED);
+
+        // The first and last frames of the span, named for the video they came from.
+        const stem = path.parse(seeded.videos.long).name;
+
+        expect(images).toContain(`train/images/${stem}_${String(SPAN.first).padStart(8, '0')}.jpg`);
+        expect(images).toContain(`train/images/${stem}_${String(SPAN.last).padStart(8, '0')}.jpg`);
+    });
+
+    test('and the dataset counts it as one observation', async () => {
+        /* The other side of the tripwire above, at the scale that makes the distinction
+           obvious: eight hundred frames, one observation. */
+        const [dataset] = await q('SELECT num_samples, notes FROM datasets WHERE id = :id', {
+            id: built.datasetId,
+        });
+
+        expect(Number(dataset.num_samples)).toBe(1);
+        expect(dataset.notes).toBe(`${WANTED} frames extracted from 1 observations.`);
+    });
+
+    test('progress moves while the video is still being cut, not only when it is done', async () => {
+        const extracting = progress.mock.calls
+            .map(([, report]) => report)
+            .filter((report) => report.phase === 'extracting' && report.total === WANTED);
+
+        /* A four-hour build over a handful of long videos reported nothing between
+           videos, so the number sat still for an hour at a time. Reported per pass, it
+           climbs. The assertion is that at least one report landed *strictly* inside the
+           video -- more than nothing done, less than all of it. */
+        const midway = extracting.filter((report) => report.done > 0 && report.done < WANTED);
+
+        expect(midway.length).toBeGreaterThan(0);
+
+        // And it never goes backwards, which is what a per-video reset would look like.
+        const done = extracting.map((report) => report.done);
+
+        expect(done.every((value, i) => i === 0 || value >= done[i - 1])).toBe(true);
+
+        // Ending at the whole video, so the bar reaches the end.
+        expect(done[done.length - 1]).toBe(WANTED);
+    });
 });

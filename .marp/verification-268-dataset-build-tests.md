@@ -53,6 +53,9 @@ route was built against for the sake of two functions.
 | R8 | `dataset-build-lifecycle` · *an image format nobody builds in fails before a single frame is cut* | integration | The format is settled before extraction: a second, not an hour. |
 | retry | `dataset-build-lifecycle` · *a second attempt replaces the first attempt's rows rather than doubling them* | integration | Four members and three classes before and after; two attempts recorded with epochs 1 and 2; the dataset names the **second** attempt's archive. |
 | the extractor's own gaps | `dataset-build-runner` · *a frame the extractor could not produce costs that frame, not the build* | integration | A truncated video costs frames at the end; the dataset is still `ready`, and the gap in the archive is the frame that was lost rather than the one after it. |
+| **observations ≠ frames** | `dataset-build-runner` · *observations and frames are two numbers, and neither stands in for the other* | integration | `num_samples` is the membership count and the frame count is recorded beside it. The corpus is four observations and nine frames **on purpose**: a corpus where they happened to be equal would pass with them the wrong way round, which is how they came to be swapped. |
+| the batched extraction | `dataset-build-runner` · *is cut in several passes rather than one enormous one*, *every frame is asked for exactly once, in order*, *every pass writes into its own directory*, *the archive holds every frame, once* | integration | An 802-frame video, which is more than one pass. `extractFrames` builds a `select` term per frame, so one pass over 8,408 frames made a ~340 KB command line and the build died with `spawn ENAMETOOLONG` after minutes of work — the bug that would have killed the 50,000-frame target. The batch size is **not** written into the test; the shape is read back from what the extractor was asked for. |
+| progress | `dataset-build-runner` · *progress moves while the video is still being cut*, *progress counts across videos rather than restarting at each one* | integration | One long video reports strictly inside itself; three short ones report a count that never goes backwards and ends at nine. A per-video reset is a bar that jumps back to the start whenever a video ends. |
 | everything, against real video | `dataset-build-real` | slow | That the frames MARP asks for are frames the video can produce, at the frame rate it reports, through the URL the coordinator resolved — ending in a range request to `GET /gpu/datasets/:id/archive`, which is what a worker calls. |
 
 ## Proved red by mutation
@@ -79,6 +82,19 @@ live in `service/dataset-build.service.js`, which this branch was told not to to
 they are **not** proved by mutation. Both read real artefacts (an unpacked tar, the job's
 own state) rather than a stub's return value.
 
+**The batching tests were proved red three ways**, in a throwaway worktree carrying the
+batched builder, so nobody's working copy was touched:
+
+| Mutation | What failed |
+| --- | --- |
+| every pass writes into one directory (`batchDir = cut`) | *every pass writes into its own directory* — **and nothing else**. The archive still held 802 images: with batches sharing a directory, pass two's `frame-0001.png` overwrites pass one's, so the images come out right in number and wrong in content. Only this test can see it. |
+| an overlapping batch boundary (`at += FRAMES_PER_PASS - 1`) | five tests, including *every frame is asked for exactly once, in order* |
+| the per-pass progress callback disabled | *progress moves while the video is still being cut* — and nothing else |
+
+And the whole set is pinned to the change itself: against the branch **without** the
+batched, observation-counting builder, six tests fail — among them `num_samples` reading
+**802** for a single 802-frame observation, which is the defect in one number.
+
 ## Requirements with no test
 
 None of R1–R8 is untested. `repository/dataset-build.repository.js` is covered through
@@ -96,7 +112,13 @@ drive, and a unit test of `recordBuild` would assert the same rows one layer low
   modification time and the frames are rewritten on every attempt, so the digest moves.
   The retry test records this instead of asserting it.
 - **The route does not validate `image`.** An unknown format is accepted with 201 and the
-  build fails minutes later. Covered as it behaves, not as it should.
+  build fails minutes later. Covered as it behaves, not as it should; the fix belongs to
+  whoever owns `routes/dataset.routes.js`, and a route-level refusal test belongs with
+  `dataset-build-queue` once it lands.
+- **Nothing covers a *batched* cancellation.** Cancellation is checked between videos,
+  not between passes, so a single long video cannot be interrupted until it is finished.
+  That is the builder's behaviour rather than an untested path, and it is worth knowing:
+  on an 8,000-frame video it is minutes between the cancel and the stop.
 - **Permissions are not tested here.** Every suite runs as the fixture user, which holds
   every permission; the refusals are the auth suites' subject.
 - **Nothing covers two builds at once**, because the poller is one at a time by
