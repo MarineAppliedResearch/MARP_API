@@ -1918,6 +1918,18 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .species-list-head .text-action:first-of-type { margin-left: auto; }
 .species-menu .nodata { padding: 6px 2px; color: var(--muted); font-size: 11px; }
 
+/* The three shares, on one row: they are one decision and reading them as a row is how
+   somebody checks they add up. */
+.split-shares { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+.split-shares label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--muted);
+}
+.split-shares label > span { min-width: 62px; }
+.split-shares .inp { width: 62px; text-align: right; }
+.split-shares label > i { font-style: normal; color: var(--faint); }
+.split-shares .hint { flex-basis: 100%; margin: 2px 0 0; }
+
 /* The class breakdown with a share column as well as a count. */
 .dist.wide, .dist.pct { grid-template-columns: auto minmax(36px, 1fr) auto auto; }
 .dist .p { color: var(--faint); font-size: 10.5px; text-align: right; min-width: 30px; }

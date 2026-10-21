@@ -415,10 +415,21 @@ async function runOne() {
             const selected = [];
 
             for (const subset of spec.subsets) {
-                selected.push({
-                    split: subset.split || 'train',
-                    rows: await mosaicRepository.selectForBuild({ filters: subset.filters || {} }),
-                });
+                const matched = await mosaicRepository.selectForBuild({ filters: subset.filters || {} });
+
+                /* **A subset either names a split or names shares.** "These dives into
+                   train" and "divide this query 70/20/10" are both things somebody says,
+                   and a builder that only understood the first made them run the same
+                   query three times to say the second. Shares are divided here, before
+                   the subsets are reconciled, so the first-assignment rule still settles
+                   an observation two subsets both matched. */
+                if (subset.shares && Object.keys(subset.shares).length) {
+                    const divided = plan.assignSplits(plan.connectedGroups(matched), subset.shares);
+
+                    for (const [split, rowsIn] of divided) selected.push({ split, rows: rowsIn });
+                } else {
+                    selected.push({ split: subset.split || 'train', rows: matched });
+                }
             }
 
             splits = plan.assignFromSubsets(selected);

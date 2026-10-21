@@ -206,12 +206,30 @@
 
               <div class="field dataset-destination">
                 <label>Add matching observations to</label>
-                <div class="seg" role="group" aria-label="Dataset split destination">
+                <div class="seg" role="group" aria-label="How this query is split">
+                  <button type="button" class="on" data-split-mode="share" aria-pressed="true">Divide across splits</button>
+                  <button type="button" data-split-mode="one" aria-pressed="false">All to one split</button>
+                </div>
+
+                <div class="split-shares" data-split-shares>
+                  <label><span>Train</span>
+                    <input class="inp" type="number" id="shareTrain" min="0" max="100" step="5" value="70"><i>%</i></label>
+                  <label><span>Validation</span>
+                    <input class="inp" type="number" id="shareValidation" min="0" max="100" step="5" value="20"><i>%</i></label>
+                  <label><span>Test</span>
+                    <input class="inp" type="number" id="shareTest" min="0" max="100" step="5" value="10"><i>%</i></label>
+                  <p class="hint" data-share-note data-rendered></p>
+                </div>
+
+                <div class="seg" role="group" aria-label="Dataset split destination" data-split-one hidden>
                   <button type="button" class="on" data-dataset-destination="train" aria-pressed="true">Train</button>
                   <button type="button" data-dataset-destination="validation" aria-pressed="false">Validation</button>
                   <button type="button" data-dataset-destination="test" aria-pressed="false">Test</button>
                 </div>
-                <span class="hint">If a match is already assigned elsewhere, its first split assignment is kept.</span>
+
+                <span class="hint">Observations whose frames overlap stay together, so a near-duplicate
+                  picture can never land in two splits. Shares are measured in frames, and each species
+                  is divided separately so a rare one reaches every split.</span>
               </div>
 
               <button class="btn primary big block" id="addQuery"

@@ -134,7 +134,21 @@ function registerDatasetRoutes(app) {
                                     type: 'object',
                                     properties: {
                                         filters: { $ref: '#/components/schemas/MosaicQueryFilters' },
-                                        split: { type: 'string', example: 'train' },
+                                        split: {
+                                            type: 'string',
+                                            example: 'train',
+                                            description: 'Send the whole subset to one split. Use this **or** `shares`.',
+                                        },
+                                        shares: {
+                                            type: 'object',
+                                            description:
+                                                'Divide this subset across splits in these proportions, normalised, rather than '
+                                                + 'sending it to one. Measured in frames, and each species is divided separately so '
+                                                + 'a rare one reaches every split. Whole connected groups move together, so a '
+                                                + 'near-duplicate picture cannot land in two.',
+                                            example: { train: 70, validation: 20, test: 10 },
+                                            additionalProperties: { type: 'number' },
+                                        },
                                     },
                                 },
                             },

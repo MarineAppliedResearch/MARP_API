@@ -109,12 +109,12 @@ function mountSprite() {
 const NAV = [
   { id: 'dashboard', label: 'Dashboard',
     tip: 'What the GPU pool is running, queued and struggling with' },
-  { id: 'jobs', label: 'Jobs', badge: 8, tone: 'attn',
+  { id: 'jobs', label: 'Jobs', tone: 'attn',
     tip: 'The GPU queue: inference, tracking and training. Dataset builds live on Datasets' },
-  { id: 'inference', label: 'Inference', badge: 4, tone: 'run',
-    tip: 'Run a model over MARP data \u2014 4 running now' },
-  { id: 'training', label: 'Training', badge: 2, tone: 'run',
-    tip: 'Fine-tune a model on a saved dataset \u2014 2 running now' },
+  { id: 'inference', label: 'Inference', tone: 'run',
+    tip: 'Run a model over MARP data' },
+  { id: 'training', label: 'Training', tone: 'run',
+    tip: 'Fine-tune a model on a saved dataset' },
   { id: 'datasets', label: 'Datasets',
     tip: 'Build and save training sets from approved observations' },
   { id: 'models', label: 'Models',
@@ -125,6 +125,51 @@ const NAV = [
 
 const IMG = '../../../shared/assets/images/';
 
+/**
+ * The counts beside the rail, from MARP.
+ *
+ * Two kinds, and they must not look alike: red is work that has gone wrong and needs
+ * somebody, cyan is work running right now. A badge with nothing behind it is hidden
+ * rather than drawn as a zero -- a zero is a number somebody reads and acts on, and
+ * "nothing is wrong" is better said by the absence of a warning.
+ *
+ * **Dataset builds are deliberately not counted under Jobs.** They are `gpu_jobs` rows,
+ * but the Jobs screen is the GPU queue and a build is not in it -- it has its own place
+ * on Datasets, which is what that tooltip already says.
+ *
+ * Silent on failure: counts beside a label are not the labels.
+ *
+ * @returns {Promise<void>}
+ */
+async function fillRailBadges() {
+  if (!window.MarpApi) return;
+
+  const set = (id, count) => {
+    const badge = $('[data-nav-badge="' + id + '"]');
+
+    if (!badge) return;
+
+    badge.textContent = String(count);
+    badge.hidden = !count;
+  };
+
+  try {
+    /* `limit: 1` because only the total is wanted and the rows are the expensive part;
+       none of them is drawn here. */
+    const [failed, inference, training] = await Promise.all([
+      window.MarpApi.listJobs({ state: 'failed', limit: 1 }),
+      window.MarpApi.listJobs({ state: 'leased', kind: 'inference', limit: 1 }),
+      window.MarpApi.listJobs({ state: 'leased', kind: 'training', limit: 1 }),
+    ]);
+
+    set('jobs', failed.total || 0);
+    set('inference', inference.total || 0);
+    set('training', training.total || 0);
+  } catch {
+    /* Nothing: a rail that could not count is a rail without badges. */
+  }
+}
+
 function mountRail() {
   const rail = $('.rail');
   if (!rail) return;
@@ -134,8 +179,13 @@ function mountRail() {
     const current = n.id === here ? ' aria-current="page"' : '';
     /* Two kinds of count, and they must not look alike: red is work that has
        gone wrong, cyan is work in progress. */
-    const badge = n.badge
-      ? '<span class="badge" data-tone="' + (n.tone || 'attn') + '">' + n.badge + '</span>'
+    /* Empty, and filled by `fillRailBadges` from MARP. These read 8, 4 and 2 on every
+       screen until 2026-10-21, because they were written into the mockup's nav and
+       nothing ever replaced them -- Isaac, on a pool with nothing running: "i notice
+       that jobs has a 8 next to the jobs tab, but there are 0 jobs running?". The
+       markup check never saw them because they live in JavaScript, not markup. */
+    const badge = n.tone
+      ? '<span class="badge" data-tone="' + n.tone + '" data-nav-badge="' + n.id + '" hidden></span>'
       : '';
     return '<a href="./' + n.id + '.html"' + current + ' data-nav="' + n.id + '"'
       + ' title="' + (n.tip || n.label) + '">'
@@ -6340,6 +6390,12 @@ function wireDatasetBuilder() {
     /* The filters that produced it, so queueing a build sends what was asked for rather
        than the ids one browser happened to count. `key` is already that JSON. */
     row.dataset.filters = result.key;
+
+    /* Either a share map or a single split. The build divides by the first and obeys
+       the second, so the row carries whichever was asked for. */
+    const shares = splitShares();
+
+    if (shares) row.dataset.shares = JSON.stringify(shares);
     row.dataset.subsetLabel = `${result.query.dsproj} \u00b7 ${result.query.dsspecies}`;
 
     const title = document.createElement('span');
@@ -6395,6 +6451,69 @@ function wireDatasetBuilder() {
    * three-step builder mean anything -- "these dives into train, those into eval" is a
    * sentence the API has to be told, not one it can infer from a merged filter.
    */
+  /**
+   * The shares this query is divided by, or null when it all goes to one split.
+   *
+   * Zero is a real answer and means that split gets none -- somebody building without a
+   * test set says so by typing 0, and silently restoring it to 10 would build a dataset
+   * they did not ask for. All three at zero is not a split at all, so it falls back to
+   * sending everything to the chosen destination rather than producing nothing.
+   *
+   * @returns {?Object} Split name to share, or null for the single-destination mode.
+   */
+  const splitShares = () => {
+    if ($('[data-split-mode="one"]')?.classList.contains('on')) return null;
+
+    const shares = {};
+
+    for (const name of ['train', 'validation', 'test']) {
+      const value = Number($('#share' + name[0].toUpperCase() + name.slice(1))?.value);
+
+      if (Number.isFinite(value) && value > 0) shares[name] = value;
+    }
+
+    return Object.keys(shares).length ? shares : null;
+  };
+
+  /**
+   * What the shares add up to, said plainly.
+   *
+   * They are normalised rather than required to total 100 -- 2:1:1 is a perfectly clear
+   * way to say it -- but somebody typing 70/20/20 usually meant 70/20/10, so the note
+   * says what they will actually get rather than silently correcting or refusing.
+   */
+  const refreshShareNote = () => {
+    const note = $('[data-share-note]');
+    const shares = splitShares();
+
+    if (!note) return;
+
+    if (!shares) {
+      note.textContent = '';
+      return;
+    }
+
+    const total = Object.values(shares).reduce((sum, value) => sum + value, 0);
+    const parts = Object.entries(shares)
+      .map(([name, value]) => `${name} ${Math.round(100 * value / total)}%`).join(' · ');
+
+    note.textContent = total === 100
+      ? `${parts}, measured in frames.`
+      : `Adds up to ${total}, so it is read as ${parts}.`;
+  };
+
+  /** What the add button promises, which is whichever mode is on. */
+  const refreshAddLabel = () => {
+    const label = $('[data-add-query-label]');
+    const shares = splitShares();
+
+    if (!label) return;
+
+    label.textContent = shares
+      ? `Add all matching, divided across ${Object.keys(shares).length} splits`
+      : `Add all matching to ${splitLabels[selectedSplit]}`;
+  };
+
   const queueBuild = async () => {
     const rows = $$('li', list);
 
@@ -6418,10 +6537,14 @@ function wireDatasetBuilder() {
     setStatus('Queueing the build…');
 
     try {
-      const subsets = rows.map((row) => ({
-        filters: JSON.parse(row.dataset.filters || '{}'),
-        split: row.dataset.split || 'train',
-      }));
+      const subsets = rows.map((row) => {
+        const subset = { filters: JSON.parse(row.dataset.filters || '{}') };
+
+        if (row.dataset.shares) subset.shares = JSON.parse(row.dataset.shares);
+        else subset.split = row.dataset.split || 'train';
+
+        return subset;
+      });
 
       const queued = await window.MarpApi.queueDatasetBuild({
         name,
@@ -6449,6 +6572,36 @@ function wireDatasetBuilder() {
   };
 
   $('[data-queue-build]')?.addEventListener('click', queueBuild);
+
+  /* Divide-across versus all-to-one. The shares and the destination buttons are the two
+     halves of one question, so only the one being asked is on screen. */
+  const modeButtons = $$('[data-split-mode]');
+
+  modeButtons.forEach((button) => button.addEventListener('click', () => {
+    modeButtons.forEach((other) => {
+      const on = other === button;
+
+      other.classList.toggle('on', on);
+      other.setAttribute('aria-pressed', String(on));
+    });
+
+    const sharing = button.dataset.splitMode === 'share';
+    const shares = $('[data-split-shares]');
+    const one = $('[data-split-one]');
+
+    if (shares) shares.hidden = !sharing;
+    if (one) one.hidden = sharing;
+
+    refreshShareNote();
+    refreshAddLabel();
+  }));
+
+  for (const name of ['Train', 'Validation', 'Test']) {
+    $('#share' + name)?.addEventListener('input', () => { refreshShareNote(); refreshAddLabel(); });
+  }
+
+  refreshShareNote();
+  refreshAddLabel();
 
   /* The species menu is rebuilt whenever the question around it changes, so its rows
      are delegated rather than bound. */
@@ -6487,8 +6640,7 @@ function wireDatasetBuilder() {
       other.classList.toggle('on', on);
       other.setAttribute('aria-pressed', String(on));
     });
-    const label = $('[data-add-query-label]');
-    if (label) label.textContent = `Add all matching to ${splitLabels[selectedSplit]}`;
+    refreshAddLabel();
   }));
   $('#addQuery')?.addEventListener('click', addCurrent);
   $('[data-add-query]')?.addEventListener('click', addCurrent);
@@ -7027,6 +7179,7 @@ function boot(name, wire) {
 document.body.dataset.rail = 'closed';
 boot('sprite', mountSprite);
 boot('rail', mountRail);
+boot('rail-badges', fillRailBadges);
 boot('topbar', mountTopbar);
 boot('topbar autohide', wireTopbarAutohide);
 boot('rail sheet', wireRailSheet);
