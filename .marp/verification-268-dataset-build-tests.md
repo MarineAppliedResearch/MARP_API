@@ -203,9 +203,21 @@ The first is explained: a run of this group by another session, which saw four
 `marp-dataset-*` directories that session then deleted four minutes later. **The second is
 not.** It was offered as having seen three `marp-build-*` directories deleted later that
 afternoon, and that cannot be what happened — all three were created hours before the run,
-so they were in the opening snapshot and filtered out by construction. Something appeared
-during that run and stayed; what, is not established, and a build elsewhere on the machine
-is the likeliest candidate rather than a demonstrated one.
+so they were in the opening snapshot and filtered out by construction.
+
+The run is bounded to seventeen seconds, 21:26:59–21:27:16 UTC, and the obvious candidate
+— somebody else's build starting inside it — was then **checked against the development
+database and failed**: no `dataset_build` job was created between 21:10 and 21:45, the
+nearest being 21:09:18 (`test2`, dead by 21:10:27) and 22:09:02 (`test3`). Nothing of
+anybody else's was starting or running in that window.
+
+So the honest reading has moved, and it moved **toward** this suite rather than away from
+it: with no foreign build to blame, the likeliest remaining explanation is that one of
+this file's own builds genuinely failed to remove its staging. That is not far-fetched —
+a 238.7 MB `marp-build-*` directory survived its `finally` the same afternoon when ffmpeg
+was killed mid-pass, so removal failing on Windows is demonstrated rather than theoretical.
+It has happened once in many runs and has not been reproduced. **Left open, and pointing
+here.**
 
 The check is kept, because the alternative is not noticing a real leak. What changed is
 the failure text: it now names the directories **and** says to check for another build
