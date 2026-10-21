@@ -255,7 +255,13 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
   font-size: 12px; color: var(--cyan-300); background: none; border: 0; padding: 0;
 }
+/* `text-decoration: none` because one of these is an `<a>` now -- *More samples* opens
+   the Mosaic Reviewer, and a link is the right element for something that opens a page:
+   middle-click, copy-link and open-in-new-tab all have to work. Without this it would be
+   the only underlined control on the screen. */
+.more { text-decoration: none; }
 .more:hover { text-decoration: underline; }
+.more[hidden] { display: none; }
 
 /* ============================================================== stat cards */
 
@@ -527,6 +533,10 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .jobstate-title .bar { width: 100%; }
 .jobmetrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--hairline); border-radius: var(--r-sm); overflow: hidden; }
 .jobmetric { min-width: 0; padding: 11px 12px; display: grid; gap: 3px; align-content: start; background: var(--card-flat); border-right: 1px solid var(--hairline); }
+/* `display: grid` above beats the browser's own `[hidden]` rule, so a metric hidden by
+   the renderer stayed on screen. The build detail's *Video* row is hidden until the
+   runner names one. */
+.jobmetric[hidden] { display: none; }
 .jobmetric:last-child { border-right: 0; }
 .jobmetric > span { color: var(--faint); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .jobmetric > b { color: var(--white); font-size: 14px; overflow-wrap: anywhere; }
@@ -2878,4 +2888,14 @@ td.whb.quiet { color: var(--amber-300); }
   display: grid; place-items: center; min-height: 120px;
   color: var(--faint); font-size: 12px;
 }
-.is-quiet .dataset-chart svg { opacity: .25; }
+/* **The message is the whole box when there is nothing to draw.** Leaving the empty
+   plot behind it at a quarter opacity made the panel 370px of mostly nothing -- "this
+   section was blown up and doesn't look good anymore", 2026-10-21 -- because the
+   message's own 120px is added *below* a 248px chart rather than replacing it. */
+.is-quiet .dataset-chart svg { display: none; }
+
+/* And the key and the current figures go with it. The key names three lines that are not
+   drawn, and the figures are `<b>` elements the quiet path never fills -- so what is left
+   is a row reading "frames waiting completed", three bare labels with nothing in front of
+   them, which is what it looked like. */
+.dataset-activity.is-quiet .inference-flow-foot { display: none; }

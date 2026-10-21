@@ -110,16 +110,16 @@ describe('GET /api/v2/dataset/builds', () => {
      * @param {?string} [options.phase] - selecting, extracting or packaging.
      * @returns {Promise<number>} The attempt id.
      */
-    async function seedAttempt({ jobId, workerId, epoch, done = null, total = null, phase = null }) {
+    async function seedAttempt({ jobId, workerId, epoch, done = null, total = null, phase = null, failureReason = null }) {
         const [attempt] = await db.sequelize.query(
             `INSERT INTO gpu_job_attempts
                  (job_id, worker_id, slot_index, lease_epoch, state, leased_at, lease_expires_at,
-                  progress_done, progress_total, progress_unit, progress_phase)
+                  progress_done, progress_total, progress_unit, progress_phase, failure_reason)
              VALUES (:jobId, :workerId, 0, :epoch, 'running', NOW(), NOW() + INTERVAL '1 hour',
-                     :done, :total, 'frames', :phase)
+                     :done, :total, 'frames', :phase, :failureReason)
              RETURNING id`,
             {
-                replacements: { jobId, workerId, epoch, done, total, phase },
+                replacements: { jobId, workerId, epoch, done, total, phase, failureReason },
                 type: QueryTypes.SELECT,
             }
         );
@@ -276,6 +276,62 @@ describe('GET /api/v2/dataset/builds', () => {
     });
 
     /**
+     * The phase carries which video the build is on, and the route hands it back whole.
+     *
+     * `progress_phase` was a bare word; it now reads `extracting 2/6 …name`, because a
+     * reader watching a four-hour build could not tell working from wedged. The screen
+     * splits it on the first space — the phase goes in the pill, the rest on its own
+     * line — so what matters here is that the route does not touch it: a phase mangled
+     * on the way out would put a filename in a status pill, or lose the video entirely.
+     */
+    it('hands back a phase that names the video, exactly as it was written', async () => {
+        const worker = await seedWorker();
+        const { jobId } = await seedBuild({ name: 'jest-phase-video', state: 'leased' });
+        const phase = 'extracting 2/6 …0727_163021_Fwd';
+
+        await seedAttempt({
+            jobId, workerId: worker, epoch: 1, done: 400, total: 4760, phase,
+        });
+
+        const build = (await mine([made.datasets.at(-1)])).get(made.datasets.at(-1));
+
+        expect(build).toBeDefined();
+        expect(build.progress_phase).toBe(phase);
+        /* And the first word is still the phase, which is the half the pill reads. */
+        expect(build.progress_phase.split(' ')[0]).toBe('extracting');
+    });
+
+    /**
+     * `progress_phase` is `varchar(64)`, and the runner trims a long video name from the
+     * left to fit — the end of a Jellyfin name is the distinguishing part. A phase at
+     * exactly the column's width has to survive, because that is the case the trimming
+     * aims at and the one a shorter column would silently cut.
+     */
+    it('keeps a phase that fills the column', async () => {
+        const [column] = await db.sequelize.query(
+            `SELECT character_maximum_length AS width
+               FROM information_schema.columns
+              WHERE table_name = 'gpu_job_attempts' AND column_name = 'progress_phase'`,
+            { type: QueryTypes.SELECT }
+        );
+
+        expect(column.width).toBeGreaterThanOrEqual(64);
+
+        const worker = await seedWorker();
+        const { jobId } = await seedBuild({ name: 'jest-phase-wide', state: 'leased' });
+        const phase = `extracting 6/6 ${'x'.repeat(column.width - 15)}`;
+
+        expect(phase).toHaveLength(column.width);
+
+        await seedAttempt({ jobId, workerId: worker, epoch: 1, done: 1, total: 2, phase });
+
+        const build = (await mine([made.datasets.at(-1)])).get(made.datasets.at(-1));
+
+        expect(build.progress_phase).toHaveLength(column.width);
+        expect(build.progress_phase).toBe(phase);
+    });
+
+    /**
      * A retry opens a second attempt on the same job, and the one worth drawing is the
      * latest. Reporting the first would show a build going backwards — the count from a
      * run that has already failed.
@@ -337,20 +393,34 @@ describe('GET /api/v2/dataset/builds', () => {
     });
 
     /**
-     * P4 — the screen polls while anything is building and stops when nothing is, so a
-     * build that has finished, failed or been cancelled must leave this answer. A route
-     * that kept reporting it would poll for ever.
+     * **A build that succeeded is gone; one that failed is kept, for its reason.**
+     *
+     * The screen draws a failed build as *Needs attention*, and until this answer carried
+     * `failure_reason` the panel under that row could only say something had gone wrong —
+     * *"which isn't telling me ANYTHING about why it needs attention"*. A build that
+     * worked needs nothing from here: its dataset says `ready` and carries its own counts.
+     *
+     * P4 still holds, and this is where the distinction lives: **polling is keyed on the
+     * state, not on the answer being empty.** A failed build stays failed, so a screen
+     * watching for a non-empty answer would poll for ever; it watches for `queued` or
+     * `leased`, and the test below pins that those are the only two that mean *running*.
      */
-    it('leaves out a build that has finished, failed or been cancelled', async () => {
+    it('keeps a failed build for its reason, and drops one that succeeded', async () => {
         const worker = await seedWorker();
-        const terminal = {};
+        const seeded = {};
 
         for (const state of ['succeeded', 'failed', 'cancelled']) {
             const { datasetId, jobId } = await seedBuild({ name: `jest-${state}`, state });
             await seedAttempt({
-                jobId, workerId: worker, epoch: 1, done: 1367, total: 1367, phase: 'packaging',
+                jobId,
+                workerId: worker,
+                epoch: 1,
+                done: 1367,
+                total: 1367,
+                phase: 'packaging',
+                failureReason: state === 'succeeded' ? null : `jest: ${state} on purpose`,
             });
-            terminal[state] = datasetId;
+            seeded[state] = datasetId;
         }
 
         /* And one still running beside them, so an empty answer cannot pass this test by
@@ -360,13 +430,36 @@ describe('GET /api/v2/dataset/builds', () => {
             jobId: runningJob, workerId: worker, epoch: 1, done: 10, total: 1367, phase: 'extracting',
         });
 
-        const found = await mine([...Object.values(terminal), running]);
+        const found = await mine([...Object.values(seeded), running]);
 
-        for (const [state, datasetId] of Object.entries(terminal)) {
-            expect(`${state}: ${found.has(datasetId)}`).toBe(`${state}: false`);
+        expect(`succeeded: ${found.has(seeded.succeeded)}`).toBe('succeeded: false');
+
+        for (const state of ['failed', 'cancelled']) {
+            const build = found.get(seeded[state]);
+
+            expect(`${state}: ${Boolean(build)}`).toBe(`${state}: true`);
+            expect(build.failure_reason).toBe(`jest: ${state} on purpose`);
         }
 
-        expect(found.has(running)).toBe(true);
+        expect(found.get(running).failure_reason).toBeNull();
+    });
+
+    /**
+     * What the screen polls on. Two states mean a build is still going, and a reader
+     * watching a four-hour build depends on the timer stopping when it is over — a failed
+     * build in the answer must not keep it running.
+     */
+    it('marks a finished build with a state that is not queued or leased', async () => {
+        const worker = await seedWorker();
+        const { datasetId, jobId } = await seedBuild({ name: 'jest-not-running', state: 'failed' });
+
+        await seedAttempt({
+            jobId, workerId: worker, epoch: 1, failureReason: 'jest: over',
+        });
+
+        const build = (await mine([datasetId])).get(datasetId);
+
+        expect(['queued', 'leased']).not.toContain(build.state);
     });
 
     /**
@@ -496,6 +589,18 @@ describe('GET /api/v2/dataset/builds', () => {
             const { jobId } = await seedBuild({ name: 'jest-series', state: 'leased' });
             const attemptId = await seedAttempt({ jobId, workerId: worker, epoch: 1 });
 
+            /* Taken before anything is seeded, so the assertion below is about the
+               difference this test made rather than about the whole answer. */
+            const measured = (async () => {
+                const res = await global.api
+                    .get('/api/v2/gpu/throughput/series')
+                    .query({ kind: 'dataset_build', bucket: 'minute' });
+
+                return (res.body.points || []).reduce((sum, p) => sum + Number(p.units_done), 0);
+            })();
+
+            await measured;
+
             /* Written at two chosen minutes rather than through `sampleProgress`, which
                stamps `now`: a test that waited a minute for the second bucket would take a
                minute. The shape is the one `sampleProgress` writes. */
@@ -510,19 +615,124 @@ describe('GET /api/v2/dataset/builds', () => {
                 );
             }
 
-            const res = await global.api
-                .get('/api/v2/gpu/throughput/series')
-                .query({ kind: 'dataset_build', bucket: 'minute' });
+            const total = async () => {
+                const res = await global.api
+                    .get('/api/v2/gpu/throughput/series')
+                    .query({ kind: 'dataset_build', bucket: 'minute' });
 
-            expect(res.status).toBe(200);
+                expect(res.status).toBe(200);
 
-            /* Scoped to the figure this test seeded rather than to the whole answer: a real
-               build on the machine running the suite is an ordinary thing, and an assertion
-               about the total would pass on an idle database and fail on a busy one. The
-               difference is 1456 - 400, which is the work done between the two readings. */
-            const differences = (res.body.points || []).map((p) => Number(p.units_done));
+                return (res.body.points || []).reduce((sum, p) => sum + Number(p.units_done), 0);
+            };
 
-            expect(differences).toContain(1056);
+            const before = await measured;
+            const after = await total();
+
+            /* **The difference this test made, not the figure it produced.** A bucket is
+               shared: the route groups by minute across every attempt of the kind, so an
+               assertion that some bucket equals 1056 passes on an idle database and fails
+               the moment a real build reports in the same minute — which is exactly how it
+               failed inside `npm run test:ml` while passing on its own. 1456 - 400 is the
+               work done between the two readings, and it is what this adds to the answer
+               whatever else is in there. */
+            expect(after - before).toBe(1056);
+        });
+    });
+
+    /**
+     * The Datasets screen's *More samples* opens the Mosaic Reviewer on the query the panel
+     * is describing, by writing that query as an address. The reviewer keeps its question in
+     * the URL and nowhere else, so a link is a first-class way in — but it means a key
+     * renamed on either side lands the reader on a *different question* rather than on an
+     * error, and nothing in a browser would say so.
+     *
+     * These read the two declarations off disk and compare them. No database and no server:
+     * what is under test is an agreement between three files.
+     */
+    describe('the Mosaic Reviewer link keeps the vocabulary it is written in', () => {
+        const fs = require('fs');
+        const path = require('path');
+
+        const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
+
+        /** The keys `mosaicReviewUrl` writes, taken from the arrays it writes them from. */
+        function keysTheLinkWrites() {
+            const source = read('frontend', 'apps', 'ml-dashboard', 'mock.js');
+            const order = /const ORDER = \[([\s\S]*?)\];/.exec(source);
+
+            expect(order).not.toBeNull();
+
+            return order[1].split(',')
+                .map((piece) => piece.trim().replace(/^'|'$/g, ''))
+                .filter(Boolean);
+        }
+
+        /** The dimension keys the reviewer declares, which is what it reads an address with. */
+        function keysTheReviewerReads() {
+            const source = read('frontend', 'apps', 'marp-mosaic-review', 'src', 'model', 'dimensions.js');
+
+            return [...source.matchAll(/^\s*key: '([a-zA-Z]+)'/gm)].map((m) => m[1]);
+        }
+
+        it('writes only dimensions the reviewer declares', () => {
+            const declared = keysTheReviewerReads();
+
+            expect(declared.length).toBeGreaterThan(5);
+
+            /* A key the reviewer does not declare is ignored by `fromQuery`, so the filter
+               silently does not apply and the reader reviews a wider set than the panel
+               they came from was describing. */
+            for (const key of keysTheLinkWrites()) {
+                expect(`${key}: ${declared.includes(key)}`).toBe(`${key}: true`);
+            }
+        });
+
+        /**
+         * Both vocabularies are the same one. The link is built from what the screen already
+         * sends to `POST /mosaic/observations/*`, so the filter keys and the URL keys have to
+         * stay the same words or the translation stops being a copy and becomes a mapping
+         * somebody has to maintain.
+         */
+        it('writes dimensions the mosaic query filters also accept', () => {
+            const contract = JSON.parse(read('docs', 'openapi.generated.json'));
+            const accepted = Object.keys(contract.components.schemas.MosaicQueryFilters.properties);
+
+            /* `timeOfDay` and `date` are the two the screen has no control for yet; they are
+               in the written order so the next person adding one can see where it goes.
+               `date` is a reviewer dimension the filters do not take, and naming it here is
+               what stops that being discovered by a link that quietly drops it. */
+            const notInTheApi = ['date'];
+
+            for (const key of keysTheLinkWrites()) {
+                if (notInTheApi.includes(key)) continue;
+                expect(`${key}: ${accepted.includes(key)}`).toBe(`${key}: true`);
+            }
+        });
+
+        /**
+         * **The link must carry `trainingDisposition=promoted`, and this is why.** Training
+         * mode opens at `undecided`, and `toQuery` writes a mode's own status dimension only
+         * when it differs from that default — so a link that left it out would land on the
+         * observations nobody has judged yet, which is the opposite of what a dataset builder
+         * is looking at. If that default ever becomes `promoted`, the link stops needing to
+         * say it and this test is where that is noticed.
+         */
+        it('cannot rely on the reviewer defaulting to promoted', () => {
+            const modes = read('frontend', 'apps', 'marp-mosaic-review', 'src', 'model', 'modes.js');
+            const training = /training: \{[\s\S]*?\n  \}/.exec(modes);
+
+            expect(training).not.toBeNull();
+            expect(training[0]).toContain("statusKey: 'trainingDisposition'");
+
+            const defaults = /defaultStatus: \[([^\]]*)\]/.exec(training[0]);
+
+            expect(defaults).not.toBeNull();
+            expect(defaults[1]).not.toContain('promoted');
+
+            /* And the link does say it. */
+            const source = read('frontend', 'apps', 'ml-dashboard', 'mock.js');
+
+            expect(source).toContain('trainingDisposition=${filters.trainingDisposition.map(enc).join(\',\')}');
         });
     });
 

@@ -5043,6 +5043,58 @@ const DATASET_POLL_MS = 5000;
 const BUILD_PHASES = { selecting: 'Selecting', extracting: 'Extracting', packaging: 'Packaging' };
 
 /**
+ * The phase, and whatever the runner said after it.
+ *
+ * `progress_phase` was a bare word and now carries what the build is working on --
+ * `extracting 2/6 …0727_163021_Fwd`, which video of how many, trimmed from the left to
+ * fit the column because the end of a Jellyfin name is the distinguishing part. Isaac
+ * asked for it on 2026-10-21: he could not tell a build that was working from one that
+ * was wedged.
+ *
+ * **Split rather than printed whole.** The pill on the table row has room for one word,
+ * and a reader scanning the table wants the phase; the video belongs in the expanded
+ * detail where there is a line for it. Reading the first word also means this keeps
+ * working against a build that is still reporting the bare phase, which is what an API
+ * that has not been restarted yet is doing.
+ *
+ * @param {?Object} build - The in-flight build.
+ * @returns {{phase: string, detail: string}} The phase, titled, and the rest.
+ */
+function phaseOf(build) {
+  const raw = (build && build.progress_phase) || '';
+  const at = raw.indexOf(' ');
+  const word = at === -1 ? raw : raw.slice(0, at);
+
+  return {
+    phase: BUILD_PHASES[word] || word,
+    detail: at === -1 ? '' : raw.slice(at + 1).trim(),
+  };
+}
+
+/**
+ * How long since the build last said anything, which is what tells working from wedged.
+ *
+ * **Not how long since the screen last asked.** A poll that succeeds against a build
+ * that has stopped reporting would still look alive, and the question is whether the
+ * build is moving, not whether the browser is. Counted from `last_heartbeat_at`, which
+ * the runner writes on every report.
+ *
+ * @param {?Object} build - The in-flight build.
+ * @returns {string} A short phrase, or '' when nothing has reported yet.
+ */
+function buildReported(build) {
+  if (!build || !build.last_heartbeat_at) return '';
+
+  const seconds = Math.max(0, Math.round((Date.now() - Date.parse(build.last_heartbeat_at)) / 1000));
+
+  if (seconds < 90) return `${seconds}s ago`;
+
+  const minutes = Math.floor(seconds / 60);
+
+  return minutes < 60 ? `${minutes}m ago` : `${Math.floor(minutes / 60)}h ago`;
+}
+
+/**
  * A `datasets.status` as this screen's own vocabulary, given the job building it.
  *
  * Two columns answer different halves of one question and neither answers it alone.
@@ -5060,7 +5112,12 @@ const BUILD_PHASES = { selecting: 'Selecting', extracting: 'Extracting', packagi
  * @returns {string} One of `building`, `queued`, `attention`, `ready`, `draft`.
  */
 function datasetScreenStatus(set, build) {
-  if (build) return build.state === 'queued' ? 'queued' : 'building';
+  /* **Only a build that is still going says what this row is.** The answer carries failed
+     and cancelled builds too, for their reason -- and reading any build as *building* made
+     a dead one draw a running row: an *Extracting* pill on a build that stopped an hour ago,
+     with no alert under it, because the row never reached the failed branch at all. */
+  if (build && build.state === 'queued') return 'queued';
+  if (build && build.state === 'leased') return 'building';
   if (set.status === 'failed') return 'attention';
   if (set.status === 'building') return 'building';
   if (set.status === 'draft') return 'draft';
@@ -5207,9 +5264,11 @@ function renderDatasetsSummary(datasets, builds) {
   /* What the builds in flight are actually doing, so the card says more than a number.
      Counted rather than listed: three builds extracting is one phrase, three names is a
      card trying to be the table underneath it. */
+  /* The phase alone. `progress_phase` carries which video after it, and a summary card
+     is not where a Jellyfin filename goes -- it read "extracting 2/6 …0727_163021_fwd". */
   const phases = [...builds.values()]
-    .filter((build) => build.state !== 'queued' && build.progress_phase)
-    .map((build) => BUILD_PHASES[build.progress_phase] || build.progress_phase);
+    .filter((build) => build.state === 'leased' && build.progress_phase)
+    .map((build) => phaseOf(build).phase);
   const phrase = phases.length
     ? [...new Set(phases)].map((p) => p.toLowerCase()).join(' · ')
     : 'nothing building';
@@ -5273,7 +5332,10 @@ function renderDatasetsSummary(datasets, builds) {
 function patchBuildRows(body, builds) {
   for (const head of $$(':scope > tr[data-dataset-id]', body)) {
     const build = builds.get(Number(head.dataset.datasetId));
-    if (!build) continue;
+    /* A failed build is in this answer for its reason, which the detail drew once and
+       which cannot change. Patching its row would overwrite the dashes it ends on with
+       the last figures it reached, which reads as a build still going. */
+    if (!build || (build.state !== 'queued' && build.state !== 'leased')) continue;
 
     const frames = buildFramesCell(build);
     const cell = $('[data-frames]', head);
@@ -5299,15 +5361,58 @@ function patchBuildRows(body, builds) {
     }
     const written = $('.build-frames', detail);
     if (written) written.innerHTML = `${frames.html} frames`;
-    const elapsed = $('[data-build-elapsed]', detail);
-    if (elapsed) elapsed.textContent = buildElapsed(build) || NOT_STARTED_TEXT;
+
+    /* The same count the cell above shows, from the same answer, so the two cannot
+       disagree -- which they did, because this one used to be written once. */
+    const framesFact = $('[data-build-frames]', detail);
+    if (framesFact) framesFact.innerHTML = frames.html;
+
+    const phase = phaseOf(build);
+    const phaseFact = $('[data-build-phase]', detail);
+    if (phaseFact) phaseFact.textContent = phase.phase || NOT_STARTED_TEXT;
+
+    /* The video row is created only when there was one to name, so a build that starts
+       reporting it mid-way needs the row to arrive rather than be filled. A redraw is
+       what brings it, and the phase changing is what triggers one. */
+    const videoFact = $('[data-build-video]', detail);
+    if (videoFact) {
+      videoFact.textContent = phase.detail;
+      videoFact.closest('.jobmetric').hidden = !phase.detail;
+    }
+
+    tickBuildClocks(detail, build);
   }
+}
+
+/**
+ * The two figures that move on their own, between polls.
+ *
+ * **Both are read off instants the API already sent**, so this is a clock rather than an
+ * animation: elapsed counts from the attempt's `leased_at` and *Reported* from its
+ * `last_heartbeat_at`. Nothing here invents progress -- the frame count only ever moves
+ * when a poll brings a new one -- but a reader watching a four-hour build needs something
+ * that says the page is still alive, and *Reported* climbing past a minute is also how
+ * they see that the build is not.
+ *
+ * @param {Element} detail - The expanded row.
+ * @param {?Object} build - Its in-flight build.
+ */
+function tickBuildClocks(detail, build) {
+  const elapsed = $('[data-build-elapsed]', detail);
+  if (elapsed) elapsed.textContent = buildElapsed(build) || NOT_STARTED_TEXT;
+
+  const reported = $('[data-build-reported]', detail);
+  if (reported) reported.textContent = buildReported(build) || NOT_STARTED_TEXT;
 }
 
 /** What a build row's pill says: the phase while it runs, the state otherwise. */
 function datasetBuildLabel(status, build) {
-  if (build && build.state !== 'queued' && build.progress_phase) {
-    return BUILD_PHASES[build.progress_phase] || build.progress_phase;
+  /* `leased`, not "anything but queued". A failed build keeps the phase it died in, and
+     a pill reading *Extracting* on it says it is still going. */
+  if (build && build.state === 'leased' && build.progress_phase) {
+    /* The phase alone. `progress_phase` carries the video after it now, and a pill in a
+       table cell is not where a Jellyfin filename goes. */
+    return phaseOf(build).phase;
   }
   return { building: 'Building', queued: 'Queued', attention: 'Needs attention', ready: 'Ready', draft: 'Draft' }[status] || 'Ready';
 }
@@ -5361,7 +5466,12 @@ async function wireDatasetPage() {
          `description`, `location`, `num_samples`, `num_classes`, `source` and
          the timestamps; everything else on this panel is gap 16. */
       const cfg = fixtures[name] || {
-        task: 'Unassigned',
+        /* **Not "Unassigned", which claimed somebody had failed to assign one.** The
+           column means the training task -- detection, classification, segmentation --
+           and `Dataset` has no column for it, so for every row that came from MARP it is
+           simply not recorded. Isaac on seeing it: it makes no sense on a dataset build.
+           It takes the same dash as every other field this screen cannot answer. */
+        task: null,
         fromApi: true,
         format: NOT_IN_DATASET,
         project: NOT_IN_DATASET,
@@ -5379,12 +5489,16 @@ async function wireDatasetPage() {
       const classes = original[4]?.textContent.trim() || '';
       const isBuild = status === 'building' || status === 'queued' || status === 'attention';
       head.classList.add('runrow-head');
-      head.dataset.datasetTask = cfg.task.toLowerCase();
-      head.dataset.search = `${name} ${description} ${cfg.task} ${cfg.project} ${status} ${build ? build.job_id : ''}`.toLowerCase();
+      head.dataset.datasetTask = cfg.task ? cfg.task.toLowerCase() : '';
+      head.dataset.search = `${name} ${description} ${cfg.task || ''} ${cfg.project} ${status} ${build ? build.job_id : ''}`.toLowerCase();
       const task = document.createElement('td');
       task.className = 'jtype';
-      task.dataset.sort = cfg.task;
-      task.innerHTML = `<span class="task-pill" data-task="${cfg.task.toLowerCase()}">${cfg.task}</span>`;
+      task.dataset.sort = cfg.task || '';
+      /* No pill when there is no task. A pill is a value; a dash is the absence of one,
+         and drawing an empty pill would be a third thing meaning neither. */
+      task.innerHTML = cfg.task
+        ? `<span class="task-pill" data-task="${cfg.task.toLowerCase()}">${cfg.task}</span>`
+        : NOT_IN_DATASET;
       original[1].after(task);
       const state = document.createElement('td');
       state.className = 'jstatus';
@@ -5421,7 +5535,7 @@ async function wireDatasetPage() {
           ? `<span class="dash">${status === 'queued' ? 'Not started' : 'No count yet'}</span>`
           : `<span class="prog" data-state="${stateTone}"><span class="bar" role="progressbar" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span><span class="pct">${pct}%</span></span>`;
 
-        const fact = (label, value) => `<div class="jobmetric"><span>${label}</span><b>${value}</b></div>`;
+        const fact = (label, value, omit, hide) => (omit ? '' : `<div class="jobmetric"${hide ? ' hidden' : ''}><span>${label}</span><b>${value}</b></div>`);
         /* **Why it failed, from the attempt that failed.** This drew the dataset's own
            description under an alert icon and then claimed "Materialized frames are
            kept; only the unread remainder needs to run again" -- which says nothing
@@ -5447,10 +5561,26 @@ async function wireDatasetPage() {
            and a dataset build has no worker to name because the API runs it rather than
            the pool. What an attempt does carry is the phase, the count, when it started
            and which try this is. */
+        /* **Every fact that moves carries a hook, and that is the whole lesson here.**
+           `Frames` was the FRAMES cell's text captured when the row was drawn and never
+           touched again, so a row opened during *selecting* went on saying `0 / 10,361`
+           while the cell four lines above it climbed -- two numbers for one thing, which
+           Isaac read as neither being trustworthy. A fact that can change is patched. */
+        const phase = phaseOf(build);
+        const reported = buildReported(build);
+
         const metrics = [
-          fact('Phase', build && build.progress_phase ? (BUILD_PHASES[build.progress_phase] || build.progress_phase) : NOT_STARTED_TEXT),
-          fact('Frames', frames),
+          fact('Phase', `<span data-build-phase>${build ? (phase.phase || NOT_STARTED_TEXT) : NOT_STARTED_TEXT}</span>`),
+          fact('Frames', `<span data-build-frames>${frames}</span>`),
+          /* Where the build has got to in the list of videos. **Always built, hidden when
+             there is nothing to name**, because the runner starts reporting it part-way
+             through and a row that has to be created later cannot be: the detail is drawn
+             once and patched thereafter. Hidden rather than dashed -- an empty *Video*
+             reads as a video it could not name. */
+          fact('Video', `<span data-build-video>${escapeHtml(phase.detail)}</span>`, false,
+            !phase.detail),
           fact('Elapsed', `<span data-build-elapsed>${buildElapsed(build) || NOT_STARTED_TEXT}</span>`),
+          fact('Reported', `<span data-build-reported>${reported || NOT_STARTED_TEXT}</span>`, !build),
           fact('Attempt', build ? `${build.attempts_made} of ${build.max_attempts}` : NOT_STARTED_TEXT),
           fact('Build job', build ? `#${build.job_id}` : NOT_IN_DATASET),
         ].join('');
@@ -5481,7 +5611,7 @@ async function wireDatasetPage() {
       detail.className = 'runrow-body dataset-row-detail';
       detail.hidden = true;
       const readyActions = `<button class="btn sm" type="button" title="Use these immutable queries and split as a new starting point"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup</button><button class="btn sm" type="button" title="Open Training with this dataset selected"><svg class="ico"><use href="#i-training"/></svg>Use for training</button><button class="btn sm" type="button" title="Download the built images, labels and manifest"><svg class="ico"><use href="#i-download"/></svg>Download archive</button>`;
-      detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}"><header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header><div class="dataset-detail-grid"><section><h4>Build record</h4><dl class="kv"><dt>Task / format</dt><dd>${cfg.task} &middot; ${cfg.format}</dd><dt>Source</dt><dd>${cfg.project} &middot; promoted observations only</dd><dt>Membership</dt><dd>${cfg.queries} &middot; deduplicated</dd><dt>Build result</dt><dd>${cfg.build} &middot; completed cleanly</dd><dt>Fingerprint</dt><dd class="mono">${cfg.fingerprint}</dd></dl></section><section><h4>Composition and split</h4><div class="dataset-facts"><span><b>${observations}</b> observations</span><span><b>${frames}</b> frames</span><span><b>${classes}</b> classes</span><span><b>${cfg.size}</b> archive</span></div><div class="splitbar" role="img" aria-label="${cfg.split} train validation test split"><i class="tr" style="width:70%"><span>70%</span></i><i class="va" style="width:20%"><span>20%</span></i><i class="te" style="width:10%"><span>10%</span></i></div><p class="dataset-class-summary">${cfg.classes}</p><span class="hint">${cfg.groups}; connected frames stay in one split.</span></section><section class="dataset-samples"><h4>Sample images <span>design preview</span></h4><div class="thumbs">${thumbs}</div></section></div><footer>${readyActions}</footer></div></td>`;
+      detail.innerHTML = `<td colspan="11"><div class="dataset-detail" data-status="${status}"><header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header><div class="dataset-detail-grid"><section><h4>Build record</h4><dl class="kv"><dt>Task / format</dt><dd>${cfg.task || NOT_IN_DATASET} &middot; ${cfg.format}</dd><dt>Source</dt><dd>${cfg.project} &middot; promoted observations only</dd><dt>Membership</dt><dd>${cfg.queries} &middot; deduplicated</dd><dt>Build result</dt><dd>${cfg.build} &middot; completed cleanly</dd><dt>Fingerprint</dt><dd class="mono">${cfg.fingerprint}</dd></dl></section><section><h4>Composition and split</h4><div class="dataset-facts"><span><b>${observations}</b> observations</span><span><b>${frames}</b> frames</span><span><b>${classes}</b> classes</span><span><b>${cfg.size}</b> archive</span></div><div class="splitbar" role="img" aria-label="${cfg.split} train validation test split"><i class="tr" style="width:70%"><span>70%</span></i><i class="va" style="width:20%"><span>20%</span></i><i class="te" style="width:10%"><span>10%</span></i></div><p class="dataset-class-summary">${cfg.classes}</p><span class="hint">${cfg.groups}; connected frames stay in one split.</span></section><section class="dataset-samples"><h4>Sample images <span>design preview</span></h4><div class="thumbs">${thumbs}</div></section></div><footer>${readyActions}</footer></div></td>`;
       head.after(detail);
       const open = $('[aria-label="Open"]', head);
       if (open) {
@@ -5576,7 +5706,17 @@ async function wireDatasetPage() {
 
     renderDatasetsSummary(datasets, builds);
 
-    return builds.size > 0;
+    watching = builds;
+
+    /* **In flight, not merely present.** The answer carries failed builds too now, so
+       that the alert on a *Needs attention* row can say why -- and a failed build stays
+       failed, so polling on `builds.size` would poll for ever. */
+    const building = [...builds.values()]
+      .some((build) => build.state === 'queued' || build.state === 'leased');
+
+    if (building) startClock();
+
+    return building;
   };
 
   let timer = null;
@@ -5589,18 +5729,66 @@ async function wireDatasetPage() {
    * is building*. `setTimeout` rather than `setInterval` so a slow answer cannot stack a
    * queue of requests behind itself.
    */
+  /** What the last poll said, so the clocks between polls have instants to count from. */
+  let watching = new Map();
+
+  /**
+   * A second-by-second clock, running only while something is building.
+   *
+   * **It moves two figures and no others.** Elapsed and *Reported* are both durations
+   * since an instant the API already sent, so counting them locally is reading a clock,
+   * not guessing at progress: the frame count still moves only when a poll brings a new
+   * one. Isaac asked for a screen that looks alive while a four-hour build runs, and the
+   * honest version of that is a figure that is genuinely changing every second -- with the
+   * side effect that a build which has stopped reporting shows it, because *Reported*
+   * keeps climbing.
+   */
+  let clock = null;
+  const stopClock = () => { if (clock) { clearInterval(clock); clock = null; } };
+  const startClock = () => {
+    if (clock) return;
+    clock = setInterval(() => {
+      for (const head of $$(':scope > tr[data-dataset-id]', body)) {
+        const build = watching.get(Number(head.dataset.datasetId));
+        const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
+          ? head.nextElementSibling : null;
+        /* Only what is on screen. A collapsed row's clocks are redrawn when it opens. */
+        if (build && detail && !detail.hidden) tickBuildClocks(detail, build);
+      }
+    }, 1000);
+  };
+
   const poll = async () => {
     timer = null;
     const busy = await refresh(false);
     if (busy) timer = setTimeout(poll, DATASET_POLL_MS);
+    else stopClock();
   };
 
-  if (await refresh(true)) timer = setTimeout(poll, DATASET_POLL_MS);
+  if (await refresh(true)) {
+    timer = setTimeout(poll, DATASET_POLL_MS);
+    startClock();
+  }
 
   /* A queued build is in flight from the instant the button answers, so the screen starts
      watching without waiting for the next whole poll interval. */
   document.addEventListener('marp:dataset-build-queued', () => {
     if (!timer) timer = setTimeout(poll, 0);
+  });
+
+  /* A row opened between polls gets its clocks filled straight away rather than waiting
+     up to a second for the next tick -- an expander that shows a dash and then a figure
+     looks like it failed and recovered. */
+  body.addEventListener('click', (event) => {
+    if (!event.target.closest('.exbtn')) return;
+    window.setTimeout(() => {
+      for (const head of $$(':scope > tr[data-dataset-id]', body)) {
+        const build = watching.get(Number(head.dataset.datasetId));
+        const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
+          ? head.nextElementSibling : null;
+        if (build && detail && !detail.hidden) tickBuildClocks(detail, build);
+      }
+    }, 0);
   });
 
   search.addEventListener('input', filter);
@@ -6084,6 +6272,80 @@ function applyTips() {
  * deterministic fixture, but the interaction is real: queries can be rerun,
  * added more than once when their filters differ, removed, and deduplicated.
  */
+/**
+ * Where the Mosaic Reviewer lives, and the question this screen is asking, as an address.
+ *
+ * **The reviewer keeps its question in the URL and nowhere else** -- decided 2026-09-06,
+ * because two stores that can disagree about where a reviewer was is a bug waiting to be
+ * written. That makes a link a first-class way in rather than a trick, which is why
+ * *More samples* opens the reviewer on this query instead of this screen growing a second
+ * sample viewer.
+ *
+ * The format is `marp-mosaic-review/src/model/query-url.js` and the keys are the same
+ * vocabulary `mosaicFilters` already sends to `POST /mosaic/observations/*`, so the
+ * translation is almost a copy. Three things about it are not obvious and each one would
+ * land the reader on the wrong question:
+ *
+ * - **`trainingDisposition=promoted` has to be written.** Training mode opens at
+ *   `undecided` -- `modes.js`, `defaultStatus` -- so a link that leaves it out lands on
+ *   the observations nobody has judged yet, which is the opposite of what a dataset
+ *   builder is looking at. `toQuery` writes a mode's own status dimension only when it
+ *   differs from that default, and `promoted` does.
+ * - **A set is comma-joined and percent-encoded per value**, so a species whose common
+ *   name contains a comma still reads back as one value. `encodeURIComponent` escapes the
+ *   colon as well, which the reviewer undoes because a time reads better as `22:00`; no
+ *   value here carries one, and leaving it encoded would still parse.
+ * - **A range is `from..to`**, and either end may be empty. A value outside a dimension's
+ *   declared bounds makes the reviewer discard the whole range rather than clamp it, so
+ *   confidence is written only as the two numbers the controls hold, which are 0 to 1.
+ *
+ * The parameter order follows `toQuery`'s own -- mode, then the declared dimensions, then
+ * the status ones -- so an address built here is the same string the reviewer would write
+ * for the same question, rather than a permutation of it that merely parses the same.
+ *
+ * @param {Object} filters - From `mosaicFilters()`.
+ * @returns {string} An address, ready for `href`.
+ */
+function mosaicReviewUrl(filters) {
+  /* The reviewer's own encoder: a colon is legal in a query value and reads better
+     unescaped, and commas stay escaped so splitting a set on them is unambiguous. */
+  const enc = (v) => encodeURIComponent(String(v)).replace(/%3A/g, ':');
+  const parts = ['mode=training'];
+
+  /* `query-url.js`'s declaration order, so the address matches what the reviewer writes.
+     `sessionType`, `session`, `timeOfDay` and `date` are in that list and this screen has
+     no control for them; they are named here so the next person adding one can see where
+     it goes rather than appending it to the end. */
+  const SETS = ['project', 'dive', 'line', 'sessionType', 'session', 'species', 'model'];
+  const ORDER = ['project', 'dive', 'line', 'sessionType', 'session', 'species',
+    'confidence', 'timeOfDay', 'date', 'model'];
+
+  for (const key of ORDER) {
+    const value = filters[key];
+    if (value == null) continue;
+
+    if (SETS.includes(key)) {
+      if (!Array.isArray(value) || !value.length) continue;
+      parts.push(`${key}=${value.map(enc).join(',')}`);
+      continue;
+    }
+
+    /* A range. Both ends may be absent, and a range narrowing neither end is not a
+       filter -- writing `..` would be read back as nothing anyway, so it is left out. */
+    const from = value.from == null ? '' : enc(value.from);
+    const to = value.to == null ? '' : enc(value.to);
+    if (from === '' && to === '') continue;
+    parts.push(`${key}=${from}..${to}`);
+  }
+
+  /* Last, the way `toQuery` writes the mode's status dimensions after the declared ones. */
+  if (Array.isArray(filters.trainingDisposition) && filters.trainingDisposition.length) {
+    parts.push(`trainingDisposition=${filters.trainingDisposition.map(enc).join(',')}`);
+  }
+
+  return `/apps/marp-mosaic-review/?${parts.join('&')}`;
+}
+
 function wireDatasetBuilder() {
   const list = $('[data-subset-list]');
   const totalEl = $('[data-dataset-total]');
@@ -6193,15 +6455,45 @@ function wireDatasetBuilder() {
    * @param {Object[]} species - The facet's entries, `{label, count}`.
    * @param {number} total - The headline match count.
    */
-  const drawQueryComposition = (container, species, total) => {
+  /** Whether the step 2 breakdown is showing every class or the largest five. */
+  let compositionExpanded = false;
+
+  /**
+   * Show or hide the *All classes* control, and say which way it is pointing.
+   *
+   * **Hidden when it would do nothing.** A question matching five classes or fewer has
+   * nothing to expand, and a control that is always there and sometimes inert is how this
+   * screen ended up with two dead buttons in the first place.
+   *
+   * @param {number} hidden - How many classes the breakdown is not showing.
+   */
+  const updateCompositionToggle = (hidden) => {
+    const button = $('[data-composition-toggle]');
+    if (!button) return;
+
+    button.hidden = hidden <= 0 && !compositionExpanded;
+    button.setAttribute('aria-expanded', String(compositionExpanded));
+    button.firstChild.textContent = compositionExpanded ? 'Top five ' : 'All classes ';
+    button.title = compositionExpanded
+      ? 'Show the largest five classes instead of every one'
+      : 'Show every class in the result instead of the largest five';
+  };
+
+  const drawQueryComposition = (container, species, total, expandable) => {
     if (!container) return;
 
     const sorted = [...species].sort((a, b) => b.count - a.count);
-    const top = sorted.slice(0, 5);
-    const rest = sorted.slice(5);
+    /* Expanded means every class, with no Other row to fold the rest into. The remainder
+       below is then whatever the facet does not account for at all -- an observation with
+       no species -- which is a real row and not a fold. */
+    const expanded = Boolean(expandable) && compositionExpanded;
+    const top = expanded ? sorted : sorted.slice(0, 5);
+    const rest = expanded ? [] : sorted.slice(5);
     const counted = top.reduce((sum, s) => sum + s.count, 0);
     const remainder = Math.max(0, total - counted);
     const rows = top.map((s) => ({ label: s.label || 'Unnamed species', count: s.count }));
+
+    if (expandable) updateCompositionToggle(sorted.length - top.length);
 
     /* Only when there is something left over. "Other (0 classes)" is noise, and a
        question that matched nothing should draw an empty panel rather than one row
@@ -6278,7 +6570,7 @@ function wireDatasetBuilder() {
 
     if (note) {
       note.textContent = usable.length
-        ? `${usable.length} of ${total.toLocaleString('en-US')} matches. Duplicates are ignored when adding.`
+        ? `${usable.length} of ${total.toLocaleString('en-US')} matches. The build cuts the full frame behind each one. Duplicates are ignored when adding.`
         : 'Duplicates are ignored when adding.';
     }
   };
@@ -6365,7 +6657,7 @@ function wireDatasetBuilder() {
           + 'interpolated between them, which are trained on as well');
       }
 
-      drawQueryComposition($('[data-query-composition]'), species, observations);
+      drawQueryComposition($('[data-query-composition]'), species, observations, true);
       drawSamples(pageSet.pages?.[0]?.rows || [], observations);
 
       setStatus(observations
@@ -6697,6 +6989,19 @@ function wireDatasetBuilder() {
     refreshSpeciesLabel();
   });
 
+  /**
+   * Point *More samples* at the Mosaic Reviewer, on whatever the filters currently say.
+   *
+   * **Kept current as the controls move, not computed on click.** It is a real link, so a
+   * reader may middle-click it, copy its address or open it in a new tab without ever
+   * firing a click handler -- and all three have to arrive at the same question the panel
+   * beside them is describing.
+   */
+  const refreshMosaicLink = () => {
+    const link = $('[data-mosaic-link]');
+    if (link) link.href = mosaicReviewUrl(mosaicFilters());
+  };
+
   /* The reachable species depend on the rest of the question, so narrowing the project
      or the dive narrows what is on offer. Without this the picker keeps showing species
      that the dive you just chose has ruled out, and ticking one returns nothing. */
@@ -6707,6 +7012,36 @@ function wireDatasetBuilder() {
       fillSpeciesPicker(rest);
     });
   }
+
+  /* Every control that is part of the question. `filterIds` is the list the snapshot
+     already keeps, so a filter added later is caught here by having been added there --
+     one list rather than two that drift. The species menu is checkboxes rather than a
+     field, so it is listened to where it lives. */
+  for (const id of filterIds) {
+    const el = $('#' + id);
+    if (!el) continue;
+    el.addEventListener('change', refreshMosaicLink);
+    if (el.tagName === 'INPUT') el.addEventListener('input', refreshMosaicLink);
+  }
+  $('[data-species-menu]')?.addEventListener('change', refreshMosaicLink);
+  refreshMosaicLink();
+
+  /**
+   * *All classes* expands the breakdown in place rather than opening anything.
+   *
+   * Isaac, 2026-10-21: *"I'm not sure all classes is even needed as a link."* It is not a
+   * link -- there is nowhere for it to go that the panel underneath is not already
+   * showing -- but the breakdown folds everything past the fifth class into one Other row,
+   * and a reader deciding what a dataset is made of sometimes wants the tail. So it
+   * expands, and it is hidden entirely when there is no tail to show.
+   */
+  $('[data-composition-toggle]')?.addEventListener('click', () => {
+    compositionExpanded = !compositionExpanded;
+    /* `speciesCounts`, not `species` -- the latter is how *many* species matched, and
+       passing a number where the rows are expected drew an empty breakdown. */
+    drawQueryComposition($('[data-query-composition]'), currentResult?.speciesCounts || [],
+      currentResult?.observations || 0, true);
+  });
 
   const destinationButtons = $$('[data-dataset-destination]');
   destinationButtons.forEach((button) => button.addEventListener('click', () => {

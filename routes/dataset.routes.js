@@ -353,7 +353,10 @@ function registerDatasetRoutes(app) {
             + 'records is `status`, plus `num_samples` once the build finishes. the `Dataset` schema is generated from the Sequelize '
             + 'model, so a `build` object on the row could not be described without a hand-maintained parallel schema. And this is '
             + 'the route a screen polls: `GET /api/dataset` is unpaged and grows without bound, while this answers only about work '
-            + 'in flight and answers `[]` the moment there is none -- which is the answer that stops the polling. '
+            + 'in flight rather than every dataset. '
+            + '**A build that failed is carried too, with its `failure_reason`**, because the Datasets screen draws one as '
+            + '*Needs attention* and could otherwise only say that something had gone wrong. A screen therefore watches for '
+            + 'a row whose state is `queued` or `leased` rather than for a non-empty answer: a failed build stays failed. '
             + '**`queued` is returned as well as `leased`**, without an attempt and so without progress: `datasets.status` is '
             + '`building` from the instant a build is queued, so the dataset alone cannot distinguish waiting from started. '
             + 'At most one row per dataset, newest job first.',
@@ -372,8 +375,9 @@ function registerDatasetRoutes(app) {
                                     job_id: { type: 'integer', description: 'The `dataset_build` job, on the Jobs screen like any other.' },
                                     state: {
                                         type: 'string',
-                                        enum: ['queued', 'leased'],
-                                        description: '`queued` is waiting to start and has no attempt; `leased` is running.',
+                                        enum: ['queued', 'leased', 'failed', 'cancelled'],
+                                        description: '`queued` is waiting to start and has no attempt; `leased` is running; '
+                                            + '`failed` and `cancelled` are over, and are here for their reason.',
                                     },
                                     attempts_made: { type: 'integer' },
                                     max_attempts: { type: 'integer' },
@@ -398,6 +402,12 @@ function registerDatasetRoutes(app) {
                                     },
                                     started_at: { type: 'string', format: 'date-time', nullable: true },
                                     last_heartbeat_at: { type: 'string', format: 'date-time', nullable: true },
+                                    failure_reason: {
+                                        type: 'string',
+                                        nullable: true,
+                                        description: 'Why the build stopped, as the runner recorded it. Null while it is still going.',
+                                        example: 'train/images/20240727_163021_Fwd_00029982.jpg: unable to open for write',
+                                    },
                                 },
                             },
                         },
