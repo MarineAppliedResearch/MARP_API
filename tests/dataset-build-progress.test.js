@@ -143,6 +143,40 @@ describe('GET /api/v2/dataset/builds', () => {
     }
 
     afterAll(async () => {
+        /* **Anything the route queued, not only what was seeded.** The refusal tests below
+           post a real build and expect a 400, so on the happy path nothing is created --
+           but the moment that validation regresses the request succeeds, and a failing test
+           would leave a `gpu_jobs` row and a dataset saying `building` for ever. That is
+           exactly the run where cleanup matters, and it is the run where it was missing:
+           one `jest-image-...` dataset survived a red run before this was here. Matched on
+           the stamp, so it can only ever reach this file's own rows. */
+        const queued = await db.sequelize.query(
+            `SELECT id, (spec->>'dataset_id')::int AS dataset_id
+               FROM gpu_jobs
+              WHERE kind = 'dataset_build' AND name LIKE :like`,
+            { replacements: { like: `Build jest-image-${stamp}-%` }, type: QueryTypes.SELECT }
+        );
+
+        for (const job of queued) {
+            if (job.dataset_id) made.datasets.push(job.dataset_id);
+            made.jobs.push(job.id);
+        }
+
+        /* A build the route queued may have been claimed and given an attempt before the
+           suite finished, and an attempt holds a foreign key to its job. */
+        for (const id of made.jobs) {
+            await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE job_id = :id',
+                { replacements: { id } });
+        }
+
+        /* Likewise its membership and vocabulary, if it got as far as recording them. */
+        for (const id of made.datasets) {
+            await db.sequelize.query('DELETE FROM dataset_observations WHERE dataset_id = :id',
+                { replacements: { id } });
+            await db.sequelize.query('DELETE FROM dataset_classes WHERE dataset_id = :id',
+                { replacements: { id } });
+        }
+
         for (const id of made.attempts) {
             await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE id = :id', { replacements: { id } });
         }
