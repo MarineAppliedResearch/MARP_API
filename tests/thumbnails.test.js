@@ -2170,7 +2170,12 @@ describe('observation thumbnails (#118)', () => {
                       sweep_attempts, swept_at, thumbnail_evicted_at, filename,
                       last_error, requested_at, completed_at, created_at, updated_at)
                  VALUES (:observationId, :status, :permanent, 1, 0,
-                         :sweepAttempts, :sweptAt, :evictedAt, :filename,
+                         :sweepAttempts,
+                         CASE WHEN CAST(:sweptMinutesAgo AS int) IS NULL
+                              THEN CAST(:sweptAt AS timestamptz)
+                              ELSE NOW() - make_interval(mins => CAST(:sweptMinutesAgo AS int))
+                         END,
+                         :evictedAt, :filename,
                          :lastError, NOW(), NOW(), NOW(), NOW())
                  RETURNING observation_id`,
                 {
@@ -2179,6 +2184,18 @@ describe('observation thumbnails (#118)', () => {
                     permanent: state.permanent === undefined ? false : state.permanent,
                     sweepAttempts: state.sweepAttempts === undefined ? 0 : state.sweepAttempts,
                     sweptAt: state.sweptAt === undefined ? null : state.sweptAt,
+                    // **A relative `swept_at` is written by the database, never by
+                    // JavaScript.** The backoff compares `swept_at` against SQL
+                    // `NOW()`, so a timestamp built from `Date.now()` is one clock
+                    // being measured against another -- and in CI those are two
+                    // containers. A test that set `swept_at` to exactly the
+                    // backoff ago passed here and failed there on a few
+                    // milliseconds of skew, which is a coin flip rather than a
+                    // test. Fixed instants (the 2020 dates below) are safe because
+                    // no plausible skew spans years; anything relative comes
+                    // through here.
+                    sweptMinutesAgo: state.sweptMinutesAgo === undefined
+                        ? null : state.sweptMinutesAgo,
                     evictedAt: state.evictedAt === undefined ? null : state.evictedAt,
                     filename: state.filename === undefined ? null : state.filename,
                     lastError: state.lastError === undefined ? 'Connection refused' : state.lastError,
@@ -2348,10 +2365,11 @@ describe('observation thumbnails (#118)', () => {
 
             it('waits out the backoff before offering the same row again (R4)', async () => {
                 await inRollback(async (transaction, write) => {
-                    // Swept a minute ago, one attempt in: the first wait is an hour.
+                    // One attempt in, so the wait is twice the base. Swept one
+                    // minute ago, which is nowhere near it.
                     const id = await onlyCandidate(write, {
                         sweepAttempts: 1,
-                        sweptAt: new Date(Date.now() - 60 * 1000),
+                        sweptMinutesAgo: 1,
                     });
 
                     expect(await thumbnailRepository.sweepRetryable(50, transaction))
@@ -2361,11 +2379,13 @@ describe('observation thumbnails (#118)', () => {
 
             it('offers a row again once its backoff has elapsed (R4)', async () => {
                 await inRollback(async (transaction, write) => {
-                    // One attempt in, so the wait is SWEEP_BACKOFF_BASE_MINUTES.
-                    // Swept twice that long ago, so it is due.
+                    // One attempt in, so the wait is twice the base. Swept three
+                    // times the base ago, which clears it by a whole base period
+                    // rather than by a hair -- the margin is the point, see
+                    // `sweptMinutesAgo`.
                     const id = await onlyCandidate(write, {
                         sweepAttempts: 1,
-                        sweptAt: new Date(Date.now() - 2 * SWEEP_BACKOFF_BASE_MINUTES * 60 * 1000),
+                        sweptMinutesAgo: 3 * SWEEP_BACKOFF_BASE_MINUTES,
                     });
 
                     expect(await thumbnailRepository.sweepRetryable(50, transaction))
@@ -2380,7 +2400,7 @@ describe('observation thumbnails (#118)', () => {
                     // days ago, so it is due only if LEAST() clamped the interval.
                     const id = await onlyCandidate(write, {
                         sweepAttempts: SWEEP_MAX_ATTEMPTS - 1,
-                        sweptAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+                        sweptMinutesAgo: 8 * 24 * 60,
                     });
 
                     expect(await thumbnailRepository.sweepRetryable(50, transaction))
