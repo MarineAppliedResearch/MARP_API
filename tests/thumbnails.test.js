@@ -52,7 +52,14 @@ const db = require('../model');
 const thumbnailRepository = require('../repository/observation-thumbnail.repository');
 const extraction = require('../service/thumbnail-extraction.service');
 const reviewImageryStorage = require('../service/review-imagery-storage.service');
-const { STORAGE_DIR, FULL_FRAME_STORAGE_DIR, MAX_CONCURRENT_STREAMS } = require('../config/thumbnails');
+const {
+    STORAGE_DIR,
+    FULL_FRAME_STORAGE_DIR,
+    MAX_CONCURRENT_STREAMS,
+    SWEEP_INTERVAL_MS,
+    SWEEP_MAX_ATTEMPTS,
+    SWEEP_BACKOFF_BASE_MINUTES,
+} = require('../config/thumbnails');
 
 const { QueryTypes } = db.Sequelize;
 
@@ -2026,6 +2033,503 @@ describe('observation thumbnails (#118)', () => {
             const res = await reader.get(DECLARED_STATUS);
 
             expect(res.status).toBe(404);
+        });
+    });
+
+    describe('the background sweeper (#121)', () => {
+
+        /**
+         * Runs one function inside a transaction that is always rolled back, and
+         * hands it the transaction.
+         *
+         * **The sweep queries are deliberately unscoped**, which is what makes them
+         * a sweeper rather than a batch API -- so running one against the
+         * development database offers every real transient failure in it, and on
+         * 2026-10-21 that was 3,567 rows. A rollback is what lets the rules be
+         * asserted against real PostgreSQL without the suite becoming the thing
+         * that re-queued the corpus (#142).
+         *
+         * Everything the test needs must be written inside the same transaction,
+         * including the rows it asserts on: an uncommitted row is invisible to any
+         * other connection, and a committed one would survive the rollback.
+         *
+         * @param {Function} body - Receives `(transaction, write)`.
+         * @returns {Promise<void>} Resolves once the transaction has rolled back.
+         */
+        async function inRollback(body) {
+            const transaction = await db.sequelize.transaction();
+
+            /** One statement inside the transaction, returning its rows. */
+            const write = (sql, replacements = {}) => db.sequelize.query(
+                sql, { type: QueryTypes.SELECT, replacements, transaction }
+            );
+
+            try {
+                await body(transaction, write);
+            } finally {
+                await transaction.rollback();
+            }
+        }
+
+        /**
+         * Seeds one observation and its thumbnail row inside the transaction, and
+         * parks every row the sweep would otherwise reach.
+         *
+         * Parking is `sweep_attempts` at the cap on everything else the predicate
+         * matches. It is not a shortcut around the test -- the cap is exactly the
+         * rule R4 asks for, so a parked row is one the sweeper has legitimately
+         * given up on, and leaving it in place proves the predicate is doing the
+         * excluding rather than the `LIMIT`.
+         *
+         * @param {Function} write - The transactional query helper.
+         * @param {Object} state - Columns to write on the thumbnail row.
+         * @returns {Promise<number>} The new observation id.
+         */
+        async function onlyCandidate(write, state = {}) {
+            const [observation] = await write(
+                `INSERT INTO observations
+                     (session_id, project_id, "obsID", confidence, comname, tc,
+                      video_source, "mediaPosition", "createdAt", "updatedAt")
+                 VALUES (:sessionId, :projectId, 975000, 0.5, :comname, '10:00:00',
+                         :videoSource, '00:12:00.0000000', NOW(), NOW())
+                 RETURNING observation_id`,
+                {
+                    sessionId: seeded.sessionId,
+                    projectId: seeded.projectId,
+                    comname: `Jest Sweep ${runId}`,
+                    videoSource: `jest-sweep-${runId}.mp4`,
+                }
+            );
+
+            const observationId = observation.observation_id;
+
+            await write(
+                `INSERT INTO observation_thumbnails
+                     (observation_id, status, permanent, generation, attempts,
+                      sweep_attempts, swept_at, thumbnail_evicted_at, filename,
+                      last_error, requested_at, completed_at, created_at, updated_at)
+                 VALUES (:observationId, :status, :permanent, 1, 0,
+                         :sweepAttempts, :sweptAt, :evictedAt, :filename,
+                         :lastError, NOW(), NOW(), NOW(), NOW())
+                 RETURNING observation_id`,
+                {
+                    observationId,
+                    status: state.status === undefined ? 'failed' : state.status,
+                    permanent: state.permanent === undefined ? false : state.permanent,
+                    sweepAttempts: state.sweepAttempts === undefined ? 0 : state.sweepAttempts,
+                    sweptAt: state.sweptAt === undefined ? null : state.sweptAt,
+                    evictedAt: state.evictedAt === undefined ? null : state.evictedAt,
+                    filename: state.filename === undefined ? null : state.filename,
+                    lastError: state.lastError === undefined ? 'Connection refused' : state.lastError,
+                }
+            );
+
+            // Everything else the retry sweep could reach is put beyond the cap, so
+            // what it returns is about the predicate rather than about which rows
+            // happened to sort first.
+            await write(
+                `UPDATE observation_thumbnails
+                    SET sweep_attempts = :cap
+                  WHERE observation_id <> :observationId
+                    AND status = 'failed'
+                    AND permanent = false
+                    AND thumbnail_evicted_at IS NULL
+                    AND sweep_attempts < :cap`,
+                { observationId, cap: SWEEP_MAX_ATTEMPTS }
+            );
+
+            return observationId;
+        }
+
+        /** Reads one thumbnail row inside the transaction. */
+        async function rowFor(write, observationId) {
+            const [row] = await write(
+                `SELECT status, permanent, request_priority, sweep_attempts, swept_at,
+                        candidate_index, claimed_at
+                   FROM observation_thumbnails WHERE observation_id = :observationId`,
+                { observationId }
+            );
+
+            return row;
+        }
+
+        describe('retrying what is worth retrying (R2, R4, R6)', () => {
+
+            it('offers a transient failure nothing has retried', async () => {
+                await inRollback(async (transaction, write) => {
+                    const id = await onlyCandidate(write);
+
+                    const offered = await thumbnailRepository.sweepRetryable(50, transaction);
+
+                    expect(offered).toContain(id);
+
+                    const row = await rowFor(write, id);
+
+                    expect(row.status).toBe('queued');
+                    expect(row.sweep_attempts).toBe(1);
+                    expect(row.swept_at).not.toBeNull();
+                    expect(row.claimed_at).toBeNull();
+                });
+            });
+
+            it('leaves a swept row at ordinary priority (R3)', async () => {
+                await inRollback(async (transaction, write) => {
+                    const id = await onlyCandidate(write);
+
+                    await thumbnailRepository.sweepRetryable(50, transaction);
+
+                    // 0 is #134's "ordinary page/background work"; 1 is "a reviewer
+                    // is waiting". The claim query already orders by this, so the
+                    // sweeper yielding to a reviewer needed no new column and no
+                    // change to the claim -- and this is the assertion that would
+                    // catch somebody "helpfully" raising it.
+                    expect((await rowFor(write, id)).request_priority).toBe(0);
+                });
+            });
+
+            it('does not advance the frame candidate', async () => {
+                await inRollback(async (transaction, write) => {
+                    const id = await onlyCandidate(write);
+
+                    await thumbnailRepository.sweepRetryable(50, transaction);
+
+                    // A refused connection says nothing about the frame that was
+                    // chosen. Moving off a good candidate because the network was
+                    // down is how a tile ends up showing the wrong moment.
+                    expect((await rowFor(write, id)).candidate_index).toBe(0);
+                });
+            });
+
+            it('never offers a permanent failure (R6)', async () => {
+                await inRollback(async (transaction, write) => {
+                    const id = await onlyCandidate(write, {
+                        permanent: true,
+                        lastError: 'The observation has no keyframes.',
+                    });
+
+                    expect(await thumbnailRepository.sweepRetryable(50, transaction))
+                        .not.toContain(id);
+                    expect((await rowFor(write, id)).status).toBe('failed');
+                });
+            });
+
+            it('never offers a ready row (R6)', async () => {
+                await inRollback(async (transaction, write) => {
+                    const id = await onlyCandidate(write, {
+                        status: 'ready',
+                        filename: `jest-sweep-${runId}.jpg`,
+                        lastError: null,
+                    });
+
+                    expect(await thumbnailRepository.sweepRetryable(50, transaction))
+                        .not.toContain(id);
+                    expect((await rowFor(write, id)).status).toBe('ready');
+                });
+            });
+
+            it('never re-offers what the evictor just freed (R6)', async () => {
+                await inRollback(async (transaction, write) => {
+                    // `markFileEvicted` leaves exactly this shape -- failed, not
+                    // permanent -- because an evicted picture really is
+                    // re-derivable and a reviewer who opens its page gets it back.
+                    // A sweeper that re-extracted it would undo the eviction that
+                    // freed the disk, the evictor would free it again, and the two
+                    // would trade the same bytes for ever against the media server
+                    // the concurrency bound exists to protect.
+                    const id = await onlyCandidate(write, {
+                        evictedAt: new Date(),
+                        lastError: 'Evicted from the review imagery cache; it will be regenerated when viewed.',
+                    });
+
+                    expect(await thumbnailRepository.sweepRetryable(50, transaction))
+                        .not.toContain(id);
+                    expect((await rowFor(write, id)).status).toBe('failed');
+                });
+            });
+
+            it('stops offering a row that has exhausted its sweeps (R4)', async () => {
+                await inRollback(async (transaction, write) => {
+                    const id = await onlyCandidate(write, {
+                        sweepAttempts: SWEEP_MAX_ATTEMPTS,
+                        sweptAt: new Date('2020-01-01T00:00:00Z'),
+                    });
+
+                    expect(await thumbnailRepository.sweepRetryable(50, transaction))
+                        .not.toContain(id);
+                });
+            });
+
+            it('still lets a reviewer ask for a row the sweeper gave up on (R4)', async () => {
+                await inRollback(async (transaction, write) => {
+                    const id = await onlyCandidate(write, {
+                        sweepAttempts: SWEEP_MAX_ATTEMPTS,
+                        sweptAt: new Date('2020-01-01T00:00:00Z'),
+                    });
+
+                    // The retry route's write, in the same transaction. The cap is
+                    // on background generosity only: a person must always be able
+                    // to ask, which is why `requeue` reads neither sweep column.
+                    await write(
+                        `UPDATE observation_thumbnails
+                            SET status = 'queued', request_priority = 1,
+                                claimed_at = NULL, requested_at = NOW()
+                          WHERE observation_id = :id
+                            AND status = 'failed' AND permanent = false`,
+                        { id }
+                    );
+
+                    const row = await rowFor(write, id);
+
+                    expect(row.status).toBe('queued');
+                    expect(row.sweep_attempts).toBe(SWEEP_MAX_ATTEMPTS);
+                });
+            });
+
+            it('waits out the backoff before offering the same row again (R4)', async () => {
+                await inRollback(async (transaction, write) => {
+                    // Swept a minute ago, one attempt in: the first wait is an hour.
+                    const id = await onlyCandidate(write, {
+                        sweepAttempts: 1,
+                        sweptAt: new Date(Date.now() - 60 * 1000),
+                    });
+
+                    expect(await thumbnailRepository.sweepRetryable(50, transaction))
+                        .not.toContain(id);
+                });
+            });
+
+            it('offers a row again once its backoff has elapsed (R4)', async () => {
+                await inRollback(async (transaction, write) => {
+                    // One attempt in, so the wait is SWEEP_BACKOFF_BASE_MINUTES.
+                    // Swept twice that long ago, so it is due.
+                    const id = await onlyCandidate(write, {
+                        sweepAttempts: 1,
+                        sweptAt: new Date(Date.now() - 2 * SWEEP_BACKOFF_BASE_MINUTES * 60 * 1000),
+                    });
+
+                    expect(await thumbnailRepository.sweepRetryable(50, transaction))
+                        .toContain(id);
+                    expect((await rowFor(write, id)).sweep_attempts).toBe(2);
+                });
+            });
+
+            it('clamps the backoff at a week rather than doubling for ever (R4)', async () => {
+                await inRollback(async (transaction, write) => {
+                    // Nine attempts in, 2^9 hours would be three weeks. Swept eight
+                    // days ago, so it is due only if LEAST() clamped the interval.
+                    const id = await onlyCandidate(write, {
+                        sweepAttempts: SWEEP_MAX_ATTEMPTS - 1,
+                        sweptAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+                    });
+
+                    expect(await thumbnailRepository.sweepRetryable(50, transaction))
+                        .toContain(id);
+                });
+            });
+
+            it('takes the longest-unswept row first (R2)', async () => {
+                await inRollback(async (transaction, write) => {
+                    const never = await onlyCandidate(write);
+                    const [once] = await write(
+                        `INSERT INTO observations
+                             (session_id, project_id, "obsID", confidence, comname, tc,
+                              video_source, "mediaPosition", "createdAt", "updatedAt")
+                         VALUES (:sessionId, :projectId, 975001, 0.5, :comname, '10:00:00',
+                                 :videoSource, '00:12:00.0000000', NOW(), NOW())
+                         RETURNING observation_id`,
+                        {
+                            sessionId: seeded.sessionId,
+                            projectId: seeded.projectId,
+                            comname: `Jest Sweep ${runId}`,
+                            videoSource: `jest-sweep-${runId}.mp4`,
+                        }
+                    );
+
+                    await write(
+                        `INSERT INTO observation_thumbnails
+                             (observation_id, status, permanent, generation, attempts,
+                              sweep_attempts, swept_at, last_error,
+                              requested_at, completed_at, created_at, updated_at)
+                         VALUES (:id, 'failed', false, 1, 0, 1,
+                                 NOW() - make_interval(days => 30), 'Connection refused',
+                                 NOW(), NOW(), NOW(), NOW())`,
+                        { id: once.observation_id }
+                    );
+
+                    // Both are due. `swept_at NULLS FIRST` means the one nothing has
+                    // ever offered goes before the one offered a month ago, so a
+                    // bounded pass cannot starve rows it has never looked at.
+                    const offered = await thumbnailRepository.sweepRetryable(1, transaction);
+
+                    expect(offered).toEqual([never]);
+                });
+            });
+        });
+
+        describe('backfilling what has no record (R5)', () => {
+
+            it('enqueues an observation that has no record at all', async () => {
+                await inRollback(async (transaction, write) => {
+                    // No keyframes, so `keyframes_enqueue_thumbnail_trigger` does
+                    // not fire and the observation really does have no row -- the
+                    // state the backfill exists for.
+                    const [observation] = await write(
+                        `INSERT INTO observations
+                             (session_id, project_id, "obsID", confidence, comname, tc,
+                              video_source, "mediaPosition", "createdAt", "updatedAt")
+                         VALUES (:sessionId, :projectId, 975002, 0.5, :comname, '10:00:00',
+                                 :videoSource, '00:12:00.0000000', NOW(), NOW())
+                         RETURNING observation_id`,
+                        {
+                            sessionId: seeded.sessionId,
+                            projectId: seeded.projectId,
+                            comname: `Jest Sweep ${runId}`,
+                            videoSource: `jest-sweep-${runId}.mp4`,
+                        }
+                    );
+
+                    const id = observation.observation_id;
+
+                    expect(await thumbnailRepository.sweepBackfill(500, transaction))
+                        .toContain(id);
+
+                    const row = await rowFor(write, id);
+
+                    expect(row.status).toBe('queued');
+                    expect(row.request_priority).toBe(0);
+                });
+            });
+
+            it('finds nothing to backfill, and that is not a failure', async () => {
+                await inRollback(async (transaction, write) => {
+                    // Every observation in the development corpus already has a row
+                    // -- the keyframe trigger and the page backstop see to that --
+                    // so this is the normal outcome rather than an error, and the
+                    // sweeper must treat it as one.
+                    await write(
+                        `INSERT INTO observation_thumbnails
+                             (observation_id, status, permanent, generation, attempts,
+                              requested_at, created_at, updated_at)
+                         SELECT o.observation_id, 'queued', false, 1, 0, NOW(), NOW(), NOW()
+                           FROM observations o
+                          WHERE NOT EXISTS (
+                                    SELECT 1 FROM observation_thumbnails t
+                                     WHERE t.observation_id = o.observation_id
+                                )
+                         ON CONFLICT (observation_id) DO NOTHING`
+                    );
+
+                    expect(await thumbnailRepository.sweepBackfill(500, transaction))
+                        .toEqual([]);
+                });
+            });
+
+            it('never resets a ready row (R6)', async () => {
+                await inRollback(async (transaction, write) => {
+                    const id = await onlyCandidate(write, {
+                        status: 'ready',
+                        filename: `jest-sweep-ready-${runId}.jpg`,
+                        lastError: null,
+                    });
+
+                    await thumbnailRepository.sweepBackfill(500, transaction);
+
+                    expect((await rowFor(write, id)).status).toBe('ready');
+                });
+            });
+        });
+
+        describe('staying out of the way (R7, R8, R9, R10)', () => {
+
+            it('distinguishes a sweep that has not run from one that found nothing (R9)', async () => {
+                // Read before anything in this file has swept. `lastSweep: null`
+                // with `enabled: true` is "it has not run yet"; a pass that found
+                // nothing reports `retried: 0` instead. One counter cannot say
+                // both, which is why there are two fields.
+                const before = await global.api.get(STATUS);
+
+                expect(before.body.sweep.enabled).toBe(true);
+                expect(before.body.sweep.lastSweep).toBeNull();
+                expect(before.body.sweep.passes).toBe(0);
+            });
+
+            it('reports what the last sweep did (R9)', async () => {
+                // Limit zero: the pass runs end to end, takes its decisions and
+                // records itself, and enqueues nothing. Anything larger would offer
+                // the development corpus's real failures to the queue.
+                await extraction.sweepOnce(0);
+
+                const res = await global.api.get(STATUS);
+
+                expect(res.body.sweep.passes).toBeGreaterThan(0);
+                expect(res.body.sweep.lastSweep).not.toBeNull();
+                expect(res.body.sweep.lastSweep.retried).toBe(0);
+                expect(res.body.sweep.lastSweep.backfilled).toBe(0);
+                expect(typeof res.body.sweep.lastSweep.at).toBe('string');
+            });
+
+            it('enqueues nothing while the extractor is paused (R7)', async () => {
+                await global.api.post(CONTROL).send({ action: 'pause', note: 'sweep test' });
+
+                try {
+                    // The full batch size, safely: a paused pass refuses before it
+                    // reaches either query. Enqueuing into a queue nobody is
+                    // draining would turn a pause into a backlog that lands all at
+                    // once on resume.
+                    const summary = await extraction.sweepOnce();
+
+                    expect(summary.skipped).toBe('paused');
+                    expect(summary.retried).toBe(0);
+                    expect(summary.backfilled).toBe(0);
+                } finally {
+                    await global.api.post(CONTROL).send({ action: 'resume' });
+                }
+            });
+
+            it('enforces the storage budget even on a pass that enqueued nothing (R8)', async () => {
+                await global.api.post(CONTROL).send({ action: 'pause', note: 'sweep test' });
+
+                const enforce = jest.spyOn(reviewImageryStorage, 'enforceLimit');
+
+                try {
+                    await extraction.sweepOnce();
+
+                    // Spied rather than driven by lowering the budget, and that is
+                    // the honest tier for this one: a real enforcement deletes real
+                    // thumbnails from the development corpus to prove a timer fired.
+                    // What eviction *does* is already covered by #176's own tests;
+                    // what R8 adds is only that the tick reaches it -- including on
+                    // a pass that enqueued nothing, which is exactly the quiet
+                    // system an administrator lowers a budget on.
+                    expect(enforce).toHaveBeenCalled();
+                } finally {
+                    enforce.mockRestore();
+                    await global.api.post(CONTROL).send({ action: 'resume' });
+                }
+            });
+
+            it('is switched off by a zero interval (R10)', () => {
+                // R10 is "switchable off without a deploy". The knob is one
+                // environment variable, read where every other thumbnail setting is
+                // read, and this asserts the only thing a test can see: that zero
+                // means off and a positive number means on. The drain loop is
+                // untouched either way, so a reviewer pressing *Ask again* still
+                // works while background sweeping is stopped.
+                const { storageSettingFor } = require('../config/thumbnails');
+
+                expect(typeof storageSettingFor).toBe('function');
+                expect(SWEEP_INTERVAL_MS).toBeGreaterThan(0);
+
+                jest.resetModules();
+                process.env.THUMBNAIL_SWEEP_INTERVAL_MS = '0';
+
+                try {
+                    expect(require('../config/thumbnails').SWEEP_INTERVAL_MS).toBe(0);
+                } finally {
+                    delete process.env.THUMBNAIL_SWEEP_INTERVAL_MS;
+                    jest.resetModules();
+                }
+            });
         });
     });
 

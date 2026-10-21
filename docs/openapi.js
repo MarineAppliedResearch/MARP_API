@@ -3132,6 +3132,32 @@ const buildOpenApiSpec = () => {
                                 },
                             },
                             lastError: { type: 'string', nullable: true },
+                            sweep: {
+                                type: 'object',
+                                description:
+                                    'The background sweeper (#121): what runs when nobody is looking. It **produces** work into the same queue a page view and a reviewer retry produce into, at ordinary priority, and never extracts anything itself. `lastSweep: null` with `enabled: true` means it has not run yet; `lastSweep.retried: 0` means it ran and found nothing worth retrying. Those are different diagnoses.',
+                                properties: {
+                                    enabled: { type: 'boolean', example: true, description: 'False when `THUMBNAIL_SWEEP_INTERVAL_MS` is 0, which switches background sweeping off without touching the retries a reviewer asks for.' },
+                                    intervalMs: { type: 'integer', example: 300000 },
+                                    batchSize: { type: 'integer', example: 200, description: 'The most one pass may enqueue, per kind. The bound is what stops a quiet afternoon putting thousands of rows in front of the next reviewer.' },
+                                    passes: { type: 'integer', example: 12, description: 'Passes completed since this process started. Zero with `enabled: true` means it has not reached its first tick.' },
+                                    enqueuedTotal: { type: 'integer', example: 418 },
+                                    lastSweep: {
+                                        type: 'object',
+                                        nullable: true,
+                                        description: 'The most recent pass. Null until one has completed.',
+                                        properties: {
+                                            at: { type: 'string', format: 'date-time' },
+                                            retried: { type: 'integer', example: 200, description: 'Transient failures offered to the queue again. Never a permanent failure, and never an evicted row: re-extracting what the evictor just freed would undo it.' },
+                                            backfilled: { type: 'integer', example: 0, description: 'Observations that had no thumbnail record at all. Normally zero -- the keyframe trigger and the page backstop already cover it -- and zero is the correct answer rather than a failure.' },
+                                            skipped: { type: 'string', nullable: true, enum: ['paused', 'busy', null], example: 'busy', description: '`paused` when the run state is paused; `busy` when anything was already queued, which is how background work yields to a reviewer rather than queueing behind one.' },
+                                            evicted: { type: 'integer', example: 0, description: 'Files the storage budget removed on this tick. Eviction runs on the schedule as well as after an extraction, so a lowered budget takes effect on a quiet system.' },
+                                            bytesFreed: { type: 'integer', example: 0 },
+                                        },
+                                    },
+                                    lastError: { type: 'string', nullable: true },
+                                },
+                            },
                             lastFailure: {
                                 type: 'object',
                                 nullable: true,

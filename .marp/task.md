@@ -146,7 +146,8 @@ schema, the schedule, or what gets deleted.
 
 ### The retry sweep
 
-- [ ] **A1 · behavioural · blocking** -- **What makes a transient failure worth retrying
+- [x] **A1 · behavioural · blocking** -- answered 2026-10-21: **backoff with a hard cap,
+  cap 10.** -- **What makes a transient failure worth retrying
   again?** The 3,567 failed rows carry `attempts` (how many times extraction was claimed) and
   `completed_at`. Three candidate rules:
   1. **Attempt-capped**: retry while `attempts < N`, no waiting period. Simple, and a row that
@@ -162,7 +163,8 @@ schema, the schedule, or what gets deleted.
   for ever. **A different answer changes whether a column is added** (see A2), so this is
   blocking.
 
-- [ ] **A2 · database/schema · blocking** -- **May the sweeper add a column to
+- [x] **A2 · database/schema · blocking** -- answered 2026-10-21: **yes, add `sweep_attempts`
+  and `swept_at`.** -- **May the sweeper add a column to
   `observation_thumbnails`?** Whatever A1 answers, the existing columns do not quite say it.
   `attempts` counts claims and is **incremented by `claimBatch` on every claim including
   reviewer retries**, so capping on it silently punishes a row a reviewer asked about.
@@ -176,7 +178,8 @@ schema, the schedule, or what gets deleted.
   `dataset_classes` and drops `datasets.class_names`), so it is worth saying yes before it is
   written.
 
-- [ ] **A3 · performance/concurrency · non-blocking** -- **How much background work per pass, and how often?**
+- [x] **A3 · performance/concurrency · non-blocking** -- proceeding on the proposal below;
+  every number is one constant in `config/thumbnails.js` and cheap to change. -- -- **How much background work per pass, and how often?**
   Proposal: enqueue at most 200 rows per sweep, sweep every 5 minutes, and **skip the sweep
   entirely while any row is `queued`** -- so the sweeper only ever tops up an empty queue and
   can never build a backlog in front of a reviewer. At 3,567 rows that drains the current
@@ -185,7 +188,8 @@ schema, the schedule, or what gets deleted.
 
 ### What "stale" means, and whether anything should be deleted
 
-- [ ] **A4 · product/UI · blocking** -- **Is there any eviction rule beyond the byte budget
+- [x] **A4 · product/UI · blocking** -- answered 2026-10-21: **no new eviction rule.** The
+  eviction half of this issue is R8 alone. -- **Is there any eviction rule beyond the byte budget
   that already exists?** The measurement says the thumbnail corpus projects to ~3.6 GB against
   a 25 GiB budget, and nothing has ever been evicted. So the honest options are:
   1. **Nothing new.** Eviction stays "stay under the administrator's budget", and this issue's
@@ -198,7 +202,8 @@ schema, the schedule, or what gets deleted.
   is exactly the thing somebody audits, and some of these decisions are the evidence behind
   recorded walkthroughs. **Deleting is destructive**, so this is blocking whatever the answer.
 
-- [ ] **A5 · destructive · blocking** -- **What happens to the bytes of a thumbnail whose observation was
+- [x] **A5 · destructive · blocking** -- answered 2026-10-21: **leave the orphans.** Nothing
+  deletes a file in this work stream. -- **What happens to the bytes of a thumbnail whose observation was
   deleted?** The foreign key is `ON DELETE CASCADE`, so the *row* goes. The JPEG under
   `storage/observation-thumbnails/` does not: nothing watches for it, and the filename is a
   content hash shared by any observation on the same frame, so it cannot simply be unlinked
@@ -215,7 +220,7 @@ schema, the schedule, or what gets deleted.
 
 ### Where it runs
 
-- [ ] **A6 · architectural · blocking** -- **In-process beside the drain loop, or a separate
+- [x] **A6 · architectural · blocking** -- answered 2026-10-21: **in-process.** -- **In-process beside the drain loop, or a separate
   scheduled job?** Everything above assumes in-process: one timer in
   `thumbnail-extraction.service.js`, started by `server.js`, producing into the queue the
   drain already consumes. It needs no new deployment surface, inherits `run_state`, and is
@@ -226,13 +231,13 @@ schema, the schedule, or what gets deleted.
   heartbeats or workers, that is the signal the GPU job system was the right answer after
   all"* -- a sweeper is not that signal. Blocking because it decides where the code goes.
 
-- [ ] **A7 · behavioural · non-blocking** -- **Should the sweeper be off-hours only?** The issue's first
+- [x] **A7 · behavioural · non-blocking** -- proceeding on the proposal: no time window. -- -- **Should the sweeper be off-hours only?** The issue's first
   reason for deferring was contention for Jellyfin. R3's priority ordering answers most of it,
   and the extraction loop's own concurrency bound answers the rest. A time window is a third
   control and I do not think it is needed -- but the answer changes whether a constant exists.
   Proposal: **no time window**, priority only.
 
-- [ ] **A8 · product/UI · non-blocking** -- **Does the mosaic's no-imagery banner get its sentence back?**
+- [x] **A8 · product/UI · non-blocking** -- proceeding on the proposal: leave the copy. -- -- **Does the mosaic's no-imagery banner get its sentence back?**
   This issue's own comment records that `ui/grid.js` says *"The server refetches missing
   imagery on its own"*, that this stopped being true, and that "either this issue or #124
   should correct it". If the sweeper lands, **it is true again** -- so the question is whether
@@ -243,6 +248,24 @@ schema, the schedule, or what gets deleted.
 
 - **2026-10-21** -- Branch `121-thumbnail-sweeper` from `develop` at `0ba9ed86`. One branch for
   the whole work stream.
+- **2026-10-21** -- **The sweeper never touches an evicted row, and this was nearly a loop.**
+  `markFileEvicted` leaves a row at `status = 'failed', permanent = false` with
+  `thumbnail_evicted_at` set -- which is exactly the shape R2 re-queues. Without an exclusion
+  the evictor frees space, the sweeper re-extracts the same picture, the evictor frees it
+  again, and the two fight each other against the media server the concurrency bound exists to
+  protect. So the retry sweep requires `thumbnail_evicted_at IS NULL`. Found while writing the
+  query rather than while running it; it has its own test. This is forced by A4's answer rather
+  than a new assumption: no new eviction rule means the sweeper does not get to undo the one
+  there is.
+- **2026-10-21** -- **The sweeper enqueues at `request_priority = 0`, which already exists and
+  is already what R3 asks for.** `#134`'s migration declares 0 as *"ordinary page/background
+  work"* and 1 as *"a reviewer waiting"*, and a check constraint allows only those two. So no
+  schema change was needed for the priority, and within the ordinary class the existing
+  `requested_at` ordering keeps it FIFO.
+- **2026-10-21** -- **Backoff is `1 hour << sweep_attempts`, capped at one week.** One SQL
+  expression rather than a table of steps: 1 h, 2 h, 4 h ... 128 h, then a week for the rest of
+  the ten. A3's "skip while anything is queued" means the sweeper only ever tops up an empty
+  queue, so this is the interval between offers rather than between extractions.
 - **2026-10-21** -- The issue's premises were checked against the running database rather than
   taken as written, and three of four had moved. Recorded above under *What investigation
   found* so the next reader does not re-derive it.

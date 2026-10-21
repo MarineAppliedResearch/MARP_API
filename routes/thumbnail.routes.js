@@ -271,7 +271,11 @@ function registerThumbnailRoutes(app) {
             + 'extraction, and whether it is actually turning. A service reported as running with `extractorAvailable: false` is '
             + 'an API host with no ffmpeg, which is the condition this endpoint exists to make visible rather than leave as a '
             + 'surprise on the first thumbnail. Reading this is `observations:read`: a reviewer legitimately wants to know '
-            + 'whether their pictures are coming.',
+            + 'whether their pictures are coming. '
+            + '`sweep` reports the background sweeper (#121), which is what works when nobody is looking: it re-offers '
+            + 'transient failures on a growing backoff and enqueues observations that have no record at all. It only ever '
+            + '**produces** work into this same queue, at ordinary priority and only while the queue is empty, so it can '
+            + 'never claim a stream ahead of somebody waiting.',
         tags: [TAG],
         responses: {
             200: {

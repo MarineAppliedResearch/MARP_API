@@ -78,6 +78,9 @@ const {
     FULL_FRAME_STORAGE_DIR,
     FPS_TOLERANCE,
     IDLE_POLL_INTERVAL_MS,
+    SWEEP_INTERVAL_MS,
+    SWEEP_BATCH_SIZE,
+    SWEEP_ONLY_WHEN_IDLE,
     MAX_CONCURRENT_STREAMS,
     MEDIA_CLIENT_IDENTITY,
     MIN_MATCH_SCORE,
@@ -107,6 +110,14 @@ const live = {
     binaryError: null,
     lastRunError: null,
     timer: null,
+    // The sweeper's own state, kept beside the drain's rather than inside it:
+    // the status endpoint has to be able to say "it is turning and finding
+    // nothing", which is a different answer from "it has never run" (#121 R9).
+    sweepTimer: null,
+    sweep: null,
+    sweeps: 0,
+    sweptTotal: 0,
+    lastSweepError: null,
 };
 
 /**
@@ -994,6 +1005,105 @@ async function loop() {
 }
 
 /**
+ * One sweep pass: offer retryable failures, backfill what has no record, and
+ * enforce the storage budget (#121 R2, R5, R7, R8).
+ *
+ * **It produces work; it never extracts.** Everything here writes rows into the
+ * queue `drainOnce` already consumes, which is why a sweeper did not need a second
+ * extractor, a second concurrency bound, or a second set of leases. The one thing
+ * it does that is not an enqueue is `enforceLimit()`, and that is here because the
+ * evictor otherwise only runs *after an extraction* -- so an administrator who
+ * lowers the budget on a quiet system waits for the next thumbnail before anything
+ * happens (R8).
+ *
+ * Two refusals, in order, and each is a way of staying out of a reviewer's way:
+ *
+ * - **Paused means paused.** The run state stops the sweeper producing exactly as
+ *   it stops the drain consuming (R7). Enqueuing into a queue nobody is draining
+ *   would turn a pause into a backlog that lands all at once on resume.
+ * - **Busy means later.** With `SWEEP_ONLY_WHEN_IDLE` the pass does nothing while
+ *   anything is queued. `request_priority` already puts a reviewer's *Ask again*
+ *   ahead of background work inside the queue, but it cannot put an *ordinary*
+ *   page enqueue ahead of 200 swept rows that arrived first -- so the sweeper only
+ *   ever tops up a queue that has already drained.
+ *
+ * The eviction step runs whether or not the two enqueues were skipped: a budget is
+ * about disk, not about whether anybody is looking.
+ *
+ * @async
+ * @param {number} [limit] - How many rows each half may enqueue.
+ * @returns {Promise<Object>} `{ retried, backfilled, skipped, evicted, bytesFreed }`.
+ */
+async function sweepOnce(limit = SWEEP_BATCH_SIZE) {
+    const summary = { retried: 0, backfilled: 0, skipped: null, evicted: 0, bytesFreed: 0 };
+
+    const runState = await thumbnailRepository.readRunState();
+
+    if (runState && runState.run_state === 'paused') {
+        summary.skipped = 'paused';
+    } else if (SWEEP_ONLY_WHEN_IDLE && await thumbnailRepository.hasQueuedWork()) {
+        summary.skipped = 'busy';
+    } else {
+        // One transaction for both halves, so a pass is all or nothing.
+        const enqueued = await thumbnailRepository.sweep(limit);
+
+        summary.retried = enqueued.retried;
+        summary.backfilled = enqueued.backfilled;
+    }
+
+    const eviction = await reviewImageryStorage.enforceLimit();
+
+    summary.evicted = eviction.evicted;
+    summary.bytesFreed = eviction.bytesFreed;
+
+    // Recorded by the pass rather than by the loop around it, so what the status
+    // endpoint reports is what actually happened rather than what was scheduled
+    // (R9). `live.sweep` staying null while `enabled` is true is "it has not run
+    // yet", which is a different answer from "it ran and found nothing".
+    live.sweep = { at: new Date().toISOString(), ...summary };
+    live.sweptTotal += summary.retried + summary.backfilled;
+    live.sweeps += 1;
+
+    return summary;
+}
+
+/**
+ * The sweep loop. One pass, then a wait, then another, until stopped.
+ *
+ * Separate from {@link loop} rather than a counter inside it, and the two
+ * intervals are why: the drain polls every second because work appears the moment
+ * somebody opens a page, and the sweep runs every five minutes because it is
+ * looking for a media server that has come back. Folding them together would mean
+ * one of those numbers was a lie.
+ *
+ * A pass that throws is logged and the loop continues. The sweeper finding the
+ * database unreachable is not a reason for the API to stop sweeping for ever.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function sweepLoop() {
+    if (!live.started) {
+        return;
+    }
+
+    try {
+        await sweepOnce();
+    } catch (error) {
+        live.lastSweepError = elideToken(error.message);
+        logger.error(`Thumbnail sweep failed: ${elideToken(error.message)}`);
+    }
+
+    if (live.started && SWEEP_INTERVAL_MS > 0) {
+        live.sweepTimer = setTimeout(sweepLoop, SWEEP_INTERVAL_MS);
+
+        if (live.sweepTimer.unref) {
+            live.sweepTimer.unref();
+        }
+    }
+}
+
+/**
  * Starts the extractor.
  *
  * **Called by `server.js`, never by `app.js`.** Every test suite imports the app
@@ -1025,6 +1135,21 @@ async function start() {
         live.timer.unref();
     }
 
+    // The first sweep runs at once rather than after an interval, so a restart
+    // starts repairing immediately instead of five minutes later. Safe to repeat
+    // because the backoff is on the row: a failure offered now is not offered
+    // again for an hour, however many times the API is restarted meanwhile.
+    //
+    // Zero turns the sweeper off entirely (#121 R10), and the drain is untouched
+    // by that -- a reviewer's own retries still run.
+    if (SWEEP_INTERVAL_MS > 0) {
+        live.sweepTimer = setTimeout(sweepLoop, 0);
+
+        if (live.sweepTimer.unref) {
+            live.sweepTimer.unref();
+        }
+    }
+
     return { started: true, reason: null };
 }
 
@@ -1043,6 +1168,11 @@ function stop() {
     if (live.timer) {
         clearTimeout(live.timer);
         live.timer = null;
+    }
+
+    if (live.sweepTimer) {
+        clearTimeout(live.sweepTimer);
+        live.sweepTimer = null;
     }
 }
 
@@ -1088,6 +1218,18 @@ async function status() {
             claimed: counts.claimed,
         },
         lastError: live.lastRunError,
+        // R9. `lastSweep: null` with `enabled: true` is a sweeper that has not run
+        // yet; `lastSweep.retried === 0` is one that ran and found nothing. Those
+        // are different diagnoses and a single counter cannot tell them apart.
+        sweep: {
+            enabled: SWEEP_INTERVAL_MS > 0,
+            intervalMs: SWEEP_INTERVAL_MS,
+            batchSize: SWEEP_BATCH_SIZE,
+            passes: live.sweeps,
+            enqueuedTotal: live.sweptTotal,
+            lastSweep: live.sweep,
+            lastError: live.lastSweepError,
+        },
         lastFailure: failure
             ? {
                 observation_id: failure.observation_id,
@@ -1131,6 +1273,7 @@ async function control(action, userId, note = null) {
 
 module.exports = {
     control,
+    sweepOnce,
     cropToTile,
     cutChosenPicture,
     drainOnce,
