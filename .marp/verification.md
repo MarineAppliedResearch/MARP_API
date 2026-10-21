@@ -194,6 +194,71 @@ these tests leave the database unchanged. The narrower evidence that they do is 
 sweep test runs inside a transaction it rolls back. That is weaker than a green group run
 and it is what there is.
 
-### What was not run
+### The manual run, 2026-10-21
 
-The manual steps above. No picture has been extracted, and the 3,567 figure has not moved.
+`marp db dump` first: 136.5 MB plus 109,658 thumbnail files, at
+`MARP_API/.marp/local/corpus/20261021-140548`.
+
+The API was started from this branch on **port 3001**, not 3000, because another API was
+already running there; both drain the same queue, so the figures below are the queue's
+rather than one process's.
+
+Baseline, and after eight minutes:
+
+| | before | after |
+| --- | --- | --- |
+| ready | 111,319 | 111,322 |
+| queued | 0 | 189 |
+| retryable failures | 3,567 | 3,373 |
+| permanent failures | 38 | **40** |
+| rows the sweeper has offered | 0 | 200 |
+
+**The sweeper itself did exactly what it was built to do.** The first pass enqueued 200 —
+`SWEEP_BATCH_SIZE` exactly — at ordinary priority, and subsequent passes correctly enqueued
+nothing while the queue was busy. Nothing was evicted. No reviewer-facing behaviour changed.
+
+**Extraction is another matter, and this run is mostly a finding about Jellyfin.** Of the 200
+offered, eleven had resolved when the run was stopped:
+
+- **3 became real pictures**, 27,799 bytes between them — a mean of 9.3 KB, consistent with
+  the 8.2 KB measured across the existing corpus.
+- **6 failed again** with `ffmpeg timed out after 120s` and `frame= 0 fps=0.0 size=0KiB` —
+  ffmpeg connected and received nothing for two minutes. `GET /System/Info/Public` answers
+  (Mare Video Server 10.11.11), so the server is up and the streams are not delivering.
+- **2 were marked permanently failed on a Jellyfin 401** (observations 258 and 308, both
+  `20240730_171520_Fwd.mp4`).
+
+The run was stopped at that point rather than left going, because of the third line.
+
+### The defect this run exposed, which is not the sweeper's
+
+`resolveVideoSource` treats *any* failure to match a video as structural, so an HTTP **401
+from Jellyfin — an authentication problem, which is transient by nature — is recorded as
+`permanent: true`.** A permanent failure is refused by *Ask again* and skipped by the
+sweeper, by design, so those two observations are now unreachable by either recovery path
+and need a hand-written `UPDATE` to come back.
+
+This is pre-existing: the same code path, and the 28 rows already carrying
+`No Jellyfin video matched video_source ""` prove it has always classified this family as
+permanent. **But the sweeper is what turns it from rare into systematic.** Nothing used to
+retry these rows at all; now a sweep that lands inside a 401 window can permanently retire up
+to 200 perfectly good observations in one pass, unattended, and the flag is what stops anyone
+noticing. That is the opposite of what this issue is for.
+
+It is out of this task's scope and it is **not fixed here**. It needs a decision rather than a
+guess: whether a Jellyfin HTTP status in the 401/403/5xx family should be transient while a
+genuine no-such-video stays permanent.
+
+### Throughput, measured rather than estimated
+
+Eleven rows resolved in roughly eight minutes against three concurrent streams, because the
+dominant outcome is a 120-second timeout rather than a 1.5-second decode. At that rate the
+3,373 remaining would take on the order of **40 hours**. The sweeper's own pacing is not the
+constraint and tuning `SWEEP_BATCH_SIZE` would not help; Jellyfin is the constraint, exactly
+as #118 said it would be.
+
+### State left behind
+
+189 rows are still `queued` with `sweep_attempts = 1`. The API on port 3000 is still running
+and is draining them. Whatever fails will not be offered again for an hour, which is the
+backoff working. The port 3001 process was stopped; port 3000 was not touched.
