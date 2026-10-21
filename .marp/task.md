@@ -113,3 +113,86 @@ service against a seeded database (fast), and one end-to-end build over a short 
 ## Status
 
 G1 — spec written, A1 and A2 settled. Not yet implemented.
+
+---
+
+# 1.2 — Progress on the Datasets screen
+
+Issue: MarineAppliedResearch/MARP_API#268, planning comment of 2026-10-21, item 1.2.
+Branch: `claude/268-dataset-build-progress-261a94`, cut from `104-dashboard-reads-marp`.
+
+## Goal
+
+A build's progress is only on the Jobs screen. The Datasets screen — the one place somebody
+watching a four-hour build actually looks — shows `—` in FRAMES for a build in flight, and
+draws its *Building now* and *Queued builds* cards from six fixture rows typed into
+`mock.js`. Join each building dataset to its `dataset_build` job and show what it is doing.
+
+## Requirements
+
+- **P1 — A building row says frames done against total.** `42,816 / 63,200`, from the
+  latest attempt's `progress_done` / `progress_total`, not a percentage alone.
+- **P2 — And the phase.** `selecting`, `extracting`, `packaging` — because a build sits at
+  `0` for minutes during `selecting`, and a reader who sees `0 / 0` with no phase concludes
+  it is stuck.
+- **P3 — Queued is distinct from building.** `datasets.status` is `building` from the
+  instant the build is queued, so the dataset alone cannot say whether anything has started.
+  The job's state can: `queued` draws *Queued*, `leased` draws the phase.
+- **P4 — Poll while anything is building, and stop when nothing is.** No timer running on a
+  screen with nothing in flight.
+- **P5 — The cards and the donut count what MARP holds**, not fixtures. The six fixture
+  build rows in `mock.js` go; they would otherwise sit above the real rows showing invented
+  progress, and the cards would count them.
+- **P6 — Nothing invented.** A build's elapsed time is derivable and is shown; its archive
+  size so far, its fingerprint and a remaining-time estimate are not recorded anywhere and
+  say so, the way every other unbacked field on this screen does.
+
+## The join, and what was rejected
+
+**`GET /api/v2/dataset/builds`** — one request, every `dataset_build` job that is `queued`
+or `leased`, with its latest attempt's progress, at most one row per dataset.
+
+Three reasons it is a route of its own rather than a field on the dataset:
+
+1. **`Dataset`'s schema is generated from the Sequelize model.** `docs/openapi.js` derives
+   it in `GENERATED_SCHEMAS`, so a `build` object hung on the row is a field the published
+   contract cannot describe without a hand-maintained parallel schema — a document that
+   promises to stay in sync with code it cannot observe, which `AGENTS.md` names by name.
+2. **Progress is not a property of a dataset.** It belongs to the latest attempt of the job
+   building it. What the dataset itself records is `status`, and `num_samples` once the
+   build finishes.
+3. **Polling.** `GET /api/v2/dataset` is unpaged and grows without bound; polling it every
+   few seconds to watch one row move re-fetches every saved dataset. This route answers
+   only about work in flight, and answers `[]` — at which point the screen stops polling.
+
+**Rejected — a `build` field on `GET /api/v2/dataset`.** One request rather than two, and
+the completion transition (`status` → `ready`, `num_samples` filled) would arrive in the
+same payload as the last progress report. Rejected for 1 and 3 above.
+
+**Rejected — asking the existing jobs route.** `GET /api/v2/gpu/jobs` carries no progress
+at all: it is on the attempt, and only `GET /api/v2/gpu/jobs/:id` returns attempts. That is
+one detail request per building row, which is the request-per-row-to-draw-one-page this app
+rejected on the Models screen for the same reason.
+
+## Open assumptions
+
+- [x] **P-A1 · product/UI · non-blocking** — **The Status pill shows the phase while a
+  build runs**, rather than a generic *Building* with the phase elsewhere. The filter still
+  keys on `building`, so filtering is unchanged. Taken because the pill is the row's one
+  piece of prose and *Extracting* is strictly more useful there than *Building*.
+- [x] **P-A2 · product/UI · non-blocking** — **Five seconds between polls.** Progress is
+  reported once per video, and a video is minutes; a faster poll would redraw a table that
+  has not changed.
+
+## Acceptance criteria
+
+- A dataset whose build is `leased` shows `done / total` and the phase; one whose build is
+  `queued` shows neither and says *Queued*.
+- With nothing building, no timer is running and the cards read nothing building / nothing
+  waiting.
+- `node frontend/apps/ml-dashboard/tools/markup-check.mjs` reports no more than the 129 it
+  reported before.
+
+## Status
+
+G1 — written, both assumptions answered as non-blocking.

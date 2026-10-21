@@ -59,6 +59,66 @@ class DatasetRepository {
 
 
     /**
+     * Every dataset build that is still in flight, with how far it has got.
+     *
+     * **The progress is on the attempt, not on the job and not on the dataset.** A
+     * `dataset_build` job carries `spec->>'dataset_id'`; its latest attempt carries
+     * `progress_done`, `progress_total`, `progress_unit` and `progress_phase`, written
+     * once per video by the runner. So the join the Datasets screen needs is
+     * dataset -> job -> latest attempt, and this is it, answered for every building
+     * dataset at once rather than once per row.
+     *
+     * **`queued` is returned as well as `leased`,** without an attempt. `datasets.status`
+     * is `building` from the instant a build is queued, so the dataset alone cannot say
+     * whether anything has started; the job's state can, and a row that says *Queued*
+     * rather than *0 frames* is the difference between waiting and stuck.
+     *
+     * `DISTINCT ON (dataset_id)` because a consumer keys by dataset: a retry reuses the
+     * same job, so one row per dataset is normally true anyway, and making it always true
+     * saves every caller the same reduction.
+     *
+     * Errors reject rather than resolving to `[]`. A screen that polls this cannot tell a
+     * build that finished from a query that failed, and the empty answer is the one that
+     * stops the polling.
+     *
+     * @async
+     * @returns {Promise<Array<Object>>} One row per building dataset, newest job first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getBuildsInFlight() {
+        return this.db.sequelize.query(
+            `SELECT DISTINCT ON ((j.spec->>'dataset_id')::int)
+                    (j.spec->>'dataset_id')::int AS dataset_id,
+                    j.id                         AS job_id,
+                    j.state,
+                    j.attempts_made,
+                    j.max_attempts,
+                    j.created_at                 AS queued_at,
+                    a.id                         AS attempt_id,
+                    a.progress_done,
+                    a.progress_total,
+                    a.progress_unit,
+                    a.progress_phase,
+                    a.leased_at                  AS started_at,
+                    a.last_heartbeat_at
+               FROM gpu_jobs j
+               LEFT JOIN LATERAL (
+                    SELECT *
+                      FROM gpu_job_attempts
+                     WHERE job_id = j.id
+                     ORDER BY lease_epoch DESC, id DESC
+                     LIMIT 1
+               ) a ON TRUE
+              WHERE j.kind = 'dataset_build'
+                AND j.state IN ('queued', 'leased')
+                AND j.spec->>'dataset_id' ~ '^[0-9]+$'
+              ORDER BY (j.spec->>'dataset_id')::int, j.id DESC`,
+            { type: QueryTypes.SELECT }
+        );
+    }
+
+
+    /**
      * Fetch every dataset record.
      *
      * Database errors are logged and converted to an empty array. As a

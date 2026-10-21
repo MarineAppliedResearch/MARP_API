@@ -562,21 +562,75 @@
       }
     }
 
+    /* **Three of the thirty-eight are not ready**, and that is the whole reason the
+       corpus carries `status` at all. Every dataset here used to be finished, so the
+       design review and the screenshot tool could not see a build in flight -- the one
+       state #268's item 1.2 is about -- and the Datasets screen's *Building now*,
+       *Queued builds* and *Needs attention* cards were nothing but zeroes. Fixed ids
+       rather than a roll of the generator, because R3 is that a regenerated corpus is
+       byte-identical and a screenshot of a build has to be of the same build. */
+    const BUILDING = 1;
+    const QUEUED = 2;
+    const FAILED = 3;
+
     for (let i = 1; i <= 38; i++) {
       const classes = int(r, 4, 24);
+      const status = i === BUILDING || i === QUEUED ? 'building' : i === FAILED ? 'failed' : 'ready';
       datasets.push({
         id: i,
         name: `${pick(r, SURVEYS).replace(' ', '_')}_${pick(r, ['Fish', 'Inverts', 'Habitat'])}_v${int(r, 1, 5)}`,
         description: 'Training corpus built from reviewed observations',
         location: `datasets/${i}/`,
-        num_samples: int(r, 2000, 60000),
-        num_classes: classes,
+        /* Null until a build finishes. The counts are written when the archive is
+           packaged, so a row that exists while they do not is the normal case for
+           hours, and it is the case that threw when the screen assumed a number. */
+        num_samples: status === 'ready' ? int(r, 2000, 60000) : null,
+        num_classes: status === 'ready' ? classes : null,
         source: 'mosaic review',
+        status,
         notes: null,
         created_at: ago(int(r, 1440, 300000)),
         updated_at: ago(int(r, 60, 20000)),
       });
     }
+
+    /* The two builds in flight, as `GET /dataset/builds` answers for them.
+       **Frozen, not advancing.** A corpus that moved with the wall clock would make two
+       people looking at one screen see different numbers, and a screenshot check compare
+       against something that had changed since -- which is R3. So this is one instant of
+       one build, and the screen draws it exactly as it draws a real one. */
+    const datasetBuilds = [
+      {
+        dataset_id: BUILDING,
+        job_id: 2048,
+        state: 'leased',
+        attempts_made: 1,
+        max_attempts: 3,
+        queued_at: ago(140),
+        attempt_id: 4096,
+        progress_done: 42816,
+        progress_total: 63200,
+        progress_unit: 'frames',
+        progress_phase: 'extracting',
+        started_at: ago(138),
+        last_heartbeat_at: ago(1),
+      },
+      {
+        dataset_id: QUEUED,
+        job_id: 2049,
+        state: 'queued',
+        attempts_made: 0,
+        max_attempts: 3,
+        queued_at: ago(12),
+        attempt_id: null,
+        progress_done: null,
+        progress_total: null,
+        progress_unit: null,
+        progress_phase: null,
+        started_at: null,
+        last_heartbeat_at: null,
+      },
+    ];
 
     /* Projects and the people who submit jobs. Both are real list routes --
        `GET /api/v2/projects` and `GET /api/v2/users` -- which is worth saying
@@ -612,7 +666,7 @@
       });
     });
 
-    return { models, datasets, projects, users };
+    return { models, datasets, datasetBuilds, projects, users };
   }
 
   const CORPUS = build();
@@ -980,6 +1034,34 @@
   }
 
   /**
+   * `GET /api/v2/dataset/builds` -- how far every build still running has got.
+   *
+   * **The progress is on the attempt, which is why this is not on the dataset.** A
+   * `dataset_build` job names its dataset in `spec.dataset_id`; its latest attempt carries
+   * `progress_done`, `progress_total` and `progress_phase`. The route does that join once
+   * for every building dataset, so a screen listing them draws progress without a request
+   * per row.
+   *
+   * **`[]` is the answer that matters.** Nothing in flight, so a screen polling this stops.
+   *
+   * A `queued` build comes back with no attempt and no counts: `datasets.status` says
+   * `building` from the instant one is queued, so the job state is the only thing that can
+   * tell waiting from started.
+   *
+   * The corpus answers with two frozen builds -- one extracting, one queued -- so the
+   * design review and the screenshot tool can see the state this route exists for. Frozen
+   * rather than advancing, because R3 is that a regenerated corpus is byte-identical and a
+   * build that moved with the wall clock would show two people different numbers.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listDatasetBuilds() {
+    return serve('datasets',
+      () => request('/dataset/builds'),
+      () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.datasetBuilds)));
+  }
+
+  /**
    * `GET /api/v2/projects` -- every project, as a plain array.
    *
    * A job carries `session.project_id` as a bare integer, so this is what turns
@@ -1257,6 +1339,7 @@
     listModelVersions,
     listModelSpecies,
     listDatasets,
+    listDatasetBuilds,
     listProjects,
     listUsers,
     submitJob,
