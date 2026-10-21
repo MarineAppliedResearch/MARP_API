@@ -32,7 +32,7 @@ describe('GET /api/v2/dataset/builds', () => {
     const stamp = Date.now();
 
     /** Everything this file created, torn down in reverse. */
-    const made = { datasets: [], jobs: [], attempts: [], workers: [] };
+    const made = { datasets: [], jobs: [], attempts: [], workers: [], observations: [] };
 
     /**
      * A `gpu_workers` row, because `gpu_job_attempts.worker_id` is NOT NULL with a foreign
@@ -196,6 +196,12 @@ describe('GET /api/v2/dataset/builds', () => {
         }
         for (const id of made.workers) {
             await db.sequelize.query('DELETE FROM gpu_workers WHERE id = :id', { replacements: { id } });
+        }
+
+        /* After the membership rows above, which hold the foreign key to them. */
+        for (const id of made.observations) {
+            await db.sequelize.query('DELETE FROM observations WHERE observation_id = :id',
+                { replacements: { id } });
         }
     });
 
@@ -636,6 +642,174 @@ describe('GET /api/v2/dataset/builds', () => {
                work done between the two readings, and it is what this adds to the answer
                whatever else is in there. */
             expect(after - before).toBe(1056);
+        });
+    });
+
+    /**
+     * What a dataset is made of, which the Datasets screen drew from a fixture until now.
+     *
+     * The panel keyed its Build record, its split bar and its class breakdown on the
+     * dataset's *name*, against five invented ones — so the first dataset MARP actually
+     * built rendered a wall of em dashes with confident sentences beside them, and a split
+     * bar hardcoded to 70/20/10. Both halves are recorded and neither was served.
+     */
+    describe('GET /api/v2/dataset/:id/composition', () => {
+        /** A dataset with membership and a vocabulary, as a finished build leaves it. */
+        async function seedComposed() {
+            const [dataset] = await db.sequelize.query(
+                `INSERT INTO datasets (name, status, source, num_samples, num_observations,
+                                       num_classes, created_at, updated_at)
+                 VALUES (:name, 'ready', 'ml-dashboard', 120, 3, 2, NOW(), NOW())
+                 RETURNING id`,
+                { replacements: { name: `jest-composition-${stamp}` }, type: QueryTypes.SELECT }
+            );
+
+            made.datasets.push(dataset.id);
+
+            /* Two splits with different counts, so a bar drawn from them cannot pass by
+               being hardcoded to anything. */
+            const members = [['train', 2], ['eval', 1]];
+
+            for (const [split, howMany] of members) {
+                for (let i = 0; i < howMany; i++) {
+                    /* **A real observation, because membership has a foreign key to one**
+                       (`20260909120300`). Borrowing one out of the corpus would pass here
+                       and fail in CI, which builds an empty database. Inserted with SQL
+                       rather than through the model: `observation_id` is declared without
+                       `autoIncrement`, so Sequelize sends an explicit null and the insert
+                       fails -- see the repository note on #62. */
+                    const [seededObservation] = await db.sequelize.query(
+                        `INSERT INTO observations ("obsID", "createdAt", "updatedAt")
+                         VALUES (0, NOW(), NOW())
+                         RETURNING observation_id`,
+                        { type: QueryTypes.SELECT }
+                    );
+
+                    made.observations.push(seededObservation.observation_id);
+
+                    await db.sequelize.query(
+                        `INSERT INTO dataset_observations
+                             (dataset_id, observation_id, inclusion_type, selection_method,
+                              created_at, updated_at)
+                         VALUES (:dataset, :observation, :split, 'jest', NOW(), NOW())`,
+                        {
+                            replacements: {
+                                dataset: dataset.id,
+                                observation: seededObservation.observation_id,
+                                split,
+                            },
+                        }
+                    );
+                }
+            }
+
+            /* **Real species, because `dataset_classes.species_id` is NOT NULL** and
+               carries a foreign key. Taken from the catalogue rather than invented: the
+               species import migration seeds 854 of them, so they are there in CI too,
+               and this only reads them. */
+            const catalogue = await db.sequelize.query(
+                'SELECT id FROM species ORDER BY id LIMIT 2',
+                { type: QueryTypes.SELECT }
+            );
+
+            expect(catalogue).toHaveLength(2);
+
+            /* Deliberately inserted out of order: the route promises index order, because
+               that is the order a YOLO label file indexes and reading it any other way
+               renames every class. */
+            for (const [index, species] of [[1, catalogue[1].id], [0, catalogue[0].id]]) {
+                await db.sequelize.query(
+                    `INSERT INTO dataset_classes (dataset_id, species_id, class_index, created_at, updated_at)
+                     VALUES (:dataset, :species, :index, NOW(), NOW())`,
+                    { replacements: { dataset: dataset.id, species, index } }
+                );
+            }
+
+            return dataset.id;
+        }
+
+        it('counts the observations in each split', async () => {
+            const datasetId = await seedComposed();
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/composition`);
+
+            expect(res.status).toBe(200);
+
+            const bySplit = Object.fromEntries(res.body.splits.map((s) => [s.split, s.observations]));
+
+            expect(bySplit).toEqual({ train: 2, eval: 1 });
+        });
+
+        it('returns the classes in index order, whatever order they were written in', async () => {
+            const datasetId = await seedComposed();
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/composition`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.classes.map((c) => c.class_index)).toEqual([0, 1]);
+        });
+
+        /**
+         * A dataset built before #268 recorded membership has neither, and that is a real
+         * answer rather than an error — every legacy import is in that state. The screen
+         * says so instead of drawing an empty bar.
+         */
+        it('answers with empty arrays for a dataset whose membership was never recorded', async () => {
+            const [dataset] = await db.sequelize.query(
+                `INSERT INTO datasets (name, status, source, created_at, updated_at)
+                 VALUES (:name, 'ready', 'legacy import', NOW(), NOW())
+                 RETURNING id`,
+                { replacements: { name: `jest-legacy-${stamp}` }, type: QueryTypes.SELECT }
+            );
+
+            made.datasets.push(dataset.id);
+
+            const res = await global.api.get(`/api/v2/dataset/${dataset.id}/composition`);
+
+            expect(res.status).toBe(200);
+            expect(res.body).toEqual({ splits: [], classes: [] });
+        });
+
+        /**
+         * **404 rather than the same empty answer.** They mean different things — "built
+         * before membership was recorded" against "there is no such dataset" — and a
+         * mistyped id that looked like an old build would send somebody looking for a
+         * migration that is not the problem.
+         */
+        it('refuses a dataset that does not exist', async () => {
+            const res = await global.api.get('/api/v2/dataset/2147483600/composition');
+
+            expect(res.status).toBe(404);
+        });
+
+        /**
+         * The archive columns reach `GET /api/v2/dataset`. They are columns on `datasets`
+         * and were simply not declared on the model, so the list route could not return
+         * them and the screen invented a fingerprint and an archive size keyed on the
+         * dataset's name.
+         */
+        it('serves the archive fields on the dataset list', async () => {
+            const [dataset] = await db.sequelize.query(
+                `INSERT INTO datasets (name, status, source, archive_path, archive_sha256,
+                                       archive_bytes, created_at, updated_at)
+                 VALUES (:name, 'ready', 'ml-dashboard', 'datasets/jest.tar', :sha, 541542400, NOW(), NOW())
+                 RETURNING id`,
+                {
+                    replacements: { name: `jest-archive-${stamp}`, sha: 'a'.repeat(64) },
+                    type: QueryTypes.SELECT,
+                }
+            );
+
+            made.datasets.push(dataset.id);
+
+            const res = await global.api.get('/api/v2/dataset');
+
+            expect(res.status).toBe(200);
+
+            const mineOnly = res.body.find((d) => d.id === dataset.id);
+
+            expect(mineOnly).toBeDefined();
+            expect(mineOnly.archive_path).toBe('datasets/jest.tar');
+            expect(mineOnly.archive_sha256).toBe('a'.repeat(64));
+            expect(Number(mineOnly.archive_bytes)).toBe(541542400);
         });
     });
 

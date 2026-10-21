@@ -424,6 +424,76 @@ function registerDatasetRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'datasets:read',
+        path: '/api/dataset/:id/composition',
+        summary: 'What a dataset is made of: its splits and its classes',
+        description:
+            'Counts of included observations per split, and the ordered class vocabulary. Both have been recorded since '
+            + '#268 -- `dataset_observations` holds a row per included observation and `dataset_classes` the vocabulary a '
+            + 'label index refers to -- and neither was served, so the Datasets screen drew a split bar hardcoded to '
+            + '70/20/10 and a class breakdown keyed on five invented dataset names. '
+            + '**The split is `inclusion_type`.** That column predates the build path and its name is about why an '
+            + 'observation is in a dataset; the builder writes the split name into it, which is the name `data.yaml` uses. '
+            + 'Counted now rather than taken from `num_observations`, which is what was recorded at build time: membership '
+            + 'can lose rows to the observation cascade, and the two disagreeing is a fact worth being able to see.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset.' },
+        ],
+        responses: {
+            200: {
+                description: 'Its splits and its classes. Both arrays are empty for a dataset built before membership was recorded.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                splits: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            split: { type: 'string', example: 'train' },
+                                            observations: { type: 'integer', example: 49 },
+                                        },
+                                    },
+                                },
+                                classes: {
+                                    type: 'array',
+                                    description: 'In class-index order, which is the order a YOLO label file indexes.',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            class_index: { type: 'integer', example: 0 },
+                                            species_id: { type: 'integer', nullable: true },
+                                            comname: { type: 'string', nullable: true, example: 'California sea cucumber' },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            /* The dataset has to exist: empty arrays for a real dataset mean "built before
+               membership was recorded", and the same answer for a dataset that is not
+               there would make a typo look like an old build. */
+            const dataset = await datasetController.getDatasetById(req.params.id);
+
+            if (!dataset) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `Dataset ${req.params.id} was not found.`);
+            }
+
+            res.json(await datasetRepository.getDatasetComposition(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
         path: '/api/dataset/:id',
         summary: 'Fetch a dataset by id',
         description:

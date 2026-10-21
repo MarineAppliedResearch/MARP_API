@@ -168,6 +168,38 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      /* **What the build actually produced.** These three are columns on `datasets` and
+         were not declared here, so `GET /api/v2/dataset` could not return them and the
+         Datasets screen drew a fixture in their place: a hardcoded fingerprint and
+         archive size keyed on the dataset's *name*, which matched five invented names
+         and nothing MARP ever built. */
+      archive_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Where the packaged archive is, relative to the storage root. Null until a build finishes.',
+        jsonSchema: {
+            description: 'Where the packaged archive is, relative to the storage root. Null until a build finishes. `GET /api/v2/gpu/datasets/{id}/archive` serves these bytes.',
+        },
+      },
+
+      archive_sha256: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'The archive is addressed by its own content hash, so the same dataset packages to the same file.',
+        jsonSchema: {
+            description: 'SHA-256 of the packaged archive. It names the file as well as verifying it, so a re-package of the same dataset produces the same hash.',
+        },
+      },
+
+      archive_bytes: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        comment: 'Size of the packaged archive in bytes.',
+        jsonSchema: {
+            description: 'Size of the packaged archive in bytes. Null until a build finishes.',
+        },
+      },
+
       status: {
         // What the process building this dataset last reported. MARP does not
         // run the build -- what does is still an open question (DESIGN.md gap
