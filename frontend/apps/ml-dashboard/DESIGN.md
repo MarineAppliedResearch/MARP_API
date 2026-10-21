@@ -46,7 +46,40 @@ functional and easy to use, not just what the mockup is, or what the api already
 - **2026-10-20 — the dataset-build chart waits for dataset builds.** It asks for frames
   materialized per minute, concurrency and queue depth. All three are reasonable and none is
   answerable until something tracks a build as work. Designing that schema now would be
-  guessing at the shape of a feature being designed elsewhere.
+  guessing at the shape of a feature being designed elsewhere. **Superseded 2026-10-21 by
+  the two entries below**: #268 made a build a job, so two of the three became answerable
+  and the third turned out to be the wrong question.
+- **2026-10-21 — Build activity draws three measurements, and concurrency is not one of
+  them.** The panel's subtitle promised materialization rate, concurrency, queue pressure
+  and completions, and the panel underneath it said on screen that none of them was
+  recorded. Both halves had stopped being true: a build is a `gpu_jobs` row of kind
+  `dataset_build` with attempts and progress, so the rate comes from
+  `GET /gpu/throughput/series` and the counts from `GET /gpu/jobs/series`, both narrowed by
+  `kind`.
+
+  **Concurrency is dropped rather than drawn, because the answer is a constant.**
+  `service/dataset-build.service.js` takes builds one at a time on purpose — a build is a
+  second consumer of the media server the thumbnail extractor protects with a concurrency
+  ceiling (`task-118`, R20) — so the number can only ever be 0 or 1, and a chart of it is a
+  square wave restating a decision the design already made. The subtitle names the three
+  things the panel draws instead of promising a fourth. Isaac, 2026-10-21, on the
+  disclaimer that was there: *"this section shouldn't say this, if we were planning on
+  having some sort of build activity graph here, we shouldn't have just documented it as a
+  gap, we were supposed to work on it."*
+
+  What was behind that disclaimer was worse than the disclaimer: an animated fixture of
+  invented frame counts, which only stayed hidden because the markup had no SVG for it to
+  find. Adding a real chart would have woken it up.
+- **2026-10-21 — a build's queue pressure is counted in builds, not in frames.**
+  `GET /gpu/throughput/series` answers a backlog as well as a rate, but it measures it in
+  units of work read out of `spec.range`, which is an inference job's shape. A build's spec
+  carries filters, and how many frames it will cut is not known until it has selected them
+  — so that figure is always zero for a build. The honest backlog is how many builds have
+  not finished, which is `waiting` from `GET /gpu/jobs/series`.
+
+  The completions line counts `succeeded` rather than `finished`, for the same kind of
+  reason: a build that failed has finished, and counting it under a line labelled
+  *completed* would say a dataset came out of it.
 - **2026-10-20 — throughput is kept as a count, not a rate.** `gpu_attempt_progress` stores
   the cumulative figure per attempt per minute and the route differences it. A rate computed
   at write time cannot be re-bucketed afterwards, and the screen asks for three ranges.

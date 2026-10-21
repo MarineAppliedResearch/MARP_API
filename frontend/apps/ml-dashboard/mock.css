@@ -412,6 +412,10 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .inference-line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; transition: opacity 150ms ease, stroke-width 150ms ease; }
 .inference-line.throughput { stroke: var(--cyan-300); }
 .inference-line.backlog { stroke: var(--violet-300); stroke-dasharray: 7 5; }
+/* A third series, for the Datasets screen's Build activity: frames extracted and builds
+   waiting share this chart with builds completed, and three lines need three strokes.
+   Dotted rather than dashed so it reads apart from `backlog` without colour alone. */
+.inference-line.done { stroke: var(--mint-400); stroke-dasharray: 2 6; }
 .inference-flow.is-highlighted .inference-line, .inference-flow.is-highlighted .inference-area { opacity: .12; }
 .inference-flow.is-highlighted .inference-line.highlighted { opacity: 1; stroke-width: 4.5; }
 .inference-flow.is-highlighted .inference-area.highlighted { opacity: .7; }
@@ -427,6 +431,7 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 }
 .inference-chart-key .throughput { --key: var(--cyan-300); }
 .inference-chart-key .backlog { --key: var(--violet-300); }
+.inference-chart-key .done { --key: var(--mint-400); }
 .inference-chart-key button[aria-pressed="true"] { color: var(--white); text-decoration: underline; text-underline-offset: 3px; }
 .inference-chart-key button:focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 2px; border-radius: 2px; }
 .inference-current {
@@ -2848,3 +2853,13 @@ td.whb.quiet { color: var(--amber-300); }
   color: var(--faint); font-size: 12px;
 }
 .is-quiet .jobs-chart svg { opacity: .25; }
+/* The same empty state for the Datasets screen's Build activity chart. Without it a
+   window with no builds in it is a blank frame with no explanation -- the aria-label says
+   so, which serves a screen reader and nobody looking at it. On a database where nothing
+   has been built yet, that is the first thing anybody sees of this panel. */
+.is-quiet .dataset-chart::after {
+  content: "No builds ran or finished in this window";
+  display: grid; place-items: center; min-height: 120px;
+  color: var(--faint); font-size: 12px;
+}
+.is-quiet .dataset-chart svg { opacity: .25; }
