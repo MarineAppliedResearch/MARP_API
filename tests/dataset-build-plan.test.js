@@ -661,7 +661,8 @@ describe('the extraction plan (#268)', () => {
         const [entry] = [...plan.values()];
 
         // Centre, not corner: 0.2 + 0.1/2 and 0.4 + 0.2/2.
-        expect(entry.frames.get(10)).toEqual(['0 0.250000 0.500000 0.100000 0.200000']);
+        // Centre-origin: the keyframe's own x and y, not x + width / 2.
+        expect(entry.frames.get(10)).toEqual(['0 0.200000 0.400000 0.100000 0.200000']);
     });
 
     test('videos are planned per split, so one pass never mixes them', () => {
@@ -680,18 +681,62 @@ describe('the extraction plan (#268)', () => {
 
 describe('the interpolated box (#268)', () => {
 
+    /* **`x, y` is the centre.** These tests asserted `x + width / 2` until 2026-10-21,
+       which is what the code did, and both were wrong: every label was shifted half a
+       box right and down, off the animal. `service/thumbnail-geometry.js` records the
+       answer (F1) -- centre-origin, confirmed by eye in the spike, where the top-left
+       reading "contains bare rubble". The real-video suite caught it; no fixture here
+       could, because a box at 0.3 with width 0.2 is in range read either way. */
     const boxes = [
-        { framenum: 0, x: 0, y: 0, width: 0.2, height: 0.2 },
-        { framenum: 10, x: 0.4, y: 0.4, width: 0.2, height: 0.2 },
+        { framenum: 0, x: 0.3, y: 0.3, width: 0.2, height: 0.2 },
+        { framenum: 10, x: 0.7, y: 0.7, width: 0.2, height: 0.2 },
     ];
 
     test('it moves between the keyframes either side', () => {
-        expect(boxAt(boxes, 5).cx).toBeCloseTo(0.3, 6);
+        expect(boxAt(boxes, 5).cx).toBeCloseTo(0.5, 6);
     });
 
-    test('it lands exactly on a keyframe', () => {
-        expect(boxAt(boxes, 0).cx).toBeCloseTo(0.1, 6);
-        expect(boxAt(boxes, 10).cx).toBeCloseTo(0.5, 6);
+    test('it lands exactly on a keyframe, at the centre the keyframe records', () => {
+        expect(boxAt(boxes, 0).cx).toBeCloseTo(0.3, 6);
+        expect(boxAt(boxes, 10).cx).toBeCloseTo(0.7, 6);
+    });
+
+    test('a box running off the edge is clipped to what is in the picture', () => {
+        /* Real boxes do run off: measured over 78 keyframes they span [-0.0105, 1.0275]
+           horizontally. YOLO reads a box as a region of the image, so the part outside
+           the frame is not in the picture and must not be in the label. Clipped and
+           re-centred rather than clamped -- clamping the centre keeps a width reaching
+           outside and describes a box bigger than the animal in view. */
+        const edge = [{ framenum: 0, x: 0.95, y: 0.5, width: 0.2, height: 0.2 }];
+        const box = boxAt(edge, 0);
+
+        // Spanned 0.85..1.05; what is in the picture is 0.85..1.
+        expect(box.cx).toBeCloseTo(0.925, 6);
+        expect(box.w).toBeCloseTo(0.15, 6);
+        expect(box.cy).toBeCloseTo(0.5, 6);
+    });
+
+    test('every coordinate it produces lies inside the frame', () => {
+        /* The property the real build broke: a label carrying 1.012 is one the trainer
+           silently clips, so the box it trains on is not the box anybody drew. */
+        for (const x of [-0.05, 0, 0.5, 1, 1.05]) {
+            for (const w of [0.05, 0.4, 0.9]) {
+                const box = boxAt([{ framenum: 0, x, y: x, width: w, height: w }], 0);
+
+                if (!box) continue;
+
+                for (const value of [box.cx, box.cy, box.w, box.h]) {
+                    expect(value).toBeGreaterThanOrEqual(0);
+                    expect(value).toBeLessThanOrEqual(1);
+                }
+            }
+        }
+    });
+
+    test('a box entirely outside the frame is no box at all', () => {
+        const gone = [{ framenum: 0, x: 1.4, y: 0.5, width: 0.2, height: 0.2 }];
+
+        expect(boxAt(gone, 0)).toBeNull();
     });
 
     test('outside the keyframes there is nothing to interpolate, so no box', () => {

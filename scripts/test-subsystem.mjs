@@ -95,7 +95,18 @@ const SUBSYSTEMS = {
     },
     review: {
         describe: 'observation review and training state, and observation versioning',
-        suites: ['observation-review-schema', 'observation-review-current', 'observation-version'],
+        suites: [
+            'observation-review-schema',
+            'observation-review-current',
+            'observation-version',
+            /* #268: the migration carrying the legacy "R" note into the training
+               dimension. Here rather than with the schema suites because what it is
+               about is what a training decision means and who made it, which is this
+               group's subject. It builds and drops its own database, so it is seconds
+               rather than milliseconds -- see the file for why it cannot run against
+               a shared one. */
+            'legacy-r-promotion',
+        ],
     },
     observations: {
         describe: 'observations, keyframes, and the timecode columns',

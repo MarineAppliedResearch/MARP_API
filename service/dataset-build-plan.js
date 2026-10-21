@@ -424,12 +424,45 @@ function boxAt(boxes, frame) {
     const t = span === 0 ? 0 : (frame - Number(before.framenum)) / span;
     const mix = (a, b) => Number(a) + (Number(b) - Number(a)) * t;
 
-    const x = mix(before.x, after.x);
-    const y = mix(before.y, after.y);
+    /* **`x, y` is the centre already.** It is not the top-left, and this added half a
+       width and half a height to it -- so every label written before 2026-10-21 was
+       shifted half a box right and down, off the animal it was naming.
+
+       `service/thumbnail-geometry.js` records the answer and how it was reached (F1):
+       centre-origin, "confirmed three times in two other repositories and then confirmed
+       by eye in the spike: the centre-origin box sits on the animal, the top-left box is
+       shifted half a box right and down and contains bare rubble". The thumbnail path
+       reads `box.x * sourceWidth` as the centre, and this now agrees with it.
+
+       The real-video suite is what caught it, by asserting every coordinate lies in
+       0..1 and finding 1.012 -- the overflow a doubled half-width produces at the right
+       edge. No unit fixture would have: a box at 0.1 with width 0.2 is in range read
+       either way, and only the edges disagree. */
+    const cx = mix(before.x, after.x);
+    const cy = mix(before.y, after.y);
     const w = mix(before.width, after.width);
     const h = mix(before.height, after.height);
 
-    return { cx: x + w / 2, cy: y + h / 2, w, h };
+    /* **Boxes do run off the edge** -- measured over 78 real keyframes they span
+       [-0.0105, 1.0275] horizontally (thumbnail-geometry, F3). YOLO reads a box as the
+       region of the image it is in, so the part outside the frame is not in the picture
+       and must not be in the label. Clipped to the frame and re-centred on what is left,
+       rather than clamped: clamping the centre keeps a width that reaches outside and
+       describes a box bigger than the animal in view. */
+    const left = Math.max(0, cx - w / 2);
+    const right = Math.min(1, cx + w / 2);
+    const top = Math.max(0, cy - h / 2);
+    const bottom = Math.min(1, cy + h / 2);
+
+    // Entirely outside the frame: nothing of it is in this picture to label.
+    if (right <= left || bottom <= top) return null;
+
+    return {
+        cx: (left + right) / 2,
+        cy: (top + bottom) / 2,
+        w: right - left,
+        h: bottom - top,
+    };
 }
 
 module.exports = {

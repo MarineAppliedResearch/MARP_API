@@ -724,6 +724,11 @@ const JOB_KIND_LABEL = {
   training: ['training', 'Training'],
   tracking: ['inference', 'Tracking'],
   diagnostic: ['jobs', 'Diagnostic'],
+  /* A dataset build is a `gpu_jobs` row that no GPU touches (#268). Absent from here it
+     fell through to the fallback below and was drawn as *Inference* -- not "unknown",
+     but a confident wrong answer, which is how Isaac found it: a build of his named
+     test2 running on the Dashboard as an inference job. */
+  dataset_build: ['datasets', 'Dataset build'],
 };
 
 /**
@@ -794,7 +799,11 @@ function sessionFor(spec) {
 function jobView(job, issueBatches) {
   const spec = job.spec || {};
   const session = sessionFor(spec);
-  const [kindIcon, kindLabel] = JOB_KIND_LABEL[job.kind] || JOB_KIND_LABEL.inference;
+  /* **An unknown kind says so.** Falling back to Inference meant every kind added after
+     this map was written was drawn as inference, confidently and wrongly, until somebody
+     noticed. A kind nobody has given a label to is a gap in this file, and the screen
+     naming it is how it gets found. */
+  const [kindIcon, kindLabel] = JOB_KIND_LABEL[job.kind] || ['jobs', job.kind || 'Unknown'];
 
   let [state, label] = JOB_STATE_LABEL[job.state] || ['queued', job.state];
 
@@ -5508,8 +5517,19 @@ async function wireDatasetPage() {
           : `<span class="prog" data-state="${stateTone}"><span class="bar" role="progressbar" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span><span class="pct">${pct}%</span></span>`;
 
         const fact = (label, value, omit, hide) => (omit ? '' : `<div class="jobmetric"${hide ? ' hidden' : ''}><span>${label}</span><b>${value}</b></div>`);
+        /* **Why it failed, from the attempt that failed.** This drew the dataset's own
+           description under an alert icon and then claimed "Materialized frames are
+           kept; only the unread remainder needs to run again" -- which says nothing
+           about the failure and is not true: a failed build keeps nothing, its staging
+           goes with it. Isaac, looking at one: "which isn't telling me ANYTHING about
+           why it needs attention". */
+        const reason = build && build.failure_reason
+          ? escapeHtml(build.failure_reason)
+          : 'No reason was recorded, which is itself worth reporting.';
+
         const note = failed
-          ? `<div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${description}</h4><p>Materialized frames are kept; only the unread remainder needs to run again.</p></div></div>`
+          ? '<div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg>'
+            + `<div><h4>This build failed</h4><p>${reason}</p></div></div>`
           : '';
         const actions = failed
           ? '<button class="btn sm" type="button">Retry build</button><button class="btn sm ghost" type="button">Discard</button>'

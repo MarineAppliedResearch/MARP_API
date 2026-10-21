@@ -156,14 +156,20 @@ function imageSettings(asked) {
  *
  * `extractFrames` builds a `select` expression with a term per frame, so the command line
  * grows with the batch: about forty characters each, against an operating-system limit
- * near 32 KB on Windows. 400 keeps a pass around 16 KB with room to spare, and the cost
- * of a smaller batch is one more seek into a video already open on disk.
+ * near 32 KB on Windows.
+ *
+ * **100 rather than 400, chosen for the person watching rather than for ffmpeg.** 400
+ * took about ninety seconds a pass, so a four-hour build showed a number that sat still
+ * for a minute and a half at a time and gave no way to tell working from wedged. A
+ * hundred reports roughly every twenty seconds. The cost is one more seek into a video
+ * already open on disk, which is cheap next to decoding; the command line stays near
+ * 4 KB, far inside the limit.
  *
  * Found at 8,408 frames, where a build died with `spawn ENAMETOOLONG` after minutes of
  * extraction. Every build run by hand until then had been a few hundred frames, which is
  * why it had never shown.
  */
-const FRAMES_PER_PASS = 400;
+const FRAMES_PER_PASS = 100;
 
 /** Identifies this API to Jellyfin, the way the thumbnail path does. */
 const MEDIA_CLIENT_IDENTITY = { client: 'MARP API', device: 'dataset-build' };
@@ -456,8 +462,31 @@ async function runOne() {
 
         let done = 0;
         let missing = 0;
+        let at = 0;
+
+        const total_videos = videos.size;
 
         for (const entry of videos.values()) {
+            at += 1;
+
+            /* **Which video, and how far through the list.** A build sits on one video
+               for minutes and reports only when a pass finishes, so without this the
+               screen is a number that does not move and no way to tell working from
+               wedged. Isaac, watching one: "i can't really tell if it's still running
+               or not... maybe seeing what video it is currently looking at".
+
+               `progress_phase` is varchar(64) and a Jellyfin filename is long, so the
+               name is trimmed from the left -- the end of these names is the timestamp
+               that distinguishes them, and the start is the survey prefix every one of
+               them shares. */
+            const name = path.parse(entry.video).name;
+            const room = 64 - `extracting  ${at}/${total_videos}  `.length;
+            const shown = name.length > room ? `…${name.slice(-(room - 1))}` : name;
+            const phase = `extracting ${at}/${total_videos} ${shown}`;
+
+            await buildRepository.reportProgress(attempt.id, {
+                phase, done, total, unit: 'frames',
+            });
             if (await buildRepository.isCancelled(job.id)) {
                 await buildRepository.failBuild({
                     jobId: job.id,
@@ -477,7 +506,7 @@ async function runOne() {
             const before = done;
             const cut = await cutVideo(entry, staging, image, async (soFar) => {
                 await buildRepository.reportProgress(
-                    attempt.id, { phase: 'extracting', done: before + soFar, total, unit: 'frames' }
+                    attempt.id, { phase, done: before + soFar, total, unit: 'frames' }
                 );
 
                 // Checked per pass rather than per video: a long video is minutes, and
@@ -501,7 +530,7 @@ async function runOne() {
             }
 
             await buildRepository.reportProgress(attempt.id, {
-                phase: 'extracting', done, total, unit: 'frames',
+                phase, done, total, unit: 'frames',
             });
         }
 
