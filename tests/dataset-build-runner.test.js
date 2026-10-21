@@ -375,7 +375,31 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
 
     test('nothing this build staged is left in the temp directory', async () => {
         // Gigabytes of frames, removed in a `finally` whatever happened.
-        expect(fixture.stagingDirectories().filter((name) => !stagedBefore.has(name))).toEqual([]);
+        const left = fixture.stagingDirectories().filter((name) => !stagedBefore.has(name));
+
+        /* **This cannot tell whose staging directory it found**, and on 2026-10-21 it
+           twice found somebody else's. `os.tmpdir()` is shared by every workspace on the
+           machine and by whatever server a person is using, while a staging directory is
+           named by `mkdtemp` and carries nothing that says which process owns it — so a
+           build started elsewhere during this file looks exactly like a leak from this
+           one. The check is kept because the thing it guards is real (a failed build
+           leaving gigabytes behind), and the message says the other reading out loud so
+           the next person does not spend an afternoon on it.
+
+           The fix that would make it attributable is not in this file: staging under
+           `%TEMP%/marp-builds/<pid>/` would let this ask about its own process, and would
+           also stop a prefix sweep matching a live build. */
+        /* Asserted as text rather than as an array, because jest's `expect` takes no
+           message: this way the explanation travels in the diff, where somebody reading
+           a red run will actually see it. */
+        const found = left.length
+            ? `${left.join(', ')} — appeared during this file and were not removed. This build `
+              + 'removes its own staging in a `finally`, and %TEMP% is shared with every other '
+              + 'workspace and server on this machine, so check whether another build was running '
+              + 'before chasing a leak here.'
+            : '';
+
+        expect(found).toBe('');
     });
 
     test('the connected group stayed whole, in the split its earliest member claimed', async () => {

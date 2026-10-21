@@ -186,6 +186,34 @@ drive, and a unit test of `recordBuild` would assert the same rows one layer low
 - **Nothing covers two builds at once**, because the poller is one at a time by
   construction and no test starts a second process.
 
+## A check that cannot tell whose directory it found
+
+*nothing this build staged is left in the temp directory* compares `%TEMP%` before and
+after the build and fails on what appeared and stayed. It guards something real — a build
+that fails part-way has gigabytes staged, and `runOne` removes them in a `finally` — but
+**it cannot attribute what it finds**, and on 2026-10-21 it twice reported somebody
+else's build.
+
+`os.tmpdir()` is shared by every workspace on the machine and by whatever server a person
+is using, and a staging directory is named by `mkdtemp`, carrying nothing that says which
+process owns it. A build started elsewhere during this file is indistinguishable from a
+leak by this one. There were two sightings on that day, neither reproducible.
+
+The first is explained: a run of this group by another session, which saw four
+`marp-dataset-*` directories that session then deleted four minutes later. **The second is
+not.** It was offered as having seen three `marp-build-*` directories deleted later that
+afternoon, and that cannot be what happened — all three were created hours before the run,
+so they were in the opening snapshot and filtered out by construction. Something appeared
+during that run and stayed; what, is not established, and a build elsewhere on the machine
+is the likeliest candidate rather than a demonstrated one.
+
+The check is kept, because the alternative is not noticing a real leak. What changed is
+the failure text: it now names the directories **and** says to check for another build
+before chasing a leak, so the next person does not spend an afternoon on it. The fix that
+would make it attributable is not in this file — staging under `%TEMP%/marp-builds/<pid>/`
+would let a test ask about its own process, and would stop a prefix sweep matching a live
+build at the same time.
+
 ## Recorded, not chased: `test:ml` then `test:mosaic` fails where neither does alone
 
 Reported by the design-review session on 2026-10-21, written down here so it is found by
