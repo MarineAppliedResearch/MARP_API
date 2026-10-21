@@ -151,6 +151,20 @@ function imageSettings(asked) {
     return { format, quality, extension: format === 'jpeg' ? 'jpg' : 'png' };
 }
 
+/**
+ * How many frames one ffmpeg pass asks for.
+ *
+ * `extractFrames` builds a `select` expression with a term per frame, so the command line
+ * grows with the batch: about forty characters each, against an operating-system limit
+ * near 32 KB on Windows. 400 keeps a pass around 16 KB with room to spare, and the cost
+ * of a smaller batch is one more seek into a video already open on disk.
+ *
+ * Found at 8,408 frames, where a build died with `spawn ENAMETOOLONG` after minutes of
+ * extraction. Every build run by hand until then had been a few hundred frames, which is
+ * why it had never shown.
+ */
+const FRAMES_PER_PASS = 400;
+
 /** Identifies this API to Jellyfin, the way the thumbnail path does. */
 const MEDIA_CLIENT_IDENTITY = { client: 'MARP API', device: 'dataset-build' };
 
@@ -196,9 +210,12 @@ function dataYaml(classes, directories = ['train', 'eval']) {
  * @param {Object} entry - One `extractionPlan` entry: `{split, video, frames}`.
  * @param {string} staging - The build's staging directory.
  * @param {Object} [image] - From {@link imageSettings}; how to write each frame.
+ * @param {Function} [onBatch] - Called with the running count after each pass, so a
+ * long video reports progress while it is still being cut rather than only when it
+ * is finished.
  * @returns {Promise<{written: number, missing: number}>} What it managed.
  */
-async function cutVideo(entry, staging, image = imageSettings()) {
+async function cutVideo(entry, staging, image = imageSettings(), onBatch = null) {
     const resolved = await jellyfinRepository.resolveVideoSource(entry.video, 1, MEDIA_CLIENT_IDENTITY);
     const streamUrl = await jellyfinRepository.buildDirectStreamUrl(resolved.item.id, MEDIA_CLIENT_IDENTITY);
     const probe = await extraction.probeStream(streamUrl);
@@ -218,42 +235,66 @@ async function cutVideo(entry, staging, image = imageSettings()) {
     const cut = fs.mkdtempSync(path.join(os.tmpdir(), 'marp-build-'));
 
     try {
-        await extraction.extractFrames(streamUrl, wanted, probe.fps, cut);
-
         let written = 0;
         let missing = 0;
 
-        for (let i = 0; i < wanted.length; i++) {
-            const frame = wanted[i];
+        /* **One pass per batch, not one pass per video.** `extractFrames` builds a
+           `select` expression with a term per frame, so a video wanting 8,408 frames
+           produced a command line of roughly 340 KB against a limit near 32 KB, and the
+           build died with `spawn ENAMETOOLONG` after minutes of work. Every build run by
+           hand before that had been a few hundred frames.
 
-            /* The extractor names its output `frame-%04d.png`, by position in the list it
-               was given -- that is how one pass stays addressable. Taken from the loop
-               rather than by searching the list: `indexOf` inside the loop is quadratic,
-               and this list runs to tens of thousands. */
-            const produced = path.join(cut, `frame-${String(i + 1).padStart(4, '0')}.png`);
+           It also keeps a second limit out of reach: the extractor names its output
+           `frame-%04d.png`, so one pass over more than 9,999 frames would have begun
+           overwriting its own output. A batch never comes close.
 
-            if (!fs.existsSync(produced)) {
-                missing += 1;
+           And it makes progress move *within* a video rather than only between videos,
+           which over a four-hour build is the difference between a number that climbs
+           and one that sits still. */
+        for (let at = 0; at < wanted.length; at += FRAMES_PER_PASS) {
+            const batch = wanted.slice(at, at + FRAMES_PER_PASS);
 
-                continue;
+            // Its own directory, so position-within-batch stays the addressing.
+            const batchDir = path.join(cut, String(at));
+
+            fs.mkdirSync(batchDir, { recursive: true });
+            await extraction.extractFrames(streamUrl, batch, probe.fps, batchDir);
+
+            for (let i = 0; i < batch.length; i++) {
+                const frame = batch[i];
+                const produced = path.join(batchDir, `frame-${String(i + 1).padStart(4, '0')}.png`);
+
+                if (!fs.existsSync(produced)) {
+                    missing += 1;
+
+                    continue;
+                }
+
+                /* The video's name is in the filename, not just the frame number: two
+                   videos in one split both have a frame 1200, and one would overwrite
+                   the other. */
+                const stem = `${path.parse(entry.video).name}_${String(frame).padStart(8, '0')}`;
+
+                /* The extractor writes PNG, because a thumbnail is cropped and
+                   re-processed afterwards. A training frame is not, so it is re-encoded
+                   here -- see `DEFAULT_IMAGE` for why that is JPEG. */
+                const destination = path.join(images, `${stem}.${image.extension}`);
+
+                if (image.format === 'png') fs.renameSync(produced, destination);
+                else {
+                    await sharp(produced).jpeg({ quality: image.quality, mozjpeg: true }).toFile(destination);
+                    fs.rmSync(produced, { force: true });
+                }
+
+                fs.writeFileSync(path.join(labels, `${stem}.txt`), `${entry.frames.get(frame).join('\n')}\n`, 'utf8');
+                written += 1;
             }
 
-            /* The video's name is in the filename, not just the frame number: two videos
-               in one split both have a frame 1200, and one would overwrite the other. */
-            const stem = `${path.parse(entry.video).name}_${String(frame).padStart(8, '0')}`;
+            // Converted or moved; nothing in here is wanted again, and a long video's
+            // staging would otherwise hold every PNG it ever cut.
+            fs.rmSync(batchDir, { recursive: true, force: true });
 
-            /* The extractor writes PNG, because a thumbnail is cropped and re-processed
-               afterwards. A training frame is not, so it is re-encoded here -- see
-               `DEFAULT_IMAGE` for why that is JPEG and how to ask for something else. */
-            const destination = path.join(images, `${stem}.${image.extension}`);
-
-            if (image.format === 'png') fs.renameSync(produced, destination);
-            else {
-                await sharp(produced).jpeg({ quality: image.quality, mozjpeg: true }).toFile(destination);
-                fs.rmSync(produced, { force: true });
-            }
-            fs.writeFileSync(path.join(labels, `${stem}.txt`), `${entry.frames.get(frame).join('\n')}\n`, 'utf8');
-            written += 1;
+            if (onBatch) await onBatch(written);
         }
 
         return { written, missing };
@@ -407,7 +448,14 @@ async function runOne() {
                 return { cancelled: true, jobId: job.id };
             }
 
-            const cut = await cutVideo(entry, staging, image);
+            /* Reported per batch rather than per video: one video can hold thousands of
+               frames, and a reader watching a four-hour build needs the number to move
+               before the video it is on is finished. `done` is the count before this
+               video; the batch reports its own running total on top. */
+            const before = done;
+            const cut = await cutVideo(entry, staging, image, (soFar) => buildRepository.reportProgress(
+                attempt.id, { phase: 'extracting', done: before + soFar, total, unit: 'frames' }
+            ));
 
             done += cut.written;
             missing += cut.missing;
@@ -442,7 +490,14 @@ async function runOne() {
             members,
             classes,
             archive,
-            samples: done,
+            /* Two different numbers, recorded as two. `num_samples` has meant *images*
+               since before MARP built datasets -- `scripts/package-dataset.js` writes
+               it, which is why rockfish5 is known as 11,845 images -- so redefining it
+               would leave one column meaning images on every legacy row and something
+               else on every new one, with nothing to tell them apart. The observation
+               count is the genuinely new fact and gets the new column. */
+            frames: done,
+            observations: members.length,
         });
 
         logger.info(`Dataset ${datasetId} built: ${done} images, ${classes.length} classes, `
