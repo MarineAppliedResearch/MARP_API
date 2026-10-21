@@ -249,11 +249,13 @@ async function isCancelled(jobId) {
  * every row it had already written.
  *
  * @async
- * @param {Object} result - `{jobId, attemptId, datasetId, members, classes, archive, samples}`.
+ * @param {Object} result - `{jobId, attemptId, datasetId, members, classes, archive,
+ * frames, observations}`. Two different counts: `frames` is images written, which is
+ * what `num_samples` has always meant, and `observations` is how many were selected.
  * @returns {Promise<void>}
  * @throws {Error} Re-throws any database failure.
  */
-async function recordBuild({ jobId, attemptId, datasetId, members, classes, archive, samples }) {
+async function recordBuild({ jobId, attemptId, datasetId, members, classes, archive, frames, observations }) {
     const transaction = await db.sequelize.transaction();
 
     try {
@@ -308,7 +310,19 @@ async function recordBuild({ jobId, attemptId, datasetId, members, classes, arch
         await db.sequelize.query(
             `UPDATE datasets
                 SET status = 'ready',
-                    num_samples = :samples,
+                    /* num_samples is images, as it has been since before MARP built
+                       datasets -- package-dataset.js writes the image count and that is
+                       why rockfish5 is known as 11,845 images. Redefining it would leave
+                       one column meaning images on legacy rows and observations on new
+                       ones, with nothing to tell them apart.
+
+                       num_observations is the new fact: nothing recorded it before #268,
+                       because dataset_observations was empty. Counting that table live
+                       instead would shrink -- its observation_id cascade removes the
+                       membership row when an observation goes, while the archive still
+                       holds that observation's frames. */
+                    num_samples = :frames,
+                    num_observations = :observations,
                     num_classes = :classCount,
                     archive_path = :archivePath,
                     archive_sha256 = :sha256,
@@ -318,7 +332,8 @@ async function recordBuild({ jobId, attemptId, datasetId, members, classes, arch
             {
                 replacements: {
                     datasetId,
-                    samples,
+                    frames,
+                    observations,
                     classCount: classes.length,
                     archivePath: archive.path,
                     sha256: archive.sha256,
