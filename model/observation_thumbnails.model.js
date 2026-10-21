@@ -143,6 +143,17 @@ module.exports = (sequelize, DataTypes) => {
                 defaultValue: 0,
                 comment: 'How many times extraction has been claimed for this row.',
             },
+            sweep_attempts: {
+                type: DataTypes.INTEGER,
+                allowNull: false,
+                defaultValue: 0,
+                comment: 'How many times the background sweeper has re-queued this row. Separate from `attempts`, which a reviewer also moves.',
+            },
+            swept_at: {
+                type: DataTypes.DATE,
+                allowNull: true,
+                comment: 'When the sweeper last re-queued this row. The backoff is measured from here, so pressing Ask again does not reset it.',
+            },
             request_priority: {
                 type: DataTypes.SMALLINT,
                 allowNull: false,
