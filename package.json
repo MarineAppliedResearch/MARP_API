@@ -17,6 +17,7 @@
     "test:auth": "node scripts/test-subsystem.mjs auth",
     "test:core": "node scripts/test-subsystem.mjs core",
     "test:media": "node scripts/test-subsystem.mjs media",
+    "test:datasets": "node scripts/test-subsystem.mjs datasets --testPathIgnorePatterns /node_modules/",
     "docs:api:build": "node ./scripts/generate-openapi.js",
     "docs:schema:infer": "node ./scripts/infer-openapi-schema.js",
     "docs:erd": "node ./sequelize-erd.js",

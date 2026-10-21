@@ -117,6 +117,21 @@ const SUBSYSTEMS = {
             // #268: grouping, splitting and vocabulary for a dataset build. Pure
             // functions, so they cost a second and belong with the registry they feed.
             'dataset-build-plan',
+            // #268: the rest of the build path -- the route, the claim rule, the
+            // runner, and what a cancelled, retried or failed build left behind. The
+            // extractor is stubbed in all three, so they are seconds rather than
+            // minutes; the real build is `datasets` below.
+            'dataset-build-queue',
+            'dataset-build-runner',
+            'dataset-build-lifecycle',
+            /* #268 1.2: the build's progress as the Datasets screen reads it. Written
+               on another branch, and registered from here deliberately -- this file has
+               one writer, and two agents editing it from different assumptions is a
+               conflict in the one place that says which suites exist. **The audit fails
+               until that file lands**, naming it, which is the honest half of the
+               trade: a suite that is expected and missing says so, where a suite nobody
+               registered is one no fast loop would ever run. */
+            'dataset-build-progress',
             'model_species',
             'training_runs',
         ],
@@ -175,6 +190,10 @@ const SUBSYSTEMS = {
             // invariant rather than a tier of its own.
             'dashboard-shell',
         ],
+    },
+    datasets: {
+        describe: 'a real dataset build. Needs the corpus and the media server; CI excludes it',
+        suites: ['dataset-build-real'],
     },
     media: {
         describe: 'Jellyfin. Needs the live media server, which is why CI excludes it',
