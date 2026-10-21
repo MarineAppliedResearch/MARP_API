@@ -279,8 +279,49 @@ being written, the newest at 21:17:38, all carrying the same 401. Pausing the ex
 through `thumbnail_extraction_state` is the designed control for exactly this and is one
 reversible write, but it is a shared resource and was left to the human.
 
+### The pause, and the final accounting
+
+Paused on the human's instruction at 21:25, through `thumbnail_extraction_state` -- the
+control #118 built for exactly this. It behaved as specified and the specification earned
+its keep:
+
+| | T+0 | T+60s | T+120s | T+240s |
+| --- | --- | --- | --- | --- |
+| claimed | 29 | 21 | 5 | **0** |
+| ready | 111,328 | 111,336 | 111,349 | 111,349 |
+| permanent | 66 | 66 | 66 | **66** |
+
+**Permanent failures froze the moment the pause landed**, which is what it was for. And
+in-flight extractions were allowed to finish rather than killed, which produced **21 more
+real pictures** out of Jellyfin streams already paid for -- the reason the migration gives
+for there being no `stopped` state, demonstrated rather than argued.
+
+Against the baseline:
+
+| | before | after |
+| --- | --- | --- |
+| ready | 111,319 | **111,349** (+30) |
+| retryable failures | 3,567 | 3,447 |
+| permanent failures | 38 | **66** (+28) |
+| queued | 0 | 62, extractor paused |
+
+**Every one of the 28 new permanent failures is the spurious 401**, across two videos -- 14
+on `20240730_171520_Fwd.mp4` and 14 on `20260614_203200_Fwd.mp4`. The 38 that were there
+before are all genuine: 28 with an empty `video_source` and 10 with no keyframes. So the
+defect has a clean signature and the damage has an exact boundary:
+`permanent AND last_error LIKE '%401%'` is 28 rows, all recoverable by the same two-column
+reset that fixed 258 and 308.
+
+**This is the honest cost of the run: 30 pictures gained, 28 observations retired that should
+not have been.** The sweeper did not misbehave -- it offered 200 rows at the right priority,
+stopped offering more while the queue was busy, and recorded itself accurately throughout.
+What it did was drive an existing misclassification hard enough to be visible, which is worth
+something, but it is not a trade worth repeating. **Resuming before the 401 is settled would
+simply retire more.**
+
 ### State left behind
 
-189 rows are still `queued` with `sweep_attempts = 1`. The API on port 3000 is still running
-and is draining them. Whatever fails will not be offered again for an hour, which is the
-backoff working. The port 3001 process was stopped; port 3000 was not touched.
+62 rows are still `queued` with `sweep_attempts = 1`, and nothing is draining them: the
+extractor is **paused**, persistently, with the reason recorded in
+`thumbnail_extraction_state.note`. They resume where they left off whenever somebody resumes
+it. The port 3001 process was stopped; port 3000 was never touched and is still serving.
