@@ -1002,13 +1002,26 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 
    The widths live on the header classes rather than in a <colgroup> because a
    narrower screen drops a column, and a <col> cannot be hidden reliably. */
+/* **Every sortable column needs a width here, including Worker.** `table-layout:
+   fixed` hands out exactly what is declared, so a column added to the markup and not
+   added to this list gets nothing: Worker collapsed to zero and its heading spilled
+   across Submitted, which is the two overlaid words somebody reported reading. The
+   widths are still deliberately generous of each other -- they sum above 100% and the
+   browser scales them -- so this changes the shares rather than the approach. */
 .tbl.fixed { table-layout: fixed; }
-.tbl.fixed .hjob    { width: 24%; }
+
+/* A heading too long for its column ends in an ellipsis instead of painting across the
+   next one. Without this a narrow window puts two labels on top of each other and the
+   reader sees one word over another rather than a column that got smaller. */
+.tbl.fixed th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tbl.fixed .hjob    { width: 19%; }
 .tbl.fixed .hscope  { width: 15%; }
-.tbl.fixed .hmodel  { width: 17%; }
+.tbl.fixed .hmodel  { width: 15%; }
 .tbl.fixed .hstatus { width: 12%; }
-.tbl.fixed .hprog   { width: 15%; }
-.tbl.fixed .hupd    { width: 8%; }
+.tbl.fixed .hprog   { width: 13%; }
+.tbl.fixed .hworker { width: 8%; }
+.tbl.fixed .hupd    { width: 9%; }
 .tbl.fixed .hacts   { width: 9%; }
 .two .a, .two .b, .name .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .name { max-width: 100%; }
