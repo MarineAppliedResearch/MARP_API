@@ -4447,7 +4447,7 @@ async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read
 
     try {
       const answer = await ask(span);
-      const { series, scales, current, quiet, points } = read(answer);
+      const { series, scales, current, quiet, points } = read(answer, { ...span, label: range.label });
 
       if (quiet) {
         blank();
@@ -4482,6 +4482,17 @@ async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read
           : (range.bucket === 'day'
             ? d.toISOString().slice(5, 10)
             : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+      });
+
+      /* **The unit travels with the figure.** A number beside a chart with a one-word
+         label is the Jobs badge problem again -- `1,189` with nothing saying "failed".
+         The window these are read over changes with the range buttons, so the words
+         cannot live in the markup: `read` says what each figure is, and says it against
+         the range it was actually computed for. */
+      $$(`[data-${prefix}-unit]`, root).forEach((node) => {
+        const said = (current.units || {})[node.dataset[camel('unit')]];
+
+        if (said !== undefined) node.textContent = said;
       });
 
       $$(`[data-${prefix}-current]`, root).forEach((node) => {
@@ -4818,7 +4829,11 @@ function wireDatasetActivity() {
       window.MarpApi.throughputSeries({ ...span, kind: 'dataset_build' }),
       window.MarpApi.jobSeries({ ...span, kind: 'dataset_build' }),
     ]).then(([rate, jobs]) => ({ rate, jobs })),
-    read: ({ rate, jobs }) => {
+    read: ({ rate, jobs }, span) => {
+      /* The bucket the route was asked for, so the figures can name their own window
+         rather than implying they all share one. */
+      const bucketWord = span.bucket === 'hour' ? 'hour' : 'day';
+
       /* The two routes bucket the same window the same way, but only the jobs route
          generates a row per bucket -- the rate route groups what it found, so a bucket
          where nothing was extracted is simply absent. Keyed by instant and read back
@@ -4868,15 +4883,30 @@ function wireDatasetActivity() {
              separator never fires and a fractional tick would be a build and a half. */
           formatRight: (v) => String(Math.round(v)),
         },
+        /* **Each figure says what it counts and over what, and the fourth one is gone.**
+           Isaac, on `14k frames - 2 waiting - 4 completed - 2 in flight`: *"which i'm not
+           sure what is telling us."* He was right not to trust it.
+
+           `2 in flight` was `waitingNow` a second time, under a word that means something
+           else -- there was no leased build on his database at all, and "in flight" never
+           read that. One number, twice, once wrongly labelled.
+
+           The other three were bare figures over unstated windows that are not even the
+           same window as each other: frames and waiting are the **last bucket**, an hour
+           on the 24h view and a whole day on 7d and 30d, while completed is a **sum over
+           the range**. Saying so is most of the fix. */
         current: {
           rate: compactCount(frames.at(-1)),
           waiting: String(waitingNow),
           finished: String(completed),
-          aria: `Dataset build activity: ${compactCount(frames.at(-1))} frames extracted in the last bucket, `
-            + `${waitingNow} build${waitingNow === 1 ? '' : 's'} waiting, ${completed} completed`,
-          /* Said only while something is in flight, because "0 building" is what the
-             cards above already say and a second copy of it is noise. */
-          building: waitingNow ? `${waitingNow} in flight` : '',
+          units: {
+            rate: `frames in the last ${bucketWord}`,
+            waiting: waitingNow === 1 ? `build unfinished at the start of this ${bucketWord}` : `builds unfinished at the start of this ${bucketWord}`,
+            finished: `completed in ${span.label}`,
+          },
+          aria: `Dataset build activity: ${compactCount(frames.at(-1))} frames extracted in the last ${bucketWord}, `
+            + `${waitingNow} build${waitingNow === 1 ? '' : 's'} unfinished at the start of it, `
+            + `${completed} completed in ${span.label}`,
         },
       };
     },

@@ -82,10 +82,15 @@
                   <button type="button" class="done" data-dataset-highlight="finished" title="Builds completed, read against the right axis">Builds completed</button>
                 </div>
                 <div class="inference-current" aria-label="Current dataset build activity">
-                  <span><b data-dataset-current="rate"></b> frames</span>
-                  <span><b data-dataset-current="waiting"></b> waiting</span>
-                  <span><b data-dataset-current="finished"></b> completed</span>
-                  <span class="clearing" data-rendered data-dataset-current="building" hidden></span>
+                  <!-- The unit is filled by the chart, not written here: these three
+                       are read over windows that differ from each other and change with
+                       the range buttons, so a fixed word beside them would be wrong on
+                       two of the three ranges. A fourth figure said "N in flight" and was
+                       the waiting count a second time under a word that means something
+                       else; it is gone. -->
+                  <span><b data-dataset-current="rate"></b> <span data-dataset-unit="rate" data-rendered></span></span>
+                  <span><b data-dataset-current="waiting"></b> <span data-dataset-unit="waiting" data-rendered></span></span>
+                  <span><b data-dataset-current="finished"></b> <span data-dataset-unit="finished" data-rendered></span></span>
                 </div>
               </div>
             </div>
