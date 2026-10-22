@@ -7580,9 +7580,17 @@ function wireSplit() {
 
     /* An estimate says nothing a reader can act on -- the numbers above already move
        when the shares do, and the caveat about whole groups is the split rule, which
-       belongs on the control that applies it rather than under the figures. */
+       belongs on the control that applies it rather than under the figures.
+
+       The other state is worth keeping, because it explains a number that will not add
+       up otherwise: every subset went to one split, so these counts are exact, and a
+       subset that contributed fewer than it matched did so because something it matched
+       was already placed. Said in the words the screen uses elsewhere -- "first
+       assignment wins" named the rule without saying what it does to you. */
     if (note) {
-      note.textContent = estimated ? '' : 'First assignment wins; later overlaps never cross splits';
+      note.textContent = estimated
+        ? ''
+        : 'An observation matched twice stays in the split that took it first, and overlapping frames go with it';
     }
   };
 

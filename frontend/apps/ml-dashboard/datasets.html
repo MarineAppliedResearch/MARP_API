@@ -317,7 +317,7 @@
               <span class="sub">Set when each query is added</span></h2>
             <div class="panel-tools">
               <span class="pill" data-state="idle"
-                    title="An observation or connected frame group keeps its first split assignment">No cross-split overlap</span>
+                    title="Overlapping frames of the same animal all go to one split, so the model is never tested on a near-copy of something it trained on">No near-duplicates across splits</span>
             </div>
           </header>
           <div class="panel-bd">
@@ -334,7 +334,7 @@
             </div>
             <div class="splitkey">
               <span class="tr">Train</span><span class="va">Validation</span><span class="te">Test</span>
-              <span class="faint" id="splitNote">First assignment wins; later overlaps never cross splits</span>
+              <span class="faint" id="splitNote">An observation matched twice stays in the split that took it first, and overlapping frames go with it</span>
             </div>
           </div>
         </section>
