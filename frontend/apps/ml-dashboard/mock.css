@@ -1908,6 +1908,18 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .dataset-facts span { display: grid; gap: 2px; padding: 8px; border-radius: 4px; background: var(--sunk); color: var(--faint); font-size: 8.5px; text-transform: uppercase; }
 .dataset-facts b { color: var(--white); font-size: 11px; text-transform: none; overflow-wrap: anywhere; }
 .dataset-class-summary { margin: 10px 0 3px; color: var(--text); font-size: 10px; }
+/* The three numbers per split, under the bar. A row each rather than packed into the
+   band, because the bands are sized by share and the smallest one has no room for a
+   number -- which is how the percentage ended up being the only thing shown. */
+.splitlegend { display: grid; gap: 4px; margin: 9px 0 0; padding: 0; list-style: none; }
+.splitlegend li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 9px; font-size: 9.5px; color: var(--faint); }
+.splitlegend i { width: 8px; height: 8px; border-radius: 2px; }
+.splitlegend .tr { background: rgba(34, 215, 220, 0.55); }
+.splitlegend .va { background: rgba(155, 124, 240, 0.55); }
+.splitlegend .te { background: rgba(246, 196, 83, 0.5); }
+.splitname { min-width: 66px; color: var(--white); text-transform: uppercase; letter-spacing: .05em; font-size: 8.5px; }
+.splitshare { min-width: 34px; color: var(--text); font-size: 10.5px; }
+.splitof b { color: var(--text); font-weight: 600; }
 /* The sample of frames a build cut. Full width under the grid: a frame is only useful at
    a size somebody can see the label box in. */
 .dataset-sample { margin-top: 16px; padding: 13px; border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--card-flat); }

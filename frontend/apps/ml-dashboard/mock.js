@@ -5558,23 +5558,60 @@ function splitBar(splits) {
   const rows = (splits || []).filter((s) => Number(s.observations) > 0);
   if (!rows.length) return '';
 
-  const total = rows.reduce((sum, s) => sum + Number(s.observations), 0);
+  /* **The percentage is of images when the archive could be counted, and says so.**
+     `assignSplits` balances the split on *frames* -- it measures each group as
+     `last_framenum - first_framenum + 1` and fills each share by that -- so a requested
+     70/20/10 is a ratio of images. This bar was drawn from observation counts, which is a
+     different quantity: one observation is a span, and 164 of them became 15,020 images.
+     A reader checking the bar against the ratio they asked for was comparing two
+     different things with nothing saying so.
+
+     When there is no archive to count, it falls back to observations and the label
+     changes with it, rather than the same bar quietly meaning something else. */
+  const byImages = rows.every((s) => Number.isFinite(Number(s.images)));
+  const unit = byImages ? 'images' : 'observations';
+  const amount = (s) => Number(byImages ? s.images : s.observations);
+  const total = rows.reduce((sum, s) => sum + amount(s), 0);
+
+  if (!total) return '';
   /* The class on each band is what colours it; an unexpected split name gets the neutral
      one rather than no class at all, which would be an invisible band. */
   const tone = { train: 'tr', validation: 'va', val: 'va', eval: 'va', test: 'te' };
 
-  const label = rows.map((s) => `${s.split} ${Math.round(s.observations / total * 100)} per cent`).join(', ');
+  const label = rows.map((s) => `${s.split} ${Math.round(amount(s) / total * 100)} per cent of ${unit}`).join(', ');
   const bands = rows.map((s) => {
-    const share = Math.round(Number(s.observations) / total * 100);
+    const share = Math.round(amount(s) / total * 100);
 
     return `<i class="${tone[s.split] || 'tr'}" style="width:${share}%"><span>${share}%</span></i>`;
+  }).join('');
+
+  /* **All three numbers per split, and the unit on every one of them.** Isaac asked for
+     the percentage, the observations and the images together, and the reason they have to
+     be labelled is that they disagree by two orders of magnitude -- 164 observations are
+     15,020 images -- so a bare pair of numbers reads as a contradiction rather than as
+     two units. The percentage carries its own unit in the caption below. */
+  const legend = rows.map((s) => {
+    const share = Math.round(amount(s) / total * 100);
+    const images = Number.isFinite(Number(s.images))
+      ? `<b>${Number(s.images).toLocaleString()}</b> images`
+      : '';
+
+    return `<li><i class="${tone[s.split] || 'tr'}"></i><span class="splitname">${escapeHtml(s.split)}</span>`
+      + `<span class="splitshare">${share}%</span>`
+      + `<span class="splitof"><b>${Number(s.observations).toLocaleString()}</b> observations</span>`
+      + (images ? `<span class="splitof">${images}</span>` : '')
+      + '</li>';
   }).join('');
 
   /* `escapeHtml` on an attribute, which is the bug this had: `NOT_IN_DATASET` is markup,
      and interpolating it into `aria-label` closed the attribute early and spilled
      `train validation test split">` onto the screen as text. Nothing that reaches an
      attribute here is markup any more, and it is escaped as well. */
-  return `<div class="splitbar" role="img" aria-label="${escapeHtml(label)}">${bands}</div>`;
+  return `<div class="splitbar" role="img" aria-label="${escapeHtml(label)}">${bands}</div>`
+    + `<ul class="splitlegend">${legend}</ul>`
+    + `<p class="hint">Percentages are of ${unit}${byImages
+      ? ', which is what the builder balances the split on.'
+      : " — the archive could not be counted, so these are not the ratio the build balanced on, which is images."}</p>`;
 }
 
 /**

@@ -20,7 +20,7 @@ const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
 const datasetController = require('../controller/dataset.controller');
 const modelArtifactService = require('../service/model-artifact.service');
 const datasetBuildRepository = require('../repository/dataset-build.repository');
-const { imageSettings } = require('../service/dataset-build.service');
+const { imageSettings, SPLIT_DIRECTORIES } = require('../service/dataset-build.service');
 const datasetRepository = require('../repository/dataset.repository');
 const datasetPreviewService = require('../service/dataset-preview.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
@@ -491,7 +491,46 @@ function registerDatasetRoutes(app) {
                 throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `Dataset ${req.params.id} was not found.`);
             }
 
-            res.json(await datasetRepository.getDatasetComposition(req.params.id));
+            const composition = await datasetRepository.getDatasetComposition(req.params.id);
+
+            /* **Images per split, counted out of the archive.** `dataset_observations`
+               records which split an observation went to and nothing about how many
+               frames it became -- one observation is a span, and 164 of them became
+               15,020 images in the first large build. The count has to come from
+               somewhere, and the archive is the honest somewhere: it is what a training
+               run will actually read, rather than what the builder believed it wrote.
+
+               **Best effort, and absent rather than zero when it cannot be had.** A
+               legacy import, a failed build and a dataset whose archive has been moved
+               all have membership and no file, and this answer is still about them. */
+            try {
+                const byDirectory = await datasetPreviewService.splitImages(req.params.id);
+
+                /* `eval` and `validation` are both written into `eval/`, so a dataset
+                   carrying both has no way to say which of them a given image belongs
+                   to. Attributed only where one split owns the directory; left out
+                   otherwise, because a number split between two rows would be invented. */
+                const owners = {};
+
+                for (const split of composition.splits) {
+                    const directory = SPLIT_DIRECTORIES[split.split];
+
+                    if (directory) owners[directory] = (owners[directory] || 0) + 1;
+                }
+
+                for (const split of composition.splits) {
+                    const directory = SPLIT_DIRECTORIES[split.split];
+
+                    if (directory && owners[directory] === 1 && byDirectory[directory] !== undefined) {
+                        split.images = byDirectory[directory];
+                    }
+                }
+            } catch (error) {
+                /* Nothing to read. The splits and the classes are the answer either way,
+                   and the screen says what it has rather than failing over a count. */
+            }
+
+            res.json(composition);
         }),
     });
 

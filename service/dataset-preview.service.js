@@ -63,6 +63,15 @@ const chosen = new Map();
 const CACHE_LIMIT = 8;
 
 /**
+ * Images per split directory, by archive hash.
+ *
+ * Separate from {@link chosen} because it does not depend on the sample size, and because
+ * the composition panel asks for it without wanting a preview. Same reasoning about being
+ * safe to keep: an archive is named for its own bytes.
+ */
+const counted = new Map();
+
+/**
  * Reads a NUL-terminated field out of a tar header.
  *
  * @param {Buffer} header - The 512-byte block.
@@ -246,6 +255,59 @@ function pick(all, limit) {
 }
 
 /**
+ * Counts the images in each split directory of a walk.
+ *
+ * @param {Array<{name: string}>} all - Every member of the archive.
+ * @returns {Object<string, number>} Directory to image count, zeroes left out.
+ */
+function tally(all) {
+    const counts = {};
+
+    for (const member of all) {
+        const match = /^(train|eval|test)\/images\/[^/]+\.(jpe?g|png)$/i.exec(member.name);
+
+        if (match) counts[match[1]] = (counts[match[1]] || 0) + 1;
+    }
+
+    return counts;
+}
+
+/**
+ * How many images the archive actually holds in each split.
+ *
+ * **Counted from the archive rather than recorded at build time**, and the difference is
+ * the point. The runner knows what it believed it wrote; the archive is what a training
+ * run will actually read. A build that lost frames to a truncated video, or wrote them
+ * somewhere unexpected, shows up here and would not show up in a number saved alongside
+ * it -- which matters on a screen whose whole job this week has been telling somebody
+ * what their build really produced. It also answers for every dataset built before this
+ * existed, with no backfill.
+ *
+ * The cost is the same header walk the preview does, about 140 ms over a 2.4 GB archive,
+ * cached on the archive's hash thereafter.
+ *
+ * **Directories, not split names.** `eval` and `validation` are both written into
+ * `eval/`, so the caller maps its own split names onto these and decides what to do when
+ * two of them land on one directory.
+ *
+ * @async
+ * @param {number|string} datasetId - `datasets.id`.
+ * @returns {Promise<Object<string, number>>} Directory to image count.
+ * @throws {ApiError} 404 when there is no archive to read.
+ */
+async function splitImages(datasetId) {
+    const archive = await gpuService.datasetArchive(datasetId);
+
+    if (!counted.has(archive.sha256)) {
+        counted.set(archive.sha256, tally(members(archive.absolutePath)));
+
+        while (counted.size > CACHE_LIMIT) counted.delete(counted.keys().next().value);
+    }
+
+    return counted.get(archive.sha256);
+}
+
+/**
  * The frames a dataset's preview shows, and the boxes drawn on them.
  *
  * @async
@@ -263,6 +325,10 @@ async function preview(datasetId, limit = DEFAULT_LIMIT) {
 
     if (!chosen.has(key)) {
         const all = members(archive.absolutePath);
+
+        /* The same walk answers both questions, so opening a row costs one pass rather
+           than one for the frames and another for the counts beside them. */
+        if (!counted.has(archive.sha256)) counted.set(archive.sha256, tally(all));
 
         chosen.set(key, {
             absolutePath: archive.absolutePath,
@@ -329,6 +395,7 @@ async function frame(datasetId, index, limit = DEFAULT_LIMIT) {
 module.exports = {
     preview,
     frame,
+    splitImages,
     DEFAULT_LIMIT,
     MAX_LIMIT,
 };
