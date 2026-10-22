@@ -106,6 +106,34 @@ class DatasetRepository {
             { replacements: { datasetId }, type: QueryTypes.SELECT }
         );
 
+        /* **Per species, per split, in observations.** Isaac asked for this in the words
+           *"kinda like we do above when we build the dataset"* -- the build flow's class
+           breakdown, but for what was actually built rather than what a query matched.
+
+           **Observations, not images, and the panel says so.** `dataset_observations` is
+           a row per observation, so counting it is exact. Images per species is the more
+           useful number and is not available: `dataset_splits` records images per split,
+           not per species, and deriving them from keyframe spans would give what the
+           build *intended* to cut rather than what it wrote -- `cutVideo` reports frames
+           it could not produce. An estimate dressed as a count is the thing this panel
+           has twice been corrected for.
+
+           A zero is kept rather than dropped: a rare species landing only in train is
+           exactly what the stratification exists to prevent, so the reader has to be able
+           to see it. The rows come back as they are and the screen fills the gaps. */
+        const speciesSplits = await this.db.sequelize.query(
+            `SELECT o.species_id,
+                    o.comname,
+                    m.inclusion_type AS split,
+                    count(*)::int    AS observations
+               FROM dataset_observations m
+               JOIN observations o ON o.observation_id = m.observation_id
+              WHERE m.dataset_id = :datasetId
+              GROUP BY o.species_id, o.comname, m.inclusion_type
+              ORDER BY o.comname, m.inclusion_type`,
+            { replacements: { datasetId }, type: QueryTypes.SELECT }
+        );
+
         const classes = await this.db.sequelize.query(
             `SELECT c.class_index, c.species_id, s.comname
                FROM dataset_classes c
@@ -115,7 +143,7 @@ class DatasetRepository {
             { replacements: { datasetId }, type: QueryTypes.SELECT }
         );
 
-        return { splits, classes };
+        return { splits, classes, speciesSplits };
     }
 
 

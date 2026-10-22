@@ -772,7 +772,9 @@ describe('GET /api/v2/dataset/builds', () => {
             const res = await global.api.get(`/api/v2/dataset/${dataset.id}/composition`);
 
             expect(res.status).toBe(200);
-            expect(res.body).toEqual({ splits: [], classes: [] });
+            /* All three empty: a dataset with no membership has no splits, no
+               vocabulary and no species to put into splits. */
+            expect(res.body).toEqual({ splits: [], classes: [], speciesSplits: [] });
         });
 
         /**
@@ -2144,6 +2146,72 @@ describe('GET /api/v2/dataset/builds', () => {
             expect(res.body.splits).toHaveLength(1);
             expect(res.body.splits[0].observations).toBe(2);
             expect(res.body.splits[0].images).toBeNull();
+        });
+
+        /**
+         * **Where each species went, split by split.** *"The dataset composition and
+         * split should show us the split number of each species, kinda like we do above
+         * when we build the dataset."*
+         *
+         * Counted in **observations**, which is what `dataset_observations` holds. The
+         * images figure beside it on the same panel is a different unit by about ninety
+         * to one, so the screen labels this one; the route's job is to be exact about
+         * what it counted.
+         */
+        it('counts each species into each split', async () => {
+            const datasetId = await seedMembership('byspecies', {});
+
+            const [species] = await db.sequelize.query(
+                'SELECT id, comname FROM species WHERE comname IS NOT NULL ORDER BY id LIMIT 2',
+                { type: QueryTypes.SELECT }
+            );
+
+            /* Two splits for one species, one for the other, so the answer cannot pass by
+               giving every species the same shape. */
+            for (const [split, howMany] of [['train', 3], ['validation', 1]]) {
+                for (let i = 0; i < howMany; i++) {
+                    const [observation] = await db.sequelize.query(
+                        `INSERT INTO observations ("obsID", species_id, comname, "createdAt", "updatedAt")
+                         VALUES (0, :speciesId, :comname, NOW(), NOW())
+                         RETURNING observation_id`,
+                        {
+                            replacements: { speciesId: species.id, comname: species.comname },
+                            type: QueryTypes.SELECT,
+                        }
+                    );
+
+                    made.observations.push(observation.observation_id);
+
+                    await db.sequelize.query(
+                        `INSERT INTO dataset_observations
+                             (dataset_id, observation_id, inclusion_type, selection_method,
+                              created_at, updated_at)
+                         VALUES (:dataset, :observation, :split, 'jest', NOW(), NOW())`,
+                        {
+                            replacements: {
+                                dataset: datasetId,
+                                observation: observation.observation_id,
+                                split,
+                            },
+                        }
+                    );
+                }
+            }
+
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/composition`);
+
+            expect(res.status).toBe(200);
+
+            const mine = res.body.speciesSplits.filter((row) => row.species_id === species.id);
+            const bySplit = Object.fromEntries(mine.map((row) => [row.split, row.observations]));
+
+            expect(bySplit).toEqual({ train: 3, validation: 1 });
+
+            /* **No row for `test`, and that is correct.** The route reports what is there;
+               drawing the absence as a zero is the screen's job, because a zero is a
+               claim about a split this dataset has and the route cannot know which splits
+               the reader expects. */
+            expect(mine.some((row) => row.split === 'test')).toBe(false);
         });
 
         /** A split with membership still appears even with nothing recorded against it. */

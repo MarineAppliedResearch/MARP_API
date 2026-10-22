@@ -1949,6 +1949,22 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .dataset-facts span { display: grid; gap: 2px; padding: 8px; border-radius: 4px; background: var(--sunk); color: var(--faint); font-size: 8.5px; text-transform: uppercase; }
 .dataset-facts b { color: var(--white); font-size: 11px; text-transform: none; overflow-wrap: anywhere; }
 .dataset-class-summary { margin: 10px 0 3px; color: var(--text); font-size: 10px; }
+/* Where each species went. Four columns: the name, then one per split, so a species that
+   landed only in train shows two zeros rather than two absences. */
+.speciessplit { margin: 10px 0 2px; }
+.speciessplit h5 { display: flex; align-items: baseline; gap: 7px; margin: 0 0 5px; color: var(--white); font-size: 10px; }
+.speciessplit h5 span { color: var(--faint); font-size: 8.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+.speciessplit ol { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.speciessplit li { display: grid; grid-template-columns: minmax(0, 1fr) 46px 46px 46px; gap: 6px; align-items: baseline; padding: 2px 4px; border-radius: 3px; font-size: 10px; }
+.speciessplit li.head { color: var(--faint); font-size: 8px; text-transform: uppercase; letter-spacing: .05em; }
+.speciessplit li.more { color: var(--muted); font-style: italic; }
+.speciessplit li:nth-of-type(even):not(.head) { background: var(--sunk); }
+.sn { min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+.sv { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+/* A zero is shown and muted rather than hidden: an empty split is the thing the
+   stratification exists to prevent, so it has to be visible as a zero. */
+.sv.none { color: var(--faint); }
+.linkish { padding: 3px 0; border: 0; background: none; color: var(--cyan-300); font: inherit; font-size: 9.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 /* The three numbers per split, under the bar. A row each rather than packed into the
    band, because the bands are sized by share and the smallest one has no room for a
    number -- which is how the percentage ended up being the only thing shown. */

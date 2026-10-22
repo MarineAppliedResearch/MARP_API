@@ -6540,6 +6540,93 @@ async function refreshBuildQueue() {
   }
 }
 
+/** How many species a built dataset lists before the rest are folded into one row. */
+const SPECIES_SHOWN = 8;
+
+/**
+ * Where each species went, split by split.
+ *
+ * *"The dataset composition and split should show us the split number of each species,
+ * kinda like we do above when we build the dataset."* The build flow's breakdown answers
+ * what a query matched; this answers what the build actually put in the archive.
+ *
+ * **Counted in observations, and the header says so.** The panel above this one counts
+ * **images** per split, and the two differ by about ninety to one -- 164 observations
+ * became 15,020 images. Two numbers in one panel in two units, with nothing saying which
+ * is which, is the mistake this screen has already been corrected for twice, so the unit
+ * is a column heading rather than a footnote. Images per species are not available:
+ * `dataset_splits` records them per split, and deriving them from keyframe spans would
+ * give what the build *intended* to cut rather than what it wrote.
+ *
+ * **A zero is drawn, not dropped.** A rare species landing only in train is what the
+ * stratification exists to prevent, and it is only visible if the empty cells are there.
+ *
+ * **Folded after eight, the way the build flow folds after five**, because a breakdown
+ * that is fine with four species and unreadable with thirty is not finished. The fold
+ * sums the rest rather than hiding them, and says how many it is holding.
+ *
+ * @param {Object[]} rows - `{species_id, comname, split, observations}` from the route.
+ * @param {boolean} all - Show every species rather than the first {@link SPECIES_SHOWN}.
+ * @returns {string}
+ */
+function speciesSplitTable(rows, all) {
+  if (!rows || !rows.length) return '';
+
+  /* The split names `inclusion_type` holds. Deliberately not the archive's directories:
+     `validation` and `eval` share `eval/` on disk, and a panel about membership should
+     say what was asked for rather than where it landed. */
+  const splits = ['train', 'validation', 'test'];
+  const by = new Map();
+
+  for (const row of rows) {
+    const key = row.species_id ?? row.comname;
+
+    if (!by.has(key)) {
+      by.set(key, { name: row.comname || `Species ${row.species_id}`, total: 0, counts: {} });
+    }
+
+    const entry = by.get(key);
+    const n = Number(row.observations) || 0;
+
+    entry.counts[row.split] = (entry.counts[row.split] || 0) + n;
+    entry.total += n;
+  }
+
+  const sorted = [...by.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  const shown = all ? sorted : sorted.slice(0, SPECIES_SHOWN);
+  const rest = all ? [] : sorted.slice(SPECIES_SHOWN);
+
+  const cells = (entry) => splits
+    .map((split) => `<span class="sv${entry.counts[split] ? '' : ' none'}">${(entry.counts[split] || 0).toLocaleString('en-US')}</span>`)
+    .join('');
+
+  const body = shown.map((entry) => `<li><span class="sn">${escapeHtml(entry.name)}</span>${cells(entry)}</li>`).join('');
+
+  /* One row standing for the rest, with its own split counts summed -- not a count of
+     species with the numbers thrown away, which would make the columns stop adding up. */
+  const folded = rest.length
+    ? `<li class="more"><span class="sn">Other (${rest.length} ${rest.length === 1 ? 'species' : 'species'})</span>`
+      + cells(rest.reduce((sum, entry) => {
+        for (const split of splits) sum.counts[split] = (sum.counts[split] || 0) + (entry.counts[split] || 0);
+
+        return sum;
+      }, { counts: {} }))
+      + '</li>'
+    : '';
+
+  const toggle = (rest.length || all)
+    ? `<button class="linkish" type="button" data-species-split-toggle>${all ? 'Show fewer' : `Show all ${sorted.length}`}</button>`
+    : '';
+
+  /* The toggle lives inside this element, because redrawing replaces the element whole
+     -- a button outside it would keep saying "Show all" after everything was shown. */
+  return '<div class="speciessplit">'
+    + '<h5>By species <span>observations, not images</span></h5>'
+    + `<ol><li class="head"><span class="sn"></span>${splits
+      .map((split) => `<span class="sv">${split}</span>`).join('')}</li>`
+    + body + folded + '</ol>' + toggle + '</div>';
+}
+
 function datasetPillContents(status, build) {
   const dot = build && build.state === 'leased' ? '<span class="dot"></span>' : '';
 
@@ -7021,7 +7108,7 @@ async function wireDatasetPage() {
         let named = new Map();
 
         try {
-          const { splits, classes: vocabulary } = await window.MarpApi.datasetComposition(set.id);
+          const { splits, classes: vocabulary, speciesSplits } = await window.MarpApi.datasetComposition(set.id);
           const bar = splitBar(splits);
           const names = (vocabulary || [])
             .map((entry) => escapeHtml(entry.comname || `Species ${entry.species_id}`));
@@ -7031,11 +7118,35 @@ async function wireDatasetPage() {
 
           /* Nothing recorded is a real answer and a common one: every dataset built
              before #268 wrote membership has neither, and saying so beats an empty bar. */
+          /* The per-species breakdown replaces the bare list of names it used to print:
+             the names are in the first column of it, with where each one went beside
+             them, which is what the list was standing in for. */
+          const table = speciesSplitTable(speciesSplits, false);
+
           into.innerHTML = (bar || names.length)
-            ? bar + (names.length
+            ? bar + (table || (names.length
               ? `<p class="dataset-class-summary">${names.join(' &middot; ')}</p>`
-              : '')
+              : ''))
             : '<span class="hint">No membership was recorded for this dataset.</span>';
+
+          /* Redrawn in place rather than toggling a class, so the fold can sum the rest
+             rather than hiding rows that are already on the page. */
+          const toggle = $('[data-species-split-toggle]', into);
+
+          if (toggle) {
+            let all = false;
+
+            into.addEventListener('click', (event) => {
+              if (!event.target.closest('[data-species-split-toggle]')) return;
+
+              all = !all;
+
+              const fresh = speciesSplitTable(speciesSplits, all);
+              const holder = $('.speciessplit', into);
+
+              if (holder && fresh) holder.outerHTML = fresh;
+            });
+          }
         } catch (error) {
           into.innerHTML = `<span class="hint">Could not load its composition (${error.status || 'no answer'}).</span>`;
         }
