@@ -70,6 +70,51 @@ const JOB_SORT_KEYS = Object.keys(gpuRepository.JOB_SORT_COLUMNS);
 const GPU_TAG = 'V1 · GpuCompute';
 
 /**
+ * What a downloaded dataset archive should be called on disk.
+ *
+ * The archive is named for its own SHA-256 in storage, which is right there and useless
+ * to a person: a worker resuming a fetch was the only client until somebody clicked
+ * Download on the Datasets screen and got `6b37b479….tar` in their downloads folder.
+ *
+ * **A dataset name is free text**, so it cannot go into a header as it stands. Three
+ * things are being guarded against at once, and only the first is obvious:
+ *
+ * - a newline would end the header and begin another, which is header injection;
+ * - `\\ / : * ? " < > |` are illegal in a Windows filename, and a trailing dot or space
+ *   makes a name Windows will not write at all;
+ * - a non-ASCII character in a bare `filename=` is not interoperable, which is what
+ *   RFC 5987's `filename*` exists for.
+ *
+ * So the plain `filename=` is always ASCII and always safe, and `filename*=` carries the
+ * real name when they differ. A client that understands neither still gets the hash.
+ *
+ * `.tar` because it is one: `packageArchive` shells out to `tar` and `archive_path` ends
+ * `.tar`. Calling it `.zip` would be a lie a person only discovers on opening it.
+ *
+ * @param {?string} name - `datasets.name`, as a person typed it.
+ * @param {string} sha256 - The archive's digest, used when the name leaves nothing.
+ * @returns {string} A `Content-Disposition` value.
+ */
+function archiveDisposition(name, sha256) {
+    const cleaned = String(name || '')
+        .replace(/[\u0000-\u001f\u007f]/g, '')
+        .replace(/[\\/:*?"<>|]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/[. ]+$/, '')
+        .slice(0, 120)
+        .replace(/[. ]+$/, '');
+
+    const base = cleaned || `dataset-${sha256.slice(0, 12)}`;
+    const ascii = base.replace(/[^\x20-\x7e]/g, '_');
+    const plain = `filename="${ascii}.tar"`;
+
+    return base === ascii
+        ? `attachment; ${plain}`
+        : `attachment; ${plain}; filename*=UTF-8''${encodeURIComponent(`${base}.tar`)}`;
+}
+
+/**
  * Where the whole family is mounted, in V2 terms. Used to raise the JSON body
  * limit for these routes and nothing else.
  *
@@ -518,6 +563,11 @@ function registerGpuRoutes(app) {
             res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
             res.setHeader('ETag', `"dataset-archive-${archive.sha256}"`);
             res.setHeader('Accept-Ranges', 'bytes');
+
+            /* So a person who clicks Download gets the dataset's name rather than its
+               hash. The worker does not read this and is unaffected: it asks for bytes
+               and validates them against the digest. */
+            res.setHeader('Content-Disposition', archiveDisposition(archive.name, archive.sha256));
 
             // A conditional fetch of an immutable file can always be answered from cache.
             if (req.headers['if-none-match'] === `"dataset-archive-${archive.sha256}"`) {

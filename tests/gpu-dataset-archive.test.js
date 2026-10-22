@@ -51,6 +51,17 @@ let archiveFile;
 let packagedId;
 let unpackagedId;
 
+/**
+ * A dataset whose name is everything a filename cannot be.
+ *
+ * Quotes and a newline would break the header or inject another; the Windows-illegal
+ * set would produce a file the browser cannot write; the trailing dot is refused by
+ * Windows on its own. Dataset names are free text, so all of this is reachable by
+ * typing it into the New dataset field.
+ */
+const AWKWARD_NAME = 'CAMPA "2024" / Rockfish: v1*?<>|\\\n  .';
+let awkwardId;
+
 beforeAll(async () => {
     sha256 = require('crypto').createHash('sha256').update(BODY).digest('hex');
 
@@ -83,11 +94,31 @@ beforeAll(async () => {
         { replacements: { name: `jest-dataset-unpackaged-${runId}` }, type: db.Sequelize.QueryTypes.INSERT, logging: false }
     );
     unpackagedId = unpackaged[0].id;
+
+    /* Points at the same archive file: what is being tested is the name on the way out,
+       not the bytes, and one file serves both. */
+    const [awkward] = await db.sequelize.query(
+        `INSERT INTO datasets (name, location, num_samples, num_classes, source, status,
+                               archive_path, archive_sha256, archive_bytes, created_at, updated_at)
+         VALUES (:name, 'test', 1, 1, 'test', 'ready', :archivePath, :sha, :bytes, now(), now())
+         RETURNING id`,
+        {
+            replacements: {
+                name: `${AWKWARD_NAME} ${runId}`,
+                archivePath: `datasets/${path.basename(archiveFile)}`,
+                sha: sha256,
+                bytes: BODY.length,
+            },
+            type: db.Sequelize.QueryTypes.INSERT,
+            logging: false,
+        }
+    );
+    awkwardId = awkward[0].id;
 });
 
 afterAll(async () => {
     await db.sequelize.query('DELETE FROM datasets WHERE id IN (:ids)', {
-        replacements: { ids: [packagedId, unpackagedId].filter(Boolean) },
+        replacements: { ids: [packagedId, unpackagedId, awkwardId].filter(Boolean) },
         logging: false,
     });
     if (archiveFile && fs.existsSync(archiveFile)) fs.rmSync(archiveFile);
@@ -160,5 +191,63 @@ describe('GET /api/v2/gpu/datasets/:id/archive', () => {
         const response = await global.api.get('/api/v2/gpu/datasets/99999999/archive');
 
         expect(response.status).toBe(404);
+    });
+});
+
+describe('what a person gets when they click Download (#268)', () => {
+
+    /* The archive is stored under its own SHA-256, which is the right name in storage
+       and useless in a downloads folder. Until this header existed the only client was
+       a worker, which does not care; a person does. */
+
+    test('the archive arrives named for the dataset, as a tar', async () => {
+        const response = await global.api.get(`/api/v2/gpu/datasets/${packagedId}/archive`).responseType('blob');
+
+        expect(response.status).toBe(200);
+        expect(response.headers['content-disposition'])
+            .toBe(`attachment; filename="jest-dataset-packaged-${runId}.tar"`);
+    });
+
+    test('a name full of things a filename cannot contain is made safe', async () => {
+        const response = await global.api.get(`/api/v2/gpu/datasets/${awkwardId}/archive`).responseType('blob');
+        const disposition = response.headers['content-disposition'];
+
+        expect(response.status).toBe(200);
+
+        /* The header must survive being a header: a newline would end it and start
+           another, which is how a dataset name becomes header injection. */
+        expect(disposition).not.toMatch(/[\r\n]/);
+
+        /* And must survive being a Windows filename. The interior dot stays — a dot is
+           only a problem at the end of a name, and this is what the person typed. */
+        expect(disposition).toBe(`attachment; filename="CAMPA 2024 Rockfish v1 . ${runId}.tar"`);
+        expect(disposition).not.toMatch(/[\\/:*?<>|]/);
+    });
+
+    test('a range request carries it too, so a resumed download keeps the name', async () => {
+        const response = await global.api
+            .get(`/api/v2/gpu/datasets/${packagedId}/archive`)
+            .set('Range', 'bytes=0-4')
+            .responseType('blob');
+
+        expect(response.status).toBe(206);
+        expect(response.headers['content-disposition'])
+            .toBe(`attachment; filename="jest-dataset-packaged-${runId}.tar"`);
+    });
+
+    test('the worker path is untouched: bytes, length and validator are what they were', async () => {
+        /* The trade this change must not make. A worker asks for bytes and checks them
+           against the digest; an extra header is nothing to it, and this says so rather
+           than assuming it. */
+        const response = await global.api
+            .get(`/api/v2/gpu/datasets/${packagedId}/archive`)
+            .set('Range', 'bytes=5-9')
+            .responseType('blob');
+
+        expect(response.status).toBe(206);
+        expect(response.headers['content-range']).toBe(`bytes 5-9/${BODY.length}`);
+        expect(response.headers['content-length']).toBe('5');
+        expect(response.headers['etag']).toBe(`"dataset-archive-${sha256}"`);
+        expect(Buffer.from(response.body).toString('utf8')).toBe(BODY.subarray(5, 10).toString('utf8'));
     });
 });
