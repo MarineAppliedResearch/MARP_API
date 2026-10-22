@@ -962,6 +962,50 @@ function registerGpuRoutes(app) {
     });
 
     registerVersionedRoute(app, {
+        method: 'delete',
+        permission: 'jobs:write',
+        path: '/api/gpu/jobs/:id',
+        summary: 'Delete one job',
+        description:
+            'Removes a single job and its attempts, whatever state it is in.\n\n'
+            + '**A job that produced observations does not delete on the first request.** `observations.gpu_job_id` is `ON DELETE SET NULL`, so deleting such a job neither refuses nor cascades: it leaves every observation in place and silently removes the link back to the run that produced it. Measured on the development corpus, the succeeded jobs hold **114,866 observations** between them and every other state holds none -- so this is a real loss on exactly the jobs a person is most likely to tidy away, and an invisible one. The first request answers **409 with the number of observations that job produced**; resend with `acknowledgeObservations=true` to go ahead. The count is that job\'s own, queried for the occasion, not a general warning.\n\n'
+            + '**A job an artifact references is refused outright**, because `artifacts.job_id` is RESTRICT. Deleting the artifact to make the job deletable would be destroying the output to tidy the record of the work.\n\n'
+            + 'The foreign key is deliberately left as SET NULL: it is the schema\'s existing decision and other things depend on it. The guard belongs here, where it can say what it is about to cost.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The job.' },
+            {
+                in: 'query', name: 'acknowledgeObservations', required: false,
+                schema: { type: 'boolean', default: false },
+                description: 'Required when the job produced observations; confirms their provenance may be unlinked.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'The job is gone.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                deleted: { type: 'integer' },
+                                observationsUnlinked: { type: 'integer' },
+                                attemptsRemoved: { type: 'integer' },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            409: { description: 'Held by an artifact, or it would unlink observations and nobody has said so.' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await gpuController.deleteJob(req.params.id, req.query || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
         method: 'post',
         permission: 'jobs:write',
         path: '/api/gpu/requeue-interrupted',

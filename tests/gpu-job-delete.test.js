@@ -176,6 +176,34 @@ beforeAll(async () => {
         [attempt.id]
     );
 
+    /* A succeeded job with observations hanging off it: the dangerous case, because
+       SET NULL means this delete neither refuses nor cascades. */
+    seeded.succeededWithObservations = await job('succeeded with observations', 'succeeded');
+
+    const [project] = await on(
+        SCRATCH_DB,
+        `INSERT INTO projects (name, "createdAt", "updatedAt") VALUES ('Jest Delete', NOW(), NOW()) RETURNING project_id`
+    );
+    const [session] = await on(
+        SCRATCH_DB,
+        `INSERT INTO sessions (project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+         VALUES ($1, 1, 'JD0001', 'L1', 'LID-JD-1', 'transect', NOW(), NOW()) RETURNING session_id`,
+        [project.project_id]
+    );
+
+    seeded.observationIds = [];
+
+    for (const n of [1, 2]) {
+        const [obs] = await on(
+            SCRATCH_DB,
+            `INSERT INTO observations (session_id, project_id, "obsID", comname, gpu_job_id, tc, "createdAt", "updatedAt")
+             VALUES ($1, $2, $3, 'Jest Delete', $4, '10:00:00', NOW(), NOW()) RETURNING observation_id`,
+            [session.session_id, project.project_id, n, seeded.succeededWithObservations]
+        );
+
+        seeded.observationIds.push(obs.observation_id);
+    }
+
     /* The artifact that makes its job undeletable. */
     await on(
         SCRATCH_DB,
@@ -237,6 +265,85 @@ describe('deleting failed jobs (#268)', () => {
 
         expect(again.deleted).toEqual([]);
         expect(again.blocked).toEqual([seeded.failedWithArtifact]);
+    }, 60000);
+});
+
+/**
+ * Calls the service for one job in the scratch database, the same way.
+ *
+ * @param {number} jobId - The job.
+ * @param {boolean} ack - Whether the caller acknowledged the observation loss.
+ * @returns {Object} `{ok, body}` -- the result, or the ApiError's status and message.
+ */
+function deleteOneInScratch(jobId, ack) {
+    const script = `
+        const svc = require(${JSON.stringify(path.join(ROOT, 'service', 'gpu.service.js'))});
+        svc.deleteJob(${JSON.stringify(String(jobId))}, { acknowledgeObservations: ${ack ? 'true' : 'false'} })
+            .then((r) => { process.stdout.write('RESULT' + JSON.stringify({ ok: true, body: r })); process.exit(0); })
+            .catch((e) => { process.stdout.write('RESULT' + JSON.stringify({ ok: false, status: e.statusCode || e.status, message: String(e.message) })); process.exit(0); });
+    `;
+
+    const result = spawnSync(process.execPath, ['-e', script], {
+        cwd: ROOT, encoding: 'utf8', env: { ...process.env, DB_NAME: SCRATCH_DB },
+    });
+
+    const marker = (result.stdout || '').indexOf('RESULT');
+
+    if (marker < 0) throw new Error(`no result from child: ${result.stdout} ${result.stderr}`);
+
+    return JSON.parse(result.stdout.slice(marker + 'RESULT'.length));
+}
+
+describe('deleting one job, whatever state it is in (#268)', () => {
+
+    test('a job that produced observations refuses, and says how many', () => {
+        const refused = deleteOneInScratch(seeded.succeededWithObservations, false);
+
+        /* `observations.gpu_job_id` is SET NULL, so this delete would not refuse and
+           would not cascade -- it would quietly unlink the provenance of every one of
+           them. On the real corpus that is 114,866 rows across the succeeded jobs. */
+        expect(refused.ok).toBe(false);
+        expect(refused.status).toBe(409);
+        expect(refused.message).toMatch(/produced 2 observations/);
+    }, 60000);
+
+    test('and it is still there afterwards, with its observations still linked', async () => {
+        const jobs = await on(SCRATCH_DB, 'SELECT id FROM gpu_jobs WHERE id = $1', [seeded.succeededWithObservations]);
+        const linked = await on(SCRATCH_DB, 'SELECT count(*)::int n FROM observations WHERE gpu_job_id = $1', [seeded.succeededWithObservations]);
+
+        expect(jobs).toHaveLength(1);
+        expect(linked[0].n).toBe(2);
+    });
+
+    test('acknowledged, it deletes and reports what it unlinked', async () => {
+        const done = deleteOneInScratch(seeded.succeededWithObservations, true);
+
+        expect(done.ok).toBe(true);
+        expect(done.body.observationsUnlinked).toBe(2);
+
+        const linked = await on(SCRATCH_DB, 'SELECT count(*)::int n FROM observations WHERE gpu_job_id = $1', [seeded.succeededWithObservations]);
+        const kept = await on(SCRATCH_DB, 'SELECT count(*)::int n FROM observations WHERE observation_id = ANY($1)', [seeded.observationIds]);
+
+        /* The observations survive -- that is what SET NULL means, and it is the whole
+           reason the warning has to be explicit. Only the link goes. */
+        expect(linked[0].n).toBe(0);
+        expect(kept[0].n).toBe(2);
+    }, 60000);
+
+    test('a job with no observations needs no acknowledgement', () => {
+        const done = deleteOneInScratch(seeded.cancelled, false);
+
+        expect(done.ok).toBe(true);
+        expect(done.body.observationsUnlinked).toBe(0);
+    }, 60000);
+
+    test('an artifact refuses the delete outright', () => {
+        const refused = deleteOneInScratch(seeded.failedWithArtifact, true);
+
+        // Even acknowledged: the acknowledgement is about observations, not artifacts.
+        expect(refused.ok).toBe(false);
+        expect(refused.status).toBe(409);
+        expect(refused.message).toMatch(/artifact/);
     }, 60000);
 });
 

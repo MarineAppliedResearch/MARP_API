@@ -271,6 +271,19 @@ class GpuController {
         return gpuService.deleteJobsInState(query);
     }
 
+    /**
+     * Delete one job.
+     *
+     * @async
+     * @param {string|number} jobId - From the path.
+     * @param {Object} query - `{acknowledgeObservations}`.
+     * @returns {Promise<Object>} What went with it.
+     */
+    async deleteJob(jobId, query) {
+        logger.info('Controller: deleteJob');
+        return gpuService.deleteJob(jobId, query);
+    }
+
 
     /**
      * Where a dataset's archive is, for streaming to a worker.

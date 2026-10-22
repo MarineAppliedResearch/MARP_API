@@ -1290,6 +1290,61 @@ class GpuRepository {
         };
     }
 
+    /**
+     * What deleting one job would cost, before anything is deleted.
+     *
+     * Two of the three numbers are the reason this exists. An artifact makes the job
+     * undeletable outright -- `artifacts.job_id` is RESTRICT. Observations do **not**:
+     * `observations.gpu_job_id` is `ON DELETE SET NULL`, so the delete succeeds and the
+     * link from every observation back to the run that produced it is quietly removed.
+     * On this corpus that is 114,866 rows across the succeeded jobs and nothing at all
+     * on the other states, which is why a per-row delete needs to ask and a bulk delete
+     * of failed jobs did not.
+     *
+     * @async
+     * @param {number} jobId - The job.
+     * @returns {Promise<?{id: number, state: string, observations: number, artifacts: number, attempts: number}>}
+     * Null when there is no such job.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async jobDeletionImpact(jobId) {
+        const [row] = await this.db.sequelize.query(
+            `SELECT j.id, j.state,
+                    (SELECT count(*)::int FROM observations o WHERE o.gpu_job_id = j.id) AS observations,
+                    (SELECT count(*)::int FROM artifacts a WHERE a.job_id = j.id) AS artifacts,
+                    (SELECT count(*)::int FROM gpu_job_attempts t WHERE t.job_id = j.id) AS attempts
+               FROM gpu_jobs j
+              WHERE j.id = :jobId`,
+            { replacements: { jobId }, type: QueryTypes.SELECT }
+        );
+
+        return row || null;
+    }
+
+    /**
+     * Delete one job, unless an artifact still references it.
+     *
+     * The artifact check is in the statement as well as in the caller's decision, so
+     * the RESTRICT cannot fire between the two -- the same reason the bulk delete
+     * excludes rather than attempts.
+     *
+     * @async
+     * @param {number} jobId - The job.
+     * @returns {Promise<boolean>} True when the row went.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async deleteJobById(jobId) {
+        const rows = await this.db.sequelize.query(
+            `DELETE FROM gpu_jobs j
+              WHERE j.id = :jobId
+                AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id)
+              RETURNING j.id`,
+            { replacements: { jobId }, type: QueryTypes.SELECT }
+        );
+
+        return rows.length > 0;
+    }
+
     // Leasing
     // -----------------------------------------------------------------
 

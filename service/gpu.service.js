@@ -2132,6 +2132,61 @@ class GpuService {
 
 
     /**
+     * Delete one job, whatever state it is in.
+     *
+     * **The guard is about observations, not about state.** `observations.gpu_job_id`
+     * is `ON DELETE SET NULL`, so deleting a job that produced observations does not
+     * refuse and does not cascade -- it removes the link from each observation back to
+     * the run that made it, silently. Measured on this corpus: the succeeded jobs hold
+     * 114,866 observations between them and every other state holds none. So a delete
+     * that would unlink anything requires `acknowledgeObservations`, and the refusal
+     * carries the real number for that job rather than a general warning.
+     *
+     * An artifact is a different matter and is a refusal outright: the foreign key is
+     * RESTRICT, and deleting the artifact to make the job deletable would be destroying
+     * the output to tidy the record of the work.
+     *
+     * @async
+     * @param {string|number} jobId - From the path.
+     * @param {Object} [options] - `{acknowledgeObservations}`.
+     * @returns {Promise<{deleted: number, observationsUnlinked: number, attemptsRemoved: number}>}
+     * @throws {ApiError} 404 when there is no such job, 409 when an artifact holds it or
+     * when it would unlink observations and nobody has said so.
+     */
+    async deleteJob(jobId, options = {}) {
+        const id = this.jobIdFromPath(jobId);
+        const impact = await gpuRepository.jobDeletionImpact(id);
+
+        if (!impact) {
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `GPU job ${jobId} was not found.`);
+        }
+
+        if (impact.artifacts > 0) {
+            throw new ApiError(409, ERROR_CODES.CONFLICT,
+                `GPU job ${id} cannot be deleted: ${impact.artifacts} artifact(s) reference it.`);
+        }
+
+        const acknowledged = options.acknowledgeObservations === true
+            || String(options.acknowledgeObservations).toLowerCase() === 'true';
+
+        if (impact.observations > 0 && !acknowledged) {
+            throw new ApiError(409, ERROR_CODES.CONFLICT,
+                `GPU job ${id} produced ${impact.observations} observations. Deleting it leaves them in `
+                + 'place with no record of what produced them. Resend with acknowledgeObservations=true '
+                + 'to delete it anyway.');
+        }
+
+        await gpuRepository.deleteJobById(id);
+
+        return {
+            deleted: id,
+            observationsUnlinked: impact.observations,
+            attemptsRemoved: impact.attempts,
+        };
+    }
+
+
+    /**
      * Where a dataset's archive is on disk, for the route to stream.
      *
      * **Why a worker may read this at all.** The permission is `jobs:execute`, the
