@@ -59,6 +59,19 @@ jobs:
         working-directory: marp-api
         run: npm run test:app:mosaic-review:unit
 
+      # The ml-dashboard's tier needs jsdom, which is its own devDependency rather than
+      # the API's -- it is the only thing in this repository that wants a DOM, and the
+      # API has no business carrying one. Installed here so the tier can run here: it is
+      # a second and a half and it covers a defect class nothing else in CI can see,
+      # which is a redraw closing a row somebody was reading.
+      - name: Install the ml-dashboard's test dependencies
+        working-directory: marp-api/frontend/apps/ml-dashboard
+        run: npm ci
+
+      - name: ml-dashboard DOM tests
+        working-directory: marp-api
+        run: npm run test:app:ml-dashboard
+
       # `docs/openapi.generated.json` and `docs/developer/` are committed, so a route change
       # without `npm run docs:build` makes the diff a lie. This is that rule as a check.
       - name: Generated documentation is current
