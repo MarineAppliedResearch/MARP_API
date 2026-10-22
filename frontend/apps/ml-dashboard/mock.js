@@ -5732,6 +5732,28 @@ function wireCancelBuild(detail, name) {
 }
 
 /**
+ * The Delete control, wherever a dataset can be deleted from.
+ *
+ * **One definition, because it is drawn on two different panels.** A finished dataset
+ * gets it in the footer beside Download; a build that failed or was cancelled gets it in
+ * place of Cancel. It was written into the ready panel's footer alone to begin with,
+ * which is how a failed build -- the case somebody most wants to clear -- ended up being
+ * the one thing that could not be deleted.
+ *
+ * **Red, and last in its row**, so it is not the button a hand lands on next to Download.
+ * What it takes with it is named in the confirmation rather than on the label: a button
+ * cannot say "and 3.8 GB" without becoming a sentence.
+ *
+ * @param {Object} set - The dataset.
+ * @returns {string}
+ */
+function deleteButton(set) {
+  return `<button class="btn sm danger" type="button" data-delete-dataset="${set.id}">`
+    + '<svg class="ico"><use href="#i-stop"/></svg>Delete</button>'
+    + '<span class="hint" data-delete-said></span>';
+}
+
+/**
  * The Delete button on a built dataset.
  *
  * **What goes is said before it goes, with the size in it.** These archives are hundreds
@@ -5750,23 +5772,35 @@ function wireCancelBuild(detail, name) {
  * @param {string} size - Its archive size, already formatted.
  * @returns {void}
  */
-function wireDeleteDataset(detail, head, set, size) {
+function wireDeleteDataset(detail, head, set) {
   const button = $('[data-delete-dataset]', detail);
 
   if (!button) return;
 
   button.addEventListener('click', async () => {
+    /* **The size is worked out here, not passed in**, because this is called from two
+       panels and only one of them had it in scope. A failed build has no archive and no
+       counts at all, so every clause below can be absent at once. */
+    const size = archiveSize(set && set.archive_bytes);
     const holds = [
       Number(set.num_observations) > 0 ? `${Number(set.num_observations).toLocaleString()} observations` : '',
       Number(set.num_samples) > 0 ? `${Number(set.num_samples).toLocaleString()} images` : '',
       size ? `a ${size} archive` : '',
     ].filter(Boolean);
 
+    /* **Two different sentences, because they are two different acts.** Deleting a
+       finished dataset destroys work; deleting a failed build tidies up. A confirmation
+       that warned identically about both would be ignored on the one that matters -- and
+       a confirmation that silently dropped its "this removes..." clause would make the
+       dangerous case look like the harmless one. */
+    const what = holds.length
+      ? `This removes ${holds.join(', ')}.\n\nIt cannot be undone, and the archive is not kept anywhere else.`
+      : 'This build recorded no images, no observations and no archive, so there is nothing'
+        + ' to lose but the row itself.';
+
     /* eslint-disable-next-line no-alert -- the app has no dialog of its own, and a
        permanent delete with no confirmation at all is the worse answer. */
-    if (!window.confirm(`Delete "${set.name}"?\n\n`
-      + (holds.length ? `This removes ${holds.join(', ')}.\n\n` : '')
-      + 'It cannot be undone, and the archive is not kept anywhere else.')) return;
+    if (!window.confirm(`Delete "${set.name}"?\n\n${what}`)) return;
 
     const said = $('[data-delete-said]', detail);
 
@@ -6052,13 +6086,31 @@ async function wireDatasetPage() {
            is about twenty seconds, and a control that appears to do nothing for twenty
            seconds gets pressed again. A queued build stops at once -- there is nothing
            cutting frames to interrupt. */
-        const stopActions = stoppable
+        /* **Delete belongs here more than it belongs on a finished dataset**, and it was
+           missing: the button was built into `readyActions`, so it only ever appeared on
+           a dataset that had built successfully. A failed build is the one somebody
+           actually wants rid of -- it holds nothing, it clutters the list, and it may be
+           sitting on a partial archive -- and it was the one case with no way to clear
+           it. Isaac found it the hour after delete shipped.
+
+           Not drawn while a build can still be cancelled: `queued` and `leased` both mean
+           a runner has it or is about to, and the route refuses those anyway because the
+           dataset row still says `building`. Cancel first, then delete, which is the
+           order the refusal already asks for. */
+        const stopActions = (stoppable || !build || build.state === 'failed' || build.state === 'cancelled')
           ? '<footer>'
-            + `<button class="btn sm danger" type="button" data-cancel-build="${build.job_id}">`
-            + '<svg class="ico"><use href="#i-stop"/></svg>Cancel build</button>'
-            + `<span class="hint">${build.state === 'leased'
-              ? 'Stops at the end of the pass it is cutting, usually within about 20 seconds.'
-              : 'Stops before it starts; nothing has been cut yet.'}</span>`
+            + (stoppable
+              /* **The delay is on screen, because it is long enough to look ignored.** A
+                 running build checks for cancellation once per pass of a hundred frames,
+                 which is about twenty seconds, and a control that appears to do nothing
+                 for that long gets pressed again. A queued build stops at once -- there
+                 is nothing cutting frames to interrupt. */
+              ? `<button class="btn sm danger" type="button" data-cancel-build="${build.job_id}">`
+                + '<svg class="ico"><use href="#i-stop"/></svg>Cancel build</button>'
+                + `<span class="hint">${build.state === 'leased'
+                  ? 'Stops at the end of the pass it is cutting, usually within about 20 seconds.'
+                  : 'Stops before it starts; nothing has been cut yet.'}</span>`
+              : deleteButton(set))
             + '</footer>'
           : '';
 
@@ -6071,6 +6123,7 @@ async function wireDatasetPage() {
           + '</div></td>';
         head.after(detail);
         wireCancelBuild(detail, name);
+        wireDeleteDataset(detail, head, set);
         continue;
       }
       head.setAttribute('aria-expanded', 'false');
@@ -6114,13 +6167,9 @@ async function wireDatasetPage() {
          wiring them has not been asked for, and two more half-working buttons is worse
          than two that are obviously not finished. They carry a `later` chip, which is
          what this app uses for a control with nothing behind it. */
-      /* **Delete is last and it is the only red thing here**, so it is not the button a
-         hand lands on by accident next to Download. What it takes with it is named in the
-         confirmation rather than here: a label cannot say "and 3.8 GB" without becoming a
-         sentence. */
-      const remove = `<button class="btn sm danger" type="button" data-delete-dataset="${set.id}"><svg class="ico"><use href="#i-stop"/></svg>Delete</button>`;
+      const remove = deleteButton(set);
 
-      const readyActions = `<button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup <span class="chip">later</span></button><button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-training"/></svg>Use for training <span class="chip">later</span></button>${download}${remove}<span class="hint" data-delete-said></span>`;
+      const readyActions = `<button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup <span class="chip">later</span></button><button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-training"/></svg>Use for training <span class="chip">later</span></button>${download}${remove}`;
       /* **The Build record, from the dataset row rather than from its name.** This block
          was a lookup keyed on five invented dataset names — `CAMPA_2024_Rockfish_v3` and
          friends — so anything MARP actually built fell through to a wall of em dashes
@@ -6149,7 +6198,14 @@ async function wireDatasetPage() {
 
       detail.innerHTML = `<td colspan="10"><div class="dataset-detail" data-status="${status}">`
         + `<header><div><h3>${name}</h3><p>${description}</p></div>`
-        + `<span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header>`
+        /* **Not "Ready · immutable" on everything that reaches this panel.** A cancelled
+           build lands in `draft` and is drawn here, so the one piece of prose on the
+           header was calling a dataset with no archive ready and promising it would never
+           change. It is not ready, and the only thing immutable about it is that nothing
+           was built. */
+        + `<span class="pill" data-state="${stateTone}">${status === 'draft'
+          ? 'Draft &middot; nothing built'
+          : 'Ready &middot; immutable'}</span></header>`
         + '<div class="dataset-detail-grid">'
         + `<section><h4>Build record</h4><dl class="kv">${record}</dl></section>`
         + '<section><h4>Composition and split</h4>'
@@ -6239,7 +6295,7 @@ async function wireDatasetPage() {
          detail element so the closure stays with the row it belongs to. */
       detail.loadComposition = compose;
       head.after(detail);
-      wireDeleteDataset(detail, head, set, size);
+      wireDeleteDataset(detail, head, set);
       const open = $('[aria-label="Open"]', head);
       if (open) {
         open.setAttribute('aria-label', `Show details for ${name}`);

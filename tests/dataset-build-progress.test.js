@@ -1780,6 +1780,94 @@ describe('GET /api/v2/dataset/builds', () => {
             expect(res.body).toEqual({ deleted: true, archive_removed: false });
         });
 
+        /**
+         * **A failed build is the one somebody most wants rid of**, and it was the one
+         * that could not be deleted: the control lived in the ready panel's footer, and a
+         * failed build draws a different panel. Isaac found it the hour after delete
+         * shipped. The route always allowed it -- only `building` is refused -- so this
+         * pins the server half so a future guard cannot quietly widen and take it away.
+         */
+        it('deletes a dataset whose build failed', async () => {
+            const { datasetId } = await seedBuild({ name: 'jest-delete-failed', state: 'failed' });
+
+            await db.sequelize.query(
+                "UPDATE datasets SET status = 'failed' WHERE id = :datasetId",
+                { replacements: { datasetId } }
+            );
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.deleted).toBe(true);
+            /* It never packaged anything, so there was no file -- which is reported as
+               false rather than as a failure. */
+            expect(res.body.archive_removed).toBe(false);
+        });
+
+        /**
+         * A cancelled build lands in `draft`, which is finished rather than running. It
+         * must not be caught by the guard that refuses a build in flight, or cancelling
+         * would make a dataset permanently undeletable -- a worse version of the bug
+         * being fixed.
+         */
+        it('deletes a dataset whose build was cancelled', async () => {
+            const { jobId, datasetId } = await seedBuild({ name: 'jest-delete-cancelled', state: 'queued' });
+
+            await db.sequelize.query(
+                "UPDATE gpu_jobs SET state = 'cancelled' WHERE id = :jobId",
+                { replacements: { jobId } }
+            );
+
+            await buildRepository.settleCancelledBuilds();
+
+            const [row] = await db.sequelize.query(
+                'SELECT status FROM datasets WHERE id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(row.status).toBe('draft');
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(200);
+        });
+
+        /**
+         * And the refusal is not special-cased away for them. A failed dataset will not
+         * normally have a training run, but the rule is the rule -- an exception carved
+         * for a state is how it stops being true later.
+         */
+        it('still refuses a failed dataset a model was trained from', async () => {
+            const { datasetId } = await seedBuild({ name: 'jest-delete-failed-trained', state: 'failed' });
+
+            await db.sequelize.query(
+                "UPDATE datasets SET status = 'failed' WHERE id = :datasetId",
+                { replacements: { datasetId } }
+            );
+
+            const [model] = await db.sequelize.query(
+                `INSERT INTO ml_models (name, model_type, status, preferred, created_at, updated_at)
+                 VALUES (:name, 'detection', 'registered', false, NOW(), NOW())
+                 RETURNING id`,
+                { replacements: { name: `jest-model-failed-${stamp}` }, type: QueryTypes.SELECT }
+            );
+
+            models.push(model.id);
+
+            const [run] = await db.sequelize.query(
+                `INSERT INTO training_runs (dataset_id, model_id, notes, created_at, updated_at)
+                 VALUES (:datasetId, :modelId, 'seeded by tests/dataset-build-progress', NOW(), NOW())
+                 RETURNING id`,
+                { replacements: { datasetId, modelId: model.id }, type: QueryTypes.SELECT }
+            );
+
+            runs.push(run.id);
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(409);
+        });
+
         /** It writes, so it is not the read permission, and certainly not anonymous. */
         it('refuses a request carrying no principal', async () => {
             const request = require('supertest');

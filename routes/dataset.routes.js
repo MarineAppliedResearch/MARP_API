@@ -778,8 +778,19 @@ function registerDatasetRoutes(app) {
                    filesystem path, which is the shape of a traversal bug -- and this one
                    unlinks rather than reads. Checked the way the archive route checks it. */
                 if (absolute.startsWith(storageRoot + path.sep) && fs.existsSync(absolute)) {
-                    fs.rmSync(absolute, { force: true });
-                    archiveRemoved = true;
+                    /* **The row is already gone, so this must not throw.** An archive
+                       held open -- by a worker still streaming it, or by anything else on
+                       Windows -- would otherwise answer 500 for a delete that had
+                       succeeded, and the caller would retry and get a 404. The file
+                       staying behind is reported rather than hidden: `archive_removed`
+                       false means there is something left on disk, which is a different
+                       outcome from the row having named no archive at all. */
+                    try {
+                        fs.rmSync(absolute, { force: true });
+                        archiveRemoved = true;
+                    } catch (error) {
+                        archiveRemoved = false;
+                    }
                 }
             }
 
