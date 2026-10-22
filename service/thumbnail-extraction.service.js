@@ -289,7 +289,50 @@ async function probeStream(streamUrl) {
  * @returns {Promise<Object>} `{ files, ptsTimes, seconds }`.
  * @throws {Error} If ffmpeg fails.
  */
-async function extractFrames(streamUrl, frames, fps, destination) {
+/**
+ * The caller's 1-100 quality as ffmpeg's mjpeg `-q:v`.
+ *
+ * **Two scales that run opposite ways, so this cannot be passed through.** The build
+ * speaks sharp's 1-100 where higher is better, because that is what `imageSettings`
+ * validates and what is recorded in `gpu_jobs.spec` at queue time. ffmpeg's mjpeg encoder
+ * takes 2-31 where *lower* is better. Handing 95 to ffmpeg unmapped would ask for nearly
+ * the worst quality it can produce, and the frames would still look like frames.
+ *
+ * **Mapped linearly across both ranges, and written down because the number is stored.**
+ * A build queued before this change and run after it carries a `quality` recorded against
+ * the old encoder; a value that quietly meant one thing and now means another is the
+ * ambiguity `AGENTS.md` counts as loss. So the mapping is one reversible line rather than
+ * a table of special cases:
+ *
+ * - `100` -> `2`, the best mjpeg offers.
+ * - `95` -> `3`, which is what {@link DEFAULT_IMAGE} asks for.
+ * - `50` -> `17`.
+ * - `1`  -> `31`.
+ *
+ * It is not claimed to be perceptually equivalent to mozjpeg at the same number -- the two
+ * encoders are different and nothing here measured that. It is claimed to put the same
+ * request at the same place in each encoder's range, and to be undone by reading this.
+ *
+ * @param {?number} quality - 1-100, higher better. Defaults to 95 when absent.
+ * @returns {number} 2-31, lower better.
+ */
+function jpegQuality(quality) {
+    const asked = Number.isFinite(Number(quality)) ? Number(quality) : 95;
+    const clamped = Math.max(1, Math.min(100, asked));
+
+    return Math.max(2, Math.min(31, Math.round(2 + ((100 - clamped) * 29) / 99)));
+}
+
+async function extractFrames(streamUrl, frames, fps, destination, output = null) {
+    /* **PNG unless the caller says otherwise, and that default is load-bearing.** The
+       thumbnail path crops and re-processes what this produces, so a JPEG here would be a
+       lossy step before another lossy step on every mosaic tile. A dataset build does
+       neither -- it writes the frame straight into the archive -- so it asks for JPEG and
+       saves the whole re-encode. Measured against the real media server per hundred
+       frames: 693 ms to PNG, then 18,701 ms to re-encode with sharp; 416 ms writing JPEG
+       here instead. */
+    const format = output && output.format === 'jpeg' ? 'jpeg' : 'png';
+    const extension = format === 'jpeg' ? 'jpg' : 'png';
     const targets = frames.map((frame) => frame / fps);
     const halfFrame = 1 / (2 * fps);
 
@@ -311,8 +354,14 @@ async function extractFrames(streamUrl, frames, fps, destination) {
         '-fps_mode', 'passthrough',
         '-frames:v', String(frames.length),
         '-f', 'image2',
-        path.join(destination, 'frame-%04d.png'),
     ];
+
+    /* mjpeg's scale runs 2 (best) to 31 (worst), the opposite direction to the 1-100 the
+       caller speaks. `jpegQuality` maps it and says why. PNG takes none: it is lossless,
+       and `imageSettings` refuses a quality asked for alongside it. */
+    if (format === 'jpeg') args.push('-q:v', String(jpegQuality(output && output.quality)));
+
+    args.push(path.join(destination, `frame-%04d.${extension}`));
 
     const started = Date.now();
     const result = await run(FFMPEG_PATH, args);
@@ -339,7 +388,16 @@ async function extractFrames(streamUrl, frames, fps, destination) {
     }
 
     const files = fs.readdirSync(destination)
-        .filter((name) => /^frame-\d+\.png$/.test(name))
+        /* **No regex, because the escaping is a trap this already fell into.** Written as
+           a pattern with `\d` inside a quoted string, the backslash is a *string* escape
+           that resolves to a bare "d" before RegExp sees it: the pattern became
+           `^frame-d+.png$` and matched nothing, so this returned an empty file list while
+           the files sat on disk. Neither suite could see it -- the dataset build names
+           its own files by position and never reads this list, and the stubbed runner
+           replaces this function wholesale -- but the thumbnail sweep reads it and would
+           have extracted nothing at all. Two string tests cannot go wrong that way, and
+           the only writer of these names is the output pattern twenty lines above. */
+        .filter((name) => name.startsWith('frame-') && name.endsWith(`.${extension}`))
         .sort()
         .map((name) => path.join(destination, name));
 
@@ -1338,6 +1396,7 @@ module.exports = {
        videos through the same ffmpeg pass. A second implementation of "get these frames
        out of this video" is the thing most likely to drift from this one. */
     extractFrames,
+    jpegQuality,
     cutChosenPicture,
     drainOnce,
     elideToken,

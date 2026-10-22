@@ -91,6 +91,34 @@ async function pngBytes() {
     return framePng;
 }
 
+/** The same picture as a JPEG, cached the same way. */
+let frameJpeg = null;
+
+/**
+ * A frame in the format the extractor was asked for.
+ *
+ * **The bytes have to match the name, not just the extension.** The stub used to write
+ * PNG bytes under a `.png` name and the builder re-encoded them, so what landed in the
+ * archive was a real JPEG. Now that ffmpeg writes the final format, a stub still
+ * producing PNG bytes would put PNG content in a file called `.jpg` -- and the test that
+ * reads the archive's SOI marker caught exactly that, which is the test doing its job.
+ *
+ * @async
+ * @param {string} format - `jpeg` or `png`.
+ * @returns {Promise<Buffer>} The encoded image.
+ */
+async function frameBytes(format) {
+    if (format !== 'jpeg') return pngBytes();
+
+    if (!frameJpeg) {
+        frameJpeg = await sharp({
+            create: { width: 8, height: 8, channels: 3, background: { r: 10, g: 120, b: 200 } },
+        }).jpeg().toBuffer();
+    }
+
+    return frameJpeg;
+}
+
 /**
  * Runs one statement and returns its rows.
  *
@@ -382,15 +410,20 @@ function stubExtraction({ jellyfin, extraction }, behaviour = {}) {
         });
 
     const extract = jest.spyOn(extraction, 'extractFrames')
-        .mockImplementation(async (url, frames, fps, destination) => {
-            calls.extractions.push({ url, frames: [...frames], fps, destination });
+        .mockImplementation(async (url, frames, fps, destination, output) => {
+            /* `output` is recorded as well as honoured, so a test can say the build asked
+               the extractor for its final format rather than only that the files landed.
+               That request is the whole of the change that stopped a build spending 96%
+               of itself re-encoding PNGs into JPEGs. */
+            calls.extractions.push({ url, frames: [...frames], fps, destination, output });
 
             /* A hook for the tests that need something to happen *during* extraction --
                a cancellation arriving between videos, or a failure. */
             if (behaviour.onExtract) await behaviour.onExtract(calls.extractions.length, frames);
 
             const files = [];
-            const bytes = await pngBytes();
+            const format = output && output.format === 'jpeg' ? 'jpeg' : 'png';
+            const bytes = await frameBytes(format);
 
             for (let i = 0; i < frames.length; i++) {
                 /* `omit` is how "the extractor could not produce that frame" is said: the
@@ -398,7 +431,12 @@ function stubExtraction({ jellyfin, extraction }, behaviour = {}) {
                    missing file is a gap rather than a shift. */
                 if (behaviour.omit && behaviour.omit(frames[i], calls.extractions.length)) continue;
 
-                const file = path.join(destination, `frame-${String(i + 1).padStart(4, '0')}.png`);
+                /* The same extension the real extractor writes for this request, or the
+                   builder looks for a file that is not there and reports every frame
+                   missing -- which would look like a broken build rather than a stub
+                   that had not kept up. */
+                const extension = format === 'jpeg' ? 'jpg' : 'png';
+                const file = path.join(destination, `frame-${String(i + 1).padStart(4, '0')}.${extension}`);
 
                 fs.writeFileSync(file, bytes);
                 files.push(file);

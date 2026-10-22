@@ -35,7 +35,6 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const sharp = require('sharp');
 
 const logger = require('../logger/api.logger');
 const jellyfinRepository = require('../repository/jellyfin.repository');
@@ -324,11 +323,20 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
             const batchDir = path.join(cut, String(batch[0]));
 
             fs.mkdirSync(batchDir, { recursive: true });
-            await extraction.extractFrames(streamUrl, batch, probe.fps, batchDir);
+
+            /* **ffmpeg writes the final format, rather than PNG for sharp to re-encode.**
+               That re-encode was 96% of a build: 18.7 s per hundred frames against 0.7 s
+               to cut them, so a 50,000-frame build spent about two and a half hours
+               converting pictures it had already decoded. Asking ffmpeg for JPEG costs
+               416 ms per hundred and produces *smaller* files -- 349 KB a frame against
+               430 KB, and the legacy datasets are 364 KB, so the old path was the outlier
+               rather than the new one. `png` still produces PNGs and always skipped the
+               re-encode anyway. */
+            await extraction.extractFrames(streamUrl, batch, probe.fps, batchDir, image);
 
             for (let i = 0; i < batch.length; i++) {
                 const frame = batch[i];
-                const produced = path.join(batchDir, `frame-${String(i + 1).padStart(4, '0')}.png`);
+                const produced = path.join(batchDir, `frame-${String(i + 1).padStart(4, '0')}.${image.extension}`);
 
                 if (!fs.existsSync(produced)) {
                     missing += 1;
@@ -341,16 +349,12 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
                    the other. */
                 const stem = `${path.parse(entry.video).name}_${String(frame).padStart(8, '0')}`;
 
-                /* The extractor writes PNG, because a thumbnail is cropped and
-                   re-processed afterwards. A training frame is not, so it is re-encoded
-                   here -- see `DEFAULT_IMAGE` for why that is JPEG. */
+                /* **Moved, never re-encoded.** The extractor has already written the
+                   format this build asked for, so both paths are a rename now -- which is
+                   also why there is no `sharp` in this file any more. */
                 const destination = path.join(images, `${stem}.${image.extension}`);
 
-                if (image.format === 'png') fs.renameSync(produced, destination);
-                else {
-                    await sharp(produced).jpeg({ quality: image.quality, mozjpeg: true }).toFile(destination);
-                    fs.rmSync(produced, { force: true });
-                }
+                fs.renameSync(produced, destination);
 
                 fs.writeFileSync(path.join(labels, `${stem}.txt`), `${entry.frames.get(frame).join('\n')}\n`, 'utf8');
                 written += 1;

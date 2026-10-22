@@ -550,7 +550,7 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
         const image = archive.entries.find((name) => name.startsWith('train/images/'));
         const bytes = fs.readFileSync(path.join(archive.root, image));
 
-        // SOI marker. The extractor writes PNG; a training frame is re-encoded.
+        // SOI marker. ffmpeg writes the JPEG itself now; nothing re-encodes it.
         expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xff, 0xd8, 0xff]);
     });
 
@@ -1015,6 +1015,17 @@ describe('a video with more frames than one ffmpeg pass can ask for (#268)', () 
         expect(asked[0]).toBe(SPAN.first);
         expect(asked[asked.length - 1]).toBe(SPAN.last);
         expect(asked.every((frame, i) => i === 0 || frame === asked[i - 1] + 1)).toBe(true);
+    });
+
+    test('the build asks the extractor for its final format, not for PNG', () => {
+        /* **The whole of the speed change, stated as a requirement.** ffmpeg writing JPEG
+           costs 416 ms per hundred frames; writing PNG and re-encoding with sharp cost
+           19,394 ms for the same hundred, which was 96% of a build. If this regresses to
+           PNG the archive still comes out correct and a 50,000-frame build takes two and
+           a half hours longer, which no other assertion here would notice. */
+        for (const call of stub.calls.extractions) {
+            expect(call.output).toMatchObject({ format: 'jpeg' });
+        }
     });
 
     test('every pass writes into its own directory, so position stays the addressing', () => {
