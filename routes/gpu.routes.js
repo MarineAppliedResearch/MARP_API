@@ -918,6 +918,50 @@ function registerGpuRoutes(app) {
     });
 
     registerVersionedRoute(app, {
+        method: 'delete',
+        permission: 'jobs:write',
+        path: '/api/gpu/jobs',
+        summary: 'Delete every job in one state',
+        description:
+            'Removes finished work that is only cluttering the queue. **`failed` is the only state this will delete**, and that is a decision rather than a first instalment: a `cancelled` job is one somebody changed their mind about, there are far more of them, and nobody has asked. The two are not interchangeable -- `observations.gpu_job_id` is `ON DELETE SET NULL`, so deleting a job that produced observations leaves them in place with nothing recording where they came from, which is provenance going quietly.\n\n'
+            + '**What goes with the job:** its attempts cascade, and the per-attempt event log cascades with them. That is much the larger half -- the attempts carry `failure_reason` and the events carry the log, several times as many rows. A caller should say so before asking for this.\n\n'
+            + '**What does not go:** a job an artifact still references. `artifacts.job_id` is `ON DELETE RESTRICT`, and those jobs are **excluded by the query rather than attempted**, so the constraint never fires and a partial result is reported as a partial result rather than as an error. Their ids come back in `blocked`. The artifacts themselves are never touched: deleting the output to tidy the record of the work would be the wrong trade.',
+        tags: [GPU_TAG],
+        parameters: [
+            {
+                in: 'query', name: 'state', required: false,
+                schema: { type: 'string', enum: ['failed'], default: 'failed' },
+                description: 'Which state to clear. Only `failed` is accepted.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'How many went, and which were held back.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                state: { type: 'string', example: 'failed' },
+                                deleted: { type: 'integer', example: 1170 },
+                                blocked: {
+                                    type: 'array', items: { type: 'integer' },
+                                    description: 'Jobs an artifact references, which were left alone.',
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await gpuController.deleteJobsInState(req.query || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
         method: 'post',
         permission: 'jobs:write',
         path: '/api/gpu/requeue-interrupted',

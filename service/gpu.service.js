@@ -2098,6 +2098,40 @@ class GpuService {
 
 
     /**
+     * Delete every job in one state.
+     *
+     * **The allow-list has one entry and that is a decision, not a stub.** `failed` is
+     * what was asked for: a list cluttered with work that did not finish. `cancelled`
+     * is a bigger pile and nobody has asked, and the two are not interchangeable --
+     * `observations.gpu_job_id` is SET NULL, so deleting a job that produced
+     * observations leaves them in place with nothing to say where they came from. That
+     * is provenance going quietly, and it should be somebody's decision rather than a
+     * parameter a caller discovers it can pass.
+     *
+     * Jobs an artifact still references are not deleted and not treated as a failure:
+     * the repository excludes them and names them, and the caller reports a partial
+     * result as a partial result.
+     *
+     * @async
+     * @param {Object} [query] - `{state}`; defaults to `failed`.
+     * @returns {Promise<{state: string, deleted: number, blocked: number[]}>}
+     * @throws {ApiError} 400 when the state is not one this will delete.
+     */
+    async deleteJobsInState(query = {}) {
+        const DELETABLE_STATES = ['failed'];
+        const state = query.state === undefined ? 'failed' : String(query.state);
+
+        if (!DELETABLE_STATES.includes(state)) {
+            invalid(`state must be ${DELETABLE_STATES.join(' or ')}, and was ${JSON.stringify(query.state)}.`);
+        }
+
+        const { deleted, blocked } = await gpuRepository.deleteJobsInState(state);
+
+        return { state, deleted: deleted.length, blocked };
+    }
+
+
+    /**
      * Where a dataset's archive is on disk, for the route to stream.
      *
      * **Why a worker may read this at all.** The permission is `jobs:execute`, the

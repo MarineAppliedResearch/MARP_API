@@ -1,0 +1,270 @@
+/**
+ * Tests for deleting every job in one state.
+ *
+ * **This cannot be tested in place, and that is the whole shape of the file.**
+ * `DELETE /api/v2/gpu/jobs?state=failed` deletes *every* failed job in whatever database
+ * it is pointed at — 1,184 of them on the workspace database as this was written, and
+ * 1,189 on the development one. No amount of seeding scopes it, exactly as
+ * `tests/legacy-r-promotion.test.js` found for a migration. So the behaviour is proved
+ * on a database this file builds and drops, in a child process bound to it, and only the
+ * refusals are exercised against the ordinary test database, because a 400 deletes
+ * nothing.
+ *
+ * What is being pinned:
+ *
+ * - a job an artifact references is **excluded by the query**, so `artifacts.job_id`'s
+ *   RESTRICT never fires and a partial result arrives as `{deleted, blocked}` rather
+ *   than as a 500;
+ * - the artifacts themselves survive — deleting the output to tidy the record of the
+ *   work would be the wrong trade;
+ * - attempts cascade, and the event log cascades with them, which is much the larger
+ *   half of what a person is agreeing to lose;
+ * - jobs in other states are untouched;
+ * - `cancelled` is refused. There are four times as many of them and nobody asked.
+ *
+ * Refs MarineAppliedResearch/MARP_API#268.
+ *
+ * @fileoverview Tests for bulk deletion of failed jobs.
+ * @author Isaac Travers
+ * @module tests/gpu-job-delete
+ */
+
+'use strict';
+
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const { Client } = require('pg');
+
+const ROOT = path.join(__dirname, '..');
+
+/** The scratch database, named per process so two runs cannot collide. */
+const SCRATCH_DB = `marp_jobdelete_${process.pid}`;
+
+/** Connection settings for the local server; only the database name differs. */
+const connection = (database) => ({
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT || 5432),
+    database,
+});
+
+/**
+ * Runs one statement against a database.
+ *
+ * @async
+ * @param {string} database - Which database.
+ * @param {string} sql - The statement.
+ * @param {Array} [values] - Positional parameters.
+ * @returns {Promise<Array<Object>>} The rows.
+ */
+async function on(database, sql, values = []) {
+    const client = new Client(connection(database));
+
+    await client.connect();
+
+    try {
+        return (await client.query(sql, values)).rows;
+    } finally {
+        await client.end();
+    }
+}
+
+/**
+ * Builds the schema the way `marp db up` and CI build theirs.
+ *
+ * @param {string} script - Node script to run.
+ * @param {string[]} args - Its arguments.
+ * @returns {void}
+ */
+function build(script, args) {
+    const result = spawnSync(process.execPath, [script, ...args], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, DB_NAME: SCRATCH_DB },
+    });
+
+    if (result.status !== 0) {
+        throw new Error(`${path.basename(script)} failed:\n${result.stdout || ''}${result.stderr || ''}`);
+    }
+}
+
+/**
+ * Calls the repository in a child process bound to the scratch database.
+ *
+ * The repository takes its connection from `model/`, which binds once at require time,
+ * so a child is the only way to point the **real** code at another database. Asserting
+ * against a copy of the SQL in this file would prove the copy.
+ *
+ * @param {string} state - Passed to `deleteJobsInState`.
+ * @returns {Object} What the repository returned.
+ */
+function deleteInScratch(state) {
+    const script = `
+        const repo = require(${JSON.stringify(path.join(ROOT, 'repository', 'gpu.repository.js'))});
+        repo.deleteJobsInState(${JSON.stringify(state)})
+            .then((r) => { process.stdout.write('RESULT' + JSON.stringify(r)); process.exit(0); })
+            .catch((e) => { process.stderr.write(String(e && e.message)); process.exit(1); });
+    `;
+
+    const result = spawnSync(process.execPath, ['-e', script], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, DB_NAME: SCRATCH_DB },
+    });
+
+    if (result.status !== 0) {
+        throw new Error(`delete in scratch failed: ${result.stderr || result.stdout}`);
+    }
+
+    const marker = (result.stdout || '').indexOf('RESULT');
+
+    if (marker < 0) throw new Error(`no result from child: ${result.stdout}`);
+
+    return JSON.parse(result.stdout.slice(marker + 'RESULT'.length));
+}
+
+/** Ids seeded in the scratch database, by the case each stands for. */
+const seeded = {};
+
+beforeAll(async () => {
+    await on('postgres', `DROP DATABASE IF EXISTS "${SCRATCH_DB}" WITH (FORCE)`);
+    await on('postgres', `CREATE DATABASE "${SCRATCH_DB}"`);
+
+    build(path.join(ROOT, 'scripts', 'init-database.js'), []);
+    build(path.join(ROOT, 'node_modules', 'sequelize-cli', 'lib', 'sequelize'), ['db:migrate']);
+
+    const job = async (name, state) => {
+        const [row] = await on(
+            SCRATCH_DB,
+            `INSERT INTO gpu_jobs (kind, name, spec, state, priority, attempts_made, max_attempts, created_at, updated_at)
+             VALUES ('inference', $1, '{}'::jsonb, $2, 0, 1, 3, NOW(), NOW()) RETURNING id`,
+            [name, state]
+        );
+
+        return row.id;
+    };
+
+    const [worker] = await on(
+        SCRATCH_DB,
+        `INSERT INTO gpu_workers (name, local_id, state, slot_count, enrolled_at, update_state)
+         VALUES ('jest-delete', 'jest-delete', 'paused', 1, NOW(), 'current') RETURNING id`
+    );
+
+    seeded.workerId = worker.id;
+    seeded.plainFailed = await job('plain failed', 'failed');
+    seeded.failedWithAttempt = await job('failed with attempt', 'failed');
+    seeded.failedWithArtifact = await job('failed with artifact', 'failed');
+    seeded.succeeded = await job('succeeded', 'succeeded');
+    seeded.cancelled = await job('cancelled', 'cancelled');
+
+    /* An attempt and one event on it, so the cascade is observable rather than assumed. */
+    const [attempt] = await on(
+        SCRATCH_DB,
+        `INSERT INTO gpu_job_attempts (job_id, worker_id, slot_index, lease_epoch, state, leased_at, lease_expires_at, failure_reason)
+         VALUES ($1, $2, 0, 1, 'failed', NOW(), NOW(), 'why it failed') RETURNING id`,
+        [seeded.failedWithAttempt, seeded.workerId]
+    );
+
+    seeded.attemptId = attempt.id;
+
+    await on(
+        SCRATCH_DB,
+        `INSERT INTO gpu_job_events (attempt_id, seq, at, kind, payload)
+         VALUES ($1, 1, NOW(), 'log', '{}'::jsonb)`,
+        [attempt.id]
+    );
+
+    /* The artifact that makes its job undeletable. */
+    await on(
+        SCRATCH_DB,
+        `INSERT INTO artifacts (job_id, artifact_type, path, created_at, updated_at)
+         VALUES ($1, 'log', 'jest/delete.log', NOW(), NOW())`,
+        [seeded.failedWithArtifact]
+    );
+}, 180000);
+
+afterAll(async () => {
+    await on('postgres', `DROP DATABASE IF EXISTS "${SCRATCH_DB}" WITH (FORCE)`);
+}, 60000);
+
+describe('deleting failed jobs (#268)', () => {
+
+    /** What the repository reported, on the scratch database. */
+    let result;
+
+    beforeAll(() => {
+        result = deleteInScratch('failed');
+    }, 60000);
+
+    test('deletes the failed jobs that nothing holds', () => {
+        expect(result.deleted.sort()).toEqual([seeded.plainFailed, seeded.failedWithAttempt].sort());
+    });
+
+    test('a job an artifact references is reported, not attempted', () => {
+        /* The RESTRICT never fires: the query excludes it. Attempted and caught, this
+           would be an error path on a bulk delete, and 19 of his 1,189 are like this. */
+        expect(result.blocked).toEqual([seeded.failedWithArtifact]);
+    });
+
+    test('and that job, and its artifact, are both still there', async () => {
+        const jobs = await on(SCRATCH_DB, 'SELECT id FROM gpu_jobs WHERE id = $1', [seeded.failedWithArtifact]);
+        const artifacts = await on(SCRATCH_DB, 'SELECT id FROM artifacts WHERE job_id = $1', [seeded.failedWithArtifact]);
+
+        expect(jobs).toHaveLength(1);
+        expect(artifacts).toHaveLength(1);
+    });
+
+    test('the attempts go with the job, and the event log goes with them', async () => {
+        /* The larger half of what somebody agrees to lose: `failure_reason` is on the
+           attempt and the log is on the events, several times as many rows. */
+        const attempts = await on(SCRATCH_DB, 'SELECT id FROM gpu_job_attempts WHERE id = $1', [seeded.attemptId]);
+        const events = await on(SCRATCH_DB, 'SELECT attempt_id FROM gpu_job_events WHERE attempt_id = $1', [seeded.attemptId]);
+
+        expect(attempts).toHaveLength(0);
+        expect(events).toHaveLength(0);
+    });
+
+    test('jobs in other states are untouched', async () => {
+        const rows = await on(SCRATCH_DB, 'SELECT id, state FROM gpu_jobs WHERE id = ANY($1) ORDER BY id', [[seeded.succeeded, seeded.cancelled]]);
+
+        expect(rows.map((r) => r.state).sort()).toEqual(['cancelled', 'succeeded']);
+    });
+
+    test('running it again deletes nothing and still reports the blocked one', () => {
+        const again = deleteInScratch('failed');
+
+        expect(again.deleted).toEqual([]);
+        expect(again.blocked).toEqual([seeded.failedWithArtifact]);
+    }, 60000);
+});
+
+describe('what it refuses (#268)', () => {
+
+    /* These run against the ordinary test database on purpose: a refused request
+       deletes nothing, so there is nothing to scope and nothing to clean up. */
+
+    test('cancelled is refused rather than quietly included', async () => {
+        const response = await global.api.delete('/api/v2/gpu/jobs?state=cancelled');
+
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/failed/);
+    });
+
+    test('an unknown state is refused', async () => {
+        const response = await global.api.delete('/api/v2/gpu/jobs?state=banana');
+
+        expect(response.status).toBe(400);
+    });
+
+    test('a refused request deletes nothing', async () => {
+        const before = await global.api.get('/api/v2/gpu/jobs?state=failed&limit=1');
+
+        await global.api.delete('/api/v2/gpu/jobs?state=cancelled');
+
+        const after = await global.api.get('/api/v2/gpu/jobs?state=failed&limit=1');
+
+        expect(after.body.total).toBe(before.body.total);
+    });
+});

@@ -54,6 +54,10 @@ const SUBSYSTEMS = {
             'gpu-training-submit',
             'gpu-training-run-record',
             'gpu-trained-model-registration',
+            /* #268: bulk deletion of failed jobs. Builds and drops its own database,
+               because the route deletes every failed job in whatever one it is pointed
+               at -- no seeding scopes that. */
+            'gpu-job-delete',
             'worker-provisioning',
         ],
     },

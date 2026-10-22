@@ -1237,6 +1237,59 @@ class GpuRepository {
     }
 
     // -----------------------------------------------------------------
+    /**
+     * Delete every job in one state, and say which ones could not go.
+     *
+     * **The blocked rows are excluded by the query rather than attempted and caught.**
+     * `artifacts.job_id` is `ON DELETE RESTRICT`, so a job an artifact points at cannot
+     * be deleted at all; a bulk delete that tried them anyway would either abort the
+     * whole statement or need per-row error handling, and both turn "19 of these are
+     * held by artifacts" into an error path. Excluded here, the RESTRICT can never fire
+     * and the caller gets a fact instead of a failure.
+     *
+     * **The artifacts themselves are never touched.** Deleting them to make a job
+     * deletable would be destroying the output to tidy the record of the work.
+     *
+     * What goes with the job, by the foreign keys as they stand:
+     *
+     * - `gpu_job_attempts` CASCADE, and `gpu_job_events` CASCADE through them -- this
+     *   is where `failure_reason` and the per-attempt log live, and it is much the
+     *   larger half: 3,570 attempts carried 12,088 events when this was written;
+     * - `observations.gpu_job_id` and `training_runs.job_id` are SET NULL, so a job
+     *   that produced observations would leave them in place and unlinked. That is
+     *   provenance quietly going missing, which is why the caller's allow-list of
+     *   states is deliberately short.
+     *
+     * @async
+     * @param {string} state - The `gpu_jobs.state` to clear. Validated by the caller.
+     * @returns {Promise<{deleted: number[], blocked: number[]}>} Ids removed, and ids
+     * an artifact still references.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async deleteJobsInState(state) {
+        const blockedRows = await this.db.sequelize.query(
+            `SELECT DISTINCT j.id
+               FROM gpu_jobs j
+               JOIN artifacts a ON a.job_id = j.id
+              WHERE j.state = :state
+              ORDER BY j.id`,
+            { replacements: { state }, type: QueryTypes.SELECT }
+        );
+
+        const deletedRows = await this.db.sequelize.query(
+            `DELETE FROM gpu_jobs j
+              WHERE j.state = :state
+                AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id)
+              RETURNING j.id`,
+            { replacements: { state }, type: QueryTypes.SELECT }
+        );
+
+        return {
+            deleted: deletedRows.map((row) => Number(row.id)),
+            blocked: blockedRows.map((row) => Number(row.id)),
+        };
+    }
+
     // Leasing
     // -----------------------------------------------------------------
 

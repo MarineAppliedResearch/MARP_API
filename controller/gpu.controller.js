@@ -259,6 +259,18 @@ class GpuController {
         return gpuService.cancelJob(jobId);
     }
 
+    /**
+     * Delete every job in one state.
+     *
+     * @async
+     * @param {Object} query - `{state}`.
+     * @returns {Promise<Object>} What went and what was held back.
+     */
+    async deleteJobsInState(query) {
+        logger.info('Controller: deleteJobsInState');
+        return gpuService.deleteJobsInState(query);
+    }
+
 
     /**
      * Where a dataset's archive is, for streaming to a worker.
