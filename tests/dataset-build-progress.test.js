@@ -1337,6 +1337,81 @@ describe('GET /api/v2/dataset/builds', () => {
         });
     });
 
+    /**
+     * How many builds run at once, which is a number Isaac is going to turn while
+     * watching the media server rather than one anybody can derive.
+     *
+     * *"Let's allow two or three builds at once and see how Jellyfin copes."* The second
+     * half of that is why this is an environment variable: a judgement formed by watching
+     * is worth nothing if acting on it means editing code and redeploying.
+     *
+     * **Only the parsing is exercised here, deliberately.** Proving the ceiling by running
+     * builds would mean calling `claimBuild`, which takes the oldest queued
+     * `dataset_build` job on the database the suite is pointed at -- and on a development
+     * machine that may be a real build somebody queued a minute ago. Claiming it would
+     * flip it to `leased`, open an attempt nothing is running, and strand it exactly the
+     * way an API left running beside `npm test` does. That is the hazard `DATASET_BUILDS`
+     * exists for and it is not worth re-creating to assert a number.
+     */
+    describe('how many builds run at once', () => {
+        const buildService = require('../service/dataset-build.service');
+
+        /** Restored after each case: the suite shares one process with everything else. */
+        const original = process.env.DATASET_BUILD_CONCURRENCY;
+
+        afterEach(() => {
+            if (original === undefined) delete process.env.DATASET_BUILD_CONCURRENCY;
+            else process.env.DATASET_BUILD_CONCURRENCY = original;
+        });
+
+        it('runs two at once when nothing says otherwise', () => {
+            delete process.env.DATASET_BUILD_CONCURRENCY;
+
+            expect(buildService.concurrency()).toBe(buildService.DEFAULT_CONCURRENCY);
+            expect(buildService.DEFAULT_CONCURRENCY).toBe(2);
+        });
+
+        it('takes the number it is given', () => {
+            process.env.DATASET_BUILD_CONCURRENCY = '3';
+
+            expect(buildService.concurrency()).toBe(3);
+        });
+
+        /**
+         * **Read per call, not captured at load.** The whole point is that the number can
+         * be changed; one read into a module-level constant would mean the variable was
+         * documented and inert, which is worse than not having it.
+         */
+        it('reads the variable again rather than remembering the first answer', () => {
+            process.env.DATASET_BUILD_CONCURRENCY = '3';
+            expect(buildService.concurrency()).toBe(3);
+
+            process.env.DATASET_BUILD_CONCURRENCY = '1';
+            expect(buildService.concurrency()).toBe(1);
+        });
+
+        /**
+         * Zero and below fall back rather than stopping builds. Stopping them is a thing
+         * somebody may well want, and `DATASET_BUILDS=off` is how it is said -- out loud,
+         * with a log line. A silent halt from a mistyped number is the failure nobody
+         * diagnoses, because every part of the screen still works and nothing ever builds.
+         */
+        it('ignores a value that would stop builds silently', () => {
+            for (const bad of ['0', '-1', '', 'two', 'off']) {
+                process.env.DATASET_BUILD_CONCURRENCY = bad;
+
+                expect(buildService.concurrency()).toBe(buildService.DEFAULT_CONCURRENCY);
+            }
+        });
+
+        /** A fractional value is floored, not rounded up past what was asked for. */
+        it('does not round a fraction up into another build', () => {
+            process.env.DATASET_BUILD_CONCURRENCY = '2.9';
+
+            expect(buildService.concurrency()).toBe(2);
+        });
+    });
+
     it('refuses a request carrying no principal', async () => {
         const request = require('supertest');
         const app = require('../app');

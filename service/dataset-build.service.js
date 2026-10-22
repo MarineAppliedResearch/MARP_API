@@ -7,10 +7,17 @@
  * the part that talks to ffmpeg, Jellyfin and the disk.
  *
  * **A second consumer of the thumbnail extractor, not a second extractor.** It already
- * cuts a set of frames from one video in a single ffmpeg pass, already resolves a video
- * through Jellyfin, and already has a concurrency ceiling that exists to protect the
- * media server. #268 predicted a dataset build would want the same capability; it does,
- * and the way to not drift from it is to call it.
+ * cuts a set of frames from one video in a single ffmpeg pass and already resolves a
+ * video through Jellyfin. #268 predicted a dataset build would want the same capability;
+ * it does, and the way to not drift from it is to call it.
+ *
+ * **What it does not inherit is a concurrency ceiling**, and this said it did until
+ * 2026-10-22. `MAX_CONCURRENT_STREAMS` is applied by the thumbnail *sweep*, which fans
+ * out that many workers of its own; `extractFrames` and `probeStream` are plain functions
+ * with no limiter in them. So builds and thumbnail extraction are not dividing a budget,
+ * they are two independent loads on one media server, and the streams add. Worth knowing
+ * before turning {@link concurrency} up: two builds beside a running sweep is five
+ * streams, not three.
  *
  * **The archive is the shape `scripts/package-dataset.js` produces**, because that is
  * what the worker already fetches, verifies and trains on
@@ -659,20 +666,75 @@ async function runOne() {
     }
 }
 
-/** The poller's own state. One build at a time, by construction. */
-const live = { started: false, timer: null, running: false };
+/** The poller's own state. `inFlight` is how many builds are running right now. */
+const live = { started: false, timer: null, inFlight: 0 };
 
 /** How long to wait before looking for another build when there was none. */
 const IDLE_MS = 15000;
 
+/** How many builds run at once when nothing says otherwise. */
+const DEFAULT_CONCURRENCY = 2;
+
 /**
- * Take builds as they are queued, one at a time.
+ * How many builds may run at once.
  *
- * **One at a time deliberately.** A build is a second consumer of the same media server
- * the thumbnail extractor protects with a concurrency ceiling (`task-118`, R20), and two
- * builds would double the load on Jellyfin without anybody having chosen that. It is also
- * disk-bound: two builds staging tens of gigabytes at once is a full disk rather than
- * twice the throughput.
+ * **Read per tick rather than captured at startup**, which is the point of it being an
+ * environment variable at all: Isaac asked for two or three *"and see how Jellyfin
+ * copes"*, and a judgement formed by watching is worth nothing if changing it means
+ * editing code. Restarting the API picks up a new value; nothing here caches it.
+ *
+ * **Two by default, and the reason is a media server rather than this process.** A build
+ * holds one Jellyfin stream at a time -- `cutVideo` walks its videos in order and each
+ * pass awaits the one before it -- so the ceiling here is very nearly a count of streams
+ * MARP adds to whatever the thumbnail extractor is already pulling. That extractor runs
+ * its own fan-out up to `MAX_CONCURRENT_STREAMS`, and the two numbers are not connected:
+ * there is no shared limiter, so they add rather than divide a budget.
+ *
+ * A value below one would stop builds silently, which `DATASET_BUILDS=off` already says
+ * out loud and means on purpose, so anything unparseable or less than one falls back to
+ * the default instead.
+ *
+ * @returns {number} The ceiling, at least one.
+ */
+function concurrency() {
+    const asked = Number(process.env.DATASET_BUILD_CONCURRENCY);
+
+    return Number.isFinite(asked) && asked >= 1 ? Math.floor(asked) : DEFAULT_CONCURRENCY;
+}
+
+/**
+ * Put the next tick on the clock, replacing whatever was pending.
+ *
+ * One timer, so a build finishing can bring the next tick forward without leaving the
+ * idle one behind to fire as well.
+ *
+ * @param {number} delay - Milliseconds.
+ * @returns {void}
+ */
+function schedule(delay) {
+    if (!live.started) return;
+
+    if (live.timer) clearTimeout(live.timer);
+
+    live.timer = setTimeout(loop, delay);
+
+    /* Does not hold the process open. A fifteen-second timer that did would make every
+       `node` script that loaded this module hang on exit. */
+    if (live.timer.unref) live.timer.unref();
+}
+
+/**
+ * Take builds as they are queued, up to {@link concurrency} at once.
+ *
+ * **It used to be one at a time, and that was a decision rather than a limitation**: a
+ * build is a second consumer of the media server the thumbnail extractor already loads,
+ * and it stages tens of gigabytes. Isaac asked for two or three so he can watch what
+ * Jellyfin does with it, which is the only way that number gets settled.
+ *
+ * **The runs are not awaited here.** A build is hours; a tick that waited for one could
+ * not start a second. Each is tracked only by the count it increments, and a run
+ * finishing brings the next tick forward so a queue drains without waiting out an idle
+ * interval.
  *
  * Never throws out of the loop. `runOne` already turns a failed build into a failed row,
  * so anything reaching here is a bug in the loop itself and stopping the poller over it
@@ -684,30 +746,47 @@ const IDLE_MS = 15000;
 async function loop() {
     if (!live.started) return;
 
-    let worked = false;
-
     try {
-        live.running = true;
-
         /* Before taking new work, return anything a dead process left behind. A build
            abandoned by a restart sits `running` with nobody running it, and the dataset
            sits `building` for ever -- which is what the first fifty-minute build did,
-           three times, while `npm run dev` restarted on file changes. */
-        await buildRepository.reclaimAbandonedBuilds();
+           three times, while `npm run dev` restarted on file changes.
 
-        worked = Boolean(await runOne());
+           **Safe with several builds live**, and that was checked rather than assumed:
+           it reclaims on `lease_expires_at < NOW()`, and `reportProgress` pushes that an
+           hour out on every report. A slow build is still a reporting build. */
+        await buildRepository.reclaimAbandonedBuilds();
     } catch (error) {
         logger.error(`Dataset build loop: ${error && error.message}`);
-    } finally {
-        live.running = false;
     }
 
-    if (!live.started) return;
+    /* Fill the remaining slots. `runOne` claims with `FOR UPDATE SKIP LOCKED`, so two
+       starts in the same tick take two different jobs or the second takes none -- they
+       cannot both claim the same one. Starting them in one tick rather than one per tick
+       is what lets a queue of three reach the ceiling immediately. */
+    while (live.started && live.inFlight < concurrency()) {
+        live.inFlight += 1;
 
-    // Straight on to the next when one was just built; a queue is usually more than one.
-    live.timer = setTimeout(loop, worked ? 0 : IDLE_MS);
+        runOne()
+            .catch((error) => {
+                logger.error(`Dataset build: ${error && error.message}`);
 
-    if (live.timer.unref) live.timer.unref();
+                return null;
+            })
+            .then((result) => {
+                live.inFlight -= 1;
+
+                /* **Only when it actually built something.** A run that claimed nothing
+                   has just told us the queue is empty, and bringing the next tick
+                   forward on that would spin: an empty queue would start runs, find
+                   nothing, reschedule at zero and do it again as fast as the database
+                   could answer. When one really did finish, a slot is free and the next
+                   build should not wait out the idle interval for it. */
+                if (result) schedule(0);
+            });
+    }
+
+    schedule(IDLE_MS);
 }
 
 /**
@@ -748,7 +827,8 @@ function start() {
  * Does not interrupt one in flight: a build part-way through has gigabytes staged and the
  * tidy place to stop is where `runOne` already checks for cancellation.
  *
- * @returns {{stopped: boolean, running: boolean}} Whether one is still finishing.
+ * @returns {{stopped: boolean, running: number}} How many are still finishing. A count
+ * rather than a flag now that more than one can be.
  */
 function stop() {
     live.started = false;
@@ -757,16 +837,18 @@ function stop() {
 
     live.timer = null;
 
-    return { stopped: true, running: live.running };
+    return { stopped: true, running: live.inFlight };
 }
 
 module.exports = {
     ARCHIVE_DIRECTORY,
+    DEFAULT_CONCURRENCY,
     DEFAULT_IMAGE,
     FRAMES_PER_PASS,
     IMAGE_FORMATS,
     SEEK_RATHER_THAN_DECODE,
     SPLIT_DIRECTORIES,
+    concurrency,
     cutVideo,
     directoryFor,
     imageSettings,
