@@ -1562,6 +1562,235 @@ describe('GET /api/v2/dataset/builds', () => {
         });
     });
 
+    /**
+     * Deleting a dataset, and the two things that stop it.
+     *
+     * *"Delete everything, but refuse if a model was trained from that dataset."* That
+     * rule is the schema's: `dataset_observations` and `dataset_classes` cascade, and
+     * `training_runs.dataset_id` is `NO ACTION`, so PostgreSQL blocks the delete while a
+     * run points at the row. **The `NO ACTION` is the guard, not an oversight** -- a
+     * dataset is the answer to *what was this model trained on* -- and the test below
+     * that proves a trained-from dataset survives is the one that must never be relaxed
+     * into a cascade to make it pass.
+     */
+    describe('DELETE /api/v2/dataset/:id', () => {
+        const fs = require('fs');
+        const nodePath = require('path');
+        const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
+
+        /** Training runs this block created, removed before the datasets they point at. */
+        const runs = [];
+
+        /** And the models those runs name, removed after the runs that reference them. */
+        const models = [];
+
+        /**
+         * A dataset with membership, a vocabulary and a file on disk, as a build leaves it.
+         *
+         * @param {string} label - Distinguishes it within this file.
+         * @returns {Promise<{datasetId: number, archive: string}>}
+         */
+        async function seedDeletable(label) {
+            const file = `jest-delete-${stamp}-${label}.tar`;
+            const archive = nodePath.join(DATASET_DIRECTORY, file);
+
+            fs.mkdirSync(DATASET_DIRECTORY, { recursive: true });
+            fs.writeFileSync(archive, 'not a real archive, but a real file');
+
+            const [dataset] = await db.sequelize.query(
+                `INSERT INTO datasets (name, status, source, archive_path, archive_bytes,
+                                       num_samples, created_at, updated_at)
+                 VALUES (:name, 'ready', 'ml-dashboard', :path, 35, 2, NOW(), NOW())
+                 RETURNING id`,
+                {
+                    replacements: { name: `jest-delete-${stamp}-${label}`, path: `datasets/${file}` },
+                    type: QueryTypes.SELECT,
+                }
+            );
+
+            made.datasets.push(dataset.id);
+
+            /* Both cascading children, so the test can say they went rather than assuming
+               the schema does what the schema says.
+
+               A real `observations` row, because `dataset_observations.observation_id`
+               carries a foreign key to it -- a made-up negative id is refused, which is
+               how this was first written. Inserted with SQL rather than through the
+               model: `observation_id` is declared without `autoIncrement`, so Sequelize
+               sends an explicit null and the insert fails (#62). */
+            const [observation] = await db.sequelize.query(
+                `INSERT INTO observations ("obsID", "createdAt", "updatedAt")
+                 VALUES (0, NOW(), NOW())
+                 RETURNING observation_id`,
+                { type: QueryTypes.SELECT }
+            );
+
+            made.observations.push(observation.observation_id);
+
+            await db.sequelize.query(
+                `INSERT INTO dataset_observations
+                     (dataset_id, observation_id, inclusion_type, selection_method, created_at, updated_at)
+                 VALUES (:dataset, :observation, 'train', 'jest', NOW(), NOW())`,
+                { replacements: { dataset: dataset.id, observation: observation.observation_id } }
+            );
+
+            const [species] = await db.sequelize.query(
+                'SELECT id FROM species ORDER BY id LIMIT 1',
+                { type: QueryTypes.SELECT }
+            );
+
+            await db.sequelize.query(
+                `INSERT INTO dataset_classes (dataset_id, species_id, class_index, created_at, updated_at)
+                 VALUES (:dataset, :species, 0, NOW(), NOW())`,
+                { replacements: { dataset: dataset.id, species: species.id } }
+            );
+
+            return { datasetId: dataset.id, archive };
+        }
+
+        afterAll(async () => {
+            /* Before the datasets go: a run is what blocks their delete, which is the
+               whole point of this block. */
+            for (const id of runs) {
+                await db.sequelize.query('DELETE FROM training_runs WHERE id = :id',
+                    { replacements: { id } });
+            }
+
+            for (const id of models) {
+                await db.sequelize.query('DELETE FROM ml_models WHERE id = :id',
+                    { replacements: { id } });
+            }
+
+            for (const label of ['kept', 'trained']) {
+                fs.rmSync(nodePath.join(DATASET_DIRECTORY, `jest-delete-${stamp}-${label}.tar`), { force: true });
+            }
+        });
+
+        it('deletes the dataset, its membership, its classes and its archive', async () => {
+            const { datasetId, archive } = await seedDeletable('gone');
+
+            expect(fs.existsSync(archive)).toBe(true);
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(200);
+            expect(res.body).toEqual({ deleted: true, archive_removed: true });
+            expect(fs.existsSync(archive)).toBe(false);
+
+            const [row] = await db.sequelize.query(
+                'SELECT id FROM datasets WHERE id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(row).toBeUndefined();
+
+            /* The cascades, asserted rather than assumed. A migration that quietly changed
+               one to `NO ACTION` would otherwise show up as an unexplained 500 much later. */
+            const [left] = await db.sequelize.query(
+                `SELECT (SELECT count(*)::int FROM dataset_observations WHERE dataset_id = :datasetId) AS members,
+                        (SELECT count(*)::int FROM dataset_classes WHERE dataset_id = :datasetId) AS classes`,
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(left).toEqual({ members: 0, classes: 0 });
+        });
+
+        /**
+         * **The rule, and the archive stays too.** A refusal that deleted the file anyway
+         * would leave a dataset that exists, says it has an archive, and serves a 404 for
+         * it -- which is worse than either outcome on its own, and is why the route
+         * removes the file only after the row is gone.
+         */
+        it('refuses a dataset a model was trained from, and leaves its archive alone', async () => {
+            const { datasetId, archive } = await seedDeletable('trained');
+
+            /* `training_runs.model_id` is NOT NULL, so the model comes first -- and it
+               is the model's name the refusal quotes, since a run has none of its own. */
+            const [model] = await db.sequelize.query(
+                `INSERT INTO ml_models (name, model_type, status, preferred, created_at, updated_at)
+                 VALUES (:name, 'detection', 'registered', false, NOW(), NOW())
+                 RETURNING id`,
+                { replacements: { name: `jest-model-${stamp}` }, type: QueryTypes.SELECT }
+            );
+
+            models.push(model.id);
+
+            const [run] = await db.sequelize.query(
+                `INSERT INTO training_runs (dataset_id, model_id, notes, created_at, updated_at)
+                 VALUES (:datasetId, :modelId, 'seeded by tests/dataset-build-progress', NOW(), NOW())
+                 RETURNING id`,
+                {
+                    replacements: { datasetId, modelId: model.id },
+                    type: QueryTypes.SELECT,
+                }
+            );
+
+            runs.push(run.id);
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(409);
+            /* Naming the run is the useful half: it is what somebody needs to decide
+               whether the training still matters. */
+            expect(res.body.error.message).toMatch(new RegExp(`#${run.id}`));
+            expect(res.body.error.message).toContain(`jest-model-${stamp}`);
+            expect(res.body.error.message).toMatch(/train/i);
+
+            const [row] = await db.sequelize.query(
+                'SELECT id FROM datasets WHERE id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(row).toBeDefined();
+            expect(fs.existsSync(archive)).toBe(true);
+        });
+
+        /**
+         * A build in flight holds a staging directory and is about to write this row.
+         * Deleting underneath it makes its own completion the error, so it is refused and
+         * told to cancel -- one press, which takes effect within a pass.
+         */
+        it('refuses a dataset that is still building, and says to cancel it', async () => {
+            const { datasetId } = await seedBuild({ name: 'jest-delete-building', state: 'leased' });
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(409);
+            expect(res.body.error.message).toMatch(/cancel/i);
+        });
+
+        it('refuses a dataset that does not exist', async () => {
+            const res = await global.api.delete('/api/v2/dataset/2147483600');
+
+            expect(res.status).toBe(404);
+        });
+
+        /**
+         * A row whose archive was already removed by hand still deletes. The row is the
+         * thing being deleted; a missing file is one less thing to do, not a failure.
+         */
+        it('deletes a dataset whose archive is already gone', async () => {
+            const { datasetId, archive } = await seedDeletable('kept');
+
+            fs.rmSync(archive, { force: true });
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(200);
+            expect(res.body).toEqual({ deleted: true, archive_removed: false });
+        });
+
+        /** It writes, so it is not the read permission, and certainly not anonymous. */
+        it('refuses a request carrying no principal', async () => {
+            const request = require('supertest');
+            const app = require('../app');
+
+            const res = await request(app).delete('/api/v2/dataset/1');
+
+            expect(res.status).toBe(401);
+        });
+    });
+
     it('refuses a request carrying no principal', async () => {
         const request = require('supertest');
         const app = require('../app');

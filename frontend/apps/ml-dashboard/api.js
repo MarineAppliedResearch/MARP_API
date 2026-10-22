@@ -1110,6 +1110,25 @@
    * @param {number} [limit] - How many frames.
    * @returns {Promise<{sha256: string, total: number, frames: Object[]}>}
    */
+  /**
+   * `DELETE /api/v2/dataset/:id` -- remove a dataset, its membership and its archive.
+   *
+   * Refuses with 409 when a model was trained from it, which is the schema's own rule:
+   * `training_runs.dataset_id` is `NO ACTION`, so a dataset stays as long as it is the
+   * record of what a model saw. Also 409 while it is still building, which asks for the
+   * build to be cancelled first. Both carry the sentence to show.
+   *
+   * **No corpus fallback.** A delete that silently succeeds against a fixture would teach
+   * the control works when nothing was removed; in corpus mode the request is made and
+   * its answer is whatever the API says.
+   *
+   * @param {number|string} id - The dataset.
+   * @returns {Promise<{deleted: boolean, archive_removed: boolean}>}
+   */
+  function deleteDataset(id) {
+    return request(`/dataset/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
   function datasetPreview(id, limit) {
     return serve('datasets',
       () => request(`/dataset/${encodeURIComponent(id)}/preview${limit ? `?limit=${encodeURIComponent(limit)}` : ''}`),
@@ -1403,6 +1422,7 @@
     listDatasetBuilds,
     datasetComposition,
     datasetPreview,
+    deleteDataset,
     listProjects,
     listUsers,
     submitJob,

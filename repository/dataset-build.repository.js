@@ -25,6 +25,7 @@ const { QueryTypes } = require('sequelize');
 
 const db = require('../model');
 const logger = require('../logger/api.logger');
+const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 
 /** What the API's own worker row is called. Stable, because it is looked up by name. */
 const API_WORKER_NAME = 'marp-api';
@@ -430,6 +431,98 @@ async function isCancelled(jobId) {
 }
 
 /**
+ * Delete a dataset, and say what is in the way when something is.
+ *
+ * **"Delete everything, but refuse if a model was trained from that dataset."** That rule
+ * is the schema's already: `dataset_observations` and `dataset_classes` cascade, and
+ * `training_runs.dataset_id` is `NO ACTION`, so PostgreSQL itself refuses while a run
+ * points at the row. A dataset is the answer to *what was this model trained on*, and
+ * that `NO ACTION` is the guard rather than an oversight -- it is not to be relaxed.
+ *
+ * **The training runs are looked up first anyway**, because a foreign key violation
+ * reaching a reader is a 500 and a crash is not a refusal. The check produces the
+ * sentence; the delete inside a transaction is still the thing that enforces it, and the
+ * caught violation below is the backstop for a run created between the two.
+ *
+ * **The row goes, and the caller removes the file afterwards.** Deliberately not both
+ * here: if the delete is refused the archive must still be on disk, and a dataset whose
+ * archive is gone but whose row survives is worse than either outcome on its own.
+ *
+ * `gpu_jobs` rows are left alone and that is a decision. A job is the record that the
+ * work happened, nothing references the dataset by a foreign key, and the two settle
+ * functions above simply match no rows once the dataset is gone.
+ *
+ * @async
+ * @param {number} datasetId - The dataset.
+ * @returns {Promise<{deleted: boolean, archivePath: ?string}>} What to unlink, if
+ * anything.
+ * @throws {ApiError} 404 when there is no such dataset, 409 when it is still building or
+ * a training run was made from it.
+ */
+async function deleteDataset(datasetId) {
+    const [dataset] = await db.sequelize.query(
+        'SELECT id, name, status, archive_path FROM datasets WHERE id = :datasetId',
+        { replacements: { datasetId }, type: QueryTypes.SELECT }
+    );
+
+    if (!dataset) {
+        throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `No dataset ${datasetId}.`);
+    }
+
+    /* **A building dataset is refused rather than cancelled for them.** There is a runner
+       holding a staging directory and about to write this row; deleting underneath it
+       makes its own completion the error. Cancelling first is one press and the build
+       stops within a pass, so the honest answer is to say so rather than to do two things
+       behind one button and leave twenty seconds where the dataset still exists. */
+    if (dataset.status === 'building') {
+        throw new ApiError(409, ERROR_CODES.CONFLICT,
+            `"${dataset.name}" is still building. Cancel the build first, then delete it.`);
+    }
+
+    /* **The model's name, not the run's -- `training_runs` has no name of its own.**
+       Which is just as well: *which model was trained on this* is the useful half, and it
+       is what somebody needs in order to decide whether the run still matters. */
+    const runs = await db.sequelize.query(
+        `SELECT t.id, m.name AS model_name
+           FROM training_runs t
+           LEFT JOIN ml_models m ON m.id = t.model_id
+          WHERE t.dataset_id = :datasetId
+          ORDER BY t.id LIMIT 5`,
+        { replacements: { datasetId }, type: QueryTypes.SELECT }
+    );
+
+    if (runs.length) {
+        const named = runs.map((run) => `#${run.id}${run.model_name ? ` ${run.model_name}` : ''}`).join(', ');
+
+        throw new ApiError(409, ERROR_CODES.CONFLICT,
+            `"${dataset.name}" was used to train ${runs.length === 1 ? 'a model' : 'models'} `
+            + `(${named}), so it is the record of what that training saw and cannot be deleted.`);
+    }
+
+    try {
+        const removed = await db.sequelize.query(
+            'DELETE FROM datasets WHERE id = :datasetId RETURNING id',
+            { replacements: { datasetId }, type: QueryTypes.SELECT }
+        );
+
+        return {
+            deleted: Boolean(removed.length),
+            archivePath: removed.length ? dataset.archive_path : null,
+        };
+    } catch (error) {
+        /* The race the check above cannot close: a training run written between the two.
+           Postgres refuses, and this turns its message into the same sentence rather than
+           letting a 500 out. */
+        if (error && /training_runs_dataset_id_fkey/.test(String(error.message || error))) {
+            throw new ApiError(409, ERROR_CODES.CONFLICT,
+                `"${dataset.name}" was used to train a model, so it cannot be deleted.`);
+        }
+
+        throw error;
+    }
+}
+
+/**
  * Settle a dataset whose build was cancelled with nobody running it.
  *
  * **The hole cancellation had.** `POST /gpu/jobs/:id/cancel` sets the job to `cancelled`,
@@ -711,6 +804,7 @@ module.exports = {
     queueBuild,
     reclaimAbandonedBuilds,
     recordBuild,
+    deleteDataset,
     reportProgress,
     settleCancelledBuilds,
     recordSelection,

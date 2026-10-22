@@ -14,6 +14,9 @@
  */
 
 const path = require('path');
+const fs = require('fs');
+
+const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
 const datasetController = require('../controller/dataset.controller');
 const modelArtifactService = require('../service/model-artifact.service');
 const datasetBuildRepository = require('../repository/dataset-build.repository');
@@ -704,20 +707,75 @@ function registerDatasetRoutes(app) {
         method: 'delete',
         permission: 'datasets:write',
         path: '/api/dataset/:id',
-        summary: 'Delete a dataset',
+        summary: 'Delete a dataset, its membership and its archive',
         description:
-            "Deletes a dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
+            'Deletes everything the dataset is -- the row, its membership and its class vocabulary -- and removes '
+            + 'the archive from storage.\n\n'
+            + "**It refuses if a model was trained from it.** That is the schema's own rule rather than one added "
+            + 'here: `dataset_observations` and `dataset_classes` are `ON DELETE CASCADE`, while '
+            + '`training_runs.dataset_id` is `NO ACTION` and PostgreSQL blocks the delete while a run points at the '
+            + 'row. A dataset is the answer to *what was this model trained on*, so that is the guard working. The '
+            + 'runs are looked up first so the refusal is a 409 naming the model that was trained, rather than a '
+            + 'foreign-key violation arriving as a 500 -- which is what this route did until #268.\n\n'
+            + '**A dataset that is still building is refused too**, and asks for the build to be cancelled first. '
+            + 'There is a runner holding a staging directory and about to write that row; deleting underneath it '
+            + 'turns its own completion into the error. Cancelling is one press and takes effect within a pass.\n\n'
+            + '**The row goes first and the file only once that succeeded.** A refused delete must leave the archive '
+            + 'where it was, and a dataset whose archive is gone but whose row survives is worse than either '
+            + 'outcome. Removing the file was not done at all before, so a deleted dataset left gigabytes behind. A '
+            + 'file that is already missing is not an error -- the row is what is being deleted.\n\n'
+            + '`gpu_jobs` rows survive, deliberately. A job is the record that the work happened, nothing references '
+            + 'the dataset by a foreign key, and a job whose dataset is gone simply stops appearing in '
+            + '`GET /dataset/builds`.',
         tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the dataset to delete.' },
         ],
         responses: {
-            200: { description: 'The number of rows destroyed (as returned by Sequelize).' },
+            200: {
+                description: 'It is gone.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                deleted: { type: 'boolean' },
+                                archive_removed: {
+                                    type: 'boolean',
+                                    description: 'False when the row named no archive, or the file was already absent.',
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            409: {
+                description: 'A model was trained from it, or it is still building. The message says which.',
+            },
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            const data = await datasetController.deleteDataset(req.params.id);
-            res.json(data);
+            const { deleted, archivePath } = await datasetBuildRepository.deleteDataset(req.params.id);
+
+            /* **Only now.** Everything that could refuse has refused and the row is gone,
+               so removing the file can no longer orphan a dataset that still exists. */
+            let archiveRemoved = false;
+
+            if (deleted && archivePath) {
+                const storageRoot = path.resolve(DATASET_DIRECTORY, '..');
+                const absolute = path.resolve(storageRoot, archivePath);
+
+                /* `archive_path` is our own value, but it is a database value becoming a
+                   filesystem path, which is the shape of a traversal bug -- and this one
+                   unlinks rather than reads. Checked the way the archive route checks it. */
+                if (absolute.startsWith(storageRoot + path.sep) && fs.existsSync(absolute)) {
+                    fs.rmSync(absolute, { force: true });
+                    archiveRemoved = true;
+                }
+            }
+
+            res.json({ deleted, archive_removed: archiveRemoved });
         }),
     });
 

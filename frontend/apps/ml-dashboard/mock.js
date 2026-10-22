@@ -5690,6 +5690,65 @@ function wireCancelBuild(detail, name) {
   });
 }
 
+/**
+ * The Delete button on a built dataset.
+ *
+ * **What goes is said before it goes, with the size in it.** These archives are hundreds
+ * of megabytes to several gigabytes and they are not recoverable -- there is no undo and
+ * no second copy -- so the confirmation names the dataset, its contents and how much disk
+ * it is about to free, rather than asking "are you sure?" about an unnamed thing.
+ *
+ * **A refusal is shown, not swallowed.** The route refuses a dataset a model was trained
+ * from, and that refusal is the useful answer: it names the training run. The same for a
+ * dataset still building, which asks for the build to be cancelled first. Both arrive as
+ * 409 with the sentence already written, so this prints it rather than inventing its own.
+ *
+ * @param {Element} detail - The expanded row.
+ * @param {Element} head - The row itself, removed with it.
+ * @param {Object} set - The dataset.
+ * @param {string} size - Its archive size, already formatted.
+ * @returns {void}
+ */
+function wireDeleteDataset(detail, head, set, size) {
+  const button = $('[data-delete-dataset]', detail);
+
+  if (!button) return;
+
+  button.addEventListener('click', async () => {
+    const holds = [
+      Number(set.num_observations) > 0 ? `${Number(set.num_observations).toLocaleString()} observations` : '',
+      Number(set.num_samples) > 0 ? `${Number(set.num_samples).toLocaleString()} images` : '',
+      size ? `a ${size} archive` : '',
+    ].filter(Boolean);
+
+    /* eslint-disable-next-line no-alert -- the app has no dialog of its own, and a
+       permanent delete with no confirmation at all is the worse answer. */
+    if (!window.confirm(`Delete "${set.name}"?\n\n`
+      + (holds.length ? `This removes ${holds.join(', ')}.\n\n` : '')
+      + 'It cannot be undone, and the archive is not kept anywhere else.')) return;
+
+    const said = $('[data-delete-said]', detail);
+
+    button.disabled = true;
+    button.textContent = 'Deleting…';
+
+    try {
+      await window.MarpApi.deleteDataset(set.id);
+
+      /* Both rows: the dataset's own and the detail panel under it, which is a sibling
+         `<tr>` rather than a child, so removing one would leave the other behind. */
+      detail.remove();
+      head.remove();
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Delete';
+
+      /* The server's sentence, which is the whole point of it having written one. */
+      if (said) said.textContent = error.message || `Could not delete it (${error.status || 'no answer'}).`;
+    }
+  });
+}
+
 function datasetPillContents(status, build) {
   const dot = build && build.state === 'leased' ? '<span class="dot"></span>' : '';
 
@@ -6014,7 +6073,13 @@ async function wireDatasetPage() {
          wiring them has not been asked for, and two more half-working buttons is worse
          than two that are obviously not finished. They carry a `later` chip, which is
          what this app uses for a control with nothing behind it. */
-      const readyActions = `<button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup <span class="chip">later</span></button><button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-training"/></svg>Use for training <span class="chip">later</span></button>${download}`;
+      /* **Delete is last and it is the only red thing here**, so it is not the button a
+         hand lands on by accident next to Download. What it takes with it is named in the
+         confirmation rather than here: a label cannot say "and 3.8 GB" without becoming a
+         sentence. */
+      const remove = `<button class="btn sm danger" type="button" data-delete-dataset="${set.id}"><svg class="ico"><use href="#i-stop"/></svg>Delete</button>`;
+
+      const readyActions = `<button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup <span class="chip">later</span></button><button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-training"/></svg>Use for training <span class="chip">later</span></button>${download}${remove}<span class="hint" data-delete-said></span>`;
       /* **The Build record, from the dataset row rather than from its name.** This block
          was a lookup keyed on five invented dataset names — `CAMPA_2024_Rockfish_v3` and
          friends — so anything MARP actually built fell through to a wall of em dashes
@@ -6133,6 +6198,7 @@ async function wireDatasetPage() {
          detail element so the closure stays with the row it belongs to. */
       detail.loadComposition = compose;
       head.after(detail);
+      wireDeleteDataset(detail, head, set, size);
       const open = $('[aria-label="Open"]', head);
       if (open) {
         open.setAttribute('aria-label', `Show details for ${name}`);
