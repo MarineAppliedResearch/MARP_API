@@ -659,6 +659,76 @@ async function getBuildSetup(datasetId) {
 }
 
 /**
+ * Remove the build jobs that belong to a dataset.
+ *
+ * **There is no foreign key to do this.** A build job names its dataset in
+ * `spec->>'dataset_id'`, which is a value rather than a reference, so nothing cascades
+ * and the lookup is deliberate. Scoped to `dataset_build` throughout: no other kind of
+ * job carries that key and none is in scope.
+ *
+ * **The attempts, their events and their progress samples go on their own.**
+ * `gpu_job_attempts` cascades from the job, and `gpu_job_events` and
+ * `gpu_attempt_progress` cascade from the attempt, so deleting the job row is the whole
+ * of it -- checked against the schema rather than assumed.
+ *
+ * **An artifact stops a job, and must not stop the dataset.** `artifacts.job_id` is
+ * `RESTRICT`, so a job that produced one cannot be deleted. The caller is removing a
+ * *dataset*; failing that because of a job row they cannot see would be the same
+ * complaint in a new form. So each job is attempted on its own and the ones that refuse
+ * are reported rather than thrown.
+ *
+ * @async
+ * @param {number|string} datasetId - The dataset whose jobs should go.
+ * @param {Object} [transaction] - Join the caller's transaction, when there is one.
+ * @returns {Promise<{deleted: number[], kept: number[]}>} Which job ids went, and which
+ * would not.
+ */
+async function deleteBuildJobsFor(datasetId, transaction = undefined) {
+    const jobs = await db.sequelize.query(
+        `SELECT id FROM gpu_jobs
+          WHERE kind = 'dataset_build'
+            AND (spec->>'dataset_id')::int = :datasetId
+          ORDER BY id`,
+        { replacements: { datasetId }, type: QueryTypes.SELECT, transaction }
+    );
+
+    const deleted = [];
+    const kept = [];
+
+    for (const job of jobs) {
+        /* One at a time, and each in its own savepoint, because a `RESTRICT` violation
+           aborts the transaction it happens in -- taking the dataset delete with it if
+           they shared one. A savepoint lets the refusal be caught and the rest continue. */
+        const savepoint = await db.sequelize.transaction({ transaction });
+
+        try {
+            await db.sequelize.query(
+                "DELETE FROM gpu_jobs WHERE id = :id AND kind = 'dataset_build'",
+                { replacements: { id: job.id }, transaction: savepoint }
+            );
+
+            await savepoint.commit();
+            deleted.push(job.id);
+        } catch (error) {
+            await savepoint.rollback();
+
+            /* The only expected refusal. Anything else is a real failure and is raised,
+               because silently keeping a job for a reason nobody named is how the next
+               orphan goes unexplained. */
+            if (error && /artifacts?_job_id_fkey|violates foreign key constraint/i.test(String(error.message || error))) {
+                kept.push(job.id);
+
+                continue;
+            }
+
+            throw error;
+        }
+    }
+
+    return { deleted, kept };
+}
+
+/**
  * Delete a dataset, and say what is in the way when something is.
  *
  * **"Delete everything, but refuse if a model was trained from that dataset."** That rule
@@ -733,9 +803,18 @@ async function deleteDataset(datasetId) {
             { replacements: { datasetId }, type: QueryTypes.SELECT }
         );
 
+        /* **After the row, not before.** If the dataset refuses -- a training run points
+           at it -- its build job must still be there; a dataset that survived while its
+           job did not would be the orphan problem inverted and harder to see. */
+        const jobs = removed.length
+            ? await deleteBuildJobsFor(datasetId)
+            : { deleted: [], kept: [] };
+
         return {
             deleted: Boolean(removed.length),
             archivePath: removed.length ? dataset.archive_path : null,
+            jobsDeleted: jobs.deleted,
+            jobsKept: jobs.kept,
         };
     } catch (error) {
         /* The race the check above cannot close: a training run written between the two.
@@ -1052,6 +1131,7 @@ module.exports = {
     queueBuild,
     reclaimAbandonedBuilds,
     recordBuild,
+    deleteBuildJobsFor,
     deleteDataset,
     getBuildSetup,
     countRunningBuilds,

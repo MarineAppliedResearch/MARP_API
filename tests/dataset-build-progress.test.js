@@ -32,7 +32,7 @@ describe('GET /api/v2/dataset/builds', () => {
     const stamp = Date.now();
 
     /** Everything this file created, torn down in reverse. */
-    const made = { datasets: [], jobs: [], attempts: [], workers: [], observations: [] };
+    const made = { datasets: [], jobs: [], attempts: [], workers: [], observations: [], artifacts: [] };
 
     /**
      * A `gpu_workers` row, because `gpu_job_attempts.worker_id` is NOT NULL with a foreign
@@ -175,6 +175,13 @@ describe('GET /api/v2/dataset/builds', () => {
             await db.sequelize.query('DELETE FROM dataset_observations WHERE dataset_id = :id',
                 { replacements: { id } });
             await db.sequelize.query('DELETE FROM dataset_classes WHERE dataset_id = :id',
+                { replacements: { id } });
+        }
+
+        /* Artifacts first of all: `artifacts.job_id` is RESTRICT, so a job this file
+           created while proving that refusal cannot be deleted until its artifact is. */
+        for (const id of made.artifacts) {
+            await db.sequelize.query('DELETE FROM artifacts WHERE id = :id',
                 { replacements: { id } });
         }
 
@@ -1674,7 +1681,7 @@ describe('GET /api/v2/dataset/builds', () => {
             const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
 
             expect(res.status).toBe(200);
-            expect(res.body).toEqual({ deleted: true, archive_removed: true });
+            expect(res.body).toMatchObject({ deleted: true, archive_removed: true });
             expect(fs.existsSync(archive)).toBe(false);
 
             const [row] = await db.sequelize.query(
@@ -1777,7 +1784,7 @@ describe('GET /api/v2/dataset/builds', () => {
             const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
 
             expect(res.status).toBe(200);
-            expect(res.body).toEqual({ deleted: true, archive_removed: false });
+            expect(res.body).toMatchObject({ deleted: true, archive_removed: false });
         });
 
         /**
@@ -1905,14 +1912,120 @@ describe('GET /api/v2/dataset/builds', () => {
 
             expect(res.status).toBe(200);
 
-            /* The job survives -- that is the decision -- and stops being served here. */
+            /* **The job goes with it now, and this assertion is the reverse of what it
+               was.** It used to pin the opposite -- that a job survives its dataset as the
+               record that work happened. Isaac objected twice: once when the Datasets
+               summary counted the orphans, and again when he deleted a dataset here and
+               met its build still listed on the Jobs screen. The reasoning for keeping
+               them was sound and his workflow outvoted it. */
             const [job] = await db.sequelize.query(
                 'SELECT id FROM gpu_jobs WHERE id = :jobId',
                 { replacements: { jobId }, type: QueryTypes.SELECT }
             );
 
-            expect(job).toBeDefined();
+            expect(job).toBeUndefined();
+            expect(res.body.jobs_deleted).toContain(jobId);
+
+            /* And the join still earns its place: a job that *cannot* be deleted --
+               one holding an artifact -- must still not be served here. */
             expect(await seen()).toBe(false);
+        });
+
+        /**
+         * **A job holding an artifact refuses, and the dataset goes anyway.**
+         *
+         * `artifacts.job_id` is `RESTRICT`, so that job cannot be deleted. The caller
+         * asked to remove a *dataset*; failing the whole thing because of a job row they
+         * cannot see would be the complaint this change exists to answer, arriving in a
+         * new form. So the refusal is reported and the delete succeeds.
+         *
+         * The savepoint is what makes that possible: a foreign-key violation aborts the
+         * transaction it happens in, so without one the refusal would take the dataset
+         * delete down with it.
+         */
+        it('keeps a build job that holds an artifact, and still deletes the dataset', async () => {
+            const { jobId, datasetId } = await seedBuild({ name: 'jest-delete-artifact', state: 'failed' });
+
+            await db.sequelize.query(
+                "UPDATE datasets SET status = 'failed' WHERE id = :datasetId",
+                { replacements: { datasetId } }
+            );
+
+            const [artifact] = await db.sequelize.query(
+                `INSERT INTO artifacts (job_id, artifact_type, path, created_at, updated_at)
+                 VALUES (:jobId, 'weights', :path, NOW(), NOW())
+                 RETURNING id`,
+                {
+                    replacements: { jobId, path: `jest/${stamp}-weights.pt` },
+                    type: QueryTypes.SELECT,
+                }
+            );
+
+            made.artifacts.push(artifact.id);
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.deleted).toBe(true);
+            expect(res.body.jobs_kept).toContain(jobId);
+            expect(res.body.jobs_deleted).not.toContain(jobId);
+
+            const [dataset] = await db.sequelize.query(
+                'SELECT id FROM datasets WHERE id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            const [job] = await db.sequelize.query(
+                'SELECT id FROM gpu_jobs WHERE id = :jobId',
+                { replacements: { jobId }, type: QueryTypes.SELECT }
+            );
+
+            // The dataset is gone; the job that could not go is still there.
+            expect(dataset).toBeUndefined();
+            expect(job).toBeDefined();
+        });
+
+        /**
+         * The attempts, their events and their progress samples go with the job, by
+         * cascade rather than by this code deleting them. Asserted because a migration
+         * that quietly changed one of those rules would otherwise leave rows nobody looks
+         * for, pointing at a job that no longer exists.
+         */
+        it('takes the attempts, events and progress samples with the job', async () => {
+            const worker = await seedWorker();
+            const { jobId, datasetId } = await seedBuild({ name: 'jest-delete-cascade', state: 'failed' });
+            const attemptId = await seedAttempt({ jobId, workerId: worker, epoch: 1, done: 5, total: 10 });
+
+            await db.sequelize.query(
+                `INSERT INTO gpu_job_events (attempt_id, seq, at, kind, payload)
+                 VALUES (:attemptId, 1, NOW(), 'note', '{}'::jsonb)`,
+                { replacements: { attemptId } }
+            );
+
+            await db.sequelize.query(
+                `INSERT INTO gpu_attempt_progress
+                     (attempt_id, at, progress_done, progress_total, progress_unit, job_kind)
+                 VALUES (:attemptId, date_trunc('minute', NOW()), 5, 10, 'frames', 'dataset_build')`,
+                { replacements: { attemptId } }
+            );
+
+            await db.sequelize.query(
+                "UPDATE datasets SET status = 'failed' WHERE id = :datasetId",
+                { replacements: { datasetId } }
+            );
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(200);
+
+            const [left] = await db.sequelize.query(
+                `SELECT (SELECT count(*)::int FROM gpu_job_attempts WHERE job_id = :jobId) AS attempts,
+                        (SELECT count(*)::int FROM gpu_job_events WHERE attempt_id = :attemptId) AS events,
+                        (SELECT count(*)::int FROM gpu_attempt_progress WHERE attempt_id = :attemptId) AS samples`,
+                { replacements: { jobId, attemptId }, type: QueryTypes.SELECT }
+            );
+
+            expect(left).toEqual({ attempts: 0, events: 0, samples: 0 });
         });
 
         /** It writes, so it is not the read permission, and certainly not anonymous. */

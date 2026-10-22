@@ -27,6 +27,9 @@ const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-con
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
+/** A blank line between paragraphs of a route description. */
+const BREAK = '\n\n';
+
 /**
  * Register every ML-pipeline route and its OpenAPI operation on `app`.
  *
@@ -943,7 +946,16 @@ function registerDatasetRoutes(app) {
             + 'where it was, and a dataset whose archive is gone but whose row survives is worse than either '
             + 'outcome. Removing the file was not done at all before, so a deleted dataset left gigabytes behind. A '
             + 'file that is already missing is not an error -- the row is what is being deleted.\n\n'
-            + '`gpu_jobs` rows survive, deliberately. A job is the record that the work happened -- its attempt, its '
+            + '**The build job goes too, with its attempts, their events and their progress samples.** It used to '
+            + 'survive, as the record that the work happened, and Isaac objected twice: a build job for a dataset '
+            + 'nobody can see is not a record anyone can use, and he met it again on the Jobs screen after deleting '
+            + 'the dataset here. There is no foreign key -- the job names its dataset in its spec -- so '
+            + 'this is a deliberate lookup. The attempts cascade from the job and the events and progress samples '
+            + 'cascade from the attempt.' + BREAK
+            + '**A job holding an artifact refuses, and the dataset still goes.** `artifacts.job_id` is `RESTRICT`. '
+            + 'Failing the whole delete over a job row the caller cannot see would be the same complaint again, so '
+            + 'the refusal is reported in `jobs_kept` instead.' + BREAK
+            + 'Older text, kept because the reasoning is still worth reading: a job is the record that work happened -- its attempt, its '
             + 'failure reason, its timings, and the spec that is the only record of what was asked for -- and '
             + 'nothing references the dataset by a foreign key, so nothing cascades. **They are excluded from '
             + '`GET /dataset/builds` by a join rather than by hope:** this description previously claimed they '
@@ -980,7 +992,7 @@ function registerDatasetRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            const { deleted, archivePath } = await datasetBuildRepository.deleteDataset(req.params.id);
+            const { deleted, archivePath, jobsDeleted, jobsKept } = await datasetBuildRepository.deleteDataset(req.params.id);
 
             /* **Only now.** Everything that could refuse has refused and the row is gone,
                so removing the file can no longer orphan a dataset that still exists. */
@@ -1010,7 +1022,16 @@ function registerDatasetRoutes(app) {
                 }
             }
 
-            res.json({ deleted, archive_removed: archiveRemoved });
+            res.json({
+                deleted,
+                archive_removed: archiveRemoved,
+                /* Which build jobs went with it, and which would not. A job holding an
+                   artifact refuses, and the dataset still goes -- the caller asked to
+                   remove a dataset, and failing that over a job row they cannot see is
+                   the complaint this change exists to answer, in a new form. */
+                jobs_deleted: jobsDeleted,
+                jobs_kept: jobsKept,
+            });
         }),
     });
 

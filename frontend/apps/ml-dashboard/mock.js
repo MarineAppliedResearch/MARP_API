@@ -6379,10 +6379,19 @@ function wireDeleteDataset(detail, head, set) {
        that warned identically about both would be ignored on the one that matters -- and
        a confirmation that silently dropped its "this removes..." clause would make the
        dangerous case look like the harmless one. */
+    /* **The build job goes with the dataset now, so the confirmation says so.** It used
+       to survive, and Isaac met one on the Jobs screen after deleting its dataset here:
+       *"i already deleted this on the other page"*. Named only when the panel actually
+       found one -- a legacy import has no build job at all, and a dialog that listed one
+       anyway would be the same kind of untruth in reverse. */
+    const job = detail.buildJobId
+      ? ` Its build job (#${detail.buildJobId}), with that job's attempts and events, goes too.`
+      : '';
+
     const what = holds.length
-      ? `This removes ${holds.join(', ')}.\n\nIt cannot be undone, and the archive is not kept anywhere else.`
+      ? `This removes ${holds.join(', ')}.${job}\n\nIt cannot be undone, and the archive is not kept anywhere else.`
       : 'This build recorded no images, no observations and no archive, so there is nothing'
-        + ' to lose but the row itself.';
+        + ` to lose but the row itself.${job}`;
 
     /* eslint-disable-next-line no-alert -- the app has no dialog of its own, and a
        permanent delete with no confirmation at all is the worse answer. */
@@ -7008,6 +7017,11 @@ async function wireDatasetPage() {
         if (duplicate) {
           try {
             const setup = await window.MarpApi.datasetBuildSetup(set.id);
+
+            /* **Kept for the delete confirmation, which must not claim a job that is not
+               there.** This request has already happened for Duplicate setup, and its 404
+               is the honest answer that a legacy import has no build job at all. */
+            detail.buildJobId = setup.jobId;
 
             duplicate.disabled = false;
             duplicate.title = `Fill the build flow with the ${setup.subsets.length === 1
