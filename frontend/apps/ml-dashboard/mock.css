@@ -433,21 +433,13 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .inference-flow.is-highlighted .inference-area.highlighted { opacity: .7; }
 .inference-flow-foot { display: grid; gap: 9px; }
 .inference-chart-key { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+/* No `position: relative` and no left padding reserved for a swatch: this element always
+   also carries `result-legend`, whose later rule lays the swatch out as a flex item. The
+   two disagreed -- an absolutely positioned mark at `left: 0` inside a button padded only
+   5px -- so the swatch sat on top of the first letter of every label. */
 .inference-chart-key button {
-  position: relative; padding: 3px 0 3px 18px; border: 0; background: none;
+  border: 0; background: none;
   color: var(--text); font: 650 10.5px var(--body-font); cursor: pointer;
-}
-/* **The swatch is drawn from the same two tokens the line is stroked with**, so a dotted
-   series reads as dotted here and a change to one cannot leave the other behind. The
-   gradient is the dash: a run of `--dash-on` in the series colour, then `--dash-off` of
-   nothing, repeated. A legend with no dash tokens -- every other chart on the site -- gets
-   a solid bar from the defaults. */
-.inference-chart-key button::before {
-  content: ""; position: absolute; left: 0; top: 50%; width: 12px; height: 3px;
-  border-radius: 2px; transform: translateY(-50%);
-  background-image: repeating-linear-gradient(to right,
-    var(--key, currentColor) 0 var(--dash-on, 100%),
-    transparent var(--dash-on, 100%) calc(var(--dash-on, 100%) + var(--dash-off, 0px)));
 }
 .inference-chart-key button[aria-pressed="true"] { color: var(--white); text-decoration: underline; text-underline-offset: 3px; }
 .inference-chart-key button:focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 2px; border-radius: 2px; }
@@ -582,19 +574,26 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .jobresults.empty { padding: 13px; border: 1px dashed var(--hairline-2); border-radius: var(--r-sm); background: var(--card-flat); }
 .result-legend { display: flex; justify-content: flex-end; gap: 6px 12px; flex-wrap: wrap; color: var(--text); font-size: 9.5px; font-weight: 600; }
 .result-legend button {
-  display: inline-flex; align-items: center; gap: 5px; padding: 3px 5px;
+  display: inline-flex; align-items: center; gap: 7px; padding: 3px 5px;
   border: 1px solid transparent; border-radius: 4px; background: none;
   color: inherit; font: inherit; cursor: pointer;
 }
-/* **The same swatch, because this class sits on the same element as
-   `.inference-chart-key` and a later rule of equal weight was quietly winning.** It set
-   `background: var(--line)`, and `--line` is the chart *grid* colour inherited from an
-   ancestor -- a cyan at ten per cent opacity -- so every legend on the site painted an
-   invisible bar while a correct rule sat above it doing nothing. Read in the browser
-   rather than in this file: computed `--line` was `rgba(42, 214, 220, 0.10)` on all three
-   buttons while `--key` was the right colour on each. */
+/* **The only swatch rule, after two of them spent a day disagreeing.** The other lived on
+   `.inference-chart-key`, which sits on this same element, and set
+   `background: var(--line)` -- the chart *grid* colour, inherited, cyan at ten per cent --
+   so every legend painted an invisible bar. It also positioned the mark absolutely while
+   this rule lays it out as a flex item, which put it on top of the first letter once it
+   became visible.
+
+   **24px, because a dash has to repeat to read as one.** At 12px a 7-on-5-off pattern
+   shows one segment and a sliver, which looks like a short solid line; at 24 it shows two
+   full repeats, and the 2-on-6-off series shows three. That is the difference between
+   "dotted" and "shorter than the others".
+
+   Colour and dash both come from the tokens the line itself is stroked with, so neither
+   is written down twice. */
 .result-legend button::before {
-  content: ""; width: 12px; height: 3px; flex: none;
+  content: ""; width: 24px; height: 3px; flex: none; border-radius: 2px;
   background-image: repeating-linear-gradient(to right,
     var(--key, currentColor) 0 var(--dash-on, 100%),
     transparent var(--dash-on, 100%) calc(var(--dash-on, 100%) + var(--dash-off, 0px)));
