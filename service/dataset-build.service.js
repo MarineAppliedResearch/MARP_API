@@ -756,6 +756,14 @@ async function loop() {
            it reclaims on `lease_expires_at < NOW()`, and `reportProgress` pushes that an
            hour out on every report. A slow build is still a reporting build. */
         await buildRepository.reclaimAbandonedBuilds();
+
+        /* And settle anything cancelled that no runner is going to notice. A build
+           cancelled while still queued has nobody to tell -- `claimBuild` only looks at
+           `queued` jobs, so it is never picked up and never reaches `failBuild` -- and
+           its dataset would say `building` for ever. Here rather than at the moment of
+           cancelling, because this also catches a cancel made from the Jobs screen or a
+           script, which know nothing about datasets. */
+        await buildRepository.settleCancelledBuilds();
     } catch (error) {
         logger.error(`Dataset build loop: ${error && error.message}`);
     }

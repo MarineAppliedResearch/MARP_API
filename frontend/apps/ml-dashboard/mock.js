@@ -5642,6 +5642,54 @@ function previewStrip(frames, total, datasetId, limit, named) {
   return `<div class="pvstrip">${shots}</div>${of}`;
 }
 
+/**
+ * The Cancel build button, where one was drawn.
+ *
+ * **Cancels the job, not the dataset.** `POST /gpu/jobs/:id/cancel` already does exactly
+ * this and is kind-agnostic, so a dataset build needs no route of its own -- it writes
+ * `cancelled` on the job and the runner, which polls that state once per pass, stops and
+ * tidies its staging. A second route would have been a second way to say the same thing.
+ *
+ * **Confirmed first, because the work is the expensive part.** A build is hours of
+ * extraction and the button sits beside a progress bar somebody is watching; a misclick
+ * there costs the whole run. Cancelling is not destructive beyond that -- the dataset
+ * returns to `draft` and can be built again -- so one confirmation is enough and nothing
+ * is typed to prove intent.
+ *
+ * @param {Element} detail - The expanded build row.
+ * @param {string} name - The dataset's name, for the confirmation.
+ * @returns {void}
+ */
+function wireCancelBuild(detail, name) {
+  const button = $('[data-cancel-build]', detail);
+
+  if (!button) return;
+
+  button.addEventListener('click', async () => {
+    /* eslint-disable-next-line no-alert -- the app has no dialog of its own, and a
+       destructive control with no confirmation at all is the worse answer. */
+    if (!window.confirm(`Cancel the build of "${name}"? The frames cut so far are discarded and the dataset goes back to draft.`)) return;
+
+    /* **Disabled and relabelled before the request, not after it.** The answer comes
+       back in milliseconds but the build does not stop for another pass, so the thing
+       that has to change immediately is the button -- otherwise the only feedback for
+       twenty seconds is nothing happening. */
+    button.disabled = true;
+    button.textContent = 'Cancelling…';
+
+    try {
+      await window.MarpApi.cancelJob(button.dataset.cancelBuild);
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Cancel build';
+
+      const said = $('.hint', button.parentElement);
+
+      if (said) said.textContent = `Could not cancel it (${error.status || 'no answer'}).`;
+    }
+  });
+}
+
 function datasetPillContents(status, build) {
   const dot = build && build.state === 'leased' ? '<span class="dot"></span>' : '';
 
@@ -5893,13 +5941,36 @@ async function wireDatasetPage() {
         const detail = document.createElement('tr');
         detail.className = 'runrow-body dataset-row-detail';
         detail.hidden = true;
+        /* **Only where cancelling can do anything.** `queued` and `leased` are the two
+           states a build is still in; a failed or cancelled one has already stopped, and
+           a succeeded one has an archive. A button that would answer `changed: false` is
+           a button that lies about having done something. */
+        const stoppable = build && (build.state === 'queued' || build.state === 'leased');
+
+        /* **The delay is on screen, because it is long enough to look ignored.** A
+           running build checks for cancellation once per pass of a hundred frames, which
+           is about twenty seconds, and a control that appears to do nothing for twenty
+           seconds gets pressed again. A queued build stops at once -- there is nothing
+           cutting frames to interrupt. */
+        const stopActions = stoppable
+          ? '<footer>'
+            + `<button class="btn sm danger" type="button" data-cancel-build="${build.job_id}">`
+            + '<svg class="ico"><use href="#i-stop"/></svg>Cancel build</button>'
+            + `<span class="hint">${build.state === 'leased'
+              ? 'Stops at the end of the pass it is cutting, usually within about 20 seconds.'
+              : 'Stops before it starts; nothing has been cut yet.'}</span>`
+            + '</footer>'
+          : '';
+
         detail.innerHTML = `<td colspan="10"><div class="dataset-detail" data-status="${status}">`
           + `<header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">${datasetPillContents(status, build)}</span></header>`
           + `<div class="dataset-build-progress">${bar}<span class="build-frames">${frames} frames</span></div>`
           + note
           + `<div class="jobmetrics">${metrics}</div>`
+          + stopActions
           + '</div></td>';
         head.after(detail);
+        wireCancelBuild(detail, name);
         continue;
       }
       head.setAttribute('aria-expanded', 'false');

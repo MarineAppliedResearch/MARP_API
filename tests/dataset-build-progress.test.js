@@ -1412,6 +1412,156 @@ describe('GET /api/v2/dataset/builds', () => {
         });
     });
 
+    /**
+     * What happens to a dataset when its build is cancelled and nobody is running it.
+     *
+     * Cancelling goes through `POST /gpu/jobs/:id/cancel`, which is kind-agnostic and
+     * already worked for a `dataset_build` -- no route was added. A *running* build polls
+     * that state once per pass and calls `failBuild` itself, which is the path that also
+     * deletes the staging directory.
+     *
+     * **A queued build has nobody to notice**, and that was the defect. `claimBuild` only
+     * ever selects `state = 'queued'`, so a cancelled job is never picked up, `failBuild`
+     * is never reached, and the dataset sits at `building` for ever with nothing building
+     * it. `reclaimAbandonedBuilds` cannot see it either -- it wants a `leased` job with an
+     * expired attempt and this has neither.
+     */
+    describe('settling a dataset whose build was cancelled', () => {
+
+        /** What the dataset row says now. */
+        async function datasetRow(datasetId) {
+            const [row] = await db.sequelize.query(
+                'SELECT status, num_observations, num_classes FROM datasets WHERE id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            return row;
+        }
+
+        /**
+         * **The defect.** Queue a build, cancel it before anything claims it, and the
+         * dataset is stranded at `building` until somebody notices by hand.
+         */
+        it('returns a queued build\'s dataset to draft', async () => {
+            const { jobId, datasetId } = await seedBuild({ name: 'jest-cancel-queued', state: 'queued' });
+
+            await db.sequelize.query(
+                "UPDATE gpu_jobs SET state = 'cancelled', finished_at = NOW() WHERE id = :jobId",
+                { replacements: { jobId } }
+            );
+
+            expect((await datasetRow(datasetId)).status).toBe('building');
+            expect(await buildRepository.settleCancelledBuilds()).toBeGreaterThanOrEqual(1);
+            expect((await datasetRow(datasetId)).status).toBe('draft');
+        });
+
+        /**
+         * **The runner owns a build it is still running**, and this must not race it. It
+         * is the only thing that can delete the staging directory it opened, so settling
+         * the row underneath it would report the build over while gigabytes were still
+         * being written. A live lease is what "still running" means -- the same test
+         * `reclaimAbandonedBuilds` uses, for the same reason.
+         */
+        it('leaves a cancelled build alone while a runner is still reporting on it', async () => {
+            const worker = await seedWorker();
+            const { jobId, datasetId } = await seedBuild({ name: 'jest-cancel-live', state: 'leased' });
+
+            await seedAttempt({ jobId, workerId: worker, epoch: 1, done: 40, total: 400 });
+            await db.sequelize.query(
+                "UPDATE gpu_jobs SET state = 'cancelled' WHERE id = :jobId",
+                { replacements: { jobId } }
+            );
+
+            await buildRepository.settleCancelledBuilds();
+
+            expect((await datasetRow(datasetId)).status).toBe('building');
+        });
+
+        /**
+         * And the mirror image: a build cancelled while leased whose runner then died.
+         * The attempt is stuck `running`, the job is `cancelled` rather than `leased`, so
+         * reclaiming cannot see it and no runner will ever report again. Both the attempt
+         * and the dataset are closed here, or the attempt stays `running` for ever.
+         */
+        it('settles one whose runner died, and closes the attempt it left behind', async () => {
+            const worker = await seedWorker();
+            const { jobId, datasetId } = await seedBuild({ name: 'jest-cancel-dead', state: 'leased' });
+            const attemptId = await seedAttempt({ jobId, workerId: worker, epoch: 1, done: 40, total: 400 });
+
+            await db.sequelize.query(
+                `UPDATE gpu_job_attempts SET lease_expires_at = NOW() - INTERVAL '2 hours'
+                  WHERE id = :attemptId`,
+                { replacements: { attemptId } }
+            );
+            await db.sequelize.query(
+                "UPDATE gpu_jobs SET state = 'cancelled' WHERE id = :jobId",
+                { replacements: { jobId } }
+            );
+
+            await buildRepository.settleCancelledBuilds();
+
+            const [attempt] = await db.sequelize.query(
+                'SELECT state, failure_reason FROM gpu_job_attempts WHERE id = :attemptId',
+                { replacements: { attemptId }, type: QueryTypes.SELECT }
+            );
+
+            expect((await datasetRow(datasetId)).status).toBe('draft');
+            expect(attempt.state).toBe('cancelled');
+            expect(attempt.failure_reason).toMatch(/did not report back/i);
+        });
+
+        /**
+         * The selection counts go with the status, for the reason `failBuild` clears
+         * them: `recordBuild` writes the membership and it never ran, so a count left
+         * behind describes rows that are not there -- and the panel, which counts that
+         * table live, would disagree with the row it expands from.
+         */
+        it('clears the counts a selection had already written', async () => {
+            const { jobId, datasetId } = await seedBuild({ name: 'jest-cancel-counted', state: 'queued' });
+
+            await buildRepository.recordSelection({ datasetId, observations: 115, classes: 3 });
+            await db.sequelize.query(
+                "UPDATE gpu_jobs SET state = 'cancelled' WHERE id = :jobId",
+                { replacements: { jobId } }
+            );
+
+            await buildRepository.settleCancelledBuilds();
+
+            const row = await datasetRow(datasetId);
+
+            expect(row.status).toBe('draft');
+            expect(row.num_observations).toBeNull();
+            expect(row.num_classes).toBeNull();
+        });
+
+        /** A build nobody cancelled is none of this function's business. */
+        it('does not touch a build that is merely queued', async () => {
+            const { datasetId } = await seedBuild({ name: 'jest-cancel-untouched', state: 'queued' });
+
+            await buildRepository.settleCancelledBuilds();
+
+            expect((await datasetRow(datasetId)).status).toBe('building');
+        });
+
+        /**
+         * It runs on every poll, so running it twice has to be free. The second pass
+         * matches nothing: the dataset is no longer `building` and the attempt is no
+         * longer `running`, which is what the guard in the CTE is for.
+         */
+        it('does nothing the second time', async () => {
+            const { jobId } = await seedBuild({ name: 'jest-cancel-twice', state: 'queued' });
+
+            await db.sequelize.query(
+                "UPDATE gpu_jobs SET state = 'cancelled' WHERE id = :jobId",
+                { replacements: { jobId } }
+            );
+
+            await buildRepository.settleCancelledBuilds();
+
+            expect(await buildRepository.settleCancelledBuilds()).toBe(0);
+        });
+    });
+
     it('refuses a request carrying no principal', async () => {
         const request = require('supertest');
         const app = require('../app');

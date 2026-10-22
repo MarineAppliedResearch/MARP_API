@@ -430,6 +430,92 @@ async function isCancelled(jobId) {
 }
 
 /**
+ * Settle a dataset whose build was cancelled with nobody running it.
+ *
+ * **The hole cancellation had.** `POST /gpu/jobs/:id/cancel` sets the job to `cancelled`,
+ * and a *running* build notices within a pass and calls `failBuild`, which is what puts
+ * the dataset back to `draft` and tidies the staging. A build that was still **queued**
+ * has no runner to notice: `claimBuild` only ever selects `state = 'queued'`, so the job
+ * is never picked up, `failBuild` is never reached, and the dataset sits at `building`
+ * for ever with nothing building it. It looks exactly like a hang and is a dead row.
+ *
+ * {@link reclaimAbandonedBuilds} cannot see it either -- that one wants a `leased` job
+ * with an expired attempt, and this has neither.
+ *
+ * **Judged by the lease, not by the absence of an attempt**, which is the same rule
+ * reclaiming uses and is what covers the second case: a build cancelled while leased
+ * whose runner then died leaves an attempt stuck `running`, and the job is `cancelled`
+ * rather than `leased`, so nothing else would ever close it. A runner that is alive is
+ * still extending its lease, and it owns the tidying because it is the only thing that
+ * can delete the staging directory it opened.
+ *
+ * @async
+ * @returns {Promise<number>} How many datasets were settled.
+ */
+async function settleCancelledBuilds() {
+    const [settled] = await db.sequelize.query(
+        `WITH stranded AS (
+                SELECT j.id AS job_id, (j.spec->>'dataset_id')::int AS dataset_id
+                  FROM gpu_jobs j
+                 WHERE j.kind = 'dataset_build'
+                   AND j.state = 'cancelled'
+                   /* Nobody live is working on it. A fresh lease means a runner is
+                      mid-build and about to do this itself, properly. */
+                   AND NOT EXISTS (
+                       SELECT 1 FROM gpu_job_attempts a
+                        WHERE a.job_id = j.id
+                          AND a.state = 'running'
+                          AND a.lease_expires_at > NOW()
+                   )
+                   /* And there is actually something left to settle, so this is a cheap
+                      no-op once it has run rather than a lock taken every fifteen
+                      seconds on every build anybody has ever cancelled. */
+                   AND (
+                       EXISTS (
+                           SELECT 1 FROM gpu_job_attempts a
+                            WHERE a.job_id = j.id AND a.state = 'running'
+                       )
+                       OR EXISTS (
+                           SELECT 1 FROM datasets d
+                            WHERE d.id = (j.spec->>'dataset_id')::int
+                              AND d.status = 'building'
+                       )
+                   )
+                   FOR UPDATE OF j SKIP LOCKED
+         ),
+         closed AS (
+                UPDATE gpu_job_attempts a
+                   SET state = 'cancelled',
+                       finished_at = NOW(),
+                       failure_reason = COALESCE(a.failure_reason,
+                           'Cancelled, and the process running it did not report back.')
+                  FROM stranded s
+                 WHERE a.job_id = s.job_id
+                   AND a.state = 'running'
+         )
+         UPDATE datasets d
+            SET status = 'draft',
+                /* Back to null with the status, for the reason failBuild clears them:
+                   membership is written by recordBuild and it never ran, so a count here
+                   would describe rows that do not exist. */
+                num_observations = NULL,
+                num_classes = NULL,
+                updated_at = NOW()
+           FROM stranded s
+          WHERE d.id = s.dataset_id
+            AND d.status = 'building'
+          RETURNING d.id`,
+        { type: db.Sequelize.QueryTypes.SELECT }
+    );
+
+    const count = Array.isArray(settled) ? settled.length : (settled ? 1 : 0);
+
+    if (count) logger.info(`Settled ${count} dataset(s) whose build was cancelled before it ran.`);
+
+    return count;
+}
+
+/**
  * Record what a build produced, and mark everything finished.
  *
  * **One transaction over membership, vocabulary, the archive and both states.** A dataset
@@ -626,6 +712,7 @@ module.exports = {
     reclaimAbandonedBuilds,
     recordBuild,
     reportProgress,
+    settleCancelledBuilds,
     recordSelection,
     sampleProgress,
 };

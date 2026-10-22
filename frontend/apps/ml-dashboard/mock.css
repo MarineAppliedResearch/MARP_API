@@ -1924,6 +1924,13 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .pvframe figcaption em { color: var(--text); font-size: 9px; font-style: normal; }
 .pvframe figcaption em.none { color: var(--faint); font-style: italic; }
 .dataset-detail > footer { display: flex; flex-wrap: wrap; gap: 7px; }
+.dataset-detail > footer .hint { align-self: center; }
+/* Destructive, and the only control on this screen that is. Bordered rather than filled:
+   it sits beside a progress bar somebody is watching, and a solid red block there reads
+   as an alarm about the build rather than as a button. */
+.btn.danger { border-color: var(--red-500); color: var(--red-400); }
+.btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red-500) 16%, transparent); }
+.btn.danger:disabled { opacity: .55; cursor: default; }
 .dataset-build-progress { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .8fr) auto; gap: 6px 14px; align-items: center; padding: 11px 12px; border: 1px solid var(--hairline-2); border-radius: var(--r-sm); background: rgba(20, 126, 232, .06); }
 .dataset-build-progress > div { display: flex; justify-content: space-between; gap: 10px; }
 .dataset-build-progress b { color: var(--white); font-size: 11px; }
