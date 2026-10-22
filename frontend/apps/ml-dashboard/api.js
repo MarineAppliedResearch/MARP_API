@@ -1274,6 +1274,24 @@
     return request(`/dataset/${encodeURIComponent(id)}/build-setup`);
   }
 
+  /**
+   * `GET /api/v2/dataset/:id` -- one dataset, or 404.
+   *
+   * **Used to find out whether one still exists**, which is a question the Jobs screen
+   * has to ask before it tells somebody a dataset will be spared. A `dataset_build` job
+   * keeps its dataset id in `spec` and nothing clears it when the dataset goes, so the
+   * id on the row is a claim about the past rather than about now.
+   *
+   * It answers 404 when there is none. The route's own description still says it returns
+   * null; it throws.
+   *
+   * @param {number|string} id - The dataset.
+   * @returns {Promise<Object>}
+   */
+  function getDataset(id) {
+    return request(`/dataset/${encodeURIComponent(id)}`);
+  }
+
   function deleteDataset(id) {
     return request(`/dataset/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
@@ -1574,6 +1592,7 @@
     datasetBuildQueue,
     datasetBuildSetup,
     datasetPreview,
+    getDataset,
     deleteDataset,
     moveQueuedBuild,
     listProjects,

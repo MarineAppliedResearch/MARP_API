@@ -3536,6 +3536,33 @@ async function afterJobsDelete() {
 }
 
 /**
+ * What is true about a build's dataset, right now.
+ *
+ * Three answers, and they are three different facts, so none is guessed:
+ *
+ * - it is there, and deleting the job costs it the record of how it was made;
+ * - it is gone already, and this job is the last trace of that build -- which makes the
+ *   delete more obviously right rather than less, so saying so is not a warning;
+ * - the question could not be answered, which is said plainly rather than resolved
+ *   toward either of the other two.
+ *
+ * @param {string|number} id - The dataset the build names.
+ * @returns {Promise<string>} One sentence for the confirmation.
+ */
+async function datasetClause(id) {
+  try {
+    await window.MarpApi.getDataset(id);
+    return `Dataset ${id} is not deleted. It loses the record of the build that made it.`;
+  } catch (error) {
+    if (error.status === 404) {
+      return `Dataset ${id} was deleted already, so this job is the last trace of that build.`;
+    }
+
+    return `Could not check whether dataset ${id} still exists (${error.status || 'no answer'}).`;
+  }
+}
+
+/**
  * The delete controls: one row, a selection, or every failed job.
  *
  * **Three verbs, and the confirmation is different for each**, because what they destroy
@@ -3579,11 +3606,15 @@ function wireJobsDelete() {
         ? `This removes ${countOf(attempts, 'attempt')} and the event log recorded against them.`
         : 'It was never attempted, so there is nothing recorded against it.';
 
-      /* A build's dataset outlives its job, and somebody about to delete the job has
-         every reason to think otherwise. */
-      const keeps = dataset
-        ? `\n\nDataset ${dataset} is not deleted. It loses the record of the build that made it.`
-        : '';
+      /* **Asked, not assumed.** A build keeps its dataset id in `spec` and nothing clears
+         it when the dataset goes, so the id on this row is a claim about the past. Told
+         that "dataset 385 is not deleted" about one he had deleted himself, Isaac's
+         reaction was that the screen was wrong -- and it was. A confirmation promising to
+         spare a row that is already gone is worse than one that says nothing, because it
+         is the sentence somebody reads before agreeing.
+
+         One request, on a destructive action, which is the right place to spend one. */
+      const keeps = dataset ? `\n\n${await datasetClause(dataset)}` : '';
 
       /* eslint-disable-next-line no-alert -- the app has no dialog of its own, and a
          permanent delete with no confirmation at all is the worse answer. */
