@@ -144,13 +144,19 @@ const IMG = '../../../shared/assets/images/';
 async function fillRailBadges() {
   if (!window.MarpApi) return;
 
-  const set = (id, count) => {
+  const set = (id, count, label) => {
     const badge = $('[data-nav-badge="' + id + '"]');
 
     if (!badge) return;
 
     badge.textContent = String(count);
     badge.hidden = !count;
+
+    /* **What the number is, not just the number.** The Jobs badge is a count of failed
+       jobs and read as a bare 1,189 with nothing saying so; Isaac asked what it meant
+       twice, once when it said 8. The count was always right -- the silence was the
+       defect. */
+    if (label) badge.title = `${Number(count).toLocaleString()} ${label}`;
   };
 
   try {
@@ -162,9 +168,9 @@ async function fillRailBadges() {
       window.MarpApi.listJobs({ state: 'leased', kind: 'training', limit: 1 }),
     ]);
 
-    set('jobs', failed.total || 0);
-    set('inference', inference.total || 0);
-    set('training', training.total || 0);
+    set('jobs', failed.total || 0, 'failed jobs');
+    set('inference', inference.total || 0, 'inference jobs running');
+    set('training', training.total || 0, 'training jobs running');
   } catch {
     /* Nothing: a rail that could not count is a rail without badges. */
   }
@@ -1127,11 +1133,26 @@ const JOBS_SORT_KEYS = {
   hmodel: (view) => ((view.job.spec.model && view.job.spec.model.name) || '').toLowerCase(),
   hstatus: (view) => JOB_STATE_RANK[view.state],
   hprog: (view) => view.pct,
+  /* **Worker was marked `sortable` in the markup and had no key here**, so the loop that
+     wires the headers skipped it -- `if (!key) continue` -- and clicking it did nothing
+     on desktop while the phone had no button for it at all. A header that says it sorts
+     and does not is worse than one that never claimed to. Blank for a job never leased to
+     a machine, which sorts those together rather than scattering them. */
+  hworker: (view) => (view.job.worker_name || '').toLowerCase(),
   hupd: (view) => view.job.created_at,
 };
 
-/** The column order the phone's sort strip uses. @type {string[]} */
-const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hprog', 'hupd'];
+/**
+ * The column order the phone's sort strip uses.
+ *
+ * **Index for index with the table's headers**, which is why `hworker` goes before
+ * `hupd` rather than on the end: the strip is the only sort control below 1050px and a
+ * reader comparing it with the table above would otherwise find the two in different
+ * orders. Appending it would have been a smaller diff and a worse answer.
+ *
+ * @type {string[]}
+ */
+const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hprog', 'hworker', 'hupd'];
 
 /** The window the whole screen is drawn from, refetched only when the API query changes. */
 let jobsWindow = null;
