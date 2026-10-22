@@ -6294,6 +6294,61 @@ const NOT_STARTED_TEXT = '—';
  */
 let openedRequestedDataset = false;
 
+/**
+ * Fill the build flow from the dataset named in `?dataset=`, when `?duplicate=1` asks.
+ *
+ * **Where Duplicate with change lands.** The Jobs screen cannot fill this form -- the form
+ * is here -- so a failed build links across with the dataset it produced and this reads
+ * the request on arrival. `openRequestedDataset` has already opened that row, which is
+ * what a reader needs to see: the thing being copied, above the form it is copied into.
+ *
+ * **The same route and the same event the button beside it uses**, rather than a second
+ * implementation of "new build from an old spec". The button is the gesture for somebody
+ * already on this screen; this is the gesture for somebody arriving from a job. They have
+ * to stay the same thing, so they share everything except how they were asked for.
+ *
+ * Creates nothing, which is the rule the whole feature turns on: the form is filled, the
+ * ordinary Queue button is what starts a build, and a reader who changes their mind simply
+ * leaves.
+ *
+ * 404 is the ordinary case for a legacy import and the route has written the sentence for
+ * it, so it is shown rather than replaced with a guess.
+ *
+ * @returns {Promise<void>}
+ */
+async function fillFromRequestedBuild() {
+  const query = new URLSearchParams(window.location.search);
+  const wanted = query.get('dataset');
+
+  if (!wanted || query.get('duplicate') !== '1') return;
+  if (!$('#dsname') || !window.MarpApi) return;
+
+  /* **Nothing is said on success, deliberately.** `applySetup` writes its own line when
+     it has finished -- it names the build, says nothing was created, and adds what it
+     could not restore, which this cannot know. A message here would be a worse one
+     racing a better one: it only lost that race because `applySetup` is async, and a
+     faster fill would have left the vaguer sentence on screen. */
+  const say = (text, kind = '') => {
+    const status = $('[data-query-add-status]');
+
+    if (status) {
+      status.textContent = text;
+      status.dataset.kind = kind;
+    }
+  };
+
+  try {
+    const setup = await window.MarpApi.datasetBuildSetup(wanted);
+
+    document.dispatchEvent(new CustomEvent('marp:duplicate-dataset-setup', { detail: setup }));
+  } catch (error) {
+    /* The one case the builder never hears about, because nothing reached it. */
+    say(error.status === 404
+      ? (error.message || `Dataset ${wanted} has no recorded queries to copy.`)
+      : `Could not read that build's queries (${error.status || 'no answer'}).`, 'warning');
+  }
+}
+
 function openRequestedDataset() {
   if (openedRequestedDataset) return;
 
@@ -6849,6 +6904,9 @@ async function wireDatasetPage() {
       wireAccordions();
       filter();
       openRequestedDataset();
+      /* After the row is open, so a reader sees what is being copied above the form
+         it is copied into. */
+      fillFromRequestedBuild();
     } else {
       patchBuildRows(body, builds);
     }
