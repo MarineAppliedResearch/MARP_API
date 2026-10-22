@@ -6891,9 +6891,35 @@ async function wireDatasetPage() {
     /* The shape of the table: which datasets, in which state. The counts are
        deliberately left out -- they move constantly and moving them is what the patch
        below is for. */
-    const shape = datasets.map((set) => `${set.id}:${datasetScreenStatus(set, builds.get(set.id) || null)}:${set.num_samples ?? ''}:${set.num_observations ?? ''}:${set.num_classes ?? ''}`).join('|');
+    /* **Sorted by id before being joined, because this is a set and was being compared as
+       a sequence.** `GET /dataset` is `findAll()` with no ORDER BY, so rows arrive in
+       PostgreSQL's physical order -- and an UPDATE writes a new tuple at the end of the
+       heap. Since a build began touching `datasets.updated_at` on every progress report,
+       the building dataset moved in that order every twenty seconds, this string differed
+       from the last one for no real change, and the whole table was rebuilt. Every
+       expanded row closed with it, which is what Isaac was looking at.
+
+       The fix is that the comparison should not have been positional in the first place:
+       what it is asking is *are these the same datasets in the same states*, and that is
+       a question about a set. */
+    const shape = [...datasets]
+      .sort((a, b) => a.id - b.id)
+      .map((set) => `${set.id}:${datasetScreenStatus(set, builds.get(set.id) || null)}:${set.num_samples ?? ''}:${set.num_observations ?? ''}:${set.num_classes ?? ''}`)
+      .join('|');
 
     if (first || shape !== drawn) {
+      /* **What the reader had open, so a redraw does not shut it.** The table is rebuilt
+         when the set of datasets or their states genuinely change -- a build finishing is
+         the obvious one, and it is exactly the moment somebody is watching that row. The
+         markup is replaced, so `aria-expanded` and the detail element belonged to nodes
+         that no longer exist and every open row closed.
+
+         Keyed by dataset id rather than by position: a redraw is allowed to reorder, and
+         restoring "the third row" would reopen whichever dataset had moved into third. */
+      const wasOpen = new Set($$(':scope > tr[data-dataset-id][aria-expanded="true"]', body)
+        .map((head) => head.dataset.datasetId));
+      const wasScrolled = window.scrollY;
+
       drawn = shape;
       fillSavedDatasets(body, datasets, builds);
       decorate(builds, new Map(datasets.map((set) => [set.id, set])));
@@ -6904,6 +6930,31 @@ async function wireDatasetPage() {
       wireAccordions();
       filter();
       openRequestedDataset();
+
+      /* **Reopened the way `openRequestedDataset` does it, not by clicking the expander.**
+         A click toggles, so a row the deep link had already opened would be shut again by
+         this. A dataset that has gone is simply not found and is not reopened. */
+      for (const id of wasOpen) {
+        const head = $(`:scope > tr[data-dataset-id="${CSS.escape(id)}"]`, body);
+
+        if (!head) continue;
+
+        const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
+          ? head.nextElementSibling : null;
+
+        head.setAttribute('aria-expanded', 'true');
+
+        if (detail) {
+          detail.hidden = false;
+          /* The panel is new markup, so whatever it fetches on open has to be asked for
+             again -- otherwise it reopens showing the empty state it was built with. */
+          if (typeof detail.loadComposition === 'function') detail.loadComposition();
+        }
+      }
+
+      /* Restored after the rows are back, or the page is shorter than it was and the
+         browser clamps the scroll to the bottom of a half-built table. */
+      if (wasOpen.size && window.scrollY !== wasScrolled) window.scrollTo({ top: wasScrolled });
       /* After the row is open, so a reader sees what is being copied above the form
          it is copied into. */
       fillFromRequestedBuild();
