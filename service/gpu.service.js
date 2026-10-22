@@ -68,6 +68,20 @@ const {
 const { ASSUMED_FPS } = require('../db/timecode');
 
 /**
+ * Which job states can be cleared wholesale.
+ *
+ * **One entry, and that is a decision rather than a stub.** `failed` is what was
+ * asked for: a list cluttered with work that did not finish. `cancelled` is a bigger
+ * pile nobody has asked about, and the two are not interchangeable --
+ * `observations.gpu_job_id` is SET NULL, so clearing a state takes the provenance of
+ * everything those jobs produced. Shared by the delete and by the count in front of
+ * it, so a state cannot be countable and undeletable.
+ *
+ * @type {string[]}
+ */
+const DELETABLE_STATES = ['failed'];
+
+/**
  * Jellyfin reports durations in 100-nanosecond ticks.
  *
  * @constant
@@ -2098,6 +2112,33 @@ class GpuService {
 
 
     /**
+     * What clearing a state would take with it, counted and deleting nothing.
+     *
+     * **A GET, not a flag on the DELETE, and that is the whole point of it.** An unknown
+     * query parameter is ignored rather than refused, so `DELETE ?state=failed&dryRun=true`
+     * sent to a MARP that predates the flag is simply a delete -- 1,189 jobs gone, and the
+     * caller holding an answer it thinks is a preview. A separate verb cannot be
+     * misunderstood that way: a server without this route answers 404 and destroys nothing.
+     *
+     * The allow-list is checked first and identically, because answering for a state the
+     * delete refuses would teach a caller the state is deletable.
+     *
+     * @async
+     * @param {Object} [query] - `{state}`; defaults to `failed`.
+     * @returns {Promise<Object>} `{state, jobs, attempts, events, blocked, observations, builds}`.
+     * @throws {ApiError} 400 when the state is not one that can be cleared.
+     */
+    async deletableJobs(query = {}) {
+        const state = query.state === undefined ? 'failed' : String(query.state);
+
+        if (!DELETABLE_STATES.includes(state)) {
+            invalid(`state must be ${DELETABLE_STATES.join(' or ')}, and was ${JSON.stringify(query.state)}.`);
+        }
+
+        return { state, ...await gpuRepository.previewDeleteJobsInState(state) };
+    }
+
+    /**
      * Delete every job in one state.
      *
      * **The allow-list has one entry and that is a decision, not a stub.** `failed` is
@@ -2113,12 +2154,14 @@ class GpuService {
      * result as a partial result.
      *
      * @async
+     * What this would take is answered by `deletableJobs`, which is a GET and therefore
+     * cannot be mistaken for this.
+     *
      * @param {Object} [query] - `{state}`; defaults to `failed`.
      * @returns {Promise<{state: string, deleted: number, blocked: number[]}>}
      * @throws {ApiError} 400 when the state is not one this will delete.
      */
     async deleteJobsInState(query = {}) {
-        const DELETABLE_STATES = ['failed'];
         const state = query.state === undefined ? 'failed' : String(query.state);
 
         if (!DELETABLE_STATES.includes(state)) {
@@ -2197,7 +2240,8 @@ class GpuService {
 
         if (impact.artifacts > 0) {
             throw new ApiError(409, ERROR_CODES.CONFLICT,
-                `GPU job ${id} cannot be deleted: ${impact.artifacts} artifact(s) reference it.`);
+                `GPU job ${id} cannot be deleted: ${impact.artifacts} artifact(s) reference it.`,
+                [{ job_id: id, artifacts: impact.artifacts }]);
         }
 
         const acknowledged = options.acknowledgeObservations === true
@@ -2207,7 +2251,12 @@ class GpuService {
             throw new ApiError(409, ERROR_CODES.CONFLICT,
                 `GPU job ${id} produced ${impact.observations} observations. Deleting it leaves them in `
                 + 'place with no record of what produced them. Resend with acknowledgeObservations=true '
-                + 'to delete it anyway.');
+                + 'to delete it anyway.',
+                /* **The number machine-readably, as well as in the sentence.** A client
+                   that has to show "this unlinks 412 observations" before it can ask for
+                   the flag would otherwise have to read the count back out of English,
+                   and a reworded sentence would silently break it. */
+                [{ job_id: id, observations: impact.observations, attempts: impact.attempts }]);
         }
 
         await gpuRepository.deleteJobById(id);

@@ -157,6 +157,18 @@ beforeAll(async () => {
     seeded.failedWithAttempt = await job('failed with attempt', 'failed');
     seeded.failedWithArtifact = await job('failed with artifact', 'failed');
     seeded.succeeded = await job('succeeded', 'succeeded');
+
+    /* A failed dataset build. The preview names these separately because a build is the
+       record of something somebody ran and its dataset outlives it; the delete treats it
+       as any other job, which is the pair worth seeing in one fixture. */
+    const [builtRow] = await on(
+        SCRATCH_DB,
+        `INSERT INTO gpu_jobs (kind, name, spec, state, priority, attempts_made, max_attempts, created_at, updated_at)
+         VALUES ('dataset_build', 'failed build', '{"dataset_id": 4242}'::jsonb, 'failed', 0, 1, 3, NOW(), NOW())
+         RETURNING id`
+    );
+
+    seeded.failedBuild = builtRow.id;
     seeded.cancelled = await job('cancelled', 'cancelled');
 
     /* A selection: one safe, one holding observations, one held by an artifact. */
@@ -241,6 +253,92 @@ afterAll(async () => {
     await on('postgres', `DROP DATABASE IF EXISTS "${SCRATCH_DB}" WITH (FORCE)`);
 }, 60000);
 
+/**
+ * Calls the preview in a child process bound to the scratch database.
+ *
+ * @param {string} state - Passed to `previewDeleteJobsInState`.
+ * @returns {Object} What the repository returned.
+ */
+function previewInScratch(state) {
+    const script = `
+        const repo = require(${JSON.stringify(path.join(ROOT, 'repository', 'gpu.repository.js'))});
+        repo.previewDeleteJobsInState(${JSON.stringify(state)})
+            .then((r) => { process.stdout.write('RESULT' + JSON.stringify(r)); process.exit(0); })
+            .catch((e) => { process.stderr.write(String(e && e.message)); process.exit(1); });
+    `;
+
+    const result = spawnSync(process.execPath, ['-e', script], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, DB_NAME: SCRATCH_DB },
+    });
+
+    if (result.status !== 0) {
+        throw new Error(`preview in scratch failed: ${result.stderr || result.stdout}`);
+    }
+
+    const marker = (result.stdout || '').indexOf('RESULT');
+
+    if (marker < 0) throw new Error(`no result from child: ${result.stdout}`);
+
+    return JSON.parse(result.stdout.slice(marker + 'RESULT'.length));
+}
+
+/* **Before the delete, because it is about to stop being answerable.** The describe below
+   empties the failed state in its own `beforeAll`, so a preview asserted afterwards would
+   be a preview of nothing and would pass by counting zeroes. Jest runs describes in file
+   order; this one has to come first, and that is a dependency between blocks rather than a
+   coincidence of layout. */
+describe('counting what a clear would take, before it takes it (#268)', () => {
+
+    /** What the preview reported, on the scratch database. */
+    let plan;
+
+    beforeAll(() => {
+        plan = previewInScratch('failed');
+    }, 60000);
+
+    test('counts the jobs the delete would take, and not the one it would not', () => {
+        /* Five jobs are `failed`; two of them are held by an artifact -- the one seeded
+           for this and the one the selection tests use, which is `failed` as well. The
+           preview and the delete exclude both by the same `NOT EXISTS`, which is the
+           property worth pinning: two expressions that agreed today would be free to
+           drift tomorrow. */
+        expect(plan.jobs).toBe(3);
+        expect(plan.blocked).toBe(2);
+    });
+
+    test('counts the attempts and the events that cascade with them', () => {
+        /* One attempt carrying one event, on `failedWithAttempt`. This is the half a
+           person is really agreeing to lose, and the half a confirmation has no other
+           way to name: nothing else serves it. */
+        expect(plan.attempts).toBe(1);
+        expect(plan.events).toBe(1);
+    });
+
+    test('counts no observations, because no failed job here produced any', () => {
+        /* The observation holders are `succeeded`, so a preview that counted them would
+           be counting rows this delete cannot reach. */
+        expect(plan.observations).toBe(0);
+    });
+
+    test('names the dataset build among them, with the dataset it produced', () => {
+        /* A failed build is the record of something somebody ran, and its dataset
+           outlives it -- so it is named rather than folded into a total. The dataset id
+           comes out of the spec, which is where a build keeps it. */
+        expect(plan.builds).toEqual([{ id: seeded.failedBuild, dataset_id: 4242 }]);
+    });
+
+    test('counting deletes nothing', async () => {
+        /* The whole point of it being a separate verb. A preview that had deleted would
+           make the four assertions above descriptions of a database that no longer
+           exists, and the delete below would then report two jobs rather than three. */
+        const rows = await on(SCRATCH_DB, 'SELECT COUNT(*)::int AS n FROM gpu_jobs WHERE state = $1', ['failed']);
+
+        expect(rows[0].n).toBe(5);
+    });
+});
+
 describe('deleting failed jobs (#268)', () => {
 
     /** What the repository reported, on the scratch database. */
@@ -251,7 +349,8 @@ describe('deleting failed jobs (#268)', () => {
     }, 60000);
 
     test('deletes the failed jobs that nothing holds', () => {
-        expect(result.deleted.sort()).toEqual([seeded.plainFailed, seeded.failedWithAttempt].sort());
+        expect(result.deleted.sort()).toEqual(
+            [seeded.plainFailed, seeded.failedWithAttempt, seeded.failedBuild].sort());
     });
 
     test('a job an artifact references is reported, not attempted', () => {

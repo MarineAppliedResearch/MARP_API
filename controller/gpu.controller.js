@@ -260,6 +260,18 @@ class GpuController {
     }
 
     /**
+     * What clearing a state would take with it. Counts; deletes nothing.
+     *
+     * @async
+     * @param {Object} query - `{state}`.
+     * @returns {Promise<Object>} Jobs, attempts, events, blocked, observations, builds.
+     */
+    async deletableJobs(query) {
+        logger.info('Controller: deletableJobs');
+        return gpuService.deletableJobs(query);
+    }
+
+    /**
      * Delete every job in one state.
      *
      * @async

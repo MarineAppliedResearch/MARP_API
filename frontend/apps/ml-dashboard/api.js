@@ -721,10 +721,18 @@
 
   /** An error carrying a status, so a screen can tell 500 from 404. */
   class ApiError extends Error {
-    constructor(status, message) {
+    /**
+     * @param {number} status - HTTP status, or 0 when the request never arrived.
+     * @param {string} message - The API's own sentence where it sent one.
+     * @param {Array<Object>} [details] - What the error contract put in `error.details`.
+     * A 409 that asks the caller to confirm something carries the number here as well as
+     * in the sentence, so a screen can show it without parsing English.
+     */
+    constructor(status, message, details) {
       super(message);
       this.name = 'ApiError';
       this.status = status;
+      this.details = Array.isArray(details) ? details : [];
     }
   }
 
@@ -801,13 +809,15 @@
          Read defensively: a proxy in front of the API can answer with HTML, and
          a client that throws while working out what went wrong says nothing. */
       let message = `${response.status} ${response.statusText || ''}`.trim();
+      let details;
 
       try {
         const problem = await response.json();
         if (problem && problem.error && problem.error.message) message = problem.error.message;
+        if (problem && problem.error) details = problem.error.details;
       } catch { /* not JSON, or empty */ }
 
-      throw new ApiError(response.status, message);
+      throw new ApiError(response.status, message, details);
     }
 
     return response.status === 204 ? null : response.json();
@@ -948,6 +958,75 @@
    * @param {number} id - Job id.
    * @returns {Promise<Object>}
    */
+  /**
+   * `DELETE /api/v2/gpu/jobs/:id` -- one job and everything recorded against it.
+   *
+   * Its attempts cascade and the per-attempt event log cascades with them. Two things
+   * do not: an artifact referencing the job refuses the delete outright, and
+   * observations are unlinked rather than removed -- `observations.gpu_job_id` is
+   * `ON DELETE SET NULL`, so the detections stay and lose what produced them. That is
+   * why the route answers 409 with its own count instead of doing it quietly, and why
+   * `acknowledgeObservations` has to be asked for by the caller that saw the number.
+   *
+   * **No corpus fallback**, the same rule `deleteDataset` keeps: a delete that succeeds
+   * against a fixture teaches the control works when nothing was removed.
+   *
+   * @param {number|string} id - Job id.
+   * @param {boolean} [acknowledgeObservations] - Delete it although observations lose
+   * their provenance. Only ever true because somebody was shown the count and agreed.
+   * @returns {Promise<{deleted: number, observationsUnlinked: number, attemptsRemoved: number}>}
+   */
+  function deleteJob(id, acknowledgeObservations) {
+    const query = acknowledgeObservations ? { acknowledgeObservations: 'true' } : {};
+    return request(`/gpu/jobs/${encodeURIComponent(id)}`, { method: 'DELETE', query });
+  }
+
+  /**
+   * `DELETE /api/v2/gpu/jobs?ids=...` -- a named selection, at most 200.
+   *
+   * What is safe to delete goes; the rest come back in `blocked` with the reason beside
+   * each id. **There is no acknowledgement on this path and that is deliberate** -- a
+   * job holding observations can only be deleted on its own, where its own count is in
+   * front of whoever presses.
+   *
+   * @param {Array<number|string>} ids - The jobs to delete.
+   * @returns {Promise<{deleted: number, blocked: Array<{id: number, reason: string}>}>}
+   */
+  function deleteJobs(ids) {
+    return request('/gpu/jobs', { method: 'DELETE', query: { ids: ids.join(',') } });
+  }
+
+  /**
+   * `GET /api/v2/gpu/jobs/deletable` -- what clearing a state would take, deleting nothing.
+   *
+   * Answers jobs, attempts, events, the blocked count, the observations that would be
+   * left unlinked, and any dataset builds among them by id. It exists so a confirmation
+   * can name real numbers instead of numbers somebody measured once.
+   *
+   * **A GET rather than a flag on the delete.** An unknown query parameter is ignored,
+   * not refused, so a `dryRun=true` on the DELETE would be an ordinary delete against any
+   * MARP that predates the flag -- a preview that destroys 1,189 jobs. A server without
+   * this route answers 404 instead.
+   *
+   * @param {string} state - Only `failed` is accepted.
+   * @returns {Promise<Object>}
+   */
+  function deletableJobs(state) {
+    return request('/gpu/jobs/deletable', { query: { state } });
+  }
+
+  /**
+   * `DELETE /api/v2/gpu/jobs?state=failed` -- clear a state.
+   *
+   * `deletableJobs` is how to find out what this would take before calling it.
+   *
+   * @param {string} state - Only `failed` is accepted.
+   * @returns {Promise<{state: string, deleted: number, blocked: number[]}>}
+   */
+  function deleteJobsInState(state) {
+    return request('/gpu/jobs', { method: 'DELETE', query: { state } });
+  }
+
   function cancelJob(id) {
     return serve('jobs', () => request(`/gpu/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' }), () => {
       const job = CORPUS.jobs.find((j) => j.id === Number(id));
@@ -1475,6 +1554,10 @@
     listUsers,
     submitJob,
     cancelJob,
+    deleteJob,
+    deleteJobs,
+    deletableJobs,
+    deleteJobsInState,
     renameWorker,
     ApiError,
     /* Exposed for the checks, not for the screens. A screen reading these is a

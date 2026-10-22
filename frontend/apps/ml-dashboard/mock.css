@@ -1971,6 +1971,17 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .btn.danger { border-color: var(--red-500); color: var(--red-400); }
 .btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red-500) 16%, transparent); }
 .btn.danger:disabled { opacity: .55; cursor: default; }
+/* The icon form, on a job row. Red only on hover: eighteen red glyphs down the
+   right of a table reads as eighteen things being wrong, which is what the status
+   column is for. */
+.btn.sm.icon.danger { color: var(--muted); border-color: var(--hairline-2); }
+.btn.sm.icon.danger:hover:not(:disabled) { color: var(--red-400); border-color: var(--red-500); }
+/* Two controls in the actions cell since the delete landed, and they must not touch. */
+#jobs td.jacts > span { display: inline-flex; gap: 4px; justify-content: flex-end; align-items: center; }
+/* What the last delete did, between the table and the pager. A partial result is the
+   normal result, so the reasons need somewhere that is not an alert box. */
+.deletesaid { margin: 0; padding: 9px 14px; border-top: 1px solid var(--hairline-2); font-size: 11px; color: var(--muted); }
+.deletesaid[data-tone="bad"] { color: var(--red-400); }
 .dataset-build-progress { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .8fr) auto; gap: 6px 14px; align-items: center; padding: 11px 12px; border: 1px solid var(--hairline-2); border-radius: var(--r-sm); background: rgba(20, 126, 232, .06); }
 .dataset-build-progress > div { display: flex; justify-content: space-between; gap: 10px; }
 .dataset-build-progress b { color: var(--white); font-size: 11px; }

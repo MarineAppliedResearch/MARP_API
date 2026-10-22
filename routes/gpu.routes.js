@@ -812,6 +812,64 @@ function registerGpuRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'jobs:read',
+        path: '/api/gpu/jobs/deletable',
+        summary: 'What clearing a state would delete',
+        description:
+            'Counts what `DELETE /gpu/jobs?state=...` would take, and takes nothing. The confirmation in front of a four-figure delete is only worth reading if it names real numbers, and numbers measured once and written into a sentence go stale silently -- so the screen asks at the moment it asks the operator.\n\n'
+            + '**A GET rather than a `dryRun` flag on the DELETE, and the difference is not stylistic.** An unknown query parameter is ignored rather than refused, so a `dryRun=true` sent to a MARP that predates the flag is an ordinary delete: the jobs go, and the caller is holding what it believes is a preview. A separate verb cannot be misread that way -- a server without this route answers 404 and destroys nothing.\n\n'
+            + 'Counted over exactly the rows the delete would take, by the same `NOT EXISTS` on `artifacts`, so what this says and what that does cannot drift apart. `blocked` is how many an artifact holds; `observations` is how many detections would be left with nothing recording what produced them; `builds` names any failed dataset builds among them, because a build is the record of something somebody ran and deserves better than being folded into a total.',
+        tags: [GPU_TAG],
+        parameters: [
+            {
+                in: 'query', name: 'state', required: false,
+                schema: { type: 'string', enum: ['failed'], default: 'failed' },
+                description: 'Which state to count. Only `failed` is accepted, because only `failed` can be cleared.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'What would go, and what would stay.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                state: { type: 'string', example: 'failed' },
+                                jobs: { type: 'integer', example: 1170, description: 'Jobs that would be deleted.' },
+                                attempts: { type: 'integer', example: 3570, description: 'Attempts that would cascade with them.' },
+                                events: { type: 'integer', example: 12088, description: 'Event rows cascading through those attempts.' },
+                                blocked: { type: 'integer', example: 19, description: 'Jobs an artifact references, which would stay.' },
+                                observations: {
+                                    type: 'integer', example: 0,
+                                    description: 'Detections that would be left unlinked. `observations.gpu_job_id` is SET NULL.',
+                                },
+                                builds: {
+                                    type: 'array',
+                                    description: 'Failed dataset builds among them, with the dataset each produced. The datasets are not touched.',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            id: { type: 'integer', example: 21769 },
+                                            dataset_id: { type: 'integer', nullable: true, example: 379 },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await gpuController.deletableJobs(req.query || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
         path: '/api/gpu/jobs/:id',
         summary: 'Fetch one job with its attempts and artifacts',
         description:
@@ -925,7 +983,8 @@ function registerGpuRoutes(app) {
         description:
             'Removes finished work that is only cluttering the queue. **`failed` is the only state this will delete**, and that is a decision rather than a first instalment: a `cancelled` job is one somebody changed their mind about, there are far more of them, and nobody has asked. The two are not interchangeable -- `observations.gpu_job_id` is `ON DELETE SET NULL`, so deleting a job that produced observations leaves them in place with nothing recording where they came from, which is provenance going quietly.\n\n'
             + '**What goes with the job:** its attempts cascade, and the per-attempt event log cascades with them. That is much the larger half -- the attempts carry `failure_reason` and the events carry the log, several times as many rows. A caller should say so before asking for this.\n\n'
-            + '**What does not go:** a job an artifact still references. `artifacts.job_id` is `ON DELETE RESTRICT`, and those jobs are **excluded by the query rather than attempted**, so the constraint never fires and a partial result is reported as a partial result rather than as an error. Their ids come back in `blocked`. The artifacts themselves are never touched: deleting the output to tidy the record of the work would be the wrong trade.',
+            + '**What does not go:** a job an artifact still references. `artifacts.job_id` is `ON DELETE RESTRICT`, and those jobs are **excluded by the query rather than attempted**, so the constraint never fires and a partial result is reported as a partial result rather than as an error. Their ids come back in `blocked`. The artifacts themselves are never touched: deleting the output to tidy the record of the work would be the wrong trade.\n\n'
+            + '**What this would take is answered by `GET /gpu/jobs/deletable`**, over exactly these rows -- same `NOT EXISTS`, so the count and the act cannot drift apart. It is a separate verb rather than a flag here because an unknown query parameter is ignored rather than refused, and a `dryRun` an old server did not understand would be this delete.',
         tags: [GPU_TAG],
         parameters: [
             {

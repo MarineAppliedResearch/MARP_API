@@ -1238,6 +1238,77 @@ class GpuRepository {
 
     // -----------------------------------------------------------------
     /**
+     * What deleting every job in one state would actually take with it.
+     *
+     * **A confirmation has to carry real numbers or it carries none.** The counts
+     * measured while this was written -- 1,189 failed jobs, 3,570 attempts, 12,088
+     * events -- are the right shape for the sentence and the wrong thing to write into
+     * one: they were true on 2026-10-22 and nothing on the page can tell when they stop
+     * being true. So the page asks, at the moment the button is pressed, and the
+     * sentence is built from the answer.
+     *
+     * Same query as the delete, minus the delete: the blocked set is excluded by the
+     * same `NOT EXISTS`, so what this counts and what would go are the same rows by
+     * construction rather than by two expressions agreeing.
+     *
+     * **The dataset builds come back named.** A failed `inference` job is a row; a
+     * failed `dataset_build` is the record of a build somebody ran, and its dataset
+     * outlives it. Deleting those is still right -- the dataset is a `datasets` row and
+     * is not touched -- but it deserves its own clause rather than being folded into a
+     * four-figure total nobody reads.
+     *
+     * @async
+     * @param {string} state - The `gpu_jobs.state` to count. Validated by the caller.
+     * @returns {Promise<Object>} Jobs, attempts, events, blocked, and the builds by name.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async previewDeleteJobsInState(state) {
+        const [totals] = await this.db.sequelize.query(
+            `WITH mine AS (
+                 SELECT j.id,
+                        EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id) AS held
+                   FROM gpu_jobs j
+                  WHERE j.state = :state
+             ),
+             going AS (SELECT id FROM mine WHERE NOT held)
+             SELECT (SELECT COUNT(*) FROM going)                     AS jobs,
+                    (SELECT COUNT(*) FROM mine WHERE held)           AS blocked,
+                    (SELECT COUNT(*) FROM gpu_job_attempts t
+                      WHERE t.job_id IN (SELECT id FROM going))      AS attempts,
+                    (SELECT COUNT(*) FROM gpu_job_events e
+                       JOIN gpu_job_attempts t ON t.id = e.attempt_id
+                      WHERE t.job_id IN (SELECT id FROM going))      AS events,
+                    (SELECT COUNT(*) FROM observations o
+                      WHERE o.gpu_job_id IN (SELECT id FROM going))  AS observations`,
+            { replacements: { state }, type: QueryTypes.SELECT }
+        );
+
+        /* Named rather than counted, because there are two of them and a name is what
+           makes somebody recognise the build they ran this morning. */
+        const builds = await this.db.sequelize.query(
+            `SELECT j.id, j.spec->>'dataset_id' AS dataset_id
+               FROM gpu_jobs j
+              WHERE j.state = :state
+                AND j.kind = 'dataset_build'
+                AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id)
+              ORDER BY j.id`,
+            { replacements: { state }, type: QueryTypes.SELECT }
+        );
+
+        return {
+            jobs: Number(totals.jobs),
+            attempts: Number(totals.attempts),
+            events: Number(totals.events),
+            blocked: Number(totals.blocked),
+            observations: Number(totals.observations),
+            builds: builds.map((row) => ({
+                id: Number(row.id),
+                dataset_id: row.dataset_id === null ? null : Number(row.dataset_id),
+            })),
+        };
+    }
+
+    /**
      * Delete every job in one state, and say which ones could not go.
      *
      * **The blocked rows are excluded by the query rather than attempted and caught.**

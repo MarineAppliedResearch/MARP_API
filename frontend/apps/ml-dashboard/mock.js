@@ -80,6 +80,10 @@ const ICONS = {
   menu: '<path d="M2.4 4.4h11.2M2.4 8h11.2M2.4 11.6h11.2"/>',
   video: '<rect x="1.6" y="4" width="9" height="8" rx="1.2"/><path d="M10.6 7.4 14.4 5.2v5.6l-3.8-2.2z"/>',
   pencil: '<path d="M11 2.6l2.4 2.4-8 8H3v-2.4z"/>',
+  /* **Not the cross.** `x` closes and cancels everywhere on these screens, and a
+     permanent delete sharing that glyph is how somebody destroys a job meaning to
+     dismiss a row. */
+  trash: '<path d="M3.2 4.6h9.6"/><path d="M6.4 4.6V3.2a.8.8 0 0 1 .8-.8h1.6a.8.8 0 0 1 .8.8v1.4"/><path d="M4.6 4.6l.5 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.5-8"/>',
   split: '<path d="M2.4 8h3.2M2.4 8V4.4h3.2M2.4 8v3.6h3.2M8.8 4.4h4.8M8.8 8h4.8M8.8 11.6h4.8"/>',
   star: '<path d="M8 2.2l1.8 3.7 4 .6-2.9 2.9.7 4.1L8 11.6l-3.6 1.9.7-4.1L2.2 6.5l4-.6z"/>',
 };
@@ -880,9 +884,27 @@ function rowFor(view) {
   const date = when.toISOString().slice(0, 10);
 
   const live = job.state === 'queued' || job.state === 'leased';
-  const actions = live
+
+  /* **Absent on a running job, not disabled.** A leased job has a worker holding it,
+     and deleting it cascades the attempt that worker is heartbeating against -- so the
+     next heartbeat 404s and the machine is reporting into nothing. Cancel first, then
+     delete; the row already carries Cancel while it is live. A greyed button with a
+     tooltip was the other option and Isaac has rejected that shape three times: a
+     control that cannot act should not be drawn.
+
+     Queued is deletable. Nothing is running it, and removing it from the queue is a
+     thing somebody legitimately wants rather than a cancellation. */
+  const removable = job.state !== 'leased';
+  const remove = removable
+    ? `<button class="btn sm icon danger" type="button" data-delete-job="${job.id}"`
+      + ` aria-label="Delete job ${job.id}" title="Delete this job and everything recorded against it">`
+      + '<svg class="ico sm"><use href="#i-trash"/></svg></button>'
+    : '';
+
+  const actions = (live
     ? '<button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
-    : '<button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button>';
+    : '<button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button>')
+    + remove;
 
   /**
    * Which machine ran this job.
@@ -3341,6 +3363,278 @@ function wireJobsControls() {
     perPage.addEventListener('change', () => {
       jobsQuery.perPage = Number(perPage.value) || 18;
       renarrow();
+    });
+  }
+}
+
+/* ====================================================== deleting jobs */
+
+/**
+ * What a delete just did, under the table.
+ *
+ * **A partial result is the normal result here**, so it needs somewhere to be said. A
+ * selection of forty can come back as thirty-seven deleted and three held, each for its
+ * own reason, and an alert saying "done" would be a lie about three of them.
+ *
+ * @param {string} text - What happened, already written.
+ * @param {string} [tone] - `bad` for a refusal.
+ * @returns {void}
+ */
+function sayJobsDelete(text, tone) {
+  const said = $('#jobsDeleteSaid');
+  if (!said) return;
+  said.textContent = text;
+  said.dataset.tone = tone || 'ok';
+  said.hidden = !text;
+}
+
+/**
+ * How many of whatever, written so it reads in a sentence.
+ *
+ * @param {number} count - The number.
+ * @param {string} one - Singular noun.
+ * @param {string} [many] - Plural, when it is not the singular plus s.
+ * @returns {string}
+ */
+function countOf(count, one, many) {
+  const n = Number(count) || 0;
+  return `${n.toLocaleString()} ${n === 1 ? one : (many || `${one}s`)}`;
+}
+
+/**
+ * Redraw after something was deleted.
+ *
+ * **The rail badge is recounted, not left.** It is a count of failed jobs, and deleting
+ * failed jobs is the one act guaranteed to change it -- a badge still reading 1,189 over
+ * an empty list is the screen contradicting itself.
+ *
+ * @returns {Promise<void>}
+ */
+async function afterJobsDelete() {
+  await renderJobsTable();
+  await fillRailBadges();
+}
+
+/**
+ * The delete controls: one row, a selection, or every failed job.
+ *
+ * **Three verbs, and the confirmation is different for each**, because what they destroy
+ * is different. One job names that job. A selection names how many and that nothing in it
+ * can be forced. Clearing a state asks the server what it is about to destroy and reads
+ * the answer out -- the numbers measured while this was written (1,189 jobs, 3,570
+ * attempts, 12,088 events) are the right shape for that sentence and the wrong thing to
+ * write into one, because nothing on the page could tell when they stopped being true.
+ *
+ * **Observations are the thing worth stopping for.** `observations.gpu_job_id` is SET
+ * NULL, so deleting a job that produced detections leaves them in place with nothing
+ * recording where they came from. The route refuses with the count; this shows the count
+ * and asks a second time. Only the single-job path can be confirmed that way -- a
+ * selection has no second question, by design, so a job holding observations stays in it.
+ *
+ * @returns {void}
+ */
+function wireJobsDelete() {
+  const panel = $('table#jobs')?.closest('.panel');
+  if (!panel || !window.MarpApi) return;
+
+  const body = $('table#jobs tbody', panel);
+
+  /* Delegated: the rows are replaced on every filter, sort and page, so a listener
+     bound to a button is a listener bound to something about to be thrown away. */
+  if (body) {
+    body.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-delete-job]');
+      if (!button) return;
+
+      const row = button.closest('tr[data-job]');
+      const id = button.dataset.deleteJob;
+      const attempts = Number(row?.dataset.attempts) || 0;
+      const dataset = row?.dataset.dataset;
+      const name = $('.jname .t', row)?.textContent.trim() || `Job ${id}`;
+
+      /* Real, and from the row rather than invented: `attempts_made` travels on it
+         already. The event log is named without a number because nothing serves one
+         per job, and a plausible figure would be worse than an honest clause. */
+      const goes = attempts
+        ? `This removes ${countOf(attempts, 'attempt')} and the event log recorded against them.`
+        : 'It was never attempted, so there is nothing recorded against it.';
+
+      /* A build's dataset outlives its job, and somebody about to delete the job has
+         every reason to think otherwise. */
+      const keeps = dataset
+        ? `\n\nDataset ${dataset} is not deleted. It loses the record of the build that made it.`
+        : '';
+
+      /* eslint-disable-next-line no-alert -- the app has no dialog of its own, and a
+         permanent delete with no confirmation at all is the worse answer. */
+      if (!window.confirm(`Delete "${name}"?\n\n${goes} It cannot be undone.${keeps}`)) return;
+
+      button.disabled = true;
+
+      try {
+        await window.MarpApi.deleteJob(id);
+        sayJobsDelete(`Deleted job ${id}.`);
+        await afterJobsDelete();
+      } catch (error) {
+        /* **The one case worth a second question.** The route answers 409 and puts the
+           count in `details` as well as in its sentence, so this can ask about the
+           provenance rather than repeat an API instruction at somebody. */
+        const held = (error.details || [])[0];
+        const orphaned = held && Number(held.observations);
+
+        if (error.status === 409 && orphaned > 0) {
+          /* eslint-disable-next-line no-alert -- as above. */
+          const anyway = window.confirm(
+            `Job ${id} produced ${countOf(orphaned, 'observation')}.\n\n`
+            + 'Those detections stay in MARP and lose every record of what produced them: '
+            + 'which model, which settings, which run. That cannot be undone and cannot be '
+            + 'worked out again afterwards.\n\nDelete the job anyway?');
+
+          if (!anyway) {
+            button.disabled = false;
+            sayJobsDelete(`Job ${id} was kept. ${countOf(orphaned, 'observation')} still point at it.`);
+            return;
+          }
+
+          try {
+            await window.MarpApi.deleteJob(id, true);
+            sayJobsDelete(`Deleted job ${id}. ${countOf(orphaned, 'observation')} lost their provenance.`);
+            await afterJobsDelete();
+            return;
+          } catch (second) {
+            button.disabled = false;
+            sayJobsDelete(second.message || `Could not delete job ${id}.`, 'bad');
+            return;
+          }
+        }
+
+        button.disabled = false;
+        /* The server's own sentence: an artifact refusal names how many reference it,
+           which is the useful half of why it will not go. */
+        sayJobsDelete(error.message || `Could not delete job ${id} (${error.status || 'no answer'}).`, 'bad');
+      }
+    });
+  }
+
+  const bulkDelete = $('#bulkDelete', panel);
+
+  if (bulkDelete) {
+    bulkDelete.addEventListener('click', async () => {
+      const ids = $$('tbody .chkbox', panel)
+        .filter((box) => box.checked)
+        .map((box) => box.closest('tr[data-job]')?.dataset.job)
+        .filter(Boolean);
+
+      if (!ids.length) return;
+
+      /* eslint-disable-next-line no-alert -- as above. */
+      if (!window.confirm(
+        `Delete ${countOf(ids.length, 'job')}?\n\n`
+        + 'Every attempt and every event recorded against them goes too. It cannot be undone.\n\n'
+        + 'Anything that cannot safely go stays, and this will say which and why: a job an '
+        + 'artifact references, and a job that produced observations. Those have to be '
+        + 'deleted one at a time, where the count is shown first.')) return;
+
+      bulkDelete.disabled = true;
+
+      try {
+        const answer = await window.MarpApi.deleteJobs(ids);
+        const blocked = answer.blocked || [];
+
+        /* **Each refusal with its own reason.** "37 of 40" tells somebody a number and
+           leaves them to guess at three; the reasons are the answer they wanted. */
+        sayJobsDelete(blocked.length
+          ? `Deleted ${countOf(answer.deleted, 'job')}. `
+            + `${blocked.length} stayed: `
+            + blocked.map((entry) => `${entry.id} (${entry.reason})`).join(', ')
+          : `Deleted ${countOf(answer.deleted, 'job')}.`, blocked.length ? 'bad' : 'ok');
+
+        await afterJobsDelete();
+      } catch (error) {
+        sayJobsDelete(error.message || `Could not delete those jobs (${error.status || 'no answer'}).`, 'bad');
+      } finally {
+        bulkDelete.disabled = false;
+      }
+    });
+  }
+
+  const clearFailed = $('#clearFailed', panel);
+  const stateSel = $$('#filters select', panel)[1];
+
+  /* **Offered only when the list is the pile.** Narrowing to Failed is the gesture that
+     means "this is what I am looking at"; a button that deletes every failed job sitting
+     beside the filters the rest of the time is a button somebody eventually presses by
+     accident. Absent rather than disabled, which is the same answer the row control
+     gives on a running job. */
+  const showClear = () => {
+    if (clearFailed) clearFailed.hidden = !stateSel || stateSel.value !== 'Failed';
+  };
+
+  if (stateSel) stateSel.addEventListener('change', showClear);
+  showClear();
+
+  if (clearFailed) {
+    clearFailed.addEventListener('click', async () => {
+      clearFailed.disabled = true;
+
+      try {
+        /* **Counted by a GET, before anything is asked for.** Over exactly the rows the
+           delete would take -- the same `NOT EXISTS` -- so the sentence and the act
+           cannot disagree. It is a separate route rather than a flag on the delete
+           because an unknown query parameter is ignored rather than refused: a `dryRun`
+           an older MARP did not understand would have been the delete itself, and this
+           would then have reported "nothing to delete" over a list it had just
+           destroyed. A server without the route answers 404 and takes nothing. */
+        const plan = await window.MarpApi.deletableJobs('failed');
+
+        if (!plan.jobs) {
+          sayJobsDelete(plan.blocked
+            ? `Nothing to delete: all ${countOf(plan.blocked, 'failed job')} are referenced by artifacts.`
+            : 'There are no failed jobs to delete.');
+          return;
+        }
+
+        /* A failed dataset build is the record of a build somebody ran this morning, and
+           it deserves a clause rather than being folded into a four-figure total. */
+        const builds = plan.builds || [];
+        const buildLine = builds.length
+          ? `\n\n${builds.length} of them ${builds.length === 1 ? 'is a dataset build' : 'are dataset builds'}: `
+            + builds.map((b) => `job ${b.id}${b.dataset_id ? ` to dataset ${b.dataset_id}` : ''}`).join(', ')
+            + `. The dataset${builds.length === 1 ? '' : 's'} stay; only the build record goes.`
+          : '';
+
+        const blockedLine = plan.blocked
+          ? `\n\n${countOf(plan.blocked, 'job')} will stay: an artifact references `
+            + `${plan.blocked === 1 ? 'it' : 'them'}, and the artifacts are not touched.`
+          : '';
+
+        /* Provenance again, and at this scale it is the clause that should stop
+           somebody rather than the four-figure job count. */
+        const orphanLine = plan.observations
+          ? `\n\n${countOf(plan.observations, 'observation')} will lose every record of what produced them.`
+          : '';
+
+        /* eslint-disable-next-line no-alert -- as above. */
+        if (!window.confirm(
+          `Delete ${countOf(plan.jobs, 'failed job')}?\n\nThis removes `
+          + `${countOf(plan.attempts, 'attempt')} and ${countOf(plan.events, 'event')} recorded `
+          + `against them. It cannot be undone.${orphanLine}${buildLine}${blockedLine}`)) return;
+
+        const answer = await window.MarpApi.deleteJobsInState('failed');
+        const blocked = answer.blocked || [];
+
+        sayJobsDelete(blocked.length
+          ? `Deleted ${countOf(answer.deleted, 'failed job')}. `
+            + `${countOf(blocked.length, 'job')} stayed, held by artifacts: ${blocked.join(', ')}.`
+          : `Deleted ${countOf(answer.deleted, 'failed job')}.`);
+
+        await afterJobsDelete();
+      } catch (error) {
+        sayJobsDelete(error.message || `Could not delete the failed jobs (${error.status || 'no answer'}).`, 'bad');
+      } finally {
+        clearFailed.disabled = false;
+        showClear();
+      }
     });
   }
 }
@@ -8690,6 +8984,7 @@ Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), r
   /* `applyJobsQuery` and `applyWorkersQuery` rewire the rows they draw; these
      are the ones that bind once, to controls that outlive every redraw. */
   wireJobsControls();
+  wireJobsDelete();
   wireWorkersControls();
   wireHistoryControls();
   wireModelsControls();
