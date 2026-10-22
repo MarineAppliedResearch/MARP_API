@@ -966,6 +966,240 @@ describe('GET /api/v2/dataset/builds', () => {
      * because the screen fetches it on a timer: a route that answered anonymously would put
      * which surveys are being trained on in front of anybody who opened the page.
      */
+    /**
+     * The sample of frames a build cut, read back out of the archive it wrote.
+     *
+     * The Datasets panel showed four sample pictures per dataset and they were four
+     * hardcoded Jellyfin item ids -- the same four on every row, of video unrelated to the
+     * dataset beneath them. These routes serve the real frames instead, and the real boxes
+     * beside them.
+     *
+     * **The archive here is made with `tar`, the way the builder makes one.** A reader
+     * written against a tar this file encoded by hand would prove only that it agrees with
+     * itself; what is worth knowing is that it reads what `service/dataset-build.service.js`
+     * actually produces, headers and padding and all.
+     */
+    describe('GET /api/v2/dataset/:id/preview', () => {
+        const fs = require('fs');
+        const os = require('os');
+        const nodePath = require('path');
+        const { execFileSync } = require('child_process');
+        const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
+
+        /** Archive files this file wrote into dataset storage, removed in `afterAll`. */
+        const archives = [];
+
+        /**
+         * Builds a real tar of a small dataset and records it on a `datasets` row.
+         *
+         * The images are not JPEGs -- nothing here decodes one, and the route hands back
+         * whatever bytes the archive holds -- but each is distinct, which is what lets a
+         * test say *which* frame came back rather than only that one did.
+         *
+         * @param {Object} [options] - Shape of the fixture.
+         * @param {number} [options.train] - How many training frames.
+         * @param {number} [options.evaluate] - How many eval frames.
+         * @returns {Promise<{datasetId: number, contents: Map<string, Buffer>}>}
+         */
+        async function seedArchive({ train = 10, evaluate = 2 } = {}) {
+            const staging = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'jest-preview-'));
+            const contents = new Map();
+
+            for (const [directory, count] of [['train', train], ['eval', evaluate]]) {
+                fs.mkdirSync(nodePath.join(staging, directory, 'images'), { recursive: true });
+                fs.mkdirSync(nodePath.join(staging, directory, 'labels'), { recursive: true });
+
+                for (let i = 0; i < count; i++) {
+                    const stem = `${directory}_video_${String(i).padStart(8, '0')}`;
+
+                    /* Distinct bytes per frame, and long enough to span more than one
+                       512-byte tar block so the padding arithmetic is actually exercised. */
+                    const bytes = Buffer.alloc(1100 + i, `${directory[0]}${i % 10}`);
+
+                    contents.set(`${directory}/images/${stem}.jpg`, bytes);
+                    fs.writeFileSync(nodePath.join(staging, directory, 'images', `${stem}.jpg`), bytes);
+
+                    /* One box per frame, at a position derived from the index, so a test
+                       can say the boxes came back with the frame they belong to. */
+                    fs.writeFileSync(
+                        nodePath.join(staging, directory, 'labels', `${stem}.txt`),
+                        `${i % 3} ${(0.1 + i / 100).toFixed(6)} 0.500000 0.200000 0.300000\n`
+                    );
+                }
+            }
+
+            fs.writeFileSync(nodePath.join(staging, 'data.yaml'), 'names:\n- One\nnc: 1\n');
+            fs.mkdirSync(DATASET_DIRECTORY, { recursive: true });
+
+            const file = `jest-preview-${stamp}-${archives.length + 1}.tar`;
+
+            // A bare name with `-C`, because a drive letter's colon reads as a remote host.
+            execFileSync('tar', ['-cf', file, '-C', staging, 'train', 'eval', 'data.yaml'],
+                { cwd: DATASET_DIRECTORY, stdio: 'pipe' });
+
+            archives.push(nodePath.join(DATASET_DIRECTORY, file));
+            fs.rmSync(staging, { recursive: true, force: true });
+
+            const [dataset] = await db.sequelize.query(
+                `INSERT INTO datasets (name, status, source, archive_path, archive_sha256,
+                                       archive_bytes, created_at, updated_at)
+                 VALUES (:name, 'ready', 'ml-dashboard', :path, :sha, :bytes, NOW(), NOW())
+                 RETURNING id`,
+                {
+                    replacements: {
+                        name: `jest-preview-${stamp}-${archives.length}`,
+                        path: `datasets/${file}`,
+                        /* The hash keys the preview's cache, so two fixtures sharing one
+                           would serve the first one's frames for the second one's dataset
+                           -- which this makes impossible rather than catches. */
+                        sha: `${stamp}${archives.length}`.padStart(64, 'f').slice(-64),
+                        bytes: fs.statSync(nodePath.join(DATASET_DIRECTORY, file)).size,
+                    },
+                    type: QueryTypes.SELECT,
+                }
+            );
+
+            made.datasets.push(dataset.id);
+
+            return { datasetId: dataset.id, contents };
+        }
+
+        afterAll(() => {
+            for (const file of archives) fs.rmSync(file, { force: true });
+        });
+
+        it('serves frames out of the archive with the boxes their label files record', async () => {
+            const { datasetId } = await seedArchive();
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/preview?limit=4`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.total).toBe(12);
+            expect(res.body.frames).toHaveLength(4);
+
+            for (const frame of res.body.frames) {
+                expect(['train', 'eval']).toContain(frame.split);
+                expect(frame.boxes).toHaveLength(1);
+
+                /* YOLO, and centre-origin: the builder writes `cx cy w h`, and a reader
+                   treating x and y as the top-left corner draws every box down and right
+                   by half its own size -- wrong in a way that looks plausible. */
+                expect(frame.boxes[0].w).toBeCloseTo(0.2, 5);
+                expect(frame.boxes[0].h).toBeCloseTo(0.3, 5);
+                expect(frame.boxes[0].cy).toBeCloseTo(0.5, 5);
+            }
+        });
+
+        /**
+         * **The sample is spread, and this is the test for that decision.**
+         *
+         * A build interpolates between keyframes, so the images sit in the archive in shot
+         * order and the first N are one animal a fortieth of a second apart. Taking the
+         * front of the archive is cheaper to write and produces a preview that cannot show
+         * that a build covered two splits, let alone several videos.
+         */
+        it('spreads the sample across the archive rather than taking the front of it', async () => {
+            const { datasetId } = await seedArchive();
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/preview?limit=4`);
+
+            expect(res.status).toBe(200);
+
+            const splits = new Set(res.body.frames.map((frame) => frame.split));
+
+            /* The fixture is ten train frames then two eval, so the front four are all
+               train and only an even stride reaches the eval ones. */
+            expect(splits.has('train')).toBe(true);
+            expect(splits.has('eval')).toBe(true);
+        });
+
+        it('serves one frame as the bytes the archive holds for it', async () => {
+            const { datasetId, contents } = await seedArchive();
+            const listing = await global.api.get(`/api/v2/dataset/${datasetId}/preview?limit=4`);
+
+            expect(listing.status).toBe(200);
+
+            const first = listing.body.frames[0];
+            const res = await global.api
+                .get(`/api/v2/dataset/${datasetId}/preview/0?limit=4`)
+                .buffer()
+                .parse((response, callback) => {
+                    const chunks = [];
+
+                    response.on('data', (chunk) => chunks.push(chunk));
+                    response.on('end', () => callback(null, Buffer.concat(chunks)));
+                });
+
+            expect(res.status).toBe(200);
+
+            /* Byte-identical to what went in, which is the whole claim: the offset and the
+               length come off the tar header, and either being wrong still gives bytes
+               that look like a plausible image response. */
+            const expected = [...contents].find(([name]) => name.includes(first.stem))[1];
+
+            expect(Buffer.compare(res.body, expected)).toBe(0);
+        });
+
+        /**
+         * Immutable, and said so. An archive is named for its own hash, so these bytes
+         * cannot change under a reader; the dashboard opens the same panel repeatedly and
+         * should not re-fetch eight full-size frames each time.
+         */
+        it('answers 304 to a conditional request carrying the frame tag', async () => {
+            const { datasetId } = await seedArchive();
+
+            const first = await global.api.get(`/api/v2/dataset/${datasetId}/preview/0?limit=4`);
+
+            expect(first.status).toBe(200);
+            expect(first.headers.etag).toBeTruthy();
+            expect(first.headers['cache-control']).toMatch(/immutable/);
+
+            const again = await global.api
+                .get(`/api/v2/dataset/${datasetId}/preview/0?limit=4`)
+                .set('If-None-Match', first.headers.etag);
+
+            expect(again.status).toBe(304);
+        });
+
+        it('refuses a frame past the end of the sample', async () => {
+            const { datasetId } = await seedArchive();
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/preview/99?limit=4`);
+
+            expect(res.status).toBe(404);
+        });
+
+        /**
+         * A dataset with no archive is a 404 rather than an empty sample, because the two
+         * mean different things: a build that failed at packaging has no frames to show,
+         * and an empty list would read as a build that cut none.
+         */
+        it('refuses a dataset that was never packaged', async () => {
+            const [dataset] = await db.sequelize.query(
+                `INSERT INTO datasets (name, status, source, created_at, updated_at)
+                 VALUES (:name, 'ready', 'legacy import', NOW(), NOW())
+                 RETURNING id`,
+                { replacements: { name: `jest-unpackaged-${stamp}` }, type: QueryTypes.SELECT }
+            );
+
+            made.datasets.push(dataset.id);
+
+            const res = await global.api.get(`/api/v2/dataset/${dataset.id}/preview`);
+
+            expect(res.status).toBe(404);
+        });
+
+        /**
+         * These serve pictures of survey video out of the archive, so the gate matters as
+         * much here as it does on the archive itself.
+         */
+        it('refuses a request carrying no principal', async () => {
+            const request = require('supertest');
+            const app = require('../app');
+
+            const res = await request(app).get('/api/v2/dataset/1/preview');
+
+            expect(res.status).toBe(401);
+        });
+    });
+
     it('refuses a request carrying no principal', async () => {
         const request = require('supertest');
         const app = require('../app');

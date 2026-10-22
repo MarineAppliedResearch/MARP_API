@@ -5100,6 +5100,11 @@ const DATASET_POLL_MS = 5000;
 /** What the runner's phases are called on screen. */
 const BUILD_PHASES = { selecting: 'Selecting', extracting: 'Extracting', packaging: 'Packaging' };
 
+/* How many frames a dataset's preview shows. Eight is two rows of four at the width the
+   panel has, and enough to cover several videos once they are spread across the archive
+   rather than taken from the front. */
+const PREVIEW_FRAMES = 8;
+
 /**
  * The phase, and whatever the runner said after it.
  *
@@ -5572,6 +5577,71 @@ function splitBar(splits) {
   return `<div class="splitbar" role="img" aria-label="${escapeHtml(label)}">${bands}</div>`;
 }
 
+/**
+ * The sample of frames a build cut, each with the box its label file records.
+ *
+ * **The box is the point, not decoration.** A frame on its own only says a picture was
+ * taken out of the video; the frame with its box drawn says the label landed on the
+ * animal, and the species beside it says it landed on the right one. Those are the two
+ * ways a build goes quietly wrong, and neither is visible in any number on this screen.
+ *
+ * The boxes are YOLO: normalised to the image, with **x and y at the box centre**, which
+ * is why each one is offset by half its own size here. Reading them as a top-left corner
+ * draws every box down and to the right by half its width -- close enough to be believed,
+ * which is what makes it worth a comment.
+ *
+ * @param {Object[]} frames - From `GET /dataset/:id/preview`.
+ * @param {number} total - Every image in the archive, so the strip can say what it is a
+ * sample of.
+ * @param {number|string} datasetId - For the image URLs.
+ * @param {number} limit - The sample size, which the frame positions are relative to.
+ * @param {Map<number, string>} named - Class index to species name, from the composition.
+ * @returns {string}
+ */
+function previewStrip(frames, total, datasetId, limit, named) {
+  if (!frames || !frames.length) return '';
+
+  const shots = frames.map((frame) => {
+    const boxes = (frame.boxes || []).map((box) => {
+      const style = `left:${((box.cx - box.w / 2) * 100).toFixed(3)}%;`
+        + `top:${((box.cy - box.h / 2) * 100).toFixed(3)}%;`
+        + `width:${(box.w * 100).toFixed(3)}%;height:${(box.h * 100).toFixed(3)}%`;
+
+      return `<i class="pvbox" style="${style}"></i>`;
+    }).join('');
+
+    /* **The species goes in the caption, not on the box.** A chip drawn on the box is
+       clipped by the frame's own edge for anything near it, and the real boxes here sit
+       at cx 0.93 and cy 0.92 -- so the label would be missing on exactly the frames a
+       reader most wants to check. Deduplicated, because a frame of nine urchins is one
+       species said once. */
+    const species = [...new Set((frame.boxes || [])
+      .map((box) => named.get(box.class_index) || `class ${box.class_index}`))];
+
+    /* The stem is `<video>_<frame>`, which is what identifies the picture: a reader who
+       doubts a frame opens that video at that frame number and looks. */
+    const where = escapeHtml(frame.stem).replace(/_(\d{8})$/, ' &middot; frame $1');
+
+    /* Not `loading="lazy"`: these sit in a row that is collapsed until somebody opens it,
+       and a lazy image revealed that way is never fetched -- the deferral never resolves,
+       so the strip stays blank with nothing in the console. */
+    return '<figure class="pvframe">'
+      + `<span class="pvshot"><img src="/api/v2/dataset/${encodeURIComponent(datasetId)}/preview/${frame.index}?limit=${limit}"`
+      + ` alt="Training frame ${escapeHtml(frame.stem)} with its label box drawn">${boxes}</span>`
+      + `<figcaption><b>${escapeHtml(frame.split)}</b> ${where}`
+      + (species.length ? `<em>${escapeHtml(species.join(', '))}</em>` : '<em class="none">no label</em>')
+      + '</figcaption></figure>';
+  }).join('');
+
+  /* Says it is a sample, and of how many. A strip of eight pictures with no number beside
+     it reads as the whole dataset, which is the mistake the old fixture strip invited. */
+  const of = total > frames.length
+    ? `<span class="hint">${frames.length} of ${total.toLocaleString()} images, spread across the archive.</span>`
+    : `<span class="hint">All ${total.toLocaleString()} images in the archive.</span>`;
+
+  return `<div class="pvstrip">${shots}</div>${of}`;
+}
+
 function datasetPillContents(status, build) {
   const dot = build && build.state === 'leased' ? '<span class="dot"></span>' : '';
 
@@ -5916,6 +5986,10 @@ async function wireDatasetPage() {
            every row the table draws would be a request per row to draw one page. */
         + '<div data-dataset-composition></div>'
         + '</section></div>'
+        /* Full width under the grid rather than a third column: a frame is only worth
+           showing at a size somebody can see the box in, and three of those do not fit
+           beside the build record. */
+        + '<section class="dataset-sample"><h4>Frames it cut</h4><div data-dataset-preview></div></section>'
         + `<footer>${readyActions}</footer></div></td>`;
 
       /* **Asked on first open, once.** The splits and the vocabulary cannot change for a
@@ -5929,21 +6003,54 @@ async function wireDatasetPage() {
         const into = $('[data-dataset-composition]', detail);
         if (!into) return;
 
+        /* The vocabulary is wanted twice -- once as the class breakdown, once to name the
+           box on each sample frame -- so the preview waits on this rather than running
+           beside it. A box labelled `class 2` is most of the way to useless. */
+        let named = new Map();
+
         try {
           const { splits, classes: vocabulary } = await window.MarpApi.datasetComposition(set.id);
           const bar = splitBar(splits);
-          const named = (vocabulary || [])
+          const names = (vocabulary || [])
             .map((entry) => escapeHtml(entry.comname || `Species ${entry.species_id}`));
+
+          named = new Map((vocabulary || [])
+            .map((entry) => [entry.class_index, entry.comname || `Species ${entry.species_id}`]));
 
           /* Nothing recorded is a real answer and a common one: every dataset built
              before #268 wrote membership has neither, and saying so beats an empty bar. */
-          into.innerHTML = (bar || named.length)
-            ? bar + (named.length
-              ? `<p class="dataset-class-summary">${named.join(' &middot; ')}</p>`
+          into.innerHTML = (bar || names.length)
+            ? bar + (names.length
+              ? `<p class="dataset-class-summary">${names.join(' &middot; ')}</p>`
               : '')
             : '<span class="hint">No membership was recorded for this dataset.</span>';
         } catch (error) {
           into.innerHTML = `<span class="hint">Could not load its composition (${error.status || 'no answer'}).</span>`;
+        }
+
+        const sample = $('[data-dataset-preview]', detail);
+        if (!sample) return;
+
+        /* **The whole section goes when there is nothing to show**, rather than a heading
+           over an explanation. A dataset with no archive on disk -- a build that failed at
+           packaging, or an archive moved away from the rows that name it -- has no frames,
+           and a reader does not need a paragraph about why. */
+        const drop = (why) => {
+          const section = sample.closest('.dataset-sample');
+
+          if (section) section.innerHTML = why ? `<h4>Frames it cut</h4><span class="hint">${why}</span>` : '';
+        };
+
+        try {
+          const { frames, total } = await window.MarpApi.datasetPreview(set.id, PREVIEW_FRAMES);
+          const strip = previewStrip(frames, total, set.id, PREVIEW_FRAMES, named);
+
+          if (strip) sample.innerHTML = strip;
+          else drop('');
+        } catch (error) {
+          /* 404 is the ordinary case and not worth a complaint: the dataset has no
+             archive to read. Anything else is the server failing and is said plainly. */
+          drop(error.status === 404 ? '' : `Could not read its frames (${error.status || 'no answer'}).`);
         }
       };
 

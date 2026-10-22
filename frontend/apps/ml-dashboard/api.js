@@ -1094,6 +1094,28 @@
       () => ({ splits: [], classes: [] }));
   }
 
+  /**
+   * `GET /api/v2/dataset/:id/preview` -- a sample of the frames the build cut.
+   *
+   * The actual training images, read out of the archive, each with the boxes its YOLO
+   * label file records. What sat here before was four hardcoded Jellyfin item ids, the
+   * same four pictures on every dataset.
+   *
+   * **The corpus answers with nothing, on purpose.** A preview is the one thing on this
+   * screen that cannot be stood in for: a plausible picture of an animal is exactly the
+   * failure that was just taken out, and a design review looking at invented frames would
+   * be reviewing the fixture again. The panel says it has no preview instead.
+   *
+   * @param {number|string} id - The dataset.
+   * @param {number} [limit] - How many frames.
+   * @returns {Promise<{sha256: string, total: number, frames: Object[]}>}
+   */
+  function datasetPreview(id, limit) {
+    return serve('datasets',
+      () => request(`/dataset/${encodeURIComponent(id)}/preview${limit ? `?limit=${encodeURIComponent(limit)}` : ''}`),
+      () => ({ sha256: '', total: 0, frames: [] }));
+  }
+
   function listDatasetBuilds() {
     return serve('datasets',
       () => request('/dataset/builds'),
@@ -1380,6 +1402,7 @@
     listDatasets,
     listDatasetBuilds,
     datasetComposition,
+    datasetPreview,
     listProjects,
     listUsers,
     submitJob,

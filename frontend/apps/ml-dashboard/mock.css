@@ -1908,8 +1908,21 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .dataset-facts span { display: grid; gap: 2px; padding: 8px; border-radius: 4px; background: var(--sunk); color: var(--faint); font-size: 8.5px; text-transform: uppercase; }
 .dataset-facts b { color: var(--white); font-size: 11px; text-transform: none; overflow-wrap: anywhere; }
 .dataset-class-summary { margin: 10px 0 3px; color: var(--text); font-size: 10px; }
-.dataset-samples { grid-column: 1 / -1; }
-.dataset-samples .thumbs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* The sample of frames a build cut. Full width under the grid: a frame is only useful at
+   a size somebody can see the label box in. */
+.dataset-sample { margin-top: 16px; padding: 13px; border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--card-flat); }
+.pvstrip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 9px; }
+.pvframe { min-width: 0; margin: 0; }
+/* The positioning context the boxes are a percentage of, so it must wrap the image and
+   nothing else -- any padding here moves every box off the animal. */
+.pvshot { position: relative; display: block; overflow: hidden; border-radius: 4px; background: var(--sunk); }
+.pvshot img { display: block; width: 100%; height: auto; }
+.pvbox { position: absolute; border: 1.5px solid var(--amber-300); border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); pointer-events: none; }
+.pvframe figcaption { display: grid; gap: 1px; margin-top: 5px; color: var(--faint); font-size: 8.5px; overflow-wrap: anywhere; }
+.pvframe figcaption b { color: var(--cyan-300); font-size: 8px; letter-spacing: .05em; text-transform: uppercase; }
+.pvframe figcaption em { color: var(--text); font-size: 9px; font-style: normal; }
+.pvframe figcaption em.none { color: var(--faint); font-style: italic; }
 .dataset-detail > footer { display: flex; flex-wrap: wrap; gap: 7px; }
 .dataset-build-progress { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .8fr) auto; gap: 6px 14px; align-items: center; padding: 11px 12px; border: 1px solid var(--hairline-2); border-radius: var(--r-sm); background: rgba(20, 126, 232, .06); }
 .dataset-build-progress > div { display: flex; justify-content: space-between; gap: 10px; }
@@ -2816,7 +2829,7 @@ td.whb.quiet { color: var(--amber-300); }
   #saved-datasets tbody tr.runrow-body { display: block; padding: 0; }
   #saved-datasets tbody tr.runrow-body > td { display: block; }
   .dataset-detail-grid { grid-template-columns: minmax(0, 1fr); }
-  .dataset-samples { grid-column: auto; }
+  .pvstrip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dataset-build-progress { grid-template-columns: minmax(0, 1fr); }
 }
 

@@ -19,6 +19,7 @@ const modelArtifactService = require('../service/model-artifact.service');
 const datasetBuildRepository = require('../repository/dataset-build.repository');
 const { imageSettings } = require('../service/dataset-build.service');
 const datasetRepository = require('../repository/dataset.repository');
+const datasetPreviewService = require('../service/dataset-preview.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
@@ -488,6 +489,152 @@ function registerDatasetRoutes(app) {
             }
 
             res.json(await datasetRepository.getDatasetComposition(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/:id/preview',
+        summary: 'A sample of the frames a build cut, with their label boxes',
+        description:
+            'A handful of the actual training images in a dataset, read straight out of the archive the build '
+            + 'wrote. The Datasets screen showed four sample pictures per dataset and they were four hardcoded '
+            + 'Jellyfin item ids -- the same four on every row, of video unrelated to the dataset under them.\n\n'
+            + '**The boxes come back with the frames**, as the YOLO label file records them: `class_index` into '
+            + "the vocabulary `GET /dataset/:id/composition` returns, and `cx`/`cy`/`w`/`h` normalised to the "
+            + 'image with **x and y at the box centre**. Drawing them is the point -- a frame on its own says a '
+            + 'picture was cut, and a frame with its box says the label landed on the animal.\n\n'
+            + '**Read rather than stored.** The archive is an uncompressed tar, so a sample costs a walk of its '
+            + 'headers -- one 512-byte read per member, about 140 ms over a 2.4 GB archive -- plus one read per '
+            + 'frame shown. Nothing is written at build time to make this work, so it answers for datasets that '
+            + 'were built before it existed.\n\n'
+            + '**The frames are spread across the archive, not taken from the front.** A build interpolates '
+            + 'between keyframes, so the first dozen images are one animal a fortieth of a second apart; an even '
+            + 'stride covers the videos and splits the build actually touched, for the same walk.\n\n'
+            + 'Gated on `datasets:read` rather than the `jobs:execute` that guards the whole archive: this is '
+            + 'somebody browsing the catalogue, which is the case that permission exists for, and it serves a '
+            + 'sample rather than the dataset.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset.' },
+            {
+                in: 'query',
+                name: 'limit',
+                required: false,
+                schema: { type: 'integer', default: datasetPreviewService.DEFAULT_LIMIT, maximum: datasetPreviewService.MAX_LIMIT },
+                description: 'How many frames to sample. Clamped, because each one is served at full size.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'The sample.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                sha256: { type: 'string', description: "The archive's hash, which is also its address." },
+                                total: {
+                                    type: 'integer',
+                                    example: 10361,
+                                    description: 'Every image in the archive, not how many are shown, so a reader knows what the sample is a sample of.',
+                                },
+                                frames: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            index: { type: 'integer', description: 'Its address for `GET /dataset/:id/preview/:index`.' },
+                                            split: { type: 'string', example: 'train' },
+                                            stem: {
+                                                type: 'string',
+                                                example: '20240727_163021_Fwd_00029982',
+                                                description: 'The video it came from and the absolute frame number in it.',
+                                            },
+                                            bytes: { type: 'integer' },
+                                            boxes: {
+                                                type: 'array',
+                                                description: 'Empty when the archive carries no label beside the frame, which is a fact about the build rather than an error.',
+                                                items: {
+                                                    type: 'object',
+                                                    properties: {
+                                                        class_index: { type: 'integer', example: 2 },
+                                                        cx: { type: 'number', example: 0.234120 },
+                                                        cy: { type: 'number', example: 0.095045 },
+                                                        w: { type: 'number', example: 0.052060 },
+                                                        h: { type: 'number', example: 0.094724 },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await datasetPreviewService.preview(req.params.id, req.query.limit));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/:id/preview/:index',
+        summary: 'One frame of a dataset preview',
+        description:
+            'The image bytes for one entry of `GET /dataset/:id/preview`, cut out of the archive at the offset '
+            + 'its tar header records.\n\n'
+            + '**Addressed by position in the sample, not by filename.** The archive is named for its own hash '
+            + 'and never changes, so a walk of it returns the same order every time and a position is a stable '
+            + 'address. A filename from the caller would be a caller-supplied path reaching a file read, which '
+            + 'is a shape worth not having.\n\n'
+            + '`limit` must match the one the sample was taken with, because it is what the positions are '
+            + 'relative to.\n\n'
+            + '**Cached hard and deliberately.** The response carries a strong ETag of the archive hash and the '
+            + "position, and `immutable`, because those bytes cannot change: a re-packaged dataset is a "
+            + 'different hash. A reader fetches each preview frame once.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset.' },
+            { in: 'path', name: 'index', required: true, schema: { type: 'integer' }, description: 'Which frame of the sample.' },
+            {
+                in: 'query',
+                name: 'limit',
+                required: false,
+                schema: { type: 'integer', default: datasetPreviewService.DEFAULT_LIMIT },
+                description: 'The sample size the index was taken against.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'The frame.',
+                content: { 'image/jpeg': { schema: { type: 'string', format: 'binary' } } },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const frame = await datasetPreviewService.frame(req.params.id, req.params.index, req.query.limit);
+            const etag = `"dataset-preview-${frame.sha256}-${req.params.index}"`;
+
+            if (req.headers['if-none-match'] === etag) {
+                res.status(304).end();
+
+                return;
+            }
+
+            res.setHeader('ETag', etag);
+            res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+            res.setHeader('Content-Type', frame.contentType);
+            res.setHeader('Content-Length', frame.buffer.length);
+            res.send(frame.buffer);
         }),
     });
 
