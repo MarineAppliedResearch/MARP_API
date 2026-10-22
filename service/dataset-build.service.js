@@ -281,6 +281,78 @@ function passes(wanted) {
  * is finished. Returning exactly `false` stops the cut after that pass.
  * @returns {Promise<{written: number, missing: number}>} What it managed.
  */
+/**
+ * How many times a video's setup is attempted.
+ *
+ * More than a pass gets, because these are three small requests rather than a minute of
+ * decoding -- five tries with the backoff below is about fifteen seconds in the worst
+ * case, against losing an eight-minute build.
+ */
+const SETUP_ATTEMPTS = 5;
+
+/**
+ * Resolve a video, authenticate, and read its frame rate, retrying the network parts.
+ *
+ * **Three network calls that were outside the retry.** `CookieStarTest2` failed a second
+ * time at `ffprobe exited 1: Connection to tcp://... failed: Error number -138` -- a
+ * connection timeout, from `probeStream`, which runs before the extraction loop the pass
+ * retry protects. `resolveVideoSource` and `buildDirectStreamUrl` are the same shape:
+ * both reach the media server, and `buildDirectStreamUrl` authenticates on the way.
+ * Protecting only the one that failed today is how the third variant is met tomorrow.
+ *
+ * **The media server is across the internet, not on this machine**, so a timeout is a
+ * routine event rather than an exotic one -- and the build now pulls six to nine times
+ * harder than it did, so it meets them far more often.
+ *
+ * **A missing frame rate is not retried.** It is a permanent property of the video, and
+ * trying five times would spend fifteen seconds to produce a confusing message about
+ * attempts when the answer would have been the same the first time.
+ *
+ * @async
+ * @param {string} video - The video's source name.
+ * @returns {Promise<{streamUrl: string, probe: Object}>}
+ * @throws {Error} When the frame rate is unreadable, or every attempt failed.
+ */
+async function openVideo(video) {
+    let last;
+
+    for (let attempt = 1; attempt <= SETUP_ATTEMPTS; attempt++) {
+        try {
+            const resolved = await jellyfinRepository.resolveVideoSource(video, 1, MEDIA_CLIENT_IDENTITY);
+            const streamUrl = await jellyfinRepository.buildDirectStreamUrl(resolved.item.id, MEDIA_CLIENT_IDENTITY);
+            const probe = await extraction.probeStream(streamUrl);
+
+            if (attempt > 1) logger.info(`Dataset build: ${video} opened on attempt ${attempt}.`);
+
+            /* Outside the retry: a video that reports no frame rate will report none on
+               the fifth attempt too, and its frames cannot be addressed at any speed. */
+            if (!probe.fps) {
+                throw Object.assign(
+                    new Error(`${video} reported no frame rate, so its frames cannot be addressed.`),
+                    { permanent: true }
+                );
+            }
+
+            return { streamUrl, probe };
+        } catch (error) {
+            if (error && error.permanent) throw error;
+
+            last = error;
+
+            if (attempt < SETUP_ATTEMPTS) {
+                logger.info(`Dataset build: ${video} could not be opened on attempt ${attempt}, `
+                    + `retrying. ${error && error.message}`);
+
+                await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+            }
+        }
+    }
+
+    throw new Error(
+        `${video}: could not be opened after ${SETUP_ATTEMPTS} attempts. ${last && last.message}`
+    );
+}
+
 /** How many times one pass is attempted before the build gives up on it. */
 const PASS_ATTEMPTS = 3;
 
@@ -358,13 +430,7 @@ async function cutPass(streamUrl, batch, fps, batchDir, image, video) {
 }
 
 async function cutVideo(entry, staging, image = imageSettings(), onBatch = null) {
-    const resolved = await jellyfinRepository.resolveVideoSource(entry.video, 1, MEDIA_CLIENT_IDENTITY);
-    const streamUrl = await jellyfinRepository.buildDirectStreamUrl(resolved.item.id, MEDIA_CLIENT_IDENTITY);
-    const probe = await extraction.probeStream(streamUrl);
-
-    if (!probe.fps) {
-        throw new Error(`${entry.video} reported no frame rate, so its frames cannot be addressed.`);
-    }
+    const { streamUrl, probe } = await openVideo(entry.video);
 
     const wanted = [...entry.frames.keys()].sort((a, b) => a - b);
     const directory = directoryFor(entry.split);

@@ -406,6 +406,16 @@ function stubExtraction({ jellyfin, extraction }, behaviour = {}) {
         .mockImplementation(async (url) => {
             calls.probes.push(url);
 
+            /* The hook for the tests about opening a video: the three calls before the
+               extraction loop are network calls to the same server and can time out, and
+               `probeStream` is the one that did. Returning something lets a test change
+               what the video looks like; throwing lets it make the open fail. */
+            if (behaviour.onProbe) {
+                const said = await behaviour.onProbe(calls.probes.length, url);
+
+                if (said) return said;
+            }
+
             return { width: 8, height: 8, codec: 'h264', fps: FPS, duration: 60 };
         });
 

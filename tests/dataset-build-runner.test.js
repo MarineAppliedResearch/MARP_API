@@ -741,7 +741,111 @@ describe('a pass that falters is retried, not fatal (#268)', () => {
         expect(result.reason).toContain(path.parse(seeded.videos.one).name);
         expect(result.reason).toMatch(/frames \d+-\d+/);
         expect(result.reason).toMatch(/attempts/i);
+    }, 60000);
+});
+
+describe('opening a video survives a timeout (#268)', () => {
+
+    /** This group's own stub. */
+    let opening;
+
+    afterAll(() => {
+        if (opening) opening.restore();
     });
+
+    /**
+     * **The second failure, in the gap the first fix did not cover.** `CookieStarTest2`
+     * failed again at `ffprobe exited 1: Connection to tcp://... failed: Error number
+     * -138` -- a connection timeout, from `probeStream`, which runs *before* the
+     * extraction loop that the pass retry protects. The media server is across the
+     * internet rather than on this machine, so a timeout is routine, and a build that now
+     * pulls six to nine times harder meets them far more often.
+     */
+    test('a probe that times out once does not lose the build', async () => {
+        let failures = 0;
+
+        opening = fixture.stubExtraction({ jellyfin, extraction }, {
+            onProbe: () => {
+                if (failures === 0) {
+                    failures += 1;
+
+                    throw new Error('ffprobe exited 1: Connection to tcp://jest.invalid:8096 failed: Error number -138');
+                }
+            },
+        });
+
+        const queued = await queueBuild({
+            name: `Jest Build Probe Timeout ${runId}`,
+            filters: { session: [seeded.sessionId], species: [seeded.speciesIds[1]] },
+            splits: { train: 1 },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(failures).toBe(1);
+        expect(result.reason).toBeUndefined();
+        expect(result.images).toBe(6);
+    }, 60000);
+
+    /**
+     * And when the server really is unreachable, the build fails saying which video it
+     * could not open -- not `ffprobe exited 1` and a URL with the API key elided.
+     */
+    test('a video that never opens fails the build, naming it', async () => {
+        if (opening) opening.restore();
+
+        opening = fixture.stubExtraction({ jellyfin, extraction }, {
+            onProbe: () => {
+                throw new Error('ffprobe exited 1: Connection to tcp://jest.invalid:8096 failed: Error number -138');
+            },
+        });
+
+        const queued = await queueBuild({
+            name: `Jest Build Probe Dead ${runId}`,
+            filters: { session: [seeded.sessionId], species: [seeded.speciesIds[1]] },
+            splits: { train: 1 },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(result.failed).toBe(true);
+        expect(result.reason).toContain(path.parse(seeded.videos.one).name);
+        expect(result.reason).toMatch(/attempts/i);
+    }, 60000);
+
+    /**
+     * **A video with no frame rate is not retried.** That is a permanent property of the
+     * file, not a network blip: five attempts would spend fifteen seconds to produce a
+     * message about attempts when the answer was the same the first time. It fails at
+     * once, and says what is actually wrong.
+     */
+    test('a video reporting no frame rate fails at once rather than being retried', async () => {
+        if (opening) opening.restore();
+
+        let probes = 0;
+
+        opening = fixture.stubExtraction({ jellyfin, extraction }, {
+            onProbe: () => {
+                probes += 1;
+
+                return { width: 8, height: 8, codec: 'h264', fps: null, duration: 60 };
+            },
+        });
+
+        const queued = await queueBuild({
+            name: `Jest Build No Rate ${runId}`,
+            filters: { session: [seeded.sessionId], species: [seeded.speciesIds[1]] },
+            splits: { train: 1 },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(result.failed).toBe(true);
+        expect(result.reason).toMatch(/frame rate/i);
+        expect(result.reason).not.toMatch(/attempts/i);
+        /* Once, not five times. */
+        expect(probes).toBe(1);
+    }, 60000);
 });
 
 describe('labels at the edge of the frame (#268)', () => {
