@@ -5750,6 +5750,87 @@ function renderDatasetsSummary(datasets, builds) {
  * @param {Map<number, Object>} builds - In-flight builds by dataset id.
  * @returns {void}
  */
+/**
+ * Readings of how far each build had got, so a rate can be worked out between them.
+ *
+ * Keyed by job id, holding `{done, at}` pairs taken when the count actually moved. A
+ * build is not in here for long and there are never many at once, so this is bounded by
+ * {@link RATE_WINDOW} per build rather than by any sweeping.
+ */
+const buildReadings = new Map();
+
+/** How many readings a rate is averaged over. */
+const RATE_WINDOW = 6;
+
+/**
+ * Frames per second, from how far the build has moved between reports.
+ *
+ * **Taken from the attempt row across polls, not from `gpu_attempt_progress`.** That
+ * table is the series the chart is drawn from and it is sampled **once a minute** -- one
+ * row per attempt per minute, upserted -- so a rate read from it can only change once a
+ * minute, which is not a live rate on a screen that polls every second. The attempt row
+ * carries `progress_done` and `last_heartbeat_at` and is rewritten on every report the
+ * runner makes, which is once a pass: about twenty seconds at the speeds before the
+ * extractor stopped re-encoding, and about two at the speeds after.
+ *
+ * **Recent, not since the start.** Averaging from the first reading hides exactly what he
+ * asked to be able to see -- a stretch where the rate drops -- because by then the
+ * average is dominated by everything before it. A short window moves when the build does.
+ *
+ * **Nothing until there are two readings**, which is a real state and lasts until the
+ * runner reports twice. A rate of zero would be a measurement, and an infinity would be
+ * arithmetic nobody asked for.
+ *
+ * **Only while frames are being cut.** `selecting` has no frames yet and `packaging` is
+ * tar and SHA-256 over a finished tree -- the count does not move, so a rate that kept
+ * being shown would fall toward zero and read as a build grinding to a halt when it is
+ * doing the last thing it has to do.
+ *
+ * @param {Object} build - The in-flight build.
+ * @returns {string} Frames per second to one decimal, or '' when there is no rate to give.
+ */
+function buildRate(build) {
+  if (!build || build.state !== 'leased') return '';
+
+  const phase = phaseOf(build).phase.toLowerCase();
+
+  if (phase !== 'extracting') return '';
+
+  const done = Number(build.progress_done);
+  const at = Date.parse(build.last_heartbeat_at);
+
+  if (!Number.isFinite(done) || !Number.isFinite(at)) return '';
+
+  const key = build.job_id;
+  const readings = buildReadings.get(key) || [];
+  const last = readings[readings.length - 1];
+
+  /* Only when the runner has actually reported again. Polling faster than it reports
+     would otherwise stack identical readings and divide a real frame count by the
+     seconds the browser spent asking, which is a rate of the polling rather than of
+     the build. */
+  if (!last || last.at !== at) {
+    readings.push({ done, at });
+
+    while (readings.length > RATE_WINDOW) readings.shift();
+
+    buildReadings.set(key, readings);
+  }
+
+  if (readings.length < 2) return '';
+
+  const first = readings[0];
+  const latest = readings[readings.length - 1];
+  const frames = latest.done - first.done;
+  const seconds = (latest.at - first.at) / 1000;
+
+  if (!(seconds > 0) || frames < 0) return '';
+
+  const rate = frames / seconds;
+
+  return rate >= 10 ? `${Math.round(rate)} f/s` : `${rate.toFixed(1)} f/s`;
+}
+
 function patchBuildRows(body, builds) {
   for (const head of $$(':scope > tr[data-dataset-id]', body)) {
     const build = builds.get(Number(head.dataset.datasetId));
@@ -5789,6 +5870,19 @@ function patchBuildRows(body, builds) {
        disagree -- which they did, because this one used to be written once. */
     const framesFact = $('[data-build-frames]', detail);
     if (framesFact) framesFact.innerHTML = frames.html;
+
+    /* Asked once and used twice: `buildRate` records the reading it is given, so calling
+       it a second time in the same poll would compare a reading with itself. */
+    const rate = buildRate(build);
+    const rateFact = $('[data-build-rate]', detail);
+
+    if (rateFact) {
+      rateFact.textContent = rate;
+
+      const row = rateFact.closest('.jobmetric');
+
+      if (row) row.hidden = !rate;
+    }
 
     const phase = phaseOf(build);
     const phaseFact = $('[data-build-phase]', detail);
@@ -6553,6 +6647,9 @@ async function wireDatasetPage() {
              reads as a video it could not name. */
           fact('Video', `<span data-build-video>${escapeHtml(phase.detail)}</span>`, false,
             !phase.detail),
+          /* Built always and hidden until there is one, because the detail is drawn once
+             and patched thereafter -- a row that had to be created later could not be. */
+          fact('Rate', `<span data-build-rate>${buildRate(build)}</span>`, false, !buildRate(build)),
           fact('Elapsed', `<span data-build-elapsed>${buildElapsed(build) || NOT_STARTED_TEXT}</span>`),
           fact('Reported', `<span data-build-reported>${reported || NOT_STARTED_TEXT}</span>`, !build),
           fact('Attempt', build ? `${build.attempts_made} of ${build.max_attempts}` : NOT_STARTED_TEXT),
