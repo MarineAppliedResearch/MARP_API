@@ -269,6 +269,17 @@ async function claimBuild() {
  * build reported onto the attempt and nothing else, so the Build activity panel had no
  * series to draw and said so on screen.
  *
+ * **The dataset row is touched too, so `Updated` moves while the build runs.** It used to
+ * be written only when the build finished, so the Datasets table showed a frame count
+ * climbing and an elapsed clock ticking beside a timestamp frozen at the moment the build
+ * was queued -- which reads as a row that has stopped being maintained rather than one
+ * that is being worked on. Isaac found it watching dataset 381: created 22:19:27, updated
+ * 22:25:06, and 22:25:06 was the instant it completed.
+ *
+ * **Derived from the attempt rather than passed in**, which is the same join
+ * `getBuildsInFlight` makes. A `datasetId` parameter would be one more thing six call
+ * sites have to remember, and forgetting it brings this exact defect back silently.
+ *
  * @async
  * @param {number} attemptId - The attempt.
  * @param {Object} progress - `{done, total, unit, phase}`.
@@ -295,7 +306,57 @@ async function reportProgress(attemptId, progress) {
         }
     );
 
+    /* Safe against the table's ordering, and that was checked rather than assumed: the
+       Datasets screen sorts on `created_at` with the id breaking ties, precisely so a row
+       reporting progress does not shuffle under somebody reading it. `GET /dataset` itself
+       returns no order at all, so an unsorted reader was already at the mercy of physical
+       order -- this does not make that worse, but it is why the client sort exists. */
+    await db.sequelize.query(
+        `UPDATE datasets d
+            SET updated_at = NOW()
+           FROM gpu_job_attempts a
+           JOIN gpu_jobs j ON j.id = a.job_id
+          WHERE a.id = :attemptId
+            AND j.kind = 'dataset_build'
+            AND d.id = (j.spec->>'dataset_id')::int`,
+        { replacements: { attemptId } }
+    );
+
     await sampleProgress(attemptId, progress);
+}
+
+/**
+ * Record what the selection found, as soon as it has found it.
+ *
+ * **These two are known when `selecting` ends, not when the build does.** Resolving the
+ * filters produces the observations and the class vocabulary; cutting frames out of video
+ * is everything after that and takes the hours. Writing them at the end left the
+ * Observations and Classes columns blank for the whole of a long build, next to a frame
+ * count that was climbing -- the screen had somewhere to put the answer and the server was
+ * not sending it.
+ *
+ * **Not `num_samples`.** That column means images, and the only honest image count during
+ * a build is how many have actually been cut -- which the Frames cell already shows live
+ * off the attempt row. Writing the *planned* total here would make one column mean
+ * "intended" on a running row and "written" on a finished one, with nothing to tell them
+ * apart, which is the ambiguity `AGENTS.md` counts as loss.
+ *
+ * @async
+ * @param {Object} selection - What the selecting phase resolved.
+ * @param {number} selection.datasetId - The dataset being built.
+ * @param {number} selection.observations - How many observations it will include.
+ * @param {number} selection.classes - How many classes their species make up.
+ * @returns {Promise<void>}
+ */
+async function recordSelection({ datasetId, observations, classes }) {
+    await db.sequelize.query(
+        `UPDATE datasets
+            SET num_observations = :observations,
+                num_classes = :classes,
+                updated_at = NOW()
+          WHERE id = :datasetId`,
+        { replacements: { datasetId, observations, classes } }
+    );
 }
 
 /**
@@ -527,10 +588,18 @@ async function failBuild({ jobId, attemptId, datasetId, reason, cancelled = fals
             );
         }
 
+        /* **The selection counts go back to null along with the archive columns.**
+           `recordSelection` writes them the moment the filters resolve, so a build that
+           then failed at extraction would leave a row saying it holds 115 observations
+           and 3 classes when `dataset_observations` is empty -- `recordBuild` is what
+           writes the membership and it never ran. The panel counts that table live, so
+           the row and the panel it expands into would disagree about the same dataset.
+           Blank is what the column means when there is nothing in it. */
         await db.sequelize.query(
             `UPDATE datasets
                 SET status = :status,
                     archive_path = NULL, archive_sha256 = NULL, archive_bytes = NULL,
+                    num_observations = NULL, num_classes = NULL,
                     updated_at = NOW()
               WHERE id = :datasetId`,
             {
@@ -557,5 +626,6 @@ module.exports = {
     reclaimAbandonedBuilds,
     recordBuild,
     reportProgress,
+    recordSelection,
     sampleProgress,
 };

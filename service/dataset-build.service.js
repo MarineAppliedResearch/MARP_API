@@ -509,6 +509,22 @@ async function runOne() {
         const videos = plan.extractionPlan(splits, classes);
         const total = [...videos.values()].reduce((sum, entry) => sum + entry.frames.size, 0);
 
+        /* **Counted off `splits`, the same way the membership rows are built at the end.**
+           Not `rows.length`: in the subsets branch those are the same number, but taking
+           it from the thing `recordBuild` also walks means the figure written here and
+           the one written when the build finishes cannot drift apart -- they are one
+           count made twice rather than two counts that ought to agree. */
+        const included = [...splits.values()].reduce((sum, rowsIn) => sum + rowsIn.length, 0);
+
+        /* Selection is done, so these two are final. They used to be written only by
+           `recordBuild`, which meant Observations and Classes stayed blank for the hours a
+           build spends cutting frames -- beside a frame count that was visibly climbing. */
+        await buildRepository.recordSelection({
+            datasetId,
+            observations: included,
+            classes: classes.length,
+        });
+
         await buildRepository.reportProgress(attempt.id, {
             phase: 'extracting', done: 0, total, unit: 'frames',
         });

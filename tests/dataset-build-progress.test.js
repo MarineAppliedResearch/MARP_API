@@ -1200,6 +1200,143 @@ describe('GET /api/v2/dataset/builds', () => {
         });
     });
 
+    /**
+     * What a running build writes onto its own dataset row, rather than only when it ends.
+     *
+     * Isaac, watching one: *"the frames get bigger, the elapsed time passes, etc. but the
+     * updated table does not update, and when we queue it up, shouldn't it have the number
+     * of observations and classes, those only seem to be updated at the end right now?"*
+     * Both were real and they are separate -- one is a timestamp never touched until the
+     * end, the other two columns whose answer is known hours before it is written.
+     */
+    describe('what a build writes while it is still running', () => {
+
+        /**
+         * Puts a dataset's timestamps in the past, so a write during the test is visible
+         * as a move rather than as two values a few milliseconds apart.
+         *
+         * @param {number} datasetId - A dataset this file created.
+         * @returns {Promise<string>} The backdated `updated_at`.
+         */
+        async function backdate(datasetId) {
+            const [row] = await db.sequelize.query(
+                `UPDATE datasets SET updated_at = NOW() - INTERVAL '10 minutes'
+                  WHERE id = :datasetId
+                 RETURNING updated_at`,
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            return row.updated_at;
+        }
+
+        /**
+         * **The defect, stated as a test.** The Datasets table showed a frame count
+         * climbing and an elapsed clock ticking beside an `Updated` column frozen at the
+         * moment the build was queued, which reads as a row nothing is maintaining. On
+         * dataset 381 it said created 22:19:27 and updated 22:25:06 -- and 22:25:06 was
+         * when the build finished, five and a half minutes of work with no sign of it.
+         */
+        it('moves the dataset Updated timestamp when the build reports progress', async () => {
+            const worker = await seedWorker();
+            const { jobId, datasetId } = await seedBuild({ name: 'jest-touch', state: 'leased' });
+            const attemptId = await seedAttempt({ jobId, workerId: worker, epoch: 1, phase: 'selecting' });
+            const before = await backdate(datasetId);
+
+            await buildRepository.reportProgress(attemptId, {
+                done: 40, total: 400, unit: 'frames', phase: 'extracting 1/2 a-video',
+            });
+
+            const [after] = await db.sequelize.query(
+                'SELECT updated_at FROM datasets WHERE id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(Date.parse(after.updated_at)).toBeGreaterThan(Date.parse(before));
+        });
+
+        /**
+         * The dataset is found through the job's `spec`, so the obvious way to get this
+         * wrong is an update whose `WHERE` does not actually narrow -- which would touch
+         * every dataset in the table on every report and be invisible on a database
+         * holding one.
+         */
+        it('touches only the dataset its own job names', async () => {
+            const worker = await seedWorker();
+            const mineBuild = await seedBuild({ name: 'jest-touch-mine', state: 'leased' });
+            const other = await seedBuild({ name: 'jest-touch-other', state: 'queued' });
+            const attemptId = await seedAttempt({ jobId: mineBuild.jobId, workerId: worker, epoch: 1 });
+
+            await backdate(mineBuild.datasetId);
+
+            const untouched = await backdate(other.datasetId);
+
+            await buildRepository.reportProgress(attemptId, { done: 1, total: 2, unit: 'frames' });
+
+            const [after] = await db.sequelize.query(
+                'SELECT updated_at FROM datasets WHERE id = :datasetId',
+                { replacements: { datasetId: other.datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(Date.parse(after.updated_at)).toBe(Date.parse(untouched));
+        });
+
+        /**
+         * **Known when selecting ends, not when the build does.** Resolving the filters is
+         * what produces the observations and the vocabulary; everything after it is cutting
+         * frames out of video, which is where the hours go. The screen has had columns for
+         * both the whole time -- it was the server not filling them.
+         */
+        it('records the observation and class counts as soon as selection resolves', async () => {
+            const { datasetId } = await seedBuild({ name: 'jest-selected', state: 'leased' });
+
+            await buildRepository.recordSelection({ datasetId, observations: 115, classes: 3 });
+
+            const [row] = await db.sequelize.query(
+                'SELECT num_observations, num_classes, num_samples FROM datasets WHERE id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(row.num_observations).toBe(115);
+            expect(row.num_classes).toBe(3);
+
+            /* **And not `num_samples`.** That column means images, and the only honest
+               image count mid-build is how many have been cut so far -- which the Frames
+               cell already shows live off the attempt row. Writing the planned total here
+               would make one column mean "intended" on a running row and "written" on a
+               finished one. */
+            expect(row.num_samples).toBeNull();
+        });
+
+        /**
+         * A build that failed after selection holds no membership -- `recordBuild` writes
+         * `dataset_observations` and it never ran -- so a count left behind would have the
+         * table row claiming 115 observations while the panel it expands into, which counts
+         * that table live, says none were recorded. Two numbers for one thing.
+         */
+        it('clears the selection counts when the build fails', async () => {
+            const worker = await seedWorker();
+            const { jobId, datasetId } = await seedBuild({ name: 'jest-selected-failed', state: 'leased' });
+            const attemptId = await seedAttempt({ jobId, workerId: worker, epoch: 1 });
+
+            await buildRepository.recordSelection({ datasetId, observations: 115, classes: 3 });
+            await buildRepository.failBuild({
+                jobId,
+                attemptId,
+                datasetId,
+                reason: 'seeded by tests/dataset-build-progress',
+            });
+
+            const [row] = await db.sequelize.query(
+                'SELECT status, num_observations, num_classes FROM datasets WHERE id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(row.status).toBe('failed');
+            expect(row.num_observations).toBeNull();
+            expect(row.num_classes).toBeNull();
+        });
+    });
+
     it('refuses a request carrying no principal', async () => {
         const request = require('supertest');
         const app = require('../app');
