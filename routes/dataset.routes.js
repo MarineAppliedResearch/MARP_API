@@ -943,9 +943,14 @@ function registerDatasetRoutes(app) {
             + 'where it was, and a dataset whose archive is gone but whose row survives is worse than either '
             + 'outcome. Removing the file was not done at all before, so a deleted dataset left gigabytes behind. A '
             + 'file that is already missing is not an error -- the row is what is being deleted.\n\n'
-            + '`gpu_jobs` rows survive, deliberately. A job is the record that the work happened, nothing references '
-            + 'the dataset by a foreign key, and a job whose dataset is gone simply stops appearing in '
-            + '`GET /dataset/builds`.',
+            + '`gpu_jobs` rows survive, deliberately. A job is the record that the work happened -- its attempt, its '
+            + 'failure reason, its timings, and the spec that is the only record of what was asked for -- and '
+            + 'nothing references the dataset by a foreign key, so nothing cascades. **They are excluded from '
+            + '`GET /dataset/builds` by a join rather than by hope:** this description previously claimed they '
+            + '"simply stop appearing", and they did not. Three such rows were being served on the development '
+            + 'database, '
+            + 'and a build row for a dataset nobody can open, expand or delete is a row for nothing. They remain '
+            + 'visible on the Jobs screen, which is where a record of work belongs.',
         tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the dataset to delete.' },

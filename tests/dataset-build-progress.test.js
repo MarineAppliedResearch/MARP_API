@@ -1868,6 +1868,53 @@ describe('GET /api/v2/dataset/builds', () => {
             expect(res.status).toBe(409);
         });
 
+        /**
+         * **A build whose dataset is gone is not a build this screen can show.**
+         *
+         * Nothing links `gpu_jobs` to `datasets` by a foreign key -- the association is
+         * `spec->>'dataset_id'` -- so deleting a dataset leaves its build job behind, and
+         * the builds route went on serving it. The delete route's own description claimed
+         * such a job "simply stops appearing" here; it did not, and three of them were
+         * being served on the development database.
+         *
+         * The job row is deliberately kept: it is the record that the work happened, with
+         * its attempt, its failure reason and the spec saying what was asked for. It
+         * belongs on the Jobs screen. It does not belong on a screen about datasets,
+         * where it is a row that cannot be opened, downloaded or deleted.
+         */
+        it('stops serving a build once its dataset is deleted', async () => {
+            const { jobId, datasetId } = await seedBuild({ name: 'jest-orphan', state: 'failed' });
+
+            /* Asked through the route, which is the tier the screen reads. */
+            const seen = async () => {
+                const res = await global.api.get('/api/v2/dataset/builds');
+
+                expect(res.status).toBe(200);
+
+                return res.body.some((row) => row.job_id === jobId);
+            };
+
+            expect(await seen()).toBe(true);
+
+            await db.sequelize.query(
+                "UPDATE datasets SET status = 'failed' WHERE id = :datasetId",
+                { replacements: { datasetId } }
+            );
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(200);
+
+            /* The job survives -- that is the decision -- and stops being served here. */
+            const [job] = await db.sequelize.query(
+                'SELECT id FROM gpu_jobs WHERE id = :jobId',
+                { replacements: { jobId }, type: QueryTypes.SELECT }
+            );
+
+            expect(job).toBeDefined();
+            expect(await seen()).toBe(false);
+        });
+
         /** It writes, so it is not the read permission, and certainly not anonymous. */
         it('refuses a request carrying no principal', async () => {
             const request = require('supertest');

@@ -3814,6 +3814,32 @@ function wireJobsOverview() {
       ? `<p class="jobdetail-dataset">Built <a href="./datasets.html?dataset=${encodeURIComponent(builtDataset)}">dataset ${escapeHtml(builtDataset)}</a></p>`
       : '';
 
+    /* **Duplicate with change, drawn only where there is somewhere to land.**
+       It makes a new job from this one's spec by filling the build flow in and letting it
+       be edited; nothing is created until Queue is pressed. That flow exists for a dataset
+       build and for nothing else on this dashboard yet -- the Inference screen assembles a
+       plan and prints it rather than submitting (`MarpApi.submitJob` has no callers), and
+       `#trainBtn` has no handler at all. So an inference, tracking or training job has no
+       form to arrive at, and a button that opened nothing would be the third dead control
+       on this screen rather than the first working one.
+
+       A link rather than a button because it navigates, and `?duplicate=1` is read on
+       arrival. The filling itself is the Datasets screen's -- `datasetBuildSetup` and the
+       `marp:duplicate-dataset-setup` event -- rather than a second implementation of
+       "new build from an old spec", which is how two of them drift apart.
+
+       It is a retry as well, which is why there is no Retry button beside it: a duplicate
+       nobody edits is the same build run again, and reaching it this way never resets
+       `attempts_made` or reopens a job the coordinator has closed. */
+    const duplicate = isDatasetBuild && builtDataset
+      ? `<a class="btn sm" href="./datasets.html?dataset=${encodeURIComponent(builtDataset)}&amp;duplicate=1"`
+        + ' title="Fill the build flow with the queries this ran, to edit before queueing. Creates nothing.">'
+        + '<svg class="ico"><use href="#i-copy"/></svg>Duplicate with changes</a>'
+      : '';
+
+    /* Nothing to offer is an absent strip, not an empty one. */
+    const actions = (inner) => (inner ? `<div class="jobstate-actions">${inner}</div>` : '');
+
     let operational;
 
     if (state === 'running' || state === 'paused' || state === 'cancelling') {
@@ -3843,14 +3869,14 @@ function wireJobsOverview() {
         : isTraining
         ? metric('Stopped', 'Epoch 37 / 100') + metric('Best mAP@50', '0.681') + metric('Checkpoint', 'Saved', 'last good epoch')
         : metric('Succeeded', '19 / 21 ranges') + metric('Affected', '2 ranges', '1,800 frames') + metric('Partial results', '386 obs', 'not yet ingested');
-      operational = `<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${issue}</h4><p>${state === 'failed' ? 'The job stopped and needs an operator decision.' : 'Usable work is preserved; only failed work needs to run again.'}</p></div></div><div class="jobmetrics">${measures}${metric('Attempts', state === 'failed' ? '1 / 3' : '3 / 3')}</div><div class="jobstate-actions"><button class="btn sm" type="button">${state === 'issues' ? 'Retry failed work' : 'Retry job'}</button><button class="btn sm" type="button">Duplicate with changes</button></div></section>`;
+      operational = `<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${issue}</h4><p>${state === 'failed' ? 'The job stopped and needs an operator decision.' : 'Usable work is preserved; only failed work needs to run again.'}</p></div></div><div class="jobmetrics">${measures}${metric('Attempts', state === 'failed' ? '1 / 3' : '3 / 3')}</div>${actions(duplicate)}</section>`;
     } else if (state === 'done') {
       const measures = isTraining
         ? metric('Registered', `${model} v1.0.3`) + metric('Best mAP@50', '0.781') + metric('Duration', '4h 18m') + metric('Checkpoint', '2.8 GB')
         : metric('Observations', '412', 'ready for review') + metric('Ranges', '21 / 21') + metric('Duration', '26m 11s') + metric('Throughput', '11.6 fps');
       operational = `<section class="jobstate" data-job-state="complete"><div class="jobstate-title"><div><h4>${isTraining ? 'Model version registered' : 'Results produced'}</h4><p>Completed cleanly; outputs are available to the rest of MARP.</p></div></div><div class="jobmetrics">${measures}</div><div class="jobstate-actions"><button class="btn sm" type="button">${isTraining ? 'Open model version' : 'Review observations'}</button><button class="btn sm" type="button">Run again</button></div></section>`;
     } else {
-      operational = `<section class="jobstate" data-job-state="cancelled"><div class="jobstate-title"><div><h4>Job cancelled</h4><p>Cancelled by an operator; incomplete output was not published.</p></div></div><div class="jobmetrics">${metric('Stopped at', progress)}${metric('Cancelled by', 'itravers')}${metric('Reusable work', 'Preserved', 'completed ranges cached')}</div><div class="jobstate-actions"><button class="btn sm" type="button">Run again</button><button class="btn sm" type="button">Duplicate with changes</button></div></section>`;
+      operational = `<section class="jobstate" data-job-state="cancelled"><div class="jobstate-title"><div><h4>Job cancelled</h4><p>Cancelled by an operator; incomplete output was not published.</p></div></div><div class="jobmetrics">${metric('Stopped at', progress)}${metric('Cancelled by', 'itravers')}${metric('Reusable work', 'Preserved', 'completed ranges cached')}</div>${actions(`<button class="btn sm" type="button">Run again</button>${duplicate}`)}</section>`;
     }
 
     let resultsPreview;
@@ -6129,6 +6155,11 @@ function wireDeleteDataset(detail, head, set) {
          `<tr>` rather than a child, so removing one would leave the other behind. */
       detail.remove();
       head.remove();
+
+      /* Removing the rows is the instant feedback; this is what makes the numbers above
+         them true again. The table owns its own counts and its own polling, so it is told
+         rather than reached into -- the same seam a queued build uses. */
+      document.dispatchEvent(new CustomEvent('marp:dataset-deleted', { detail: { id: set.id } }));
     } catch (error) {
       button.disabled = false;
       button.textContent = 'Delete';
@@ -6894,6 +6925,19 @@ async function wireDatasetPage() {
     if (!timer) timer = setTimeout(poll, 0);
   });
 
+  /* **A delete has to re-read, because the poller is not running.** It stops itself the
+     moment nothing is building, which is right -- but it meant the summary cards kept the
+     numbers from before the delete while the row vanished from under them. Isaac deleted a
+     failed build and went on being told there were five datasets and two needing
+     attention. A stale count after a destructive action reads as the delete having
+     failed.
+
+     `poll` rather than a bare redraw: it refreshes, and if a build happens to be in
+     flight it also restarts the clock, which a one-shot refresh would leave stopped. */
+  document.addEventListener('marp:dataset-deleted', () => {
+    if (!timer) timer = setTimeout(poll, 0);
+  });
+
   const queueStrip = $('[data-build-queue]');
 
   if (queueStrip) {
@@ -7202,8 +7246,6 @@ const TIPS = {
   'Start when available': 'Keep this job queued and begin automatically when eligible compute is free',
   'Change priority': 'Adjust where this queued job competes for eligible compute',
   'Cancel': 'Stop this job and prevent it from taking more work',
-  'Retry failed work': 'Run only the ranges that did not complete successfully',
-  'Retry job': 'Start this job again from its beginning',
   'Duplicate with changes': 'Create a new job prefilled from this one, then edit it before submitting',
   'Pause': 'Stop assigning new work while preserving completed progress',
   'Resume': 'Allow this paused job to begin taking work again',

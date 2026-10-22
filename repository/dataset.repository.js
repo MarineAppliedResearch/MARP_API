@@ -186,6 +186,11 @@ class DatasetRepository {
                      ORDER BY lease_epoch DESC, id DESC
                      LIMIT 1
                ) a ON TRUE
+               -- The dataset must still exist. Nothing links gpu_jobs to datasets by a
+               -- foreign key -- the association is spec->>'dataset_id' -- so deleting a
+               -- dataset leaves its build job behind, and this went on serving it. The
+               -- row that produced was for a dataset nobody could open, expand or delete.
+               JOIN datasets d ON d.id = (j.spec->>'dataset_id')::int
               WHERE j.kind = 'dataset_build'
                 /* cancelled belongs here with failed: the runner cancels by failing the
                    build, the dataset ends up failed either way, and a reader asking why a
