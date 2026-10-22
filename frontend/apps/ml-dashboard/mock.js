@@ -6247,11 +6247,18 @@ function splitBar(splits) {
      and interpolating it into `aria-label` closed the attribute early and spilled
      `train validation test split">` onto the screen as text. Nothing that reaches an
      attribute here is markup any more, and it is escaped as well. */
-  return `<div class="splitbar" role="img" aria-label="${escapeHtml(label)}">${bands}</div>`
-    + `<ul class="splitlegend">${legend}</ul>`
-    + `<p class="hint">Percentages are of ${unit}${byImages
-      ? ', which is what the builder balances the split on.'
-      : " — the archive could not be counted, so these are not the ratio the build balanced on, which is images."}</p>`;
+  /* **Hover text, not a paragraph.** *"i dont' know why we have this text"*, of the
+     sentence that used to sit under this bar. What it says is worth keeping -- the
+     percentages are of images, which is the quantity the builder balances on, and a
+     reader checking them against the ratio they asked for needs that -- but it belongs on
+     the bar rather than under it, which is the correction he already made once on this
+     screen. */
+  const why = byImages
+    ? `Percentages are of images, which is what the builder balances the split on. ${escapeHtml(label)}`
+    : `Percentages are of observations: the archive could not be counted, so these are not the ratio the build balanced on, which is images. ${escapeHtml(label)}`;
+
+  return `<div class="splitbar" role="img" title="${why}" aria-label="${escapeHtml(label)}">${bands}</div>`
+    + `<ul class="splitlegend">${legend}</ul>`;
 }
 
 /**
@@ -6560,18 +6567,19 @@ async function refreshBuildQueue() {
   }
 }
 
-/** How many species a built dataset lists before the rest are folded into one row. */
-const SPECIES_SHOWN = 8;
+/* **Five, because the Class breakdown folds at five.** This panel is that component
+   now, and matching the screen somebody already reads matters more than the number. */
+const SPECIES_SHOWN = 5;
 
 /**
  * Where each species went, split by split, as a bar each.
  *
- * *"each species should have an associated bar, who's length is the number of images, and
- * each bar should have 3 shades, one for the training amount, one for the validation
- * amount, and one for the test amount."* The panel above answers how the dataset as a
- * whole was split; this answers it per species, which is where a stratification goes
- * wrong -- a rare animal landing entirely in train is invisible in the dataset's own
- * 70/20/10 and obvious in its own bar.
+ * *"kind of like these bars... but they should have different shading."* He was pointing
+ * at the **Class breakdown** in the build flow, so this is that component --
+ * `.dist`, largest first, folded into an *Other* row -- with the one difference he
+ * asked for: the single blue-to-cyan fill becomes three segments, one per split. Reusing
+ * it rather than building a second bar is the point; two bar components on one screen
+ * drift the moment either is touched.
  *
  * **Images, the same unit as the bar above it.** This shipped in observations because
  * that was all that was recorded, and the two differ by about ninety to one -- 164
@@ -6579,27 +6587,27 @@ const SPECIES_SHOWN = 8;
  * units in one panel is worse as bars than it was as columns. The build now counts
  * species per frame as it writes each label file and
  * `scripts/backfill-split-species-images.js` reads them out of the archives for anything
- * built before it did; a dataset neither has falls back to observations and says so,
- * rather than the same bar quietly meaning something else.
+ * built before it did; a dataset with neither falls back to observations, and the unit in
+ * the heading changes with it.
  *
- * **Lengths are against the largest species, not against the dataset.** The point of the
- * row is the shape of its own split and how it compares with its neighbours'. Scaling to
- * the dataset's total would leave every bar but the commonest a sliver, with the three
- * shades too small to tell apart -- which is the one thing the bar is for.
+ * **Lengths are against the largest row, which is what `.dist` already does.** The point
+ * of a row is the shape of its own split and how it compares with its neighbours'.
+ * Scaling to the dataset's total would leave every bar but the commonest a sliver, with
+ * the three shades too small to tell apart -- which is the one thing the bar is for.
  *
- * **The bars do not add up to the dataset, and the hint says so.** A frame holding a
- * cucumber and an anemone is one image and counts for both, so these sum to more than the
- * split totals above -- 34,075 against 33,417 on the dataset that prompted this.
+ * **No share column, unlike `.dist.pct` in the build flow, and that is deliberate.**
+ * There the shares are of one total and add to a hundred. Here a frame holding a cucumber
+ * and an anemone is one image belonging to both species, so shares would add past a
+ * hundred -- the exact arithmetic `drawQueryComposition` treats as a defect and refuses
+ * to draw, after one breakdown reached 129 per cent. The counts are exact; a percentage
+ * would not be, so the panel shows the count and the heading explains the overlap.
  *
- * **A zero is drawn, not dropped.** A species with nothing in test gets no test segment
- * and a title saying zero, which is what makes the gap visible rather than invisible.
- *
- * **Folded after eight, the way the build flow folds after five**, because a breakdown
- * that is fine with four species and unreadable with thirty is not finished. The fold
- * sums the rest rather than hiding them, and says how many it is holding.
+ * **A zero is drawn by its absence.** A species with nothing in test gets no test segment
+ * and says so in its tooltip, which is what makes the gap visible rather than a hairline
+ * that reads as a very small amount.
  *
  * @param {Object[]} rows - `{species_id, comname, split, observations, images}`.
- * @param {boolean} all - Show every species rather than the first {@link SPECIES_SHOWN}.
+ * @param {boolean} all - Show every species rather than the largest {@link SPECIES_SHOWN}.
  * @returns {string}
  */
 function speciesSplitTable(rows, all) {
@@ -6635,11 +6643,21 @@ function speciesSplitTable(rows, all) {
   const shown = all ? sorted : sorted.slice(0, SPECIES_SHOWN);
   const rest = all ? [] : sorted.slice(SPECIES_SHOWN);
 
-  /* The longest bar, over every species rather than the shown ones, so folding the tail
-     away does not silently rescale the rows that stayed. */
-  const widest = sorted.reduce((most, entry) => Math.max(most, entry.total), 0);
+  /* One row standing for the rest, with its split counts summed -- not a count of species
+     with the numbers thrown away, which would leave the panel unable to say where they
+     went. Built before the scale is taken, so folding cannot make the longest bar vanish
+     and silently rescale the rows that stayed. */
+  const folded = rest.length
+    ? [rest.reduce((sum, entry) => {
+      for (const split of splits) sum.counts[split] = (sum.counts[split] || 0) + (entry.counts[split] || 0);
+      sum.total += entry.total;
 
-  if (!widest) return '';
+      return sum;
+    }, { name: `Other (${rest.length} ${rest.length === 1 ? 'species' : 'species'})`, total: 0, counts: {} })]
+    : [];
+
+  const drawn = [...shown, ...folded];
+  const widest = Math.max(...drawn.map((entry) => entry.total), 1);
 
   /* The class on each segment is what colours it, from the same three tokens the split
      bar above uses; an unexpected split name takes the neutral one rather than no class,
@@ -6647,61 +6665,50 @@ function speciesSplitTable(rows, all) {
   const tone = { train: 'tr', validation: 'va', val: 'va', eval: 'va', test: 'te' };
   const count = (n) => Number(n || 0).toLocaleString('en-US');
 
-  const bar = (entry) => {
-    const said = splits.map((split) => `${split} ${count(entry.counts[split])}`).join(', ');
+  /* Every split named on every row, zeros included. It is the only place a reader can see
+     that a species has nothing in test, since a zero segment is not drawn. */
+  const said = (entry) => splits.map((split) => `${split} ${count(entry.counts[split])}`).join(', ');
 
-    /* Each segment is a share of the widest species, so the three together are this
-       species' own length. A zero contributes nothing and is left out of the markup
-       rather than drawn as a hairline, which would read as a very small amount. */
+  const body = drawn.map((entry) => {
     const segments = splits.map((split) => {
       const n = Number(entry.counts[split]) || 0;
 
-      return n ? `<i class="${tone[split] || 'tr'}" style="width:${(n / widest) * 100}%"></i>` : '';
+      return n ? `<i class="${tone[split] || 'tr'}" style="width:${((n / widest) * 100).toFixed(1)}%"></i>` : '';
     }).join('');
 
-    return `<span class="sbar" title="${escapeHtml(`${entry.name}: ${said}`)}">${segments}</span>`;
-  };
-
-  const row = (entry, className) => `<li${className ? ` class="${className}"` : ''}>`
-    + `<span class="sn">${escapeHtml(entry.name)}</span>`
-    + bar(entry)
-    + `<span class="sv">${count(entry.total)}</span></li>`;
-
-  const body = shown.map((entry) => row(entry)).join('');
-
-  /* One row standing for the rest, with its split counts summed -- not a count of species
-     with the numbers thrown away, which would leave the panel unable to say where they
-     went. Its bar is drawn on the same scale, so it can be longer than any single row. */
-  const folded = rest.length
-    ? row(rest.reduce((sum, entry) => {
-      for (const split of splits) sum.counts[split] = (sum.counts[split] || 0) + (entry.counts[split] || 0);
-      sum.total += entry.total;
-
-      return sum;
-    }, { name: `Other (${rest.length} species)`, total: 0, counts: {} }), 'more')
-    : '';
+    return `<span class="k" title="${escapeHtml(`${entry.name}: ${said(entry)}`)}">${escapeHtml(entry.name)}</span>`
+      + `<span class="b">${segments}</span>`
+      + `<span class="v">${count(entry.total)}</span>`;
+  }).join('');
 
   const toggle = (rest.length || all)
-    ? `<button class="linkish" type="button" data-species-split-toggle>${all ? 'Show fewer' : `Show all ${sorted.length}`}</button>`
+    ? `<button class="more" type="button" data-species-split-toggle aria-expanded="${all}"`
+      + ` title="${all
+        ? `Show the largest ${SPECIES_SHOWN} species instead of every one`
+        : 'Show every species in the dataset instead of the largest few'}">`
+      + `${all ? `Largest ${SPECIES_SHOWN}` : 'All species'} `
+      + '<svg class="ico sm"><use href="#i-arrow"/></svg></button>'
     : '';
 
-  /* The legend names the three shades once. Repeating the split name on every row would
-     be thirty labels for three facts, and the bar above this one has already taught the
-     reader which colour is which -- this is the reminder, not the lesson. */
-  const key = splits
-    .map((split) => `<li><i class="${tone[split]}"></i>${split}</li>`)
-    .join('');
+  /* **The explanations are hover text, not body text.** *"i dont' know why we have this
+     text"* -- two paragraphs under the bars, which is the correction he had already made
+     once on this screen, when the panel's other explanations became tooltips on the
+     controls they described. The facts survive; the paragraphs do not. */
+  const why = byImages
+    ? 'Images in each split holding this species. A frame holding two species counts for '
+      + 'both, so these add up to more than the splits above.'
+    : 'Observations, not images: no archive could be counted for this dataset, so these '
+      + 'are not the unit the splits above are in.';
 
   /* The toggle lives inside this element, because redrawing replaces the element whole
-     -- a button outside it would keep saying "Show all" after everything was shown. */
+     -- a button outside it would keep saying "All" after everything was shown. */
+  /* **No key of its own.** Drawn, it was the third legend on one panel for the same
+     three colours: the split bar's own legend sits directly above it naming train,
+     validation and test with these very swatches. The shades are already taught; each
+     row's tooltip gives its three numbers. */
   return '<div class="speciessplit">'
-    + `<h5>By species <span>${unit}</span></h5>`
-    + `<ul class="skey">${key}</ul>`
-    + `<ol>${body}${folded}</ol>`
-    + toggle
-    + `<p class="hint">${byImages
-      ? 'A frame holding two species counts for both, so these add up to more than the splits above.'
-      : 'The archive could not be counted, so these are observations rather than the images the splits above are in.'}</p>`
+    + `<h5>By species <span class="faint" title="${escapeHtml(why)}">(largest first, ${unit})</span>${toggle}</h5>`
+    + `<div class="dist split">${body}</div>`
     + '</div>';
 }
 

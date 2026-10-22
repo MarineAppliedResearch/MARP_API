@@ -103,13 +103,34 @@ async function openComposition(speciesSplits, t) {
 }
 
 /**
+ * The panel's rows, as `.dist` lays them out.
+ *
+ * `.dist` is a grid of loose spans rather than nested rows -- label, bar, count, three
+ * cells per species -- so a "row" has to be reassembled from them. Reading the three
+ * together is what the assertions want, and doing it here keeps them about the drawing.
+ *
+ * @param {Object} panel - The `.speciessplit` element.
+ * @returns {Array<{name: string, bar: Object, total: string}>} In drawn order.
+ */
+function rowsOf(panel) {
+    const cells = [...panel.querySelectorAll('.dist > *')];
+    const out = [];
+
+    for (let i = 0; i < cells.length; i += 3) {
+        out.push({ name: cells[i].textContent, bar: cells[i + 1], total: cells[i + 2].textContent });
+    }
+
+    return out;
+}
+
+/**
  * The widths one row's segments were drawn at, by shade.
  *
- * @param {Object} row - An `li` of the panel.
+ * @param {Object} row - From {@link rowsOf}.
  * @returns {Object<string, number>} Class to percentage, rounded to a tenth.
  */
 function widths(row) {
-    return Object.fromEntries([...row.querySelectorAll('.sbar i')].map((segment) => [
+    return Object.fromEntries([...row.bar.querySelectorAll('i')].map((segment) => [
         segment.className,
         Math.round(parseFloat(segment.style.width) * 10) / 10,
     ]));
@@ -124,10 +145,10 @@ test('a species bar is as long as its image count, against the commonest species
         ...species(2, 'Anemone', { train: [14, 150], validation: [4, 30], test: [2, 20] }),
     ], t);
 
-    const rows = [...panel.querySelectorAll('ol li')];
+    const rows = rowsOf(panel);
 
     assert.equal(rows.length, 2, 'one row per species');
-    assert.equal(rows[0].querySelector('.sn').textContent, 'Cucumber',
+    assert.equal(rows[0].name, 'Cucumber',
         'the commonest species sorts first, so the longest bar is the top one');
 
     const first = widths(rows[0]);
@@ -153,7 +174,7 @@ test('each split gets its own shade, and a split with nothing gets none', async 
         ...species(2, 'Rare star', { train: [1, 40] }),
     ], t);
 
-    const rows = [...panel.querySelectorAll('ol li')];
+    const rows = rowsOf(panel);
 
     assert.deepEqual(Object.keys(widths(rows[0])), ['tr', 'va', 'te'],
         'train, validation and test each get their own shade, in that order');
@@ -167,6 +188,12 @@ test('each split gets its own shade, and a split with nothing gets none', async 
 
     assert.deepEqual(above, ['tr', 'va', 'te'],
         'the split bar above uses these same three classes, which is what keeps the shades identical');
+
+    /* **It is the build flow's Class breakdown component, not a second one.** *"kind of
+       like these bars"* -- reusing `.dist` is what makes the two read as one family, and
+       a copy that drifted would look right on the day it was written. */
+    assert.ok(panel.querySelector('.dist.split'),
+        'the panel is drawn with .dist, the same component the Class breakdown uses');
 });
 
 test('the bars are drawn in images and the panel says so', async (t) => {
@@ -177,13 +204,16 @@ test('the bars are drawn in images and the panel says so', async (t) => {
 
     assert.match(panel.querySelector('h5').textContent, /images/,
         'the heading names the unit, because the lengths are compared without reading it');
-    assert.equal(panel.querySelector('ol li .sv').textContent, '360',
+    assert.equal(rowsOf(panel)[0].total, '360',
         'the total beside the bar is images, matching the bar it sits next to');
 
-    /* The species bars sum to more than the splits above whenever a frame holds two
-       animals, so the panel has to say so rather than leave a reader to find it. */
-    assert.match(panel.querySelector('.hint').textContent, /counts for both/,
-        'the panel explains why these do not add up to the splits above');
+    /* **The explanation is hover text, not a paragraph.** *"i dont' know why we have this
+       text"* -- so the fact has to survive somewhere a reader can reach it, and a
+       deleted paragraph and a tooltip look identical to every other check. */
+    assert.match(panel.querySelector('h5 .faint').title, /counts for both/,
+        'why these do not add up to the splits above hangs off the unit that states them');
+    assert.equal(panel.querySelector('.hint'), null,
+        'and it is no longer a paragraph under the bars');
 });
 
 test('falls back to observations, and says so, when no images were recorded', async (t) => {
@@ -195,12 +225,12 @@ test('falls back to observations, and says so, when no images were recorded', as
         ...species(2, 'Anemone', { train: [10, null] }),
     ], t);
 
-    const rows = [...panel.querySelectorAll('ol li')];
+    const rows = rowsOf(panel);
 
     assert.match(panel.querySelector('h5').textContent, /observations/,
         'the heading changes with the unit rather than the bar quietly meaning something else');
-    assert.match(panel.querySelector('.hint').textContent, /could not be counted/,
-        'and the hint says these are not the images the splits above are in');
+    assert.match(panel.querySelector('h5 .faint').title, /no archive could be counted/,
+        'and hovering the unit says why it changed, without a paragraph of apology');
 
     assert.deepEqual(widths(rows[1]), { tr: 33.3 },
         '10 observations against 30 is a third of the track');
