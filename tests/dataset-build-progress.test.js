@@ -1792,85 +1792,45 @@ describe('GET /api/v2/dataset/builds', () => {
     });
 
     /**
-     * Images per split, counted out of the archive.
+     * Images per split, recorded by the build.
      *
      * Isaac asked the Composition panel for three numbers per split -- percentage,
-     * observations, images -- and only the first two were obtainable.
+     * observations, images -- and the third had nowhere to come from.
      * `dataset_observations` records which split an observation went to and nothing about
-     * how many frames it became: one observation is a span, and 164 of them became 15,020
-     * images in the first large build.
+     * how many frames it became: one observation is a span between keyframes, and 164 of
+     * them became 15,020 images in the first large build.
      *
-     * **Counted rather than recorded, deliberately.** The runner knows what it believed it
-     * wrote; the archive is what a training run will actually read. A build that lost
-     * frames to a truncated video shows up here and would not show up in a number saved
-     * beside it. It also answers for every dataset built before this existed, with no
-     * backfill and no change to the build service.
+     * **It shipped counting the archive and then stopped.** Walking the tar is honest --
+     * it is what a training run reads -- but Isaac's objection settled it: *"i'd rather
+     * not have to count the images in each archive everytime we have to load the thing."*
+     * The archive is immutable, so the number cannot change after the build, and
+     * re-deriving a constant on every panel open is a read nobody needs to pay for. The
+     * walk survives in `scripts/backfill-split-images.js`, which does it once.
      */
-    describe('images per split on GET /api/v2/dataset/:id/composition', () => {
-        const fs = require('fs');
-        const os = require('os');
-        const nodePath = require('path');
-        const { execFileSync } = require('child_process');
-        const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
+    describe('images per split', () => {
 
-        /** Archives written into dataset storage by this block. */
-        const written = [];
+        /** Writes a recorded count, the way a finished build does. */
+        async function recordSplit(datasetId, split, images) {
+            await db.sequelize.query(
+                `INSERT INTO dataset_splits (dataset_id, split, images, created_at, updated_at)
+                 VALUES (:datasetId, :split, :images, NOW(), NOW())`,
+                { replacements: { datasetId, split, images } }
+            );
+        }
 
-        /**
-         * A dataset whose membership and whose archive disagree about proportion, on
-         * purpose: the two counts are different quantities and a test that used the same
-         * shape for both could not tell which one the screen is reading.
-         *
-         * @param {Object} shape - `{split: {observations, images}}`.
-         * @returns {Promise<number>} The dataset id.
-         */
-        async function seedSplit(shape) {
-            const staging = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'jest-split-'));
-            const directories = { train: 'train', eval: 'eval', validation: 'eval', test: 'test' };
-
-            for (const [split, counts] of Object.entries(shape)) {
-                const directory = directories[split];
-
-                fs.mkdirSync(nodePath.join(staging, directory, 'images'), { recursive: true });
-
-                for (let i = 0; i < counts.images; i++) {
-                    fs.writeFileSync(
-                        nodePath.join(staging, directory, 'images', `${split}_${i}.jpg`),
-                        `frame ${i}`
-                    );
-                }
-            }
-
-            fs.mkdirSync(DATASET_DIRECTORY, { recursive: true });
-
-            const file = `jest-split-${stamp}-${written.length + 1}.tar`;
-
-            execFileSync('tar', ['-cf', file, '-C', staging, ...new Set(Object.keys(shape).map((s) => directories[s]))],
-                { cwd: DATASET_DIRECTORY, stdio: 'pipe' });
-
-            written.push(nodePath.join(DATASET_DIRECTORY, file));
-            fs.rmSync(staging, { recursive: true, force: true });
-
+        /** A dataset with membership in the splits named, and nothing recorded yet. */
+        async function seedMembership(label, counts) {
             const [dataset] = await db.sequelize.query(
-                `INSERT INTO datasets (name, status, source, archive_path, archive_sha256,
-                                       archive_bytes, created_at, updated_at)
-                 VALUES (:name, 'ready', 'ml-dashboard', :path, :sha, 1, NOW(), NOW())
+                `INSERT INTO datasets (name, status, source, created_at, updated_at)
+                 VALUES (:name, 'ready', 'ml-dashboard', NOW(), NOW())
                  RETURNING id`,
-                {
-                    replacements: {
-                        name: `jest-split-${stamp}-${written.length}`,
-                        path: `datasets/${file}`,
-                        // Distinct per fixture: the image counts are cached on this hash.
-                        sha: `${stamp}${written.length}a`.padStart(64, 'e').slice(-64),
-                    },
-                    type: QueryTypes.SELECT,
-                }
+                { replacements: { name: `jest-splits-${stamp}-${label}` }, type: QueryTypes.SELECT }
             );
 
             made.datasets.push(dataset.id);
 
-            for (const [split, counts] of Object.entries(shape)) {
-                for (let i = 0; i < counts.observations; i++) {
+            for (const [split, howMany] of Object.entries(counts)) {
+                for (let i = 0; i < howMany; i++) {
                     const [observation] = await db.sequelize.query(
                         `INSERT INTO observations ("obsID", "createdAt", "updatedAt")
                          VALUES (0, NOW(), NOW())
@@ -1899,21 +1859,17 @@ describe('GET /api/v2/dataset/builds', () => {
             return dataset.id;
         }
 
-        afterAll(() => {
-            for (const file of written) fs.rmSync(file, { force: true });
-        });
-
         /**
-         * **The two counts are different quantities, and this is the test that says so.**
+         * **The two counts are different quantities and this is the test that says so.**
          * Two observations in train against six images, one in eval against two: the
          * observation split is 2:1 and the image split is 3:1. A panel reading the wrong
-         * one would still look plausible, which is exactly why they are made to differ.
+         * one would still look plausible, which is why they are made to differ.
          */
-        it('counts the images in each split out of the archive', async () => {
-            const datasetId = await seedSplit({
-                train: { observations: 2, images: 6 },
-                eval: { observations: 1, images: 2 },
-            });
+        it('serves the recorded image count beside the live observation count', async () => {
+            const datasetId = await seedMembership('both', { train: 2, eval: 1 });
+
+            await recordSplit(datasetId, 'train', 6);
+            await recordSplit(datasetId, 'eval', 2);
 
             const res = await global.api.get(`/api/v2/dataset/${datasetId}/composition`);
 
@@ -1921,87 +1877,91 @@ describe('GET /api/v2/dataset/builds', () => {
 
             const bySplit = Object.fromEntries(res.body.splits.map((s) => [s.split, s]));
 
-            expect(bySplit.train.observations).toBe(2);
-            expect(bySplit.train.images).toBe(6);
-            expect(bySplit.eval.observations).toBe(1);
-            expect(bySplit.eval.images).toBe(2);
+            expect(bySplit.train).toMatchObject({ observations: 2, images: 6 });
+            expect(bySplit.eval).toMatchObject({ observations: 1, images: 2 });
         });
 
         /**
-         * `validation` is written into `eval/` by the builder, so its images are found
-         * under that directory rather than one named for the split.
+         * **Null, not zero, and the distinction is the whole reason the column is
+         * nullable.** Every dataset built before `dataset_splits` existed is in this
+         * state. Zero images in a split is a fact; not knowing is a different fact, and a
+         * panel drawing the second as the first would state a measurement nobody took.
          */
-        it('finds a validation split\'s images in the eval directory', async () => {
-            const datasetId = await seedSplit({
-                train: { observations: 1, images: 4 },
-                validation: { observations: 1, images: 1 },
-            });
+        it('answers null for a split whose count was never recorded', async () => {
+            const datasetId = await seedMembership('unrecorded', { train: 2 });
 
             const res = await global.api.get(`/api/v2/dataset/${datasetId}/composition`);
-            const bySplit = Object.fromEntries(res.body.splits.map((s) => [s.split, s]));
-
-            expect(bySplit.validation.images).toBe(1);
-        });
-
-        /**
-         * **Absent rather than invented when two splits share a directory.** `eval` and
-         * `validation` both land in `eval/`, so a dataset carrying both has no way to say
-         * which of them an image belongs to. Splitting the count between the rows would be
-         * a number nobody measured, in the place a reader looks for one.
-         */
-        it('leaves images out when two splits share one archive directory', async () => {
-            const datasetId = await seedSplit({
-                eval: { observations: 1, images: 2 },
-                validation: { observations: 1, images: 1 },
-            });
-
-            const res = await global.api.get(`/api/v2/dataset/${datasetId}/composition`);
-
-            for (const split of res.body.splits) {
-                expect(split.images).toBeUndefined();
-            }
-
-            // The observations are still answered; only the ambiguous number is withheld.
-            expect(res.body.splits.map((s) => s.observations).sort()).toEqual([1, 1]);
-        });
-
-        /**
-         * A dataset with membership and no archive -- a legacy import, or a build that
-         * failed at packaging -- still answers. The splits and the classes are the answer
-         * either way, and the screen says the percentages are of observations instead.
-         */
-        it('still answers for a dataset with no archive to count', async () => {
-            const [dataset] = await db.sequelize.query(
-                `INSERT INTO datasets (name, status, source, created_at, updated_at)
-                 VALUES (:name, 'ready', 'legacy import', NOW(), NOW())
-                 RETURNING id`,
-                { replacements: { name: `jest-split-none-${stamp}` }, type: QueryTypes.SELECT }
-            );
-
-            made.datasets.push(dataset.id);
-
-            const [observation] = await db.sequelize.query(
-                `INSERT INTO observations ("obsID", "createdAt", "updatedAt")
-                 VALUES (0, NOW(), NOW())
-                 RETURNING observation_id`,
-                { type: QueryTypes.SELECT }
-            );
-
-            made.observations.push(observation.observation_id);
-
-            await db.sequelize.query(
-                `INSERT INTO dataset_observations
-                     (dataset_id, observation_id, inclusion_type, selection_method, created_at, updated_at)
-                 VALUES (:dataset, :observation, 'train', 'jest', NOW(), NOW())`,
-                { replacements: { dataset: dataset.id, observation: observation.observation_id } }
-            );
-
-            const res = await global.api.get(`/api/v2/dataset/${dataset.id}/composition`);
 
             expect(res.status).toBe(200);
             expect(res.body.splits).toHaveLength(1);
-            expect(res.body.splits[0].observations).toBe(1);
-            expect(res.body.splits[0].images).toBeUndefined();
+            expect(res.body.splits[0].observations).toBe(2);
+            expect(res.body.splits[0].images).toBeNull();
+        });
+
+        /** A split with membership still appears even with nothing recorded against it. */
+        it('does not lose a split to the join when only some are recorded', async () => {
+            const datasetId = await seedMembership('partial', { train: 2, test: 1 });
+
+            await recordSplit(datasetId, 'train', 9);
+
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/composition`);
+            const bySplit = Object.fromEntries(res.body.splits.map((s) => [s.split, s]));
+
+            expect(Object.keys(bySplit).sort()).toEqual(['test', 'train']);
+            expect(bySplit.train.images).toBe(9);
+            expect(bySplit.test.images).toBeNull();
+        });
+
+        /**
+         * A retry replaces what the first attempt recorded rather than adding to it --
+         * the same rule the membership and the vocabulary follow in `recordBuild`, and
+         * the primary key would refuse the second insert anyway.
+         */
+        it('replaces the counts when a build records them again', async () => {
+            const datasetId = await seedMembership('rebuilt', { train: 1 });
+
+            await recordSplit(datasetId, 'train', 5);
+
+            await buildRepository.recordBuild({
+                jobId: null,
+                attemptId: null,
+                datasetId,
+                members: [],
+                classes: [],
+                archive: { path: null, sha256: null, bytes: null },
+                frames: 11,
+                observations: 0,
+                splitImages: new Map([['train', 11]]),
+            });
+
+            const rows = await db.sequelize.query(
+                'SELECT split, images FROM dataset_splits WHERE dataset_id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(rows).toEqual([{ split: 'train', images: 11 }]);
+        });
+
+        /**
+         * The rows go with the dataset, like its membership and its vocabulary. Delete
+         * relies on it: a child without `ON DELETE CASCADE` would refuse the delete and
+         * turn a working control into a 409 nobody could explain.
+         */
+        it('goes with the dataset when it is deleted', async () => {
+            const datasetId = await seedMembership('cascaded', { train: 1 });
+
+            await recordSplit(datasetId, 'train', 4);
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(200);
+
+            const rows = await db.sequelize.query(
+                'SELECT split FROM dataset_splits WHERE dataset_id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(rows).toEqual([]);
         });
     });
 

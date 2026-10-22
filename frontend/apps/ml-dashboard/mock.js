@@ -5568,7 +5568,11 @@ function splitBar(splits) {
 
      When there is no archive to count, it falls back to observations and the label
      changes with it, rather than the same bar quietly meaning something else. */
-  const byImages = rows.every((s) => Number.isFinite(Number(s.images)));
+  /* `Number(null)` is 0, not NaN, so a recorded-nothing split would have passed a bare
+     `Number.isFinite` check and been drawn as zero per cent -- which is a measurement,
+     and the wrong one. Null and undefined are both "not known" and are excluded first. */
+  const known = (s) => s.images !== null && s.images !== undefined && Number.isFinite(Number(s.images));
+  const byImages = rows.every(known);
   const unit = byImages ? 'images' : 'observations';
   const amount = (s) => Number(byImages ? s.images : s.observations);
   const total = rows.reduce((sum, s) => sum + amount(s), 0);
@@ -5592,7 +5596,7 @@ function splitBar(splits) {
      two units. The percentage carries its own unit in the caption below. */
   const legend = rows.map((s) => {
     const share = Math.round(amount(s) / total * 100);
-    const images = Number.isFinite(Number(s.images))
+    const images = known(s)
       ? `<b>${Number(s.images).toLocaleString()}</b> images`
       : '';
 

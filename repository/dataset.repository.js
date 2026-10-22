@@ -81,12 +81,28 @@ class DatasetRepository {
      * @throws {Error} Re-throws any database failure.
      */
     async getDatasetComposition(datasetId) {
+        /* **Observations counted live, images read from what the build recorded**, and
+           the two are deliberately different sources. `dataset_observations` is the
+           record of membership and counting it is the truth about what is in the dataset
+           now -- its cascade removes a row when an observation is deleted, and seeing
+           that happen is worth more than a frozen number. The image count cannot be
+           derived from anything here at all: one observation is a span between keyframes
+           and becomes many frames, so `dataset_splits.images` is what the build wrote,
+           and null there means not known rather than none.
+
+           A `LEFT JOIN` so a split with membership and no recorded count still appears,
+           which is every dataset built before `dataset_splits` existed. */
         const splits = await this.db.sequelize.query(
-            `SELECT inclusion_type AS split, count(*)::int AS observations
-               FROM dataset_observations
-              WHERE dataset_id = :datasetId
-              GROUP BY inclusion_type
-              ORDER BY inclusion_type`,
+            `SELECT o.inclusion_type AS split,
+                    count(*)::int    AS observations,
+                    max(s.images)    AS images
+               FROM dataset_observations o
+               LEFT JOIN dataset_splits s
+                      ON s.dataset_id = o.dataset_id
+                     AND s.split = o.inclusion_type
+              WHERE o.dataset_id = :datasetId
+              GROUP BY o.inclusion_type
+              ORDER BY o.inclusion_type`,
             { replacements: { datasetId }, type: QueryTypes.SELECT }
         );
 

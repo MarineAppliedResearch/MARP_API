@@ -540,6 +540,9 @@ async function runOne() {
         let missing = 0;
         let at = 0;
 
+        /** Images written, per split, so the Composition panel need not count them later. */
+        const perSplit = new Map();
+
         const total_videos = videos.size;
 
         for (const entry of videos.values()) {
@@ -593,6 +596,14 @@ async function runOne() {
             done += cut.written;
             missing += cut.missing;
 
+            /* **Per split, from what was actually written.** `cut.written` counts files
+               the extractor produced and this pass then wrote, so frames lost to a
+               truncated video are already excluded -- which is the number the panel
+               should show, not what the plan intended. Attributed by the entry's own
+               split rather than by the archive directory, because `validation` and `eval`
+               share a directory and the two are different splits. */
+            perSplit.set(entry.split, (perSplit.get(entry.split) || 0) + cut.written);
+
             if (cut.stopped) {
                 await buildRepository.failBuild({
                     jobId: job.id,
@@ -643,6 +654,7 @@ async function runOne() {
                count is the genuinely new fact and gets the new column. */
             frames: done,
             observations: members.length,
+            splitImages: perSplit,
         });
 
         logger.info(`Dataset ${datasetId} built: ${done} images, ${classes.length} classes, `

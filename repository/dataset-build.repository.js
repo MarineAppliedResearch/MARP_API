@@ -626,7 +626,7 @@ async function settleCancelledBuilds() {
  * @returns {Promise<void>}
  * @throws {Error} Re-throws any database failure.
  */
-async function recordBuild({ jobId, attemptId, datasetId, members, classes, archive, frames, observations }) {
+async function recordBuild({ jobId, attemptId, datasetId, members, classes, archive, frames, observations, splitImages }) {
     const transaction = await db.sequelize.transaction();
 
     try {
@@ -713,6 +713,26 @@ async function recordBuild({ jobId, attemptId, datasetId, members, classes, arch
                 transaction,
             }
         );
+
+        /* **Per-split image counts, in the same transaction as everything else.** They
+           are recorded rather than counted out of the archive on every read: the archive
+           is immutable, so the number cannot change after this, and re-deriving a
+           constant on each panel open is a read nobody needs to pay for.
+
+           Replaced rather than added to, the way the membership above is, so a second
+           attempt at the same dataset does not double them. */
+        await db.sequelize.query(
+            'DELETE FROM dataset_splits WHERE dataset_id = :datasetId',
+            { replacements: { datasetId }, transaction }
+        );
+
+        for (const [split, images] of (splitImages || new Map())) {
+            await db.sequelize.query(
+                `INSERT INTO dataset_splits (dataset_id, split, images, created_at, updated_at)
+                 VALUES (:datasetId, :split, :images, NOW(), NOW())`,
+                { replacements: { datasetId, split, images }, transaction }
+            );
+        }
 
         await db.sequelize.query(
             `UPDATE gpu_job_attempts SET state = 'succeeded', finished_at = NOW() WHERE id = :attemptId`,
