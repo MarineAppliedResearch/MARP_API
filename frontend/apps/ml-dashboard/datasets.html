@@ -72,9 +72,14 @@
               </div>
               <div class="inference-flow-foot">
                 <div class="inference-chart-key result-legend">
-                  <button type="button" class="throughput" data-dataset-highlight="rate">Frames extracted</button>
-                  <button type="button" class="backlog" data-dataset-highlight="waiting">Builds waiting</button>
-                  <button type="button" class="done" data-dataset-highlight="finished">Builds completed</button>
+                  <!-- Which axis each series is read against. The two scales differ by
+                       orders of magnitude - frames come in thousands, builds in single
+                       figures - so a reader comparing the heights of two lines would be
+                       comparing nothing. The titles say so rather than the labels,
+                       because the labels are what the chart calls the series. -->
+                  <button type="button" class="throughput" data-dataset-highlight="rate" title="Frames extracted, read against the left axis">Frames extracted</button>
+                  <button type="button" class="backlog" data-dataset-highlight="waiting" title="Builds waiting, read against the right axis">Builds waiting</button>
+                  <button type="button" class="done" data-dataset-highlight="finished" title="Builds completed, read against the right axis">Builds completed</button>
                 </div>
                 <div class="inference-current" aria-label="Current dataset build activity">
                   <span><b data-dataset-current="rate"></b> frames</span>

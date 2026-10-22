@@ -568,8 +568,15 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   border: 1px solid transparent; border-radius: 4px; background: none;
   color: inherit; font: inherit; cursor: pointer;
 }
-.result-legend button::before { content: ""; width: 11px; height: 2px; flex: none; background: var(--line); }
-.ops-activity .result-legend button::before { background: var(--key); }
+/* **The swatch reads whichever variable the chart's own classes set.** It read `--line`
+   alone, which the training and model legends define -- but the inference family defines
+   `--key` instead, so on Datasets and Inference the swatch had no colour at all and three
+   named series sat behind three invisible bars. Isaac: *"i can't tell which lines in the
+   graph are what."* The History chart had the same defect and was patched with an
+   override of its own; the fallback makes that unnecessary and fixes the two screens
+   nobody had got to. The colours are not restated here -- `--key` is set to the same
+   token the line is stroked with, a few rules below. */
+.result-legend button::before { content: ""; width: 11px; height: 2px; flex: none; background: var(--line, var(--key)); }
 .result-legend button:hover { color: var(--white); background: rgba(9, 30, 51, .8); }
 .result-legend button:focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 1px; }
 .result-legend button[aria-pressed="true"] { color: var(--white); border-color: var(--hairline-2); background: rgba(9, 30, 51, .95); }
