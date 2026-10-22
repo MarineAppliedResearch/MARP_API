@@ -1849,8 +1849,28 @@ async function renderInferenceScreen() {
    that -- the training dataset, key metrics and how many workers hold a model
    -- and none of the three is anywhere in MARP. Gap 28. */
 
-/** The registry does not carry this. Distinct from "not measured yet". */
-const NOT_IN_REGISTRY = '<span class="dash" title="Not carried by ml_models: the dataset link lives on a training run, which cannot be listed, and nothing records metrics, cache placement or a preferred model (gap 28)">&mdash;</span>';
+/**
+ * The registry does not carry this, and nothing else does either.
+ *
+ * **Narrowed to what is still true.** It used to say the dataset link "cannot be listed"
+ * and that nothing records metrics; #260 added the collection read for training runs, and
+ * `metrics_summary` has recorded precision, recall, mAP and fitness all along. So the
+ * dataset is drawn now and this covers the two that remain: scores nothing serves yet,
+ * and cache placement nothing records at all. Isaac asked for both columns to stay --
+ * *"later maybe we will keep those scores"* -- so they wait rather than disappear.
+ */
+const NOT_IN_REGISTRY = '<span class="dash" title="Nothing serves this yet: metrics_summary records precision, recall and mAP but no route lists them by run, and no worker reports which models it holds">&mdash;</span>';
+
+/**
+ * A model MARP has no training run for.
+ *
+ * **The same dash, and that is the requirement.** Some models predate the registry
+ * keeping runs at all, and an honest "we have no run for this" has to look identical to
+ * the columns beside it rather than becoming a third kind of empty -- a blank, a zero or
+ * a "None" would all read as a different sort of fact. Only the tooltip differs, because
+ * the reason differs and a reader who asks deserves the real one.
+ */
+const NO_TRAINING_RUN = '<span class="dash" title="No training run recorded for this model, so there is nothing to say what it learned from">&mdash;</span>';
 
 /** MARP's `ml_models.status`, in the design's own state words. @type {Object} */
 const MODEL_STATE = {
@@ -1862,7 +1882,7 @@ const MODEL_STATE = {
 
 /** What the Models screen is asking for. The route takes no parameters. */
 const modelsQuery = {
-  task: '', status: '', base: '', search: '',
+  task: '', status: '', base: '', dataset: '', search: '',
   sort: { key: 'hupd', dir: 'descending' },
   page: 1, perPage: 8,
 };
@@ -1874,11 +1894,21 @@ const MODELS_SORT_KEYS = {
   hver: (v) => v.version,
   hstatus: (v) => ['training', 'draft', 'trained', 'archived'].indexOf(v.model.status),
   hbase: (v) => (v.model.architecture_version || '').toLowerCase(),
+  /* **It claimed to sort and did not.** Three headers here are marked `sortable` with no
+     key, so the loop that wires them skips each one -- `if (!key) continue` -- and the
+     click does nothing. This is the one that now has a value to order by; `hmodel` and
+     `hcache` still do not, and still say they sort. Named in the report rather than
+     quietly unmarked, because that is a decision about two columns Isaac asked to keep.
+     Empty sorts together rather than scattering. */
+  hdset: (v) => (v.trainedOn ? v.trainedOn.name.toLowerCase() : ''),
   hupd: (v) => v.model.updated_at,
 };
 
 /** The registry, as fetched. */
 let modelsRegistry = null;
+
+/** What each model trained on, by model id. Empty until the registry has loaded. */
+let modelsTrainedOn = new Map();
 
 /**
  * Which generation a model is, by walking `parent_model_id`.
@@ -1909,6 +1939,40 @@ function modelGeneration(model, byId) {
 }
 
 /**
+ * Which dataset each model learned from, by model id.
+ *
+ * **The newest run wins, and the route already answers in that order.** A model can have
+ * several runs -- a retry, a rerun on a wider dataset -- and the one worth showing beside
+ * it is the one that produced what is in the registry now. `created_at DESC, id DESC` is
+ * the repository's own ordering, so first-seen is newest and no sort is repeated here.
+ *
+ * A run with a null `dataset_id` is a run that trained on something outside MARP. That is
+ * not the same as having no run, but it reads the same in a single cell, so both take the
+ * dash and the tooltip carries the difference.
+ *
+ * @param {Object[]} runs - From `GET /training_run`, newest first.
+ * @param {Object[]} datasets - From `GET /dataset`, for the names.
+ * @returns {Map<number, Object>} `{id, name}` per model id.
+ */
+function trainingDatasetByModel(runs, datasets) {
+  const names = new Map(datasets.map((set) => [set.id, set.name]));
+  const found = new Map();
+
+  for (const run of runs) {
+    if (found.has(run.model_id) || run.dataset_id == null) continue;
+
+    found.set(run.model_id, {
+      id: run.dataset_id,
+      /* A dataset the catalogue did not return -- deleted, or a read that failed -- is
+         still a real link, so it is named by its id rather than dropped. */
+      name: names.get(run.dataset_id) || `Dataset ${run.dataset_id}`,
+    });
+  }
+
+  return found;
+}
+
+/**
  * One model, reduced to what the table shows and sorts on.
  *
  * @param {Object} model - From `GET /api/v2/ml_models`.
@@ -1917,10 +1981,15 @@ function modelGeneration(model, byId) {
  */
 function modelView(model, byId) {
   const [state, label] = MODEL_STATE[model.status] || ['queued', model.status];
+  const trainedOn = modelsTrainedOn.get(model.id) || null;
+
   return {
     model, state, label,
     version: modelGeneration(model, byId),
-    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status}`.toLowerCase(),
+    trainedOn,
+    /* Searchable by what it trained on, which is how somebody looks for "every model
+       that saw the inverts dataset". */
+    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status} ${trainedOn ? trainedOn.name : ''}`.toLowerCase(),
   };
 }
 
@@ -1942,7 +2011,12 @@ function modelRows(view, byId) {
     + `<td class="hver">v${view.version}</td>`
     + `<td class="hstatus" data-sort="${MODELS_SORT_KEYS.hstatus(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
     + `<td class="hbase">${model.architecture_version || NOT_REPORTED}</td>`
-    + `<td class="hdset">${NOT_IN_REGISTRY}</td>`
+    /* Linked, because the question after "which dataset" is always "which dataset is
+       that" -- the same link a dataset build carries on the Jobs screen, landing on the
+       row rather than on a table to search. */
+    + `<td class="hdset">${view.trainedOn
+      ? `<a href="./datasets.html?dataset=${encodeURIComponent(view.trainedOn.id)}" title="The dataset this model's most recent training run learned from">${escapeHtml(view.trainedOn.name)}</a>`
+      : NO_TRAINING_RUN}</td>`
     + `<td class="hmodel">${NOT_IN_REGISTRY}</td>`
     + `<td class="hcache num">${NOT_IN_REGISTRY}</td>`
     + `<td class="hupd">${sinceText(model.updated_at)}</td>`
@@ -1996,6 +2070,7 @@ function applyModelsQuery() {
   if (modelsQuery.task) views = views.filter((v) => v.model.model_type === modelsQuery.task);
   if (modelsQuery.status) views = views.filter((v) => v.model.status === modelsQuery.status);
   if (modelsQuery.base) views = views.filter((v) => v.model.architecture_version === modelsQuery.base);
+  if (modelsQuery.dataset) views = views.filter((v) => v.trainedOn?.name === modelsQuery.dataset);
   if (modelsQuery.search) views = views.filter((v) => v.haystack.includes(modelsQuery.search));
 
   const key = MODELS_SORT_KEYS[modelsQuery.sort.key] || MODELS_SORT_KEYS.hupd;
@@ -2135,7 +2210,22 @@ async function renderModelsScreen() {
   body.innerHTML = `<tr class="tblmsg"><td class="loading" colspan="${columns}">Loading the registry&hellip;</td></tr>`;
 
   try {
-    modelsRegistry = await window.MarpApi.listModels();
+    /* **Three reads, one of which is allowed to fail.** The registry is the screen; the
+       runs and the datasets are what turn `training_runs.dataset_id` into a name. A
+       registry that drew nothing because the dataset catalogue was slow would be worse
+       than one with a dash in one column, so those two are settled rather than awaited
+       together -- `allSettled`, and an empty map is the honest fallback. */
+    const [registry, runs, datasets] = await Promise.all([
+      window.MarpApi.listModels(),
+      Promise.allSettled([window.MarpApi.listTrainingRuns(), window.MarpApi.listDatasets()]),
+    ]).then(([models, [runResult, setResult]]) => [
+      models,
+      runResult.status === 'fulfilled' ? runResult.value : [],
+      setResult.status === 'fulfilled' ? setResult.value : [],
+    ]);
+
+    modelsRegistry = registry;
+    modelsTrainedOn = trainingDatasetByModel(runs, datasets);
     fillModelsFilterOptions();
     applyModelsQuery();
   } catch (error) {
@@ -2164,10 +2254,24 @@ function fillModelsFilterOptions() {
   if (selects['Base model']) {
     selects['Base model'].innerHTML = ['<option>All base models</option>', ...bases.map((b) => `<option>${b}</option>`)].join('');
   }
+  /* **Enabled, because the reason it was disabled has gone.** It carried
+     *"the connection lives on a training run, which cannot be listed"* -- true when it
+     was written and not since #260. It is the filter for the column, so wiring one and
+     leaving the other greyed out beside it would deliver half the thing. The options are
+     the datasets models actually trained on, not the whole catalogue: a filter offering
+     eighty datasets that narrow to nothing is a filter nobody trusts twice. */
   if (selects.Dataset) {
-    selects.Dataset.innerHTML = '<option>Not linked in the registry</option>';
-    selects.Dataset.disabled = true;
-    selects.Dataset.title = 'ml_models carries no dataset link; the connection lives on a training run, which cannot be listed (gap 28)';
+    const trained = [...new Set([...modelsTrainedOn.values()].map((one) => one.name))].sort();
+
+    selects.Dataset.disabled = false;
+    selects.Dataset.title = trained.length
+      ? 'Show models whose most recent training run used one dataset'
+      : 'No model here has a training run recording the dataset it used';
+    selects.Dataset.innerHTML = trained.length
+      ? ['<option>All datasets</option>', ...trained.map((name) => `<option>${escapeHtml(name)}</option>`)].join('')
+      : '<option>No training runs recorded</option>';
+
+    if (!trained.length) selects.Dataset.disabled = true;
   }
 }
 
@@ -2192,6 +2296,11 @@ function wireModelsControls() {
   });
   selects['Base model']?.addEventListener('change', () => {
     modelsQuery.base = selects['Base model'].value.startsWith('All') ? '' : selects['Base model'].value;
+    renarrow();
+  });
+  /* It had options and no listener, so even enabled it would have done nothing. */
+  selects.Dataset?.addEventListener('change', () => {
+    modelsQuery.dataset = selects.Dataset.value.startsWith('All') ? '' : selects.Dataset.value;
     renarrow();
   });
 

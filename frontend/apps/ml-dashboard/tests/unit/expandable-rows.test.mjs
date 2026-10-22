@@ -18,65 +18,16 @@
  * screen, drawn shut, with the attribute and the panel agreeing — which is what stops
  * the next table built the same way from arriving open.
  *
- * The jsdom boot is a copy of the one in `datasets-poll.test.mjs` less the clock, which
- * this does not need. Five one-line shims duplicated is cheaper than a harness module
- * two files share; if a third screen wants one, that is when to extract it.
+ * The jsdom boot lives in `screen.mjs`, which this shares with
+ * `models-training-dataset.test.mjs`.
  *
  * @author Isaac Travers
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
 
-const APP = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-
-/**
- * Draw one screen in jsdom against answers the test controls.
- *
- * @param {string} page - The HTML file.
- * @param {Object} answers - Keyed by the `MarpApi` method that should return them.
- * @returns {Promise<Object>} The window and a closer.
- */
-async function drawScreen(page, answers) {
-  const html = readFileSync(join(APP, page), 'utf8')
-    .replace(/<script[^>]*src="[^"]*"[^>]*><\/script>/g, '');
-
-  const dom = new JSDOM(html, {
-    url: `http://localhost/apps/ml-dashboard/${page}`,
-    runScripts: 'dangerously',
-    pretendToBeVisual: true,
-  });
-
-  const { window } = dom;
-
-  window.Element.prototype.scrollIntoView = () => {};
-  window.Element.prototype.animate = () => ({ finished: Promise.resolve(), cancel() {}, finish() {} });
-  window.scrollTo = () => {};
-  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
-  window.CSS = { escape: (value) => String(value).replace(/[^\w-]/g, (c) => `\\${c}`) };
-
-  window.MarpApi = new Proxy(answers, {
-    get(target, name) {
-      if (name in target) return target[name];
-      if (typeof name !== 'string') return undefined;
-      return async () => { throw Object.assign(new Error(`no stub for ${name}`), { status: 404 }); };
-    },
-  });
-
-  const script = window.document.createElement('script');
-  script.textContent = readFileSync(join(APP, 'mock.js'), 'utf8');
-  window.document.body.appendChild(script);
-
-  /* The renders are promise chains, not timers; a few turns of the loop settles them. */
-  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
-
-  return { window, document: window.document, close: () => window.close() };
-}
+import { drawScreen } from './screen.mjs';
 
 /**
  * Assert that every expandable table on a drawn screen starts shut.

@@ -504,9 +504,10 @@
    * dashboard reads `GET /api/v2/ml_models` and `GET /api/v2/dataset`, outside
    * the `/gpu/` group entirely. Both are plain arrays and neither pages.
    *
-   * `training_run` is *not* here, and that is a fact rather than an omission:
-   * `/v2/training_run` has only a `POST`. A run can be created and never
-   * listed, so no screen can show training history from the API.
+   * `training_run` **is** listable, since #260 added the collection read. The corpus
+   * does not build runs because nothing drawn from it needs one; `listTrainingRuns`
+   * asks MARP and has no fixture, which is the honest shape for a route whose answer
+   * this layer cannot invent.
    *
    * @returns {{models: Object[], datasets: Object[]}}
    */
@@ -1132,6 +1133,30 @@
   }
 
   /**
+   * `GET /api/v2/training_run` -- every run, newest first, or one model's.
+   *
+   * **This is where a model's dataset lives.** `ml_models` carries no dataset link and
+   * never did; `training_runs.dataset_id` records what a run learned from, which is the
+   * provenance question somebody looking at the registry is actually asking. The
+   * registry reads it without a `model_id`, once, and takes the newest run per model
+   * from the order the route already answers in -- the alternative being one request per
+   * row.
+   *
+   * It is unpaged, as `findAll` with no limit always is. That is fine while runs are few
+   * and would not be if training became routine: the narrowing parameter exists, so the
+   * answer then is one call per visible row rather than a change here.
+   *
+   * **No corpus fallback**, deliberately: the generated registry has no training runs,
+   * and inventing one would draw a dataset link for a model that never trained.
+   *
+   * @param {number} [modelId] - Only runs that produced this model.
+   * @returns {Promise<Object[]>}
+   */
+  function listTrainingRuns(modelId) {
+    return request('/training_run', { query: modelId ? { model_id: modelId } : {} });
+  }
+
+  /**
    * `GET /api/v2/dataset/builds` -- how far every build still running has got.
    *
    * **The progress is on the attempt, which is why this is not on the dataset.** A
@@ -1543,6 +1568,7 @@
     listModelVersions,
     listModelSpecies,
     listDatasets,
+    listTrainingRuns,
     listDatasetBuilds,
     datasetComposition,
     datasetBuildQueue,
