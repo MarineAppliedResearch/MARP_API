@@ -518,10 +518,20 @@ async function wirePoolUtilization() {
   const root = $('[data-pool-history]');
   if (!root) return;
 
+  /* **One ladder across the dashboard**: 1h, 24h, 7d, 30d, 1y. Every chart takes a
+     contiguous four of it, so the vocabulary is shared without every chart carrying every
+     rung. Eight charts had four different vocabularies between them and no reason for any
+     of it; `5h` was the only rung that was not a round unit and `90d` sat between 30d and
+     1y on one chart alone, so both went.
+
+     **This chart stops at 30 days because its data does.** `SAMPLE_RETENTION_DAYS` is 30
+     and the pool read sweeps anything older, so a year here would be empty by
+     construction -- which is the complaint this is answering, not a way to answer it. */
   const RANGES = {
     '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
-    '5h': { hours: 5, bucket: 'minute', label: 'the last 5 hours' },
     '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+    '7d': { hours: 168, bucket: 'hour', label: 'the last 7 days' },
+    '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
   };
 
   const lines = Object.fromEntries($$('[data-pool-line]', root).map((l) => [l.dataset.poolLine, l]));
@@ -558,7 +568,7 @@ async function wirePoolUtilization() {
       b.setAttribute('aria-pressed', String(on));
     });
 
-    const { hours, bucket, label } = RANGES[next] || RANGES['5h'];
+    const { hours, bucket, label } = RANGES[next] || RANGES['24h'];
     const until = new Date();
     const span = {
       since: new Date(until.getTime() - hours * 3600e3).toISOString(),
@@ -635,7 +645,7 @@ async function wirePoolUtilization() {
   }
 
   buttons.forEach((b) => b.addEventListener('click', () => choose(b.dataset.poolRange)));
-  await choose('5h');
+  await choose('24h');
 }
 
 function batchesWithIssues(jobs) {
@@ -4279,17 +4289,20 @@ function wireJobsOverview() {
      `waiting` is reconstructed -- a job was waiting at an instant if it was
      created before it and had not finished by it. None of that was answerable
      until `finished_at` existed. */
+  /* The shared ladder; see `wirePoolUtilization`. Shortest first, which four of the eight
+     already did and the other four did not. */
   const RANGES = {
-    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
-    '5h': { hours: 5, bucket: 'minute', label: 'the last 5 hours' },
     '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
+    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+    '7d': { hours: 168, bucket: 'hour', label: 'the last 7 days' },
+    '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
   };
 
   const buttons = $$('[data-jobs-range]', root);
   const lines = Object.fromEntries($$('[data-jobs-line]', root).map((line) => [line.dataset.jobsLine, line]));
   const chart = $('.jobs-chart', root);
   const axis = $$('[data-jobs-axis]', root);
-  let range = '5h';
+  let range = '24h';
 
   /** Fit a run of values into the chart's box. */
   const pathOf = (values, max) => values.map((value, index) =>
@@ -4566,11 +4579,13 @@ function wireInferenceThroughput() {
   return drawSeriesChart({
     root,
     prefix: 'inference',
-    initial: '5h',
+    initial: '24h',
     ranges: {
+      /* The shared ladder; see `wirePoolUtilization`. */
       '1h': { since: (u) => new Date(u - 3600e3), bucket: 'minute', label: 'the last hour', empty: 'No frames processed' },
-      '5h': { since: (u) => new Date(u - 5 * 3600e3), bucket: 'minute', label: 'the last 5 hours', empty: 'No frames processed' },
       '24h': { since: (u) => new Date(u - 24 * 3600e3), bucket: 'hour', label: 'the last 24 hours', empty: 'No frames processed' },
+      '7d': { since: (u) => new Date(u - 7 * 86400e3), bucket: 'hour', label: 'the last 7 days', empty: 'No frames processed' },
+      '30d': { since: (u) => new Date(u - 30 * 86400e3), bucket: 'day', label: 'the last 30 days', empty: 'No frames processed' },
     },
     fetch: (span) => window.MarpApi.throughputSeries({ ...span, kind: 'inference' }),
     read: (answer) => {
@@ -4630,10 +4645,14 @@ function wireRegistryTrend() {
   return drawSeriesChart({
     root,
     prefix: 'ops',
-    initial: '90d',
+    initial: '1y',
     ranges: {
+      /* The shared ladder; see `wirePoolUtilization`. A model is registered rarely, so
+         this one opens on the widest rung rather than the narrowest: a 24-hour default
+         would be empty almost every day it was looked at. */
+      '24h': { since: (u) => new Date(u - 24 * 3600e3), bucket: 'hour', label: 'the last 24 hours', empty: 'No models registered' },
+      '7d': { since: (u) => new Date(u - 7 * 86400e3), bucket: 'day', label: 'the last 7 days', empty: 'No models registered' },
       '30d': { since: (u) => new Date(u - 30 * 86400e3), bucket: 'day', label: 'the last 30 days', empty: 'No models registered' },
-      '90d': { since: (u) => new Date(u - 90 * 86400e3), bucket: 'day', label: 'the last 90 days', empty: 'No models registered' },
       '1y': { since: (u) => new Date(u - 365 * 86400e3), bucket: 'day', label: 'the last year', empty: 'No models registered' },
     },
     fetch: (span) => window.MarpApi.registrySeries(span),
@@ -4824,6 +4843,7 @@ function wireDatasetActivity() {
       '24h': { since: (u) => new Date(u - 24 * 3600e3), bucket: 'hour', label: 'the last 24 hours', empty: 'No build activity' },
       '7d': { since: (u) => new Date(u - 7 * 24 * 3600e3), bucket: 'day', label: 'the last 7 days', empty: 'No build activity' },
       '30d': { since: (u) => new Date(u - 30 * 24 * 3600e3), bucket: 'day', label: 'the last 30 days', empty: 'No build activity' },
+      '1y': { since: (u) => new Date(u - 365 * 24 * 3600e3), bucket: 'day', label: 'the last year', empty: 'No build activity' },
     },
     fetch: (span) => Promise.all([
       window.MarpApi.throughputSeries({ ...span, kind: 'dataset_build' }),
@@ -7581,9 +7601,12 @@ const TIPS = {
   'Running training': 'Training jobs actively updating model weights now',
   'Need attention': 'Jobs that failed or completed with some work unresolved',
   'Design preview': 'Illustrative changing data used to review this design before live metrics are connected',
-  '24h': 'Show this activity graph across the last 24 hours',
-  '5h': 'Show this activity graph across the last 5 hours',
+  /* The ladder, in ladder order. `30d` had no entry at all and was on three charts. */
   '1h': 'Show this activity graph across the last hour',
+  '24h': 'Show this activity graph across the last 24 hours',
+  '7d': 'Show this activity graph across the last 7 days',
+  '30d': 'Show this activity graph across the last 30 days',
+  '1y': 'Show this activity graph across the last year',
   'Inference status': 'How current and recently completed inference jobs are distributed by state',
   'Throughput & backlog': 'Compare the rate frames are being processed with the volume still waiting',
   'Processing throughput': 'Frames processed per minute across the inference worker pool',
@@ -9184,10 +9207,20 @@ async function wirePoolCapacity() {
   const root = $('[data-ops-activity="workers"]');
   if (!root || !$('.ops-chart', root)) return;
 
+  /* **One ladder across the dashboard**: 1h, 24h, 7d, 30d, 1y. Every chart takes a
+     contiguous four of it, so the vocabulary is shared without every chart carrying every
+     rung. Eight charts had four different vocabularies between them and no reason for any
+     of it; `5h` was the only rung that was not a round unit and `90d` sat between 30d and
+     1y on one chart alone, so both went.
+
+     **This chart stops at 30 days because its data does.** `SAMPLE_RETENTION_DAYS` is 30
+     and the pool read sweeps anything older, so a year here would be empty by
+     construction -- which is the complaint this is answering, not a way to answer it. */
   const RANGES = {
     '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
-    '5h': { hours: 5, bucket: 'minute', label: 'the last 5 hours' },
     '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+    '7d': { hours: 168, bucket: 'hour', label: 'the last 7 days' },
+    '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
   };
 
   const lines = Object.fromEntries($$('[data-ops-line]', root).map((l) => [l.dataset.opsLine, l]));
@@ -9215,7 +9248,7 @@ async function wirePoolCapacity() {
       b.setAttribute('aria-pressed', String(on));
     });
 
-    const { hours, bucket, label } = RANGES[next] || RANGES['5h'];
+    const { hours, bucket, label } = RANGES[next] || RANGES['24h'];
     const until = new Date();
     const since = new Date(until.getTime() - hours * 3600 * 1000);
     const span = { since: since.toISOString(), until: until.toISOString(), bucket };
@@ -9243,8 +9276,12 @@ async function wirePoolCapacity() {
         leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
         if (chart) {
           chart.setAttribute('aria-label',
-            `No GPU readings in ${label}. A machine reports while it works, and a worker has to be `
-            + 'running a build that sends telemetry on its heartbeat.');
+            /* **Not "a build".** A dataset build is run by the API and is not in
+               `LEASABLE_JOB_KINDS`, so it is the one kind of work that can never produce a
+               reading -- which is exactly the work Isaac was doing when he asked why this
+               was empty. Saying "a build" here pointed at the wrong thing. */
+            `No GPU readings in ${label}. A machine reports while it works, so this stays empty `
+            + 'until a worker leases an inference, tracking, training or diagnostic job.');
         }
         root.classList.add('is-quiet');
         return;
@@ -9304,17 +9341,20 @@ async function wirePoolCapacity() {
   }
 
   buttons.forEach((b) => b.addEventListener('click', () => choose(b.dataset.opsRange)));
-  await choose('5h');
+  await choose('24h');
 }
 
 async function wireOperationalActivity() {
   const root = $('[data-ops-activity="history"]');
   if (!root || !$('.ops-chart', root)) return;
 
+  /* The shared ladder; see `wirePoolUtilization`. This table counts in days, so the
+     24-hour rung is one day of hour buckets rather than a different shape. */
   const RANGES = {
+    '24h': { days: 1, bucket: 'hour', label: '24 hours' },
     '7d': { days: 7, bucket: 'day', label: '7 days' },
     '30d': { days: 30, bucket: 'day', label: '30 days' },
-    '90d': { days: 90, bucket: 'day', label: '90 days' },
+    '1y': { days: 365, bucket: 'day', label: 'year' },
   };
 
   const lines = Object.fromEntries($$('[data-ops-line]', root).map((l) => [l.dataset.opsLine, l]));
