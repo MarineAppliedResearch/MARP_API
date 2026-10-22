@@ -166,6 +166,9 @@ class DatasetRepository {
                     j.state,
                     j.attempts_made,
                     j.max_attempts,
+                    -- What claimBuild orders by, so the screen can show the queue in the
+                    -- order it will be taken rather than the order the table draws.
+                    j.priority,
                     j.created_at                 AS queued_at,
                     a.id                         AS attempt_id,
                     a.progress_done,

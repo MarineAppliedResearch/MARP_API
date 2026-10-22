@@ -5845,6 +5845,92 @@ function wireDeleteDataset(detail, head, set) {
   });
 }
 
+/**
+ * The builds waiting, in the order they will be taken, with a way to change it.
+ *
+ * **The order was real and invisible, which is why this exists before the buttons do.**
+ * `claimBuild` has always selected `ORDER BY priority DESC, created_at ASC, id ASC`, so
+ * the queue has always been a priority queue -- but nothing served the priority, and the
+ * table sorts newest-first, which is the reverse of claim order within a priority. Move
+ * buttons on that table would have reordered something nobody could see.
+ *
+ * **"Starts next" is a group, not a row.** Builds run `DATASET_BUILD_CONCURRENCY` at a
+ * time, so the front of the queue begins together and there is no single next job. The
+ * server says which ones would start now -- the ceiling less whatever is running -- and
+ * they are marked as a set, because a numbered list alone would imply the first one goes
+ * and the second waits.
+ *
+ * **Hidden below two.** With one build waiting there is no order to change, and a strip
+ * of controls that cannot do anything is worse than no strip.
+ *
+ * @param {Object} answer - From `GET /dataset/build-queue`.
+ * @returns {void}
+ */
+function drawBuildQueue(answer) {
+  const strip = $('[data-build-queue]');
+
+  if (!strip) return;
+
+  const queue = (answer && answer.queue) || [];
+
+  strip.hidden = queue.length < 2;
+
+  if (strip.hidden) {
+    strip.innerHTML = '';
+
+    return;
+  }
+
+  const ceiling = Number(answer.concurrency) || 1;
+  const running = Number(answer.running) || 0;
+  const starting = queue.filter((row) => row.starts_next).length;
+
+  /* Said in full rather than as a bare count, because "2 of 5" invites the reading that
+     three are blocked rather than waiting their turn. */
+  const lead = starting
+    ? `${starting === 1 ? 'The first' : `The first ${starting}`} start${starting === 1 ? 's' : ''} next`
+    : `All ${queue.length} are waiting for a slot`;
+
+  const rows = queue.map((row, index) => {
+    const name = escapeHtml(row.name || `Dataset ${row.dataset_id}`);
+
+    return `<li${row.starts_next ? ' data-starting' : ''}>`
+      + `<span class="qpos">${row.position}</span>`
+      + `<span class="qname" title="Build job #${row.job_id}">${name}</span>`
+      + (row.starts_next ? '<span class="qnext">starts next</span>' : '')
+      + '<span class="qmove">'
+      + `<button class="btn xs" type="button" data-move-build="${row.job_id}" data-direction="up"`
+      + `${index === 0 ? ' disabled' : ''} aria-label="Move ${name} sooner" title="Move sooner">`
+      + '<svg class="ico sm"><use href="#i-arrow"/></svg></button>'
+      + `<button class="btn xs" type="button" data-move-build="${row.job_id}" data-direction="down"`
+      + `${index === queue.length - 1 ? ' disabled' : ''} aria-label="Move ${name} later" title="Move later">`
+      + '<svg class="ico sm"><use href="#i-down"/></svg></button>'
+      + '</span></li>';
+  }).join('');
+
+  strip.innerHTML = `<div class="buildqueue-hd"><h3>${queue.length} builds waiting</h3>`
+    + `<p>${lead}. ${ceiling} run at once${running ? `, ${running} running now` : ''}.</p></div>`
+    + `<ol class="buildqueue-list">${rows}</ol>`;
+}
+
+/**
+ * Asks for the queue and draws it.
+ *
+ * @returns {Promise<void>}
+ */
+async function refreshBuildQueue() {
+  const strip = $('[data-build-queue]');
+
+  if (!strip || !window.MarpApi) return;
+
+  try {
+    drawBuildQueue(await window.MarpApi.datasetBuildQueue());
+  } catch (error) {
+    /* A queue that could not be read is not a queue of nothing, so the strip is left
+       as it was rather than being emptied into a claim that nothing is waiting. */
+  }
+}
+
 function datasetPillContents(status, build) {
   const dot = build && build.state === 'leased' ? '<span class="dot"></span>' : '';
 
@@ -6406,6 +6492,10 @@ async function wireDatasetPage() {
         window.MarpApi.listDatasets(),
         window.MarpApi.listDatasetBuilds(),
       ]);
+
+      /* Not awaited with the other two: the queue strip is a detail above the table and
+         the table should not wait on it, nor fail because of it. */
+      refreshBuildQueue();
     } catch (error) {
       /* Only on the first draw. A poll that fails is a blip, and replacing a table
          somebody is reading with an error because one request in a hundred timed out is
@@ -6509,6 +6599,35 @@ async function wireDatasetPage() {
   document.addEventListener('marp:dataset-build-queued', () => {
     if (!timer) timer = setTimeout(poll, 0);
   });
+
+  const queueStrip = $('[data-build-queue]');
+
+  if (queueStrip) {
+    queueStrip.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-move-build]');
+
+      if (!button || button.disabled) return;
+
+      /* Every button in the strip, because a second press would land on a row that has
+         already moved and ask for something the reader did not mean. */
+      const buttons = $$('[data-move-build]', queueStrip);
+
+      buttons.forEach((one) => { one.disabled = true; });
+
+      try {
+        await window.MarpApi.moveQueuedBuild(button.dataset.moveBuild, button.dataset.direction);
+
+        /* **Redrawn from a fresh read, not from the move's own answer.** The move
+           returns the queue, but not the concurrency or how many are running, and which
+           builds now start next depends on both -- so one authoritative request beats
+           reassembling a half-shaped answer here. A failed move redraws nothing: the
+           order did not change, and redrawing would suggest it had. */
+        await refreshBuildQueue();
+      } catch (error) {
+        buttons.forEach((one) => { one.disabled = false; });
+      }
+    });
+  }
 
   /* A row opened between polls gets its clocks filled straight away rather than waiting
      up to a second for the next tick -- an expander that shows a dash and then a figure

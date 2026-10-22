@@ -431,6 +431,172 @@ async function isCancelled(jobId) {
 }
 
 /**
+ * The queued builds, in the order they will actually be claimed.
+ *
+ * `claimBuild` takes `ORDER BY priority DESC, created_at ASC, id ASC`, so that clause is
+ * the queue and this is the same clause asked as a question. Only `queued` jobs: a leased
+ * one is already running and reordering it means nothing.
+ *
+ * @async
+ * @returns {Promise<Array<Object>>} `{job_id, dataset_id, priority, name}`, first to run first.
+ */
+async function getQueuedBuilds() {
+    return db.sequelize.query(
+        `SELECT j.id AS job_id,
+                (j.spec->>'dataset_id')::int AS dataset_id,
+                j.priority,
+                d.name
+           FROM gpu_jobs j
+           LEFT JOIN datasets d ON d.id = (j.spec->>'dataset_id')::int
+          WHERE j.kind = 'dataset_build'
+            AND j.state = 'queued'
+            AND j.attempts_made < j.max_attempts
+          ORDER BY j.priority DESC, j.created_at ASC, j.id ASC`,
+        { type: QueryTypes.SELECT }
+    );
+}
+
+/**
+ * How many builds are running right now.
+ *
+ * Counted from the database rather than from the poller's own `inFlight`, because the
+ * screen asking is not in that process -- and on a machine running two API instances
+ * neither one's counter is the answer. A leased job with a live attempt is a build
+ * somebody is doing.
+ *
+ * @async
+ * @returns {Promise<number>}
+ */
+async function countRunningBuilds() {
+    const [row] = await db.sequelize.query(
+        `SELECT count(*)::int AS running
+           FROM gpu_jobs j
+          WHERE j.kind = 'dataset_build'
+            AND j.state = 'leased'
+            AND EXISTS (
+                SELECT 1 FROM gpu_job_attempts a
+                 WHERE a.job_id = j.id
+                   AND a.state = 'running'
+                   AND a.lease_expires_at > NOW()
+            )`,
+        { type: QueryTypes.SELECT }
+    );
+
+    return row ? row.running : 0;
+}
+
+/**
+ * Move one queued build up or down the queue.
+ *
+ * **Move rather than set a number**, because *"change the order of what job is queued"* is
+ * what a person means and it keeps them out of deciding what priority 5 versus 10 is
+ * worth. The number is an implementation detail of the ordering and stays one.
+ *
+ * **The whole queue is renumbered on every move, and that is what keeps the values sane.**
+ * Swapping with a neighbour does not work: every job is priority 0 until something changes
+ * it, and swapping 0 with 0 moves nothing -- the tie is broken by `created_at` and the row
+ * sits where it was. Handing the moved job `max + 1` works once and then drifts upward for
+ * ever, leaving a column of ever-larger numbers that still ties underneath. Writing
+ * positions N..1 across the queued set each time means: no ties after the first move, the
+ * largest value is the length of the queue, and nothing to compact later.
+ *
+ * **Scoped to `dataset_build` throughout.** `priority` is a `gpu_jobs` column and the
+ * worker pool orders its own queue by it, so a renumber that reached further would silently
+ * reorder somebody's inference work. The two queues are disjoint by kind --
+ * `LEASABLE_JOB_KINDS` excludes `dataset_build` -- and this keeps it that way.
+ *
+ * @async
+ * @param {number|string} jobId - The queued build to move.
+ * @param {string} direction - `up` (sooner) or `down` (later).
+ * @returns {Promise<{moved: boolean, queue: Array<Object>}>} The queue after the move.
+ * @throws {ApiError} 404 when the job is not a queued build, 400 for an unknown direction.
+ */
+async function moveQueuedBuild(jobId, direction) {
+    if (direction !== 'up' && direction !== 'down') {
+        throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR,
+            `direction must be "up" or "down", not "${direction}"`);
+    }
+
+    const transaction = await db.sequelize.transaction();
+
+    try {
+        /* Locked for the length of the renumber, so two people moving at once cannot
+           interleave and produce an order neither asked for. `claimBuild` uses SKIP
+           LOCKED, so a runner claiming meanwhile steps over these rather than waiting. */
+        const queue = await db.sequelize.query(
+            `SELECT j.id
+               FROM gpu_jobs j
+              WHERE j.kind = 'dataset_build'
+                AND j.state = 'queued'
+                AND j.attempts_made < j.max_attempts
+              ORDER BY j.priority DESC, j.created_at ASC, j.id ASC
+                FOR UPDATE`,
+            { type: QueryTypes.SELECT, transaction }
+        );
+
+        const order = queue.map((row) => Number(row.id));
+        const at = order.indexOf(Number(jobId));
+
+        if (at === -1) {
+            await transaction.rollback();
+
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                `Build job ${jobId} is not waiting in the queue. Only a queued build can be reordered -- `
+                + 'one that is already running cannot be moved behind anything.');
+        }
+
+        const to = direction === 'up' ? at - 1 : at + 1;
+
+        /* Already at the end it is being asked to move toward. Not an error -- pressing
+           up on the first row is a reasonable thing to do and the honest answer is that
+           nothing changed. */
+        if (to < 0 || to >= order.length) {
+            await transaction.commit();
+
+            return { moved: false, queue: await getQueuedBuilds() };
+        }
+
+        order.splice(to, 0, order.splice(at, 1)[0]);
+
+        /* Positions N..1, highest first, so the array order is the claim order. One
+           statement rather than a write per row: the queue is short, but a partial
+           renumber would be an order nobody chose. */
+        await db.sequelize.query(
+            `UPDATE gpu_jobs AS j
+                SET priority = v.priority, updated_at = NOW()
+               FROM (
+                    SELECT * FROM unnest(
+                        string_to_array(:ids, ',')::int[],
+                        string_to_array(:priorities, ',')::int[]
+                    ) AS t(id, priority)
+               ) AS v
+              WHERE j.id = v.id
+                AND j.kind = 'dataset_build'`,
+            {
+                /* **Joined into strings and split by Postgres.** Sequelize expands an
+                   array replacement into a comma-separated list of literals, so `:ids::int[]`
+                   arrived as `1,2::int[]` and the cast applied to the last element only --
+                   `function unnest(integer) does not exist`. Every value here is already a
+                   number, so the round trip through text is safe and the cast is explicit. */
+                replacements: {
+                    ids: order.join(','),
+                    priorities: order.map((unused, index) => order.length - index).join(','),
+                },
+                transaction,
+            }
+        );
+
+        await transaction.commit();
+
+        return { moved: true, queue: await getQueuedBuilds() };
+    } catch (error) {
+        if (!transaction.finished) await transaction.rollback();
+
+        throw error;
+    }
+}
+
+/**
  * The queries a dataset was built from, so another can be set up the same way.
  *
  * *"Sets up a new dataset with the same queries as the old one, and just makes it so the
@@ -888,6 +1054,9 @@ module.exports = {
     recordBuild,
     deleteDataset,
     getBuildSetup,
+    countRunningBuilds,
+    getQueuedBuilds,
+    moveQueuedBuild,
     reportProgress,
     settleCancelledBuilds,
     recordSelection,

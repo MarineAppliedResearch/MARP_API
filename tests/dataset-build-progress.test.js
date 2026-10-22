@@ -2222,6 +2222,211 @@ describe('GET /api/v2/dataset/builds', () => {
         });
     });
 
+    /**
+     * Reordering the build queue.
+     *
+     * *"If multiple items are queued, it should be possible to change the order of what
+     * job is queued."* The order was already real -- `claimBuild` selects
+     * `ORDER BY priority DESC, created_at ASC, id ASC`, so the queue has always been a
+     * priority queue -- and nothing served the priority or set it.
+     *
+     * **Every assertion here is scoped to this file's own jobs.** A real build queued on
+     * the machine running the suite is ordinary, so asserting the length of the queue
+     * would pass on an idle database and fail on a busy one.
+     */
+    describe('the build queue and its order', () => {
+
+        /** Three queued builds, oldest first, all at the default priority. */
+        async function seedQueue(labels) {
+            const made = [];
+
+            for (const label of labels) {
+                const seeded = await seedBuild({ name: `jest-queue-${label}`, state: 'queued' });
+
+                made.push(seeded);
+            }
+
+            return made;
+        }
+
+        /** This file's jobs, in claim order, out of whatever else is waiting. */
+        async function mineInOrder(jobIds) {
+            const queue = await buildRepository.getQueuedBuilds();
+            const wanted = new Set(jobIds);
+
+            return queue.filter((row) => wanted.has(row.job_id)).map((row) => row.job_id);
+        }
+
+        it('lists queued builds in the order claimBuild would take them', async () => {
+            const [first, second, third] = await seedQueue(['a', 'b', 'c']);
+            const order = await mineInOrder([first.jobId, second.jobId, third.jobId]);
+
+            /* All at priority 0, so the tie-break decides and the oldest goes first --
+               which is what the queue has always done and what the screen must show. */
+            expect(order).toEqual([first.jobId, second.jobId, third.jobId]);
+        });
+
+        it('moves a build sooner, and back again', async () => {
+            const [first, second, third] = await seedQueue(['d', 'e', 'f']);
+            const ids = [first.jobId, second.jobId, third.jobId];
+
+            await buildRepository.moveQueuedBuild(third.jobId, 'up');
+
+            expect(await mineInOrder(ids)).toEqual([first.jobId, third.jobId, second.jobId]);
+
+            await buildRepository.moveQueuedBuild(third.jobId, 'down');
+
+            expect(await mineInOrder(ids)).toEqual(ids);
+        });
+
+        /**
+         * **The reason this renumbers rather than swaps.** Every build is priority 0
+         * until something changes it, so swapping a pair's priorities is 0 for 0 and the
+         * `created_at` tie-break puts the row straight back where it was. A move that
+         * silently does nothing is the failure mode worth a test of its own.
+         */
+        it('moves a build that is tied with every other on priority', async () => {
+            const [first, second] = await seedQueue(['g', 'h']);
+
+            const [before] = await db.sequelize.query(
+                'SELECT priority FROM gpu_jobs WHERE id = :id',
+                { replacements: { id: second.jobId }, type: QueryTypes.SELECT }
+            );
+
+            expect(before.priority).toBe(0);
+
+            await buildRepository.moveQueuedBuild(second.jobId, 'up');
+
+            const order = await mineInOrder([first.jobId, second.jobId]);
+
+            expect(order).toEqual([second.jobId, first.jobId]);
+        });
+
+        /**
+         * **And the numbers stay bounded.** The other way to write this -- give the moved
+         * job `max + 1` -- works and then climbs for ever, so a queue reordered a hundred
+         * times carries priorities in the hundreds and still ties underneath. Positions
+         * N..1 across the queued set means the largest value is the length of the queue,
+         * however many times it has been shuffled.
+         */
+        it('keeps the priority numbers bounded by the length of the queue', async () => {
+            const seeded = await seedQueue(['i', 'j', 'k']);
+            const ids = seeded.map((one) => one.jobId);
+
+            for (let i = 0; i < 20; i++) {
+                await buildRepository.moveQueuedBuild(ids[i % ids.length], i % 2 ? 'down' : 'up');
+            }
+
+            const rows = await db.sequelize.query(
+                'SELECT priority FROM gpu_jobs WHERE id IN (:ids)',
+                { replacements: { ids }, type: QueryTypes.SELECT }
+            );
+
+            const queue = await buildRepository.getQueuedBuilds();
+
+            for (const row of rows) {
+                expect(row.priority).toBeGreaterThan(0);
+                expect(row.priority).toBeLessThanOrEqual(queue.length);
+            }
+        });
+
+        it('answers moved: false at the top rather than failing', async () => {
+            await seedQueue(['l', 'm']);
+
+            /* **Whatever is actually first, not this file's first.** Earlier cases here
+               leave their builds queued until `afterAll`, and a real build waiting on the
+               machine running the suite is ordinary -- so "the one I just seeded" is
+               somewhere in the middle and moving it up succeeds. The job at the head of
+               the whole queue is the only one for which up is a no-op. */
+            const queue = await buildRepository.getQueuedBuilds();
+
+            expect(queue.length).toBeGreaterThan(0);
+
+            const result = await buildRepository.moveQueuedBuild(queue[0].job_id, 'up');
+
+            expect(result.moved).toBe(false);
+        });
+
+        /**
+         * **It must not reach a worker's queue.** `priority` is a `gpu_jobs` column and
+         * `selectClaimableJobRow` orders inference, tracking, training and diagnostic work
+         * by it. A renumber that was not scoped by kind would reorder somebody's GPU
+         * queue from a screen about datasets.
+         */
+        it('leaves jobs of other kinds untouched', async () => {
+            const [queued] = await seedQueue(['n', 'o']);
+
+            const [inference] = await db.sequelize.query(
+                `INSERT INTO gpu_jobs (kind, name, spec, state, priority, attempts_made, max_attempts,
+                                       created_at, updated_at)
+                 VALUES ('inference', :name, '{}'::jsonb, 'queued', 0, 0, 3, NOW(), NOW())
+                 RETURNING id, priority`,
+                { replacements: { name: `jest-queue-inference-${stamp}` }, type: QueryTypes.SELECT }
+            );
+
+            made.jobs.push(inference.id);
+
+            await buildRepository.moveQueuedBuild(queued.jobId, 'down');
+
+            const [after] = await db.sequelize.query(
+                'SELECT priority FROM gpu_jobs WHERE id = :id',
+                { replacements: { id: inference.id }, type: QueryTypes.SELECT }
+            );
+
+            expect(after.priority).toBe(inference.priority);
+        });
+
+        it('refuses a job that is not waiting in the queue', async () => {
+            const { jobId } = await seedBuild({ name: 'jest-queue-leased', state: 'leased' });
+
+            await expect(buildRepository.moveQueuedBuild(jobId, 'up')).rejects.toMatchObject({ status: 404 });
+        });
+
+        it('refuses a direction that is not up or down', async () => {
+            const [first] = await seedQueue(['p']);
+
+            await expect(buildRepository.moveQueuedBuild(first.jobId, 'sideways'))
+                .rejects.toMatchObject({ status: 400 });
+        });
+
+        /**
+         * **`starts_next` is a set, not a row.** Builds run several at a time now, so the
+         * front of the queue all begin together and a screen implying one next job would
+         * be wrong about what pressing nothing does.
+         */
+        it('marks as many as would start now, not just the first', async () => {
+            const seeded = await seedQueue(['q', 'r', 's']);
+            const ids = seeded.map((one) => one.jobId);
+
+            const res = await global.api.get('/api/v2/dataset/build-queue');
+
+            expect(res.status).toBe(200);
+            expect(res.body.concurrency).toBeGreaterThanOrEqual(1);
+
+            const mine = res.body.queue.filter((row) => ids.includes(row.job_id));
+
+            expect(mine.length).toBe(3);
+
+            /* Positions are over the whole queue, so this file's three are consecutive
+               rather than necessarily 1, 2, 3 -- another build may be waiting too. */
+            expect(mine[1].position).toBe(mine[0].position + 1);
+            expect(mine[2].position).toBe(mine[1].position + 1);
+
+            for (const row of res.body.queue) {
+                expect(row.starts_next).toBe(row.position <= res.body.concurrency - res.body.running);
+            }
+        });
+
+        it('refuses a reorder from a request carrying no principal', async () => {
+            const request = require('supertest');
+            const app = require('../app');
+
+            const res = await request(app).post('/api/v2/dataset/build-queue/1/move').send({ direction: 'up' });
+
+            expect(res.status).toBe(401);
+        });
+    });
+
     it('refuses a request carrying no principal', async () => {
         const request = require('supertest');
         const app = require('../app');

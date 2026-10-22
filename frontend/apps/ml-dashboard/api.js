@@ -1138,6 +1138,34 @@
    * @param {number|string} id - The dataset to copy.
    * @returns {Promise<Object>}
    */
+  /**
+   * `GET /api/v2/dataset/build-queue` -- the builds waiting, in the order they will run.
+   *
+   * The order was always real -- `claimBuild` selects by priority then age -- and was
+   * nowhere on screen, so nothing could be reordered meaningfully.
+   *
+   * @returns {Promise<{concurrency: number, running: number, queue: Object[]}>}
+   */
+  function datasetBuildQueue() {
+    return serve('datasets',
+      () => request('/dataset/build-queue'),
+      () => ({ concurrency: 2, running: 0, queue: [] }));
+  }
+
+  /**
+   * `POST /api/v2/dataset/build-queue/:jobId/move` -- one place sooner or later.
+   *
+   * @param {number|string} jobId - The queued build.
+   * @param {string} direction - `up` or `down`.
+   * @returns {Promise<{moved: boolean, queue: Object[]}>}
+   */
+  function moveQueuedBuild(jobId, direction) {
+    return request(`/dataset/build-queue/${encodeURIComponent(jobId)}/move`, {
+      method: 'POST',
+      body: { direction },
+    });
+  }
+
   function datasetBuildSetup(id) {
     return request(`/dataset/${encodeURIComponent(id)}/build-setup`);
   }
@@ -1438,9 +1466,11 @@
     listDatasets,
     listDatasetBuilds,
     datasetComposition,
+    datasetBuildQueue,
     datasetBuildSetup,
     datasetPreview,
     deleteDataset,
+    moveQueuedBuild,
     listProjects,
     listUsers,
     submitJob,

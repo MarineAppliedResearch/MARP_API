@@ -20,7 +20,7 @@ const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
 const datasetController = require('../controller/dataset.controller');
 const modelArtifactService = require('../service/model-artifact.service');
 const datasetBuildRepository = require('../repository/dataset-build.repository');
-const { imageSettings } = require('../service/dataset-build.service');
+const { imageSettings, concurrency } = require('../service/dataset-build.service');
 const datasetRepository = require('../repository/dataset.repository');
 const datasetPreviewService = require('../service/dataset-preview.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
@@ -500,6 +500,149 @@ function registerDatasetRoutes(app) {
             const composition = await datasetRepository.getDatasetComposition(req.params.id);
 
             res.json(composition);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/build-queue',
+        summary: 'The builds waiting, in the order they will run',
+        description:
+            'The builds waiting to be taken, in the order they will be taken, and how many of them start together.'
+            + '\n\n'
+            + '**The order was already real and was nowhere on screen.** `claimBuild` selects '
+            + 'ORDER BY priority DESC, created_at ASC, id ASC, so the queue has always been a priority queue -- '
+            + 'but nothing served the priority and the Datasets table sorts newest-first, which is the reverse of '
+            + 'claim order within a priority. Reorder buttons without this would have moved something invisible.'
+            + '\n\n'
+            + '**`starts_next` is a set, not a single row.** Builds run `DATASET_BUILD_CONCURRENCY` at a time, so '
+            + 'the first few in the queue all begin on the next tick and there is no one next job. This marks '
+            + 'exactly those that would start now -- the ceiling less whatever is already running -- so the screen '
+            + 'can say so rather than implying a single front of the queue.'
+            + '\n\n'
+            + '**Only `dataset_build`.** `priority` is a `gpu_jobs` column and the worker pool orders its own '
+            + 'queue by it, but `LEASABLE_JOB_KINDS` excludes dataset builds, so the two queues are disjoint and '
+            + 'nothing here can reorder inference work.',
+        tags: ['V1 \u00b7 MachineLearning'],
+        responses: {
+            200: {
+                description: 'The queue, first to run first.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                concurrency: { type: 'integer', description: 'How many builds run at once.' },
+                                running: { type: 'integer', description: 'How many are running right now.' },
+                                queue: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            job_id: { type: 'integer' },
+                                            dataset_id: { type: 'integer' },
+                                            name: { type: 'string', nullable: true },
+                                            priority: { type: 'integer' },
+                                            position: { type: 'integer', description: '1 is next.' },
+                                            starts_next: {
+                                                type: 'boolean',
+                                                description: 'It would begin on the next tick, as a free slot allows.',
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const [queue, inFlight] = await Promise.all([
+                datasetBuildRepository.getQueuedBuilds(),
+                datasetBuildRepository.countRunningBuilds(),
+            ]);
+
+            const ceiling = concurrency();
+            /* Slots a build could start into right now. When builds are already running
+               the front of the queue is shorter than the ceiling, and saying otherwise
+               would promise several starts that cannot happen yet. */
+            const free = Math.max(0, ceiling - inFlight);
+
+            res.json({
+                concurrency: ceiling,
+                running: inFlight,
+                queue: queue.map((row, index) => ({
+                    ...row,
+                    position: index + 1,
+                    starts_next: index < free,
+                })),
+            });
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
+        path: '/api/dataset/build-queue/:jobId/move',
+        summary: 'Move a queued build sooner or later',
+        description:
+            'Moves one queued build one place sooner or later.'
+            + '\n\n'
+            + '**The whole queue is renumbered, which is what keeps the numbers sane.** Swapping priorities with a '
+            + 'neighbour does nothing: every build is priority 0 until something changes it, so the swap is 0 for 0 '
+            + 'and `created_at` still decides. Giving the moved job max + 1 works once and then climbs for ever. '
+            + 'Writing positions N..1 across the queued set on each move leaves no ties, bounds the largest value '
+            + 'by the length of the queue, and needs no compaction later.'
+            + '\n\n'
+            + '**Moving past either end is not an error.** Pressing up on the first row is a reasonable thing to '
+            + 'do; the answer is `moved: false` and the queue unchanged.'
+            + '\n\n'
+            + '**Only a queued build can move**, because a leased one is already running and reordering it means '
+            + 'nothing. Gated on `jobs:write`, the human job-management permission that `POST /gpu/jobs/:id/cancel` '
+            + 'uses, rather than the `jobs:execute` a worker holds.',
+        tags: ['V1 \u00b7 MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'jobId', required: true, schema: { type: 'integer' }, description: 'The queued build.' },
+        ],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['direction'],
+                        properties: { direction: { type: 'string', enum: ['up', 'down'] } },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: 'The queue after the move.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                moved: { type: 'boolean', description: 'False when it was already at that end.' },
+                                queue: { type: 'array', items: { type: 'object' } },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/ValidationError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await datasetBuildRepository.moveQueuedBuild(
+                req.params.jobId,
+                req.body && req.body.direction
+            ));
         }),
     });
 

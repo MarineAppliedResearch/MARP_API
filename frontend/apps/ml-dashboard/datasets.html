@@ -438,6 +438,10 @@
               <button class="btn" type="button" data-expand-datasets title="Expand every visible ready dataset"><svg class="ico"><use href="#i-split"/></svg>Expand all ready</button>
             </div>
           </header>
+          <!-- The waiting builds, in the order they will be taken. Drawn only when more
+               than one is waiting: with one there is no order to change, and an empty
+               strip above the table is a control that does nothing. -->
+          <div class="buildqueue" data-build-queue hidden data-rendered></div>
           <div class="panel-bd flush">
             <div class="tblwrap">
               <table class="tbl fixed stack expandable dataset-table" id="saved-datasets">
