@@ -6630,6 +6630,14 @@ const TIPS = {
   'Caching': 'Which workers already hold this model',
   'Total (deduplicated)': 'The union of the subsets, each observation counted once',
   'Query promoted observations': 'Filters that find observations to add',
+  /* Both of these were body text on the screen until somebody read the screen out
+     loud: they explain a control rather than telling you anything you act on, which
+     is what a tooltip is for. Keyed to the control each one describes. */
+  'Add matching observations to': 'Observations whose frames overlap stay together, so a '
+    + 'near-duplicate picture can never land in two splits. Shares are measured in frames, '
+    + 'and each species is divided separately so a rare one reaches every split.',
+  'Build jobs & ready datasets': 'Queued, running and failed builds appear here immediately '
+    + 'and link to their full entry in Jobs. Successful builds become expandable datasets.',
   'Query results': 'What these filters match',
   'Current dataset': 'Name, composition and what went in',
   'Dataset': 'The saved dataset',
@@ -7567,11 +7575,11 @@ function wireSplit() {
       if (subsetLabel) subsetLabel.textContent = `${subsetCount} subset${subsetCount === 1 ? '' : 's'}`;
     });
 
+    /* An estimate says nothing a reader can act on -- the numbers above already move
+       when the shares do, and the caveat about whole groups is the split rule, which
+       belongs on the control that applies it rather than under the figures. */
     if (note) {
-      note.textContent = estimated
-        ? 'Estimated: whole groups of overlapping frames move together, so the build '
-          + 'lands near these shares rather than exactly on them.'
-        : 'First assignment wins; later overlaps never cross splits';
+      note.textContent = estimated ? '' : 'First assignment wins; later overlaps never cross splits';
     }
   };
 
