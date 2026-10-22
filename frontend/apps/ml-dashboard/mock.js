@@ -6163,13 +6163,18 @@ async function wireDatasetPage() {
         ? `<a class="btn sm" href="/api/v2/gpu/datasets/${encodeURIComponent(set.id)}/archive" download title="Download the built images, labels and manifest${size ? ` — ${size}` : ''}"><svg class="ico"><use href="#i-download"/></svg>Download archive</a>`
         : '';
 
-      /* Duplicate setup and Use for training are still inert, and deliberately left so:
-         wiring them has not been asked for, and two more half-working buttons is worse
-         than two that are obviously not finished. They carry a `later` chip, which is
-         what this app uses for a control with nothing behind it. */
+      /* **Duplicate is disabled until the queries are known to exist**, which is settled
+         when the panel opens and asks. A dataset imported by the legacy packager has no
+         recorded query at all, and a Duplicate that opened an empty build flow would look
+         exactly like one that had worked. `compose` below enables it, and writes the
+         reason onto it when it cannot.
+
+         Use for training stays inert: it is blocked on the training section existing, and
+         keeps the `later` chip this app uses for a control with nothing behind it.
+         Duplicate has lost its chip because it is no longer later. */
       const remove = deleteButton(set);
 
-      const readyActions = `<button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup <span class="chip">later</span></button><button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-training"/></svg>Use for training <span class="chip">later</span></button>${download}${remove}`;
+      const readyActions = `<button class="btn sm" type="button" data-duplicate-setup="${set.id}" disabled title="Looking for the queries this was built from…"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup</button><button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-training"/></svg>Use for training <span class="chip">later</span></button>${download}${remove}`;
       /* **The Build record, from the dataset row rather than from its name.** This block
          was a lookup keyed on five invented dataset names — `CAMPA_2024_Rockfish_v3` and
          friends — so anything MARP actually built fell through to a wall of em dashes
@@ -6259,6 +6264,33 @@ async function wireDatasetPage() {
             : '<span class="hint">No membership was recorded for this dataset.</span>';
         } catch (error) {
           into.innerHTML = `<span class="hint">Could not load its composition (${error.status || 'no answer'}).</span>`;
+        }
+
+        /* **Asked once, when the row is opened**, for the same reason the composition is:
+           doing it for every row would be a request per row to draw one page. */
+        const duplicate = $('[data-duplicate-setup]', detail);
+
+        if (duplicate) {
+          try {
+            const setup = await window.MarpApi.datasetBuildSetup(set.id);
+
+            duplicate.disabled = false;
+            duplicate.title = `Fill the build flow with the ${setup.subsets.length === 1
+              ? 'query' : `${setup.subsets.length} queries`} this was built from. Creates nothing.`;
+            duplicate.addEventListener('click', () => {
+              /* The builder owns the form; this says what is wanted and lets it do the
+                 filling. Scrolled to, because the form is above the table and a page that
+                 silently changed something off screen has not told anybody. */
+              document.dispatchEvent(new CustomEvent('marp:duplicate-dataset-setup', { detail: setup }));
+              $('#dsname')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            });
+          } catch (error) {
+            /* 404 is the ordinary case for a legacy import, and the sentence the route
+               wrote is better than anything this could invent. */
+            duplicate.title = error.status === 404
+              ? (error.message || 'No recorded queries to copy.')
+              : `Could not read its queries (${error.status || 'no answer'}).`;
+          }
         }
 
         const sample = $('[data-dataset-preview]', detail);
@@ -7741,6 +7773,174 @@ function wireDatasetBuilder() {
     });
     refreshAddLabel();
   }));
+  /**
+   * Put a previous build's queries back into this form.
+   *
+   * *"Sets up a new dataset with the same queries as the old one, and just makes it so
+   * the user can then queue it up, or make changes to the old query before queuing it."*
+   *
+   * **It drives the controls rather than reproducing what they do.** Each subset is
+   * applied by setting the same inputs a person would set and then running the ordinary
+   * add -- `runQuery` then `appendSubset` -- so the counts, the species breakdown and the
+   * subset labels are produced the one way they are ever produced. Writing rows into the
+   * list directly would have been shorter and would have been a second implementation of
+   * the thing most likely to drift.
+   *
+   * **Nothing is created.** No dataset row, no draft, no job: this fills a form, and the
+   * Queue button is still what starts a build. That was explicit in the request.
+   *
+   * @param {Object} setup - From `GET /dataset/:id/build-setup`.
+   * @returns {Promise<void>}
+   */
+  const applySetup = async (setup) => {
+    /* Replaced, not added to. Duplicating into a half-filled form would silently build a
+       dataset that is neither the old one nor what the reader sees. */
+    for (const row of $$('li', list)) row.remove();
+
+    const named = $('#dsname');
+
+    /* A new name, because the old one is taken and a build refusing on a unique name
+       after all this would be a poor way to find that out. */
+    if (named) named.value = `${setup.name} copy`;
+
+    const described = $('#dsdesc');
+
+    if (described) described.value = setup.description || '';
+
+    /* A build that named filters without subsets is one subset going to train, which is
+       what the builder would have done with it. */
+    const subsets = setup.subsets && setup.subsets.length
+      ? setup.subsets
+      : [{ filters: setup.filters || {}, split: 'train' }];
+
+    const missed = new Set();
+    let added = 0;
+
+    for (const subset of subsets) {
+      applyFilters(subset.filters || {}, missed);
+      applyDestination(subset);
+
+      /* The same two calls the Add button makes, in the same order and for the same
+         reason: a subset is never assembled from a count taken before the filters were
+         last touched. */
+      const result = await runQuery();
+
+      if (result) {
+        appendSubset(result);
+        added += 1;
+      }
+    }
+
+    const couldNot = missed.size
+      ? ` ${[...missed].join(' and ')} could not be restored -- that option is no longer in the list, so this query is wider than the original.`
+      : '';
+
+    setStatus(added === subsets.length
+      ? `Filled in from "${setup.name}" (build ${setup.jobId}). Nothing has been created -- change anything you like, then queue it.${couldNot}`
+      : `Filled in ${added} of ${subsets.length} queries from "${setup.name}". The rest matched nothing or could not be run.${couldNot}`,
+    added === subsets.length && !missed.size ? 'success' : 'warning');
+  };
+
+  /**
+   * Sets the query controls from one subset's filters.
+   *
+   * The inverse of {@link mosaicFilters}, and deliberately next to it: the two have to
+   * agree about which control carries which filter, and a mapping written anywhere else
+   * would drift the first time a filter was added.
+   *
+   * **A value the control no longer offers is reported, not swallowed.** A project that
+   * has been renamed, or a model retired from the picker, leaves the select on its first
+   * option -- which is usually "Any", so the copied query silently widens. That is the
+   * failure worth naming, because the count still looks like an answer.
+   *
+   * @param {Object} filters - A `MosaicQueryFilters` from a recorded build.
+   * @param {Set<string>} missed - Collects the names of filters that would not take.
+   * @returns {void}
+   */
+  const applyFilters = (filters, missed) => {
+    const one = (id, value, label) => {
+      const el = $('#' + id);
+
+      if (!el) return;
+
+      el.value = value === undefined || value === null ? '' : String(value);
+
+      if (value !== undefined && value !== null && el.value !== String(value)) missed.add(label);
+    };
+
+    one('dsproj', filters.project && filters.project[0], 'the project');
+    one('dsdive', filters.dive && filters.dive[0], 'the dive');
+    one('dsline', filters.line && filters.line[0], 'the line');
+    one('dsmodel', filters.model && filters.model[0], 'the model');
+
+    const confidence = filters.confidence || {};
+
+    if (confidence.from !== undefined) one('dsconf', confidence.from, 'the confidence floor');
+    if (confidence.to !== undefined) one('dsconfmax', confidence.to, 'the confidence ceiling');
+
+    /* **Species are ticked by id, which is also how the name gets on screen.** The menu
+       is already built from the catalogue with a label per box, so restoring `[775]` is
+       ticking that box and letting the existing label logic say what it is called -- no
+       id-to-name lookup anywhere.
+
+       No species filter means every box, because that is what "not narrowed" is in this
+       form: `mosaicFilters` only sends a species list when it is a real narrowing. */
+    const boxes = $$('[data-species-menu] input[data-species-id]');
+    const wanted = new Set((filters.species || []).map(Number));
+
+    if (wanted.size) {
+      for (const id of wanted) {
+        if (!boxes.some((box) => Number(box.dataset.speciesId) === id)) missed.add('a species');
+      }
+    }
+
+    for (const box of boxes) {
+      const on = wanted.size ? wanted.has(Number(box.dataset.speciesId)) : true;
+
+      if (box.checked !== on) {
+        box.checked = on;
+        box.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  };
+
+  /**
+   * Sets where a subset goes: divided across splits, or all to one.
+   *
+   * **Clicks the buttons rather than setting the variables they own.** `selectedSplit`
+   * and the split mode are closure state with styling and labels hanging off them, and
+   * assigning to them directly would leave the form showing one thing and meaning
+   * another.
+   *
+   * @param {Object} subset - `{shares}` or `{split}`.
+   * @returns {void}
+   */
+  const applyDestination = (subset) => {
+    if (subset.shares && Object.keys(subset.shares).length) {
+      $$('[data-split-mode]').find((b) => b.dataset.splitMode !== 'one')?.click();
+
+      for (const name of ['train', 'validation', 'test']) {
+        const field = $('#share' + name[0].toUpperCase() + name.slice(1));
+
+        if (field) field.value = subset.shares[name] === undefined ? '' : String(subset.shares[name]);
+      }
+
+      return;
+    }
+
+    $('[data-split-mode="one"]')?.click();
+    $(`[data-dataset-destination="${subset.split || 'train'}"]`)?.click();
+  };
+
+  /* The Datasets table is on this page but is not this closure, so it asks by event
+     rather than reaching in -- the same seam `marp:dataset-build-queued` uses in the
+     other direction. */
+  document.addEventListener('marp:duplicate-dataset-setup', (event) => {
+    applySetup(event.detail).catch((error) => {
+      setStatus(`Could not fill in from that dataset (${error.message || 'no answer'}).`, 'warning');
+    });
+  });
+
   $('#addQuery')?.addEventListener('click', addCurrent);
   $('[data-add-query]')?.addEventListener('click', addCurrent);
   list.addEventListener('click', (event) => {

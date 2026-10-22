@@ -431,6 +431,68 @@ async function isCancelled(jobId) {
 }
 
 /**
+ * The queries a dataset was built from, so another can be set up the same way.
+ *
+ * *"Sets up a new dataset with the same queries as the old one, and just makes it so the
+ * user can then queue it up, or make changes to the old query before queuing it up."*
+ * Nothing is created here -- this reads, and the screen fills its form from the answer.
+ *
+ * **The spec is the only record of what was asked for**, and it is on the job rather than
+ * the dataset: `queueBuild` writes the filters into `gpu_jobs.spec` deliberately, because
+ * a saved query can be edited afterwards and a build has to stay a record of what it
+ * actually ran. So this is reachable from a dataset only through
+ * `spec->>'dataset_id'` -- the same join the builds route makes.
+ *
+ * **The succeeded job wins when there are several**, and there often are: a retry opens a
+ * second, and a cancelled attempt followed by a successful one leaves two. The one that
+ * succeeded is the only one known to have produced the dataset being copied; the others
+ * are specs that did not finish, and one of them may be the reason it was retried.
+ * Failing that, the newest -- a dataset still building has no succeeded job and its spec
+ * is still the right thing to copy.
+ *
+ * @async
+ * @param {number|string} datasetId - The dataset to copy the setup of.
+ * @returns {Promise<?Object>} `{name, description, subsets, filters, splits, image, jobId}`,
+ * or null when no job carries queries worth reusing.
+ */
+async function getBuildSetup(datasetId) {
+    const [job] = await db.sequelize.query(
+        `SELECT j.id, j.spec, d.name, d.description
+           FROM gpu_jobs j
+           JOIN datasets d ON d.id = (j.spec->>'dataset_id')::int
+          WHERE j.kind = 'dataset_build'
+            AND d.id = :datasetId
+          ORDER BY (j.state = 'succeeded') DESC, j.id DESC
+          LIMIT 1`,
+        { replacements: { datasetId }, type: QueryTypes.SELECT }
+    );
+
+    if (!job) return null;
+
+    const spec = job.spec || {};
+    const subsets = Array.isArray(spec.subsets) ? spec.subsets.filter(Boolean) : [];
+    const filters = spec.filters && Object.keys(spec.filters).length ? spec.filters : null;
+
+    /* **Nothing to copy is a real answer, and a common one.** `rockfish5` predates the
+       dashboard builder entirely, and even a dashboard-built dataset can carry
+       `filters: {}` when its queries all live in `subsets`. A Duplicate that opened an
+       empty build flow would look like it had worked and would quietly be a new dataset
+       from no query at all, so the caller is told there is nothing rather than handed a
+       blank. */
+    if (!subsets.length && !filters) return null;
+
+    return {
+        jobId: job.id,
+        name: job.name,
+        description: job.description,
+        subsets,
+        filters,
+        splits: spec.splits || null,
+        image: spec.image || null,
+    };
+}
+
+/**
  * Delete a dataset, and say what is in the way when something is.
  *
  * **"Delete everything, but refuse if a model was trained from that dataset."** That rule
@@ -825,6 +887,7 @@ module.exports = {
     reclaimAbandonedBuilds,
     recordBuild,
     deleteDataset,
+    getBuildSetup,
     reportProgress,
     settleCancelledBuilds,
     recordSelection,

@@ -2053,6 +2053,175 @@ describe('GET /api/v2/dataset/builds', () => {
         });
     });
 
+    /**
+     * The queries a dataset was built from, so another can be set up the same way.
+     *
+     * *"Sets up a new dataset with the same queries as the old one, and just makes it so
+     * the user can then queue it up, or make changes to the old query before queuing it
+     * up."* The spec is on the job rather than the dataset -- `queueBuild` writes the
+     * filters into `gpu_jobs.spec` because a saved query can be edited afterwards and a
+     * build has to stay a record of what it ran -- so this route is the only way a
+     * finished dataset can say what made it.
+     */
+    describe('GET /api/v2/dataset/:id/build-setup', () => {
+
+        /** A dataset with a job carrying the spec given. */
+        async function seedSpec(label, spec, state = 'succeeded') {
+            const [dataset] = await db.sequelize.query(
+                `INSERT INTO datasets (name, description, status, source, created_at, updated_at)
+                 VALUES (:name, 'seeded by tests/dataset-build-progress', 'ready', 'ml-dashboard', NOW(), NOW())
+                 RETURNING id`,
+                { replacements: { name: `jest-setup-${stamp}-${label}` }, type: QueryTypes.SELECT }
+            );
+
+            made.datasets.push(dataset.id);
+
+            const [job] = await db.sequelize.query(
+                `INSERT INTO gpu_jobs (kind, name, spec, state, priority, attempts_made, max_attempts,
+                                       created_at, updated_at)
+                 VALUES ('dataset_build', :name, :spec, :state, 0, 1, 3, NOW(), NOW())
+                 RETURNING id`,
+                {
+                    replacements: {
+                        name: `Build jest-setup-${stamp}-${label}`,
+                        spec: JSON.stringify({ ...spec, dataset_id: dataset.id }),
+                        state,
+                    },
+                    type: QueryTypes.SELECT,
+                }
+            );
+
+            made.jobs.push(job.id);
+
+            return { datasetId: dataset.id, jobId: job.id };
+        }
+
+        it('hands back the subsets and shares the build actually ran', async () => {
+            const subsets = [{
+                shares: { train: 70, validation: 20, test: 10 },
+                filters: {
+                    species: [775],
+                    confidence: { from: 0.5, to: 1 },
+                    trainingDisposition: ['promoted'],
+                },
+            }];
+
+            const { datasetId, jobId } = await seedSpec('full', { subsets, splits: { train: 0.8, eval: 0.2 } });
+
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/build-setup`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.jobId).toBe(jobId);
+            expect(res.body.subsets).toEqual(subsets);
+            expect(res.body.splits).toEqual({ train: 0.8, eval: 0.2 });
+            /* The new dataset is named by the screen, but the old name has to arrive for
+               it to be named *after* it. */
+            expect(res.body.name).toContain('jest-setup');
+        });
+
+        /**
+         * **The succeeded job wins**, and a dataset having several is ordinary: a retry
+         * opens a second, and a cancelled attempt followed by a successful one leaves
+         * two. The succeeded one is the only spec known to have produced this dataset --
+         * the other may be the reason it had to be retried.
+         */
+        it('takes the succeeded job when a dataset has more than one', async () => {
+            /* **The succeeded one is seeded first, so it is also the oldest.** Written
+               the other way round this test passed with the ordering deleted -- the
+               newest job happened to be the succeeded one, so `ORDER BY id DESC` alone
+               found it and the clause under test was never exercised. The cancelled
+               attempt after a success is the real shape anyway: Isaac cancels a build,
+               queues it again, and the second one is the newer row. */
+            const { datasetId, jobId: good } = await seedSpec('retried',
+                { subsets: [{ split: 'train', filters: { confidence: { from: 0.9, to: 1 } } }] },
+                'succeeded');
+
+            const [later] = await db.sequelize.query(
+                `INSERT INTO gpu_jobs (kind, name, spec, state, priority, attempts_made, max_attempts,
+                                       created_at, updated_at)
+                 VALUES ('dataset_build', :name, :spec, 'cancelled', 0, 1, 3, NOW(), NOW())
+                 RETURNING id`,
+                {
+                    replacements: {
+                        name: `Build jest-setup-${stamp}-abandoned`,
+                        spec: JSON.stringify({
+                            dataset_id: datasetId,
+                            subsets: [{ split: 'train', filters: { confidence: { from: 0.1, to: 1 } } }],
+                        }),
+                    },
+                    type: QueryTypes.SELECT,
+                }
+            );
+
+            made.jobs.push(later.id);
+
+            expect(later.id).toBeGreaterThan(good);
+
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/build-setup`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.jobId).toBe(good);
+            expect(res.body.subsets[0].filters.confidence.from).toBe(0.9);
+        });
+
+        /**
+         * **404 rather than an empty form.** A build can carry `filters: {}` with nothing
+         * in `subsets`, and a Duplicate that opened a blank build flow would look exactly
+         * like one that had worked -- then queue a dataset built from no query at all.
+         */
+        it('refuses when the spec carries no queries', async () => {
+            const { datasetId } = await seedSpec('empty', { subsets: [], filters: {} });
+
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/build-setup`);
+
+            expect(res.status).toBe(404);
+            expect(res.body.error.message).toMatch(/queries/i);
+        });
+
+        /** A build that named filters without subsets is still worth copying. */
+        it('hands back plain filters when the build used no subsets', async () => {
+            const { datasetId } = await seedSpec('plain', {
+                subsets: [],
+                filters: { confidence: { from: 0.7, to: 1 } },
+            });
+
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/build-setup`);
+
+            expect(res.status).toBe(200);
+            expect(res.body.filters).toEqual({ confidence: { from: 0.7, to: 1 } });
+            expect(res.body.subsets).toEqual([]);
+        });
+
+        /**
+         * `rockfish5` and everything else the desktop packager made has no job at all.
+         * That is the common case, not an error, and the control says so.
+         */
+        it('refuses a dataset that was never built here', async () => {
+            const [dataset] = await db.sequelize.query(
+                `INSERT INTO datasets (name, status, source, created_at, updated_at)
+                 VALUES (:name, 'ready', 'legacy import', NOW(), NOW())
+                 RETURNING id`,
+                { replacements: { name: `jest-setup-legacy-${stamp}` }, type: QueryTypes.SELECT }
+            );
+
+            made.datasets.push(dataset.id);
+
+            const res = await global.api.get(`/api/v2/dataset/${dataset.id}/build-setup`);
+
+            expect(res.status).toBe(404);
+        });
+
+        /** It reads what was queried, which is survey data, so it is not anonymous. */
+        it('refuses a request carrying no principal', async () => {
+            const request = require('supertest');
+            const app = require('../app');
+
+            const res = await request(app).get('/api/v2/dataset/1/build-setup');
+
+            expect(res.status).toBe(401);
+        });
+    });
+
     it('refuses a request carrying no principal', async () => {
         const request = require('supertest');
         const app = require('../app');

@@ -506,6 +506,74 @@ function registerDatasetRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'datasets:read',
+        path: '/api/dataset/:id/build-setup',
+        summary: 'The queries a dataset was built from, for setting up another like it',
+        description:
+            'What *Duplicate setup* needs: the subsets, filters and split shares a dataset was built from, so the '
+            + 'build flow can be filled in with them and edited before anything is queued.\n\n'
+            + '**It creates nothing.** No dataset, no draft, no job -- this reads, the screen fills its form, and '
+            + 'the ordinary Queue button is what starts a build.\n\n'
+            + '**The spec lives on the job, not the dataset**, which is why this route exists at all. `queueBuild` '
+            + 'writes the filters into `gpu_jobs.spec` on purpose: a saved query can be edited afterwards and a '
+            + "build has to stay a record of what it actually ran. The job is found by `spec->>'dataset_id'`.\n\n"
+            + '**The succeeded job wins when a dataset has several**, which is normal -- a retry opens a second, and '
+            + 'a cancelled attempt followed by a successful one leaves two. The succeeded one is the only spec known '
+            + 'to have produced this dataset. Failing that, the newest, so a dataset still building can be copied.\n\n'
+            + '**404 when there is nothing worth copying.** A dataset imported by the legacy packager has no job at '
+            + 'all, and a dashboard build can carry `filters: {}` with everything in `subsets`. A Duplicate that '
+            + 'opened an empty build flow would look like it had worked, so the screen is told there is nothing and '
+            + 'leaves the control disabled with the reason on it.',
+        tags: ['V1 \u00b7 MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset to copy.' },
+        ],
+        responses: {
+            200: {
+                description: 'Its setup.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                jobId: { type: 'integer', description: 'Which build this came from.' },
+                                name: { type: 'string' },
+                                description: { type: 'string', nullable: true },
+                                subsets: {
+                                    type: 'array',
+                                    description: 'Each a query and where it goes: `filters` plus either `shares` or `split`.',
+                                    items: { type: 'object' },
+                                },
+                                filters: {
+                                    type: 'object',
+                                    nullable: true,
+                                    description: 'A build that named filters without subsets. Null when it used subsets.',
+                                },
+                                splits: { type: 'object', nullable: true },
+                                image: { type: 'object', nullable: true },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const setup = await datasetBuildRepository.getBuildSetup(req.params.id);
+
+            if (!setup) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Dataset ${req.params.id} has no recorded queries to copy. It was imported rather than built here, `
+                    + 'or its build predates the queries being kept.');
+            }
+
+            res.json(setup);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
         path: '/api/dataset/:id/preview',
         summary: 'A sample of the frames a build cut, with their label boxes',
         description:

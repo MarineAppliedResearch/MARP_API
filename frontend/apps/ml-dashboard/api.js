@@ -1125,6 +1125,23 @@
    * @param {number|string} id - The dataset.
    * @returns {Promise<{deleted: boolean, archive_removed: boolean}>}
    */
+  /**
+   * `GET /api/v2/dataset/:id/build-setup` -- the queries a dataset was built from.
+   *
+   * What *Duplicate setup* fills the build flow with. Reads only; nothing is created
+   * until the ordinary Queue button is pressed.
+   *
+   * 404 means there is nothing worth copying -- a legacy import with no job, or a build
+   * whose queries were not recorded -- and the control says so rather than opening an
+   * empty form that looks like it worked.
+   *
+   * @param {number|string} id - The dataset to copy.
+   * @returns {Promise<Object>}
+   */
+  function datasetBuildSetup(id) {
+    return request(`/dataset/${encodeURIComponent(id)}/build-setup`);
+  }
+
   function deleteDataset(id) {
     return request(`/dataset/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
@@ -1421,6 +1438,7 @@
     listDatasets,
     listDatasetBuilds,
     datasetComposition,
+    datasetBuildSetup,
     datasetPreview,
     deleteDataset,
     listProjects,
