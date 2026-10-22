@@ -653,6 +653,97 @@ describe('what a build does with what it could not cut (#268)', () => {
     }, 120000);
 });
 
+describe('a pass that falters is retried, not fatal (#268)', () => {
+
+    /** This group's own stub, so the failure does not reach any other group. */
+    let faltering;
+
+    afterAll(() => {
+        if (faltering) faltering.restore();
+    });
+
+    /**
+     * **An eight-minute build should not die because one read faltered.**
+     *
+     * `CookieStarTest2` failed at 26,853 of 31,529 frames, on video 91 of 131, with the
+     * filter thread returning -22 and then `Could not open encoder before EOF` -- no
+     * frame ever reached the encoder. It was not the video: its pixel format matched the
+     * ones that worked, its frames were inside its duration, and replaying its whole plan
+     * afterwards produced every frame. It did not reproduce.
+     *
+     * **So this pins the behaviour rather than the trigger.** A test that claimed to
+     * reproduce a fault nobody could provoke would be the worse artefact. What is asserted
+     * is what the build does when a pass fails once: it tries again, and the dataset comes
+     * out whole.
+     */
+    test('a pass that fails once still produces every frame', async () => {
+        let failures = 0;
+
+        faltering = fixture.stubExtraction({ jellyfin, extraction }, {
+            /* The first pass of the run fails the way the real one did, and only once --
+               a second attempt at the same frames succeeds, which is what was observed
+               when the failing video was replayed. */
+            onExtract: () => {
+                if (failures === 0) {
+                    failures += 1;
+
+                    throw new Error('ffmpeg exited 4294967274: [enc:mjpeg] Could not open encoder before EOF');
+                }
+            },
+        });
+
+        const queued = await queueBuild({
+            name: `Jest Build Faltering ${runId}`,
+            filters: { session: [seeded.sessionId], species: [seeded.speciesIds[1]] },
+            splits: { train: 1 },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(failures).toBe(1);
+        /* Not failed, and not short: the retry produced the frames the first attempt did
+           not, so the build is indistinguishable from one that never faltered. */
+        expect(result.reason).toBeUndefined();
+        expect(result.images).toBe(6);
+
+        const [dataset] = await q(
+            'SELECT status, num_samples FROM datasets WHERE id = :id',
+            { id: queued.dataset.id }
+        );
+
+        expect(dataset.status).toBe('ready');
+        expect(Number(dataset.num_samples)).toBe(6);
+    });
+
+    /**
+     * And when it is not transient, the build still fails -- but says which video, which
+     * `ffmpeg exited 4294967274` did not. Working out that it was video 91 of 131 took a
+     * query against the attempt's last reported phase.
+     */
+    test('a pass that keeps failing names the video it was cutting', async () => {
+        if (faltering) faltering.restore();
+
+        faltering = fixture.stubExtraction({ jellyfin, extraction }, {
+            onExtract: () => {
+                throw new Error('ffmpeg exited 4294967274: [enc:mjpeg] Could not open encoder before EOF');
+            },
+        });
+
+        const queued = await queueBuild({
+            name: `Jest Build Doomed ${runId}`,
+            filters: { session: [seeded.sessionId], species: [seeded.speciesIds[1]] },
+            splits: { train: 1 },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(result.failed).toBe(true);
+        expect(result.reason).toContain(path.parse(seeded.videos.one).name);
+        expect(result.reason).toMatch(/frames \d+-\d+/);
+        expect(result.reason).toMatch(/attempts/i);
+    });
+});
+
 describe('labels at the edge of the frame (#268)', () => {
 
     /**

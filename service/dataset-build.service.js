@@ -281,6 +281,82 @@ function passes(wanted) {
  * is finished. Returning exactly `false` stops the cut after that pass.
  * @returns {Promise<{written: number, missing: number}>} What it managed.
  */
+/** How many times one pass is attempted before the build gives up on it. */
+const PASS_ATTEMPTS = 3;
+
+/**
+ * One ffmpeg pass, retried when the read falters, and naming the video when it does not.
+ *
+ * **A build at 85% should not die because one read faltered.** `CookieStarTest2` failed on
+ * 2026-10-22 at 26,853 of 31,529 frames, on video 91 of 131, with the filter thread
+ * returning -22 and then `Could not open encoder before EOF` -- which says no frame ever
+ * reached the encoder, not that the encoder could not handle the input. The video was not
+ * the problem: its pixel format is identical to the ones that worked (`yuv420p`, h264
+ * Main, 1920x1080), its frames are inside its duration, and replaying its entire plan
+ * through the same path afterwards produced every frame. It did not reproduce.
+ *
+ * **It is most likely a consequence of the speed rather than of JPEG.** Writing the frames
+ * directly made extraction six to nine times faster, so a build pulls from the media
+ * server that much harder and reaches the same number of passes in a fraction of the time
+ * -- a transient read failure that was always possible is simply met far more often. That
+ * is a guess about the cause; what is measured is that it happened once and would not
+ * happen again on the same input.
+ *
+ * **So the pass is retried rather than the format changed.** Not a fallback to PNG: a
+ * build that quietly takes the slow road for some videos and tells nobody is how the real
+ * throughput stops being knowable, and PNG was not the difference anyway.
+ *
+ * @async
+ * @param {string} streamUrl - The playable URL.
+ * @param {number[]} batch - Absolute frame numbers.
+ * @param {number} fps - The source's frame rate.
+ * @param {string} batchDir - Where this pass writes.
+ * @param {Object} image - From {@link imageSettings}.
+ * @param {string} video - The video being cut, for the message if it finally fails.
+ * @returns {Promise<void>}
+ * @throws {Error} When every attempt failed, saying which video and which frames.
+ */
+async function cutPass(streamUrl, batch, fps, batchDir, image, video) {
+    let last;
+
+    for (let attempt = 1; attempt <= PASS_ATTEMPTS; attempt++) {
+        try {
+            await extraction.extractFrames(streamUrl, batch, fps, batchDir, image);
+
+            if (attempt > 1) {
+                logger.info(`Dataset build: ${video} frames ${batch[0]}-${batch[batch.length - 1]} `
+                    + `succeeded on attempt ${attempt}.`);
+            }
+
+            return;
+        } catch (error) {
+            last = error;
+
+            /* Anything already written by the attempt that failed, so a retry is not
+               counted against files from the one before it -- the builder addresses
+               frames by position in the directory. */
+            fs.rmSync(batchDir, { recursive: true, force: true });
+            fs.mkdirSync(batchDir, { recursive: true });
+
+            if (attempt < PASS_ATTEMPTS) {
+                logger.info(`Dataset build: ${video} frames ${batch[0]}-${batch[batch.length - 1]} `
+                    + `failed on attempt ${attempt}, retrying. ${error && error.message}`);
+
+                // A moment, in case whatever faltered is still faltering.
+                await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+            }
+        }
+    }
+
+    /* **Named.** `ffmpeg exited 4294967274` and a wall of encoder noise said nothing about
+       where, and working out that it was video 91 of 131 took a query against the
+       attempt's last reported phase. */
+    throw new Error(
+        `${video}: frames ${batch[0]}-${batch[batch.length - 1]} could not be cut after `
+        + `${PASS_ATTEMPTS} attempts. ${last && last.message}`
+    );
+}
+
 async function cutVideo(entry, staging, image = imageSettings(), onBatch = null) {
     const resolved = await jellyfinRepository.resolveVideoSource(entry.video, 1, MEDIA_CLIENT_IDENTITY);
     const streamUrl = await jellyfinRepository.buildDirectStreamUrl(resolved.item.id, MEDIA_CLIENT_IDENTITY);
@@ -332,7 +408,7 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
                430 KB, and the legacy datasets are 364 KB, so the old path was the outlier
                rather than the new one. `png` still produces PNGs and always skipped the
                re-encode anyway. */
-            await extraction.extractFrames(streamUrl, batch, probe.fps, batchDir, image);
+            await cutPass(streamUrl, batch, probe.fps, batchDir, image, entry.video);
 
             for (let i = 0; i < batch.length; i++) {
                 const frame = batch[i];
