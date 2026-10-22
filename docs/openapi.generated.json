@@ -10684,6 +10684,416 @@
         }
       }
     },
+    "/v2/dataset/build-queue": {
+      "get": {
+        "summary": "The builds waiting, in the order they will run",
+        "description": "The builds waiting to be taken, in the order they will be taken, and how many of them start together.\n\n**The order was already real and was nowhere on screen.** `claimBuild` selects ORDER BY priority DESC, created_at ASC, id ASC, so the queue has always been a priority queue -- but nothing served the priority and the Datasets table sorts newest-first, which is the reverse of claim order within a priority. Reorder buttons without this would have moved something invisible.\n\n**`starts_next` is a set, not a single row.** Builds run `DATASET_BUILD_CONCURRENCY` at a time, so the first few in the queue all begin on the next tick and there is no one next job. This marks exactly those that would start now -- the ceiling less whatever is already running -- so the screen can say so rather than implying a single front of the queue.\n\n**Only `dataset_build`.** `priority` is a `gpu_jobs` column and the worker pool orders its own queue by it, but `LEASABLE_JOB_KINDS` excludes dataset builds, so the two queues are disjoint and nothing here can reorder inference work. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "responses": {
+          "200": {
+            "description": "The queue, first to run first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "concurrency": {
+                      "type": "integer",
+                      "description": "How many builds run at once."
+                    },
+                    "running": {
+                      "type": "integer",
+                      "description": "How many are running right now."
+                    },
+                    "queue": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "job_id": {
+                            "type": "integer"
+                          },
+                          "dataset_id": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "priority": {
+                            "type": "integer"
+                          },
+                          "position": {
+                            "type": "integer",
+                            "description": "1 is next."
+                          },
+                          "starts_next": {
+                            "type": "boolean",
+                            "description": "It would begin on the next tick, as a free slot allows."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/dataset/build-queue/{jobId}/move": {
+      "post": {
+        "summary": "Move a queued build sooner or later",
+        "description": "Moves one queued build one place sooner or later.\n\n**The whole queue is renumbered, which is what keeps the numbers sane.** Swapping priorities with a neighbour does nothing: every build is priority 0 until something changes it, so the swap is 0 for 0 and `created_at` still decides. Giving the moved job max + 1 works once and then climbs for ever. Writing positions N..1 across the queued set on each move leaves no ties, bounds the largest value by the length of the queue, and needs no compaction later.\n\n**Moving past either end is not an error.** Pressing up on the first row is a reasonable thing to do; the answer is `moved: false` and the queue unchanged.\n\n**Only a queued build can move**, because a leased one is already running and reordering it means nothing. Gated on `jobs:write`, the human job-management permission that `POST /gpu/jobs/:id/cancel` uses, rather than the `jobs:execute` a worker holds. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The queued build."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "direction"
+                ],
+                "properties": {
+                  "direction": {
+                    "type": "string",
+                    "enum": [
+                      "up",
+                      "down"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The queue after the move.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "moved": {
+                      "type": "boolean",
+                      "description": "False when it was already at that end."
+                    },
+                    "queue": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/dataset/{id}/build-setup": {
+      "get": {
+        "summary": "The queries a dataset was built from, for setting up another like it",
+        "description": "What *Duplicate setup* needs: the subsets, filters and split shares a dataset was built from, so the build flow can be filled in with them and edited before anything is queued.\n\n**It creates nothing.** No dataset, no draft, no job -- this reads, the screen fills its form, and the ordinary Queue button is what starts a build.\n\n**The spec lives on the job, not the dataset**, which is why this route exists at all. `queueBuild` writes the filters into `gpu_jobs.spec` on purpose: a saved query can be edited afterwards and a build has to stay a record of what it actually ran. The job is found by `spec->>'dataset_id'`.\n\n**The succeeded job wins when a dataset has several**, which is normal -- a retry opens a second, and a cancelled attempt followed by a successful one leaves two. The succeeded one is the only spec known to have produced this dataset. Failing that, the newest, so a dataset still building can be copied.\n\n**404 when there is nothing worth copying.** A dataset imported by the legacy packager has no job at all, and a dashboard build can carry `filters: {}` with everything in `subsets`. A Duplicate that opened an empty build flow would look like it had worked, so the screen is told there is nothing and leaves the control disabled with the reason on it. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The dataset to copy."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Its setup.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": {
+                      "type": "integer",
+                      "description": "Which build this came from."
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "subsets": {
+                      "type": "array",
+                      "description": "Each a query and where it goes: `filters` plus either `shares` or `split`.",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "filters": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "A build that named filters without subsets. Null when it used subsets."
+                    },
+                    "splits": {
+                      "type": "object",
+                      "nullable": true
+                    },
+                    "image": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/dataset/{id}/preview": {
+      "get": {
+        "summary": "A sample of the frames a build cut, with their label boxes",
+        "description": "A handful of the actual training images in a dataset, read straight out of the archive the build wrote. The Datasets screen showed four sample pictures per dataset and they were four hardcoded Jellyfin item ids -- the same four on every row, of video unrelated to the dataset under them.\n\n**The boxes come back with the frames**, as the YOLO label file records them: `class_index` into the vocabulary `GET /dataset/:id/composition` returns, and `cx`/`cy`/`w`/`h` normalised to the image with **x and y at the box centre**. Drawing them is the point -- a frame on its own says a picture was cut, and a frame with its box says the label landed on the animal.\n\n**Read rather than stored.** The archive is an uncompressed tar, so a sample costs a walk of its headers -- one 512-byte read per member, about 140 ms over a 2.4 GB archive -- plus one read per frame shown. Nothing is written at build time to make this work, so it answers for datasets that were built before it existed.\n\n**The frames are spread across the archive, not taken from the front.** A build interpolates between keyframes, so the first dozen images are one animal a fortieth of a second apart; an even stride covers the videos and splits the build actually touched, for the same walk.\n\nGated on `datasets:read` rather than the `jobs:execute` that guards the whole archive: this is somebody browsing the catalogue, which is the case that permission exists for, and it serves a sample rather than the dataset. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The dataset."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 8,
+              "maximum": 24
+            },
+            "description": "How many frames to sample. Clamped, because each one is served at full size."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The sample.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "description": "The archive's hash, which is also its address."
+                    },
+                    "total": {
+                      "type": "integer",
+                      "example": 10361,
+                      "description": "Every image in the archive, not how many are shown, so a reader knows what the sample is a sample of."
+                    },
+                    "frames": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "index": {
+                            "type": "integer",
+                            "description": "Its address for `GET /dataset/:id/preview/:index`."
+                          },
+                          "split": {
+                            "type": "string",
+                            "example": "train"
+                          },
+                          "stem": {
+                            "type": "string",
+                            "example": "20240727_163021_Fwd_00029982",
+                            "description": "The video it came from and the absolute frame number in it."
+                          },
+                          "bytes": {
+                            "type": "integer"
+                          },
+                          "boxes": {
+                            "type": "array",
+                            "description": "Empty when the archive carries no label beside the frame, which is a fact about the build rather than an error.",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "class_index": {
+                                  "type": "integer",
+                                  "example": 2
+                                },
+                                "cx": {
+                                  "type": "number",
+                                  "example": 0.23412
+                                },
+                                "cy": {
+                                  "type": "number",
+                                  "example": 0.095045
+                                },
+                                "w": {
+                                  "type": "number",
+                                  "example": 0.05206
+                                },
+                                "h": {
+                                  "type": "number",
+                                  "example": 0.094724
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/dataset/{id}/preview/{index}": {
+      "get": {
+        "summary": "One frame of a dataset preview",
+        "description": "The image bytes for one entry of `GET /dataset/:id/preview`, cut out of the archive at the offset its tar header records.\n\n**Addressed by position in the sample, not by filename.** The archive is named for its own hash and never changes, so a walk of it returns the same order every time and a position is a stable address. A filename from the caller would be a caller-supplied path reaching a file read, which is a shape worth not having.\n\n`limit` must match the one the sample was taken with, because it is what the positions are relative to.\n\n**Cached hard and deliberately.** The response carries a strong ETag of the archive hash and the position, and `immutable`, because those bytes cannot change: a re-packaged dataset is a different hash. A reader fetches each preview frame once. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The dataset."
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Which frame of the sample."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 8
+            },
+            "description": "The sample size the index was taken against."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The frame.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/dataset/{id}": {
       "get": {
         "summary": "Fetch a dataset by id",
@@ -10784,8 +11194,8 @@
         }
       },
       "delete": {
-        "summary": "Delete a dataset",
-        "description": "Deletes a dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `datasets:write` permission.",
+        "summary": "Delete a dataset, its membership and its archive",
+        "description": "Deletes everything the dataset is -- the row, its membership and its class vocabulary -- and removes the archive from storage.\n\n**It refuses if a model was trained from it.** That is the schema's own rule rather than one added here: `dataset_observations` and `dataset_classes` are `ON DELETE CASCADE`, while `training_runs.dataset_id` is `NO ACTION` and PostgreSQL blocks the delete while a run points at the row. A dataset is the answer to *what was this model trained on*, so that is the guard working. The runs are looked up first so the refusal is a 409 naming the model that was trained, rather than a foreign-key violation arriving as a 500 -- which is what this route did until #268.\n\n**A dataset that is still building is refused too**, and asks for the build to be cancelled first. There is a runner holding a staging directory and about to write that row; deleting underneath it turns its own completion into the error. Cancelling is one press and takes effect within a pass.\n\n**The row goes first and the file only once that succeeded.** A refused delete must leave the archive where it was, and a dataset whose archive is gone but whose row survives is worse than either outcome. Removing the file was not done at all before, so a deleted dataset left gigabytes behind. A file that is already missing is not an error -- the row is what is being deleted.\n\n`gpu_jobs` rows survive, deliberately. A job is the record that the work happened, nothing references the dataset by a foreign key, and a job whose dataset is gone simply stops appearing in `GET /dataset/builds`. Requires the `datasets:write` permission.",
         "tags": [
           "V2 · MachineLearning"
         ],
@@ -10802,13 +11212,35 @@
         ],
         "responses": {
           "200": {
-            "description": "The number of rows destroyed (as returned by Sequelize)."
+            "description": "It is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    },
+                    "archive_removed": {
+                      "type": "boolean",
+                      "description": "False when the row named no archive, or the file was already absent."
+                    }
+                  }
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
           },
           "403": {
             "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "409": {
+            "description": "A model was trained from it, or it is still building. The message says which."
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -15524,6 +15956,176 @@
             "$ref": "#/components/responses/InternalServerError"
           }
         }
+      },
+      "delete": {
+        "summary": "Delete every job in one state",
+        "description": "Removes finished work that is only cluttering the queue. **`failed` is the only state this will delete**, and that is a decision rather than a first instalment: a `cancelled` job is one somebody changed their mind about, there are far more of them, and nobody has asked. The two are not interchangeable -- `observations.gpu_job_id` is `ON DELETE SET NULL`, so deleting a job that produced observations leaves them in place with nothing recording where they came from, which is provenance going quietly.\n\n**What goes with the job:** its attempts cascade, and the per-attempt event log cascades with them. That is much the larger half -- the attempts carry `failure_reason` and the events carry the log, several times as many rows. A caller should say so before asking for this.\n\n**What does not go:** a job an artifact still references. `artifacts.job_id` is `ON DELETE RESTRICT`, and those jobs are **excluded by the query rather than attempted**, so the constraint never fires and a partial result is reported as a partial result rather than as an error. Their ids come back in `blocked`. The artifacts themselves are never touched: deleting the output to tidy the record of the work would be the wrong trade.\n\n**What this would take is answered by `GET /gpu/jobs/deletable`**, over exactly these rows -- same `NOT EXISTS`, so the count and the act cannot drift apart. It is a separate verb rather than a flag here because an unknown query parameter is ignored rather than refused, and a `dryRun` an old server did not understand would be this delete. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "failed"
+              ],
+              "default": "failed"
+            },
+            "description": "Which state to clear. Only `failed` is accepted. Ignored when `ids` is given."
+          },
+          {
+            "in": "query",
+            "name": "ids",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "11254,9071,8800"
+            },
+            "description": "A selection, comma-separated, at most 200. Jobs that are safe to delete go; the rest come back in `blocked` with the reason. **There is no way to force one through here** -- a job holding observations has to be deleted on its own, where its own count is shown."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many went, and which were held back.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "example": "failed"
+                    },
+                    "deleted": {
+                      "type": "integer",
+                      "example": 1170
+                    },
+                    "blocked": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "description": "Jobs an artifact references, which were left alone."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/jobs/deletable": {
+      "get": {
+        "summary": "What clearing a state would delete",
+        "description": "Counts what `DELETE /gpu/jobs?state=...` would take, and takes nothing. The confirmation in front of a four-figure delete is only worth reading if it names real numbers, and numbers measured once and written into a sentence go stale silently -- so the screen asks at the moment it asks the operator.\n\n**A GET rather than a `dryRun` flag on the DELETE, and the difference is not stylistic.** An unknown query parameter is ignored rather than refused, so a `dryRun=true` sent to a MARP that predates the flag is an ordinary delete: the jobs go, and the caller is holding what it believes is a preview. A separate verb cannot be misread that way -- a server without this route answers 404 and destroys nothing.\n\nCounted over exactly the rows the delete would take, by the same `NOT EXISTS` on `artifacts`, so what this says and what that does cannot drift apart. `blocked` is how many an artifact holds; `observations` is how many detections would be left with nothing recording what produced them; `builds` names any failed dataset builds among them, because a build is the record of something somebody ran and deserves better than being folded into a total. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "failed"
+              ],
+              "default": "failed"
+            },
+            "description": "Which state to count. Only `failed` is accepted, because only `failed` can be cleared."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What would go, and what would stay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "example": "failed"
+                    },
+                    "jobs": {
+                      "type": "integer",
+                      "example": 1170,
+                      "description": "Jobs that would be deleted."
+                    },
+                    "attempts": {
+                      "type": "integer",
+                      "example": 3570,
+                      "description": "Attempts that would cascade with them."
+                    },
+                    "events": {
+                      "type": "integer",
+                      "example": 12088,
+                      "description": "Event rows cascading through those attempts."
+                    },
+                    "blocked": {
+                      "type": "integer",
+                      "example": 19,
+                      "description": "Jobs an artifact references, which would stay."
+                    },
+                    "observations": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "Detections that would be left unlinked. `observations.gpu_job_id` is SET NULL."
+                    },
+                    "builds": {
+                      "type": "array",
+                      "description": "Failed dataset builds among them, with the dataset each produced. The datasets are not touched.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "example": 21769
+                          },
+                          "dataset_id": {
+                            "type": "integer",
+                            "nullable": true,
+                            "example": 379
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
       }
     },
     "/v2/gpu/jobs/{id}": {
@@ -15566,6 +16168,72 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete one job",
+        "description": "Removes a single job and its attempts, whatever state it is in.\n\n**A job that produced observations does not delete on the first request.** `observations.gpu_job_id` is `ON DELETE SET NULL`, so deleting such a job neither refuses nor cascades: it leaves every observation in place and silently removes the link back to the run that produced it. Measured on the development corpus, the succeeded jobs hold **114,866 observations** between them and every other state holds none -- so this is a real loss on exactly the jobs a person is most likely to tidy away, and an invisible one. The first request answers **409 with the number of observations that job produced**; resend with `acknowledgeObservations=true` to go ahead. The count is that job's own, queried for the occasion, not a general warning.\n\n**A job an artifact references is refused outright**, because `artifacts.job_id` is RESTRICT. Deleting the artifact to make the job deletable would be destroying the output to tidy the record of the work.\n\nThe foreign key is deliberately left as SET NULL: it is the schema's existing decision and other things depend on it. The guard belongs here, where it can say what it is about to cost. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The job."
+          },
+          {
+            "in": "query",
+            "name": "acknowledgeObservations",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Required when the job produced observations; confirms their provenance may be unlinked."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job is gone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "integer"
+                    },
+                    "observationsUnlinked": {
+                      "type": "integer"
+                    },
+                    "attemptsRemoved": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "409": {
+            "description": "Held by an artifact, or it would unlink observations and nobody has said so."
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
