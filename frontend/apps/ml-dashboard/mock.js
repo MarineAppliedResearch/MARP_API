@@ -6558,7 +6558,6 @@ const TIPS = {
   'Description': 'A note for whoever picks this dataset later',
   'Added subsets': 'Each query contributes its matches; duplicates are dropped',
   'Dataset composition': 'How many observations each class contributes',
-  'Save query': 'Keep these filters for next time',
   'Add all matching to dataset': 'Add every match; duplicates are ignored',
   'Reassign': 'Assign the groups again from a new seed',
   /* models */
@@ -6642,9 +6641,7 @@ const TIPS = {
   'Runs': 'Training runs that have used it',
   'Add all 12,486 to the dataset': 'Add every matching observation; duplicates are ignored',
   'Run query': 'Count what these filters match',
-  'Load query': 'Reuse a saved set of filters',
   'Reassign groups': 'Assign the groups again from a new seed',
-  'Save draft': 'Keep the filters and membership without freezing a split',
   'Create dataset': 'Freeze this membership and split',
   'Train': 'Start a training run on this dataset',
 };
