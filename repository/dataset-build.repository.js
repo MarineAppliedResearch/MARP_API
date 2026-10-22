@@ -933,7 +933,7 @@ async function settleCancelledBuilds() {
  * @returns {Promise<void>}
  * @throws {Error} Re-throws any database failure.
  */
-async function recordBuild({ jobId, attemptId, datasetId, members, classes, archive, frames, observations, splitImages }) {
+async function recordBuild({ jobId, attemptId, datasetId, members, classes, archive, frames, observations, splitImages, splitClassImages }) {
     const transaction = await db.sequelize.transaction();
 
     try {
@@ -1039,6 +1039,42 @@ async function recordBuild({ jobId, attemptId, datasetId, members, classes, arch
                  VALUES (:datasetId, :split, :images, NOW(), NOW())`,
                 { replacements: { datasetId, split, images }, transaction }
             );
+        }
+
+        /* **Per species per split, from class indices the runner counted.** The mapping
+           is the `classes` array being written a few lines above, so the index that
+           produced a count and the index recorded in `dataset_classes` are the same one
+           by construction rather than by a second lookup that could disagree.
+
+           **These do not add up to the split's image count, on purpose.** A frame holding
+           two animals carries a label line for each and counts toward both species, so
+           summing across species exceeds `dataset_splits.images`. The two are different
+           facts and both are recorded. */
+        await db.sequelize.query(
+            'DELETE FROM dataset_split_species WHERE dataset_id = :datasetId',
+            { replacements: { datasetId }, transaction }
+        );
+
+        const speciesOfClass = new Map(classes.map((entry) => [entry.class_index, entry.species_id]));
+
+        for (const [split, counts] of (splitClassImages || new Map())) {
+            for (const [klass, images] of counts) {
+                const speciesId = speciesOfClass.get(klass);
+
+                /* A class the vocabulary does not name cannot be attributed to a species,
+                   and inventing one would put a bar under the wrong name. It is dropped
+                   and the split total, which is recorded separately, still holds. */
+                if (!speciesId || !images) continue;
+
+                await db.sequelize.query(
+                    `INSERT INTO dataset_split_species
+                         (dataset_id, split, species_id, images, created_at, updated_at)
+                     VALUES (:datasetId, :split, :speciesId, :images, NOW(), NOW())
+                     ON CONFLICT (dataset_id, split, species_id)
+                     DO UPDATE SET images = EXCLUDED.images, updated_at = NOW()`,
+                    { replacements: { datasetId, split, speciesId, images }, transaction }
+                );
+            }
         }
 
         await db.sequelize.query(

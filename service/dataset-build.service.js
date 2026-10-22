@@ -509,6 +509,9 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
         let written = 0;
         let missing = 0;
 
+        /** Images holding each class, for this video's split. Keyed by class index. */
+        const perClass = new Map();
+
         /* **One pass per batch, not one pass per video.** `extractFrames` builds a
            `select` expression with a term per frame, so a video wanting 8,408 frames
            produced a command line of roughly 340 KB against a limit near 32 KB, and the
@@ -561,8 +564,23 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
 
                 fs.renameSync(produced, destination);
 
-                fs.writeFileSync(path.join(labels, `${stem}.txt`), `${entry.frames.get(frame).join('\n')}\n`, 'utf8');
+                const lines = entry.frames.get(frame);
+
+                fs.writeFileSync(path.join(labels, `${stem}.txt`), `${lines.join('\n')}\n`, 'utf8');
                 written += 1;
+
+                /* **Which species this picture holds, counted as it is written.** The
+                   label lines already carry the class index as their first token, so this
+                   is a counter rather than a second pass over anything.
+
+                   **Distinct classes, not boxes.** Three urchins in one frame are three
+                   lines and one picture of an urchin; counting lines would make a bar
+                   longer than the number of images it claims to measure. */
+                for (const klass of new Set(lines.map((line) => Number(line.split(' ')[0])))) {
+                    if (!Number.isInteger(klass)) continue;
+
+                    perClass.set(klass, (perClass.get(klass) || 0) + 1);
+                }
             }
 
             // Converted or moved; nothing in here is wanted again, and a long video's
@@ -579,11 +597,11 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
                cut -- so adding a second `onBatch` for logging cannot silently cancel
                somebody's four-hour build. Stopping is a thing a caller has to say. */
             if (onBatch && await onBatch(written) === false) {
-                return { written, missing, stopped: true };
+                return { written, missing, perClass, stopped: true };
             }
         }
 
-        return { written, missing };
+        return { written, missing, perClass };
     } finally {
         fs.rmSync(cut, { recursive: true, force: true });
     }
@@ -752,6 +770,9 @@ async function runOne() {
         /** Images written, per split, so the Composition panel need not count them later. */
         const perSplit = new Map();
 
+        /** And per class within each split, which is what the per-species bars measure. */
+        const perSplitClass = new Map();
+
         const total_videos = videos.size;
 
         for (const entry of videos.values()) {
@@ -813,6 +834,16 @@ async function runOne() {
                share a directory and the two are different splits. */
             perSplit.set(entry.split, (perSplit.get(entry.split) || 0) + cut.written);
 
+            /* Per split and per class, so a species that appears in three videos of the
+               same split adds up rather than overwriting. */
+            if (!perSplitClass.has(entry.split)) perSplitClass.set(entry.split, new Map());
+
+            const into = perSplitClass.get(entry.split);
+
+            for (const [klass, count] of cut.perClass || []) {
+                into.set(klass, (into.get(klass) || 0) + count);
+            }
+
             if (cut.stopped) {
                 await buildRepository.failBuild({
                     jobId: job.id,
@@ -864,6 +895,9 @@ async function runOne() {
             frames: done,
             observations: members.length,
             splitImages: perSplit,
+            /* Class indices here; `recordBuild` turns them into species using the same
+               vocabulary it is writing, so the two cannot disagree about what class 2 is. */
+            splitClassImages: perSplitClass,
         });
 
         logger.info(`Dataset ${datasetId} built: ${done} images, ${classes.length} classes, `

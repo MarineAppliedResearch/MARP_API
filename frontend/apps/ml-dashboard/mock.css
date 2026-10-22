@@ -1786,9 +1786,19 @@ details.fold .fbody { padding: 4px 12px 14px; }
             border: 1px solid var(--hairline); }
 .splitbar i { display: grid; place-items: center; font-style: normal;
               font-size: 10.5px; font-weight: 600; white-space: nowrap; overflow: hidden; }
-.splitbar .tr { background: rgba(34, 215, 220, 0.30); color: var(--cyan-300); }
-.splitbar .va { background: rgba(155, 124, 240, 0.30); color: var(--violet-300); }
-.splitbar .te { background: rgba(246, 196, 83, 0.26); color: var(--amber-300); }
+/* **The three split tones, written once.** Three things draw them now -- the split
+   bar, its legend and the per-species bars below both -- and two colour schemes for
+   train/validation/test in one panel would be its own bug. Only the alpha varies by
+   context: a 26px band wants less of the colour than an 8px swatch, and amber reads
+   brighter than the other two at the same value. */
+.splitbar, .splitlegend, .speciessplit {
+  --tone-train: 34, 215, 220;
+  --tone-validation: 155, 124, 240;
+  --tone-test: 246, 196, 83;
+}
+.splitbar .tr { background: rgba(var(--tone-train), 0.30); color: var(--cyan-300); }
+.splitbar .va { background: rgba(var(--tone-validation), 0.30); color: var(--violet-300); }
+.splitbar .te { background: rgba(var(--tone-test), 0.26); color: var(--amber-300); }
 /* The counts live under the bar. Inside it, the ten per cent segment could not
    hold "Test 1,285" and clipped it mid-number. */
 .splitkey { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 7px; font-size: 11px; }
@@ -1949,21 +1959,36 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .dataset-facts span { display: grid; gap: 2px; padding: 8px; border-radius: 4px; background: var(--sunk); color: var(--faint); font-size: 8.5px; text-transform: uppercase; }
 .dataset-facts b { color: var(--white); font-size: 11px; text-transform: none; overflow-wrap: anywhere; }
 .dataset-class-summary { margin: 10px 0 3px; color: var(--text); font-size: 10px; }
-/* Where each species went. Four columns: the name, then one per split, so a species that
-   landed only in train shows two zeros rather than two absences. */
+/* Where each species went: a bar each, on the same three tones as the split bar above,
+   so a species that landed only in train is a bar with one shade in it. */
 .speciessplit { margin: 10px 0 2px; }
 .speciessplit h5 { display: flex; align-items: baseline; gap: 7px; margin: 0 0 5px; color: var(--white); font-size: 10px; }
 .speciessplit h5 span { color: var(--faint); font-size: 8.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
-.speciessplit ol { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.speciessplit li { display: grid; grid-template-columns: minmax(0, 1fr) 46px 46px 46px; gap: 6px; align-items: baseline; padding: 2px 4px; border-radius: 3px; font-size: 10px; }
-.speciessplit li.head { color: var(--faint); font-size: 8px; text-transform: uppercase; letter-spacing: .05em; }
+.speciessplit ol { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+/* Name, bar, total. The name column is capped rather than free so every bar starts at the
+   same x -- lengths being comparable at a glance is the whole reason this is a bar. */
+.speciessplit li { display: grid; grid-template-columns: minmax(0, 96px) minmax(0, 1fr) 52px; gap: 8px; align-items: center; padding: 2px 4px; border-radius: 3px; font-size: 10px; }
 .speciessplit li.more { color: var(--muted); font-style: italic; }
-.speciessplit li:nth-of-type(even):not(.head) { background: var(--sunk); }
+.speciessplit li:nth-of-type(even) { background: var(--sunk); }
+
+/* The track is visible at full width, so a short bar reads as a small share of the
+   commonest species rather than as a bar that failed to draw. */
+.speciessplit .sbar { display: flex; height: 11px; border-radius: 2px; overflow: hidden; background: var(--sunk); box-shadow: inset 0 0 0 1px var(--hairline); }
+.speciessplit .sbar i { display: block; height: 100%; font-style: normal; }
+.speciessplit .sbar .tr { background: rgba(var(--tone-train), 0.55); }
+.speciessplit .sbar .va { background: rgba(var(--tone-validation), 0.55); }
+.speciessplit .sbar .te { background: rgba(var(--tone-test), 0.5); }
+.speciessplit li:nth-of-type(even) .sbar { background: var(--panel); }
+
+/* The three shades named once, above the rows rather than on every one of them. */
+.speciessplit .skey { display: flex; flex-wrap: wrap; gap: 4px 11px; margin: 0 0 6px; padding: 0 4px; list-style: none; color: var(--faint); font-size: 8.5px; text-transform: uppercase; letter-spacing: .05em; }
+.speciessplit .skey li { display: flex; align-items: center; gap: 4px; padding: 0; background: none; font-size: inherit; }
+.speciessplit .skey i { width: 8px; height: 8px; border-radius: 2px; }
+.speciessplit .skey .tr { background: rgba(var(--tone-train), 0.55); }
+.speciessplit .skey .va { background: rgba(var(--tone-validation), 0.55); }
+.speciessplit .skey .te { background: rgba(var(--tone-test), 0.5); }
 .sn { min-width: 0; color: var(--text); overflow-wrap: anywhere; }
 .sv { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
-/* A zero is shown and muted rather than hidden: an empty split is the thing the
-   stratification exists to prevent, so it has to be visible as a zero. */
-.sv.none { color: var(--faint); }
 .linkish { padding: 3px 0; border: 0; background: none; color: var(--cyan-300); font: inherit; font-size: 9.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 /* The three numbers per split, under the bar. A row each rather than packed into the
    band, because the bands are sized by share and the smallest one has no room for a
@@ -1986,9 +2011,9 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .splitlegend { display: grid; gap: 4px; margin: 9px 0 0; padding: 0; list-style: none; }
 .splitlegend li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 9px; font-size: 9.5px; color: var(--faint); }
 .splitlegend i { width: 8px; height: 8px; border-radius: 2px; }
-.splitlegend .tr { background: rgba(34, 215, 220, 0.55); }
-.splitlegend .va { background: rgba(155, 124, 240, 0.55); }
-.splitlegend .te { background: rgba(246, 196, 83, 0.5); }
+.splitlegend .tr { background: rgba(var(--tone-train), 0.55); }
+.splitlegend .va { background: rgba(var(--tone-validation), 0.55); }
+.splitlegend .te { background: rgba(var(--tone-test), 0.5); }
 .splitname { min-width: 66px; color: var(--white); text-transform: uppercase; letter-spacing: .05em; font-size: 8.5px; }
 .splitshare { min-width: 34px; color: var(--text); font-size: 10.5px; }
 .splitof b { color: var(--text); font-weight: 600; }

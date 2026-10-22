@@ -6564,28 +6564,41 @@ async function refreshBuildQueue() {
 const SPECIES_SHOWN = 8;
 
 /**
- * Where each species went, split by split.
+ * Where each species went, split by split, as a bar each.
  *
- * *"The dataset composition and split should show us the split number of each species,
- * kinda like we do above when we build the dataset."* The build flow's breakdown answers
- * what a query matched; this answers what the build actually put in the archive.
+ * *"each species should have an associated bar, who's length is the number of images, and
+ * each bar should have 3 shades, one for the training amount, one for the validation
+ * amount, and one for the test amount."* The panel above answers how the dataset as a
+ * whole was split; this answers it per species, which is where a stratification goes
+ * wrong -- a rare animal landing entirely in train is invisible in the dataset's own
+ * 70/20/10 and obvious in its own bar.
  *
- * **Counted in observations, and the header says so.** The panel above this one counts
- * **images** per split, and the two differ by about ninety to one -- 164 observations
- * became 15,020 images. Two numbers in one panel in two units, with nothing saying which
- * is which, is the mistake this screen has already been corrected for twice, so the unit
- * is a column heading rather than a footnote. Images per species are not available:
- * `dataset_splits` records them per split, and deriving them from keyframe spans would
- * give what the build *intended* to cut rather than what it wrote.
+ * **Images, the same unit as the bar above it.** This shipped in observations because
+ * that was all that was recorded, and the two differ by about ninety to one -- 164
+ * observations were 15,020 images. A length is compared without reading a heading, so two
+ * units in one panel is worse as bars than it was as columns. The build now counts
+ * species per frame as it writes each label file and
+ * `scripts/backfill-split-species-images.js` reads them out of the archives for anything
+ * built before it did; a dataset neither has falls back to observations and says so,
+ * rather than the same bar quietly meaning something else.
  *
- * **A zero is drawn, not dropped.** A rare species landing only in train is what the
- * stratification exists to prevent, and it is only visible if the empty cells are there.
+ * **Lengths are against the largest species, not against the dataset.** The point of the
+ * row is the shape of its own split and how it compares with its neighbours'. Scaling to
+ * the dataset's total would leave every bar but the commonest a sliver, with the three
+ * shades too small to tell apart -- which is the one thing the bar is for.
+ *
+ * **The bars do not add up to the dataset, and the hint says so.** A frame holding a
+ * cucumber and an anemone is one image and counts for both, so these sum to more than the
+ * split totals above -- 34,075 against 33,417 on the dataset that prompted this.
+ *
+ * **A zero is drawn, not dropped.** A species with nothing in test gets no test segment
+ * and a title saying zero, which is what makes the gap visible rather than invisible.
  *
  * **Folded after eight, the way the build flow folds after five**, because a breakdown
  * that is fine with four species and unreadable with thirty is not finished. The fold
  * sums the rest rather than hiding them, and says how many it is holding.
  *
- * @param {Object[]} rows - `{species_id, comname, split, observations}` from the route.
+ * @param {Object[]} rows - `{species_id, comname, split, observations, images}`.
  * @param {boolean} all - Show every species rather than the first {@link SPECIES_SHOWN}.
  * @returns {string}
  */
@@ -6596,6 +6609,12 @@ function speciesSplitTable(rows, all) {
      `validation` and `eval` share `eval/` on disk, and a panel about membership should
      say what was asked for rather than where it landed. */
   const splits = ['train', 'validation', 'test'];
+
+  /* `Number(null)` is 0, not NaN, so a bare `Number.isFinite` would read an unrecorded
+     count as zero images -- a measurement, and the wrong one. Same guard as `splitBar`. */
+  const known = (row) => row.images !== null && row.images !== undefined && Number.isFinite(Number(row.images));
+  const byImages = rows.every(known);
+  const unit = byImages ? 'images' : 'observations';
   const by = new Map();
 
   for (const row of rows) {
@@ -6606,7 +6625,7 @@ function speciesSplitTable(rows, all) {
     }
 
     const entry = by.get(key);
-    const n = Number(row.observations) || 0;
+    const n = Number(byImages ? row.images : row.observations) || 0;
 
     entry.counts[row.split] = (entry.counts[row.split] || 0) + n;
     entry.total += n;
@@ -6616,35 +6635,74 @@ function speciesSplitTable(rows, all) {
   const shown = all ? sorted : sorted.slice(0, SPECIES_SHOWN);
   const rest = all ? [] : sorted.slice(SPECIES_SHOWN);
 
-  const cells = (entry) => splits
-    .map((split) => `<span class="sv${entry.counts[split] ? '' : ' none'}">${(entry.counts[split] || 0).toLocaleString('en-US')}</span>`)
-    .join('');
+  /* The longest bar, over every species rather than the shown ones, so folding the tail
+     away does not silently rescale the rows that stayed. */
+  const widest = sorted.reduce((most, entry) => Math.max(most, entry.total), 0);
 
-  const body = shown.map((entry) => `<li><span class="sn">${escapeHtml(entry.name)}</span>${cells(entry)}</li>`).join('');
+  if (!widest) return '';
 
-  /* One row standing for the rest, with its own split counts summed -- not a count of
-     species with the numbers thrown away, which would make the columns stop adding up. */
+  /* The class on each segment is what colours it, from the same three tokens the split
+     bar above uses; an unexpected split name takes the neutral one rather than no class,
+     which would be an invisible segment. */
+  const tone = { train: 'tr', validation: 'va', val: 'va', eval: 'va', test: 'te' };
+  const count = (n) => Number(n || 0).toLocaleString('en-US');
+
+  const bar = (entry) => {
+    const said = splits.map((split) => `${split} ${count(entry.counts[split])}`).join(', ');
+
+    /* Each segment is a share of the widest species, so the three together are this
+       species' own length. A zero contributes nothing and is left out of the markup
+       rather than drawn as a hairline, which would read as a very small amount. */
+    const segments = splits.map((split) => {
+      const n = Number(entry.counts[split]) || 0;
+
+      return n ? `<i class="${tone[split] || 'tr'}" style="width:${(n / widest) * 100}%"></i>` : '';
+    }).join('');
+
+    return `<span class="sbar" title="${escapeHtml(`${entry.name}: ${said}`)}">${segments}</span>`;
+  };
+
+  const row = (entry, className) => `<li${className ? ` class="${className}"` : ''}>`
+    + `<span class="sn">${escapeHtml(entry.name)}</span>`
+    + bar(entry)
+    + `<span class="sv">${count(entry.total)}</span></li>`;
+
+  const body = shown.map((entry) => row(entry)).join('');
+
+  /* One row standing for the rest, with its split counts summed -- not a count of species
+     with the numbers thrown away, which would leave the panel unable to say where they
+     went. Its bar is drawn on the same scale, so it can be longer than any single row. */
   const folded = rest.length
-    ? `<li class="more"><span class="sn">Other (${rest.length} ${rest.length === 1 ? 'species' : 'species'})</span>`
-      + cells(rest.reduce((sum, entry) => {
-        for (const split of splits) sum.counts[split] = (sum.counts[split] || 0) + (entry.counts[split] || 0);
+    ? row(rest.reduce((sum, entry) => {
+      for (const split of splits) sum.counts[split] = (sum.counts[split] || 0) + (entry.counts[split] || 0);
+      sum.total += entry.total;
 
-        return sum;
-      }, { counts: {} }))
-      + '</li>'
+      return sum;
+    }, { name: `Other (${rest.length} species)`, total: 0, counts: {} }), 'more')
     : '';
 
   const toggle = (rest.length || all)
     ? `<button class="linkish" type="button" data-species-split-toggle>${all ? 'Show fewer' : `Show all ${sorted.length}`}</button>`
     : '';
 
+  /* The legend names the three shades once. Repeating the split name on every row would
+     be thirty labels for three facts, and the bar above this one has already taught the
+     reader which colour is which -- this is the reminder, not the lesson. */
+  const key = splits
+    .map((split) => `<li><i class="${tone[split]}"></i>${split}</li>`)
+    .join('');
+
   /* The toggle lives inside this element, because redrawing replaces the element whole
      -- a button outside it would keep saying "Show all" after everything was shown. */
   return '<div class="speciessplit">'
-    + '<h5>By species <span>observations, not images</span></h5>'
-    + `<ol><li class="head"><span class="sn"></span>${splits
-      .map((split) => `<span class="sv">${split}</span>`).join('')}</li>`
-    + body + folded + '</ol>' + toggle + '</div>';
+    + `<h5>By species <span>${unit}</span></h5>`
+    + `<ul class="skey">${key}</ul>`
+    + `<ol>${body}${folded}</ol>`
+    + toggle
+    + `<p class="hint">${byImages
+      ? 'A frame holding two species counts for both, so these add up to more than the splits above.'
+      : 'The archive could not be counted, so these are observations rather than the images the splits above are in.'}</p>`
+    + '</div>';
 }
 
 function datasetPillContents(status, build) {

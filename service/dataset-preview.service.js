@@ -308,6 +308,89 @@ async function splitImages(datasetId) {
 }
 
 /**
+ * How many images in each split directory hold each class.
+ *
+ * **For the backfill, and deliberately not for a request.** `splitClassImages` is now
+ * recorded by the build as it writes each label file, which costs a counter; this reads
+ * every label member of the archive instead -- fifty thousand small reads against the
+ * larger datasets here -- and exists so the four built before that was recorded can be
+ * filled in once. Nothing on a screen should call it.
+ *
+ * **Distinct classes per file, not label lines.** Three urchins in one frame are three
+ * lines and one picture of an urchin, so counting lines would make a bar longer than the
+ * number of images it claims to measure. It follows that these sum to more than the
+ * directory's image count whenever a frame holds two species, which is the same
+ * arithmetic `dataset_split_species` records a comment about.
+ *
+ * One file descriptor for the whole pass. Opening per member, which {@link read} does
+ * because a preview reads a dozen of them, is what turns this from seconds into minutes.
+ *
+ * @param {string} absolutePath - The archive.
+ * @returns {Object<string, Map<number, number>>} Directory to class index to images.
+ */
+function classTally(absolutePath) {
+    const labels = members(absolutePath)
+        .filter((member) => /^(train|eval|test)\/labels\/[^/]+\.txt$/i.test(member.name));
+
+    const counts = {};
+    const fd = fs.openSync(absolutePath, 'r');
+
+    try {
+        for (const member of labels) {
+            const directory = member.name.split('/')[0];
+
+            if (!counts[directory]) counts[directory] = new Map();
+
+            if (!member.size) continue;
+
+            const buffer = Buffer.allocUnsafe(member.size);
+            const got = fs.readSync(fd, buffer, 0, member.size, member.offset);
+            const seen = new Set();
+
+            for (const line of buffer.subarray(0, got).toString('utf8').split(/\r?\n/)) {
+                const first = line.trim().split(/\s+/)[0];
+                const klass = Number(first);
+
+                // A blank line is `Number('')` -- zero, and class zero is a real species.
+                if (first === '' || !Number.isInteger(klass)) continue;
+
+                seen.add(klass);
+            }
+
+            for (const klass of seen) {
+                counts[directory].set(klass, (counts[directory].get(klass) || 0) + 1);
+            }
+        }
+    } finally {
+        fs.closeSync(fd);
+    }
+
+    return counts;
+}
+
+/**
+ * How many images of each class one dataset's archive holds, per split directory.
+ *
+ * The dataset-shaped wrapper around {@link classTally}, so a caller never has to know
+ * where an archive lives. **For `scripts/backfill-split-species-images.js` and nothing
+ * else** -- the build records these as it writes, and this reads every label file in the
+ * archive to answer for the datasets built before it did.
+ *
+ * Uncached on purpose: it is run once per dataset, ever, and caching fifty thousand
+ * counts to save a second pass nobody makes would be holding memory for a hypothesis.
+ *
+ * @async
+ * @param {number|string} datasetId - `datasets.id`.
+ * @returns {Promise<Object<string, Map<number, number>>>} Directory to class to images.
+ * @throws {ApiError} 404 when there is no archive to read.
+ */
+async function splitClassImages(datasetId) {
+    const archive = await gpuService.datasetArchive(datasetId);
+
+    return classTally(archive.absolutePath);
+}
+
+/**
  * The frames a dataset's preview shows, and the boxes drawn on them.
  *
  * @async
@@ -396,6 +479,7 @@ module.exports = {
     preview,
     frame,
     splitImages,
+    splitClassImages,
     DEFAULT_LIMIT,
     MAX_LIMIT,
 };

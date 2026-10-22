@@ -106,17 +106,26 @@ class DatasetRepository {
             { replacements: { datasetId }, type: QueryTypes.SELECT }
         );
 
-        /* **Per species, per split, in observations.** Isaac asked for this in the words
+        /* **Per species, per split, in both units.** Isaac asked for this in the words
            *"kinda like we do above when we build the dataset"* -- the build flow's class
-           breakdown, but for what was actually built rather than what a query matched.
+           breakdown, but for what was actually built rather than what a query matched --
+           and then for a bar per species whose length is its **image** count.
 
-           **Observations, not images, and the panel says so.** `dataset_observations` is
-           a row per observation, so counting it is exact. Images per species is the more
-           useful number and is not available: `dataset_splits` records images per split,
-           not per species, and deriving them from keyframe spans would give what the
-           build *intended* to cut rather than what it wrote -- `cutVideo` reports frames
-           it could not produce. An estimate dressed as a count is the thing this panel
-           has twice been corrected for.
+           The two numbers come from different places for the same reason the split totals
+           above do. Observations are counted live from `dataset_observations`, which is
+           the record of membership and shrinks when an observation is deleted. Images
+           cannot be derived from anything here at all -- an observation is a span between
+           keyframes and becomes many frames, some of which the build could not cut -- so
+           they are read from what the build counted as it wrote each label file.
+
+           A `LEFT JOIN`, so a dataset built before `dataset_split_species` existed still
+           lists its species with a null image count, which the screen draws as *not
+           recorded* rather than as zero. `scripts/backfill-split-species-images.js` fills
+           those in from the archives.
+
+           **These image counts do not sum to the split's.** A frame holding two animals
+           counts for both species. The screen has to say so; the arithmetic is a property
+           of the data rather than a defect, and it has already confused this panel once.
 
            A zero is kept rather than dropped: a rare species landing only in train is
            exactly what the stratification exists to prevent, so the reader has to be able
@@ -125,9 +134,14 @@ class DatasetRepository {
             `SELECT o.species_id,
                     o.comname,
                     m.inclusion_type AS split,
-                    count(*)::int    AS observations
+                    count(*)::int    AS observations,
+                    max(i.images)    AS images
                FROM dataset_observations m
                JOIN observations o ON o.observation_id = m.observation_id
+               LEFT JOIN dataset_split_species i
+                      ON i.dataset_id = m.dataset_id
+                     AND i.split = m.inclusion_type
+                     AND i.species_id = o.species_id
               WHERE m.dataset_id = :datasetId
               GROUP BY o.species_id, o.comname, m.inclusion_type
               ORDER BY o.comname, m.inclusion_type`,

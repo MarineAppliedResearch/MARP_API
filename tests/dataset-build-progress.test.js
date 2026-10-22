@@ -2279,6 +2279,229 @@ describe('GET /api/v2/dataset/builds', () => {
 
             expect(rows).toEqual([]);
         });
+
+        /** Two species with comnames, for the per-species counts below. */
+        async function twoSpecies() {
+            return db.sequelize.query(
+                'SELECT id, comname FROM species WHERE comname IS NOT NULL ORDER BY id LIMIT 2',
+                { type: QueryTypes.SELECT }
+            );
+        }
+
+        /**
+         * **The class indices the runner counted become species here, through the
+         * vocabulary the same call is writing.** That is the point of doing the mapping
+         * in `recordBuild` rather than in the runner: the index that produced a count and
+         * the index recorded in `dataset_classes` are the same one by construction, so
+         * the two cannot disagree about what class 2 is.
+         *
+         * The numbers differ per split and per class so the answer cannot pass by
+         * flattening either dimension.
+         */
+        it('records per-species image counts against the vocabulary it writes', async () => {
+            const datasetId = await seedMembership('splitspecies', { train: 1 });
+            const [first, second] = await twoSpecies();
+
+            await buildRepository.recordBuild({
+                jobId: null,
+                attemptId: null,
+                datasetId,
+                members: [],
+                classes: [
+                    { class_index: 0, species_id: first.id },
+                    { class_index: 1, species_id: second.id },
+                ],
+                archive: { path: null, sha256: null, bytes: null },
+                frames: 40,
+                observations: 0,
+                splitImages: new Map([['train', 30], ['test', 10]]),
+                splitClassImages: new Map([
+                    ['train', new Map([[0, 25], [1, 9]])],
+                    ['test', new Map([[0, 7]])],
+                ]),
+            });
+
+            const rows = await db.sequelize.query(
+                `SELECT split, species_id, images
+                   FROM dataset_split_species
+                  WHERE dataset_id = :datasetId
+                  ORDER BY split, species_id`,
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(rows).toEqual([
+                { split: 'test', species_id: first.id, images: 7 },
+                { split: 'train', species_id: first.id, images: 25 },
+                { split: 'train', species_id: second.id, images: 9 },
+            ]);
+
+            /* **25 + 9 is 34 against a split of 30, and that is right.** A frame holding
+               two animals is one image and carries a label line for each, so it counts
+               toward both species. The two facts are recorded separately because neither
+               derives from the other, and a reader comparing them needs the panel to say
+               so rather than to find a discrepancy. */
+            const [split] = await db.sequelize.query(
+                "SELECT images FROM dataset_splits WHERE dataset_id = :datasetId AND split = 'train'",
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(split.images).toBe(30);
+        });
+
+        /**
+         * A class index the vocabulary does not name cannot be attributed to a species,
+         * and guessing would put one species' pictures under another's name. It is
+         * dropped; the split total, recorded separately, still holds.
+         */
+        it('drops a counted class the vocabulary does not name', async () => {
+            const datasetId = await seedMembership('unnamedclass', { train: 1 });
+            const [only] = await twoSpecies();
+
+            await buildRepository.recordBuild({
+                jobId: null,
+                attemptId: null,
+                datasetId,
+                members: [],
+                classes: [{ class_index: 0, species_id: only.id }],
+                archive: { path: null, sha256: null, bytes: null },
+                frames: 12,
+                observations: 0,
+                splitImages: new Map([['train', 12]]),
+                splitClassImages: new Map([['train', new Map([[0, 12], [7, 5]])]]),
+            });
+
+            const rows = await db.sequelize.query(
+                'SELECT species_id, images FROM dataset_split_species WHERE dataset_id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(rows).toEqual([{ species_id: only.id, images: 12 }]);
+        });
+
+        /** A rebuild replaces the rows wholesale, the way the membership and splits do. */
+        it('replaces the per-species counts when a build records them again', async () => {
+            const datasetId = await seedMembership('speciesrebuilt', { train: 1 });
+            const [first, second] = await twoSpecies();
+
+            const record = (classes, counts) => buildRepository.recordBuild({
+                jobId: null,
+                attemptId: null,
+                datasetId,
+                members: [],
+                classes,
+                archive: { path: null, sha256: null, bytes: null },
+                frames: 10,
+                observations: 0,
+                splitImages: new Map([['train', 10]]),
+                splitClassImages: new Map([['train', counts]]),
+            });
+
+            await record(
+                [{ class_index: 0, species_id: first.id }, { class_index: 1, species_id: second.id }],
+                new Map([[0, 4], [1, 6]])
+            );
+
+            /* The second build dropped a species. Adding to what was there, or leaving it,
+               would keep a bar on the panel for an animal the archive no longer holds. */
+            await record([{ class_index: 0, species_id: second.id }], new Map([[0, 10]]));
+
+            const rows = await db.sequelize.query(
+                'SELECT species_id, images FROM dataset_split_species WHERE dataset_id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(rows).toEqual([{ species_id: second.id, images: 10 }]);
+        });
+
+        /**
+         * **The bars are drawn from images, so the route has to carry them**, and a
+         * dataset built before they were recorded has to be distinguishable from one with
+         * none. Null is not known; a number is a measurement.
+         *
+         * The observation count and the image count are made to differ, because a panel
+         * reading the wrong one would still look plausible.
+         */
+        it('serves per-species image counts beside the observation counts', async () => {
+            const datasetId = await seedMembership('speciesimages', {});
+            const [first, second] = await twoSpecies();
+
+            for (const [species, split, howMany] of [[first, 'train', 2], [second, 'train', 1]]) {
+                for (let i = 0; i < howMany; i++) {
+                    const [observation] = await db.sequelize.query(
+                        `INSERT INTO observations ("obsID", species_id, comname, "createdAt", "updatedAt")
+                         VALUES (0, :speciesId, :comname, NOW(), NOW())
+                         RETURNING observation_id`,
+                        {
+                            replacements: { speciesId: species.id, comname: species.comname },
+                            type: QueryTypes.SELECT,
+                        }
+                    );
+
+                    made.observations.push(observation.observation_id);
+
+                    await db.sequelize.query(
+                        `INSERT INTO dataset_observations
+                             (dataset_id, observation_id, inclusion_type, selection_method,
+                              created_at, updated_at)
+                         VALUES (:dataset, :observation, 'train', 'jest', NOW(), NOW())`,
+                        {
+                            replacements: {
+                                dataset: datasetId,
+                                observation: observation.observation_id,
+                                split,
+                            },
+                        }
+                    );
+                }
+            }
+
+            // Recorded for one species only, so the null and the number are both exercised.
+            await db.sequelize.query(
+                `INSERT INTO dataset_split_species
+                     (dataset_id, split, species_id, images, created_at, updated_at)
+                 VALUES (:datasetId, 'train', :speciesId, 180, NOW(), NOW())`,
+                { replacements: { datasetId, speciesId: first.id } }
+            );
+
+            const res = await global.api.get(`/api/v2/dataset/${datasetId}/composition`);
+
+            expect(res.status).toBe(200);
+
+            const bySpecies = Object.fromEntries(
+                res.body.speciesSplits.map((row) => [row.species_id, row])
+            );
+
+            expect(bySpecies[first.id]).toMatchObject({ observations: 2, images: 180 });
+            expect(bySpecies[second.id]).toMatchObject({ observations: 1, images: null });
+        });
+
+        /**
+         * The rows go with the dataset. `DELETE /dataset/:id` depends on it: a child
+         * without `ON DELETE CASCADE` refuses the delete and turns a working control into
+         * a 409 nobody could explain.
+         */
+        it('takes the per-species counts with the dataset when it is deleted', async () => {
+            const datasetId = await seedMembership('speciescascade', { train: 1 });
+            const [only] = await twoSpecies();
+
+            await db.sequelize.query(
+                `INSERT INTO dataset_split_species
+                     (dataset_id, split, species_id, images, created_at, updated_at)
+                 VALUES (:datasetId, 'train', :speciesId, 3, NOW(), NOW())`,
+                { replacements: { datasetId, speciesId: only.id } }
+            );
+
+            const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
+
+            expect(res.status).toBe(200);
+
+            const rows = await db.sequelize.query(
+                'SELECT split FROM dataset_split_species WHERE dataset_id = :datasetId',
+                { replacements: { datasetId }, type: QueryTypes.SELECT }
+            );
+
+            expect(rows).toEqual([]);
+        });
     });
 
     /**
