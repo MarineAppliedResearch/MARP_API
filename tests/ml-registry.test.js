@@ -34,6 +34,12 @@ const createdDatasetIds = [];
 /** Training run ids created here. @type {Array<number>} */
 const createdRunIds = [];
 
+/** Species ids created here. @type {Array<number>} */
+const createdSpeciesIds = [];
+
+/** model_species linkage ids created here. @type {Array<number>} */
+const createdLinkIds = [];
+
 /**
  * @param {string} sql - The statement.
  * @param {Object} [replacements] - Bound values.
@@ -66,7 +72,69 @@ async function addModel({ suffix, modelType, parentId = null, preferred = false 
     return model.id;
 }
 
+/**
+ * Put a species in the list, so a model has something real to map to.
+ *
+ * @param {Object} options
+ * @param {string} options.suffix - Distinguishes it within this run.
+ * @param {string} options.list - Its `species_list`.
+ * @returns {Promise<number>} Its id.
+ */
+async function addSpecies({ suffix, list }) {
+    const [species] = await query(
+        `INSERT INTO species (taxserial, species_list, comname, species, is_active, created_at, updated_at)
+         VALUES (:taxserial, :list, :comname, 'Registrus testus', true, NOW(), NOW())
+         RETURNING id`,
+        {
+            // Within INTEGER, and unique per row within this run.
+            taxserial: (Date.now() % 2000000000) + createdSpeciesIds.length,
+            list,
+            comname: `${marker}-${suffix}`,
+        }
+    );
+
+    createdSpeciesIds.push(species.id);
+
+    return species.id;
+}
+
+/**
+ * Map a species to a model.
+ *
+ * @param {number} modelId - The model.
+ * @param {number} speciesId - The species.
+ * @param {Object} [figures] - `{datasetSize, recallMean}`.
+ * @returns {Promise<void>}
+ */
+async function mapSpecies(modelId, speciesId, figures = {}) {
+    const [link] = await query(
+        `INSERT INTO model_species (model_id, species_id, dataset_size, recall_mean, created_at, updated_at)
+         VALUES (:modelId, :speciesId, :datasetSize, :recallMean, NOW(), NOW())
+         RETURNING id`,
+        {
+            modelId,
+            speciesId,
+            datasetSize: figures.datasetSize ?? null,
+            recallMean: figures.recallMean ?? null,
+        }
+    );
+
+    createdLinkIds.push(link.id);
+}
+
 afterAll(async () => {
+    if (createdLinkIds.length) {
+        await db.sequelize.query('DELETE FROM model_species WHERE id IN (:ids)', {
+            replacements: { ids: createdLinkIds },
+        });
+    }
+
+    if (createdSpeciesIds.length) {
+        await db.sequelize.query('DELETE FROM species WHERE id IN (:ids)', {
+            replacements: { ids: createdSpeciesIds },
+        });
+    }
+
     if (createdRunIds.length) {
         await db.sequelize.query('DELETE FROM training_runs WHERE id IN (:ids)', {
             replacements: { ids: createdRunIds },
@@ -171,6 +239,67 @@ describe('R7 — a model\'s version chain', () => {
         /* Empty would read as "a model with no versions", which cannot happen:
            a model is always in its own chain. */
         expect(response.status).toBe(404);
+    });
+});
+
+describe('R10 — a model says which species it can detect', () => {
+    test('the classes come back by common name, with the linkage figures', async () => {
+        const modelId = await addModel({ suffix: 'classes', modelType: `${marker}-classes` });
+        const zebra = await addSpecies({ suffix: 'z-zebra', list: 'Fish' });
+        const anemone = await addSpecies({ suffix: 'a-anemone', list: 'Fish' });
+
+        await mapSpecies(modelId, zebra, { datasetSize: 120, recallMean: 0.42 });
+        await mapSpecies(modelId, anemone, { datasetSize: 980, recallMean: 0.91 });
+
+        const response = await global.api.get(`/api/v2/ml_models/${modelId}/species`);
+
+        expect(response.status).toBe(200);
+        expect(response.body).toHaveLength(2);
+
+        // By comname, so "a-anemone" leads whatever order the rows were written in.
+        expect(response.body.map((row) => row.comname))
+            .toEqual([`${marker}-a-anemone`, `${marker}-z-zebra`]);
+
+        const [first] = response.body;
+
+        expect(first.species_id).toBe(anemone);
+        expect(first.species_list).toBe('Fish');
+        expect(first.dataset_size).toBe(980);
+        expect(first.recall_mean).toBeCloseTo(0.91, 5);
+    });
+
+    test('a model nothing has mapped answers with an empty list, not a 404', async () => {
+        const modelId = await addModel({ suffix: 'unmapped', modelType: `${marker}-unmapped` });
+
+        const response = await global.api.get(`/api/v2/ml_models/${modelId}/species`);
+
+        // A registered model with no classes yet is a real state -- it is what every
+        // model looks like between being registered and being described.
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual([]);
+    });
+
+    test('it answers only for the model asked about', async () => {
+        const mine = await addModel({ suffix: 'mine', modelType: `${marker}-scoped` });
+        const theirs = await addModel({ suffix: 'theirs', modelType: `${marker}-scoped-other` });
+        const shared = await addSpecies({ suffix: 'shared', list: 'Inverts' });
+        const only = await addSpecies({ suffix: 'only-theirs', list: 'Inverts' });
+
+        await mapSpecies(mine, shared);
+        await mapSpecies(theirs, shared);
+        await mapSpecies(theirs, only);
+
+        const response = await global.api.get(`/api/v2/ml_models/${mine}/species`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.map((row) => row.species_id)).toEqual([shared]);
+    });
+
+    test('an anonymous caller is refused', async () => {
+        const request = require('supertest');
+        const response = await request(require('../app')).get('/api/v2/ml_models/1/species');
+
+        expect(response.status).toBe(401);
     });
 });
 

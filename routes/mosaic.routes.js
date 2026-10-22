@@ -191,6 +191,54 @@ function registerMosaicRoutes(app) {
     registerVersionedRoute(app, {
         method: 'post',
         permission: PERMISSION,
+        path: '/api/mosaic/observations/frames',
+        summary: 'How much video a mosaic question covers',
+        description:
+            'Answers how many frames a dataset built from this question would contain. `keyframes` is what somebody or something '
+            + 'drew a box on; **`frames` adds the frames interpolated between them**, because those are trained on as well, and it '
+            + 'is the number a training run is sized against. The span of one observation is its last keyframe minus its first, plus '
+            + 'one -- the same figure as summing the gap between each keyframe and the next, since the gaps tile the span. '
+            + '**Counted per observation rather than per picture**: two animals tracked through the same stretch of video contribute '
+            + 'those frames twice, which is what "how many training examples" means and is not what "how many image files" means. '
+            + 'A route of its own rather than fields on the counts route beside it, for the same reason the facets route is one: '
+            + 'that response is a fixed six-and-a-total over a set the status filters deliberately do not touch, and **the status '
+            + 'filters do apply here** -- a dataset is built from promoted work specifically, so a frame count ignoring that would '
+            + 'answer a question nobody asked.',
+        tags: [TAG],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        properties: {
+                            filters: { $ref: '#/components/schemas/MosaicQueryFilters' },
+                        },
+                        description: 'The same filters object the page query takes, status dimensions included.',
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: 'The observation, keyframe and frame counts.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/MosaicFrameCounts' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            try {
+                res.json(await mosaicRepository.frames(req.body || {}));
+            } catch (error) {
+                throw asClientError(error);
+            }
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: PERMISSION,
         path: '/api/mosaic/observations/facets',
         summary: 'Which values each rail dimension can still offer for one question',
         description:

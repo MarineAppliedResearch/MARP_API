@@ -1058,6 +1058,169 @@ SELECT count(*)::int                                          AS total,
 }
 
 /**
+ * How many frames a question's observations cover.
+ *
+ * **Three numbers, because they answer three different questions.** `observations` is
+ * how many rows matched. `keyframes` is how many frames a person or a detector actually
+ * drew a box on. `frames` is what a dataset built from this question would contain --
+ * the keyframes *plus the frames interpolated between them*, which are trained on as
+ * well. That third one is the number somebody plans a training run against, and it is
+ * the one neither `counts` nor `facets` can answer.
+ *
+ * **The span is `max(framenum) - min(framenum) + 1` per observation**, and that is the
+ * same number as summing the gap between each keyframe and the next, because the gaps
+ * tile the span exactly. Written as min/max because it is one pass and no ordering.
+ *
+ * **Counted per observation, not per picture.** Two observations tracking two animals
+ * through the same stretch of video cover the same frames, and both are counted -- which
+ * is right for "how many training examples", and wrong for "how many image files". The
+ * second is a different question and needs the frames expanded and de-duplicated per
+ * session; it is not what the screen asks.
+ *
+ * Unlike {@link buildCountsQuery} the status filters **do** apply here. The dataset
+ * builder asks about promoted work specifically, and a frame count over everything the
+ * non-status filters reach would be an answer to a question nobody asked.
+ *
+ * @param {Object} request - `{filters}`.
+ * @returns {{sql: string, bind: Array}} The statement and its parameters.
+ * @throws {MosaicRequestError} If a filter cannot be served.
+ */
+function buildFramesQuery({ filters = {} }) {
+    const bind = binder();
+    const where = predicates(filters, bind);
+
+    const sql = `
+SELECT count(*)::int                             AS observations,
+       coalesce(sum(k.keyframes), 0)::int        AS keyframes,
+       coalesce(sum(k.span), 0)::int             AS frames
+  FROM observations o
+  LEFT JOIN sessions s ON s.session_id = o.session_id
+  LEFT JOIN projects p ON p.project_id = o.project_id
+  LEFT JOIN observation_review_current rc
+         ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
+  LEFT JOIN observation_review_current rt
+         ON rt.observation_id = o.observation_id AND rt.purpose = 'training'
+  LEFT JOIN LATERAL (
+         SELECT count(*)::int                                  AS keyframes,
+                (max(kf.framenum) - min(kf.framenum) + 1)::int  AS span
+           FROM keyframes kf
+          WHERE kf.observation_id = o.observation_id
+       ) k ON TRUE
+ ${where.length ? `WHERE ${where.join('\n   AND ')}` : ''}`;
+
+    return { sql, bind: bind.values };
+}
+
+/**
+ * How many frames a question covers.
+ *
+ * `POST /api/v2/mosaic/observations/frames`.
+ *
+ * @async
+ * @param {Object} [request] - `{filters}`.
+ * @returns {Promise<{observations: number, keyframes: number, frames: number}>}
+ * @throws {MosaicRequestError} If a filter cannot be served.
+ */
+async function frames(request = {}) {
+    const { sql, bind } = buildFramesQuery(request);
+
+    const [row] = await db.sequelize.query(sql, {
+        bind,
+        type: db.Sequelize.QueryTypes.SELECT,
+    });
+
+    return row;
+}
+
+/**
+ * Every observation a dataset build would include, with what it needs to extract them.
+ *
+ * **The same `filters` the mosaic screens use**, through the same {@link predicates}, so a
+ * saved query means one thing across the platform. A second filter implementation here
+ * would drift the first time somebody added a dimension, and the dataset built would stop
+ * matching the count the Datasets screen showed before building it.
+ *
+ * One row per observation, carrying:
+ *
+ * - `video_source`, because frames are cut per video and the build groups by it;
+ * - `first_framenum` / `last_framenum`, the span the build extracts;
+ * - `keyframes`, the boxes themselves as JSON, so the labels can be interpolated without
+ *   a second query per observation -- a build covers tens of thousands of observations
+ *   and a query each is the difference between minutes and hours;
+ * - `species_id` and `comname`, which become the vocabulary.
+ *
+ * **Observations with no keyframes are left out.** There is nothing to extract and nothing
+ * to label, so including one would put an image in the archive with an empty label file
+ * beside it, which teaches the model that the frame contains nothing.
+ *
+ * **Observations with no species are left out too.** A class index has to mean something,
+ * and `species_id` is what it means; a row that cannot be given one cannot be labelled.
+ *
+ * @param {Object} request - `{filters}`.
+ * @returns {{sql: string, bind: Array}} The statement and its parameters.
+ * @throws {MosaicRequestError} If a filter cannot be served.
+ */
+function buildSelectionQuery({ filters = {} }) {
+    const bind = binder();
+    const where = predicates(filters, bind);
+
+    /* The two the build needs whatever was asked for, appended rather than folded into
+       `predicates`: they are not a question a reviewer asks, they are what this consumer
+       can physically use. */
+    where.push('o.species_id IS NOT NULL');
+    where.push('o.video_source IS NOT NULL');
+
+    const sql = `
+SELECT o.observation_id,
+       o.session_id,
+       o.video_source,
+       o.species_id,
+       sp.comname,
+       s.dive,
+       s.line,
+       k.first_framenum,
+       k.last_framenum,
+       k.keyframes
+  FROM observations o
+  LEFT JOIN sessions s ON s.session_id = o.session_id
+  LEFT JOIN projects p ON p.project_id = o.project_id
+  LEFT JOIN species sp ON sp.id = o.species_id
+  LEFT JOIN observation_review_current rc
+         ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
+  LEFT JOIN observation_review_current rt
+         ON rt.observation_id = o.observation_id AND rt.purpose = 'training'
+  JOIN LATERAL (
+         SELECT min(kf.framenum)::int AS first_framenum,
+                max(kf.framenum)::int AS last_framenum,
+                json_agg(json_build_object(
+                    'framenum', kf.framenum,
+                    'x', kf.x, 'y', kf.y,
+                    'width', kf.width, 'height', kf.height
+                ) ORDER BY kf.framenum) AS keyframes
+           FROM keyframes kf
+          WHERE kf.observation_id = o.observation_id
+       ) k ON k.first_framenum IS NOT NULL
+ WHERE ${where.join('\n   AND ')}
+ ORDER BY o.video_source, k.first_framenum, o.observation_id`;
+
+    return { sql, bind: bind.values };
+}
+
+/**
+ * Every observation a dataset build would include.
+ *
+ * @async
+ * @param {Object} [request] - `{filters}`.
+ * @returns {Promise<Array<Object>>} The rows, grouped by video and ordered within it.
+ * @throws {MosaicRequestError} If a filter cannot be served.
+ */
+async function selectForBuild(request = {}) {
+    const { sql, bind } = buildSelectionQuery(request);
+
+    return db.sequelize.query(sql, { bind, type: db.Sequelize.QueryTypes.SELECT });
+}
+
+/**
  * A `pageSize` that can be served.
  *
  * @param {*} value - The request's `pageSize`.
@@ -1200,9 +1363,13 @@ module.exports = {
     STATUS_DIMENSIONS,
     buildCountsQuery,
     buildFacetQuery,
+    buildFramesQuery,
+    buildSelectionQuery,
     buildPageSetQuery,
     buildVideoObservationsQuery,
     counts,
     facets,
+    frames,
     queryPages,
+    selectForBuild,
 };

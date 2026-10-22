@@ -17,8 +17,9 @@
  *
  * **It has to say which species it knows.** The tracking engine refuses weights whose
  * vocabulary disagrees with what MARP registered for them, so a model with no
- * `model_species` is a model no inference job can run. The names come from the dataset's
- * recorded `class_names` and are resolved against `species.comname`.
+ * `model_species` is a model no inference job can run. The species come from the
+ * dataset's own vocabulary, `dataset_classes`, which records a species per class index
+ * rather than a name to be matched later (#268).
  *
  * **It must not quietly become the default.** A newly trained model is usable immediately
  * and is not `preferred`: promoting it is a human act, after somebody has looked at what
@@ -248,21 +249,29 @@ async function registerTrainedModel({ db, job, transaction }) {
  * @throws {Error} When the dataset has none recorded.
  */
 async function datasetClassNames(db, datasetId, transaction) {
-    const [row] = await db.sequelize.query(
-        'SELECT name, class_names FROM datasets WHERE id = :id',
+    /* From `dataset_classes`, which records a *species* per index, rather than from the
+       `class_names` strings this used to read. The two were written hours apart for the
+       same question and settled into one on 2026-10-20 (#268). Resolving strings against
+       `species.comname` worked for `rockfish5` and would break the first time a species
+       was renamed -- which has happened in this platform, under records that were correct
+       when they were made. An index means a species; the name is how it is printed. */
+    const rows = await db.sequelize.query(
+        `SELECT s.comname
+           FROM dataset_classes dc
+           JOIN species s ON s.id = dc.species_id
+          WHERE dc.dataset_id = :id
+          ORDER BY dc.class_index`,
         { replacements: { id: datasetId }, type: db.Sequelize.QueryTypes.SELECT, transaction, logging: false }
     );
 
-    const names = row && Array.isArray(row.class_names) ? row.class_names : null;
-
-    if (!names || names.length === 0) {
+    if (!rows.length) {
         throw new Error(
-            `dataset ${datasetId} has no recorded class names, so the model it trained `
-            + 'cannot say what it knows; re-package it to record them'
+            `dataset ${datasetId} has no recorded classes, so the model it trained `
+            + 'cannot say what it knows; build or re-package it to record them'
         );
     }
 
-    return names.map(String);
+    return rows.map((row) => String(row.comname));
 }
 
 

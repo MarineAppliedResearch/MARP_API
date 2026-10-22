@@ -643,6 +643,61 @@ function registerGpuRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'jobs:read',
+        path: '/api/gpu/throughput/series',
+        summary: 'How fast work went through, and how much is waiting',
+        description:
+            'Units of work completed per bucket -- frames, usually -- with the current backlog beside it. **Throughput is a rate and rates need two readings**: an attempt\'s `progress_done` is overwritten by every heartbeat, so MARP now keeps it per attempt per minute and this is the difference between consecutive readings. Only positive differences count, because a retried attempt reports from zero again and that is not work being undone. The backlog is counted in *units*, not jobs: a thousand queued jobs of ten frames is not the same as ten of a hundred thousand. It is a single current figure rather than a series, because nothing records what the backlog was, only what it is.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'query', name: 'since', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Start of the window. Defaults to 24 hours before `until`.' },
+            { in: 'query', name: 'until', required: false, schema: { type: 'string', format: 'date-time' }, description: 'End of the window. Defaults to now.' },
+            { in: 'query', name: 'bucket', required: false, schema: { type: 'string', enum: ['minute', 'hour', 'day'], default: 'hour' }, description: 'Bucket size.' },
+            { in: 'query', name: 'kind', required: false, schema: { type: 'string', enum: JOB_KINDS }, description: 'Narrow to one kind of job, so inference throughput can be read apart from training.' },
+        ],
+        responses: {
+            200: {
+                description: 'The series, oldest first, with the current backlog.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuThroughputSeries' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.throughputSeries(req.query || {});
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/gpu/registry/series',
+        summary: 'How the model registry grew',
+        description:
+            'Registered model versions per bucket, cumulative, with how many were added in each and how many distinct models anything actually ran. Counted straight out of `ml_models.created_at` and the job specs — the rows have carried their own history all along, so nothing had to be recorded for this. **`in_use` is deliberately not `preferred`**, which the screen originally asked for: a flag somebody flips occasionally makes a poor chart, whereas how much of a growing registry anyone runs is worth seeing. **Cache coverage is absent and cannot be served yet**: nothing records which machine holds which model, so it waits on the worker reporting its cache.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'query', name: 'since', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Start of the window. Defaults to 24 hours before `until`.' },
+            { in: 'query', name: 'until', required: false, schema: { type: 'string', format: 'date-time' }, description: 'End of the window. Defaults to now.' },
+            { in: 'query', name: 'bucket', required: false, schema: { type: 'string', enum: ['minute', 'hour', 'day'], default: 'hour' }, description: 'Bucket size.' },
+        ],
+        responses: {
+            200: {
+                description: 'The series, oldest first.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuSeries' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.registrySeries(req.query || {});
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
         path: '/api/gpu/jobs/series',
         summary: 'How much work finished, and how much was waiting',
         description:
@@ -652,6 +707,7 @@ function registerGpuRoutes(app) {
             { in: 'query', name: 'since', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Start of the window. Defaults to 24 hours before `until`.' },
             { in: 'query', name: 'until', required: false, schema: { type: 'string', format: 'date-time' }, description: 'End of the window. Defaults to now.' },
             { in: 'query', name: 'bucket', required: false, schema: { type: 'string', enum: ['minute', 'hour', 'day'], default: 'hour' }, description: 'Bucket size.' },
+            { in: 'query', name: 'kind', required: false, schema: { type: 'string', enum: JOB_KINDS }, description: 'Narrow to one kind of job, so an inference queue can be read apart from a training one.' },
         ],
         responses: {
             200: {

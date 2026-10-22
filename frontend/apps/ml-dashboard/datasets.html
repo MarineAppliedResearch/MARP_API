@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; Datasets</title>
+<link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
+<link rel="stylesheet" href="../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
+<link rel="stylesheet" href="./mock.css">
+<script src="../../shared/assets/js/account-menu.js" defer></script>
+</head>
+<body data-screen="datasets">
+
+<div class="app">
+  <aside class="rail"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="Build and save training sets from promoted observations">Datasets</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <div class="grid dataset-overview-shell">
+        <nav class="stats dataset-stats" aria-label="Dataset build destinations">
+          <a class="stat stat-link" data-state="running" href="#saved-datasets-panel" title="Jump to the builds running now">
+            <span class="stat-ico"><svg class="ico"><use href="#i-split"/></svg></span><span class="stat-lab">Building now</span><b class="stat-num"></b>
+            <span class="stat-sub"></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="queued" href="#saved-datasets-panel" title="Jump to the queued builds">
+            <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span><span class="stat-lab">Queued builds</span><b class="stat-num"></b>
+            <span class="stat-sub"></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="done" href="#saved-datasets-panel" title="Jump to the ready saved datasets below">
+            <span class="stat-ico"><svg class="ico"><use href="#i-datasets"/></svg></span><span class="stat-lab">Ready datasets</span><b class="stat-num"></b>
+            <span class="stat-sub"></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="failed" href="#saved-datasets-panel" title="Jump to the build that needs attention">
+            <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span><span class="stat-lab">Needs attention</span><b class="stat-num"></b>
+            <span class="stat-sub"></span><span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+        </nav>
+
+        <section class="inference-overview dataset-overview" aria-label="Dataset building at a glance">
+          <article class="panel dataset-mix">
+            <header class="panel-hd"><div><h2>Dataset status</h2><p>Ready datasets and current build workload</p></div></header>
+            <div class="panel-bd jobs-mix-bd">
+              <div class="job-donut" role="img" aria-label="20 datasets represented: 2 building, 3 queued, 14 ready and 1 needing attention">
+                <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="donut-track" cx="60" cy="60" r="43"/><circle class="donut-part training" cx="60" cy="60" r="43" pathLength="20" stroke-dasharray="2 18"/><circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="20" stroke-dasharray="3 17" stroke-dashoffset="-2"/><circle class="donut-part done" cx="60" cy="60" r="43" pathLength="20" stroke-dasharray="14 6" stroke-dashoffset="-5"/><circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="20" stroke-dasharray="1 19" stroke-dashoffset="-19"/></svg>
+                <span><b>20</b><small>datasets</small></span>
+              </div>
+              <div class="job-mix-key dataset-mix-key"></div>
+            </div>
+          </article>
+
+          <article class="panel inference-flow dataset-activity" data-dataset-activity>
+            <header class="panel-hd inference-flow-hd"><div><h2>Build activity</h2><p>All dataset work &middot; frames extracted, builds waiting and builds completed</p></div><div class="seg" aria-label="Dataset build activity range"><button type="button" class="on" data-dataset-range="24h" aria-pressed="true">24h</button><button type="button" data-dataset-range="7d">7d</button><button type="button" data-dataset-range="30d">30d</button></div></header>
+            <div class="panel-bd inference-flow-bd">
+              <div class="inference-chart dataset-chart" data-result-graph role="img" data-rendered aria-label>
+                <svg viewBox="0 0 780 248" aria-hidden="true">
+                  <g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g>
+                  <g class="inference-axis left"><text x="46" y="32"></text><text x="46" y="88"></text><text x="46" y="144"></text><text x="46" y="200"></text><text x="54" y="225" data-dataset-time></text><text x="390" y="225" data-dataset-time></text><text x="726" y="225" data-dataset-time></text><text class="axis-title" x="54" y="15">FRAMES EXTRACTED</text></g>
+                  <g class="inference-axis right"><text x="734" y="32"></text><text x="734" y="88"></text><text x="734" y="144"></text><text x="734" y="200"></text><text class="axis-title" x="726" y="15">BUILDS</text></g>
+                  <path class="inference-area throughput" data-dataset-area="rate"/>
+                  <path class="inference-line throughput" data-dataset-line="rate"/>
+                  <path class="inference-line backlog" data-dataset-line="waiting"/>
+                  <path class="inference-line done" data-dataset-line="finished"/>
+                </svg>
+              </div>
+              <div class="inference-flow-foot">
+                <div class="inference-chart-key result-legend">
+                  <button type="button" class="throughput" data-dataset-highlight="rate">Frames extracted</button>
+                  <button type="button" class="backlog" data-dataset-highlight="waiting">Builds waiting</button>
+                  <button type="button" class="done" data-dataset-highlight="finished">Builds completed</button>
+                </div>
+                <div class="inference-current" aria-label="Current dataset build activity">
+                  <span><b data-dataset-current="rate"></b> frames</span>
+                  <span><b data-dataset-current="waiting"></b> waiting</span>
+                  <span><b data-dataset-current="finished"></b> completed</span>
+                  <span class="clearing" data-rendered data-dataset-current="building" hidden></span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+      </div>
+
+      <div class="grid dataset-workspace">
+
+        <div class="grid" data-cols="3">
+
+          <!-- 1 --------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>1.</b>Query promoted observations</span>
+                <span class="sub">Filters that find observations to add</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <p class="locked-note" data-rendered data-promoted-note
+                 title="A reviewer promotes an observation in the Mosaic Reviewer when its picture and its box are good enough to learn from — not occluded, not too small, the box not too loose. That is a separate judgement from whether the species is right, which is what reviewing decides. Nothing that has not been promoted can enter a dataset.">
+                <svg class="ico sm"><use href="#i-check"/></svg>
+                <span>Promoted observations only <span class="ro-tag">always</span></span></p>
+
+              <div class="field">
+                <label for="dsproj">Project</label>
+                <select class="sel wide" id="dsproj" data-rendered data-fills="dsproj">
+                  <option value="">All projects</option>
+                </select>
+              </div>
+              <div class="fieldrow">
+                <div class="field">
+                  <label for="dsdive">Dive</label>
+                  <select class="sel wide" id="dsdive" data-rendered data-fills="dsdive">
+                    <option value="">All dives</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="dsline">Line</label>
+                  <select class="sel wide" id="dsline" data-rendered data-fills="dsline">
+                    <option value="">All lines</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label>Species</label>
+                <details class="multi-pick" id="dsspecies">
+                  <summary><span>Species</span><b data-rendered data-species-label></b></summary>
+                  <div class="multi-menu species-menu" data-rendered data-species-menu></div>
+                </details>
+              </div>
+              <div class="field">
+                <label for="dsmodel">Generating model</label>
+                <select class="sel wide" id="dsmodel" data-rendered data-fills="dsmodel">
+                  <option value="">Any model</option><option value="human">Human annotation only</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="dsconf">Confidence range</label>
+                <div class="pairrow">
+                  <input class="inp" type="number" id="dsconf" value="0.50" step="0.05"
+                         min="0" max="1" aria-label="Minimum confidence">
+                  <span class="to">to</span>
+                  <input class="inp" type="number" id="dsconfmax" value="1.00" step="0.05" min="0" max="1"
+                         aria-label="Maximum confidence">
+                </div>
+              </div>
+              <div class="field">
+                <label for="dsfrom">Date range</label>
+                <div class="pairrow">
+                  <input class="inp" type="date" id="dsfrom" aria-label="Start date">
+                  <span class="to">to</span>
+                  <input class="inp" type="date" id="dsto" aria-label="End date">
+                </div>
+              </div>
+              <div class="field">
+                <label for="dsreview">Review status</label>
+                <select class="sel wide" id="dsreview">
+                  <option>Promoted (approved)</option>
+                </select>
+              </div>
+
+              <details class="fold">
+                <summary>Advanced filters<span class="now">none set</span></summary>
+                <div class="fbody">
+                  <div class="fieldrow">
+                    <div class="field">
+                      <label for="dsann">Annotator</label>
+                      <select class="sel wide" id="dsann"><option>Anyone</option><option>itravers</option></select>
+                    </div>
+                    <div class="field">
+                      <label for="dsminarea">Minimum box area</label>
+                      <input class="inp wide" type="number" id="dsminarea" value="0">
+                    </div>
+                  </div>
+                  <div class="checks">
+                    <label class="check"><input type="checkbox" id="dsexcludeds">
+                      <span>Exclude observations already in a saved dataset</span></label>
+                    <label class="check"><input type="checkbox" id="dsexcludecorrected" checked>
+                      <span>Exclude observations with a corrected species</span></label>
+                  </div>
+                </div>
+              </details>
+
+              <div class="btnrow">
+                <button class="btn" title="Reuse a saved set of filters">
+                  <svg class="ico"><use href="#i-copy"/></svg>Load query</button>
+                <button class="btn" title="Keep these filters for next time">
+                  <svg class="ico"><use href="#i-datasets"/></svg>Save query</button>
+                <button class="btn primary" data-run-dataset-query title="Count what these filters match">
+                  <svg class="ico"><use href="#i-search"/></svg>Run query</button>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- 2 --------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>2.</b>Query results</span>
+                <span class="sub">What these filters match</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="quad" data-query-metrics>
+                <span title="Observations these filters match"><b data-result="observations" data-rendered></b>observations</span>
+                <span title="Key frames plus the interpolated frames between them, which are trained on as well"><b data-result="frames" data-rendered></b>frames</span>
+                <span title="Videos and dives they come from"><b data-result="videos" data-rendered></b>videos</span>
+                <span title="Distinct species present"><b data-result="species" data-rendered></b>species</span>
+              </div>
+
+              <div class="field" style="margin-top:15px">
+                <label>Class breakdown <span class="faint">(largest first)</span>
+                  <button class="more" type="button" data-composition-toggle aria-expanded="false"
+                          title="Show every class in the result instead of the largest five" hidden>All classes
+                    <svg class="ico sm"><use href="#i-arrow"/></svg></button></label>
+                <div class="dist pct" data-query-composition data-rendered></div>
+              </div>
+
+              <div class="field">
+                <label>Matching observations <span class="faint">(review crops)</span>
+                  <a class="more" data-mosaic-link target="_blank" rel="noopener"
+                     href="/apps/marp-mosaic-review/?mode=training&amp;trainingDisposition=promoted"
+                     title="Open the Mosaic Reviewer on this exact query, in a new tab">More samples
+                    <svg class="ico sm"><use href="#i-arrow"/></svg></a></label>
+                <div class="thumbs" data-rendered></div>
+                <span class="hint" data-query-sample-note data-rendered>Duplicates are ignored when adding.</span>
+              </div>
+
+              <div class="field dataset-destination">
+                <label>Add matching observations to</label>
+                <div class="seg" role="group" aria-label="How this query is split">
+                  <button type="button" class="on" data-split-mode="share" aria-pressed="true">Divide across splits</button>
+                  <button type="button" data-split-mode="one" aria-pressed="false">All to one split</button>
+                </div>
+
+                <div class="split-shares" data-split-shares>
+                  <label><span>Train</span>
+                    <input class="inp" type="number" id="shareTrain" min="0" max="100" step="5" value="70"><i>%</i></label>
+                  <label><span>Validation</span>
+                    <input class="inp" type="number" id="shareValidation" min="0" max="100" step="5" value="20"><i>%</i></label>
+                  <label><span>Test</span>
+                    <input class="inp" type="number" id="shareTest" min="0" max="100" step="5" value="10"><i>%</i></label>
+                  <p class="hint" data-share-note data-rendered></p>
+                </div>
+
+                <div class="seg" role="group" aria-label="Dataset split destination" data-split-one hidden>
+                  <button type="button" class="on" data-dataset-destination="train" aria-pressed="true">Train</button>
+                  <button type="button" data-dataset-destination="validation" aria-pressed="false">Validation</button>
+                  <button type="button" data-dataset-destination="test" aria-pressed="false">Test</button>
+                </div>
+
+                <span class="hint">Observations whose frames overlap stay together, so a near-duplicate
+                  picture can never land in two splits. Shares are measured in frames, and each species
+                  is divided separately so a rare one reaches every split.</span>
+              </div>
+
+              <button class="btn primary big block" id="addQuery"
+                      title="Add every matching observation to the dataset; duplicates are ignored">
+                <svg class="ico"><use href="#i-plus"/></svg><span data-add-query-label>Add all matching to Train</span></button>
+              <p class="query-add-status" data-query-add-status aria-live="polite">Change the filters to assemble another subset, then add its matches.</p>
+
+            </div>
+          </section>
+
+          <!-- 3 --------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>3.</b>Current dataset</span>
+                <span class="sub">Name, composition and what went in</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field req">
+                <label for="dsname">Dataset name</label>
+                <input class="inp wide" type="text" id="dsname" value="CAMPA 2024 Rockfish Training v1">
+              </div>
+              <div class="field">
+                <label for="dsdesc">Description</label>
+                <textarea class="inp wide" id="dsdesc" rows="2" data-rendered
+                          placeholder="What this dataset is for, in a sentence"></textarea>
+              </div>
+              <div class="field">
+                <label>Added subsets <span class="faint" data-subset-count data-rendered></span>
+                  <button class="more" data-add-query title="Add the current query result">Add from query
+                    <svg class="ico sm"><use href="#i-arrow"/></svg></button></label>
+                <ul class="subsets" data-subset-list aria-label="Queries added to this dataset">
+                </ul>
+                <span class="subset-scroll-note" data-subset-scroll-note hidden>Scroll this list to review every added subset.</span>
+              </div>
+
+              <div class="totalrow" title="The union of the subsets above, each observation counted once">
+                <span class="k">Total (deduplicated)</span>
+                <span class="v" data-dataset-total data-total="0" data-rendered></span>
+                <span class="n"></span>
+              </div>
+              <p class="okline"><svg class="ico sm"><use href="#i-check"/></svg>
+                Duplicates are ignored when adding from several queries</p>
+
+              <div class="field" style="margin-top:14px">
+                <label>Dataset composition
+                  <span class="faint" data-dataset-composition-summary data-rendered></span></label>
+                <div class="dist pct" data-dataset-composition data-rendered></div>
+              </div>
+
+              <div class="btnrow" style="margin-top:14px">
+                <button class="btn" title="Keep the filters and membership without freezing a split">
+                  <svg class="ico"><use href="#i-copy"/></svg>Save draft</button>
+                <button class="btn accent" type="button" data-queue-build
+                        title="Cut the frames these observations point at, label them, and package one archive a worker can train on">
+                  <svg class="ico"><use href="#i-queue"/></svg>Queue dataset build</button>
+                <button class="btn" title="Download the images and labels for this membership, as a YOLO archive">
+                  <svg class="ico"><use href="#i-download"/></svg>Download</button>
+              </div>
+              <span class="hint">Queued, running and failed builds appear immediately in the list below and link to their full entry in Jobs. Successful builds become expandable datasets here.</span>
+
+            </div>
+          </section>
+
+        </div>
+
+        <!-- 4 ----------------------------------------------------------- -->
+        <section class="panel">
+          <header class="panel-hd">
+            <h2><span class="stepnum"><b>4.</b>Split assignment</span>
+              <span class="sub">Set when each query is added</span></h2>
+            <div class="panel-tools">
+              <span class="pill" data-state="idle"
+                    title="An observation or connected frame group keeps its first split assignment">No cross-split overlap</span>
+            </div>
+          </header>
+          <div class="panel-bd">
+            <div class="split-assignment-cards" data-split-summary>
+              <article class="train"><span>Train</span><b id="trN">5,700</b><small><i data-split-subsets="train">1 subset</i> &middot; learns weights</small></article>
+              <article class="validation"><span>Validation</span><b id="vaN">3,960</b><small><i data-split-subsets="validation">1 subset</i> &middot; selects checkpoints</small></article>
+              <article class="test"><span>Test</span><b id="teN">2,322</b><small><i data-split-subsets="test">1 subset</i> &middot; final evaluation</small></article>
+            </div>
+
+            <div class="splitbar" role="img" aria-label="Observations assigned to train, validation and test">
+              <i class="tr" id="barTr" style="width:47.6%"><span id="pcTr">48%</span></i>
+              <i class="va" id="barVa" style="width:33.1%"><span id="pcVa">33%</span></i>
+              <i class="te" id="barTe" style="width:19.3%"><span id="pcTe">19%</span></i>
+            </div>
+            <div class="splitkey">
+              <span class="tr">Train</span><span class="va">Validation</span><span class="te">Test</span>
+              <span class="faint" id="splitNote">First assignment wins; later overlaps never cross splits</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- saved, in brief ---------------------------------------------- -->
+        <section class="panel dataset-brief-obsolete" aria-hidden="true">
+          <header class="panel-hd">
+            <h2>Saved datasets <span class="count"></span></h2>
+            <button class="more" title="Every saved dataset">All datasets
+              <svg class="ico sm"><use href="#i-arrow"/></svg></button>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed stack">
+                <thead>
+                  <tr>
+                    <th class="hjob sortable">Name</th>
+                    <th class="hscope sortable">Description</th>
+                    <th class="htype sortable num">Observations</th>
+                    <th class="htype sortable num">Frames</th>
+                    <th class="htype sortable num">Classes</th>
+                    <th class="hupd sortable" aria-sort="descending">Created</th>
+                    <th class="hupd sortable">Updated</th>
+                    <th class="hacts"><span class="vh">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">CAMPA_2024_Rockfish_v3</span></span></td>
+                    <td class="jscope">Rockfish training set, high confidence</td>
+                    <td class="num" data-sort="11982">11,982</td>
+                    <td class="num" data-sort="24103">24,103</td>
+                    <td class="num" data-sort="12">12</td>
+                    <td class="jtime" data-sort="2026-09-10 10:24"><span class="two"><span class="a">10:24</span><span class="b">2026-09-10</span></span></td>
+                    <td class="jtime" data-sort="2026-09-10 10:24"><span class="two"><span class="a">10:24</span><span class="b">2026-09-10</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">GULF_Invertebrates_v2</span></span></td>
+                    <td class="jscope">Invertebrate validation set</td>
+                    <td class="num" data-sort="5672">5,672</td>
+                    <td class="num" data-sort="11340">11,340</td>
+                    <td class="num" data-sort="8">8</td>
+                    <td class="jtime" data-sort="2026-09-08 16:12"><span class="two"><span class="a">16:12</span><span class="b">2026-09-08</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09 09:41"><span class="two"><span class="a">09:41</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">Baja_Seamount_Test</span></span></td>
+                    <td class="jscope">Model test set from the Gulf survey</td>
+                    <td class="num" data-sort="4218">4,218</td>
+                    <td class="num" data-sort="8436">8,436</td>
+                    <td class="num" data-sort="7">7</td>
+                    <td class="jtime" data-sort="2026-08-25 16:03"><span class="two"><span class="a">16:03</span><span class="b">2026-08-25</span></span></td>
+                    <td class="jtime" data-sort="2026-08-28 11:17"><span class="two"><span class="a">11:17</span><span class="b">2026-08-28</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">ALL_Projects_Inverts_v5</span></span></td>
+                    <td class="jscope">Multi-species training dataset</td>
+                    <td class="num" data-sort="15734">15,734</td>
+                    <td class="num" data-sort="31892">31,892</td>
+                    <td class="num" data-sort="24">24</td>
+                    <td class="jtime" data-sort="2026-08-20 09:12"><span class="two"><span class="a">09:12</span><span class="b">2026-08-20</span></span></td>
+                    <td class="jtime" data-sort="2026-08-21 14:55"><span class="two"><span class="a">14:55</span><span class="b">2026-08-21</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">SALT_2024_Habitat_v2</span></span></td>
+                    <td class="jscope">Substrate and habitat classes</td>
+                    <td class="num" data-sort="6204">6,204</td>
+                    <td class="num" data-sort="12880">12,880</td>
+                    <td class="num" data-sort="7">7</td>
+                    <td class="jtime" data-sort="2026-06-28 08:40"><span class="two"><span class="a">08:40</span><span class="b">2026-06-28</span></span></td>
+                    <td class="jtime" data-sort="2026-07-02 15:09"><span class="two"><span class="a">15:09</span><span class="b">2026-07-02</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <div class="grid dataset-saved">
+        <section class="panel" id="saved-datasets-panel">
+          <header class="panel-hd">
+            <h2>Build jobs &amp; ready datasets <span class="count" data-dataset-count></span></h2>
+            <div class="panel-tools">
+              <span class="search">
+                <svg class="ico sm"><use href="#i-search"/></svg>
+                <input class="inp" type="search" placeholder="Search datasets&hellip;"
+                       aria-label="Search dataset builds and saved datasets" data-dataset-search title="Filter by name, description, task, status or project">
+              </span>
+              <select class="sel" aria-label="Build status" data-dataset-status title="Show builds or saved datasets in one lifecycle state">
+                <option value="all">All statuses</option><option value="building">Building</option>
+                <option value="queued">Queued</option><option value="attention">Needs attention</option><option value="ready">Ready</option>
+              </select>
+              <button class="btn" type="button" data-expand-datasets title="Expand every visible ready dataset"><svg class="ico"><use href="#i-split"/></svg>Expand all ready</button>
+            </div>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed stack expandable dataset-table" id="saved-datasets">
+                <thead>
+                  <tr>
+                    <th class="ex"><span class="vh">Destination</span></th>
+                    <th class="hjob sortable">Name</th>
+                    <th class="hscope sortable">Description</th>
+                    <th class="hstatus sortable">Status</th>
+                    <th class="htype sortable num">Observations</th>
+                    <th class="htype sortable num">Frames</th>
+                    <th class="htype sortable num">Classes</th>
+                    <th class="hupd sortable" aria-sort="descending">Created</th>
+                    <th class="hupd sortable">Updated</th>
+                    <th class="hacts"><span class="vh">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
+              </table>
+            </div>
+          </div>
+          <footer class="panel-ft">
+            <span data-rendered data-fills="showing"></span>
+            <div class="pager" data-rendered>
+              <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button><button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+            </div>
+          </footer>
+        </section>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="./api.js"></script>
+<script src="./mock.js"></script>
+</body>
+</html>

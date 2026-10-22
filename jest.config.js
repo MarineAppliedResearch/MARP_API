@@ -36,8 +36,30 @@ module.exports = {
    * The walkthrough lives under tests/ but belongs to Playwright, not Jest. Without
    * this, Jest collects `tests/walkthrough/run.spec.mjs`, fails to make sense of a
    * Playwright spec, and reports a failing suite that has nothing to do with the API.
+   *
+   * `dataset-build-real` is excluded for the other reason, the one
+   * `tests/jellyfin.test.js` is excluded from CI for: it runs ffmpeg over a real video
+   * from the central media server and takes minutes, so it is not a tier anything
+   * should pay for on every run. `npm run test:datasets` is how it is asked for, and it
+   * passes its own `--testPathIgnorePatterns` to get past this line. Everything it
+   * would prove apart from ffmpeg itself is proved in two seconds by
+   * `tests/dataset-build-runner.test.js`, with the extractor stubbed. See #268.
+   *
+   * **These are regular expressions matched against a native path**, and the last one
+   * is written relative, with `[\\/]`, rather than as `<rootDir>/...` like the one
+   * above it. That is deliberate and was found the hard way: written the obvious way,
+   * the exclusion silently did not happen and the slow suite ran anyway. `<rootDir>` is
+   * substituted into the pattern as a literal path, so on Windows it arrives full of
+   * backslashes -- and a backslash before a dot, as in a checkout under `.claude`,
+   * reads as an escaped dot rather than as a separator and a dot, so the pattern can no
+   * longer match the path it was made from. A relative pattern has no path in it to be
+   * mangled.
    */
-  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/tests/walkthrough/'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '<rootDir>/tests/walkthrough/',
+    'tests[\\\\/]dataset-build-real\\.test\\.js$',
+  ],
 
   /**
    * A plain Node environment (no DOM/browser globals), since the suite only

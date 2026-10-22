@@ -1334,6 +1334,10 @@ module.exports = {
     resolutionIsPermanent,
     sweepOnce,
     cropToTile,
+    /* Exported for the dataset builder (#268), which cuts the same frames from the same
+       videos through the same ffmpeg pass. A second implementation of "get these frames
+       out of this video" is the thing most likely to drift from this one. */
+    extractFrames,
     cutChosenPicture,
     drainOnce,
     elideToken,

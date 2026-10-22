@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const APP = join(HERE, '..');
 const PORT = Number(process.env.SCROLL_PORT || 8131);
-const BASE = `http://localhost:${PORT}/apps/marp-ml-dashboard/mockups/`;
+const BASE = `http://localhost:${PORT}/apps/ml-dashboard/`;
 const DESKTOP = { width: 1672, height: 941 };
 /* The screen the behaviour checks are driven on, and it is chosen for one reason: it has
    the most room to scroll of the eight, 1069px at this height.
@@ -204,7 +204,7 @@ async function open(name, options = {}) {
 
 /* ------------------------------------ R15: the shell authors it, so every screen has it */
 {
-  const screens = (await readdir(join(APP, 'mockups')))
+  const screens = (await readdir(APP))
     .filter((f) => f.endsWith('.html') && !f.startsWith('_'))
     .map((f) => f.replace(/\.html$/, ''));
   let scrollable = 0;

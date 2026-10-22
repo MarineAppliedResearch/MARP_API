@@ -444,7 +444,7 @@ describe('landing page copy', () => {
     it('keeps the doors into the docs and the running applications', () => {
         const everywhere = pageNames.flatMap((page) => hrefs(raw[page]));
 
-        for (const target of ['/api-docs', '/developer-docs', '/apps/marp-mosaic-review/', '/apps/marp-ml-dashboard/']) {
+        for (const target of ['/api-docs', '/developer-docs', '/apps/marp-mosaic-review/', '/apps/ml-dashboard/']) {
             expect(everywhere).toContain(target);
         }
     });

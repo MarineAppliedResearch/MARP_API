@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; History</title>
+<link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
+<link rel="stylesheet" href="../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
+<link rel="stylesheet" href="./mock.css">
+<script src="../../shared/assets/js/account-menu.js" defer></script>
+</head>
+<body data-screen="history">
+
+<div class="app">
+  <aside class="rail"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="Finished work, searchable within a bounded window">History</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <nav class="stats inference-stats history-stats" aria-label="History destinations">
+        <a class="stat stat-link" data-state="idle" href="#history-panel" title="Jump to every job in the selected history window">
+          <span class="stat-ico"><svg class="ico"><use href="#i-history"/></svg></span>
+          <span class="stat-lab">Jobs in this window</span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="stat stat-link" data-state="done" href="./history.html?status=completed#history-panel" title="Show completed jobs first in the history table">
+          <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
+          <span class="stat-lab">Completed</span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="stat stat-link" data-state="issues" href="./history.html?status=issues#history-panel" title="Show completed jobs with partial failures first">
+          <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
+          <span class="stat-lab">Completed with issues</span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+        <a class="stat stat-link" data-state="failed" href="./history.html?status=failed#history-panel" title="Show failed and cancelled jobs first">
+          <span class="stat-ico"><svg class="ico"><use href="#i-x"/></svg></span>
+          <span class="stat-lab">Failed or cancelled</span>
+          <b class="stat-num"></b>
+          <span class="stat-sub"></span>
+          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+        </a>
+      </nav>
+
+      <section class="inference-overview ops-overview" aria-label="History at a glance">
+        <article class="panel"><header class="panel-hd"><div><h2>Outcomes</h2><p>How work ended inside the selected window</p></div></header><div class="panel-bd jobs-mix-bd"><div class="job-donut" data-rendered role="img" aria-label="Status breakdown"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="donut-track" cx="60" cy="60" r="43"/><circle class="donut-part done" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="198 49"/><circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="28 219" stroke-dashoffset="-198"/><circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="21 226" stroke-dashoffset="-226"/></svg><span><b></b><small>finished jobs</small></span></div><div class="job-mix-key"></div></div></article>
+        <article class="panel inference-flow ops-activity" data-ops-activity="history"><header class="panel-hd inference-flow-hd"><div><h2>Completion activity</h2><p>Finished work, issue rate and median turnaround</p></div><div class="seg" aria-label="History activity range"><button type="button" data-ops-range="7d">7d</button><button type="button" class="on" data-ops-range="30d" aria-pressed="true">30d</button><button type="button" data-ops-range="90d">90d</button></div></header><div class="panel-bd inference-flow-bd"><div class="inference-chart ops-chart" role="img" aria-label="Completion activity over 30 days"><svg viewBox="0 0 780 248" aria-hidden="true"><g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g><g class="inference-axis left"><text x="46" y="32"></text><text x="46" y="88"></text><text x="46" y="144"></text><text x="46" y="200"></text><text x="54" y="225" data-ops-time></text><text x="390" y="225" data-ops-time></text><text x="726" y="225" data-ops-time></text><text class="axis-title" x="54" y="15">JOBS / DAY</text></g><g class="inference-axis right"><text x="734" y="32"></text><text x="734" y="88"></text><text x="734" y="144"></text><text x="734" y="200"></text><text class="axis-title" x="726" y="15">MEDIAN TURNAROUND</text></g><path class="ops-area completed" data-ops-area="completed"/><path class="ops-line completed" data-ops-line="completed"/><path class="ops-line issues" data-ops-line="issues"/><path class="ops-line turnaround" data-ops-line="turnaround"/></svg></div><div class="inference-flow-foot"><div class="inference-chart-key result-legend"><button class="completed" data-ops-highlight="completed">Completed jobs</button><button class="issues" data-ops-highlight="issues">Issue / failure rate</button><button class="turnaround" data-ops-highlight="turnaround">Median turnaround</button></div><div class="inference-current"><span><b data-ops-current="completed"></b> completed today</span><span><b data-ops-current="issues"></b> issue rate</span><span><b data-ops-current="turnaround"></b> median</span><span class="live"><i class="dot"></i>Live</span></div></div></div></article>
+      </section>
+
+      <section class="panel" id="history-panel">
+        <header class="panel-hd">
+          <h2>Job history <span class="count"></span></h2>
+          <div class="panel-tools" id="filters">
+            <span class="search">
+              <svg class="ico sm"><use href="#i-search"/></svg>
+              <input class="inp" type="search" placeholder="Search jobs, models, datasets&hellip;"
+                     aria-label="Search history" title="Filter by job, model or dataset name">
+            </span>
+            <select class="sel" aria-label="Job type" title="Show one kind only">
+              <option>All types</option><option>Inference</option><option>Training</option>
+            </select>
+            <select class="sel" aria-label="Status" title="Show one outcome only">
+              <option>All statuses</option><option>Completed</option>
+              <option>Completed with issues</option><option>Failed</option><option>Cancelled</option>
+            </select>
+            <select data-choices class="sel" id="window" aria-label="Window"
+                    title="History is never fetched whole; everything on this screen is within this window">
+              <option>Last 30 days</option><option>Last 7 days</option>
+              <option>Last 90 days</option><option>This year</option>
+            </select>
+            <select class="sel" aria-label="Model" title="Show jobs that used one model">
+              <option>All models</option><option>MARP-Multiclass-Det-XL</option>
+              <option>MARP-Det-v3</option>
+            </select>
+            <button class="btn" title="Download this window as CSV">
+              <svg class="ico"><use href="#i-download"/></svg>Export</button>
+          </div>
+          <div class="bulk" id="bulk" hidden>
+            <span><span class="n" id="bulkN"></span> selected</span>
+            <button class="btn sm" title="Start new jobs with the same configuration">Run again</button>
+            <button class="btn sm" title="Download the selected rows as CSV">Export</button>
+            <button class="btn sm ghost sp" id="bulkClear">Clear selection</button>
+          </div>
+        </header>
+        <div class="panel-bd flush">
+          <div class="tblwrap">
+            <table class="tbl fixed stack selectable" id="history">
+              <thead>
+                <tr>
+                  <th class="chk"><input class="chkbox" type="checkbox" id="all"
+                      aria-label="Select every job on this page"></th>
+                  <th class="hjob sortable" title="Sort by name">Job</th>
+                  <th class="htype sortable" title="Inference or training">Type</th>
+                  <th class="hstatus sortable" title="How it ended">Status</th>
+                  <th class="hscope sortable" title="Which MARP data it covered">Scope</th>
+                  <th class="hmodel sortable" title="The model and version it ran">Model</th>
+                  <th class="hdata sortable" title="The videos or dataset it read">Input</th>
+                  <th class="hstart sortable" aria-sort="descending" title="When work began">Started</th>
+                  <th class="hend sortable" title="When it ended">Completed</th>
+                  <th class="hdur sortable num" title="Wall-clock time">Took</th>
+                  <th class="hworker sortable" title="The machine that made the last attempt. A job retried elsewhere says how many">Worker</th><th class="hwho sortable" title="Who submitted it. A service token records nobody">By</th>
+                  <th class="hacts"><span class="vh">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
+            </table>
+          </div>
+        </div>
+        <footer class="panel-ft">
+          <span data-rendered data-fills="showing"></span>
+          <div class="pager" data-rendered>
+            <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button><button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+          </div>
+          <span class="rpp">Rows
+            <select data-choices class="sel" aria-label="Rows per page"><option>10</option><option>25</option><option>50</option></select>
+          </span>
+        </footer>
+      </section>
+
+
+    </main>
+  </div>
+</div>
+
+<script src="./api.js"></script>
+<script src="./mock.js"></script>
+</body>
+</html>

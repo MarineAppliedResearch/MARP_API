@@ -126,6 +126,69 @@ function normalizeYaml(yamlPath) {
 
 
 /**
+ * Record which species each class index means.
+ *
+ * `dataset_classes` rather than a `class_names` array, settled 2026-10-20 (#268): the
+ * question asked of this is which *species* a trained model knows, and answering with
+ * strings means matching them against `species.comname` on every read -- a match that
+ * breaks the first time a species is renamed under records that were correct when made.
+ *
+ * **A name that matches no species stops the packaging**, rather than being skipped. A
+ * skipped class leaves a hole in the index sequence, and every label in the archive
+ * numbered above the hole would then mean a different animal than it did.
+ *
+ * Replaces whatever was there, so re-packaging a dataset is not additive.
+ *
+ * @async
+ * @param {number} datasetId - The dataset.
+ * @param {string[]} names - The class names, in index order.
+ * @returns {Promise<void>}
+ * @throws {Error} When a name matches no species.
+ */
+async function recordClasses(datasetId, names) {
+    await db.sequelize.query('DELETE FROM dataset_classes WHERE dataset_id = :id',
+        { replacements: { id: datasetId }, logging: false });
+
+    const missing = [];
+
+    for (let index = 0; index < names.length; index++) {
+        const [species] = await db.sequelize.query(
+            'SELECT id FROM species WHERE comname = :name ORDER BY id LIMIT 1',
+            {
+                replacements: { name: names[index] },
+                type: db.Sequelize.QueryTypes.SELECT,
+                logging: false,
+            }
+        );
+
+        if (!species) {
+            missing.push(names[index]);
+
+            continue;
+        }
+
+        await db.sequelize.query(
+            `INSERT INTO dataset_classes (dataset_id, species_id, class_index, created_at, updated_at)
+             VALUES (:datasetId, :speciesId, :classIndex, NOW(), NOW())
+             ON CONFLICT (dataset_id, class_index) DO NOTHING`,
+            {
+                replacements: { datasetId, speciesId: species.id, classIndex: index },
+                logging: false,
+            }
+        );
+    }
+
+    if (missing.length) {
+        throw new Error(
+            `these class names match no species, so the dataset cannot say what it holds: `
+            + `${missing.join(', ')}`
+        );
+    }
+
+    console.log(`classes:  ${names.length} recorded against species`);
+}
+
+/**
  * Counts the image files in a split.
  *
  * @param {string} dir - The split's images folder.
@@ -236,15 +299,11 @@ async function main() {
             await db.sequelize.query(
                 `UPDATE datasets SET location = :location, num_samples = :samples,
                         num_classes = :classes, status = 'ready', archive_path = :archivePath,
-                        archive_sha256 = :sha256, archive_bytes = :bytes,
-                        class_names = :classNames::jsonb, updated_at = now()
+                        archive_sha256 = :sha256, archive_bytes = :bytes, updated_at = now()
                  WHERE id = :id`,
                 {
                     replacements: {
                         id: datasetId, location: dir, samples, classes, archivePath, sha256, bytes,
-                        /* In index order. A YOLO label file carries a class index, and
-                           an index means nothing without the list it indexes into. */
-                        classNames: JSON.stringify(names),
                     },
                     logging: false,
                 }
@@ -253,10 +312,10 @@ async function main() {
             const [inserted] = await db.sequelize.query(
                 `INSERT INTO datasets (name, description, location, num_samples, num_classes,
                                        source, status, archive_path, archive_sha256, archive_bytes,
-                                       class_names, created_at, updated_at)
+                                       created_at, updated_at)
                  VALUES (:name, :description, :location, :samples, :classes,
                          'legacy import', 'ready', :archivePath, :sha256, :bytes,
-                         :classNames::jsonb, now(), now())
+                         now(), now())
                  RETURNING id`,
                 {
                     replacements: {
@@ -268,7 +327,6 @@ async function main() {
                         archivePath,
                         sha256,
                         bytes,
-                        classNames: JSON.stringify(names),
                     },
                     type: db.Sequelize.QueryTypes.INSERT,
                     logging: false,
@@ -276,6 +334,8 @@ async function main() {
             );
             datasetId = inserted[0].id;
         }
+
+        await recordClasses(datasetId, names);
 
         console.log(`\narchive:  ${archivePath}`);
         console.log(`sha256:   ${sha256}`);

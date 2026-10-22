@@ -2528,6 +2528,9 @@ const buildOpenApiSpec = () => {
                             progress_unit: { type: 'string', nullable: true, example: 'frames', description: 'From the job\'s latest attempt, on list reads.' },
                             progress_phase: { type: 'string', maxLength: 64, nullable: true, example: 'inferring', description: 'From the job\'s latest attempt, on list reads. Worker-defined for this job type.' },
                             progress_elapsed_s: { type: 'number', minimum: 0, nullable: true, example: 142.375, description: 'From the job\'s latest attempt, on list reads.' },
+                            worker_id: { type: 'integer', nullable: true, example: 1634, description: 'The machine that made the job\'s latest attempt, on list reads. Null for a job never leased.' },
+                            worker_name: { type: 'string', nullable: true, example: 'ABYSS-fba6be1a', description: 'That machine\'s name, so a list need not fetch the pool to label a row.' },
+                            workers_used: { type: 'integer', example: 1, description: 'How many distinct machines have attempted this job. Past tense and therefore still true once it has finished, unlike a count of who holds it now: a job retried on a second machine reads 2.' },
                         },
                     },
                     GpuJobAttempt: {
@@ -2724,9 +2727,45 @@ const buildOpenApiSpec = () => {
                                         max_utilization_percent: { type: 'integer', nullable: true, example: 99 },
                                         avg_memory_percent_used: { type: 'number', nullable: true, example: 61.2 },
                                         avg_power_usage_watts: { type: 'number', nullable: true, example: 298.7 },
+                                        avg_inference_utilization_percent: { type: 'number', nullable: true, example: 91.2, description: 'Utilization series: the pool\'s compute spent on inference and tracking. Averaged over the readings taken while that kind of work was running, so a bucket where one machine trained and nine inferred reports what each was doing rather than one blended number describing neither. Null when no machine ran that kind in the bucket.' },
+                                        avg_training_utilization_percent: { type: 'number', nullable: true, example: 97.8, description: 'Utilization series: the same, for training.' },
+                                        inference_machines: { type: 'integer', nullable: true, example: 9, description: 'Utilization series: how many machines ran inference or tracking in this bucket.' },
+                                        training_machines: { type: 'integer', nullable: true, example: 1, description: 'Utilization series: how many ran training.' },
+                                        created: { type: 'integer', nullable: true, example: 150, description: 'Throughput series: jobs submitted in this bucket. What went in, against `finished` coming out.' },
                                         finished: { type: 'integer', nullable: true, example: 142, description: 'Throughput series: jobs whose finished_at falls in this bucket.' },
                                         succeeded: { type: 'integer', nullable: true, example: 139, description: 'Throughput series: the subset that worked.' },
                                         waiting: { type: 'integer', nullable: true, example: 7, description: 'Throughput series: jobs created before this instant and not finished by it.' },
+                                        median_turnaround_s: { type: 'integer', nullable: true, example: 4680, description: 'Throughput series: the median time from submission to finish, in seconds, for jobs finishing in this bucket. Median rather than mean, because one job that sat in the queue over a weekend drags an average into meaninglessness. Null when nothing finished.' },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    GpuThroughputSeries: {
+                        type: 'object',
+                        description: 'Work completed per bucket, with the current backlog. The series is a rate derived from kept readings; the backlog is a single figure, because nothing records what it used to be.',
+                        properties: {
+                            since: { type: 'string', format: 'date-time' },
+                            until: { type: 'string', format: 'date-time' },
+                            bucket: { type: 'string', enum: ['minute', 'hour', 'day'], example: 'minute' },
+                            kind: { type: 'string', nullable: true, example: 'inference', description: 'The job kind this was narrowed to, or null for all of them.' },
+                            queued: {
+                                type: 'object',
+                                description: 'What is waiting right now.',
+                                properties: {
+                                    units: { type: 'integer', example: 184320, description: 'Units of work left across unfinished jobs: what each expects, less what its latest attempt has done.' },
+                                    jobs: { type: 'integer', example: 21, description: 'How many unfinished jobs that is spread over.' },
+                                },
+                            },
+                            points: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        at: { type: 'string', format: 'date-time', description: 'Start of the bucket.' },
+                                        units_done: { type: 'integer', example: 714, description: 'Units completed in this bucket, summed across attempts. Positive differences only: a retried attempt counts from zero again.' },
+                                        attempts: { type: 'integer', example: 3, description: 'How many attempts contributed.' },
+                                        unit: { type: 'string', nullable: true, example: 'frames', description: 'What is being counted, as the worker named it.' },
                                     },
                                 },
                             },
@@ -3428,6 +3467,38 @@ const buildOpenApiSpec = () => {
                             undecided: { type: 'integer', example: 11900 },
                             promoted: { type: 'integer', example: 420 },
                             excluded: { type: 'integer', example: 160 },
+                        },
+                    },
+                    ModelSpeciesClass: {
+                        type: 'object',
+                        description:
+                            'One class a model can detect: the species joined to its `model_species` linkage. `species_list` is here because a '
+                            + 'common name identifies an organism only within its list. The training figures are the linkage\'s own and may be '
+                            + 'null -- a mapping recorded without them is still a mapping.',
+                        properties: {
+                            species_id: { type: 'integer', example: 775 },
+                            comname: { type: 'string', example: 'White-plumed anemone' },
+                            species: { type: 'string', nullable: true, example: 'Metridium farcimen' },
+                            species_list: { type: 'string', nullable: true, example: 'Invert' },
+                            dataset_size: { type: 'integer', nullable: true, example: 1840 },
+                            balance_weight: { type: 'number', format: 'float', nullable: true },
+                            precision_mean: { type: 'number', format: 'float', nullable: true, example: 0.91 },
+                            recall_mean: { type: 'number', format: 'float', nullable: true, example: 0.87 },
+                            f1_mean: { type: 'number', format: 'float', nullable: true, example: 0.89 },
+                        },
+                    },
+                    MosaicFrameCounts: {
+                        type: 'object',
+                        description:
+                            'How much video a question covers. `keyframes` counts the frames somebody or something drew a box on; '
+                            + '`frames` adds the frames interpolated between them, which a dataset trains on as well, and is therefore '
+                            + 'the number to size a training run against. **Counted per observation**: two animals tracked through the '
+                            + 'same stretch of video contribute their frames twice, which is right for training examples and wrong for '
+                            + 'image files. Unlike the counts route beside it, **the status filters apply here**.',
+                        properties: {
+                            observations: { type: 'integer', example: 115 },
+                            keyframes: { type: 'integer', example: 486 },
+                            frames: { type: 'integer', example: 24892 },
                         },
                     },
                 },

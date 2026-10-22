@@ -1,0 +1,476 @@
+/**
+ * Turning selected observations into a build plan.
+ *
+ * Pure functions over rows, with no database and no ffmpeg, because this is where the
+ * correctness argument lives and it should be testable in milliseconds. The service
+ * beside this one does the slow, side-effecting half.
+ *
+ * Two decisions are made here and both are load-bearing:
+ *
+ * 1. **Which observations must share a split.** The Datasets screen states the rule --
+ *    *"An observation or connected frame group keeps its first split assignment"* -- and
+ *    it exists because the same frame can carry two animals. Put one in train and the
+ *    other in eval and the model is evaluated on a picture it was trained on, which
+ *    makes the evaluation worthless and the number flattering.
+ * 2. **What class index each species gets.** A YOLO label is an index, and an index is
+ *    meaningless without the ordered list. Assigned by common name so the same selection
+ *    always produces the same vocabulary, whatever order the rows arrived in.
+ *
+ * @fileoverview Grouping, splitting and vocabulary for a dataset build.
+ * @author Isaac Travers
+ * @module service/dataset-build-plan
+ */
+
+/**
+ * How far apart two groups must be before they are different scenes.
+ *
+ * **Frame-exact overlap is not the only leak.** Two observations five frames apart in
+ * one video are nearly the same picture: the same patch of seabed, the same lighting,
+ * the animal barely moved. Put one in train and the other in eval and the evaluation is
+ * partly scored on pictures the model trained on, so the number comes back flattering
+ * and nothing downstream can tell.
+ *
+ * 125 frames is five seconds at 25fps, which is a long time in slow ROV transect video
+ * and short enough that genuinely separate encounters stay separate. **The right number
+ * is empirical**, not a constant somebody derived, which is why a build can ask for
+ * another -- raise it where the camera is near-stationary.
+ *
+ * Isaac, 2026-10-21, asked for it: *"we want to watch out for near miss leakage, we
+ * don't want to think our training is better than it is."*
+ *
+ * @constant
+ * @type {number}
+ */
+const NEAR_MISS_FRAMES = 125;
+
+/**
+ * The connected groups of observations that share frames.
+ *
+ * Two observations are connected when they are in the same video and their frame spans
+ * overlap; connection is transitive, so A overlapping B and B overlapping C puts all
+ * three in one group even when A and C do not touch. That transitivity is the whole
+ * reason this is a union rather than a pairwise check: a chain of overlaps through a
+ * busy stretch of video is one group, and splitting it anywhere leaks a frame.
+ *
+ * **Linear, because the rows arrive sorted by video then first frame.** Walking them in
+ * that order means a new group starts exactly when a row begins after the furthest frame
+ * any previous row in the group reached. The selection query's `ORDER BY` is therefore
+ * part of this function's contract rather than a convenience.
+ *
+ * @param {Array<Object>} rows - Selected observations, ordered by `video_source` then
+ * `first_framenum`.
+ * @param {number} [buffer] - Frames of separation below which two groups are treated
+ * as one scene. See {@link NEAR_MISS_FRAMES}.
+ * @returns {Array<Array<Object>>} The groups, in the order their first row appeared.
+ */
+function connectedGroups(rows, buffer = NEAR_MISS_FRAMES) {
+    const groups = [];
+    let current = null;
+    let reach = -1;
+    let video = null;
+
+    for (const row of rows) {
+        const first = Number(row.first_framenum);
+        const last = Number(row.last_framenum);
+
+        /* A different video can never share a frame, so it always starts a group --
+           frame numbers are per video and comparing them across two is meaningless. */
+        const sameVideo = row.video_source === video;
+
+        /* `+ buffer`, not just `>`: two observations five frames apart are nearly the
+           same picture -- same scene, same lighting, the animal barely moved -- so
+           splitting them across train and eval scores the model on what it memorised.
+           Frame-exact overlap is the obvious leak; this is the one that quietly
+           flatters the number. */
+        if (!current || !sameVideo || first > reach + buffer) {
+            current = [];
+            groups.push(current);
+            reach = last;
+            video = row.video_source;
+        } else {
+            reach = Math.max(reach, last);
+        }
+
+        current.push(row);
+    }
+
+    return groups;
+}
+
+/**
+ * Assign each group to a split, keeping the requested proportions.
+ *
+ * **Groups are placed whole, and stratified by species.** Whole, because that is the
+ * rule. Stratified because a proportional split measured only in frames can put most of
+ * a rare species in one split and leave another without it -- with three species and
+ * seventy-three groups that is not a remote risk, and a model evaluated on a species it
+ * barely trained on tells you nothing useful about either.
+ *
+ * The method is **iterative stratification** (Sechidis et al., 2011), which is the
+ * established answer for multi-label data: a connected group can carry several species,
+ * so it cannot be put in one species' bucket. Each group goes to whichever split is
+ * furthest below its share *of the rarest species that group contains*, because the
+ * common species come out proportional whatever you do and the rare ones are what a
+ * naive split gets wrong. Ties fall back to overall frames, which keeps the sizes right.
+ *
+ * Measured in frames rather than observations throughout: frames are what the model
+ * sees, and one observation spanning 400 frames is not the contribution of one spanning
+ * two.
+ *
+ * Each group goes wherever it leaves the result closest to the requested share, measured
+ * in frames rather than observations: frames are what the model sees, and one observation
+ * spanning 400 frames is not the same contribution as one spanning 2.
+ *
+ * **Deterministic.** The same selection and the same ratios produce the same split every
+ * time, so a rebuild is comparable with what it replaces, and a test can assert an exact
+ * membership rather than a distribution.
+ *
+ * @param {Array<Array<Object>>} groups - From {@link connectedGroups}.
+ * @param {Object} ratios - `{train, eval}`, any positive numbers; normalised here.
+ * @returns {Map<string, Array<Object>>} Split name to its observations.
+ */
+function assignSplits(groups, ratios = { train: 0.8, eval: 0.2 }) {
+    const names = Object.keys(ratios).filter((name) => Number(ratios[name]) > 0);
+
+    if (!names.length) {
+        throw new Error('At least one split must have a share above zero.');
+    }
+
+    const total = names.reduce((sum, name) => sum + Number(ratios[name]), 0);
+    const want = Object.fromEntries(names.map((name) => [name, Number(ratios[name]) / total]));
+    const held = Object.fromEntries(names.map((name) => [name, 0]));
+    const out = new Map(names.map((name) => [name, []]));
+
+    const frames = (group) => group.reduce(
+        (sum, row) => sum + (Number(row.last_framenum) - Number(row.first_framenum) + 1), 0
+    );
+
+    /* Frames per species, per group and overall. A group is multi-label -- one stretch
+       of video can hold three species -- which is why simple stratified sampling does
+       not apply and why this is counted rather than bucketed. */
+    const speciesOf = (group) => {
+        const counted = new Map();
+
+        for (const row of group) {
+            const id = Number(row.species_id);
+            const span = Number(row.last_framenum) - Number(row.first_framenum) + 1;
+
+            counted.set(id, (counted.get(id) || 0) + span);
+        }
+
+        return counted;
+    };
+
+    const wanted = new Map();
+    const measured = groups.map((group) => {
+        const species = speciesOf(group);
+
+        for (const [id, count] of species) wanted.set(id, (wanted.get(id) || 0) + count);
+
+        return { group, size: frames(group), species };
+    });
+
+    /* Held per split per species, so "starved" is a question that can be asked. */
+    const heldSpecies = Object.fromEntries(names.map((name) => [name, new Map()]));
+
+    /* **Rarest first.** Iterative stratification: the examples carrying the scarcest
+       species are placed while every split still has room, because those are the ones a
+       proportional split gets wrong. A rare species placed last lands wherever is left
+       over, which is how train ends up without one. */
+    const rarity = (entry) => Math.min(...[...entry.species.keys()].map((id) => wanted.get(id) || 0));
+
+    const ordered = measured.sort((a, b) =>
+        rarity(a) - rarity(b)
+        || b.size - a.size
+        || a.group[0].observation_id - b.group[0].observation_id);
+
+    let placed = 0;
+
+    for (const entry of ordered) {
+        const { group, size, species } = entry;
+
+        /* Which split is furthest from its share **of the rarest species this group
+           carries**, falling back to overall frames when that cannot separate them.
+           Deciding on the rarest species rather than on the total is the whole point:
+           the common ones come out proportional whatever you do. */
+        const scarcest = [...species.keys()]
+            .sort((a, b) => (wanted.get(a) || 0) - (wanted.get(b) || 0))[0];
+
+        let best = null;
+        let bestShortfall = -Infinity;
+
+        for (const name of names) {
+            const have = heldSpecies[name].get(scarcest) || 0;
+            const target = (wanted.get(scarcest) || 0) * want[name];
+            const shortfall = target - have;
+
+            /* Ties -- and at the start every split is equally starved -- are broken by
+               overall frames, so the sizes stay proportional too. */
+            const overall = (placed + size) * want[name] - held[name];
+            const score = shortfall + overall / 1e6;
+
+            if (score > bestShortfall) {
+                bestShortfall = score;
+                best = name;
+            }
+        }
+
+        out.get(best).push(...group);
+        held[best] += size;
+        placed += size;
+
+        for (const [id, count] of species) {
+            heldSpecies[best].set(id, (heldSpecies[best].get(id) || 0) + count);
+        }
+    }
+
+    return out;
+}
+
+/**
+ * Place observations in the splits their subsets asked for.
+ *
+ * The builder is a union of queries, each sent to a split by the person assembling it --
+ * "these dives into train, those into eval" is a sentence they said, not a ratio for the
+ * server to guess at. So this honours what was declared, and {@link assignSplits} is only
+ * for a build that declared nothing.
+ *
+ * Two rules decide the overlaps, and the screen states both:
+ *
+ * - **"If a match is already assigned elsewhere, its first split assignment is kept."**
+ *   An observation matched by two subsets belongs to the earlier one. Re-querying the
+ *   same dives into a second split should not move what is already placed.
+ * - **"An observation or connected frame group keeps its first split assignment."** A
+ *   group that ends up spanning two splits is pulled whole into the one its earliest
+ *   member claimed -- otherwise a frame holding two animals is in both, and the
+ *   evaluation is scored on pictures the model trained on.
+ *
+ * @param {Array<{split: string, rows: Array<Object>}>} subsets - In the order they were
+ * added, which is what "first" means.
+ * @returns {Map<string, Array<Object>>} Split name to its observations.
+ */
+function assignFromSubsets(subsets) {
+    /* First wins, so a later subset never moves what an earlier one placed. */
+    const splitOf = new Map();
+    const rowOf = new Map();
+
+    for (const subset of subsets) {
+        for (const row of subset.rows) {
+            const id = Number(row.observation_id);
+
+            if (splitOf.has(id)) continue;
+
+            splitOf.set(id, subset.split);
+            rowOf.set(id, row);
+        }
+    }
+
+    /* Group coherence is repaired after placement rather than prevented during it: the
+       groups are only knowable once every subset has contributed, because two subsets
+       can each hold half of one overlapping run. */
+    const rows = [...rowOf.values()].sort(
+        (a, b) => String(a.video_source).localeCompare(String(b.video_source))
+            || a.first_framenum - b.first_framenum
+            || a.observation_id - b.observation_id
+    );
+
+    /* Rank once. "Earliest" is insertion order into `splitOf`, and recomputing that
+       inside the loop is a scan of every placed observation per row -- quadratic over a
+       build that can hold a hundred thousand of them. */
+    const rank = new Map();
+    let next = 0;
+
+    for (const id of splitOf.keys()) rank.set(id, next++);
+
+    const out = new Map();
+
+    for (const group of connectedGroups(rows)) {
+        const owner = group.reduce(
+            (first, row) => (rank.get(Number(row.observation_id)) < rank.get(Number(first.observation_id))
+                ? row
+                : first),
+            group[0]
+        );
+
+        const split = splitOf.get(Number(owner.observation_id));
+
+        if (!out.has(split)) out.set(split, []);
+
+        out.get(split).push(...group);
+    }
+
+    return out;
+}
+
+/**
+ * The class index each species gets.
+ *
+ * **By common name, not by id and not by frequency.** The same selection has to produce
+ * the same vocabulary whichever machine builds it and whatever order the rows arrive in,
+ * because the index is written into every label file and a dataset rebuilt with a
+ * different order is a dataset whose labels mean something else. Sorting by name is
+ * stable, inspectable, and the order a person reading `data.yaml` expects.
+ *
+ * `species_id` is what the index *means*; `comname` is only how it is ordered and what
+ * the archive's `names:` list shows. A rename therefore changes the printed name and
+ * never the mapping, which is why `dataset_classes` stores the id.
+ *
+ * @param {Array<Object>} rows - Selected observations.
+ * @returns {Array<{species_id: number, comname: string, class_index: number}>} The
+ * vocabulary, index order.
+ */
+function vocabulary(rows) {
+    const bySpecies = new Map();
+
+    for (const row of rows) {
+        const id = Number(row.species_id);
+
+        if (!bySpecies.has(id)) {
+            bySpecies.set(id, { species_id: id, comname: row.comname || `species ${id}` });
+        }
+    }
+
+    return [...bySpecies.values()]
+        .sort((a, b) => a.comname.localeCompare(b.comname) || a.species_id - b.species_id)
+        .map((entry, index) => ({ ...entry, class_index: index }));
+}
+
+/**
+ * Every frame a build has to cut, per video, with the labels that belong on it.
+ *
+ * One pass over the selection produces the whole extraction plan, because ffmpeg cuts a
+ * set of frames from one video in a single pass and the expensive thing is opening the
+ * video, not the frames taken from it. A plan built per observation would open the same
+ * video once per animal in it.
+ *
+ * **A frame carries every box visible in it**, not one. That is the same fact the split
+ * rule is about, seen from the other side: if two observations share a frame, that
+ * frame's label file has two lines, and writing one line per observation would produce
+ * two images with the same name and one of them would win.
+ *
+ * Boxes are already normalised in `keyframes` -- `x`, `y`, `width`, `height` are
+ * fractions of the frame -- which is YOLO's own format, so nothing is converted here.
+ * `interpolateBox` is **not** used: it is the thumbnail path's, it returns a box only
+ * between two keyframes, and this walks every frame of the span anyway.
+ *
+ * @param {Map<string, Array<Object>>} splits - From {@link assignSplits}.
+ * @param {Array<Object>} classes - From {@link vocabulary}.
+ * @returns {Map<string, {split: string, frames: Map<number, Array<string>>}>} Keyed by
+ * video source; each frame number maps to its label lines.
+ */
+function extractionPlan(splits, classes) {
+    const indexOf = new Map(classes.map((c) => [c.species_id, c.class_index]));
+    const byVideo = new Map();
+
+    for (const [split, rows] of splits) {
+        for (const row of rows) {
+            const key = `${split}::${row.video_source}`;
+
+            if (!byVideo.has(key)) {
+                byVideo.set(key, { split, video: row.video_source, frames: new Map() });
+            }
+
+            const plan = byVideo.get(key);
+            const boxes = row.keyframes || [];
+            const index = indexOf.get(Number(row.species_id));
+
+            for (let frame = Number(row.first_framenum); frame <= Number(row.last_framenum); frame++) {
+                const box = boxAt(boxes, frame);
+
+                if (!box) continue;
+
+                if (!plan.frames.has(frame)) plan.frames.set(frame, []);
+
+                plan.frames.get(frame).push(
+                    `${index} ${box.cx.toFixed(6)} ${box.cy.toFixed(6)} `
+                    + `${box.w.toFixed(6)} ${box.h.toFixed(6)}`
+                );
+            }
+        }
+    }
+
+    return byVideo;
+}
+
+/**
+ * The box at one frame, interpolated between the keyframes either side of it.
+ *
+ * Returned as YOLO wants it -- centre, width, height, all fractions -- rather than as the
+ * top-left corner the keyframe stores, because every caller here wants the former and
+ * converting at the edge means converting once.
+ *
+ * Outside the keyframes' own range there is nothing to interpolate between and this
+ * returns null rather than clamping: a box held still past the last keyframe is a claim
+ * nobody made about where the animal was.
+ *
+ * @param {Array<Object>} boxes - The observation's keyframes, ascending by framenum.
+ * @param {number} frame - The frame wanted.
+ * @returns {?{cx: number, cy: number, w: number, h: number}} The box, or null.
+ */
+function boxAt(boxes, frame) {
+    let before = null;
+    let after = null;
+
+    for (const box of boxes) {
+        const at = Number(box.framenum);
+
+        if (at <= frame && (!before || at > Number(before.framenum))) before = box;
+        if (at >= frame && (!after || at < Number(after.framenum))) after = box;
+    }
+
+    if (!before || !after) return null;
+
+    const span = Number(after.framenum) - Number(before.framenum);
+    const t = span === 0 ? 0 : (frame - Number(before.framenum)) / span;
+    const mix = (a, b) => Number(a) + (Number(b) - Number(a)) * t;
+
+    /* **`x, y` is the centre already.** It is not the top-left, and this added half a
+       width and half a height to it -- so every label written before 2026-10-21 was
+       shifted half a box right and down, off the animal it was naming.
+
+       `service/thumbnail-geometry.js` records the answer and how it was reached (F1):
+       centre-origin, "confirmed three times in two other repositories and then confirmed
+       by eye in the spike: the centre-origin box sits on the animal, the top-left box is
+       shifted half a box right and down and contains bare rubble". The thumbnail path
+       reads `box.x * sourceWidth` as the centre, and this now agrees with it.
+
+       The real-video suite is what caught it, by asserting every coordinate lies in
+       0..1 and finding 1.012 -- the overflow a doubled half-width produces at the right
+       edge. No unit fixture would have: a box at 0.1 with width 0.2 is in range read
+       either way, and only the edges disagree. */
+    const cx = mix(before.x, after.x);
+    const cy = mix(before.y, after.y);
+    const w = mix(before.width, after.width);
+    const h = mix(before.height, after.height);
+
+    /* **Boxes do run off the edge** -- measured over 78 real keyframes they span
+       [-0.0105, 1.0275] horizontally (thumbnail-geometry, F3). YOLO reads a box as the
+       region of the image it is in, so the part outside the frame is not in the picture
+       and must not be in the label. Clipped to the frame and re-centred on what is left,
+       rather than clamped: clamping the centre keeps a width that reaches outside and
+       describes a box bigger than the animal in view. */
+    const left = Math.max(0, cx - w / 2);
+    const right = Math.min(1, cx + w / 2);
+    const top = Math.max(0, cy - h / 2);
+    const bottom = Math.min(1, cy + h / 2);
+
+    // Entirely outside the frame: nothing of it is in this picture to label.
+    if (right <= left || bottom <= top) return null;
+
+    return {
+        cx: (left + right) / 2,
+        cy: (top + bottom) / 2,
+        w: right - left,
+        h: bottom - top,
+    };
+}
+
+module.exports = {
+    NEAR_MISS_FRAMES,
+    assignFromSubsets,
+    assignSplits,
+    boxAt,
+    connectedGroups,
+    extractionPlan,
+    vocabulary,
+};

@@ -59,6 +59,129 @@ class DatasetRepository {
 
 
     /**
+     * What one dataset is actually made of: its splits, and its class vocabulary.
+     *
+     * **Both are recorded and neither was served.** `dataset_observations` has held a row
+     * per included observation since #268 and `dataset_classes` the ordered vocabulary,
+     * while the Datasets screen drew a split bar hardcoded to 70/20/10 and a class
+     * breakdown keyed on the dataset's *name* against five invented ones. A bar that says
+     * 70/20/10 whatever the dataset is worse than no bar.
+     *
+     * **The split lives in `inclusion_type`.** The column predates the build path and its
+     * name is about why an observation is in a dataset; the builder writes the split name
+     * into it, which is what `recordBuild` records and what `data.yaml` names.
+     *
+     * Counted rather than derived from `num_observations`: a dataset's membership can
+     * lose rows to the observation cascade, and the honest answer to "what is in it" is
+     * what is in it now, beside the count recorded when it was built.
+     *
+     * @async
+     * @param {number|string} datasetId - The dataset.
+     * @returns {Promise<{splits: Object[], classes: Object[]}>}
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getDatasetComposition(datasetId) {
+        const splits = await this.db.sequelize.query(
+            `SELECT inclusion_type AS split, count(*)::int AS observations
+               FROM dataset_observations
+              WHERE dataset_id = :datasetId
+              GROUP BY inclusion_type
+              ORDER BY inclusion_type`,
+            { replacements: { datasetId }, type: QueryTypes.SELECT }
+        );
+
+        const classes = await this.db.sequelize.query(
+            `SELECT c.class_index, c.species_id, s.comname
+               FROM dataset_classes c
+               LEFT JOIN species s ON s.id = c.species_id
+              WHERE c.dataset_id = :datasetId
+              ORDER BY c.class_index`,
+            { replacements: { datasetId }, type: QueryTypes.SELECT }
+        );
+
+        return { splits, classes };
+    }
+
+
+    /**
+     * Every dataset build that is still in flight, with how far it has got.
+     *
+     * **The progress is on the attempt, not on the job and not on the dataset.** A
+     * `dataset_build` job carries `spec->>'dataset_id'`; its latest attempt carries
+     * `progress_done`, `progress_total`, `progress_unit` and `progress_phase`, written
+     * once per video by the runner. So the join the Datasets screen needs is
+     * dataset -> job -> latest attempt, and this is it, answered for every building
+     * dataset at once rather than once per row.
+     *
+     * **`queued` is returned as well as `leased`,** without an attempt. `datasets.status`
+     * is `building` from the instant a build is queued, so the dataset alone cannot say
+     * whether anything has started; the job's state can, and a row that says *Queued*
+     * rather than *0 frames* is the difference between waiting and stuck.
+     *
+     * **And a build that failed, with the reason it failed.** That is not a contradiction
+     * of "in flight": the Datasets screen draws a failed build as *Needs attention*, and
+     * until this carried `failure_reason` the panel under it could only say that something
+     * had gone wrong. Isaac, looking at one: *"which isn't telling me ANYTHING about why
+     * it needs attention"*. The real one reads `...train/images/20240727_163021_Fwd_000
+     * 29982.jpg: unable to open for write`, which is a thing somebody can act on.
+     *
+     * **Polling is keyed on the state, not on this answer being empty.** A failed build
+     * stays failed, so a screen that polled while this returned anything would poll for
+     * ever; what it watches for is a row that is `queued` or `leased`. Answering `[]` is
+     * no longer what stops it.
+     *
+     * `DISTINCT ON (dataset_id)` because a consumer keys by dataset: a retry reuses the
+     * same job, so one row per dataset is normally true anyway, and making it always true
+     * saves every caller the same reduction.
+     *
+     * Errors reject rather than resolving to `[]`. A screen that polls this cannot tell a
+     * build that finished from a query that failed, and the empty answer is the one that
+     * stops the polling.
+     *
+     * @async
+     * @returns {Promise<Array<Object>>} One row per building dataset, newest job first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getBuildsInFlight() {
+        return this.db.sequelize.query(
+            `SELECT DISTINCT ON ((j.spec->>'dataset_id')::int)
+                    (j.spec->>'dataset_id')::int AS dataset_id,
+                    j.id                         AS job_id,
+                    j.state,
+                    j.attempts_made,
+                    j.max_attempts,
+                    j.created_at                 AS queued_at,
+                    a.id                         AS attempt_id,
+                    a.progress_done,
+                    a.progress_total,
+                    a.progress_unit,
+                    a.progress_phase,
+                    a.leased_at                  AS started_at,
+                    a.last_heartbeat_at,
+                    a.failure_reason
+               FROM gpu_jobs j
+               LEFT JOIN LATERAL (
+                    SELECT *
+                      FROM gpu_job_attempts
+                     WHERE job_id = j.id
+                     ORDER BY lease_epoch DESC, id DESC
+                     LIMIT 1
+               ) a ON TRUE
+              WHERE j.kind = 'dataset_build'
+                /* cancelled belongs here with failed: the runner cancels by failing the
+                   build, the dataset ends up failed either way, and a reader asking why a
+                   row needs attention deserves "Cancelled while extracting" rather than
+                   silence. A build that succeeded is not here -- its dataset says ready
+                   and carries its own counts. */
+                AND j.state IN ('queued', 'leased', 'failed', 'cancelled')
+                AND j.spec->>'dataset_id' ~ '^[0-9]+$'
+              ORDER BY (j.spec->>'dataset_id')::int, j.id DESC`,
+            { type: QueryTypes.SELECT }
+        );
+    }
+
+
+    /**
      * Fetch every dataset record.
      *
      * Database errors are logged and converted to an empty array. As a
@@ -433,6 +556,55 @@ class DatasetRepository {
             );
         } catch (err) {
             console.error(`Error in getModelVersions(${modelId}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * The species a model can detect, by common name.
+     *
+     * `model_species` has held this since the schema was written and nothing
+     * served it, so the Inference screen's class picker listed eight invented
+     * corals and the summary beside it said "all 8 species" whatever the model
+     * was. The real spread is wide -- one model here maps a single species and
+     * another maps 499 -- which is exactly why the number cannot be a constant.
+     *
+     * **Joined to `species` rather than returning the linkage rows**, because a
+     * `species_id` is not something a person can choose from. `species_list`
+     * rides along because a common name identifies an organism only within its
+     * list, and a model spanning two lists can otherwise offer the same label
+     * twice with no way to tell them apart.
+     *
+     * The per-species training figures on the linkage -- `dataset_size`,
+     * `precision_mean`, `recall_mean`, `f1_mean` -- come too. They are free from
+     * the same row, and they are what makes a class list worth reading: a class
+     * the model recalls poorly is one somebody may want to leave out of a run.
+     *
+     * @async
+     * @param {number|string} modelId - The model.
+     * @returns {Promise<Array<Object>>} The species, by common name.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getModelSpecies(modelId) {
+        try {
+            return await this.db.sequelize.query(
+                `SELECT s.id                AS species_id,
+                        s.comname,
+                        s.species,
+                        s.species_list,
+                        ms.dataset_size,
+                        ms.balance_weight,
+                        ms.precision_mean,
+                        ms.recall_mean,
+                        ms.f1_mean
+                   FROM model_species ms
+                   JOIN species s ON s.id = ms.species_id
+                  WHERE ms.model_id = :modelId
+                  ORDER BY s.comname ASC, s.id ASC`,
+                { replacements: { modelId }, type: QueryTypes.SELECT }
+            );
+        } catch (err) {
+            console.error(`Error in getModelSpecies(${modelId}):`, err);
             throw err;
         }
     }

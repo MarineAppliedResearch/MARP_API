@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; Training</title>
+<link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
+<link rel="stylesheet" href="../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
+<link rel="stylesheet" href="./mock.css">
+<script src="../../shared/assets/js/account-menu.js" defer></script>
+</head>
+<body data-screen="training">
+
+<div class="app">
+  <aside class="rail"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="Fine-tune a registered model over one saved training dataset">Training</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <div class="grid training-overview-shell">
+        <nav class="stats inference-stats training-stats" aria-label="Training workload destinations">
+          <a class="stat stat-link" data-state="running" href="./jobs.html?type=training&amp;status=running"
+             title="Open Jobs with running training work prioritized">
+            <span class="stat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
+            <span class="stat-lab">Training now</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="queued" href="./jobs.html?type=training&amp;status=queued"
+             title="Open Jobs with queued training work prioritized">
+            <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span>
+            <span class="stat-lab">Queued training</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="done" href="./history.html?type=training&amp;window=week"
+             title="Open training runs completed this week in History">
+            <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
+            <span class="stat-lab">Completed</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="failed" href="./jobs.html?type=training&amp;status=attention"
+             title="Open Jobs with failed or unhealthy training runs prioritized">
+            <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
+            <span class="stat-lab">Needs attention</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+        </nav>
+
+        <section class="inference-overview training-overview" aria-label="Training at a glance">
+          <article class="panel training-mix">
+            <header class="panel-hd"><div><h2>Training status</h2><p>Current queue and recorded outcomes</p></div></header>
+            <div class="panel-bd jobs-mix-bd">
+              <div class="job-donut" role="img" aria-label="31 training jobs represented: 2 running, 3 queued, 24 completed and 2 needing attention">
+                <svg viewBox="0 0 120 120" aria-hidden="true">
+                  <circle class="donut-track" cx="60" cy="60" r="43"/>
+                  <circle class="donut-part training" cx="60" cy="60" r="43" pathLength="31" stroke-dasharray="2 29" stroke-dashoffset="0"/>
+                  <circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="31" stroke-dasharray="3 28" stroke-dashoffset="-2"/>
+                  <circle class="donut-part done" cx="60" cy="60" r="43" pathLength="31" stroke-dasharray="24 7" stroke-dashoffset="-5"/>
+                  <circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="31" stroke-dasharray="2 29" stroke-dashoffset="-29"/>
+                </svg>
+                <span><b>31</b><small>training jobs</small></span>
+              </div>
+              <div class="job-mix-key training-mix-key"></div>
+            </div>
+          </article>
+
+          <article class="panel inference-flow training-health" data-training-activity>
+            <header class="panel-hd inference-flow-hd">
+              <div><h2>Training activity</h2><p>All training work &middot; load, concurrency, queue pressure and completed runs</p></div>
+              <div class="seg" aria-label="Training activity range">
+                <button type="button" class="on" data-training-range="24h" aria-pressed="true">24h</button>
+                <button type="button" data-training-range="7d">7d</button>
+                <button type="button" data-training-range="30d">30d</button>
+              </div>
+            </header>
+            <div class="panel-bd inference-flow-bd">
+              <div class="inference-chart training-chart" data-result-graph role="img" aria-label="System-wide training activity over the last 24 hours">
+                <svg viewBox="0 0 780 248" aria-hidden="true">
+                  <g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="70" x2="726" y2="70"/><line x1="54" y1="112" x2="726" y2="112"/><line x1="54" y1="154" x2="726" y2="154"/><line x1="54" y1="196" x2="726" y2="196"/></g>
+                  <g class="inference-axis left"><text x="46" y="32">100%</text><text x="46" y="74">75%</text><text x="46" y="116">50%</text><text x="46" y="158">25%</text><text x="46" y="200">0</text><text x="54" y="225" data-training-time>24h ago</text><text x="390" y="225" data-training-time>12h ago</text><text x="726" y="225" data-training-time>Now</text><text class="axis-title" x="54" y="15">GPU COMPUTE USED BY TRAINING</text></g>
+                  <g class="inference-axis right"><text x="734" y="32">8</text><text x="734" y="74">6</text><text x="734" y="116">4</text><text x="734" y="158">2</text><text x="734" y="200">0</text><text class="axis-title" x="726" y="15">JOBS</text></g>
+                  <path class="training-bars completed" data-training-bars="completed"/>
+                  <path class="training-area compute" data-training-area="compute"/>
+                  <path class="training-line compute" data-training-line="compute"/>
+                  <path class="training-line running" data-training-line="running"/>
+                  <path class="training-line queued" data-training-line="queued"/>
+                </svg>
+              </div>
+              <div class="inference-flow-foot">
+                <div class="inference-chart-key training-chart-key result-legend">
+                  <button type="button" class="compute" data-training-highlight="compute">Training GPU compute</button>
+                  <button type="button" class="running" data-training-highlight="running">Running jobs</button>
+                  <button type="button" class="queued" data-training-highlight="queued">Queued jobs</button>
+                  <button type="button" class="completed" data-training-highlight="completed">Completed runs</button>
+                </div>
+                <div class="inference-current" aria-label="Current system-wide training metrics">
+                  <span><b data-training-current="compute">61%</b> training compute</span>
+                  <span><b data-training-current="running">2</b> running</span>
+                  <span><b data-training-current="queued">3</b> queued</span>
+                  <span class="clearing"><b data-training-current="completed">2</b> completed in range</span>
+                  <span class="live"><i class="dot"></i>Design preview</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+      </div>
+
+      <!-- ============================================== training setup and recent work -->
+      <div class="grid training-workspace">
+
+        <div class="grid" data-cols="3">
+
+          <!-- 1 ------------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>1.</b>Start from</span>
+                <span class="sub">Base model and training settings</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field">
+                <label>Training task</label>
+                <nav class="seg wide" data-switch="task" aria-label="Task">
+                  <button type="button" class="on" data-view="det" title="Train bounding-box location and class predictions">Detection</button>
+                  <button type="button" data-view="cls" title="Train one class prediction for each complete image">Classification</button>
+                  <button type="button" data-view="seg" title="Train per-instance masks plus bounding boxes and classes">Segmentation</button>
+                </nav>
+              </div>
+
+              <div data-viewof="task" data-view="det" class="task-settings">
+                <div class="task-callout"><b>Detection</b><span>Bounding boxes, class labels and confidence per object</span></div>
+                <div class="field req">
+                  <label for="base-det">Detection base model</label>
+                  <select data-rendered data-fills="base-det" class="sel wide" id="base-det"><option value="">Loading…</option></select>
+                </div>
+                <div class="fieldrow">
+                  <div class="field"><label for="det-size">Image size</label><select class="sel wide" id="det-size" data-choices><option>640</option><option>960</option><option>1280</option></select></div>
+                  <div class="field"><label for="det-single">Class handling</label><select class="sel wide" id="det-single" data-choices><option>Keep all classes</option><option>Treat as one class</option></select></div>
+                </div>
+                <details class="fold task-fold"><summary>Detection loss balance <span class="now">box 7.5 &middot; class 0.5 &middot; DFL 1.5</span></summary><div class="fbody fieldrow">
+                  <div class="field"><label for="det-box" title="Weight applied to bounding-box localization error">Box loss gain</label><input class="inp wide" type="number" step="0.1" id="det-box" value="7.5"></div>
+                  <div class="field"><label for="det-cls" title="Weight applied to class prediction error">Class loss gain</label><input class="inp wide" type="number" step="0.1" id="det-cls" value="0.5"></div>
+                  <div class="field"><label for="det-dfl" title="Weight applied to box-edge distance error">DFL gain</label><input class="inp wide" type="number" step="0.1" id="det-dfl" value="1.5"></div>
+                </div></details>
+              </div>
+
+              <div data-viewof="task" data-view="cls" class="task-settings" hidden>
+                <div class="task-callout"><b>Classification</b><span>One class and confidence distribution for each complete image</span></div>
+                <div class="field req"><label for="base-cls">Classification base model</label><select data-rendered data-fills="base-cls" class="sel wide" id="base-cls"><option value="">Loading…</option></select></div>
+                <div class="fieldrow">
+                  <div class="field"><label for="cls-size">Image size</label><select class="sel wide" id="cls-size" data-choices><option>224</option><option>384</option><option>512</option></select></div>
+                  <div class="field"><label for="cls-drop" title="Probability of dropping classification-head activations during training">Head dropout</label><input class="inp wide" type="number" min="0" max="1" step="0.05" id="cls-drop" value="0.0"></div>
+                </div>
+              </div>
+
+              <div data-viewof="task" data-view="seg" class="task-settings" hidden>
+                <div class="task-callout"><b>Instance segmentation</b><span>Per-object masks, bounding boxes, class labels and confidence</span></div>
+                <div class="field req"><label for="base-seg">Segmentation base model</label><select data-rendered data-fills="base-seg" class="sel wide" id="base-seg"><option value="">Loading…</option></select></div>
+                <div class="fieldrow">
+                  <div class="field"><label for="seg-size">Image size</label><select class="sel wide" id="seg-size" data-choices><option>640</option><option>960</option><option>1280</option></select></div>
+                  <div class="field"><label for="mask-ratio" title="Downsample ratio used to build training masks; lower preserves more mask detail and uses more memory">Mask downsample</label><select class="sel wide" id="mask-ratio" data-choices><option>4 &mdash; standard</option><option>2 &mdash; finer</option><option>1 &mdash; full resolution</option><option>8 &mdash; lower memory</option></select></div>
+                </div>
+                <label class="check" title="Merge overlapping instance masks into one training tensor while retaining instance order"><input type="checkbox" checked><span>Overlap masks during training</span></label>
+                <details class="fold task-fold"><summary>Box and class loss balance <span class="now">box 7.5 &middot; class 0.5 &middot; DFL 1.5</span></summary><div class="fbody fieldrow">
+                  <div class="field"><label for="seg-box">Box loss gain</label><input class="inp wide" type="number" step="0.1" id="seg-box" value="7.5"></div>
+                  <div class="field"><label for="seg-cls">Class loss gain</label><input class="inp wide" type="number" step="0.1" id="seg-cls" value="0.5"></div>
+                  <div class="field"><label for="seg-dfl">DFL gain</label><input class="inp wide" type="number" step="0.1" id="seg-dfl" value="1.5"></div>
+                </div></details>
+              </div>
+
+              <div class="fieldrow shared-training-settings">
+                <div class="field"><label for="epochs">Epochs</label><input class="inp wide" type="number" id="epochs" value="100"></div>
+                <div class="field"><label for="batch">Batch size</label><select class="sel wide" id="batch" data-choices><option>16</option><option>Auto &mdash; 60% GPU memory</option><option>8</option><option>32</option></select></div>
+              </div>
+
+              <details class="fold">
+                <summary>Optimization and stopping
+                  <span class="now">Auto optimizer &middot; 3 warm-up &middot; patience 100</span></summary>
+                <div class="fbody">
+                  <div class="fieldrow">
+                    <div class="field">
+                      <label for="opt">Optimiser</label>
+                      <select class="sel wide" id="opt" data-choices><option>Auto</option><option>AdamW</option><option>SGD</option></select>
+                    </div>
+                    <div class="field">
+                      <label for="lr">Initial learning rate</label>
+                      <select class="sel wide" id="lr" data-choices><option>Auto for optimiser</option><option>0.001</option><option>0.01</option></select>
+                    </div>
+                  </div>
+                  <div class="fieldrow">
+                    <div class="field"><label for="decay">Weight decay</label><input class="inp wide" type="number" step="0.0001" id="decay" value="0.0005"></div>
+                    <div class="field"><label for="warm">Warm-up epochs</label><input class="inp wide" type="number" id="warm" value="3"></div>
+                  </div>
+                  <div class="fieldrow">
+                    <div class="field"><label for="patience">Early-stop patience</label><input class="inp wide" type="number" id="patience" value="100"><span class="hint">Epochs without validation improvement.</span></div>
+                    <div class="field"><label for="seed">Random seed</label><input class="inp wide" type="number" id="seed" value="0"><label class="check compact"><input type="checkbox" checked><span>Deterministic operations</span></label></div>
+                  </div>
+                </div>
+              </details>
+
+            </div>
+          </section>
+
+          <!-- 2 ------------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>2.</b>Training data</span>
+                <span class="sub">Exactly one saved dataset</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div data-viewof="task" data-view="det" class="task-dataset">
+                <div class="field req"><label for="dataset-det">Detection dataset</label><select data-rendered data-fills="dataset-det" class="sel wide" id="dataset-det"><option value="">Loading…</option></select></div>
+                <div class="dataset-contract"><b>Detection-compatible</b><span>Every training image has class-labelled bounding boxes.</span></div>
+              </div>
+              <div data-viewof="task" data-view="cls" class="task-dataset" hidden>
+                <div class="field req"><label for="dataset-cls">Classification dataset</label><select data-rendered data-fills="dataset-cls" class="sel wide" id="dataset-cls"><option value="">Loading…</option></select></div>
+                <div class="dataset-contract"><b>Classification-compatible</b><span>Every image has one whole-image class label.</span></div>
+              </div>
+              <div data-viewof="task" data-view="seg" class="task-dataset" hidden>
+                <div class="field req"><label for="dataset-seg">Segmentation dataset</label><select data-rendered data-fills="dataset-seg" class="sel wide" id="dataset-seg"><option value="">Loading…</option></select></div>
+                <div class="dataset-contract"><b>Segmentation-compatible</b><span>Every instance has a class-labelled polygon or mask.</span></div>
+              </div>
+              <span class="hint dataset-owned-note">Dataset variants and preprocessing are fixed when it is saved; this run does not change them.</span>
+
+              <div class="quad">
+                <span><b>12,846</b>observations</span>
+                <span><b>24</b>classes</span>
+                <span><b>142</b>videos</span>
+                <span><b>36</b>dives</span>
+              </div>
+
+              <div class="field" style="margin-top:15px">
+                <label>Saved split <span class="ro-tag">read-only</span></label>
+                <div class="splitbar" role="img"
+                     aria-label="70 per cent train, 20 per cent validation, 10 per cent test">
+                  <i class="tr" style="width:70%"><span>70%</span></i>
+                  <i class="va" style="width:20%"><span>20%</span></i>
+                  <i class="te" style="width:10%"><span>10%</span></i>
+                </div>
+                <div class="splitkey">
+                  <span class="tr"><b>8,992</b> train</span>
+                  <span class="va"><b>2,569</b> validation</span>
+                  <span class="te"><b>1,285</b> test</span>
+                </div>
+                <span class="hint">Set when the dataset was saved &middot; 1,204 overlap groups</span>
+              </div>
+
+              <div class="field">
+                <label>Class distribution <span class="faint">(8 of 24)</span></label>
+                <div class="dist">
+<span class="k">California sea cucumber</span><span class="b"><i style="width:100%"></i></span><span class="v">3,418</span><span class="k">Sunflower star</span><span class="b"><i style="width:85%"></i></span><span class="v">2,914</span><span class="k">Red urchin</span><span class="b"><i style="width:62%"></i></span><span class="v">2,106</span><span class="k">Basket star</span><span class="b"><i style="width:49%"></i></span><span class="v">1,688</span><span class="k">Orange sea pen</span><span class="b"><i style="width:35%"></i></span><span class="v">1,204</span><span class="k">Giant plumose anemone</span><span class="b"><i style="width:28%"></i></span><span class="v">942</span><span class="k">Dungeness crab</span><span class="b"><i style="width:18%"></i></span><span class="v">604</span><span class="k">Cloud sponge</span><span class="b"><i style="width:12%"></i></span><span class="v">418</span>
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- 3 ------------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>3.</b>Result</span>
+                <span class="sub">The model version this produces</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field">
+                <label>On success</label>
+                <div class="ro" data-viewof="task" data-view="det">
+                  <span class="a">Registers MARP-Multiclass-Det-XL &nbsp;1.0.3</span>
+                  <span class="b">A new detection version with box and class metrics</span>
+                  <span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>
+                </div>
+                <div class="ro" data-viewof="task" data-view="cls" hidden>
+                  <span class="a">Registers MARP-Habitat-Cls &nbsp;1.2.1</span>
+                  <span class="b">A new classification version with top-1 and per-class metrics</span>
+                  <span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>
+                </div>
+                <div class="ro" data-viewof="task" data-view="seg" hidden>
+                  <span class="a">Registers MARP-Benthic-Seg &nbsp;0.9.1</span>
+                  <span class="b">A new segmentation version with box and mask metrics</span>
+                  <span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="newname">Version name <span class="faint">(optional)</span></label>
+                <input class="inp wide" type="text" id="newname" value="1.0.3">
+                <span class="hint">Blank takes the next patch version.</span>
+              </div>
+
+              <div class="field">
+                <label>Traceability</label>
+                <dl class="kv">
+                  <dt>Base</dt><dd>MARP-Multiclass-Det-XL 1.0.2</dd>
+                  <dt>Dataset</dt><dd>ALL_Projects_Inverts_v5</dd>
+                  <dt>Observations</dt><dd>12,846, by membership</dd>
+                  <dt>Run by</dt><dd>itravers</dd>
+                </dl>
+              </div>
+
+
+            </div>
+          </section>
+
+        </div>
+
+        <section class="panel">
+          <header class="panel-hd">
+            <h2><span class="stepnum"><b>4.</b>Start</span>
+              <span class="sub">Worker and name</span></h2>
+          </header>
+          <div class="panel-bd">
+            <div class="runrow">
+              <div class="field">
+                <label for="trworkers">Worker selection</label>
+                <select data-rendered data-fills="trworkers" class="sel wide" id="trworkers"><option value="">Loading…</option></select>
+                <span class="hint">One worker, start to finish. No resume.</span>
+              </div>
+              <div class="field">
+                <label for="trname">Run name</label>
+                <input class="inp wide" type="text" id="trname" value="2026-CAMPA-Group2">
+              </div>
+              <div class="field">
+                <label>Estimated</label>
+                <div class="facts2">
+                  <span class="k">Duration</span><span class="v">~4h 10m</span>
+                  <span class="k">VRAM</span><span class="v">~18 GB</span>
+                </div>
+              </div>
+              <div class="field">
+                <label>&nbsp;</label>
+                <button class="btn accent big block" id="trainBtn">
+                  <svg class="ico"><use href="#i-play"/></svg>Start training</button>
+                <span class="hint">Mockup &mdash; submits nothing.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel inference-recent training-recent">
+          <header class="panel-hd">
+            <h2>Recent training jobs <span class="count"></span></h2>
+            <a class="more" href="./jobs.html?type=training">All jobs <svg class="ico sm"><use href="#i-arrow"/></svg></a>
+            <div class="jobs-sort-mobile" aria-label="Sort recent training jobs">
+              <span>Sort</span>
+              <button type="button" data-sort-column="0">Job</button><button type="button" data-sort-column="1">Dataset</button>
+              <button type="button" data-sort-column="2">Produces</button><button type="button" data-sort-column="3">Status</button>
+              <button type="button" data-sort-column="4">Epochs</button><button type="button" data-sort-column="5">Best mAP</button>
+              <button type="button" data-sort-column="6">Started</button><button type="button" data-sort-column="7">Took</button>
+            </div>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed stack training-table">
+                <thead>
+                  <tr>
+                    <th class="hjob sortable" title="Sort by training job name">Job</th>
+                    <th class="hscope sortable" title="Sort by the immutable saved dataset">Dataset</th>
+                    <th class="hmodel sortable" title="Sort by the model version this run will register">Produces</th>
+                    <th class="hstatus sortable" title="Sort by current training state">Status</th>
+                    <th class="htype sortable" title="Sort by completed epochs">Epochs</th>
+                    <th class="hupd sortable" title="Sort by the best validation mAP recorded so far">Best mAP</th>
+                    <th class="hupd sortable" aria-sort="descending" title="Sort by start time">Started</th>
+                    <th class="htype sortable" title="Sort by elapsed or completed duration">Took</th>
+                  </tr>
+                </thead>
+                <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- =============================================================== runs -->
+      <div data-viewof="tr" data-view="runs" class="grid" hidden>
+
+        <div class="stats">
+          <div class="stat" data-state="running" title="Runs training right now">
+            <span class="stat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
+            <span class="stat-lab">Training now</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+          </div>
+          <div class="stat" data-state="done" title="Runs that finished and registered a version">
+            <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
+            <span class="stat-lab">Completed</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+          </div>
+          <div class="stat" data-state="failed" title="Runs that stopped without registering anything">
+            <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
+            <span class="stat-lab">Failed</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+          </div>
+          <div class="stat" data-state="idle" title="Best mAP@50 across every registered version">
+            <span class="stat-ico"><svg class="ico"><use href="#i-star"/></svg></span>
+            <span class="stat-lab">Best mAP@50</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+          </div>
+        </div>
+
+        <section class="panel">
+          <header class="panel-hd">
+            <h2 title="Every training run, newest first">Training runs <span class="count"></span></h2>
+            <div class="panel-tools">
+              <span class="search">
+                <svg class="ico sm"><use href="#i-search"/></svg>
+                <input class="inp" type="search" placeholder="Search runs&hellip;"
+                       aria-label="Search runs" title="Filter by run, dataset or model name">
+              </span>
+              <select class="sel" aria-label="Status" title="Show only runs in one state">
+                <option>All statuses</option><option>Running</option>
+                <option>Completed</option><option>Failed</option>
+              </select>
+              <button class="btn" title="Open every run's curves at once">
+                <svg class="ico"><use href="#i-split"/></svg>Expand all</button>
+            </div>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed stack expandable" id="runs">
+                <thead>
+                  <tr>
+                    <th class="ex"><span class="vh">Expand</span></th>
+                    <th class="hjob sortable" title="Sort by run name">Run</th>
+                    <th class="hscope sortable" title="Sort by dataset">Dataset</th>
+                    <th class="hmodel sortable" title="Sort by the version produced">Produces</th>
+                    <th class="hstatus sortable" title="Sort by state, most active first">Status</th>
+                    <th class="hprog sortable" title="Sort by how far through">Progress</th>
+                    <th class="htype sortable num" title="Sort by epochs finished">Epochs</th>
+                    <th class="hupd sortable num" title="Sort by best mAP@50">mAP@50</th>
+                    <th class="hupd sortable" aria-sort="descending" title="Sort by start time">Started</th>
+                    <th class="htype sortable num" title="Sort by wall-clock duration">Took</th>
+                  </tr>
+                </thead>
+                <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
+              </table>
+            </div>
+          </div>
+          <footer class="panel-ft">
+            <span>Showing <b class="strong">1&ndash;6</b> of 28 runs</span>
+            <div class="pager">
+              <button aria-label="Previous page" disabled title="Previous page"><svg class="ico sm"><use href="#i-left"/></svg></button>
+              <button aria-current="page">1</button><button>2</button><button>3</button>
+              <button aria-label="Next page" title="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+            </div>
+          </footer>
+        </section>
+
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="./api.js"></script>
+<script src="./mock.js"></script>
+</body>
+</html>

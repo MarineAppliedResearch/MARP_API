@@ -23,6 +23,7 @@ const app = require('./app');
 const { listenHttpAndHttps } = require('./config/listen');
 const { STORAGE_SOURCE } = require('./config/thumbnails');
 const thumbnailExtraction = require('./service/thumbnail-extraction.service');
+const datasetBuild = require('./service/dataset-build.service');
 
 /* A worktree can deliberately run against another checkout's development
  * database, but its default thumbnail directory belongs to the worktree. A
@@ -87,3 +88,13 @@ thumbnailExtraction.start().then((result) => {
         console.log(`Thumbnail extraction is not running: ${result.reason}`);
     }
 });
+
+// Dataset builds (#268). The API runs these rather than the GPU pool: a build reads
+// video, and streaming that to a worker so it can re-download it makes no sense. Needs
+// the same ffmpeg the extractor above does, and says nothing extra when it is missing --
+// the line above has already said it.
+const builds = datasetBuild.start();
+
+console.log(builds.started
+    ? 'Dataset builds started.'
+    : `Dataset builds are not running: ${builds.reason}`);

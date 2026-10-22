@@ -70,6 +70,7 @@ const {
     TERMINAL_JOB_STATES,
     RESULT_OUTCOMES,
     SAMPLE_RETENTION_DAYS,
+    LEASABLE_JOB_KINDS,
 } = require('../config/gpu-orchestration');
 
 /**
@@ -88,6 +89,9 @@ const LIVE_ATTEMPT_STATES_SQL = LIVE_ATTEMPT_STATES.map((state) => `'${state}'`)
  * @type {string}
  */
 const TERMINAL_JOB_STATES_SQL = TERMINAL_JOB_STATES.map((state) => `'${state}'`).join(', ');
+
+/** The kinds a worker may lease, for the claim query's WHERE. */
+const LEASABLE_JOB_KINDS_SQL = LEASABLE_JOB_KINDS.map((kind) => `'${kind}'`).join(', ');
 
 /**
  * Keeps `gpu_jobs.finished_at` in step with a state this statement is setting
@@ -484,7 +488,20 @@ class GpuRepository {
                         round(avg(d.util), 1)::float AS avg_utilization_percent,
                         max(d.util)::int AS max_utilization_percent,
                         round(avg(d.mem), 1)::float AS avg_memory_percent_used,
-                        round(avg(d.watts), 1)::float AS avg_power_usage_watts
+                        round(avg(d.watts), 1)::float AS avg_power_usage_watts,
+                        /* The pool's compute, split by what it was spent on.
+                           Averaged over the readings of that kind, so a bucket
+                           where one machine trained and nine inferred reports
+                           what each was doing rather than one blended number
+                           that describes neither. */
+                        round(avg(d.util) FILTER (WHERE s.job_kind IN ('inference', 'tracking')), 1)::float
+                            AS avg_inference_utilization_percent,
+                        round(avg(d.util) FILTER (WHERE s.job_kind = 'training'), 1)::float
+                            AS avg_training_utilization_percent,
+                        count(DISTINCT s.worker_id) FILTER (WHERE s.job_kind IN ('inference', 'tracking'))::int
+                            AS inference_machines,
+                        count(DISTINCT s.worker_id) FILTER (WHERE s.job_kind = 'training')::int
+                            AS training_machines
                    FROM gpu_worker_samples s
                    CROSS JOIN LATERAL (
                         SELECT (device->>'gpu_utilization_percent')::numeric AS util,
@@ -520,7 +537,7 @@ class GpuRepository {
      * @returns {Promise<Array<Object>>} One row per bucket, oldest first.
      * @throws {Error} Re-throws any database failure.
      */
-    async jobThroughputSeries({ since, until, bucket }) {
+    async jobThroughputSeries({ since, until, bucket, kind }) {
         try {
             return await this.db.sequelize.query(
                 `WITH buckets AS (
@@ -531,15 +548,191 @@ class GpuRepository {
                  )
                  SELECT b.at,
                         (SELECT count(*)::int FROM gpu_jobs j
-                          WHERE j.finished_at >= b.at
-                            AND j.finished_at < b.at + ('1 ${bucket}')::interval) AS finished,
+                          WHERE j.created_at >= b.at
+                            AND j.created_at < b.at + ('1 ${bucket}')::interval
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS created,
                         (SELECT count(*)::int FROM gpu_jobs j
                           WHERE j.finished_at >= b.at
                             AND j.finished_at < b.at + ('1 ${bucket}')::interval
-                            AND j.state = 'succeeded') AS succeeded,
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS finished,
+                        (SELECT count(*)::int FROM gpu_jobs j
+                          WHERE j.finished_at >= b.at
+                            AND j.finished_at < b.at + ('1 ${bucket}')::interval
+                            AND j.state = 'succeeded'
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS succeeded,
                         (SELECT count(*)::int FROM gpu_jobs j
                           WHERE j.created_at <= b.at
-                            AND (j.finished_at IS NULL OR j.finished_at > b.at)) AS waiting
+                            AND (j.finished_at IS NULL OR j.finished_at > b.at)
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS waiting,
+                        /* Median rather than mean: one job that sat in the queue
+                           over a weekend drags an average into meaninglessness,
+                           and the question is what a typical job took.
+
+                           **Every one of these five narrows by kind.** The created count
+                           and this one did not until 2026-10-21: asking for one kind gave
+                           that kind's finished, succeeded and waiting beside *every*
+                           kind's created and turnaround, so the Jobs, Training and
+                           Dashboard charts all drew a created line counting work they
+                           were not about. Found by the session building the Datasets
+                           activity chart, by inserting one inference job and watching a
+                           dataset_build question count it. */
+                        (SELECT round(percentile_cont(0.5) WITHIN GROUP (
+                                    ORDER BY EXTRACT(EPOCH FROM (j.finished_at - j.created_at))
+                                ))::int
+                           FROM gpu_jobs j
+                          WHERE j.finished_at >= b.at
+                            AND j.finished_at < b.at + ('1 ${bucket}')::interval
+                            AND j.finished_at > j.created_at
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS median_turnaround_s
+                   FROM buckets b
+                  ORDER BY b.at ASC`,
+                { replacements: { since, until, kind }, type: QueryTypes.SELECT }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * How fast work went through, and how much was still waiting.
+     *
+     * **Throughput is a delta.** `gpu_attempt_progress` keeps a cumulative count per attempt
+     * per minute, so the rate is the difference between consecutive readings of the same
+     * attempt. Only *positive* differences count: an attempt that is retried reports from
+     * zero again, and treating that as negative throughput would subtract real work that
+     * really happened.
+     *
+     * **Queued is frames, not jobs.** The Inference screen asks what is waiting in units of
+     * work rather than units of submission -- a thousand queued jobs of ten frames is not
+     * the same backlog as ten of a hundred thousand. It is the total each unfinished job
+     * expects, less whatever its latest attempt has already done.
+     *
+     * @async
+     * @param {Object} window
+     * @param {Date} window.since - Start of the window.
+     * @param {Date} window.until - End of the window.
+     * @param {string} window.bucket - minute, hour or day.
+     * @param {string} [window.kind] - Narrow to one job kind.
+     * @returns {Promise<Array<Object>>} One row per bucket, oldest first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async throughputSeries({ since, until, bucket, kind }) {
+        try {
+            return await this.db.sequelize.query(
+                `WITH stepped AS (
+                        SELECT p.at,
+                               p.attempt_id,
+                               p.progress_unit,
+                               p.progress_done
+                                 - lag(p.progress_done) OVER (PARTITION BY p.attempt_id ORDER BY p.at)
+                                 AS delta
+                          FROM gpu_attempt_progress p
+                         WHERE p.at >= :since AND p.at < :until
+                           ${kind ? 'AND p.job_kind = :kind' : ''}
+                 )
+                 SELECT date_trunc('${bucket}', s.at) AS at,
+                        /* Positive only: a retry restarts the count, and that is
+                           not work being undone. */
+                        COALESCE(sum(s.delta) FILTER (WHERE s.delta > 0), 0)::bigint AS units_done,
+                        count(DISTINCT s.attempt_id)::int AS attempts,
+                        max(s.progress_unit) AS unit
+                   FROM stepped s
+                  GROUP BY 1
+                  ORDER BY 1 ASC`,
+                { replacements: { since, until, kind }, type: QueryTypes.SELECT }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * How much work is waiting right now, counted in units rather than in jobs.
+     *
+     * A single number rather than a series: nothing records what the backlog *was*, only
+     * what it is. Drawing it over time would need the same treatment progress just got, and
+     * is worth doing when somebody wants to see a backlog growing rather than its size.
+     *
+     * @async
+     * @param {string} [kind] - Narrow to one job kind.
+     * @returns {Promise<Object>} `{units, jobs}`.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async queuedUnits(kind) {
+        try {
+            const [row] = await this.db.sequelize.query(
+                `SELECT COALESCE(sum(GREATEST(0,
+                            COALESCE((j.spec->'range'->>'end_frame')::bigint, 0)
+                          - COALESCE((j.spec->'range'->>'start_frame')::bigint, 0)
+                          - COALESCE(a.progress_done, 0))), 0)::bigint AS units,
+                        count(*)::int AS jobs
+                   FROM gpu_jobs j
+                   LEFT JOIN LATERAL (
+                        SELECT progress_done FROM gpu_job_attempts
+                         WHERE job_id = j.id ORDER BY id DESC LIMIT 1
+                   ) a ON TRUE
+                  WHERE j.finished_at IS NULL
+                    ${kind ? 'AND j.kind = :kind' : ''}`,
+                { replacements: { kind }, type: QueryTypes.SELECT }
+            );
+
+            return { units: Number(row.units), jobs: row.jobs };
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * How the model registry grew.
+     *
+     * Cumulative registrations per bucket, counted straight out of `ml_models.created_at`
+     * with nothing recorded specially -- the rows have carried their own history all along.
+     *
+     * **`in_use` replaces the `preferred` line the mockup asked for**, and that is a design
+     * decision rather than a shortcut. `preferred` is a flag somebody flips occasionally; a
+     * chart of when it was flipped answers a question nobody has. What is worth seeing
+     * beside a growing registry is how much of it anyone actually runs -- this database has
+     * fifteen registered models, eight of which were used on one day in September and one in
+     * the week since. A registry filling up with models nothing runs is the thing that chart
+     * should show, and it is derivable from the jobs with nothing recorded specially.
+     *
+     * **Cache coverage is still absent and still worth having.** It answers where a job can
+     * start without downloading weights first, which is a scheduling question. Nothing
+     * records which machine holds which model, so it needs the worker to report its cache.
+     *
+     * @async
+     * @param {Object} window
+     * @param {Date} window.since - Start of the window.
+     * @param {Date} window.until - End of the window.
+     * @param {string} window.bucket - minute, hour or day.
+     * @returns {Promise<Array<Object>>} One row per bucket, oldest first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async registrySeries({ since, until, bucket }) {
+        try {
+            return await this.db.sequelize.query(
+                `WITH buckets AS (
+                        SELECT generate_series(
+                                   date_trunc('${bucket}', :since::timestamptz),
+                                   date_trunc('${bucket}', :until::timestamptz),
+                                   ('1 ${bucket}')::interval) AS at
+                 )
+                 SELECT b.at,
+                        (SELECT count(*)::int FROM ml_models m
+                          WHERE m.created_at < b.at + ('1 ${bucket}')::interval) AS registered,
+                        (SELECT count(*)::int FROM ml_models m
+                          WHERE m.created_at >= b.at
+                            AND m.created_at < b.at + ('1 ${bucket}')::interval) AS added,
+                        /* How many distinct models anything actually ran in this
+                           bucket, named as the job spec named them. */
+                        (SELECT count(DISTINCT j.spec->'model'->>'name')::int
+                           FROM gpu_jobs j
+                          WHERE j.created_at >= b.at
+                            AND j.created_at < b.at + ('1 ${bucket}')::interval
+                            AND j.spec->'model'->>'name' IS NOT NULL) AS in_use
                    FROM buckets b
                   ORDER BY b.at ASC`,
                 { replacements: { since, until }, type: QueryTypes.SELECT }
@@ -717,6 +910,14 @@ class GpuRepository {
      * progress, which is not the same as no progress *made*, and the screens draw
      * a dash rather than an empty bar for exactly that distinction.
      *
+     * **Which machine ran it comes back too**, by the same route: `worker_id` and
+     * `worker_name` from the latest attempt, and `workers_used`, a count of the
+     * distinct machines that have attempted the job. `DESIGN.md` gap 17 said this
+     * was "not recorded anywhere", which was a reading of the *fixture* rather than
+     * of the database -- the fixture's `workers.using` is present tense and reads 0
+     * once a job is over. `gpu_job_attempts.worker_id` has always recorded it, and a
+     * job retried on a second machine is exactly the case worth seeing.
+     *
      * @async
      * @param {Object} [filters]
      * @param {string} [filters.state] - Only jobs in this state.
@@ -811,16 +1012,22 @@ class GpuRepository {
                         a.progress_total,
                         a.progress_unit,
                         a.progress_phase,
-                        a.progress_elapsed_s
+                        a.progress_elapsed_s,
+                        a.worker_id,
+                        w.name AS worker_name,
+                        (SELECT count(DISTINCT worker_id)::int
+                           FROM gpu_job_attempts
+                          WHERE job_id = j.id) AS workers_used
                    FROM gpu_jobs j
                    LEFT JOIN LATERAL (
                         SELECT progress_done, progress_total, progress_unit,
-                               progress_phase, progress_elapsed_s
+                               progress_phase, progress_elapsed_s, worker_id
                           FROM gpu_job_attempts
                          WHERE job_id = j.id
                          ORDER BY id DESC
                          LIMIT 1
                    ) a ON TRUE
+                   LEFT JOIN gpu_workers w ON w.id = a.worker_id
                    ${where}
                    ${order}
                   LIMIT :limit OFFSET :offset`,
@@ -1061,10 +1268,14 @@ class GpuRepository {
      * @throws {Error} Re-throws any database failure.
      */
     async selectClaimableJobRow(transaction) {
+        /* A kind the pool does not run is invisible to this query. `dataset_build` is
+           the first: it is a `gpu_jobs` row for the queue, the attempts and the
+           progress, and the API runs it rather than a worker. */
         const [job] = await this.db.sequelize.query(
             `SELECT *
                FROM gpu_jobs
               WHERE state = 'queued'
+                AND kind IN (${LEASABLE_JOB_KINDS_SQL})
                 AND ${ATTEMPTS_SPENT_SQL} < max_attempts
               ORDER BY priority DESC, created_at ASC, id ASC
               LIMIT 1
@@ -1345,15 +1556,52 @@ class GpuRepository {
             // reason this table exists.
             if (telemetry && Array.isArray(telemetry.devices) && telemetry.devices.length) {
                 await this.db.sequelize.query(
-                    `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices)
-                     VALUES (:workerId, :attemptId, date_trunc('minute', NOW()), :devices)
+                    `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, job_kind)
+                     VALUES (:workerId, :attemptId, date_trunc('minute', NOW()), :devices, :jobKind)
                      ON CONFLICT (worker_id, at)
-                     DO UPDATE SET devices = EXCLUDED.devices, attempt_id = EXCLUDED.attempt_id`,
+                     DO UPDATE SET devices = EXCLUDED.devices,
+                                   attempt_id = EXCLUDED.attempt_id,
+                                   job_kind = EXCLUDED.job_kind`,
                     {
                         replacements: {
                             workerId,
                             attemptId: attempt.id,
                             devices: JSON.stringify(telemetry.devices),
+                            /* Written onto the sample rather than joined at read
+                               time: the attempt is nulled when a job is cleared,
+                               and a reading is a fact about the machine that
+                               outlives it. What was running then is the thing
+                               worth keeping. */
+                            jobKind: job ? job.kind : null,
+                        },
+                        transaction,
+                    }
+                );
+            }
+
+            /* Progress, kept over time so a rate can be worked out. The attempt
+               row holds only the latest value -- every heartbeat overwrites it --
+               so without this there is no second reading to subtract from.
+               Written whenever the heartbeat carried progress at all, with or
+               without telemetry: an older worker sends no GPU reading and its
+               throughput is still worth drawing. */
+            if (progress && progress.done !== undefined && progress.done !== null) {
+                await this.db.sequelize.query(
+                    `INSERT INTO gpu_attempt_progress
+                            (attempt_id, at, progress_done, progress_total, progress_unit, job_kind)
+                     VALUES (:attemptId, date_trunc('minute', NOW()), :done, :total, :unit, :jobKind)
+                     ON CONFLICT (attempt_id, at)
+                     DO UPDATE SET progress_done = EXCLUDED.progress_done,
+                                   progress_total = EXCLUDED.progress_total,
+                                   progress_unit = EXCLUDED.progress_unit,
+                                   job_kind = EXCLUDED.job_kind`,
+                    {
+                        replacements: {
+                            attemptId: attempt.id,
+                            done: progress.done,
+                            total: progress.total ?? null,
+                            unit: progress.unit ?? null,
+                            jobKind: job ? job.kind : null,
                         },
                         transaction,
                     }

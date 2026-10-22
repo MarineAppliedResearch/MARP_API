@@ -46,22 +46,36 @@ let copiedWeights;
 beforeAll(async () => {
     const [dataset] = await db.sequelize.query(
         `INSERT INTO datasets (name, location, num_samples, num_classes, source, status,
-                               archive_path, archive_sha256, archive_bytes, class_names,
+                               archive_path, archive_sha256, archive_bytes,
                                created_at, updated_at)
-         VALUES (:name, 'test', 10, 2, 'test', 'ready', :p, :s, 1024, :classes::jsonb, now(), now())
+         VALUES (:name, 'test', 10, 2, 'test', 'ready', :p, :s, 1024, now(), now())
          RETURNING id`,
         {
             replacements: {
                 name: `jest-register-dataset-${runId}`,
                 p: `datasets/${'a'.repeat(64)}.tar`,
                 s: 'a'.repeat(64),
-                classes: JSON.stringify(CLASS_NAMES),
             },
             type: db.Sequelize.QueryTypes.INSERT,
             logging: false,
         }
     );
     datasetId = dataset[0].id;
+
+    /* The vocabulary is `dataset_classes` now, not a `class_names` array: an index means
+       a species, and the name is how it is printed (#268). Seeded against the real
+       catalogue, which is what registration joins to. */
+    for (let index = 0; index < CLASS_NAMES.length; index++) {
+        await db.sequelize.query(
+            `INSERT INTO dataset_classes (dataset_id, species_id, class_index, created_at, updated_at)
+             SELECT :datasetId, id, :index, now(), now()
+               FROM species WHERE comname = :name ORDER BY id LIMIT 1`,
+            {
+                replacements: { datasetId, index, name: CLASS_NAMES[index] },
+                logging: false,
+            }
+        );
+    }
 
     const [parent] = await db.sequelize.query(
         `INSERT INTO ml_models (name, model_type, architecture_version, status, created_at, updated_at)

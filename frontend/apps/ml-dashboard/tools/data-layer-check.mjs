@@ -5,7 +5,7 @@
  * screen, because the shape of an answer and the way a table draws it are two
  * different claims and a test that mixes them cannot say which one broke.
  *
- * Runs in a browser for one reason: `mockups/api.js` is a plain script that
+ * Runs in a browser for one reason: `api.js` is a plain script that
  * reads `window` and `location` as it loads. Shimming those in node would be
  * testing a different module from the one the screens get.
  *
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const PORT = Number(process.env.LAYER_PORT || 8137);
-const BASE = `http://localhost:${PORT}/apps/marp-ml-dashboard/mockups/`;
+const BASE = `http://localhost:${PORT}/apps/ml-dashboard/`;
 
 const server = spawn(process.execPath, [join(HERE, 'serve.mjs'), String(PORT)], { stdio: 'ignore' });
 const stop = () => { try { server.kill(); } catch { /* already gone */ } };

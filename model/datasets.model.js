@@ -121,12 +121,27 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       num_samples: {
-        // Number of image or video samples in this dataset
+        // How many images are in this dataset -- one per extracted frame.
+        //
+        // This used to say "images, frames, or observations", and all three are not one
+        // quantity: 115 observations here produce 13,380 images. `package-dataset.js`
+        // has always written its `images:` count into this column, so that is what every
+        // existing row means and that is what it keeps meaning.
         type: DataTypes.INTEGER,
         allowNull: true,
-        comment: 'Total number of samples (images, frames, or observations) included in this dataset.',
+        comment: 'How many images are in this dataset: one per extracted frame. Not the observation count, which is num_observations and is much smaller -- a keyframe is a box at a frame number and the frames between two keyframes are interpolated and trained on as well.',
         jsonSchema: {
-            description: 'Total number of samples (images, frames, or observations) included in this dataset.',
+            description: 'How many images are in this dataset: one per extracted frame. Not the observation count, which is num_observations and is much smaller -- a keyframe is a box at a frame number and the frames between two keyframes are interpolated and trained on as well.',
+        },
+      },
+
+      num_observations: {
+        // The new half of the pair. See migration 20261021120000.
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: 'How many observations went into this dataset, as recorded when it was built. Null for a dataset built before MARP recorded membership, which is not the same as zero.',
+        jsonSchema: {
+            description: 'How many observations went into this dataset, as recorded when it was built. Null for a dataset built before MARP recorded membership, which is not the same as zero.',
         },
       },
 
@@ -150,6 +165,38 @@ module.exports = (sequelize, DataTypes) => {
         jsonSchema: {
             description: 'Source or method of dataset creation (e.g., "auto-compiled", "manual curation", "legacy import").',
             examples: ['auto-compiled'],
+        },
+      },
+
+      /* **What the build actually produced.** These three are columns on `datasets` and
+         were not declared here, so `GET /api/v2/dataset` could not return them and the
+         Datasets screen drew a fixture in their place: a hardcoded fingerprint and
+         archive size keyed on the dataset's *name*, which matched five invented names
+         and nothing MARP ever built. */
+      archive_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Where the packaged archive is, relative to the storage root. Null until a build finishes.',
+        jsonSchema: {
+            description: 'Where the packaged archive is, relative to the storage root. Null until a build finishes. `GET /api/v2/gpu/datasets/{id}/archive` serves these bytes.',
+        },
+      },
+
+      archive_sha256: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'The archive is addressed by its own content hash, so the same dataset packages to the same file.',
+        jsonSchema: {
+            description: 'SHA-256 of the packaged archive. It names the file as well as verifying it, so a re-package of the same dataset produces the same hash.',
+        },
+      },
+
+      archive_bytes: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+        comment: 'Size of the packaged archive in bytes.',
+        jsonSchema: {
+            description: 'Size of the packaged archive in bytes. Null until a build finishes.',
         },
       },
 

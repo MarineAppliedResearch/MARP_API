@@ -182,8 +182,19 @@ jobs:
       # runner cannot reach. Excluded by name and announced, because a suite that
       # silently skips looks green while proving nothing -- run them locally, where the
       # server is reachable, before merging anything that touches Jellyfin.
+      #
+      # tests/dataset-build-real.test.js is excluded for both reasons at once (#268): it
+      # needs the media server *and* the development corpus, and it runs ffmpeg over a
+      # real video for about a minute. `npm run test:datasets` is how it is run, locally
+      # and deliberately. The rest of the build path -- the route, the claim rule, the
+      # runner, cancel, retry and failure -- runs here, with the extractor stubbed.
+      #
+      # Named on the command line rather than left to jest.config.js, because this flag
+      # replaces the config's list rather than adding to it.
       - name: API test suite
         run: |
           echo "::notice::tests/jellyfin.test.js is not run here (17 tests). The central"
           echo "::notice::media server is unreachable from a runner; run them locally."
-          npx jest --runInBand --forceExit             --testPathIgnorePatterns '/node_modules/' 'tests/walkthrough' 'tests/jellyfin.test.js'
+          echo "::notice::tests/dataset-build-real.test.js is not run here either: it needs"
+          echo "::notice::the media server and the development corpus. npm run test:datasets."
+          npx jest --runInBand --forceExit             --testPathIgnorePatterns '/node_modules/' 'tests/walkthrough' 'tests/jellyfin.test.js' 'tests/dataset-build-real.test.js'

@@ -3124,6 +3124,23 @@
             "nullable": true,
             "example": 142.375,
             "description": "From the job's latest attempt, on list reads."
+          },
+          "worker_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1634,
+            "description": "The machine that made the job's latest attempt, on list reads. Null for a job never leased."
+          },
+          "worker_name": {
+            "type": "string",
+            "nullable": true,
+            "example": "ABYSS-fba6be1a",
+            "description": "That machine's name, so a list need not fetch the pool to label a row."
+          },
+          "workers_used": {
+            "type": "integer",
+            "example": 1,
+            "description": "How many distinct machines have attempted this job. Past tense and therefore still true once it has finished, unlike a count of who holds it now: a job retried on a second machine reads 2."
           }
         }
       },
@@ -3561,6 +3578,36 @@
                   "nullable": true,
                   "example": 298.7
                 },
+                "avg_inference_utilization_percent": {
+                  "type": "number",
+                  "nullable": true,
+                  "example": 91.2,
+                  "description": "Utilization series: the pool's compute spent on inference and tracking. Averaged over the readings taken while that kind of work was running, so a bucket where one machine trained and nine inferred reports what each was doing rather than one blended number describing neither. Null when no machine ran that kind in the bucket."
+                },
+                "avg_training_utilization_percent": {
+                  "type": "number",
+                  "nullable": true,
+                  "example": 97.8,
+                  "description": "Utilization series: the same, for training."
+                },
+                "inference_machines": {
+                  "type": "integer",
+                  "nullable": true,
+                  "example": 9,
+                  "description": "Utilization series: how many machines ran inference or tracking in this bucket."
+                },
+                "training_machines": {
+                  "type": "integer",
+                  "nullable": true,
+                  "example": 1,
+                  "description": "Utilization series: how many ran training."
+                },
+                "created": {
+                  "type": "integer",
+                  "nullable": true,
+                  "example": 150,
+                  "description": "Throughput series: jobs submitted in this bucket. What went in, against `finished` coming out."
+                },
                 "finished": {
                   "type": "integer",
                   "nullable": true,
@@ -3578,6 +3625,86 @@
                   "nullable": true,
                   "example": 7,
                   "description": "Throughput series: jobs created before this instant and not finished by it."
+                },
+                "median_turnaround_s": {
+                  "type": "integer",
+                  "nullable": true,
+                  "example": 4680,
+                  "description": "Throughput series: the median time from submission to finish, in seconds, for jobs finishing in this bucket. Median rather than mean, because one job that sat in the queue over a weekend drags an average into meaninglessness. Null when nothing finished."
+                }
+              }
+            }
+          }
+        }
+      },
+      "GpuThroughputSeries": {
+        "type": "object",
+        "description": "Work completed per bucket, with the current backlog. The series is a rate derived from kept readings; the backlog is a single figure, because nothing records what it used to be.",
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "minute",
+              "hour",
+              "day"
+            ],
+            "example": "minute"
+          },
+          "kind": {
+            "type": "string",
+            "nullable": true,
+            "example": "inference",
+            "description": "The job kind this was narrowed to, or null for all of them."
+          },
+          "queued": {
+            "type": "object",
+            "description": "What is waiting right now.",
+            "properties": {
+              "units": {
+                "type": "integer",
+                "example": 184320,
+                "description": "Units of work left across unfinished jobs: what each expects, less what its latest attempt has done."
+              },
+              "jobs": {
+                "type": "integer",
+                "example": 21,
+                "description": "How many unfinished jobs that is spread over."
+              }
+            }
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "Start of the bucket."
+                },
+                "units_done": {
+                  "type": "integer",
+                  "example": 714,
+                  "description": "Units completed in this bucket, summed across attempts. Positive differences only: a retried attempt counts from zero again."
+                },
+                "attempts": {
+                  "type": "integer",
+                  "example": 3,
+                  "description": "How many attempts contributed."
+                },
+                "unit": {
+                  "type": "string",
+                  "nullable": true,
+                  "example": "frames",
+                  "description": "What is being counted, as the worker named it."
                 }
               }
             }
@@ -5310,6 +5437,76 @@
           }
         }
       },
+      "ModelSpeciesClass": {
+        "type": "object",
+        "description": "One class a model can detect: the species joined to its `model_species` linkage. `species_list` is here because a common name identifies an organism only within its list. The training figures are the linkage's own and may be null -- a mapping recorded without them is still a mapping.",
+        "properties": {
+          "species_id": {
+            "type": "integer",
+            "example": 775
+          },
+          "comname": {
+            "type": "string",
+            "example": "White-plumed anemone"
+          },
+          "species": {
+            "type": "string",
+            "nullable": true,
+            "example": "Metridium farcimen"
+          },
+          "species_list": {
+            "type": "string",
+            "nullable": true,
+            "example": "Invert"
+          },
+          "dataset_size": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1840
+          },
+          "balance_weight": {
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "precision_mean": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "example": 0.91
+          },
+          "recall_mean": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "example": 0.87
+          },
+          "f1_mean": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "example": 0.89
+          }
+        }
+      },
+      "MosaicFrameCounts": {
+        "type": "object",
+        "description": "How much video a question covers. `keyframes` counts the frames somebody or something drew a box on; `frames` adds the frames interpolated between them, which a dataset trains on as well, and is therefore the number to size a training run against. **Counted per observation**: two animals tracked through the same stretch of video contribute their frames twice, which is right for training examples and wrong for image files. Unlike the counts route beside it, **the status filters apply here**.",
+        "properties": {
+          "observations": {
+            "type": "integer",
+            "example": 115
+          },
+          "keyframes": {
+            "type": "integer",
+            "example": 486
+          },
+          "frames": {
+            "type": "integer",
+            "example": 24892
+          }
+        }
+      },
       "Artifact": {
         "type": "object",
         "description": "A tracked output file (weights, log, plot, export, etc.) produced during a training run, including its path, size, checksum, and optional contextual metadata.\n",
@@ -5764,17 +5961,13 @@
           "x": {
             "type": "number",
             "format": "double",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Normalized left coordinate of the annotation box (0..1).",
+            "description": "Normalized **centre** x of the annotation box, not its left edge. A box is read as centre-origin everywhere in MARP: `service/thumbnail-geometry.js` crops `x * sourceWidth` as the centre, and that reading was confirmed three times in two other repositories and then by eye -- the centre-origin box sits on the animal, the top-left box is shifted half a box right and down onto bare rubble. This said \"left coordinate\" until 2026-10-21, and the dataset builder believed it: every YOLO label it wrote was shifted half a box. Values slightly outside 0..1 are real and expected for a box that runs off the frame edge; measured over 78 keyframes they span -0.0105 to 1.0275 horizontally.",
             "example": 0.423
           },
           "y": {
             "type": "number",
             "format": "double",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Normalized top coordinate of the annotation box (0..1).",
+            "description": "Normalized **centre** y of the annotation box, not its top edge. Centre-origin, for the reasons recorded on `x`, and likewise able to fall slightly outside 0..1 where a box runs off the frame edge.",
             "example": 0.318
           },
           "height": {
@@ -6283,7 +6476,12 @@
           "num_samples": {
             "type": "integer",
             "nullable": true,
-            "description": "Total number of samples (images, frames, or observations) included in this dataset."
+            "description": "How many images are in this dataset: one per extracted frame. Not the observation count, which is num_observations and is much smaller -- a keyframe is a box at a frame number and the frames between two keyframes are interpolated and trained on as well."
+          },
+          "num_observations": {
+            "type": "integer",
+            "nullable": true,
+            "description": "How many observations went into this dataset, as recorded when it was built. Null for a dataset built before MARP recorded membership, which is not the same as zero."
           },
           "num_classes": {
             "type": "integer",
@@ -6295,6 +6493,22 @@
             "nullable": true,
             "description": "Source or method of dataset creation (e.g., \"auto-compiled\", \"manual curation\", \"legacy import\").",
             "example": "auto-compiled"
+          },
+          "archive_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Where the packaged archive is, relative to the storage root. Null until a build finishes. `GET /api/v2/gpu/datasets/{id}/archive` serves these bytes."
+          },
+          "archive_sha256": {
+            "type": "string",
+            "nullable": true,
+            "description": "SHA-256 of the packaged archive. It names the file as well as verifying it, so a re-package of the same dataset produces the same hash."
+          },
+          "archive_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Size of the packaged archive in bytes. Null until a build finishes."
           },
           "status": {
             "type": "string",
@@ -9989,6 +10203,177 @@
         }
       }
     },
+    "/v2/dataset/build": {
+      "post": {
+        "summary": "Queue a dataset build from a mosaic query",
+        "description": "Builds a training dataset out of the observations MARP holds: selects them with the same filters the mosaic screens use, cuts the frames they point at from the video, writes YOLO labels, and packages one content-addressed archive that `GET /gpu/datasets/:id/archive` can serve to a worker. **It also records what the dataset is made of** -- `dataset_observations` and the ordered class vocabulary -- which nothing has ever written, so a dataset in MARP today says how many classes it has and cannot say which. **Answers immediately with the dataset and the job**, because a real build cuts tens of thousands of frames and takes hours. Watch it on the job: it carries progress, it can be cancelled, and it appears on the Jobs screen like any other. The job is a `gpu_jobs` row of kind `dataset_build` that **the API runs rather than the pool** -- streaming the video to a worker so it can re-download it makes no sense, and workers deliberately have no video access. Observations with no keyframes or no species are left out: there is nothing to extract or no class to call it. Requires the `datasets:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "CAMPA 2024 anemones v1"
+                  },
+                  "description": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  },
+                  "subsets": {
+                    "type": "array",
+                    "description": "The builder is a union of queries, each sent to a split by the person assembling it. Sent in the order they were added, because that is what \"first\" means: an observation matched by two subsets belongs to the earlier one, and a connected frame group spanning two splits is pulled whole into the one its earliest member claimed. Use this **or** `filters`, not both.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "filters": {
+                          "$ref": "#/components/schemas/MosaicQueryFilters"
+                        },
+                        "split": {
+                          "type": "string",
+                          "example": "train",
+                          "description": "Send the whole subset to one split. Use this **or** `shares`."
+                        },
+                        "shares": {
+                          "type": "object",
+                          "description": "Divide this subset across splits in these proportions, normalised, rather than sending it to one. Measured in frames, and each species is divided separately so a rare one reaches every split. Whole connected groups move together, so a near-duplicate picture cannot land in two.",
+                          "example": {
+                            "train": 70,
+                            "validation": 20,
+                            "test": 10
+                          },
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "image": {
+                    "type": "object",
+                    "description": "How the frames are written. Defaults to JPEG at quality 95, which is what every dataset MARP has trained on and what the pretrained weights learned from -- and the source is H.264 video, which has already discarded more than JPEG does. Measured on the same 219 frames, PNG was 1,690 KB each against 246 KB at quality 90, which at 50,000 frames is about 85 GB against about 20 GB. **Switchable because it is a judgement, not a law**: ask for `png` if lossless frames turn out to matter. PNG takes no quality and saying both is refused rather than ignored.",
+                    "properties": {
+                      "format": {
+                        "type": "string",
+                        "enum": [
+                          "jpeg",
+                          "png"
+                        ],
+                        "example": "jpeg"
+                      },
+                      "quality": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "example": 95
+                      }
+                    }
+                  },
+                  "splits": {
+                    "type": "object",
+                    "description": "Shares, normalised here, keyed by split name. The archive carries `train` and `eval`, which is the shape the worker already trains on. Whole connected groups of observations are placed together, so a frame holding two animals cannot land in both.",
+                    "example": {
+                      "train": 0.8,
+                      "eval": 0.2
+                    },
+                    "additionalProperties": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The dataset row, and the job that will build it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dataset": {
+                      "$ref": "#/components/schemas/Dataset"
+                    },
+                    "job": {
+                      "$ref": "#/components/schemas/GpuJob"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/ml_models/{id}/species": {
+      "get": {
+        "summary": "Fetch the species a model can detect",
+        "description": "`model_species` has mapped models to species since the schema was written and nothing served it, so a client choosing which classes to run had to be told the list rather than ask for it. Joined to `species` rather than returning the linkage rows, because a `species_id` is not something a person can pick from; `species_list` comes too, since a common name identifies an organism only within its list and a model spanning two can otherwise offer one label twice. The per-species training figures on the linkage ride along free from the same row, and they are what makes the list worth reading: a class the model recalls poorly is one somebody may want to leave out of a run. **An empty array is a real answer** -- a registered model nothing has mapped yet -- and is not a 404. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The model."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The species, by common name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelSpeciesClass"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/model/{id}/artifact": {
       "get": {
         "summary": "Download registered model weights",
@@ -10102,6 +10487,199 @@
           },
           "403": {
             "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
+    "/v2/dataset/builds": {
+      "get": {
+        "summary": "Fetch the dataset builds that are still running",
+        "description": "How far every dataset build in flight has got: frames done against total, and which phase it is in. **A route of its own rather than a field on `GET /api/dataset`**, for three reasons. The progress is not a property of a dataset -- it belongs to the latest attempt of the `dataset_build` job building it, and what the dataset itself records is `status`, plus `num_samples` once the build finishes. the `Dataset` schema is generated from the Sequelize model, so a `build` object on the row could not be described without a hand-maintained parallel schema. And this is the route a screen polls: `GET /api/dataset` is unpaged and grows without bound, while this answers only about work in flight rather than every dataset. **A build that failed is carried too, with its `failure_reason`**, because the Datasets screen draws one as *Needs attention* and could otherwise only say that something had gone wrong. A screen therefore watches for a row whose state is `queued` or `leased` rather than for a non-empty answer: a failed build stays failed. **`queued` is returned as well as `leased`**, without an attempt and so without progress: `datasets.status` is `building` from the instant a build is queued, so the dataset alone cannot distinguish waiting from started. At most one row per dataset, newest job first. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "responses": {
+          "200": {
+            "description": "Every build that is queued or running, at most one per dataset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "dataset_id": {
+                        "type": "integer",
+                        "description": "The dataset being built."
+                      },
+                      "job_id": {
+                        "type": "integer",
+                        "description": "The `dataset_build` job, on the Jobs screen like any other."
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "queued",
+                          "leased",
+                          "failed",
+                          "cancelled"
+                        ],
+                        "description": "`queued` is waiting to start and has no attempt; `leased` is running; `failed` and `cancelled` are over, and are here for their reason."
+                      },
+                      "attempts_made": {
+                        "type": "integer"
+                      },
+                      "max_attempts": {
+                        "type": "integer"
+                      },
+                      "queued_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "attempt_id": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Null while the build is still queued."
+                      },
+                      "progress_done": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Frames written so far. Null until the extracting phase begins, which is not the same as zero."
+                      },
+                      "progress_total": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Frames the build intends to cut. Not known until selection finishes, which on a large query is minutes."
+                      },
+                      "progress_unit": {
+                        "type": "string",
+                        "nullable": true,
+                        "example": "frames"
+                      },
+                      "progress_phase": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                          "selecting",
+                          "extracting",
+                          "packaging"
+                        ],
+                        "description": "What it is doing. A build sits in `selecting` with no counts at all, so a reader seeing no number needs this to tell waiting from stuck."
+                      },
+                      "started_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                      },
+                      "last_heartbeat_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                      },
+                      "failure_reason": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Why the build stopped, as the runner recorded it. Null while it is still going.",
+                        "example": "train/images/20240727_163021_Fwd_00029982.jpg: unable to open for write"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/dataset/{id}/composition": {
+      "get": {
+        "summary": "What a dataset is made of: its splits and its classes",
+        "description": "Counts of included observations per split, and the ordered class vocabulary. Both have been recorded since #268 -- `dataset_observations` holds a row per included observation and `dataset_classes` the vocabulary a label index refers to -- and neither was served, so the Datasets screen drew a split bar hardcoded to 70/20/10 and a class breakdown keyed on five invented dataset names. **The split is `inclusion_type`.** That column predates the build path and its name is about why an observation is in a dataset; the builder writes the split name into it, which is the name `data.yaml` uses. Counted now rather than taken from `num_observations`, which is what was recorded at build time: membership can lose rows to the observation cascade, and the two disagreeing is a fact worth being able to see. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The dataset."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Its splits and its classes. Both arrays are empty for a dataset built before membership was recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "splits": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "split": {
+                            "type": "string",
+                            "example": "train"
+                          },
+                          "observations": {
+                            "type": "integer",
+                            "example": 49
+                          }
+                        }
+                      }
+                    },
+                    "classes": {
+                      "type": "array",
+                      "description": "In class-index order, which is the order a YOLO label file indexes.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "class_index": {
+                            "type": "integer",
+                            "example": 0
+                          },
+                          "species_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "comname": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "California sea cucumber"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -14485,10 +15063,96 @@
         }
       }
     },
-    "/v2/gpu/jobs/series": {
+    "/v2/gpu/throughput/series": {
       "get": {
-        "summary": "How much work finished, and how much was waiting",
-        "description": "Per-bucket counts from `gpu_jobs`, with nothing sampled: `finished` counts jobs whose `finished_at` falls in the bucket, `succeeded` the subset that worked, and `waiting` is reconstructed — a job was waiting at a given instant if it was created before it and had not finished by it. Answerable only because `finished_at` exists; `updated_at` moves on a heartbeat and would have counted a job that finished last week as finishing today. Requires the `jobs:read` permission.",
+        "summary": "How fast work went through, and how much is waiting",
+        "description": "Units of work completed per bucket -- frames, usually -- with the current backlog beside it. **Throughput is a rate and rates need two readings**: an attempt's `progress_done` is overwritten by every heartbeat, so MARP now keeps it per attempt per minute and this is the difference between consecutive readings. Only positive differences count, because a retried attempt reports from zero again and that is not work being undone. The backlog is counted in *units*, not jobs: a thousand queued jobs of ten frames is not the same as ten of a hundred thousand. It is a single current figure rather than a series, because nothing records what the backlog was, only what it is. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Start of the window. Defaults to 24 hours before `until`."
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "End of the window. Defaults to now."
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "minute",
+                "hour",
+                "day"
+              ],
+              "default": "hour"
+            },
+            "description": "Bucket size."
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inference",
+                "tracking",
+                "training",
+                "diagnostic",
+                "dataset_build"
+              ]
+            },
+            "description": "Narrow to one kind of job, so inference throughput can be read apart from training."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The series, oldest first, with the current backlog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuThroughputSeries"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/registry/series": {
+      "get": {
+        "summary": "How the model registry grew",
+        "description": "Registered model versions per bucket, cumulative, with how many were added in each and how many distinct models anything actually ran. Counted straight out of `ml_models.created_at` and the job specs — the rows have carried their own history all along, so nothing had to be recorded for this. **`in_use` is deliberately not `preferred`**, which the screen originally asked for: a flag somebody flips occasionally makes a poor chart, whereas how much of a growing registry anyone runs is worth seeing. **Cache coverage is absent and cannot be served yet**: nothing records which machine holds which model, so it waits on the worker reporting its cache. Requires the `models:read` permission.",
         "tags": [
           "V2 · GpuCompute"
         ],
@@ -14555,6 +15219,92 @@
         }
       }
     },
+    "/v2/gpu/jobs/series": {
+      "get": {
+        "summary": "How much work finished, and how much was waiting",
+        "description": "Per-bucket counts from `gpu_jobs`, with nothing sampled: `finished` counts jobs whose `finished_at` falls in the bucket, `succeeded` the subset that worked, and `waiting` is reconstructed — a job was waiting at a given instant if it was created before it and had not finished by it. Answerable only because `finished_at` exists; `updated_at` moves on a heartbeat and would have counted a job that finished last week as finishing today. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Start of the window. Defaults to 24 hours before `until`."
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "End of the window. Defaults to now."
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "minute",
+                "hour",
+                "day"
+              ],
+              "default": "hour"
+            },
+            "description": "Bucket size."
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inference",
+                "tracking",
+                "training",
+                "diagnostic",
+                "dataset_build"
+              ]
+            },
+            "description": "Narrow to one kind of job, so an inference queue can be read apart from a training one."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The series, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuSeries"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/gpu/jobs": {
       "get": {
         "summary": "List GPU jobs",
@@ -14591,7 +15341,8 @@
                 "inference",
                 "tracking",
                 "training",
-                "diagnostic"
+                "diagnostic",
+                "dataset_build"
               ]
             },
             "description": "Only jobs of this kind."
@@ -15484,6 +16235,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MosaicStatusCounts"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/frames": {
+      "post": {
+        "summary": "How much video a mosaic question covers",
+        "description": "Answers how many frames a dataset built from this question would contain. `keyframes` is what somebody or something drew a box on; **`frames` adds the frames interpolated between them**, because those are trained on as well, and it is the number a training run is sized against. The span of one observation is its last keyframe minus its first, plus one -- the same figure as summing the gap between each keyframe and the next, since the gaps tile the span. **Counted per observation rather than per picture**: two animals tracked through the same stretch of video contribute those frames twice, which is what \"how many training examples\" means and is not what \"how many image files\" means. A route of its own rather than fields on the counts route beside it, for the same reason the facets route is one: that response is a fixed six-and-a-total over a set the status filters deliberately do not touch, and **the status filters do apply here** -- a dataset is built from promoted work specifically, so a frame count ignoring that would answer a question nobody asked. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  }
+                },
+                "description": "The same filters object the page query takes, status dimensions included."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The observation, keyframe and frame counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicFrameCounts"
                 }
               }
             }

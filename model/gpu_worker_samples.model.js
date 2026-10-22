@@ -71,6 +71,15 @@ module.exports = (sequelize) => {
                 allowNull: false,
                 comment: 'The worker\'s own per-GPU array, in NVML\'s field names.',
             },
+
+            // Denormalised from the job on purpose: `attempt_id` is nulled when a
+            // job is cleared, and this reading should still know what it was
+            // doing. Null means "not known", not "no work".
+            job_kind: {
+                type: DataTypes.STRING(16),
+                allowNull: true,
+                comment: 'The kind of job running when this reading was taken, so the pool\'s compute can be split by what it was spent on.',
+            },
         },
         {
             sequelize,

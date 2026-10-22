@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; Inference</title>
+<link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
+<link rel="stylesheet" href="../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
+<link rel="stylesheet" href="./mock.css">
+<script src="../../shared/assets/js/account-menu.js" defer></script>
+</head>
+<body data-screen="inference">
+
+<div class="app">
+  <aside class="rail"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="Run a registered model over MARP data">Inference</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ================================================ inference workflow -->
+      <div class="grid">
+
+        <nav class="stats inference-stats" aria-label="Inference workload destinations">
+          <a class="stat stat-link" data-state="running" href="./jobs.html?type=inference&amp;status=running"
+             title="Open Jobs with running inference work prioritized">
+            <span class="stat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
+            <span class="stat-lab">Running inference</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="queued" href="./jobs.html?type=inference&amp;status=queued"
+             title="Open Jobs with queued inference work prioritized">
+            <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span>
+            <span class="stat-lab">Queued inference</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="done" href="./history.html?type=inference&amp;window=today"
+             title="Open today's completed inference work in History">
+            <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
+            <span class="stat-lab">Completed today</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+          <a class="stat stat-link" data-state="failed" href="./jobs.html?type=inference&amp;status=attention"
+             title="Open Jobs with inference failures and partial results prioritized">
+            <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
+            <span class="stat-lab">Needs attention</span>
+            <b class="stat-num"></b>
+            <span class="stat-sub"></span>
+            <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
+          </a>
+        </nav>
+
+        <section class="inference-overview" aria-label="Inference at a glance">
+          <article class="panel inference-mix">
+            <header class="panel-hd"><div><h2>Inference status</h2><p>Current queue and today&rsquo;s outcomes</p></div></header>
+            <div class="panel-bd jobs-mix-bd">
+              <div class="job-donut" role="img" data-rendered aria-label>
+                <svg viewBox="0 0 120 120" aria-hidden="true">
+                  <circle class="donut-track" cx="60" cy="60" r="43"/>
+                  <circle class="donut-part inference" cx="60" cy="60" r="43"/>
+                  <circle class="donut-part queued" cx="60" cy="60" r="43"/>
+                  <circle class="donut-part done" cx="60" cy="60" r="43"/>
+                  <circle class="donut-part attention" cx="60" cy="60" r="43"/>
+                </svg>
+                <span><b data-rendered></b><small>inference jobs</small></span>
+              </div>
+              <div class="job-mix-key inference-mix-key"></div>
+            </div>
+          </article>
+
+          <article class="panel inference-flow" data-inference-activity>
+            <header class="panel-hd inference-flow-hd">
+              <div><h2>Throughput &amp; backlog</h2><p>Is inference processing keeping pace with queued frames?</p></div>
+              <div class="seg" aria-label="Inference activity range">
+                <button type="button" data-inference-range="24h">24h</button>
+                <button type="button" class="on" data-inference-range="5h" aria-pressed="true">5h</button>
+                <button type="button" data-inference-range="1h">1h</button>
+              </div>
+            </header>
+            <div class="panel-bd inference-flow-bd">
+              <div class="inference-chart" data-result-graph role="img" data-rendered aria-label>
+                <svg viewBox="0 0 780 248" aria-hidden="true">
+                  <g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g>
+                  <g class="inference-axis left"><text x="46" y="32"></text><text x="46" y="88"></text><text x="46" y="144"></text><text x="46" y="200"></text><text x="54" y="225" data-inference-time></text><text x="390" y="225" data-inference-time></text><text x="726" y="225" data-inference-time></text><text class="axis-title" x="54" y="15">FRAMES PROCESSED / MIN</text></g>
+                  <g class="inference-axis right"><text x="734" y="32"></text><text x="734" y="88"></text><text x="734" y="144"></text><text x="734" y="200"></text><text class="axis-title" x="726" y="15">QUEUED FRAMES</text></g>
+                  <path class="inference-area throughput" data-inference-area="throughput"/>
+                  <path class="inference-line throughput" data-inference-line="throughput"/>
+                  <path class="inference-line backlog" data-inference-line="backlog"/>
+                </svg>
+              </div>
+              <div class="inference-flow-foot">
+                <div class="inference-chart-key result-legend">
+                  <button type="button" class="throughput" data-inference-highlight="throughput">Processing throughput</button>
+                  <button type="button" class="backlog" data-inference-highlight="backlog">Queued frames</button>
+                </div>
+                <div class="inference-current" aria-label="Current inference activity">
+                  <span><b data-inference-current="throughput"></b> frames/min</span>
+                  <span><b data-inference-current="backlog"></b> queued</span>
+                  <span class="clearing" data-rendered data-inference-current="clearing" hidden></span>
+                  <span class="live"><i class="dot"></i>Live</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <div class="inference-builder">
+
+          <!-- 1 ------------------------------------------------------------- -->
+          <section class="panel pipeline-panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>1.</b>Pipeline</span>
+                <span class="sub">What each configured model will produce</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field">
+                <label for="pipeline">Inference pipeline</label>
+                <select class="sel wide" id="pipeline">
+                  <option>Detection + ByteTrack</option>
+                  <option disabled>Detection only — unavailable in the first worker pipeline</option>
+                  <option disabled>Segmentation — unavailable in the first worker pipeline</option>
+                  <option disabled>Stereo disparity — unavailable in the first worker pipeline</option>
+                  <option disabled>Classification — unavailable in the first worker pipeline</option>
+                  <option disabled>Custom runtime — unavailable in the first worker pipeline</option>
+                </select>
+                <span class="hint">The worker runs detection, assigns track IDs, then selects representative frames.</span>
+              </div>
+
+              <div class="pipeline-status">
+                <span class="pipeline-icon"><svg class="ico"><use href="#i-inference"/></svg></span>
+                <span><b>Detection + ByteTrack is available</b>
+                  <small>Other pipeline types are design placeholders and cannot be selected or submitted.</small></span>
+                <span class="pill" data-state="online"><i class="dot"></i>Available</span>
+              </div>
+
+              <details class="fold future-fold">
+                <summary>Additional pipeline designs</summary>
+                <div class="fbody future-grid">
+                  <span><b>Segmentation</b><small>Prompted or automatic masks</small></span>
+                  <span><b>Stereo disparity</b><small>Paired video and calibration</small></span>
+                  <span><b>Classification</b><small>Per-frame class scores</small></span>
+                  <span><b>Custom runtime</b><small>Registered adapter and artifact</small></span>
+                </div>
+              </details>
+
+            </div>
+          </section>
+
+          <!-- 2 ------------------------------------------------------------- -->
+          <section class="panel video-query-panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>2.</b>Find videos</span>
+                <span class="sub">Browse the Jellyfin project and dive hierarchy</span></h2>
+              <span class="query-source"><svg class="ico sm"><use href="#i-video"/></svg>Jellyfin catalog</span>
+            </header>
+            <div class="panel-bd">
+              <div class="query-fields">
+                <details class="multi-pick" open>
+                  <summary><span>Projects</span><b data-rendered data-fills="jf-projects-label"></b></summary>
+                  <div class="multi-menu" data-rendered data-fills="jf-projects"></div>
+                </details>
+                <details class="multi-pick">
+                  <summary><span>Dives</span><b data-rendered data-fills="jf-dives-label"></b></summary>
+                  <div class="multi-menu" data-rendered data-fills="jf-dives"></div>
+                </details>
+                <label class="query-search"><span>Filter videos</span>
+                  <span class="search"><svg class="ico sm"><use href="#i-search"/></svg>
+                    <input class="inp" type="search" placeholder="Timestamp or filename"></span></label>
+              </div>
+
+              <div class="query-result-head">
+                <span data-rendered data-fills="jf-count"></span>
+                <label class="check"><input type="checkbox" checked data-select-videos><span>Select visible</span></label>
+              </div>
+
+              <div class="video-results" data-rendered data-fills="jf-videos">
+              </div>
+
+              <div class="query-actions">
+                <span><b data-video-selected-count data-rendered></b> selected · line assignments save independently</span>
+                <button class="btn primary" type="button" data-add-targets><svg class="ico"><use href="#i-plus"/></svg>Add selected to run group</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- 3 ------------------------------------------------------------- -->
+          <section class="panel run-plan-panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>3.</b>Run plan</span>
+                <span class="sub">Targets and model configurations</span></h2>
+              <button class="btn sm" type="button" data-new-group><svg class="ico sm"><use href="#i-plus"/></svg>New query group</button>
+            </header>
+            <div class="panel-bd run-groups">
+              <article class="run-group" data-run-group>
+                <header class="run-group-head">
+                  <span class="group-number" data-rendered></span>
+                  <span data-rendered><b>Run group</b><small>Add video ranges from the search above, then a model</small></span>
+                  <button class="btn sm icon" type="button" data-remove-group aria-label="Delete run group"><svg class="ico sm"><use href="#i-x"/></svg></button>
+                </header>
+
+                <section class="plan-section">
+                  <header><span><b>Video ranges</b><small><span data-target-count></span> targets</small></span><button class="btn sm" type="button" data-edit-query>Edit query</button></header>
+                  <div class="plan-targets" data-plan-targets data-rendered></div>
+                </section>
+
+                <section class="plan-section">
+                  <header><span><b>Models</b><small><span data-model-count></span> configurations · each runs on every target above</small></span><button class="btn sm" type="button" data-add-model><svg class="ico sm"><use href="#i-plus"/></svg>Add model</button></header>
+                  <div class="model-configs" data-model-configs data-rendered></div>
+                </section>
+
+                <footer class="group-math"><span><b data-target-math></b> video ranges</span><i>×</i><span><b data-model-math></b> model configurations</span><i>=</i><strong><b data-run-math></b> model runs</strong><small>Worker range splitting happens after this plan is submitted.</small></footer>
+              </article>
+            </div>
+          </section>
+
+        </div>
+
+
+        <section class="panel" id="runbar">
+          <header class="panel-hd">
+            <h2><span class="stepnum"><b>4.</b>Review &amp; run</span>
+              <span class="sub" data-rendered></span></h2>
+          </header>
+          <div class="panel-bd">
+            <div class="runrow">
+              <div class="field">
+                <label for="dest">Result destination</label>
+                <select class="sel wide" id="dest">
+                  <option>Write unreviewed observations</option>
+                </select>
+                <span class="hint">Confidence, model version and track provenance are retained.</span>
+              </div>
+              <div class="field">
+                <label for="workers">Worker selection</label>
+                <select class="sel wide" id="workers">
+                  <option>Auto &mdash; best available GPU</option>
+                  <option>Only workers with this model cached</option>
+                  <option>Choose workers&hellip;</option>
+                </select>
+                <span class="hint">A preference, not an assignment.</span>
+              </div>
+              <div class="field">
+                <label for="jobname">Plan name <span class="faint">(optional)</span></label>
+                <input class="inp wide" type="text" id="jobname" data-rendered
+                       placeholder="Named after the plan if left blank">
+                <span class="hint">Letters, numbers, hyphen, underscore.</span>
+              </div>
+              <div class="field">
+                <label>&nbsp;</label>
+                <button class="btn primary big block" id="runBtn">
+                  <svg class="ico"><use href="#i-play"/></svg>Review request</button>
+                <span class="hint">Mockup &mdash; shows the request, sends nothing.</span>
+              </div>
+            </div>
+            <div class="spec" id="specOut" hidden>
+              <h4>The request this would send</h4>
+              <pre id="specText"></pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel inference-recent">
+          <header class="panel-hd">
+            <h2>Recent inference jobs <span class="count"></span></h2>
+            <a class="more" href="./jobs.html?type=inference">All jobs <svg class="ico sm"><use href="#i-arrow"/></svg></a>
+            <div class="jobs-sort-mobile" aria-label="Sort recent inference jobs">
+              <span>Sort</span>
+              <button type="button" data-sort-column="0">Job</button><button type="button" data-sort-column="1">Scope</button>
+              <button type="button" data-sort-column="2">Model</button><button type="button" data-sort-column="3">Status</button>
+              <button type="button" data-sort-column="4">Detections</button><button type="button" data-sort-column="5">Started</button>
+              <button type="button" data-sort-column="6">Took</button>
+            </div>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed stack inference-table">
+                <thead>
+                  <tr>
+                    <th class="hjob sortable">Job</th>
+                    <th class="hscope sortable">Scope</th>
+                    <th class="hmodel sortable">Model</th>
+                    <th class="hstatus sortable">Status</th>
+                    <th class="hprog sortable">Detections</th>
+                    <th class="hupd sortable" aria-sort="descending">Started</th>
+                    <th class="htype sortable">Took</th>
+                    <th class="hacts"><span class="vh">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="./api.js"></script>
+<script src="./mock.js"></script>
+</body>
+</html>

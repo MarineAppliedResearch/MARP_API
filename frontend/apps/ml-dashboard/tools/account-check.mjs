@@ -27,7 +27,7 @@ const HERE = fileURLToPath(new URL('.', import.meta.url));
 const APP = join(HERE, '..');
 const PORT = Number(process.env.ACCOUNT_PORT || 8133);
 const ORIGIN = `http://localhost:${PORT}`;
-const BASE = `${ORIGIN}/apps/marp-ml-dashboard/mockups/`;
+const BASE = `${ORIGIN}/apps/ml-dashboard/`;
 const VIEWPORTS = {
   desktop: { width: 1672, height: 941 },
   'phone portrait': { width: 412, height: 915 },
@@ -180,7 +180,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
   }
 
   const appLinks = await page.locator('main a[href="/apps/marp-mosaic-review/"], '
-    + 'main a[href="/apps/marp-ml-dashboard/"]').allTextContents();
+    + 'main a[href="/apps/ml-dashboard/"]').allTextContents();
   check(appLinks.length === 2,
     `${name}: the main dashboard should show both application links, found ${appLinks.length}`);
 
@@ -199,7 +199,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
 
 /* ------------------------------ the shell authors it, so every screen has exactly one */
 {
-  const screens = (await readdir(join(APP, 'mockups')))
+  const screens = (await readdir(APP))
     .filter((f) => f.endsWith('.html') && !f.startsWith('_'))
     .map((f) => f.replace(/\.html$/, ''));
 

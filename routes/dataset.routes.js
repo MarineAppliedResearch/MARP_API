@@ -16,6 +16,9 @@
 const path = require('path');
 const datasetController = require('../controller/dataset.controller');
 const modelArtifactService = require('../service/model-artifact.service');
+const datasetBuildRepository = require('../repository/dataset-build.repository');
+const { imageSettings } = require('../service/dataset-build.service');
+const datasetRepository = require('../repository/dataset.repository');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
@@ -93,6 +96,187 @@ function registerDatasetRoutes(app) {
     });
 
     registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'datasets:write',
+        path: '/api/dataset/build',
+        summary: 'Queue a dataset build from a mosaic query',
+        description:
+            'Builds a training dataset out of the observations MARP holds: selects them with the same filters the mosaic screens use, '
+            + 'cuts the frames they point at from the video, writes YOLO labels, and packages one content-addressed archive that '
+            + '`GET /gpu/datasets/:id/archive` can serve to a worker. **It also records what the dataset is made of** -- '
+            + '`dataset_observations` and the ordered class vocabulary -- which nothing has ever written, so a dataset in MARP today '
+            + 'says how many classes it has and cannot say which. '
+            + '**Answers immediately with the dataset and the job**, because a real build cuts tens of thousands of frames and takes '
+            + 'hours. Watch it on the job: it carries progress, it can be cancelled, and it appears on the Jobs screen like any other. '
+            + 'The job is a `gpu_jobs` row of kind `dataset_build` that **the API runs rather than the pool** -- streaming the video to '
+            + 'a worker so it can re-download it makes no sense, and workers deliberately have no video access. '
+            + 'Observations with no keyframes or no species are left out: there is nothing to extract or no class to call it.',
+        tags: ['V1 · MachineLearning'],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['name'],
+                        properties: {
+                            name: { type: 'string', example: 'CAMPA 2024 anemones v1' },
+                            description: { type: 'string', nullable: true },
+                            filters: { $ref: '#/components/schemas/MosaicQueryFilters' },
+                            subsets: {
+                                type: 'array',
+                                description:
+                                    'The builder is a union of queries, each sent to a split by the person assembling it. Sent in the '
+                                    + 'order they were added, because that is what "first" means: an observation matched by two subsets '
+                                    + 'belongs to the earlier one, and a connected frame group spanning two splits is pulled whole into '
+                                    + 'the one its earliest member claimed. Use this **or** `filters`, not both.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        filters: { $ref: '#/components/schemas/MosaicQueryFilters' },
+                                        split: {
+                                            type: 'string',
+                                            example: 'train',
+                                            description: 'Send the whole subset to one split. Use this **or** `shares`.',
+                                        },
+                                        shares: {
+                                            type: 'object',
+                                            description:
+                                                'Divide this subset across splits in these proportions, normalised, rather than '
+                                                + 'sending it to one. Measured in frames, and each species is divided separately so '
+                                                + 'a rare one reaches every split. Whole connected groups move together, so a '
+                                                + 'near-duplicate picture cannot land in two.',
+                                            example: { train: 70, validation: 20, test: 10 },
+                                            additionalProperties: { type: 'number' },
+                                        },
+                                    },
+                                },
+                            },
+                            image: {
+                                type: 'object',
+                                description:
+                                    'How the frames are written. Defaults to JPEG at quality 95, which is what every dataset MARP '
+                                    + 'has trained on and what the pretrained weights learned from -- and the source is H.264 video, '
+                                    + 'which has already discarded more than JPEG does. Measured on the same 219 frames, PNG was 1,690 KB '
+                                    + 'each against 246 KB at quality 90, which at 50,000 frames is about 85 GB against about 20 GB. '
+                                    + '**Switchable because it is a judgement, not a law**: ask for `png` if lossless frames turn out to '
+                                    + 'matter. PNG takes no quality and saying both is refused rather than ignored.',
+                                properties: {
+                                    format: { type: 'string', enum: ['jpeg', 'png'], example: 'jpeg' },
+                                    quality: { type: 'integer', minimum: 1, maximum: 100, example: 95 },
+                                },
+                            },
+                            splits: {
+                                type: 'object',
+                                description:
+                                    'Shares, normalised here, keyed by split name. The archive carries `train` and `eval`, which is '
+                                    + 'the shape the worker already trains on. Whole connected groups of observations are placed '
+                                    + 'together, so a frame holding two animals cannot land in both.',
+                                example: { train: 0.8, eval: 0.2 },
+                                additionalProperties: { type: 'number' },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                description: 'The dataset row, and the job that will build it.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                dataset: { $ref: '#/components/schemas/Dataset' },
+                                job: { $ref: '#/components/schemas/GpuJob' },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const { name, description, filters, splits, subsets, image } = req.body || {};
+
+            if (!name || !String(name).trim()) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A dataset name is required.');
+            }
+
+            /* **Settled here, not minutes later in the runner.** `imageSettings` is what
+               the build calls before it cuts anything, and it throws the useful message
+               for an unknown format, a quality out of range, and png asked for with a
+               quality. Calling it at the route turns all three into a 400 on the request
+               that made the mistake -- without it, `{"format":"webp"}` answered 201, left
+               a dataset row saying `building`, and then failed in a job the asker had to
+               go and find. The thrown text is the message, because it already names the
+               mistake and what is allowed.
+
+               Only the format is settled here. Everything else the spec carries is about
+               which observations to select, and that is a question the build has to run
+               to answer. */
+            if (image !== undefined && image !== null) {
+                try {
+                    imageSettings(image);
+                } catch (error) {
+                    throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, error.message);
+                }
+            }
+
+            /* A service client can queue a build; only a person is recorded as having
+               asked for it, the same way every other `created_by` here works. */
+            const createdBy = req.principal && req.principal.type === 'user' ? req.principal.id : null;
+
+            const queued = await datasetBuildRepository.queueBuild({
+                name: String(name).trim(),
+                description: description ? String(description) : null,
+                filters: filters || {},
+                subsets: Array.isArray(subsets) && subsets.length ? subsets : null,
+                image: image || null,
+                splits,
+                createdBy,
+            });
+
+            res.status(201).json(queued);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/ml_models/:id/species',
+        summary: 'Fetch the species a model can detect',
+        description:
+            '`model_species` has mapped models to species since the schema was written and nothing served it, so a client choosing '
+            + 'which classes to run had to be told the list rather than ask for it. Joined to `species` rather than returning the '
+            + 'linkage rows, because a `species_id` is not something a person can pick from; `species_list` comes too, since a common '
+            + 'name identifies an organism only within its list and a model spanning two can otherwise offer one label twice. '
+            + 'The per-species training figures on the linkage ride along free from the same row, and they are what makes the list '
+            + 'worth reading: a class the model recalls poorly is one somebody may want to leave out of a run. '
+            + '**An empty array is a real answer** -- a registered model nothing has mapped yet -- and is not a 404.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The model.' },
+        ],
+        responses: {
+            200: {
+                description: 'The species, by common name.',
+                content: {
+                    'application/json': {
+                        schema: { type: 'array', items: { $ref: '#/components/schemas/ModelSpeciesClass' } },
+                    },
+                },
+            },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await datasetController.getModelSpecies(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
         method: 'get',
         permission: 'jobs:execute',
         path: '/api/model/:id/artifact',
@@ -149,6 +333,161 @@ function registerDatasetRoutes(app) {
         handler: asyncHandler(async (req, res) => {
             const data = await datasetController.getDatasets();
             res.json(data);
+        }),
+    });
+
+    /*
+     * **Registered before `/api/dataset/:id`, and that is load-bearing.** Express matches
+     * in registration order, so after it this path is a dataset whose id is the word
+     * "builds" -- which reaches `findByPk('builds')` and comes back a 500 about an integer.
+     */
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/builds',
+        summary: 'Fetch the dataset builds that are still running',
+        description:
+            'How far every dataset build in flight has got: frames done against total, and which phase it is in. '
+            + '**A route of its own rather than a field on `GET /api/dataset`**, for three reasons. The progress is not a property '
+            + 'of a dataset -- it belongs to the latest attempt of the `dataset_build` job building it, and what the dataset itself '
+            + 'records is `status`, plus `num_samples` once the build finishes. the `Dataset` schema is generated from the Sequelize '
+            + 'model, so a `build` object on the row could not be described without a hand-maintained parallel schema. And this is '
+            + 'the route a screen polls: `GET /api/dataset` is unpaged and grows without bound, while this answers only about work '
+            + 'in flight rather than every dataset. '
+            + '**A build that failed is carried too, with its `failure_reason`**, because the Datasets screen draws one as '
+            + '*Needs attention* and could otherwise only say that something had gone wrong. A screen therefore watches for '
+            + 'a row whose state is `queued` or `leased` rather than for a non-empty answer: a failed build stays failed. '
+            + '**`queued` is returned as well as `leased`**, without an attempt and so without progress: `datasets.status` is '
+            + '`building` from the instant a build is queued, so the dataset alone cannot distinguish waiting from started. '
+            + 'At most one row per dataset, newest job first.',
+        tags: ['V1 · MachineLearning'],
+        responses: {
+            200: {
+                description: 'Every build that is queued or running, at most one per dataset.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    dataset_id: { type: 'integer', description: 'The dataset being built.' },
+                                    job_id: { type: 'integer', description: 'The `dataset_build` job, on the Jobs screen like any other.' },
+                                    state: {
+                                        type: 'string',
+                                        enum: ['queued', 'leased', 'failed', 'cancelled'],
+                                        description: '`queued` is waiting to start and has no attempt; `leased` is running; '
+                                            + '`failed` and `cancelled` are over, and are here for their reason.',
+                                    },
+                                    attempts_made: { type: 'integer' },
+                                    max_attempts: { type: 'integer' },
+                                    queued_at: { type: 'string', format: 'date-time' },
+                                    attempt_id: { type: 'integer', nullable: true, description: 'Null while the build is still queued.' },
+                                    progress_done: {
+                                        type: 'integer',
+                                        nullable: true,
+                                        description: 'Frames written so far. Null until the extracting phase begins, which is not the same as zero.',
+                                    },
+                                    progress_total: {
+                                        type: 'integer',
+                                        nullable: true,
+                                        description: 'Frames the build intends to cut. Not known until selection finishes, which on a large query is minutes.',
+                                    },
+                                    progress_unit: { type: 'string', nullable: true, example: 'frames' },
+                                    progress_phase: {
+                                        type: 'string',
+                                        nullable: true,
+                                        enum: ['selecting', 'extracting', 'packaging'],
+                                        description: 'What it is doing. A build sits in `selecting` with no counts at all, so a reader seeing no number needs this to tell waiting from stuck.',
+                                    },
+                                    started_at: { type: 'string', format: 'date-time', nullable: true },
+                                    last_heartbeat_at: { type: 'string', format: 'date-time', nullable: true },
+                                    failure_reason: {
+                                        type: 'string',
+                                        nullable: true,
+                                        description: 'Why the build stopped, as the runner recorded it. Null while it is still going.',
+                                        example: 'train/images/20240727_163021_Fwd_00029982.jpg: unable to open for write',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await datasetRepository.getBuildsInFlight());
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/:id/composition',
+        summary: 'What a dataset is made of: its splits and its classes',
+        description:
+            'Counts of included observations per split, and the ordered class vocabulary. Both have been recorded since '
+            + '#268 -- `dataset_observations` holds a row per included observation and `dataset_classes` the vocabulary a '
+            + 'label index refers to -- and neither was served, so the Datasets screen drew a split bar hardcoded to '
+            + '70/20/10 and a class breakdown keyed on five invented dataset names. '
+            + '**The split is `inclusion_type`.** That column predates the build path and its name is about why an '
+            + 'observation is in a dataset; the builder writes the split name into it, which is the name `data.yaml` uses. '
+            + 'Counted now rather than taken from `num_observations`, which is what was recorded at build time: membership '
+            + 'can lose rows to the observation cascade, and the two disagreeing is a fact worth being able to see.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset.' },
+        ],
+        responses: {
+            200: {
+                description: 'Its splits and its classes. Both arrays are empty for a dataset built before membership was recorded.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                splits: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            split: { type: 'string', example: 'train' },
+                                            observations: { type: 'integer', example: 49 },
+                                        },
+                                    },
+                                },
+                                classes: {
+                                    type: 'array',
+                                    description: 'In class-index order, which is the order a YOLO label file indexes.',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            class_index: { type: 'integer', example: 0 },
+                                            species_id: { type: 'integer', nullable: true },
+                                            comname: { type: 'string', nullable: true, example: 'California sea cucumber' },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            /* The dataset has to exist: empty arrays for a real dataset mean "built before
+               membership was recorded", and the same answer for a dataset that is not
+               there would make a typo look like an old build. */
+            const dataset = await datasetController.getDatasetById(req.params.id);
+
+            if (!dataset) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `Dataset ${req.params.id} was not found.`);
+            }
+
+            res.json(await datasetRepository.getDatasetComposition(req.params.id));
         }),
     });
 

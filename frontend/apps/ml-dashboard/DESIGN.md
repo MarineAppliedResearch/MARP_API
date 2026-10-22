@@ -12,12 +12,135 @@ This file is the contract between the people drawing the eight tabs. It exists b
 eight screens drawn independently produce eight vocabularies, and the thing this phase is
 supposed to settle is exactly one.
 
+## Where the design actually comes from
+
+Three things could decide what this app shows, and **none of them is in charge**:
+
+- **The mockup**, which is the design and is usually right, because somebody thought about
+  the screen. It is not always right. It was drawn before the data was understood, and in
+  places it asks for things that would not help anybody.
+- **The API**, which is what MARP can answer today. A screen is not wrong for asking
+  something the API lacks -- that is a thing to build, not a thing to delete. Most of
+  2026-10-20 was spent undoing deletions made on the opposite assumption.
+- **Judgement about what makes the system usable**, which is what settles the other two
+  when they disagree, and is the only one of the three that can say "neither".
+
+So a difference between the mockup and the API is a question, not a defect, and the answer
+is recorded below rather than argued again. Isaac, 2026-10-20: *"we need to track what makes
+sense, and update the design to what makes sense to do, what will make the system
+functional and easy to use, not just what the mockup is, or what the api already has."*
+
+### Decisions
+
+- **2026-10-20 — the Models chart shows what is *used*, not what is *preferred*.** The
+  mockup's second line was `preferred` over time. `preferred` is a flag somebody flips
+  occasionally and a chart of when it flipped answers a question nobody has. Replaced with
+  how many distinct models anything actually ran in each bucket, which is derivable from the
+  jobs and says something worth knowing: this database holds fifteen registered models,
+  eight of which ran on one day in September and one in the week since. A registry filling
+  with models nothing runs is what that panel should expose.
+- **2026-10-20 — cache coverage stays on the design, unbuilt.** The mockup's third line.
+  Worth having, because it answers where a job can start without downloading weights first,
+  which is a scheduling question. It needs the worker to report its cache, so it waits for
+  the next change to `marp-inference-worker` rather than being dropped.
+- **2026-10-20 — the dataset-build chart waits for dataset builds.** It asks for frames
+  materialized per minute, concurrency and queue depth. All three are reasonable and none is
+  answerable until something tracks a build as work. Designing that schema now would be
+  guessing at the shape of a feature being designed elsewhere. **Superseded 2026-10-21 by
+  the two entries below**: #268 made a build a job, so two of the three became answerable
+  and the third turned out to be the wrong question.
+- **2026-10-21 — Build activity draws three measurements, and concurrency is not one of
+  them.** The panel's subtitle promised materialization rate, concurrency, queue pressure
+  and completions, and the panel underneath it said on screen that none of them was
+  recorded. Both halves had stopped being true: a build is a `gpu_jobs` row of kind
+  `dataset_build` with attempts and progress, so the rate comes from
+  `GET /gpu/throughput/series` and the counts from `GET /gpu/jobs/series`, both narrowed by
+  `kind`.
+
+  **Concurrency is dropped rather than drawn, because the answer is a constant.**
+  `service/dataset-build.service.js` takes builds one at a time on purpose — a build is a
+  second consumer of the media server the thumbnail extractor protects with a concurrency
+  ceiling (`task-118`, R20) — so the number can only ever be 0 or 1, and a chart of it is a
+  square wave restating a decision the design already made. The subtitle names the three
+  things the panel draws instead of promising a fourth. Isaac, 2026-10-21, on the
+  disclaimer that was there: *"this section shouldn't say this, if we were planning on
+  having some sort of build activity graph here, we shouldn't have just documented it as a
+  gap, we were supposed to work on it."*
+
+  What was behind that disclaimer was worse than the disclaimer: an animated fixture of
+  invented frame counts, which only stayed hidden because the markup had no SVG for it to
+  find. Adding a real chart would have woken it up.
+- **2026-10-21 — a build's queue pressure is counted in builds, not in frames.**
+  `GET /gpu/throughput/series` answers a backlog as well as a rate, but it measures it in
+  units of work read out of `spec.range`, which is an inference job's shape. A build's spec
+  carries filters, and how many frames it will cut is not known until it has selected them
+  — so that figure is always zero for a build. The honest backlog is how many builds have
+  not finished, which is `waiting` from `GET /gpu/jobs/series`.
+
+  The completions line counts `succeeded` rather than `finished`, for the same kind of
+  reason: a build that failed has finished, and counting it under a line labelled
+  *completed* would say a dataset came out of it.
+- **2026-10-20 — throughput is kept as a count, not a rate.** `gpu_attempt_progress` stores
+  the cumulative figure per attempt per minute and the route differences it. A rate computed
+  at write time cannot be re-bucketed afterwards, and the screen asks for three ranges.
+- **2026-10-20 — the dataset match preview reads the mosaic routes.** Observations, videos,
+  species, the class breakdown and the sample pictures all come from
+  `/mosaic/observations/counts`, `/facets` and `/pages`, which already answer this question
+  for the reviewer and answer it the same way here.
+- **2026-10-20 — a dataset trains on the interpolated frames, so `frames` counts the span.**
+  The fourth box asks for "key frames plus the interpolated frames between them" and none of
+  the three routes above could say. Asked rather than inferred, and answered by the human:
+  *"a dataset trains on the interpolated frames too, so count the span between a keyframe and
+  the next."* `POST /mosaic/observations/frames` is that count — `max(framenum) - min(framenum)
+  + 1` per observation, which is the same figure as summing the gaps because the gaps tile the
+  span. On this database 115 promoted observations carry 2,458 keyframes and cover 13,380
+  frames, which is the scale of the difference and the reason the keyframe count is the wrong
+  number to size a training run against.
+
+  **A route of its own, not fields on `counts`.** That response is a fixed six-and-a-total
+  over a set the status dimensions deliberately do not touch; this one applies them, because
+  a dataset is built from promoted work. Counted **per observation**, so two animals tracked
+  through the same stretch of video contribute those frames twice — right for "how many
+  training examples", wrong for "how many image files", and the second is a different
+  question nothing asks yet.
+- **2026-10-20 — a model's classes come from `model_species`, which nothing served.** The
+  Inference run plan offered eight invented corals and said "all 8 species" whatever the
+  model was. `model_species` has mapped models to species since the schema was written, so
+  `GET /ml_models/:id/species` serves it. The real spread is 1 to 499 classes across the
+  thirteen active models, which is why that count could never have been markup.
+- **2026-10-20 — the run plan starts empty, and a model config is built rather than cloned.**
+  It carried three video targets and two model configurations naming models MARP has never
+  held. Targets now come from the Jellyfin picker in step 2 and configurations are built from
+  the registry. **Active models only**: `status` is what says a model is released to run.
+- **2026-10-20 — "Version" is present and disabled.** Nothing in MARP sets
+  `parent_model_id`, so every chain is one long and a picker offering one choice looks
+  broken. It reads "Not versioned" and starts working the day a training run records a
+  parent — which is the training work's call to make, not this screen's.
+- **2026-10-20 — the throughput foot says when the queue clears, not how fast.**
+  "Clearing ~16k frames/min" was a rate nothing measured. The question somebody has is when
+  the backlog ends, so it now divides what is queued by what is being processed. Nothing
+  queued and nothing processing both print nothing, because a reader who sees a duration
+  believes one.
+- **2026-10-20 — no overlap between subsets is claimed.** Adding a query used to report that
+  six to fifteen per cent of its matches were duplicates, from a hash. Knowing the real figure
+  means comparing observation ids across subsets and the page route caps at 600 rows, so the
+  screen now says duplicates are resolved when the build runs, and the total is the sum. A
+  checkable number was replaced by an honest one rather than by a better guess.
+
 ## What this app is, and is not
 
-It is a **mockup with real operation**: fixture data, real filtering, real navigation,
-real form behaviour. It is not wired to the API and does not run a job. Wiring is a later
-phase, and `src/data.js` is the seam where the API will arrive — the same seam the Picture
-Mosaic Reviewer uses.
+It **reads MARP**. Every screen fetches from `/api/v2` through `api.js`, which is the one
+seam the API arrives at; `?mock=all` serves a generated corpus instead, for the design
+review and the screenshot tool, which need a page that draws without a database behind it.
+
+What it does not yet do is *write*. Submitting a job, queueing a dataset build and
+downloading weights are drawn and inert. Where a panel has no route behind it at all, it
+says so on screen rather than drawing something plausible — `tools/markup-check.mjs`
+enforces that by failing on any number a renderer does not own.
+
+This paragraph used to say the opposite, and said it for weeks after it stopped being
+true. A document that describes the app's wiring cannot observe the wiring, which is the
+same trap *Documentation that states an environment fact* names in `AGENTS.md`.
 
 ## The rules that are not style preferences
 
@@ -586,6 +709,22 @@ the new fields is the next pass, and it is cheap now that the shapes are fixed.
 17. **How many machines worked on a finished job** is not recorded anywhere, so
     `workers.using` is 0 on every terminal row and a History column cannot show it.
     "Using" is present tense.
+
+    **Wrong, and corrected 2026-10-15.** This read the *fixture* rather than the database.
+    `workers.using` is present tense and does read 0 once a job is over — but
+    `gpu_job_attempts.worker_id` names the machine for every attempt ever made, and has since
+    the orchestrator was built. The right question was never "how many are using it" but "how
+    many tried it", which is past tense and stays true.
+
+    `GET /gpu/jobs` now carries `worker_id` and `worker_name` from the latest attempt and
+    `workers_used`, a count of the distinct machines that have attempted the job — by the same
+    lateral join that carries progress, so it costs nothing extra. Jobs and History both have a
+    Worker column, and a job retried on a second machine says so, which is the case worth
+    seeing because it usually means the first one failed it.
+
+    It is worth noticing how this survived: the fixture had a field, the field was
+    plausible, and it was read as evidence about MARP. A gap list written from the mockup
+    describes the mockup.
 18. **Inference throughput and queued-frame history** — current job and range records can be
     aggregated into a present snapshot, but there is no sampled time series or queued-frame
     rollup for the Inference activity graph. Its moving values remain deterministic design data
@@ -610,6 +749,25 @@ the new fields is the next pass, and it is cheap now that the shapes are fixed.
 
     What dataset builds run *on* is a separate question this did not settle — the Datasets
     fixtures name a `gpu-build-02` worker, and nothing in the API backs that yet.
+
+    **What a build actually is, found 2026-10-15 and recorded for the phase that does this.**
+    It already exists, in `Workspace/MARE_Video_Annotations/createDataSet.py` — 201 lines of
+    legacy Python that: asks the API for observations by video; maps `comname_taxserial` to a
+    class id; opens each observation's video at its `mediaPosition` and extracts that frame
+    with OpenCV; writes YOLO labels from the stored annotation string; shuffles and splits
+    80/20 into `images/{train,val}` and `labels/{train,val}`; then writes `classes.names` and
+    a `data.yaml` naming the classes and the two paths.
+
+    It has been run: that folder holds **1,097,550 images and 469,416 labels** across
+    seventeen named datasets — `CAMPA2025_TEST8`, `CAMPA2025_group1_candidate1`, `GULF1`,
+    `WireCoral1` and the rest. Those are what MARP's current models were trained on, and the
+    names line up with models in the registry.
+
+    **MARP's `datasets` table knows about none of them.** It has zero rows here. So the
+    registry is not behind on this work, it has never seen it — which is worth settling
+    before anything builds a dataset through the dashboard, because the first question will
+    be whether these are imported or ignored. Not acted on: dataset building and training are
+    a later phase, and one being designed alongside GPU-worker training elsewhere.
 20. **Model-registry trend and cache-coverage history** — current model and worker snapshots can
     supply present totals, but no sampled registry/cache series exists. The Models graph is
     deterministic Phase 0 design data.
