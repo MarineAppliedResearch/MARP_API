@@ -175,7 +175,65 @@ function imageSettings(asked) {
  * extraction. Every build run by hand until then had been a few hundred frames, which is
  * why it had never shown.
  */
-const FRAMES_PER_PASS = 100;
+const FRAMES_PER_PASS = 400;
+
+/**
+ * The most a pass may be set to, and the reason is the command line rather than taste.
+ *
+ * `extractFrames` builds a `select` expression with a term per frame, measured at **33
+ * characters** each for a high frame number: 400 frames is 13 KB, 600 is 19 KB, and 940
+ * is 30 KB against an operating-system limit near 32 KB on Windows. 600 keeps a third of
+ * the budget spare. Well below the extractor's other ceiling too -- it names its output
+ * `frame-%04d`, so a pass over 9,999 frames would begin overwriting its own.
+ */
+const MAX_FRAMES_PER_PASS = 600;
+
+/**
+ * How far through the video one pass may reach, in frames.
+ *
+ * **A pass costs what it decodes, not what it keeps**, and the gap rule alone does not
+ * bound that -- it caps each individual gap at {@link SEEK_RATHER_THAN_DECODE}, so the
+ * span of a pass is up to `(frames - 1) x 250` and grows with the count. At 100 that is
+ * already 24,750 frames of video, and a pass covering four and a half minutes is what
+ * the extractor's 120-second timeout killed once before. Raising the count to 400 would
+ * have taken the worst case to 66 minutes of video in one pass.
+ *
+ * So a pass breaks on how far it reaches as well as on how many it takes and how wide a
+ * gap it crosses. 3,000 frames is two minutes at the 25 fps this footage runs at, which
+ * is less than half what has been seen to time out. A dense pass never reaches it -- 400
+ * contiguous frames span 400 -- so this only ever splits the sparse ones, which are
+ * exactly the passes that were at risk.
+ */
+const MAX_PASS_SPAN = 3000;
+
+/**
+ * How many frames one ffmpeg pass asks for, which can be changed without a deploy.
+ *
+ * **400 because a pass got ten times shorter, not because bigger is better.** The 100
+ * this replaced was chosen deliberately for the person watching rather than for ffmpeg:
+ * at the speeds before `0adff93e` a hundred frames took about twenty seconds, and 400
+ * took ninety, so a four-hour build showed a number that sat still for a minute and a
+ * half at a time. Writing the frames directly made extraction six to nine times faster,
+ * so a hundred now takes about two seconds and four hundred about eight -- a better
+ * cadence than the original, from a larger number.
+ *
+ * **And the reason it matters is connections rather than comfort.** Every pass spawns a
+ * fresh ffmpeg against a media server across the public internet. At two seconds a pass
+ * the build was opening roughly ten times as many connections per minute as the design
+ * assumed, and two builds died on transient connection failures the same day the speed
+ * changed -- one in `ffmpeg`, one in `ffprobe`, neither reproducible, neither with any
+ * other consumer of that server running. Four hundred frames a pass is four times fewer
+ * rolls of that dice.
+ *
+ * @returns {number} Frames per pass, at least one and at most {@link MAX_FRAMES_PER_PASS}.
+ */
+function framesPerPass() {
+    const asked = Number(process.env.DATASET_FRAMES_PER_PASS);
+
+    if (!Number.isFinite(asked) || asked < 1) return FRAMES_PER_PASS;
+
+    return Math.min(MAX_FRAMES_PER_PASS, Math.floor(asked));
+}
 
 /**
  * The gap past which a pass ends and the next one seeks instead.
@@ -243,12 +301,17 @@ function dataYaml(classes, directories = ['train', 'eval']) {
  */
 function passes(wanted) {
     const out = [];
+    const limit = framesPerPass();
     let current = [];
 
     for (const frame of wanted) {
         const gap = current.length ? frame - current[current.length - 1] : 0;
+        /* How far this pass would reach if it took this frame. The gap rule caps each
+           step; this caps the total, which the gap rule does not -- see MAX_PASS_SPAN. */
+        const span = current.length ? frame - current[0] : 0;
 
-        if (current.length && (current.length >= FRAMES_PER_PASS || gap > SEEK_RATHER_THAN_DECODE)) {
+        if (current.length
+            && (current.length >= limit || gap > SEEK_RATHER_THAN_DECODE || span > MAX_PASS_SPAN)) {
             out.push(current);
             current = [];
         }
@@ -1011,6 +1074,9 @@ module.exports = {
     DEFAULT_CONCURRENCY,
     DEFAULT_IMAGE,
     FRAMES_PER_PASS,
+    MAX_FRAMES_PER_PASS,
+    MAX_PASS_SPAN,
+    framesPerPass,
     IMAGE_FORMATS,
     SEEK_RATHER_THAN_DECODE,
     SPLIT_DIRECTORIES,

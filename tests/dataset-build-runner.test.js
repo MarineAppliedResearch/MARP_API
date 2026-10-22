@@ -1073,6 +1073,45 @@ describe('where one ffmpeg pass ends (#268)', () => {
         expect(split[1]).toEqual([1000 + FRAMES_PER_PASS]);
     });
 
+    /**
+     * **The gap rule caps each step; it does not cap the total.** A pass breaks on a gap
+     * wider than 250, so its span can be `(frames - 1) x 250` and grows with the count --
+     * 24,750 frames at the old 100, and 99,750 had 400 been raised without this. A pass
+     * covering four and a half minutes of video is what the 120-second timeout killed
+     * once already, and 99,750 frames is sixty-six minutes.
+     *
+     * This is the rule that makes the larger count safe, so it is the one that would let
+     * that defect back if it went quietly.
+     */
+    test('breaks on how far a pass reaches, which the gap rule does not bound', () => {
+        const { MAX_PASS_SPAN } = buildService;
+        const step = SEEK_RATHER_THAN_DECODE;
+
+        /* Gaps of exactly 250 -- every one allowed by the gap rule, and few enough to be
+           well under the count, so only the span rule can split these. */
+        const wanted = Array.from({ length: 40 }, (unused, at) => 1000 + at * step);
+
+        expect(wanted.length).toBeLessThan(FRAMES_PER_PASS);
+
+        const split = passes(wanted);
+
+        expect(split.length).toBeGreaterThan(1);
+
+        for (const pass of split) {
+            expect(pass[pass.length - 1] - pass[0]).toBeLessThanOrEqual(MAX_PASS_SPAN);
+        }
+
+        // And nothing was lost to the splitting.
+        expect(asked(wanted)).toEqual(wanted);
+    });
+
+    /** A dense run is untouched by the span rule: 400 contiguous frames span 400. */
+    test('does not split a dense run that is nowhere near the span', () => {
+        const wanted = Array.from({ length: FRAMES_PER_PASS }, (unused, at) => 1000 + at);
+
+        expect(passes(wanted)).toHaveLength(1);
+    });
+
     test('breaks on a gap, well short of the count', () => {
         /* The defect. Two frames an hour apart were one pass, so ffmpeg decoded the
            hour to produce two pictures and was killed at 120 seconds -- having already
