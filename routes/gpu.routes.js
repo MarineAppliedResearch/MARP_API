@@ -931,7 +931,15 @@ function registerGpuRoutes(app) {
             {
                 in: 'query', name: 'state', required: false,
                 schema: { type: 'string', enum: ['failed'], default: 'failed' },
-                description: 'Which state to clear. Only `failed` is accepted.',
+                description: 'Which state to clear. Only `failed` is accepted. Ignored when `ids` is given.',
+            },
+            {
+                in: 'query', name: 'ids', required: false,
+                schema: { type: 'string', example: '11254,9071,8800' },
+                description:
+                    'A selection, comma-separated, at most 200. Jobs that are safe to delete go; the rest come '
+                    + 'back in `blocked` with the reason. **There is no way to force one through here** -- a job '
+                    + 'holding observations has to be deleted on its own, where its own count is shown.',
             },
         ],
         responses: {
@@ -957,7 +965,14 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            res.json(await gpuController.deleteJobsInState(req.query || {}));
+            const query = req.query || {};
+
+            /* Two verbs on one path: clear a state, or delete a selection. They share
+               the `{deleted, blocked}` shape and the rule that nothing unsafe goes, and
+               `ids` wins because naming jobs is more specific than naming a state. */
+            res.json(query.ids
+                ? await gpuController.deleteJobsByIds(query)
+                : await gpuController.deleteJobsInState(query));
         }),
     });
 

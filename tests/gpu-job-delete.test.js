@@ -159,6 +159,12 @@ beforeAll(async () => {
     seeded.succeeded = await job('succeeded', 'succeeded');
     seeded.cancelled = await job('cancelled', 'cancelled');
 
+    /* A selection: one safe, one holding observations, one held by an artifact. */
+    seeded.selectionSafe = await job('selection safe', 'cancelled');
+    seeded.selectionWithObservations = await job('selection with observations', 'succeeded');
+    seeded.selectionWithArtifact = await job('selection with artifact', 'failed');
+
+
     /* An attempt and one event on it, so the cascade is observable rather than assumed. */
     const [attempt] = await on(
         SCRATCH_DB,
@@ -204,6 +210,24 @@ beforeAll(async () => {
         seeded.observationIds.push(obs.observation_id);
     }
 
+    /* The selection's own observation-holder, so the selection tests do not depend on
+       the single-job tests having run or not run first. */
+    for (const n of [3, 4]) {
+        await on(
+            SCRATCH_DB,
+            `INSERT INTO observations (session_id, project_id, "obsID", comname, gpu_job_id, tc, "createdAt", "updatedAt")
+             VALUES ($1, $2, $3, 'Jest Delete Selection', $4, '10:00:00', NOW(), NOW())`,
+            [session.session_id, project.project_id, n, seeded.selectionWithObservations]
+        );
+    }
+
+    await on(
+        SCRATCH_DB,
+        `INSERT INTO artifacts (job_id, artifact_type, path, created_at, updated_at)
+         VALUES ($1, 'log', 'jest/selection.log', NOW(), NOW())`,
+        [seeded.selectionWithArtifact]
+    );
+
     /* The artifact that makes its job undeletable. */
     await on(
         SCRATCH_DB,
@@ -233,7 +257,9 @@ describe('deleting failed jobs (#268)', () => {
     test('a job an artifact references is reported, not attempted', () => {
         /* The RESTRICT never fires: the query excludes it. Attempted and caught, this
            would be an error path on a bulk delete, and 19 of his 1,189 are like this. */
-        expect(result.blocked).toEqual([seeded.failedWithArtifact]);
+        expect(result.blocked.sort()).toEqual(
+            [seeded.failedWithArtifact, seeded.selectionWithArtifact].sort()
+        );
     });
 
     test('and that job, and its artifact, are both still there', async () => {
@@ -264,7 +290,9 @@ describe('deleting failed jobs (#268)', () => {
         const again = deleteInScratch('failed');
 
         expect(again.deleted).toEqual([]);
-        expect(again.blocked).toEqual([seeded.failedWithArtifact]);
+        expect(again.blocked.sort()).toEqual(
+            [seeded.failedWithArtifact, seeded.selectionWithArtifact].sort()
+        );
     }, 60000);
 });
 
@@ -344,6 +372,66 @@ describe('deleting one job, whatever state it is in (#268)', () => {
         expect(refused.ok).toBe(false);
         expect(refused.status).toBe(409);
         expect(refused.message).toMatch(/artifact/);
+    }, 60000);
+});
+
+/**
+ * Delete a selection in the scratch database, through the service.
+ *
+ * @param {number[]} ids - The selection.
+ * @returns {Object} `{ok, body}` or the error's status and message.
+ */
+function deleteSelectionInScratch(ids) {
+    const script = `
+        const svc = require(${JSON.stringify(path.join(ROOT, 'service', 'gpu.service.js'))});
+        svc.deleteJobsByIds({ ids: ${JSON.stringify(ids.join(','))} })
+            .then((r) => { process.stdout.write('RESULT' + JSON.stringify({ ok: true, body: r })); process.exit(0); })
+            .catch((e) => { process.stdout.write('RESULT' + JSON.stringify({ ok: false, status: e.statusCode || e.status, message: String(e.message) })); process.exit(0); });
+    `;
+
+    const result = spawnSync(process.execPath, ['-e', script], {
+        cwd: ROOT, encoding: 'utf8', env: { ...process.env, DB_NAME: SCRATCH_DB },
+    });
+
+    const marker = (result.stdout || '').indexOf('RESULT');
+
+    if (marker < 0) throw new Error(`no result from child: ${result.stdout} ${result.stderr}`);
+
+    return JSON.parse(result.stdout.slice(marker + 'RESULT'.length));
+}
+
+describe('deleting a selection (#268)', () => {
+
+    test('deletes what is safe and says why the rest stayed', () => {
+        const result = deleteSelectionInScratch([
+            seeded.selectionSafe,
+            seeded.selectionWithObservations,
+            seeded.selectionWithArtifact,
+            999000001,
+        ]);
+
+        expect(result.ok).toBe(true);
+        expect(result.body.deleted).toBe(1);
+
+        const byId = Object.fromEntries(result.body.blocked.map((b) => [b.id, b.reason]));
+
+        /* The reason travels with the id, so a screen can say "3 left: one produced
+           2 observations, one is referenced by artifacts" rather than a bare count. */
+        expect(byId[seeded.selectionWithObservations]).toMatch(/produced 2 observations/);
+        expect(byId[seeded.selectionWithArtifact]).toMatch(/artifact/);
+        expect(byId[999000001]).toBe('no such job');
+    }, 60000);
+
+    test('a selection cannot force a job holding observations', async () => {
+        /* The whole point of the shape: there is no acknowledgement here, so the only
+           way to delete that job is one at a time with its own count in front of you. */
+        const rows = await on(SCRATCH_DB, 'SELECT id FROM gpu_jobs WHERE id = $1', [seeded.selectionWithObservations]);
+
+        expect(rows).toHaveLength(1);
+    });
+
+    test('an empty or malformed selection is refused', () => {
+        expect(deleteSelectionInScratch([]).status).toBe(400);
     }, 60000);
 });
 

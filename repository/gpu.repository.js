@@ -1322,6 +1322,67 @@ class GpuRepository {
     }
 
     /**
+     * Delete the jobs in a selection that are safe to delete, and say why the rest were
+     * not.
+     *
+     * **There is deliberately no way to force this.** A job holding observations is
+     * blocked here and can only be deleted one at a time, where the single-job route
+     * puts its own count in front of the person pressing. An acknowledgement on a
+     * selection would be one checkbox standing between somebody and 114,866 unlinked
+     * observations, which is the guard diluted rather than applied.
+     *
+     * @async
+     * @param {number[]} ids - The selection.
+     * @returns {Promise<{deleted: number[], blocked: Array<{id: number, reason: string}>}>}
+     * @throws {Error} Re-throws any database failure.
+     */
+    async deleteJobsByIds(ids) {
+        const impact = await this.db.sequelize.query(
+            `SELECT j.id,
+                    (SELECT count(*)::int FROM observations o WHERE o.gpu_job_id = j.id) AS observations,
+                    (SELECT count(*)::int FROM artifacts a WHERE a.job_id = j.id) AS artifacts
+               FROM gpu_jobs j
+              WHERE j.id IN (:ids)`,
+            { replacements: { ids }, type: QueryTypes.SELECT }
+        );
+
+        const found = new Set(impact.map((row) => Number(row.id)));
+        const blocked = [];
+        const safe = [];
+
+        for (const row of impact) {
+            const id = Number(row.id);
+
+            if (row.artifacts > 0) {
+                blocked.push({ id, reason: `${row.artifacts} artifact(s) reference it` });
+            } else if (row.observations > 0) {
+                blocked.push({ id, reason: `produced ${row.observations} observations` });
+            } else {
+                safe.push(id);
+            }
+        }
+
+        /* An id nobody can find is reported rather than silently dropped: a selection
+           that quietly deletes fewer than it names is the thing this shape exists to
+           avoid. */
+        for (const id of ids) {
+            if (!found.has(Number(id))) blocked.push({ id: Number(id), reason: 'no such job' });
+        }
+
+        const deleted = safe.length
+            ? await this.db.sequelize.query(
+                `DELETE FROM gpu_jobs j
+                  WHERE j.id IN (:safe)
+                    AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id)
+                  RETURNING j.id`,
+                { replacements: { safe }, type: QueryTypes.SELECT }
+            )
+            : [];
+
+        return { deleted: deleted.map((row) => Number(row.id)), blocked };
+    }
+
+    /**
      * Delete one job, unless an artifact still references it.
      *
      * The artifact check is in the statement as well as in the caller's decision, so

@@ -272,6 +272,18 @@ class GpuController {
     }
 
     /**
+     * Delete a selection of jobs.
+     *
+     * @async
+     * @param {Object} query - `{ids}`.
+     * @returns {Promise<Object>} What went, and why the rest did not.
+     */
+    async deleteJobsByIds(query) {
+        logger.info('Controller: deleteJobsByIds');
+        return gpuService.deleteJobsByIds(query);
+    }
+
+    /**
      * Delete one job.
      *
      * @async

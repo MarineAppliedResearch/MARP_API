@@ -2132,6 +2132,40 @@ class GpuService {
 
 
     /**
+     * Delete a selection of jobs, skipping the ones that are not safe.
+     *
+     * **No acknowledgement, deliberately.** A job holding observations comes back in
+     * `blocked` and has to be deleted on its own, where its own count is shown. The
+     * moment a selection could override that, one checkbox stands between somebody and
+     * every observation's provenance.
+     *
+     * @async
+     * @param {Object} [query] - `{ids}`, comma-separated or an array.
+     * @returns {Promise<{deleted: number, blocked: Array<{id: number, reason: string}>}>}
+     * @throws {ApiError} 400 when the selection is empty, malformed or too large.
+     */
+    async deleteJobsByIds(query = {}) {
+        const MAX_SELECTION = 200;
+        const raw = Array.isArray(query.ids) ? query.ids : String(query.ids ?? '').split(',');
+        const ids = raw.map((value) => String(value).trim()).filter(Boolean).map(Number);
+
+        if (!ids.length) invalid('ids must name at least one job.');
+
+        if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+            invalid('ids must all be positive integers.');
+        }
+
+        if (ids.length > MAX_SELECTION) {
+            invalid(`ids names ${ids.length} jobs; ${MAX_SELECTION} is the most one request will delete.`);
+        }
+
+        const { deleted, blocked } = await gpuRepository.deleteJobsByIds([...new Set(ids)]);
+
+        return { deleted: deleted.length, blocked };
+    }
+
+
+    /**
      * Delete one job, whatever state it is in.
      *
      * **The guard is about observations, not about state.** `observations.gpu_job_id`
