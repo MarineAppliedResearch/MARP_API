@@ -1949,7 +1949,16 @@ function modelRows(view, byId) {
     + '<td class="hacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
     + '</tr>';
 
-  const body = '<tr class="runrow-body"><td colspan="11"><div class="rundetail">'
+  /* **`hidden`, because nothing else hides it.** An expandable row is open or shut by
+     the attribute alone -- there is no CSS rule holding `.runrow-body` closed -- so a
+     detail row built as markup without it renders open. Both tables that build their
+     detail as a string did, and both opened with every row expanded; the two that build
+     it with `createElement` set `hidden = true` and were always right.
+
+     It read worse than it sounds: `aria-expanded` on the head was `"false"` the whole
+     time, so the row said shut while the panel was open, and the first click on any row
+     set them to agree and changed nothing visible. */
+  const body = '<tr class="runrow-body" hidden><td colspan="11"><div class="rundetail">'
     + `<div class="wdhead"><span class="name"><svg class="ico models"><use href="#i-models"/></svg><span class="t">${model.name}</span></span>`
     + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
     + `<span class="wid mono" title="Model id as the registry reports it">ml_${model.id}</span></div>`
@@ -2995,7 +3004,9 @@ function workerRows(view) {
       + '</dl></div>'
     : '<div class="sect"><h3>Live attempt</h3><p class="muted">No attempt on this machine right now.</p></div>';
 
-  const body = '<tr class="runrow-body"><td colspan="11"><div class="rundetail">'
+  /* `hidden` for the same reason the registry's is: see `modelRows`. Isaac reported the
+     models table; this one had it too, from the same line copied. */
+  const body = '<tr class="runrow-body" hidden><td colspan="11"><div class="rundetail">'
     + `<div class="wdhead"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">${worker.name}</span></span>`
     + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
     + `<span class="wid mono" title="Worker id as the pool reports it">wk_${worker.worker_id}</span>`
