@@ -6662,7 +6662,10 @@ function ownText(el) {
 }
 
 function applyTips() {
-  const sel = '.field > label, th, .stat-lab, .tabstrip button, .seg button,'
+  /* `.k` is a plain row label -- `Total (deduplicated)`, `Duration`. It was missing
+     here, so a tip written for one was never applied and the label looked like it had
+     no explanation at all. Two labels across the thirteen screens were affected. */
+  const sel = '.field > label, th, .stat-lab, .tabstrip button, .seg button, .k,'
     + ' .btn, .check span, .kv dt, .panel-hd h2, .exbtn, summary,'
     + ' .topbar .lab, .search input, .sel, .jobmetric > span, .eval-tabs button,'
     + ' .section-heading h4, .training-evaluation h4, .evaluation-card h5, .jobstate h4,'
