@@ -416,12 +416,18 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .inference-axis.right .axis-title { text-anchor: end; }
 .inference-area { fill: rgba(61, 214, 208, .09); stroke: none; transition: opacity 150ms ease; }
 .inference-line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; transition: opacity 150ms ease, stroke-width 150ms ease; }
-.inference-line.throughput { stroke: var(--cyan-300); }
-.inference-line.backlog { stroke: var(--violet-300); stroke-dasharray: 7 5; }
-/* A third series, for the Datasets screen's Build activity: frames extracted and builds
-   waiting share this chart with builds completed, and three lines need three strokes.
-   Dotted rather than dashed so it reads apart from `backlog` without colour alone. */
-.inference-line.done { stroke: var(--mint-400); stroke-dasharray: 2 6; }
+/* **Each series says its colour and its dash once, and both the line and the legend
+   swatch read them.** They were written twice -- the stroke here, the swatch colour in
+   the legend block below -- which is how the legend came to show a colour the chart did
+   not use, and then no colour at all. A third series was added for the Datasets screen's
+   Build activity; it is dotted rather than dashed so it reads apart from `backlog`
+   without relying on colour. */
+.inference-flow .throughput { --key: var(--cyan-300); --dash-on: 12px; --dash-off: 0px; }
+.inference-flow .backlog { --key: var(--violet-300); --dash-on: 7px; --dash-off: 5px; }
+.inference-flow .done { --key: var(--mint-400); --dash-on: 2px; --dash-off: 6px; }
+.inference-line.throughput, .inference-line.backlog, .inference-line.done {
+  stroke: var(--key); stroke-dasharray: var(--dash-on) var(--dash-off);
+}
 .inference-flow.is-highlighted .inference-line, .inference-flow.is-highlighted .inference-area { opacity: .12; }
 .inference-flow.is-highlighted .inference-line.highlighted { opacity: 1; stroke-width: 4.5; }
 .inference-flow.is-highlighted .inference-area.highlighted { opacity: .7; }
@@ -431,13 +437,18 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   position: relative; padding: 3px 0 3px 18px; border: 0; background: none;
   color: var(--text); font: 650 10.5px var(--body-font); cursor: pointer;
 }
+/* **The swatch is drawn from the same two tokens the line is stroked with**, so a dotted
+   series reads as dotted here and a change to one cannot leave the other behind. The
+   gradient is the dash: a run of `--dash-on` in the series colour, then `--dash-off` of
+   nothing, repeated. A legend with no dash tokens -- every other chart on the site -- gets
+   a solid bar from the defaults. */
 .inference-chart-key button::before {
   content: ""; position: absolute; left: 0; top: 50%; width: 12px; height: 3px;
-  border-radius: 2px; background: var(--key); transform: translateY(-50%);
+  border-radius: 2px; transform: translateY(-50%);
+  background-image: repeating-linear-gradient(to right,
+    var(--key, currentColor) 0 var(--dash-on, 100%),
+    transparent var(--dash-on, 100%) calc(var(--dash-on, 100%) + var(--dash-off, 0px)));
 }
-.inference-chart-key .throughput { --key: var(--cyan-300); }
-.inference-chart-key .backlog { --key: var(--violet-300); }
-.inference-chart-key .done { --key: var(--mint-400); }
 .inference-chart-key button[aria-pressed="true"] { color: var(--white); text-decoration: underline; text-underline-offset: 3px; }
 .inference-chart-key button:focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 2px; border-radius: 2px; }
 .inference-current {
@@ -462,7 +473,14 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 }
 .ops-activity .ops-area { fill: rgba(61, 214, 208, .09); transition: opacity 150ms ease; }
 .ops-activity .registered, .ops-activity .inference, .ops-activity .completed { --key: var(--cyan-300); }
-.ops-activity .preferred, .ops-activity .training, .ops-activity .issues { --key: var(--amber-300); }
+/* `in_use` with them, because the Models legend names that series "Models in use" while
+   the line it points at is classed `preferred` -- so it had no colour of its own and fell
+   back to the text colour, which is a swatch claiming a grey the chart never draws. The
+   pairing is not a guess: that chart has three lines and three buttons, and the other two
+   match by name and by colour. Renaming one to match the other is the better fix and is
+   somebody's call, not this stylesheet's. */
+.ops-activity .preferred, .ops-activity .in_use,
+.ops-activity .training, .ops-activity .issues { --key: var(--amber-300); }
 .ops-activity .coverage { --key: var(--mint-400); }
 .ops-activity .vram { --key: var(--violet-300); }
 .ops-activity .queued { --key: var(--red-400); }
@@ -568,15 +586,19 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   border: 1px solid transparent; border-radius: 4px; background: none;
   color: inherit; font: inherit; cursor: pointer;
 }
-/* **The swatch reads whichever variable the chart's own classes set.** It read `--line`
-   alone, which the training and model legends define -- but the inference family defines
-   `--key` instead, so on Datasets and Inference the swatch had no colour at all and three
-   named series sat behind three invisible bars. Isaac: *"i can't tell which lines in the
-   graph are what."* The History chart had the same defect and was patched with an
-   override of its own; the fallback makes that unnecessary and fixes the two screens
-   nobody had got to. The colours are not restated here -- `--key` is set to the same
-   token the line is stroked with, a few rules below. */
-.result-legend button::before { content: ""; width: 11px; height: 2px; flex: none; background: var(--line, var(--key)); }
+/* **The same swatch, because this class sits on the same element as
+   `.inference-chart-key` and a later rule of equal weight was quietly winning.** It set
+   `background: var(--line)`, and `--line` is the chart *grid* colour inherited from an
+   ancestor -- a cyan at ten per cent opacity -- so every legend on the site painted an
+   invisible bar while a correct rule sat above it doing nothing. Read in the browser
+   rather than in this file: computed `--line` was `rgba(42, 214, 220, 0.10)` on all three
+   buttons while `--key` was the right colour on each. */
+.result-legend button::before {
+  content: ""; width: 12px; height: 3px; flex: none;
+  background-image: repeating-linear-gradient(to right,
+    var(--key, currentColor) 0 var(--dash-on, 100%),
+    transparent var(--dash-on, 100%) calc(var(--dash-on, 100%) + var(--dash-off, 0px)));
+}
 .result-legend button:hover { color: var(--white); background: rgba(9, 30, 51, .8); }
 .result-legend button:focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 1px; }
 .result-legend button[aria-pressed="true"] { color: var(--white); border-color: var(--hairline-2); background: rgba(9, 30, 51, .95); }
