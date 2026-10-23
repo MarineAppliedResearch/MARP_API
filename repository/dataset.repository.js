@@ -1045,6 +1045,40 @@ class DatasetRepository {
      * not found. A database failure is logged and re-thrown, so the
      * returned promise rejects rather than resolving to a fallback value.
      */
+    /**
+     * Every epoch of one training run, in the order they happened.
+     *
+     * **The curves are the whole point, so the order is the contract.** `epochs` could be
+     * fetched one at a time and never as a series -- `/v2/epoch` had a POST and a by-id
+     * GET and nothing else -- so the losses and the mAP were in the database and no screen
+     * could draw them. This is that read.
+     *
+     * Ordered by `epoch_number` rather than by insert order or by time: a worker that
+     * reports an epoch late would otherwise put a kink in the line, and the number is the
+     * thing the x-axis actually is.
+     *
+     * **Nulls come back as nulls.** Most of these columns are nullable and most are null
+     * today, because the worker does not report them all yet; a run with no validation
+     * split will never have them. Coalescing to zero here would turn "not measured" into
+     * "measured as nothing", which on a loss curve reads as a model that collapsed.
+     *
+     * @async
+     * @param {number|string} runId - The training run.
+     * @returns {Promise<Array<Object>>} Its epochs, earliest first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getEpochsForRun(runId) {
+        try {
+            return await this.db.epochs.findAll({
+                where: { training_run_id: runId },
+                order: [['epoch_number', 'ASC'], ['id', 'ASC']],
+            });
+        } catch (err) {
+            console.error('Error in getEpochsForRun():', err);
+            throw err;
+        }
+    }
+
     async getEpochById(epochID) {
         try {
             const epoch = await this.db.epochs.findByPk(epochID);

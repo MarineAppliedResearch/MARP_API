@@ -1580,6 +1580,49 @@ function registerDatasetRoutes(app) {
     // ---------------------------------------------------------------
 
     registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/epochs',
+        summary: 'Every epoch of one training run',
+        description:
+            'The per-epoch record a training run leaves behind: losses, precision, recall and mAP, in the order they happened. **This is the read that did not exist.** `/v2/epoch` had a POST and a GET by id, so an epoch could be written and fetched only by somebody who already knew its id -- the curves were in the database and no screen could draw them. A sub-resource on the run rather than a filter on a collection, the same shape `GET /dataset/:id/composition` uses.\n\n'
+            + 'Ordered by `epoch_number`, which is what an x-axis of a training curve actually is. Insert order would put a kink in the line the first time a worker reported an epoch late.\n\n'
+            + '**Nulls are returned as nulls.** Most of these columns are nullable, most are null today because the worker does not yet report them all, and a run with no validation split will never have them. Coalescing to zero would turn "not measured" into "measured as nothing" -- on a loss curve that reads as a model collapsing, which is a lie about the training rather than a gap in it. A reader draws a gap.\n\n'
+            + 'An empty array is the honest answer for a run that has not reported an epoch yet, and for one that never will. It is not a 404: the run exists either way, and a screen watching a run in progress would otherwise have to treat "nothing yet" as an error.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            {
+                in: 'path', name: 'id', required: true, schema: { type: 'integer' },
+                description: 'The training run whose epochs to read.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'Its epochs, earliest first.',
+                content: {
+                    'application/json': {
+                        schema: { type: 'array', items: { $ref: '#/components/schemas/Epoch' } },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            /* The run is checked rather than assumed, so a mistyped id is a 404 and not an
+               empty chart that looks like a run which reported nothing. */
+            const run = await datasetController.getTrainingRunById(req.params.id);
+
+            if (!run) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(await datasetController.getEpochsForRun(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
         method: 'post',
         permission: 'models:write',
         path: '/api/epoch',

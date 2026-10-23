@@ -1262,6 +1262,209 @@ function applyJobsQuery() {
 /** Nothing lists these. Distinct from a run that has no epochs yet. */
 const NOT_LISTABLE = '<span class="dash" title="Training runs cannot be listed: /v2/training_run has only a POST, so epochs, losses and mAP exist in MARP but no route returns them (gap 28)">&mdash;</span>';
 
+/** What each training run was, by the job that produced it. Empty until the screen loads. */
+let trainingRunsByJob = new Map();
+
+/** How often an open expansion re-reads a run that is still going. */
+const TRAINING_EPOCH_POLL_MS = 5000;
+
+/**
+ * A path through a series that may have holes in it.
+ *
+ * **Null is not zero, and this is where that is decided.** Most epoch metrics are null
+ * today because the worker does not report them all yet, and a run with no validation
+ * split will never have them. Plotting a null at zero draws a loss falling off a cliff or
+ * an mAP collapsing — a picture of a model failing, invented out of a column nobody
+ * filled. So a gap is a gap: the line stops and starts again after it.
+ *
+ * @param {Array<number|null>} values - One per epoch, in order.
+ * @param {number} max - The top of the scale.
+ * @param {Object} box - `{left, right, top, bottom}` in viewBox units.
+ * @returns {string} An SVG path, empty when nothing was measured.
+ */
+function gappyPath(values, max, box) {
+  const span = Math.max(1, values.length - 1);
+  const x = (i) => box.left + (box.right - box.left) * i / span;
+  const y = (v) => box.bottom - (box.bottom - box.top) * Math.max(0, Math.min(max, v)) / (max || 1);
+
+  let path = '';
+  let open = false;
+
+  values.forEach((value, index) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      /* The break. Anything after this starts a new subpath. */
+      open = false;
+      return;
+    }
+
+    path += `${open ? 'L' : 'M'}${x(index).toFixed(1)},${y(Number(value)).toFixed(1)} `;
+    open = true;
+  });
+
+  return path.trim();
+}
+
+/**
+ * One chart of several series over the epochs.
+ *
+ * Built out of the same `result-chart` / `result-line` vocabulary the Jobs detail already
+ * uses, so nothing new was added to draw it and no library came with it.
+ *
+ * @param {Object} spec - `{title, note, max, top, mid, series}`.
+ * @param {Object[]} epochs - The run's epochs, earliest first.
+ * @returns {string} An `<article>`, or an empty state when nothing was measured.
+ */
+function epochChart(spec, epochs) {
+  const box = { left: 46, right: 700, top: 24, bottom: 174 };
+  const drawn = spec.series
+    .map(([key, label, column]) => {
+      const values = epochs.map((epoch) => (epoch[column] === null || epoch[column] === undefined
+        ? null : Number(epoch[column])));
+      const measured = values.filter((v) => v !== null).length;
+
+      return { key, label, column, values, measured };
+    });
+
+  /* A chart whose every series is empty is a frame around nothing. The panel says which
+     columns are missing instead, because *that* is the useful fact while the worker is
+     still being taught to report them. */
+  if (!drawn.some((one) => one.measured)) {
+    return `<article class="evaluation-card history-card"><header><div><h5>${spec.title}</h5>`
+      + `<p>Not reported for this run: ${drawn.map((one) => one.label.toLowerCase()).join(', ')}</p>`
+      + '</div></header></article>';
+  }
+
+  const legend = drawn.map((one) => `<button type="button" class="${one.key}" data-result-highlight="${one.key}"`
+    + `${one.measured ? '' : ' disabled title="Not reported for this run"'}>${one.label}</button>`).join('');
+
+  const lines = drawn.map((one) => `<path class="result-line ${one.key}" d="${gappyPath(one.values, spec.max, box)}"/>`).join('');
+
+  const grid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
+    + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
+
+  const first = epochs.length ? epochs[0].epoch_number : 0;
+  const last = epochs.length ? epochs[epochs.length - 1].epoch_number : 0;
+
+  return `<article class="evaluation-card history-card" data-result-graph><header><div><h5>${spec.title}</h5>`
+    + `<p>${spec.note}</p></div><div class="result-legend">${legend}</div></header>`
+    + `<div class="result-chart" role="img" aria-label="${spec.title} by epoch">`
+    + `<svg viewBox="0 0 740 205" aria-hidden="true">${grid}`
+    + `<g class="result-axis"><text x="38" y="28">${spec.top}</text><text x="38" y="103">${spec.mid}</text>`
+    + `<text x="38" y="178">0</text><text x="46" y="196">Epoch ${first}</text>`
+    + `<text x="700" y="196">Epoch ${last}</text></g>${lines}</svg></div></article>`;
+}
+
+/**
+ * What a run looks like inside its row.
+ *
+ * @param {Object} run - The training run.
+ * @param {Object[]} epochs - Its epochs, earliest first.
+ * @returns {string}
+ */
+function trainingRunDetail(run, epochs) {
+  /* **Not `NOT_REPORTED`.** That one's tooltip is about worker telemetry, which is not
+     what a null batch size on a training run means -- the run simply did not record one. */
+  const NONE = '<span class="dash" title="Not recorded on this training run">&mdash;</span>';
+  const metric = (label, value, note = '') =>
+    `<div class="jobmetric"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`;
+
+  const best = epochs.reduce((top, epoch) => {
+    const value = epoch.map50 === null || epoch.map50 === undefined ? null : Number(epoch.map50);
+    return value !== null && (top === null || value > top) ? value : top;
+  }, null);
+
+  const done = epochs.length;
+  const total = Number(run.total_epochs) || null;
+
+  /* **Reported, not configured.** `total_epochs` is what the run was asked for and
+     `epochs.length` is what has actually arrived, so a run in progress reads honestly as
+     it fills. */
+  const progress = total ? `${done} / ${total}` : String(done);
+
+  const settings = [
+    metric('Epochs reported', progress, total ? 'of the configured total' : 'no total recorded'),
+    metric('Best mAP@50', best === null ? NONE : best.toFixed(3), 'across reported epochs'),
+    metric('Batch size', run.batch_size ?? NONE),
+    metric('Learning rate', run.learning_rate ?? NONE),
+    metric('Optimizer', run.optimizer || NONE),
+    metric('Device', run.compute_device || NONE),
+  ].join('');
+
+  const charts = epochs.length
+    ? epochChart({
+      title: 'Loss',
+      note: 'Lower is better &middot; recorded each epoch',
+      max: 2, top: '2.0', mid: '1.0',
+      series: [['box-loss', 'Box loss', 'box_loss'], ['cls-loss', 'Class loss', 'cls_loss'], ['dfl-loss', 'DFL loss', 'dfl_loss']],
+    }, epochs)
+    + epochChart({
+      title: 'Validation quality',
+      note: 'Higher is better &middot; held-out split',
+      max: 1, top: '1.0', mid: '.5',
+      series: [['precision', 'Precision', 'precision'], ['recall', 'Recall', 'recall'], ['map', 'mAP@50', 'map50'], ['map95', 'mAP@50&ndash;95', 'map5095']],
+    }, epochs)
+    : '<p class="hint">No epoch has been reported yet. This fills in as the run reports them.</p>';
+
+  return '<div class="rundetail jobdetail">'
+    + `<div class="jobdetail-head"><div><b>Training run ${run.id}</b>`
+    + `<span>${run.dataset_id ? `Dataset ${run.dataset_id}` : 'No dataset recorded'} &middot; model ${run.model_id}</span></div></div>`
+    + `<div class="jobmetrics">${settings}</div>`
+    + `<div class="training-history-grid">${charts}</div></div>`;
+}
+
+/**
+ * Expand a training job to its run, and keep it current while the run is going.
+ *
+ * **The point is watching, not reading afterwards.** Isaac's words were *"i didn't get to
+ * watch the charts"* -- so an open expansion re-reads its epochs on a timer until the run
+ * stops reporting, and the detail is redrawn in place. A finished run is fetched once.
+ *
+ * @param {Element} head - The job row.
+ * @param {Element} detail - Its detail row.
+ * @param {Object} run - The run that job produced.
+ * @returns {void}
+ */
+function wireTrainingRunDetail(head, detail, run) {
+  const cell = $('td', detail);
+  let timer = null;
+
+  const stop = () => { if (timer) { clearTimeout(timer); timer = null; } };
+
+  const draw = async () => {
+    try {
+      const epochs = await window.MarpApi.trainingRunEpochs(run.id);
+
+      cell.innerHTML = trainingRunDetail(run, epochs);
+
+      /* **Keep going only while it is still going.** `end_time` is set when the run
+         finishes, so a finished run settles after one read and an unfinished one keeps
+         asking. A closed row stops asking either way. */
+      stop();
+
+      if (!run.end_time && head.getAttribute('aria-expanded') === 'true') {
+        timer = setTimeout(draw, TRAINING_EPOCH_POLL_MS);
+      }
+    } catch (error) {
+      stop();
+      cell.innerHTML = `<div class="rundetail jobdetail"><p class="hint">Could not read this run's epochs `
+        + `(${error.status || 'no answer'}).</p></div>`;
+    }
+  };
+
+  /* **Watched rather than clicked.** The expander is one delegated listener on the
+     document, so a click handler on the row runs while bubbling -- before that listener
+     has flipped `aria-expanded`, which made this read the old value every time and never
+     fetch. Watching the attribute is also what makes *Expand all* work, which a click on
+     the row would never have seen at all.
+
+     Fetched on opening rather than on page load: twenty rows would otherwise be twenty
+     requests for curves nobody has asked to see. */
+  new MutationObserver(() => {
+    if (head.getAttribute('aria-expanded') === 'true') draw();
+    else stop();
+  }).observe(head, { attributes: true, attributeFilter: ['aria-expanded'] });
+}
+
 /**
  * Draws the Training overview and its recent jobs.
  *
@@ -1386,10 +1589,18 @@ function renderTrainingRecent(views) {
     const tookMs = Math.max(0, Date.parse(job.updated_at) - Date.parse(job.created_at));
     const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
 
-    return `<tr data-job="${job.id}">`
+    /* The run this job produced, if it produced one. `training_runs.job_id` has existed
+       since 20261020120000 and was missing from the model, so nothing could make this
+       join until now. */
+    const run = trainingRunsByJob.get(job.id) || null;
+
+    return `<tr data-job="${job.id}"${run ? ` data-run="${run.id}"` : ''}>`
+      + `<td class="ex">${run ? '<button class="exbtn" type="button" aria-label="Show this run"><svg class="ico sm"><use href="#i-right"/></svg></button>' : ''}</td>`
       + `<td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
-      + `<td class="jdset">${NOT_LISTABLE}</td>`
-      + `<td class="jmakes">${NOT_LISTABLE}</td>`
+      + `<td class="jdset">${run && run.dataset_id
+        ? `<a href="./datasets.html?dataset=${encodeURIComponent(run.dataset_id)}">Dataset ${run.dataset_id}</a>`
+        : NOT_LISTABLE}</td>`
+      + `<td class="jmakes">${run ? `Model ${run.model_id}` : NOT_LISTABLE}</td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
       + `<td class="jepochs num">${NOT_LISTABLE}</td>`
       + `<td class="jmap num">${NOT_LISTABLE}</td>`
@@ -1397,6 +1608,31 @@ function renderTrainingRecent(views) {
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
       + '</tr>';
   }).join('');
+
+  /* **Only rows that have a run to show.** A training job whose run was never recorded
+     has nothing under it, so it gets no expander rather than one that opens on an
+     apology. */
+  for (const head of $$(':scope > tr[data-run]', body)) {
+    const run = trainingRunsByJob.get(Number(head.dataset.job));
+
+    if (!run) continue;
+
+    head.classList.add('runrow-head');
+    head.setAttribute('aria-expanded', 'false');
+
+    const detail = document.createElement('tr');
+
+    detail.className = 'runrow-body';
+    detail.hidden = true;
+    detail.innerHTML = `<td colspan="9"><div class="rundetail jobdetail"><p class="hint">Reading this run&hellip;</p></div></td>`;
+    head.after(detail);
+
+    wireTrainingRunDetail(head, detail, run);
+  }
+
+  /* The delegated expander listener keys off `table.expandable`, so the rows it has just
+     been given are wired by the sweep every other table uses. */
+  wireAccordions();
 }
 
 /**
@@ -1787,11 +2023,22 @@ async function renderTrainingScreen() {
   if (document.body.dataset.screen !== 'training' || !window.MarpApi) return;
 
   try {
-    const [jobs, models, datasets] = await Promise.all([
+    const [jobs, models, datasets, runs] = await Promise.all([
       loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 })),
       window.MarpApi.listModels(),
       window.MarpApi.listDatasets(),
+      /* Settled rather than awaited with the rest: the runs decorate the table and a
+         screen that drew nothing because one read was slow would be worse than one whose
+         rows cannot be expanded. */
+      window.MarpApi.listTrainingRuns().catch(() => []),
     ]);
+
+    /* Newest first from the route, so the first run seen for a job is its latest. */
+    trainingRunsByJob = new Map();
+
+    for (const run of runs) {
+      if (run.job_id != null && !trainingRunsByJob.has(run.job_id)) trainingRunsByJob.set(run.job_id, run);
+    }
 
     renderTraining(jobs.jobs);
     fillTrainingChoices(models, datasets);
@@ -1799,7 +2046,7 @@ async function renderTrainingScreen() {
   } catch (error) {
     const body = $('.training-table tbody');
     if (body) {
-      body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="8">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
+      body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="9">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
     }
   }
 }

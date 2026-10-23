@@ -1200,6 +1200,26 @@
   }
 
   /**
+   * `GET /api/v2/training_run/:id/epochs` -- the curves, in the order they happened.
+   *
+   * **The read that did not exist.** `/v2/epoch` had a POST and a GET by id, so the
+   * losses and the mAP were written and nothing could ask for them as a series.
+   *
+   * Nulls come back as nulls: most of these columns are null today because the worker
+   * does not report them all yet, and a run with no validation split will never have
+   * them. A caller draws a gap rather than a zero.
+   *
+   * An empty array is the honest answer for a run that has not reported an epoch yet,
+   * which is the normal state of a run somebody is watching.
+   *
+   * @param {number|string} runId - The training run.
+   * @returns {Promise<Object[]>}
+   */
+  function trainingRunEpochs(runId) {
+    return request(`/training_run/${encodeURIComponent(runId)}/epochs`);
+  }
+
+  /**
    * `GET /api/v2/dataset/builds` -- how far every build still running has got.
    *
    * **The progress is on the attempt, which is why this is not on the dataset.** A
@@ -1630,6 +1650,7 @@
     listModelSpecies,
     listDatasets,
     listTrainingRuns,
+    trainingRunEpochs,
     listDatasetBuilds,
     datasetComposition,
     datasetBuildQueue,

@@ -120,6 +120,20 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      job_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'The GPU job that produced this run, when one did. Added to the table by '
+          + '20261020120000-a-training-run-knows-its-job and missing from this model until now, '
+          + 'so the column existed and nothing could read it: Sequelize never selected it and no '
+          + 'route returned it. A run created outside the pool has none.',
+        jsonSchema: {
+            description: 'Foreign key referencing the GPU job that produced this run (gpu_jobs.id).',
+            examples: [21779],
+        },
+      },
+
       dataset_id: {
         type: DataTypes.INTEGER,
         allowNull: true,

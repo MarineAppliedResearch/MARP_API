@@ -226,6 +226,18 @@ class DatasetController {
     }
 
     /**
+     * Every epoch of one training run, earliest first.
+     *
+     * @async
+     * @param {number|string} runId - The training run.
+     * @returns {Promise<Array<Object>>}
+     */
+    async getEpochsForRun(runId) {
+        logger.info('Controller: getEpochsForRun')
+        return await datasetService.getEpochsForRun(runId);
+    }
+
+    /**
      * Create a new ML model record.
      *
      * @async

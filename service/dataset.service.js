@@ -202,6 +202,17 @@ class DatasetService {
     }
 
     /**
+     * Every epoch of one training run, earliest first.
+     *
+     * @async
+     * @param {number|string} runId - The training run.
+     * @returns {Promise<Array<Object>>}
+     */
+    async getEpochsForRun(runId) {
+        return await datasetRepository.getEpochsForRun(runId);
+    }
+
+    /**
      * Create a new ML model record.
      *
      * @async
