@@ -513,3 +513,45 @@ test('a GPU reading nobody took is absent, not a flat zero', async (t) => {
   /* The series that were recorded still draw. */
   assert.ok(root.querySelector('.training-line.queued').getAttribute('d'), 'queued is unaffected');
 });
+
+test('the pool chart draws a hole as a hole, not a dip to the floor', async (t) => {
+  /* **This is the one that appears the day sampling lands.** The three telemetry series
+     were mapped with `|| 0`, so an unsampled bucket drew 0% -- hidden while *nothing* had
+     samples, because the chart blanks itself then, and visible the moment a window is
+     only partly covered: a real curve falling to the floor across the gaps and climbing
+     back out, which reads as GPUs going idle. */
+  const at = (n) => `2026-10-23T${String(n).padStart(2, '0')}:00:00.000Z`;
+
+  const screen = await drawScreen('workers.html', {
+    listWorkers: async () => [],
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    jobSeries: async () => ({ points: [] }),
+    gpuSeries: async () => ({
+      points: [
+        { at: at(10), machines: 1, avg_inference_utilization_percent: 40, avg_training_utilization_percent: 70, avg_memory_percent_used: 55 },
+        { at: at(11), machines: 0, avg_inference_utilization_percent: null, avg_training_utilization_percent: null, avg_memory_percent_used: null },
+        { at: at(12), machines: 1, avg_inference_utilization_percent: 44, avg_training_utilization_percent: 80, avg_memory_percent_used: 60 },
+      ],
+    }),
+  });
+
+  t.after(screen.close);
+
+  const root = screen.document.querySelector('[data-ops-activity="workers"]');
+  const training = root.querySelector('[data-ops-line="training"]').getAttribute('d');
+
+  assert.ok(training, 'the measured buckets should still draw');
+
+  /* A break, rather than three points joined through the middle one. */
+  assert.equal((training.match(/M/g) || []).length, 2,
+    `the line should stop at the unsampled bucket and start again after it (d="${training}")`);
+
+  /* 196 is the baseline in this viewBox. A null plotted as 0% lands exactly there. */
+  assert.doesNotMatch(training, /,196(\.0)?\b/,
+    'nothing should be drawn on the floor: that is what a null read as 0% looks like, and '
+    + 'on a utilization chart it reads as the GPUs having gone idle');
+
+  /* The shading would fill the gap it was just taught to leave. */
+  assert.equal(root.querySelector('[data-ops-area]').getAttribute('d'), '',
+    'and no area while the series it shades has a hole in it');
+});

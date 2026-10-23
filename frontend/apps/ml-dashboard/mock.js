@@ -10531,10 +10531,18 @@ async function wirePoolCapacity() {
   const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
 
   const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
-  const y = (v, max) => 196 - 168 * (v / Math.max(1, max));
-  const pathOf = (values, max) => values
-    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
-  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`;
+
+  /* The geometry `gappyPath` already works in -- 54 to 726 across, 196 up to 28 -- so this
+     chart gets its break-on-null rather than a second copy of it. */
+  const BOX = { left: 54, right: 726, top: 28, bottom: 196 };
+  const pathOf = (values, max) => gappyPath(values, max, BOX);
+
+  /* **No area over a series with a hole.** Closing a path to the baseline across a gap
+     fills the gap, putting back the floor the line was just taught to avoid. The line
+     still draws; only the shading under it waits for a complete series. */
+  const areaOf = (values, max) => (values.some((v) => v === null || v === undefined)
+    ? ''
+    : `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`);
 
   const clock = (iso) => {
     const d = new Date(iso);
@@ -10562,10 +10570,21 @@ async function wirePoolCapacity() {
       const points = gpu.points || [];
       const queuedBy = new Map((jobs.points || []).map((p) => [String(p.at), p.waiting || 0]));
 
+      /* **A bucket nobody sampled is null, and null is not nought.** These three were
+         mapped with `|| 0`, so an unsampled bucket drew 0% -- a reading saying the GPUs
+         were idle, invented from the absence of a reading. It was masked while *nothing*
+         had samples, because `anyReading` blanks the chart then; the day sampling covers
+         part of a window, a real curve would fall to the floor across the gaps and climb
+         back out. That looks like information, which is what makes it worse than an empty
+         chart.
+
+         `queued` keeps its `|| 0`: it is a reconstructed count of jobs waiting, where
+         none waiting really is zero. */
+      const percent = (value) => (value === null || value === undefined ? null : Number(value));
       const samples = {
-        inference: points.map((p) => p.avg_inference_utilization_percent || 0),
-        training: points.map((p) => p.avg_training_utilization_percent || 0),
-        vram: points.map((p) => p.avg_memory_percent_used || 0),
+        inference: points.map((p) => percent(p.avg_inference_utilization_percent)),
+        training: points.map((p) => percent(p.avg_training_utilization_percent)),
+        vram: points.map((p) => percent(p.avg_memory_percent_used)),
         queued: points.map((p) => queuedBy.get(String(p.at)) || 0),
       };
 
