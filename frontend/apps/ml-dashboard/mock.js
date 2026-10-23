@@ -1259,8 +1259,24 @@ function applyJobsQuery() {
    So the overview, the recent-jobs table and the setup form's choices are real;
    the runs table stays fixture and says so. */
 
-/** Nothing lists these. Distinct from a run that has no epochs yet. */
-const NOT_LISTABLE = '<span class="dash" title="Training runs cannot be listed: /v2/training_run has only a POST, so epochs, losses and mAP exist in MARP but no route returns them (gap 28)">&mdash;</span>';
+/**
+ * No run was recorded for this job, so there is nothing to say about one.
+ *
+ * **This used to say runs could not be listed, and it stopped being true twice.** #260
+ * added the collection read and f951fdda added `GET /training_run/:id/epochs`, so the
+ * page went on explaining why it could not do a thing it was doing. That is the same
+ * defect as a *Design preview* marker on a live chart, and it was in twelve places.
+ */
+const NO_RUN_RECORDED = '<span class="dash" title="No training run was recorded for this job">&mdash;</span>';
+
+/**
+ * Answerable, but only by reading the run's epochs.
+ *
+ * Epochs are fetched per run when a row is opened rather than for every row on the page:
+ * a screen of twenty would be twenty requests for curves nobody asked to see. So this is
+ * a dash that points at where the number is, not one that says it does not exist.
+ */
+const IN_THE_EXPANSION = '<span class="dash" title="Computed from the run&apos;s epochs. Open the row to see it.">&mdash;</span>';
 
 /** What each training run was, by the job that produced it. Empty until the screen loads. */
 let trainingRunsByJob = new Map();
@@ -1503,7 +1519,7 @@ function renderTraining(jobs) {
 
   setCard(cards[0], running.length, [`${running.length} on GPUs`, 'in flight']);
   setCard(cards[1], queued.length, ['waiting for a worker', `${queued.length} to start`]);
-  setCard(cards[2], done.length, [`${doneThisWeek} this week`, NOT_LISTABLE + ' versions']);
+  setCard(cards[2], done.length, [`${doneThisWeek} this week`, IN_THE_EXPANSION + ' versions']);
   setCard(cards[3], attention.length, [
     `${attention.filter((v) => v.state === 'failed').length} failed`,
     `${attention.filter((v) => v.state === 'expired').length} expired`,
@@ -1516,9 +1532,9 @@ function renderTraining(jobs) {
   setCard(cards[6], views.filter((v) => v.state === 'failed').length, ['in the window']);
   if (cards[7]) {
     const n = $('.stat-num', cards[7]);
-    if (n) n.innerHTML = NOT_LISTABLE;
+    if (n) n.innerHTML = IN_THE_EXPANSION;
     const sub = $('.stat-sub', cards[7]);
-    if (sub) sub.innerHTML = '<span>no route returns run metrics</span>';
+    if (sub) sub.innerHTML = '<span>open a run to see its best</span>';
   }
 
   const parts = [
@@ -1599,11 +1615,13 @@ function renderTrainingRecent(views) {
       + `<td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
       + `<td class="jdset">${run && run.dataset_id
         ? `<a href="./datasets.html?dataset=${encodeURIComponent(run.dataset_id)}">Dataset ${run.dataset_id}</a>`
-        : NOT_LISTABLE}</td>`
-      + `<td class="jmakes">${run ? `Model ${run.model_id}` : NOT_LISTABLE}</td>`
+        : NO_RUN_RECORDED}</td>`
+      + `<td class="jmakes">${run ? `Model ${run.model_id}` : NO_RUN_RECORDED}</td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
-      + `<td class="jepochs num">${NOT_LISTABLE}</td>`
-      + `<td class="jmap num">${NOT_LISTABLE}</td>`
+      + `<td class="jepochs num">${run && run.total_epochs
+        ? `<span title="Configured for this run. How many have been reported is in the expansion.">${run.total_epochs}</span>`
+        : (run ? IN_THE_EXPANSION : NO_RUN_RECORDED)}</td>`
+      + `<td class="jmap num">${run ? IN_THE_EXPANSION : NO_RUN_RECORDED}</td>`
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
       + '</tr>';
@@ -2065,8 +2083,11 @@ function markTrainingRunsUnbacked() {
 
   const note = document.createElement('p');
   note.className = 'unbacked-note muted';
-  note.textContent = 'Design data. /v2/training_run has only a POST, so no route returns a run, '
-    + 'its epochs or its metrics (gap 28).';
+  /* **Narrowed to what is still true.** Runs can be listed since #260 and their epochs
+     since f951fdda -- this table simply has not been filled from them yet, which is a
+     different and much smaller statement than the one that used to be here. */
+  note.textContent = 'Design data. This table is not filled from MARP yet; the recent '
+    + 'training jobs above expand to show a real run and its curves.';
   header.appendChild(note);
 }
 
@@ -2601,11 +2622,17 @@ function modelRows(view, byId) {
     + `<dt>Registered</dt><dd>${new Date(model.created_at).toISOString().slice(0, 10)}</dd>`
     + `<dt>Updated</dt><dd>${sinceText(model.updated_at)}</dd>`
     + '</dl></div>'
+    /* **Rewritten twice now, both times because it outlived what it described.** It said
+       training runs could not be listed after #260 made them listable, and it said the
+       dataset and the metrics were absent after the registry started showing the dataset
+       and the Training screen started drawing per-epoch curves. A panel headed *Not in
+       the registry* has to be the shortest list that is still true, or it is the screen
+       arguing with the table beside it. */
     + '<div class="sect"><h3>Not in the registry</h3>'
-    + '<p class="muted">Which dataset trained this model, how it scored, and how many workers hold it '
-    + 'are absent from <code>ml_models</code>. Its training runs can be listed now, and whether it is '
-    + 'preferred for its task is recorded — both landed in #260, and this said otherwise for hours '
-    + 'afterwards. What is left of gap 28 is the metrics and the cache count.</p></div>'
+    + '<p class="muted">How many workers hold a copy is recorded nowhere, and per-run '
+    + 'summary scores — <code>metrics_summary</code> — can be written and fetched by id but '
+    + 'not listed for a run. What a model trained on is on the Training dataset column, and '
+    + 'its per-epoch losses and mAP are under the run on the Training screen.</p></div>'
     + '</div></div></td></tr>';
 
   return head + body;
