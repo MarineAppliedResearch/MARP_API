@@ -201,3 +201,26 @@ test('a run still going keeps asking; a finished one settles', async (t) => {
 
   assert.ok(!after.includes(5000), `a finished run should settle after one read (saw ${after.join(', ')})`);
 });
+
+test('no control on the setup form is left saying Loading', async (t) => {
+  /* **The invariant behind a real defect.** "Worker selection" sat on *Loading…* for ever
+     because nothing filled it -- no worker-list request was ever made -- and a placeholder
+     that never resolves is indistinguishable from a slow page. The control is gone now,
+     because nothing in MARP targets a job at a named worker: submission has no field for
+     it and the claim is pull-based, so a chosen worker would have been discarded.
+
+     This guards the rest of the form, where the same placeholder is used by selects that
+     *are* filled. A new one added without a filler fails here rather than in front of
+     somebody trying to queue a run. */
+  const screen = await drawScreen('training.html', answers([epoch(1)]));
+
+  t.after(screen.close);
+
+  const stuck = [...screen.document.querySelectorAll('select')]
+    .filter((one) => [...one.options].every((option) => /loading/i.test(option.textContent)))
+    .map((one) => one.id || one.getAttribute('data-fills') || one.outerHTML.slice(0, 60));
+
+  assert.deepEqual(stuck, [],
+    'every select should have been filled, emptied or removed -- a placeholder that never '
+    + 'resolves reads as a page still loading, for ever');
+});
