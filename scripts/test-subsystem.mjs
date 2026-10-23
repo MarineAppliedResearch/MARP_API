@@ -62,6 +62,9 @@ const SUBSYSTEMS = {
                at -- no seeding scopes that. */
             'gpu-job-delete',
             'worker-provisioning',
+            /* #268: the GPU reading a polling worker sends, which used to be dropped
+               unless it was given work -- so the activity charts saw only leased minutes. */
+            'gpu-idle-telemetry',
         ],
     },
     mosaic: {

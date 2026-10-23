@@ -609,6 +609,19 @@ class GpuService {
         // thing a pool view has to tell an idle machine from a dead one.
         await gpuRepository.markWorkerSeen(workerId);
 
+        /* **And the GPU reading it sent, which used to be discarded unless it got
+           work.** `capabilities` arrives on every poll and was read only when a lease
+           was granted, as the attempt snapshot -- so the activity charts could show only
+           the minutes a machine happened to be holding one, and an idle pool looked like
+           no pool. Same field, written down instead of dropped. */
+        await gpuRepository.sampleIdleWorker({
+            workerId,
+            devices: body.capabilities
+                && body.capabilities.resources
+                && body.capabilities.resources.nvidia
+                && body.capabilities.resources.nvidia.devices,
+        });
+
         // And while something is happening, retire whatever has stopped
         // happening (#202). One poll from any machine keeps the whole pool
         // honest, which is why this needs no timer of its own -- and it is after

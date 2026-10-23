@@ -745,6 +745,62 @@ class GpuRepository {
     }
 
     /**
+     * Keep the GPU reading a polling worker sent, whether or not it got work.
+     *
+     * **The readings were already arriving and being thrown away.** Every poll carries
+     * `capabilities`, and until now MARP used them only when a lease was granted, as the
+     * attempt's `capabilities_snapshot`. A poll that got nothing -- which is most polls,
+     * most of the time -- discarded a perfectly good reading of an idle machine. So both
+     * activity charts could only ever show the minutes a worker happened to be holding a
+     * lease, and a pool sitting idle looked like a pool that was not there.
+     *
+     * Nothing new is plumbed from the worker for this: the same field, written down
+     * instead of dropped.
+     *
+     * **One row per machine per minute, which the schema enforces rather than the
+     * caller.** `date_trunc` plus the unique index on `(worker_id, at)` means a worker
+     * polling every few seconds leaves one row, so the sample interval is a property of
+     * the table and not a timer somebody has to remember. `dropExpiredWorkerSamples`
+     * already bounds the other end at `SAMPLE_RETENTION_DAYS`, which is the longest
+     * window the charts offer.
+     *
+     * **An idle sample never overwrites a working one.** A machine that heartbeats mid-job
+     * and polls for its next one inside the same minute would otherwise have its reading
+     * replaced by one that does not know what was running -- turning attributed training
+     * compute into unattributed idle. The conflict clause only updates a row that has no
+     * attempt against it, so the reading that knows what it was doing always wins.
+     *
+     * `job_kind` and `attempt_id` are null here on purpose: this is a machine that is not
+     * working, and the charts filter on exactly that to tell training compute from
+     * inference compute from neither.
+     *
+     * @async
+     * @param {Object} sample
+     * @param {number} sample.workerId - The worker that polled.
+     * @param {Array<Object>} sample.devices - Its GPU readings, as the snapshot holds them.
+     * @returns {Promise<void>} Resolves when the reading is kept, or skipped.
+     */
+    async sampleIdleWorker({ workerId, devices }) {
+        if (!Array.isArray(devices) || !devices.length) return;
+
+        try {
+            await this.db.sequelize.query(
+                `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, job_kind)
+                 VALUES (:workerId, NULL, date_trunc('minute', NOW()), :devices, NULL)
+                 ON CONFLICT (worker_id, at)
+                 DO UPDATE SET devices = EXCLUDED.devices
+                 WHERE gpu_worker_samples.attempt_id IS NULL`,
+                { replacements: { workerId, devices: JSON.stringify(devices) } }
+            );
+        } catch (error) {
+            /* **Never fails the poll.** A worker asking for work must not be turned away
+               because bookkeeping failed; the chart missing a minute is the smaller loss
+               by a long way. Logged so it is not silent. */
+            logger.error('Error::' + error);
+        }
+    }
+
+    /**
      * Throw away GPU readings older than the retention window.
      *
      * One row per machine per minute is cheap and unbounded, which is the shape
