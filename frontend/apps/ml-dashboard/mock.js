@@ -1590,12 +1590,18 @@ function patchTrainingRows(body, views) {
     if (['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state)) continue;
 
     /* Epochs, from the attempt rather than from a run: it is what moves while the job
-       runs and it needs no `training_runs` row to exist. */
+       runs and it needs no `training_runs` row to exist.
+
+       **Only when the attempt says the unit is epochs.** `progress_done` counts whatever
+       the worker is counting, and a job reporting frames put `11131 / 45861` under a
+       column headed Epochs -- a real number under the wrong label, which is worse than a
+       dash because it looks like an answer. */
     const epochs = $('.jepochs', head);
     const done = Number(view.job.progress_done);
     const total = Number(view.job.progress_total);
+    const counted = /epoch/i.test(view.job.progress_unit || '');
 
-    if (epochs && Number.isFinite(done) && Number.isFinite(total) && total > 0) {
+    if (epochs && counted && Number.isFinite(done) && Number.isFinite(total) && total > 0) {
       epochs.innerHTML = `${done} / ${total}`;
     }
 

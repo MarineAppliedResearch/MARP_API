@@ -506,15 +506,26 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   transition: opacity 150ms ease, stroke-width 150ms ease;
 }
 .training-health .training-area { fill: rgba(61, 214, 208, .09); transition: opacity 150ms ease; }
-.training-line.compute { stroke: var(--cyan-300); }
-.training-line.running { stroke: var(--mint-400); }
-.training-line.queued { stroke: var(--violet-300); stroke-dasharray: 7 5; }
-.training-bars.completed { fill: rgba(255, 190, 72, .45); stroke: var(--amber-300); stroke-width: 1;
+/* **One declaration per series, reaching the path and the swatch together**, the way
+   `.inference-flow` does it. These lived twice -- `.training-line.queued` was dashed 7/5
+   and `.training-chart-key .queued` set only a colour, so the chart drew a dashed line
+   and the legend drew a solid bar for it. Queued is the one series the dash was chosen to
+   tell apart, so the legend was wrong about exactly the line it was there to identify.
+
+   `.training-health` is on the article that encloses both the svg and the legend, so a
+   token set here is in scope for both. A solid line is `12 0`, which is what
+   `.inference-flow .throughput` says and what `stroke-dasharray` treats as solid. */
+.training-health .compute { --key: var(--cyan-300); --dash-on: 12px; --dash-off: 0px; }
+.training-health .running { --key: var(--mint-400); --dash-on: 12px; --dash-off: 0px; }
+.training-health .queued { --key: var(--violet-300); --dash-on: 7px; --dash-off: 5px; }
+/* Drawn as bars rather than a line, so it carries a fill as well. */
+.training-health .completed { --key: var(--amber-300); --fill: rgba(255, 190, 72, .45); }
+
+.training-line.compute, .training-line.running, .training-line.queued {
+  stroke: var(--key); stroke-dasharray: var(--dash-on) var(--dash-off);
+}
+.training-bars.completed { fill: var(--fill); stroke: var(--key); stroke-width: 1;
   transition: opacity 150ms ease; }
-.training-chart-key .compute { --key: var(--cyan-300); }
-.training-chart-key .running { --key: var(--mint-400); }
-.training-chart-key .queued { --key: var(--violet-300); }
-.training-chart-key .completed { --key: var(--amber-300); }
 .training-health.is-highlighted .training-line,
 .training-health.is-highlighted .training-area,
 .training-health.is-highlighted .training-bars { opacity: .12; }
@@ -607,6 +618,16 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   background-image: repeating-linear-gradient(to right,
     var(--key, currentColor) 0 var(--dash-on, 100%),
     transparent var(--dash-on, 100%) calc(var(--dash-on, 100%) + var(--dash-off, 0px)));
+}
+/* **A series drawn as bars gets a swatch shaped like a bar.** The 3px line above is right
+   for a line and wrong for `.training-bars`, which is a translucent fill with a 1px
+   stroke -- the legend drew a solid 3px amber line for a column chart. A modifier rather
+   than a second component: the colour still comes from `--key`, so the rule above this one
+   still holds and nothing is written down twice. */
+.result-legend button.is-filled::before {
+  height: 10px; background-image: none;
+  background-color: var(--fill, var(--key));
+  border: 1px solid var(--key);
 }
 .result-legend button:hover { color: var(--white); background: rgba(9, 30, 51, .8); }
 .result-legend button:focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 1px; }
