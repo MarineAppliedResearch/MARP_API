@@ -1651,8 +1651,28 @@ function trainingRunDetail(run, epochs, task, spec) {
      it fills. */
   const progress = total ? `${done} / ${total}` : String(done);
 
+  /* **Epoch time, from the epochs themselves.** `duration_seconds` has been a column
+     nothing wrote; worker 0.1.6 writes it. Averaged over the epochs that reported one and
+     absent when none did, so it fills in as a run goes rather than appearing at the end.
+
+     It is also a second opinion on the pace above it, measured a different way: the pace
+     differences the attempt's progress samples, this reads what each epoch said it took.
+     Two sources disagreeing is worth seeing, which is why both are shown rather than one
+     derived from the other. */
+  const timed = epochs
+    .map((one) => Number(one.duration_seconds))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const meanEpoch = timed.length
+    ? timed.reduce((sum, value) => sum + value, 0) / timed.length
+    : null;
+
   const settings = [
     metric('Epochs reported', progress, total ? 'of the configured total' : 'no total recorded'),
+    /* **Not `tookText`**, which rounds to whole minutes: a 40-second epoch would read
+       "1m" and a 20-second one "0m". Isaac's last run finished in 27 seconds in total, so
+       seconds are the ordinary case here rather than the edge. */
+    metric('Epoch time', meanEpoch === null ? NONE : shortDuration(meanEpoch),
+      meanEpoch === null ? 'not reported' : `mean of ${timed.length} reported`),
     metric('Best mAP@50', best === null ? NONE : best.toFixed(3), 'across reported epochs'),
     metric('Batch size', run.batch_size ?? NONE),
     metric('Learning rate', run.learning_rate ?? NONE),
@@ -1703,6 +1723,20 @@ function trainingRunDetail(run, epochs, task, spec) {
     + `<div class="jobmetrics">${settings}</div>`
     + `<div class="training-history-grid">${charts}</div>`
     + `<div class="training-evaluation-grid">${evaluation}</div>`;
+}
+
+/**
+ * A duration that is usually short, in words.
+ *
+ * `tookText` rounds to whole minutes, which is right for a job and wrong for an epoch:
+ * it turns 40 seconds into "1m" and 20 into "0m". Below a minute and a half this counts
+ * seconds; above it, it hands over to the one the rest of the screen uses.
+ *
+ * @param {number} seconds - How long.
+ * @returns {string}
+ */
+function shortDuration(seconds) {
+  return seconds < 90 ? `${Math.round(seconds)}s` : tookText(seconds * 1000);
 }
 
 /**
@@ -1766,7 +1800,9 @@ function trainingAttemptProgress(job, state, pace) {
   const pct = measured ? Math.round((done / total) * 100) : -1;
 
   const phase = (job.progress_phase || '').trim();
-  const elapsed = tookText(Math.max(0, Date.now() - Date.parse(job.created_at)));
+  /* Seconds matter here too: a run that finishes in 27 seconds spends its whole life
+     reading "0m" under a minute-rounded formatter. */
+  const elapsed = shortDuration(Math.max(0, Date.now() - Date.parse(job.created_at)) / 1000);
 
   const metric = (label, value, note = '') =>
     `<div class="jobmetric"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`;
@@ -1795,7 +1831,7 @@ function trainingAttemptProgress(job, state, pace) {
        literals in the markup, for a run that took 27 seconds. */
     + (pace
       ? metric('Pace', `${pace.perMinute.toFixed(pace.perMinute < 1 ? 2 : 1)} / min`, escapeHtml(unit))
-        + metric('Remaining', pace.remainingMs === null ? '&mdash;' : `~${tookText(pace.remainingMs)}`,
+        + metric('Remaining', pace.remainingMs === null ? '&mdash;' : `~${shortDuration(pace.remainingMs / 1000)}`,
           pace.remainingMs === null ? 'no total to count down to' : 'at the rate it has held')
       : metric('Pace', '&mdash;', 'not enough progress samples yet'))
     + '</div></section>';

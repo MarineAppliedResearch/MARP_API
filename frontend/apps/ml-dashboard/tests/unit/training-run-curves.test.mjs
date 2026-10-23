@@ -789,3 +789,65 @@ test('a pace route that is not there costs two figures, not the panel', async (t
   assert.ok(detail.querySelector('.result-line.precision'), 'and so do the charts');
   assert.match(detail.textContent, /not enough progress samples yet/, 'only the pace is absent');
 });
+
+test('epoch time is the mean of what the epochs reported, or absent', async (t) => {
+  /* `duration_seconds` is a column nothing wrote until worker 0.1.6. It fills in as a run
+     goes, so it averages what has arrived rather than waiting for the end -- and it is a
+     second opinion on the pace, measured from the epochs instead of from the attempt's
+     progress samples. */
+  const withTimes = await drawScreen('training.html', answers([
+    epoch(1, { duration_seconds: 30 }),
+    epoch(2, { duration_seconds: 50 }),
+    epoch(3, { duration_seconds: null }),
+  ]));
+
+  t.after(withTimes.close);
+
+  const detail = await open(withTimes, 21779);
+
+  assert.match(detail.textContent, /Epoch time/);
+  assert.match(detail.textContent, /40s/, 'the mean of the two that reported, not of three');
+  assert.match(detail.textContent, /mean of 2 reported/, 'and it says how many it averaged');
+
+  /* A run whose worker predates the column says nothing rather than zero. */
+  const without = await drawScreen('training.html', answers([
+    epoch(1, { duration_seconds: null }), epoch(2, { duration_seconds: null })]));
+
+  t.after(without.close);
+
+  const bare = await open(without, 21779);
+  const card = [...bare.querySelectorAll('.jobmetric')].find((m) => /Epoch time/.test(m.textContent));
+
+  assert.ok(card.querySelector('.dash'), 'a dash, never a zero');
+  assert.match(card.textContent, /not reported/);
+});
+
+test('a short run is reported in seconds, not rounded to zero minutes', async (t) => {
+  /* Isaac's last training run finished in 27 seconds. Under the minute-rounded formatter
+     the whole panel reads "0m" for its entire life -- elapsed, remaining and epoch time
+     all claiming nothing has happened. */
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1, { duration_seconds: 12 })], [run(202, 21779, { end_time: null })]),
+    listJobs: async () => ({
+      jobs: [{
+        ...job(21779, 'leased'),
+        created_at: new Date(Date.now() - 27000).toISOString(),
+        progress_done: 4,
+        progress_total: 10,
+        progress_unit: 'epochs',
+      }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+    trainingRunPace: async () => [sample(0, 0), sample(1, 4)],
+  });
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.match(detail.textContent, /2[5-9]s/, 'elapsed in seconds');
+  assert.match(detail.textContent, /12s/, 'and the epoch time');
+  assert.doesNotMatch(detail.textContent, /\b0m\b/, 'nothing should read as zero minutes');
+});
