@@ -6909,6 +6909,165 @@ async function refreshBuildQueue() {
 const SPECIES_SHOWN = 5;
 
 /**
+ * Where each species in the dataset being assembled is being sent, as a bar each.
+ *
+ * *"in this section we want the bars for every species, but we also want it shaded and
+ * displayed like this: like we do in the build jobs and ready datasets."* So this is the
+ * ready dataset's panel, built from what step 3 knows instead of from what a build wrote,
+ * and sharing `.dist` and the three split tones so the two read as one design.
+ *
+ * **Every species, with no *Other* fold, and that is the deliberate difference from the
+ * panel it copies.** A ready dataset is a record and a long tail can be folded away; step
+ * 3 is a decision, and a hidden tail is hidden evidence about what is going in.
+ *
+ * **Observations, because images do not exist yet.** Nothing has been cut, so the only
+ * exact quantity here is the observation count the facet returned. Images could be
+ * estimated from the keyframe spans, and that estimate was rejected: it would be what the
+ * build *intends* to cut rather than what it writes -- `cutVideo` reports frames it could
+ * not produce -- and an estimate sitting beside a panel elsewhere that is exact is worse
+ * than a smaller number that is true.
+ *
+ * **The split is what was asked for, not what will result, and the two differ for two
+ * separate reasons.** A subset sent wholly to one split contributes all of its species
+ * there, exactly. A subset divided by shares is spread here in those shares, but the
+ * build runs `assignSplits`, which is *iterative stratification measured in frames* -- it
+ * deliberately moves groups so a rare species is represented in every split, and one
+ * observation spanning 400 frames outweighs one spanning two. So a divided subset's
+ * per-species division is the algorithm's intent rather than its arithmetic.
+ *
+ * **One observation is one species here**, unlike the ready panel, where one image can
+ * hold two animals and the species counts sum past the split totals. `observations`
+ * carries a single `species_id`, so these sum to the headline count -- including its
+ * double counting, because two subsets that match the same observation count it twice in
+ * both and the build is what resolves that.
+ *
+ * @param {Element[]} rows - The subset `<li>` elements, carrying `data-species`,
+ * `data-split` and optionally `data-shares`.
+ * @returns {string} The `.dist` grid's inner HTML.
+ */
+function currentDatasetBars(rows) {
+  const splits = ['train', 'validation', 'test'];
+  const tone = { train: 'tr', validation: 'va', val: 'va', eval: 'va', test: 'te' };
+  const by = new Map();
+
+  for (const row of rows) {
+    let species;
+
+    try {
+      species = JSON.parse(row.dataset.species || '[]');
+    } catch (error) {
+      continue;
+    }
+
+    /* Either a share map or a single split, which is exactly what the row carries and
+       what the build obeys. A row with neither is not placed anywhere, and is counted
+       into the total without a segment rather than being guessed at. */
+    let shares = null;
+
+    try {
+      shares = row.dataset.shares ? JSON.parse(row.dataset.shares) : null;
+    } catch (error) {
+      shares = null;
+    }
+
+    const whole = shares ? null : (row.dataset.split || null);
+    const sum = shares
+      ? Object.values(shares).reduce((at, n) => at + (Number(n) || 0), 0)
+      : 0;
+
+    for (const [label, count] of species) {
+      const name = label || 'Unnamed species';
+
+      if (!by.has(name)) by.set(name, { name, total: 0, counts: {} });
+
+      const entry = by.get(name);
+      const n = Number(count) || 0;
+
+      entry.total += n;
+
+      if (shares && sum > 0) {
+        /* Fractions kept here and rounded once, below, so the segments a reader compares
+           are the real proportions rather than three numbers each rounded on its own. */
+        for (const [split, share] of Object.entries(shares)) {
+          entry.counts[split] = (entry.counts[split] || 0) + (n * (Number(share) || 0)) / sum;
+        }
+      } else if (whole) {
+        entry.counts[whole] = (entry.counts[whole] || 0) + n;
+      }
+    }
+  }
+
+  const sorted = [...by.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+  if (!sorted.length) return '<span class="nodata">Nothing has been added to this dataset yet.</span>';
+
+  const widest = Math.max(...sorted.map((entry) => entry.total), 1);
+  const count = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
+
+  /**
+   * Whole observations that still add up to the species total.
+   *
+   * A share of 70/20/10 over seven observations is 4.9/1.4/0.7, and rounding each on its
+   * own gives 5/1/1 -- seven observations reported as seven, by luck. Largest remainder
+   * makes that an arithmetic property rather than a coincidence, which matters because
+   * the number beside the bar is the one a reader checks it against.
+   *
+   * @param {Object} entry - One species.
+   * @returns {Object<string, number>} Whole counts per split.
+   */
+  const whole = (entry) => {
+    const parts = splits
+      .filter((split) => entry.counts[split])
+      .map((split) => ({ split, exact: entry.counts[split] }));
+
+    if (!parts.length) return {};
+
+    const out = {};
+    let placed = 0;
+
+    for (const part of parts) {
+      out[part.split] = Math.floor(part.exact);
+      placed += out[part.split];
+    }
+
+    let left = Math.round(parts.reduce((at, part) => at + part.exact, 0)) - placed;
+
+    for (const part of [...parts].sort((a, b) => (b.exact % 1) - (a.exact % 1))) {
+      if (left <= 0) break;
+
+      out[part.split] += 1;
+      left -= 1;
+    }
+
+    return out;
+  };
+
+  return sorted.map((entry) => {
+    const counts = whole(entry);
+    /* Every split named, zeros included: a species landing only in train is what the
+       stratification exists to prevent, and a segment that is not drawn says nothing on
+       its own. */
+    const said = splits.map((split) => `${split} ${count(counts[split])}`).join(', ');
+
+    const segments = splits.map((split) => {
+      const n = entry.counts[split] || 0;
+
+      return n ? `<i class="${tone[split] || 'tr'}" style="width:${((n / widest) * 100).toFixed(1)}%"></i>` : '';
+    }).join('');
+
+    /* A subset with no split declared and no shares contributes to the total and to no
+       segment, so the bar is shorter than the number beside it. Said rather than hidden. */
+    const placed = splits.reduce((at, split) => at + (entry.counts[split] || 0), 0);
+    const unplaced = Math.round(entry.total - placed);
+
+    return `<span class="k" title="${escapeHtml(`${entry.name}: ${said}`
+      + (unplaced > 0 ? `, ${unplaced} not yet assigned to a split` : ''))}">${escapeHtml(entry.name)}</span>`
+      + `<span class="b">${segments}</span>`
+      + `<span class="v">${count(entry.total)}</span>`;
+  }).join('');
+}
+
+/**
  * Where each species went, split by split, as a bar each.
  *
  * *"kind of like these bars... but they should have different shading."* He was pointing
@@ -8853,7 +9012,14 @@ function wireDatasetBuilder() {
     }
 
     const classes = [...tally].map(([label, count]) => ({ label, count }));
-    drawQueryComposition($('[data-dataset-composition]'), classes, total);
+
+    /* **Bars here, the Class breakdown in step 1.** They were one renderer and are
+       now two, because what they answer diverged: step 1 is a facet of a query and
+       folds its tail away, while this is the dataset being assembled and shows every
+       species, segmented by the split each subset asked for. */
+    const composition = $('[data-dataset-composition]');
+
+    if (composition) composition.innerHTML = currentDatasetBars(rows);
 
     const summary = $('[data-dataset-composition-summary]');
     if (summary) {
