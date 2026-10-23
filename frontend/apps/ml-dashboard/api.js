@@ -766,6 +766,43 @@
    * @returns {Promise<*>} The parsed body, or null for a 204.
    * @throws {ApiError} With the status, and the API's own message where it sent one.
    */
+  /**
+   * Whether the sign-in redirect has already been started.
+   *
+   * **One redirect, however many calls fail.** A screen makes a dozen requests at once and
+   * an expired session fails all of them -- the Training screen produced twenty-nine 401s
+   * in one load. Without this each one would navigate, which is a race at best and a
+   * stampede at worst.
+   */
+  let leaving = false;
+
+  /**
+   * Leave for the sign-in page, once.
+   *
+   * **A 401 is not a kind of data, it is the end of the session.** Signed out, the
+   * dashboard used to sit there looking populated: the renderers bail, and the mockup
+   * numbers still in the markup -- "31 training jobs" against a database holding one --
+   * stay on screen with nothing saying the page is unauthenticated. The fix is to stop
+   * rather than to draw.
+   *
+   * `/?login=1` rather than `/` because that is what the account menu's own Sign in link
+   * uses, so this arrives with the dialog open rather than on a page to hunt around.
+   *
+   * `replace` rather than `assign`: the page being left is not one to come back to with
+   * the Back button.
+   *
+   * **Never in fixture mode.** `?mock=all` is a deliberate choice to draw without a
+   * database, and a handful of routes have no corpus answer and ask MARP anyway -- so a
+   * design review reading the corpus would otherwise be thrown off it by one of them.
+   *
+   * @returns {void}
+   */
+  function leaveForSignIn() {
+    if (leaving || SWITCH.fixture) return;
+    leaving = true;
+    window.location.replace('/?login=1');
+  }
+
   async function request(path, options) {
     const { method = 'GET', query, body } = options || {};
     const url = new URL(`/api/v2${path}`, location.origin);
@@ -803,6 +840,12 @@
       // No status at all: the request never arrived. Distinct from a 500, and a
       // screen should say "could not reach MARP" rather than "MARP failed".
       throw new ApiError(0, `Could not reach MARP: ${error.message}`);
+    }
+
+    if (response.status === 401) {
+      /* Started before the throw, so every caller still gets its rejection and no screen
+         has to learn about this; the navigation is already under way. */
+      leaveForSignIn();
     }
 
     if (!response.ok) {

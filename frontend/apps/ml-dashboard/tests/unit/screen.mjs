@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { JSDOM, VirtualConsole } from 'jsdom';
 
 /** The application root, two levels up from `tests/unit`. */
 export const APP = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -28,18 +28,38 @@ export const APP = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
  * `answers` is a map of the methods this screen should get, and anything it reaches for
  * that is not named answers 404, which every screen is already written to survive.
  *
+ * `navigations` on the result counts the times the page tried to leave. jsdom does not
+ * implement navigation and reports each attempt, which is how a test watches for a
+ * redirect without the page having to be written to be watched -- `window.location` and
+ * its methods cannot be reassigned or redefined in jsdom, so there is no other seam.
+ *
+ * `realApi` loads `api.js` instead of standing `answers` in its place, for the few tests
+ * that are about the data layer itself rather than about a screen. Those stub
+ * `window.fetch` instead, which is one layer lower and the only way to exercise what
+ * `request` does with a status.
+ *
  * @param {string} page - The HTML file, e.g. `models.html`.
- * @param {Object} answers - Keyed by `MarpApi` method name.
- * @returns {Promise<{window: Object, document: Object, close: Function}>}
+ * @param {Object} answers - Keyed by `MarpApi` method name. Ignored with `realApi`.
+ * @param {Object} [options] - `{search, realApi}`.
+ * @returns {Promise<{window: Object, document: Object, navigations: string[], close: Function}>}
  */
-export async function drawScreen(page, answers) {
+export async function drawScreen(page, answers, options = {}) {
+  const { search = '', realApi = false } = options;
   const html = readFileSync(join(APP, page), 'utf8')
     .replace(/<script[^>]*src="[^"]*"[^>]*><\/script>/g, '');
 
+  const navigations = [];
+  const virtualConsole = new VirtualConsole();
+
+  virtualConsole.on('jsdomError', (error) => {
+    if (/navigation/i.test(error.message)) navigations.push(error.message);
+  });
+
   const dom = new JSDOM(html, {
-    url: `http://localhost/apps/ml-dashboard/${page}`,
+    url: `http://localhost/apps/ml-dashboard/${page}${search}`,
     runScripts: 'dangerously',
     pretendToBeVisual: true,
+    virtualConsole,
   });
 
   const { window } = dom;
@@ -54,21 +74,28 @@ export async function drawScreen(page, answers) {
   window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   window.CSS = { escape: (value) => String(value).replace(/[^\w-]/g, (c) => `\\${c}`) };
 
-  window.MarpApi = new Proxy(answers, {
-    get(target, name) {
-      if (name in target) return target[name];
-      if (typeof name !== 'string') return undefined;
-      return async () => { throw Object.assign(new Error(`no stub for ${name}`), { status: 404 }); };
-    },
-  });
+  const run = (file) => {
+    const script = window.document.createElement('script');
+    script.textContent = readFileSync(join(APP, file), 'utf8');
+    window.document.body.appendChild(script);
+  };
 
-  const script = window.document.createElement('script');
-  script.textContent = readFileSync(join(APP, 'mock.js'), 'utf8');
-  window.document.body.appendChild(script);
+  if (realApi) run('api.js');
+  else {
+    window.MarpApi = new Proxy(answers, {
+      get(target, name) {
+        if (name in target) return target[name];
+        if (typeof name !== 'string') return undefined;
+        return async () => { throw Object.assign(new Error(`no stub for ${name}`), { status: 404 }); };
+      },
+    });
+  }
+
+  run('mock.js');
 
   /* The renders are promise chains rather than timers; a few turns of the loop settles
      them, and a screen that is still loading fails its own assertions loudly. */
   for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
 
-  return { window, document: window.document, close: () => window.close() };
+  return { window, document: window.document, navigations, close: () => window.close() };
 }
