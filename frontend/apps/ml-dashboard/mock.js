@@ -6112,11 +6112,25 @@ function buildElapsed(build) {
  * @param {Map<number, Object>} builds - In-flight builds by dataset id.
  * @returns {void}
  */
+/**
+ * A timestamp as this table draws one: time above, date below.
+ *
+ * Module-level because two paths write it now -- the draw, and the patch that keeps
+ * the Updated cell moving while a build runs. It was a closure inside the draw, so the
+ * patch would have needed a second copy, and a second copy of a format is a format
+ * that drifts.
+ *
+ * @param {string} iso - An ISO timestamp.
+ * @returns {string} The cell's inner HTML.
+ */
+function datasetStamp(iso) {
+  const d = new Date(iso);
+
+  return `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
+}
+
 function fillSavedDatasets(body, datasets, builds) {
-  const stamp = (iso) => {
-    const d = new Date(iso);
-    return `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
-  };
+  const stamp = datasetStamp;
 
   /* **Newest first, which is what the column header has always claimed.** The CREATED
      header carries `aria-sort="descending"` and nothing sorted anything: the rows arrived
@@ -6156,7 +6170,10 @@ function fillSavedDatasets(body, datasets, builds) {
       + `<td class="num" data-frames data-sort="${frames.sort}">${frames.html}</td>`
       + `<td class="num" data-sort="${set.num_classes ?? -1}">${set.num_classes ?? NOT_IN_DATASET}</td>`
       + `<td class="jtime" data-sort="${set.created_at}">${stamp(set.created_at)}</td>`
-      + `<td class="jtime" data-sort="${set.updated_at}">${stamp(set.updated_at)}</td>`
+      /* Marked, because the patch path rewrites it on every poll while a build runs.
+         `data-frames` beside it is marked for the same reason; picking it out as "the
+         second .jtime" would be a rule about column order rather than about the cell. */
+      + `<td class="jtime" data-updated data-sort="${set.updated_at}">${stamp(set.updated_at)}</td>`
       + '<td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button></span></td>'
       + '</tr>';
   }).join('');
@@ -6331,9 +6348,30 @@ function buildRate(build) {
   return rate >= 10 ? `${Math.round(rate)} f/s` : `${rate.toFixed(1)} f/s`;
 }
 
-function patchBuildRows(body, builds) {
+function patchBuildRows(body, builds, byId) {
   for (const head of $$(':scope > tr[data-dataset-id]', body)) {
-    const build = builds.get(Number(head.dataset.datasetId));
+    const id = Number(head.dataset.datasetId);
+    const set = (byId && byId.get(id)) || null;
+    const build = builds.get(id);
+
+    /* **The Updated cell, patched before the build check, because it moves for a
+       reason that has nothing to do with this row having a build.** `datasets.updated_at`
+       is touched on every progress report, and this column froze for as long as a
+       build ran: it used to be refreshed by accident, because the whole table was
+       being thrown away and redrawn twenty seconds at a time. Stopping that rebuild
+       was right -- it is what stopped expanded rows closing -- and this is its cost,
+       paid here rather than by going back. */
+    if (set && set.updated_at) {
+      const updated = $('[data-updated]', head);
+
+      if (updated && updated.dataset.sort !== String(set.updated_at)) {
+        updated.innerHTML = datasetStamp(set.updated_at);
+        /* The sort key too, or sorting by Updated orders the table by what the
+           timestamps were when the page was drawn. */
+        updated.dataset.sort = String(set.updated_at);
+      }
+    }
+
     /* A failed build is in this answer for its reason, which the detail drew once and
        which cannot change. Patching its row would overwrite the dashes it ends on with
        the last figures it reached, which reads as a build still going. */
@@ -7691,7 +7729,14 @@ async function wireDatasetPage() {
        a question about a set. */
     const shape = [...datasets]
       .sort((a, b) => a.id - b.id)
-      .map((set) => `${set.id}:${datasetScreenStatus(set, builds.get(set.id) || null)}:${set.num_samples ?? ''}:${set.num_observations ?? ''}:${set.num_classes ?? ''}`)
+      /* **Name and description are in here, and `updated_at` deliberately is not.**
+         Everything a row draws is either in this string, so a change to it rebuilds
+         the table, or patched in place by `patchBuildRows`. `updated_at` is the one
+         that is patched, because it moves every twenty seconds and putting it here
+         would rebuild the table on every poll -- which is the thing that was wrong.
+         The two strings cannot change during a build, but nothing patches them, so
+         without them here a rename would not reach the screen until a reload. */
+      .map((set) => `${set.id}:${datasetScreenStatus(set, builds.get(set.id) || null)}:${set.num_samples ?? ''}:${set.num_observations ?? ''}:${set.num_classes ?? ''}:${set.name ?? ''}:${set.description ?? ''}`)
       .join('|');
 
     if (first || shape !== drawn) {
@@ -7746,7 +7791,7 @@ async function wireDatasetPage() {
          it is copied into. */
       fillFromRequestedBuild();
     } else {
-      patchBuildRows(body, builds);
+      patchBuildRows(body, builds, new Map(datasets.map((set) => [set.id, set])));
     }
 
     renderDatasetsSummary(datasets, builds);

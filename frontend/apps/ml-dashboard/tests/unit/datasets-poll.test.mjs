@@ -19,7 +19,15 @@
  *   `updated_at` every few seconds, so a reordered answer for no real change is the
  *   normal case rather than a freak one;
  * - when it **is** rebuilt, because something genuinely changed, the row that was open
- *   is open afterwards.
+ *   is open afterwards;
+ * - and a value that changed **reaches the screen**, which is the half that was missing.
+ *   Isaac: *"the datasets page had a regression, when we update the page the update column
+ *   is no longer getting updated!"* `datasets.updated_at` moves on every progress report
+ *   and the Updated cell froze for as long as a build ran — it had been refreshed by
+ *   accident, because the whole table was being thrown away every twenty seconds, and
+ *   stopping that took the accident with it. **"Nothing is redrawn" and "nothing is
+ *   updated" look identical from outside**, so a tier that can only see the first one
+ *   grades half the fix.
  *
  * A redraw replaces `tbody.innerHTML`, so "was it rebuilt" is asked as node identity
  * rather than by counting rows: the same `<tr>` object still being in the document is
@@ -301,6 +309,68 @@ test('a poll that changes nothing leaves the running pill in place', async (t) =
 
   assert.equal(screen.row(1).querySelector('.pill[data-state="running"]'), pill,
     'the same pill element should survive a poll that changed nothing');
+});
+
+test('a poll carries a new updated_at onto the row without rebuilding it', async (t) => {
+  const answers = {
+    datasets: [dataset(1, 'Sea Cucumber v2', 'building'), dataset(2, 'Rockfish v3', 'ready')],
+    builds: [build(1)],
+  };
+
+  const screen = await openDatasetsScreen(answers);
+  t.after(screen.close);
+
+  const before = screen.row(1);
+  const cell = () => screen.row(1).querySelector('[data-updated]');
+
+  assert.ok(cell(), 'the Updated cell is marked, the way the frames cell is');
+  const first = cell().textContent;
+
+  assert.equal(cell().dataset.sort, '2026-10-22T10:00:00.000Z',
+    'the sort key is the ISO the API sent');
+
+  /* **What a build actually does between polls.** `reportProgress` touches the dataset's
+     `updated_at` on every progress report, and nothing else about the row changes — not
+     the status, not the counts — so this poll takes the patch path. That is the case the
+     column froze in. */
+  answers.datasets = answers.datasets.map((set) => (set.id === 1
+    ? { ...set, updated_at: '2026-10-22T13:45:00.000Z' }
+    : set));
+
+  await screen.poll();
+
+  /* Both halves. The row survived — so this really was the patch path and not a rebuild
+     that would have refreshed the cell by accident, which is the trap the whole file is
+     about — and the cell moved anyway. */
+  assert.equal(screen.row(1), before, 'the table is not rebuilt for a timestamp');
+  assert.notEqual(cell().textContent, first, 'and the new timestamp is on the screen');
+
+  /* The sort key as well, or sorting by Updated orders the table by what the timestamps
+     were when the page was first drawn. */
+  assert.equal(cell().dataset.sort, '2026-10-22T13:45:00.000Z');
+});
+
+test('a renamed dataset reaches the screen', async (t) => {
+  /* Nothing patches the name or the description, so they have to be in the string that
+     decides whether to rebuild. They cannot change during a build, which is exactly why
+     this would have sat undiscovered: the same shape of defect as the Updated column, one
+     gesture further away. */
+  const answers = {
+    datasets: [dataset(1, 'Sea Cucumber v2', 'building')],
+    builds: [build(1)],
+  };
+
+  const screen = await openDatasetsScreen(answers);
+  t.after(screen.close);
+
+  assert.match(screen.row(1).textContent, /Sea Cucumber v2/);
+
+  answers.datasets = [{ ...answers.datasets[0], name: 'Sea Cucumber v3' }];
+
+  await screen.poll();
+
+  assert.match(screen.row(1).textContent, /Sea Cucumber v3/,
+    'a rename rebuilds the table, because no patch would carry it');
 });
 
 test('the headline cards count the rows that are actually drawn', async (t) => {
