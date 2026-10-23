@@ -82,9 +82,10 @@
             <header class="panel-hd inference-flow-hd">
               <div><h2>Training activity</h2><p>All training work &middot; load, concurrency, queue pressure and completed runs</p></div>
               <div class="seg" aria-label="Training activity range">
-                <button type="button" class="on" data-training-range="24h" aria-pressed="true">24h</button>
-                <button type="button" data-training-range="7d">7d</button>
-                <button type="button" data-training-range="30d">30d</button>
+                <button type="button" class="on" data-training-range="1h" aria-pressed="true">1h</button>
+                <button type="button" data-training-range="24h" aria-pressed="false">24h</button>
+                <button type="button" data-training-range="7d" aria-pressed="false">7d</button>
+                <button type="button" data-training-range="30d" aria-pressed="false">30d</button>
               </div>
             </header>
             <div class="panel-bd inference-flow-bd">
@@ -108,11 +109,11 @@
                   <button type="button" class="completed is-filled" data-training-highlight="completed">Completed runs</button>
                 </div>
                 <div class="inference-current" aria-label="Current system-wide training metrics">
-                  <span><b data-training-current="compute">61%</b> training compute</span>
-                  <span><b data-training-current="running">2</b> running</span>
-                  <span><b data-training-current="queued">3</b> queued</span>
-                  <span class="clearing"><b data-training-current="completed">2</b> completed in range</span>
-                  <span class="live"><i class="dot"></i>Design preview</span>
+                  <span data-rendered><b data-training-current="compute"></b> training compute</span>
+                  <span data-rendered><b data-training-current="running"></b> running</span>
+                  <span data-rendered><b data-training-current="queued"></b> queued</span>
+                  <span class="clearing" data-rendered><b data-training-current="completed"></b> completed in range</span>
+                  <span class="live"><i class="dot"></i>Live</span>
                 </div>
               </div>
             </div>

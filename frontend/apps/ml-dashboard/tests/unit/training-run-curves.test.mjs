@@ -427,3 +427,89 @@ test('a poll where only updated_at moved repaints that cell and nothing else', a
     'and its sort key too, or sorting by Updated orders by what the page was drawn with');
   assert.equal(head.getAttribute('aria-expanded'), 'true', 'with the expansion still open');
 });
+
+/** One bucket of the jobs series, as GET /gpu/jobs/series returns it. */
+const bucket = (at, extra = {}) => ({
+  at,
+  machines: 1,
+  avg_training_utilization_percent: null,
+  training_machines: 0,
+  created: 0,
+  finished: 0,
+  succeeded: 0,
+  waiting: 0,
+  ...extra,
+});
+
+test('the activity chart draws what the series says, at a 1h default', async (t) => {
+  /* It drew four hardcoded arrays: the tiles above said 1 running, 0 queued, 2 completed
+     while this footer said 2, 3 and 3. `GET /gpu/jobs/series` takes kind, so no route had
+     to be added -- the same two reads the Datasets activity chart already makes. */
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    jobSeries: async (q) => ({
+      since: q.since,
+      until: q.until,
+      bucket: q.bucket,
+      points: [
+        bucket('2026-10-23T19:00:00.000Z', { avg_training_utilization_percent: 61, training_machines: 1, waiting: 2 }),
+        bucket('2026-10-23T19:30:00.000Z', { avg_training_utilization_percent: 74, training_machines: 2, waiting: 1, succeeded: 1 }),
+      ],
+    }),
+  });
+
+  t.after(screen.close);
+
+  const root = screen.document.querySelector('[data-training-activity]');
+  const cur = (n) => root.querySelector(`[data-training-current="${n}"]`).textContent.trim();
+
+  assert.deepEqual(
+    [...root.querySelectorAll('[data-training-range]')].map((b) => b.dataset.trainingRange),
+    ['1h', '24h', '7d', '30d'],
+    'the same set workers.html offers, rather than a fourth variant');
+  assert.equal(root.querySelector('[data-training-range].on').dataset.trainingRange, '1h',
+    'defaulting to the hour Isaac asked for');
+
+  assert.ok(root.querySelector('.training-line.compute').getAttribute('d'), 'compute draws');
+  assert.ok(root.querySelector('.training-line.queued').getAttribute('d'), 'queued draws');
+  assert.ok(root.querySelector('.training-bars.completed').getAttribute('d').trim(), 'completed draws as bars');
+
+  /* The readouts are the last bucket, except completed which is a count of events. */
+  assert.equal(cur('compute'), '74%');
+  assert.equal(cur('running'), '2');
+  assert.equal(cur('queued'), '1');
+  assert.equal(cur('completed'), '1');
+});
+
+test('a GPU reading nobody took is absent, not a flat zero', async (t) => {
+  /* `avg_training_utilization_percent` comes from gpu_worker_samples, written only while a
+     worker holds a lease and heartbeats -- so it is null far more often than it is zero. A
+     0% line says the GPUs were idle; null says nobody looked, and drawing the first for
+     the second is the same lie as plotting a null loss at zero. */
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    jobSeries: async (q) => ({
+      since: q.since,
+      until: q.until,
+      bucket: q.bucket,
+      points: [bucket('2026-10-23T19:00:00.000Z', { training_machines: 1, waiting: 1 }),
+        bucket('2026-10-23T19:30:00.000Z', { training_machines: 1, waiting: 0, succeeded: 1 })],
+    }),
+  });
+
+  t.after(screen.close);
+
+  const root = screen.document.querySelector('[data-training-activity]');
+
+  assert.equal(root.querySelector('.training-line.compute').getAttribute('d'), '',
+    'no line at all, rather than one along the bottom');
+  assert.equal(root.querySelector('.training-area').getAttribute('d'), '',
+    'and no area under it');
+  assert.ok(root.querySelector('[data-training-highlight="compute"]').disabled,
+    'its legend key cannot be pressed to reveal nothing');
+  assert.ok(root.querySelector('[data-training-current="compute"] .dash'),
+    'and the readout is a dash');
+
+  /* The series that were recorded still draw. */
+  assert.ok(root.querySelector('.training-line.queued').getAttribute('d'), 'queued is unaffected');
+});

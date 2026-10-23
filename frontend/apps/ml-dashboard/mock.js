@@ -5633,80 +5633,166 @@ function wireRegistryTrend() {
 function wireTrainingActivity() {
   const root = $('[data-training-activity]');
   if (!root) return;
-  const ranges = {
-    '24h': {
-      labels: ['24h ago', '12h ago', 'Now'],
-      compute: [22, 21, 24, 28, 36, 44, 49, 53, 58, 62, 57, 51, 46, 43, 48, 55, 67, 72, 69, 64, 59, 57, 60, 61],
-      running: [1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 2, 2, 2, 2, 3, 3, 4, 4, 3, 3, 2, 2, 2],
-      queued: [0, 0, 1, 1, 1, 2, 2, 2, 3, 4, 4, 3, 3, 2, 2, 3, 4, 5, 5, 4, 4, 4, 3, 3],
-      completed: [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0]
-    },
-    '7d': {
-      labels: ['7d ago', '3.5d ago', 'Now'],
-      compute: [38, 44, 51, 47, 34, 29, 42, 55, 61, 58, 43, 36, 49, 63, 69, 65, 51, 45, 57, 72, 76, 68, 54, 48, 59, 66, 63, 61],
-      running: [2, 2, 3, 2, 1, 1, 2, 3, 3, 3, 2, 2, 2, 3, 4, 3, 2, 2, 3, 4, 4, 3, 3, 2, 3, 3, 2, 2],
-      queued: [2, 3, 4, 3, 2, 1, 2, 3, 4, 4, 3, 2, 3, 4, 5, 5, 4, 3, 4, 5, 6, 5, 4, 3, 4, 4, 3, 3],
-      completed: [0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1]
-    },
-    '30d': {
-      labels: ['30d ago', '15d ago', 'Now'],
-      compute: [31, 42, 37, 48, 54, 46, 35, 29, 44, 58, 61, 53, 47, 38, 51, 64, 70, 62, 49, 41, 56, 68, 73, 66, 52, 45, 58, 67, 64, 61],
-      running: [1, 2, 2, 2, 3, 2, 1, 1, 2, 3, 3, 2, 2, 2, 3, 3, 4, 3, 2, 2, 3, 4, 4, 3, 2, 2, 3, 3, 2, 2],
-      queued: [1, 2, 2, 3, 4, 3, 2, 1, 2, 4, 4, 3, 3, 2, 3, 5, 5, 4, 3, 3, 4, 5, 6, 5, 4, 3, 4, 4, 3, 3],
-      completed: [0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1]
-    }
-  };
   const buttons = $$('[data-training-range]', root);
   const lines = Object.fromEntries($$('[data-training-line]', root).map((line) => [line.dataset.trainingLine, line]));
   const area = $('[data-training-area="compute"]', root);
   const bars = $('[data-training-bars="completed"]', root);
   const chart = $('.training-chart', root);
-  let range = '24h';
-  let samples;
-  let tick = 0;
-  const coords = (values, scale) => values.map((value, index) => {
+  /* **Real, and the same two reads the Datasets activity chart makes.** This drew four
+     hardcoded arrays per range -- the tiles above said 1 running, 0 queued, 2 completed
+     while the footer said 2, 3 and 3, because the footer was a mockup. `GET
+     /gpu/jobs/series` takes `kind`, which is validated against `JOB_KINDS` and includes
+     `training`, so no route had to be added for this. */
+  const RANGES = {
+    '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
+    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+    '7d': { hours: 168, bucket: 'hour', label: 'the last 7 days' },
+    '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
+  };
+
+  let range = '1h';
+  let samples = null;
+  const coords = (values, scale, top) => values.map((value, index) => {
     const x = 54 + 672 * index / Math.max(1, values.length - 1);
-    const y = scale === 'compute'
-      ? 196 - 168 * Math.max(0, Math.min(100, value)) / 100
-      : 196 - 168 * Math.max(0, Math.min(8, value)) / 8;
+    const y = 196 - 168 * Math.max(0, Math.min(top, value)) / (top || 1);
+
     return [x, y];
   });
-  const pathOf = (values, scale) => coords(values, scale)
+  const pathOf = (values, scale, top) => coords(values, scale, top)
     .map(([x, y], index) => `${index ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  const barsOf = (values) => {
-    const width = Math.min(14, 480 / values.length);
-    return coords(values, 'jobs').map(([x, y], index) => values[index]
+  const barsOf = (values, top) => {
+    const width = Math.min(14, 480 / Math.max(1, values.length));
+
+    return coords(values, 'jobs', top).map(([x, y], index) => (values[index]
       ? `M${(x - width / 2).toFixed(1)},196 V${y.toFixed(1)} H${(x + width / 2).toFixed(1)} V196 Z`
-      : '').join(' ');
+      : '')).join(' ');
   };
+
+  /**
+   * A series the window recorded nothing for.
+   *
+   * **Not the same as a series of zeroes**, and the difference matters most for training
+   * compute: `avg_training_utilization_percent` comes from `gpu_worker_samples`, which is
+   * only written while a worker holds a lease and heartbeats. A flat 0% line would say the
+   * GPUs were idle; nothing sampling says nobody looked.
+   *
+   * @param {Array<number|null>} values - The series.
+   * @returns {boolean} True when not one point was measured.
+   */
+  const unmeasured = (values) => !values.some((value) => value !== null && value !== undefined);
+
+  /* Blank reads as still loading. A dash reads as nothing recorded, which is what it is. */
+  const NO_READING = '<span class="dash" title="Not recorded in this window">&mdash;</span>';
+  const set = (name, text) => {
+    const into = $(`[data-training-current="${name}"]`, root);
+
+    if (into) into.innerHTML = text;
+  };
+  const clearReadouts = () => ['compute', 'running', 'queued', 'completed']
+    .forEach((name) => set(name, NO_READING));
+
   const draw = () => {
-    const computePath = pathOf(samples.compute, 'compute');
-    lines.compute.setAttribute('d', computePath);
-    lines.running.setAttribute('d', pathOf(samples.running, 'jobs'));
-    lines.queued.setAttribute('d', pathOf(samples.queued, 'jobs'));
-    area.setAttribute('d', `${computePath} L726,196 L54,196 Z`);
-    bars.setAttribute('d', barsOf(samples.completed));
-    const completed = samples.completed.reduce((sum, value) => sum + value, 0);
-    $('[data-training-current="compute"]', root).textContent = `${Math.round(samples.compute.at(-1))}%`;
-    $('[data-training-current="running"]', root).textContent = samples.running.at(-1);
-    $('[data-training-current="queued"]', root).textContent = samples.queued.at(-1);
-    $('[data-training-current="completed"]', root).textContent = completed;
-    const label = `All training activity over ${range}: ${Math.round(samples.compute.at(-1))}% of GPU compute used by training, ${samples.running.at(-1)} running, ${samples.queued.at(-1)} queued and ${completed} runs completed`;
-    chart.setAttribute('aria-label', label);
-    chart.title = label;
+    if (!samples) return;
+
+    const { compute, running, queued, completed, label } = samples;
+
+    /* One scale for the three job counts so they can be read against each other, and a
+       fixed 0-100 for the percentage, which is not a count. */
+    const jobTop = Math.max(1, ...running, ...queued, ...completed);
+
+    const computeOff = unmeasured(compute);
+
+    lines.compute.setAttribute('d', computeOff ? '' : pathOf(compute.map((v) => v ?? 0), 'compute', 100));
+    area.setAttribute('d', computeOff ? '' : `${pathOf(compute.map((v) => v ?? 0), 'compute', 100)} L726,196 L54,196 Z`);
+    lines.running.setAttribute('d', pathOf(running, 'jobs', jobTop));
+    lines.queued.setAttribute('d', pathOf(queued, 'jobs', jobTop));
+    bars.setAttribute('d', barsOf(completed, jobTop));
+
+    /* The legend says which line is not there, rather than the chart implying a flat
+       zero. Disabled, so it cannot be highlighted to reveal nothing. */
+    const computeKey = $('[data-training-highlight="compute"]', root);
+
+    if (computeKey) {
+      computeKey.disabled = computeOff;
+      computeKey.title = computeOff
+        ? 'Not recorded in this window: a GPU reading is written only while a worker holds a lease and heartbeats'
+        : 'Highlight only training GPU compute on this graph';
+    }
+
+    const totalCompleted = completed.reduce((sum, value) => sum + value, 0);
+
+    set('compute', computeOff ? NO_READING : `${Math.round(compute.filter((v) => v != null).at(-1) ?? 0)}%`);
+    set('running', String(running.at(-1) ?? 0));
+    set('queued', String(queued.at(-1) ?? 0));
+    set('completed', String(totalCompleted));
+
+    const said = `All training activity over ${label}: `
+      + `${computeOff ? 'no GPU reading recorded' : `${Math.round(compute.filter((v) => v != null).at(-1) ?? 0)}% of GPU compute used by training`}, `
+      + `${running.at(-1) ?? 0} running, ${queued.at(-1) ?? 0} queued and ${totalCompleted} runs completed`;
+
+    chart.setAttribute('aria-label', said);
+    chart.title = said;
   };
-  const choose = (next) => {
-    range = next;
-    samples = Object.fromEntries(Object.entries(ranges[range])
-      .filter(([name]) => name !== 'labels').map(([name, values]) => [name, [...values]]));
+
+  const choose = async (next) => {
+    range = RANGES[next] ? next : '1h';
+
+    const { hours, bucket, label } = RANGES[range];
+
     buttons.forEach((button) => {
       const on = button.dataset.trainingRange === range;
+
       button.classList.toggle('on', on);
       button.setAttribute('aria-pressed', String(on));
     });
-    $$('[data-training-time]', root).forEach((label, index) => { label.textContent = ranges[range].labels[index]; });
-    draw();
+
+    const until = new Date();
+    const since = new Date(until.getTime() - hours * 3600e3);
+    const span = { since: since.toISOString(), until: until.toISOString(), bucket };
+
+    try {
+      const jobs = await window.MarpApi.jobSeries({ ...span, kind: 'training' });
+      const points = jobs.points || [];
+
+      $$('[data-training-time]', root).forEach((text, index) => {
+        const at = points[Math.round((points.length - 1) * index / 2)];
+
+        text.textContent = at
+          ? new Date(at.at).toTimeString().slice(0, 5)
+          : '';
+      });
+
+      if (!points.length) {
+        root.classList.add('is-quiet');
+        samples = null;
+        clearReadouts();
+        chart.setAttribute('aria-label', `No training activity in ${label}`);
+        return;
+      }
+
+      root.classList.remove('is-quiet');
+
+      /* **`succeeded`, not `finished`.** A training job that failed has finished, and
+         counting it under a line labelled *completed runs* would say a model came out of
+         it -- the same decision the Datasets chart makes for builds. */
+      samples = {
+        label,
+        compute: points.map((p) => (p.avg_training_utilization_percent == null
+          ? null : Number(p.avg_training_utilization_percent))),
+        running: points.map((p) => Number(p.training_machines) || 0),
+        queued: points.map((p) => Number(p.waiting) || 0),
+        completed: points.map((p) => Number(p.succeeded) || 0),
+      };
+
+      draw();
+    } catch (error) {
+      root.classList.add('is-quiet');
+      samples = null;
+      clearReadouts();
+      chart.setAttribute('aria-label', `Could not read training activity (${error.status || 'no answer'})`);
+    }
   };
+
   buttons.forEach((button) => button.addEventListener('click', () => choose(button.dataset.trainingRange)));
   const highlightButtons = $$('[data-training-highlight]', root);
   const highlight = (name = '') => {
@@ -5728,15 +5814,12 @@ function wireTrainingActivity() {
       selected?.focus();
     }
   });
+  /* **The jitter is gone with the fixture.** A three-second timer nudged the last compute
+     reading up and down so the chart looked alive. That was the mockup's liveliness and it
+     would now be editing a real measurement -- which is worse than a still chart, because
+     a number that moves reads as a number somebody is recording. The chart refreshes when
+     a range is chosen; nothing invents motion between times. */
   choose(range);
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const movement = [1, -2, 1, 0, 2, -1];
-    window.setInterval(() => {
-      samples.compute[samples.compute.length - 1] = Math.max(20, Math.min(90, samples.compute.at(-1) + movement[tick % movement.length]));
-      tick += 1;
-      draw();
-    }, 3000);
-  }
 }
 
 /**
