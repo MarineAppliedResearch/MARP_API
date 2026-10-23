@@ -91,7 +91,7 @@ async function open(screen, jobId) {
   return head.nextElementSibling;
 }
 
-test('only a job whose run was recorded gets an expander', async (t) => {
+test('every training job expands, and the run half appears where there is a run', async (t) => {
   const screen = await drawScreen('training.html', answers([epoch(1)]));
 
   t.after(screen.close);
@@ -99,9 +99,10 @@ test('only a job whose run was recorded gets an expander', async (t) => {
   const withRun = screen.document.querySelector('.training-table tbody tr[data-job="21779"]');
   const without = screen.document.querySelector('.training-table tbody tr[data-job="21780"]');
 
+  /* This assertion was the opposite way round for a day, and that was the defect: the
+     expander was conditional on a run existing, so a job still running had none. */
   assert.ok(withRun.querySelector('.exbtn'), 'the job that produced run 202 should open');
-  assert.equal(without.querySelector('.exbtn'), null,
-    'a training job with no run has nothing under it, so it should not offer to open on an apology');
+  assert.ok(without.querySelector('.exbtn'), 'and so should one with no run recorded');
 
   /* The join itself, which could not be made until `training_runs.job_id` reached the
      model: the column has been in the table since 20261020120000. */
@@ -165,41 +166,41 @@ test('a metric nothing reported says so instead of drawing an empty frame', asyn
     'mAP was never reported, so its line is empty rather than flat along the bottom');
 });
 
-test('a run still going keeps asking; a finished one settles', async (t) => {
-  const unfinished = await drawScreen('training.html',
-    answers([epoch(1, { box_loss: 1.8 })], [run(202, 21779, { end_time: null })]));
+test('the screen keeps asking while a job is live, and stops when none is', async (t) => {
+  /* The timer belongs to the screen rather than to each open panel: one poll patches
+     every row and refreshes whatever is open, instead of a request per expanded row. */
+  const live = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({ jobs: [job(21782, 'leased')], total: 1, limit: 500, offset: 0 }),
+  });
 
-  t.after(unfinished.close);
+  t.after(live.close);
 
   const scheduled = [];
-  const realSetTimeout = unfinished.window.setTimeout;
+  const real = live.window.setTimeout;
 
-  unfinished.window.setTimeout = (fn, delay) => {
-    scheduled.push(delay);
-    return realSetTimeout(fn, delay);
-  };
-
-  await open(unfinished, 21779);
+  live.window.setTimeout = (fn, delay) => { scheduled.push(delay); return real(fn, delay); };
+  live.window.watchTrainingJobs();
 
   assert.ok(scheduled.includes(5000),
-    `an open run with no end_time should schedule another read (saw ${scheduled.join(', ')})`);
+    `a leased job should keep the screen watching at the builder's cadence (saw ${scheduled.join(', ')})`);
 
-  /* And the other way, which is the half that stops a finished run polling for ever. */
-  const finished = await drawScreen('training.html', answers([epoch(1, { box_loss: 1.8 })]));
+  /* And the half that matters for a screen left open on finished work. */
+  const settled = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({ jobs: [job(21779, 'succeeded')], total: 1, limit: 500, offset: 0 }),
+  });
 
-  t.after(finished.close);
+  t.after(settled.close);
 
   const after = [];
-  const alsoReal = finished.window.setTimeout;
+  const alsoReal = settled.window.setTimeout;
 
-  finished.window.setTimeout = (fn, delay) => {
-    after.push(delay);
-    return alsoReal(fn, delay);
-  };
+  settled.window.setTimeout = (fn, delay) => { after.push(delay); return alsoReal(fn, delay); };
+  settled.window.watchTrainingJobs();
 
-  await open(finished, 21779);
-
-  assert.ok(!after.includes(5000), `a finished run should settle after one read (saw ${after.join(', ')})`);
+  assert.ok(!after.includes(5000),
+    `nothing queued or leased means nothing to ask about (saw ${after.join(', ')})`);
 });
 
 test('no control on the setup form is left saying Loading', async (t) => {
@@ -223,4 +224,94 @@ test('no control on the setup form is left saying Loading', async (t) => {
   assert.deepEqual(stuck, [],
     'every select should have been filled, emptied or removed -- a placeholder that never '
     + 'resolves reads as a page still loading, for ever');
+});
+
+test('a job with no run yet still expands, and says what it is waiting for', async (t) => {
+  /* **The defect this fixes.** The expander used to be conditional on a training run
+     existing, so the one job anybody watches -- the one still going -- had none. Isaac,
+     on the run he had just queued: "it's not expandable, it should be expandable". */
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({
+      jobs: [{ ...job(21781, 'queued'), progress_done: null, progress_total: 10 },
+        { ...job(21782, 'leased'), progress_done: 3, progress_total: 10, progress_unit: 'epochs', progress_phase: 'training' }],
+      total: 2,
+      limit: 500,
+      offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const queued = screen.document.querySelector('.training-table tbody tr[data-job="21781"]');
+  const leased = screen.document.querySelector('.training-table tbody tr[data-job="21782"]');
+
+  assert.ok(queued.querySelector('.exbtn'), 'a queued job should expand');
+  assert.ok(leased.querySelector('.exbtn'), 'a job being worked on should expand');
+
+  const waiting = await open(screen, 21781);
+
+  assert.match(waiting.textContent, /Waiting for a worker/,
+    'a job nothing has leased should say so rather than opening on nothing');
+
+  const running = await open(screen, 21782);
+
+  /* The live half comes off the attempt, so it needs no training run at all. */
+  assert.match(running.textContent, /3 of 10 epochs/, 'progress comes from the attempt');
+  assert.match(running.textContent, /[Tt]raining/, 'and the phase the worker reports');
+  assert.match(running.textContent, /No training run has been recorded/,
+    'with the run half honestly absent rather than invented');
+});
+
+test('a poll patches the rows and leaves an open one open', async (t) => {
+  /* **The regression that goes silent.** Rebuilding the table every five seconds closes
+     the row being read -- the exact defect the Datasets table was fixed for. Asked as node
+     identity, because a rebuild replaces the elements. */
+  let done = 3;
+
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({
+      jobs: [{ ...job(21782, 'leased'), progress_done: done, progress_total: 10, progress_unit: 'epochs', progress_phase: 'training' }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const head = screen.document.querySelector('.training-table tbody tr[data-job="21782"]');
+  const detail = await open(screen, 21782);
+
+  assert.equal(head.getAttribute('aria-expanded'), 'true');
+  assert.match(detail.textContent, /3 of 10 epochs/, 'the panel starts at what the attempt said');
+
+  /* Run one real cycle: the watcher schedules at 5000, so firing that callback is what
+     the page does five seconds later. */
+  done = 7;
+
+  let cycle = null;
+  const real = screen.window.setTimeout;
+
+  screen.window.setTimeout = (fn, delay) => {
+    if (delay === 5000 && !cycle) { cycle = fn; return 1; }
+    return real(fn, delay);
+  };
+
+  screen.window.watchTrainingJobs();
+
+  assert.ok(cycle, 'a leased job should have scheduled a poll');
+
+  await cycle();
+
+  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => real(resolve, 20));
+
+  assert.equal(screen.document.querySelector('.training-table tbody tr[data-job="21782"]'), head,
+    'the same <tr> should still be in the document -- a new node means the table was rebuilt '
+    + 'around the reader, which is what closed rows on Datasets');
+  assert.equal(head.nextElementSibling, detail, 'and the same detail row beside it');
+  assert.equal(head.getAttribute('aria-expanded'), 'true', 'still open');
+  assert.match(head.querySelector('.jepochs').textContent, /7 \/ 10/, 'with the moved number written in');
+  assert.match(detail.textContent, /7 of 10 epochs/, 'and the open panel refreshed in place');
 });

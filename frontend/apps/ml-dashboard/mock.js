@@ -1278,6 +1278,9 @@ const NO_RUN_RECORDED = '<span class="dash" title="No training run was recorded 
  */
 const IN_THE_EXPANSION = '<span class="dash" title="Computed from the run&apos;s epochs. Open the row to see it.">&mdash;</span>';
 
+/** The latest view per training job id, so an open panel redraws from current data. */
+let trainingViewsByJob = new Map();
+
 /** What each training run was, by the job that produced it. Empty until the screen loads. */
 let trainingRunsByJob = new Map();
 
@@ -1375,7 +1378,7 @@ function epochChart(spec, epochs) {
  *
  * @param {Object} run - The training run.
  * @param {Object[]} epochs - Its epochs, earliest first.
- * @returns {string}
+ * @returns {string} The run's part of the panel, without the wrapper.
  */
 function trainingRunDetail(run, epochs) {
   /* **Not `NOT_REPORTED`.** That one's tooltip is about worker telemetry, which is not
@@ -1421,64 +1424,185 @@ function trainingRunDetail(run, epochs) {
     }, epochs)
     : '<p class="hint">No epoch has been reported yet. This fills in as the run reports them.</p>';
 
-  return '<div class="rundetail jobdetail">'
-    + `<div class="jobdetail-head"><div><b>Training run ${run.id}</b>`
+  /* The inner content only; `trainingJobDetail` owns the wrapper, because it puts the
+     live attempt block above this and the two have to sit in one panel. */
+  return `<div class="jobdetail-head"><div><b>Training run ${run.id}</b>`
     + `<span>${run.dataset_id ? `Dataset ${run.dataset_id}` : 'No dataset recorded'} &middot; model ${run.model_id}</span></div></div>`
     + `<div class="jobmetrics">${settings}</div>`
-    + `<div class="training-history-grid">${charts}</div></div>`;
+    + `<div class="training-history-grid">${charts}</div>`;
 }
 
 /**
- * Expand a training job to its run, and keep it current while the run is going.
+ * What a job's own attempt says it is doing, right now.
  *
- * **The point is watching, not reading afterwards.** Isaac's words were *"i didn't get to
- * watch the charts"* -- so an open expansion re-reads its epochs on a timer until the run
- * stops reporting, and the detail is redrawn in place. A finished run is fetched once.
+ * **The live half, and it needs no training run.** `gpu_job_attempts` carries
+ * `progress_done`, `progress_total`, `progress_unit` and `progress_phase`, and the job
+ * list serves them — for 21779 that read `0 / 1 epochs, phase training` while it ran. A
+ * run row and its epochs arrive later and sometimes never, so a panel that waited for one
+ * showed nothing during the only period anybody is watching.
+ *
+ * @param {Object} job - From `GET /gpu/jobs`.
+ * @param {string} state - The view's state word.
+ * @returns {string} The progress block.
+ */
+function trainingAttemptProgress(job, state) {
+  const done = Number(job.progress_done);
+  const total = Number(job.progress_total);
+  const unit = job.progress_unit || 'epochs';
+  const measured = Number.isFinite(done) && Number.isFinite(total) && total > 0;
+  const pct = measured ? Math.round((done / total) * 100) : -1;
+
+  const phase = (job.progress_phase || '').trim();
+  const elapsed = tookText(Math.max(0, Date.now() - Date.parse(job.created_at)));
+
+  const metric = (label, value, note = '') =>
+    `<div class="jobmetric"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`;
+
+  if (state === 'queued') {
+    return '<section class="jobstate" data-job-state="queued"><div class="jobstate-title"><div>'
+      + '<h4>Waiting for a worker</h4><p>Nothing has leased this job yet, so it has reported nothing.</p>'
+      + `</div></div><div class="jobmetrics">${metric('Waiting', elapsed, 'since it was queued')}`
+      + `${metric('Epochs', measured ? `0 / ${total}` : '&mdash;', 'none started')}</div></section>`;
+  }
+
+  /* The bar is drawn only when the attempt gave numbers to draw it from. A bar at zero
+     and a bar for "not reported" look identical, and one of them is a lie. */
+  const bar = pct >= 0
+    ? `<span class="bar wide"><i style="width:${pct}%"></i></span>`
+    : '';
+
+  return `<section class="jobstate" data-job-state="active"><div class="jobstate-title"><div>`
+    + `<h4>${phase ? escapeHtml(phase.charAt(0).toUpperCase() + phase.slice(1)) : 'Training'}</h4>`
+    + `<p>${measured ? `${done} of ${total} ${escapeHtml(unit)}` : 'The attempt has not reported progress yet'}</p>`
+    + `</div>${bar}</div><div class="jobmetrics">`
+    + metric('Epochs', measured ? `${done} / ${total}` : '&mdash;', measured ? escapeHtml(unit) : 'not reported')
+    + metric('Elapsed', elapsed, 'since it was queued')
+    + metric('Phase', phase ? escapeHtml(phase) : '&mdash;', phase ? 'as the worker reports it' : 'not reported')
+    + '</div></section>';
+}
+
+/**
+ * A training job inside its row: what it is doing now, and its run when it has one.
+ *
+ * @param {Object} view - The job view.
+ * @param {Object|null} run - Its training run, when one has been recorded.
+ * @param {Object[]} epochs - That run's epochs, or empty.
+ * @returns {string}
+ */
+function trainingJobDetail(view, run, epochs) {
+  const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
+  const live = terminal ? '' : trainingAttemptProgress(view.job, view.state);
+
+  if (!run) {
+    /* **Expanding is not conditional on a run existing**, which is what broke watching:
+       the gate used to be `data-run`, so the one job anybody wanted to watch -- the one
+       still going -- had no expander at all. */
+    return `<div class="rundetail jobdetail">${live}`
+      + '<p class="hint">No training run has been recorded for this job yet. Its epochs, losses '
+      + 'and mAP appear here as soon as one is.</p></div>';
+  }
+
+  return `<div class="rundetail jobdetail">${live}${trainingRunDetail(run, epochs)}</div>`;
+}
+
+/**
+ * Expand a training job, and keep what is inside it current.
+ *
+ * **Every training job, not only one with a run.** The gate used to be `data-run`, so a
+ * job that was queued or still leased had no expander — and that is the one somebody
+ * watches. Isaac, on the run he had just started: *"it's not expandable, it should be
+ * expandable, and updated every few seconds as we go through it"*.
+ *
+ * The detail is redrawn in place, never rebuilt around: the row and its detail element
+ * stay, and only the contents of the cell change. That is the same rule the Datasets
+ * table learned the hard way, where a redraw closed whatever somebody was reading.
+ *
+ * Epochs are asked for only when a run exists, and only while the row is open.
  *
  * @param {Element} head - The job row.
  * @param {Element} detail - Its detail row.
- * @param {Object} run - The run that job produced.
  * @returns {void}
  */
-function wireTrainingRunDetail(head, detail, run) {
+function wireTrainingJobDetail(head, detail) {
   const cell = $('td', detail);
-  let timer = null;
+  const jobId = Number(head.dataset.job);
 
-  const stop = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  /* Exposed on the element the way `loadComposition` is on a dataset row, so the screen's
+     poller can refresh an open panel without knowing anything about how it is built. */
+  detail.redraw = async () => {
+    if (head.getAttribute('aria-expanded') !== 'true') return;
 
-  const draw = async () => {
-    try {
-      const epochs = await window.MarpApi.trainingRunEpochs(run.id);
+    const view = trainingViewsByJob.get(jobId);
 
-      cell.innerHTML = trainingRunDetail(run, epochs);
+    if (!view) return;
 
-      /* **Keep going only while it is still going.** `end_time` is set when the run
-         finishes, so a finished run settles after one read and an unfinished one keeps
-         asking. A closed row stops asking either way. */
-      stop();
+    const run = trainingRunsByJob.get(jobId) || null;
+    let epochs = [];
 
-      if (!run.end_time && head.getAttribute('aria-expanded') === 'true') {
-        timer = setTimeout(draw, TRAINING_EPOCH_POLL_MS);
+    if (run) {
+      try {
+        epochs = await window.MarpApi.trainingRunEpochs(run.id);
+      } catch (error) {
+        cell.innerHTML = '<div class="rundetail jobdetail"><p class="hint">Could not read this '
+          + `run's epochs (${error.status || 'no answer'}).</p></div>`;
+        return;
       }
-    } catch (error) {
-      stop();
-      cell.innerHTML = `<div class="rundetail jobdetail"><p class="hint">Could not read this run's epochs `
-        + `(${error.status || 'no answer'}).</p></div>`;
     }
+
+    cell.innerHTML = trainingJobDetail(view, run, epochs);
   };
 
   /* **Watched rather than clicked.** The expander is one delegated listener on the
      document, so a click handler on the row runs while bubbling -- before that listener
-     has flipped `aria-expanded`, which made this read the old value every time and never
-     fetch. Watching the attribute is also what makes *Expand all* work, which a click on
-     the row would never have seen at all.
+     has flipped `aria-expanded`, which made an earlier version read the old value every
+     time and never fetch. Watching the attribute is also what makes *Expand all* work. */
+  new MutationObserver(() => { detail.redraw(); })
+    .observe(head, { attributes: true, attributeFilter: ['aria-expanded'] });
+}
 
-     Fetched on opening rather than on page load: twenty rows would otherwise be twenty
-     requests for curves nobody has asked to see. */
-  new MutationObserver(() => {
-    if (head.getAttribute('aria-expanded') === 'true') draw();
-    else stop();
-  }).observe(head, { attributes: true, attributeFilter: ['aria-expanded'] });
+/**
+ * Write the cells that move, on the rows that are already there.
+ *
+ * **Patched, not redrawn.** Rebuilding the table every five seconds would close the row
+ * being read, which is exactly the defect the Datasets table was fixed for; the same rule
+ * applies here for the same reason, and the DOM tier pins both.
+ *
+ * A job that has finished is skipped: its cells are settled, and writing the last figures
+ * it reached over them reads as a job still going.
+ *
+ * @param {Element} body - The table body.
+ * @param {Map<number, Object>} views - The latest view per job id.
+ * @returns {void}
+ */
+function patchTrainingRows(body, views) {
+  for (const head of $$(':scope > tr[data-job]', body)) {
+    const view = views.get(Number(head.dataset.job));
+
+    if (!view) continue;
+
+    const status = $('.jstatus', head);
+
+    if (status && status.dataset.sort !== String(JOB_STATE_RANK[view.state])) {
+      status.innerHTML = `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`;
+      status.dataset.sort = String(JOB_STATE_RANK[view.state]);
+    }
+
+    if (['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state)) continue;
+
+    /* Epochs, from the attempt rather than from a run: it is what moves while the job
+       runs and it needs no `training_runs` row to exist. */
+    const epochs = $('.jepochs', head);
+    const done = Number(view.job.progress_done);
+    const total = Number(view.job.progress_total);
+
+    if (epochs && Number.isFinite(done) && Number.isFinite(total) && total > 0) {
+      epochs.innerHTML = `${done} / ${total}`;
+    }
+
+    const detail = head.nextElementSibling;
+
+    if (detail && typeof detail.redraw === 'function') detail.redraw();
+  }
 }
 
 /**
@@ -1611,7 +1735,9 @@ function renderTrainingRecent(views) {
     const run = trainingRunsByJob.get(job.id) || null;
 
     return `<tr data-job="${job.id}"${run ? ` data-run="${run.id}"` : ''}>`
-      + `<td class="ex">${run ? '<button class="exbtn" type="button" aria-label="Show this run"><svg class="ico sm"><use href="#i-right"/></svg></button>' : ''}</td>`
+      /* **Every job, not only one with a run.** The expander used to be conditional on
+         `run`, so a queued or leased job -- the only kind anybody watches -- had none. */
+      + '<td class="ex"><button class="exbtn" type="button" aria-label="Show this job"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
       + `<td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
       + `<td class="jdset">${run && run.dataset_id
         ? `<a href="./datasets.html?dataset=${encodeURIComponent(run.dataset_id)}">Dataset ${run.dataset_id}</a>`
@@ -1627,14 +1753,9 @@ function renderTrainingRecent(views) {
       + '</tr>';
   }).join('');
 
-  /* **Only rows that have a run to show.** A training job whose run was never recorded
-     has nothing under it, so it gets no expander rather than one that opens on an
-     apology. */
-  for (const head of $$(':scope > tr[data-run]', body)) {
-    const run = trainingRunsByJob.get(Number(head.dataset.job));
+  trainingViewsByJob = new Map(shown.map((view) => [view.job.id, view]));
 
-    if (!run) continue;
-
+  for (const head of $$(':scope > tr[data-job]', body)) {
     head.classList.add('runrow-head');
     head.setAttribute('aria-expanded', 'false');
 
@@ -1642,10 +1763,10 @@ function renderTrainingRecent(views) {
 
     detail.className = 'runrow-body';
     detail.hidden = true;
-    detail.innerHTML = `<td colspan="9"><div class="rundetail jobdetail"><p class="hint">Reading this run&hellip;</p></div></td>`;
+    detail.innerHTML = '<td colspan="9"><div class="rundetail jobdetail"><p class="hint">Reading this job&hellip;</p></div></td>';
     head.after(detail);
 
-    wireTrainingRunDetail(head, detail, run);
+    wireTrainingJobDetail(head, detail);
   }
 
   /* The delegated expander listener keys off `table.expandable`, so the rows it has just
@@ -2061,12 +2182,75 @@ async function renderTrainingScreen() {
     renderTraining(jobs.jobs);
     fillTrainingChoices(models, datasets);
     markTrainingRunsUnbacked();
+    watchTrainingJobs();
   } catch (error) {
     const body = $('.training-table tbody');
     if (body) {
       body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="9">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
     }
   }
+}
+
+/**
+ * Keep the Training table current while anything is still going.
+ *
+ * **The dataset builder's cadence and the dataset builder's rule.** Isaac asked for this
+ * screen to behave *"just like we do for the dataset builder"*, which means two things
+ * and the second is the one that is easy to lose: every five seconds, and **patched** --
+ * the rows are written into, never rebuilt around, because a rebuild closes the row
+ * somebody is reading. That was a real defect on Datasets and it would be the same defect
+ * here.
+ *
+ * Stops itself when nothing is queued or leased, so a screen of finished jobs makes no
+ * requests at all. A newly queued job restarts it on the next render.
+ *
+ * @returns {void}
+ */
+let trainingWatch = null;
+
+function watchTrainingJobs() {
+  const body = $('.training-table tbody');
+
+  if (!body || !window.MarpApi) return;
+
+  const live = (view) => view.state === 'queued' || view.state === 'running' || view.state === 'leased';
+
+  if (trainingWatch) { clearTimeout(trainingWatch); trainingWatch = null; }
+
+  /* Nothing moving, nothing to ask about. */
+  if (![...trainingViewsByJob.values()].some(live)) return;
+
+  trainingWatch = setTimeout(async function again() {
+    try {
+      const [jobs, runs] = await Promise.all([
+        window.MarpApi.listJobs({ limit: 500, kind: 'training' }),
+        window.MarpApi.listTrainingRuns().catch(() => []),
+      ]);
+
+      /* A run can appear part-way through, which is the moment the panel stops saying
+         there is none and starts drawing curves. */
+      for (const run of runs) {
+        if (run.job_id != null && !trainingRunsByJob.has(run.job_id)) trainingRunsByJob.set(run.job_id, run);
+      }
+
+      const issues = batchesWithIssues(jobs.jobs);
+      const fresh = new Map(jobs.jobs.map((job) => [job.id, jobView(job, issues)]));
+
+      /* Only rows that are on the page: paging and filtering are the table's business. */
+      for (const [id, view] of fresh) {
+        if (trainingViewsByJob.has(id)) trainingViewsByJob.set(id, view);
+      }
+
+      patchTrainingRows(body, trainingViewsByJob);
+    } catch {
+      /* A poll that fails is a blip. The last good answer stays on screen, which is
+         better than replacing a table somebody is reading with an error. */
+    }
+
+    trainingWatch = [...trainingViewsByJob.values()].some(live)
+      ? setTimeout(again, TRAINING_EPOCH_POLL_MS)
+      : null;
+  }, TRAINING_EPOCH_POLL_MS);
 }
 
 /**
