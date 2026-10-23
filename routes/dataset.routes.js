@@ -1582,6 +1582,78 @@ function registerDatasetRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'models:read',
+        path: '/api/training_run/:id/pace',
+        summary: 'How fast one training run has been getting through its epochs',
+        description:
+            'The heartbeat\'s record of how many epochs were done, sampled once a minute for as '
+            + 'long as the run\'s attempt held its lease.'
+            + BREAK
+            + '**This is the clock; `/training_run/:id/epochs` is the science.** An epoch row is '
+            + 'written when the worker reports its metrics, so that array has one entry per '
+            + 'finished epoch and nothing at all before the first one lands. These samples start '
+            + 'when the attempt is leased, which covers the stretch where the dataset is being '
+            + 'fetched and nothing has trained yet -- exactly when a reader most wants to see '
+            + 'that the run is alive. Neither answers for the other, so they are two reads.'
+            + BREAK
+            + '**Every attempt of the job, each sample saying which.** A run that was retried has '
+            + 'a second attempt counting from zero again, and dropping it would leave a step down '
+            + 'in the series that nothing explains.'
+            + BREAK
+            + '**Nothing is derived.** Epochs per minute and a remaining estimate both come out of '
+            + 'these samples; computing them here would mean choosing a window and a rounding on '
+            + 'the reader\'s behalf.'
+            + BREAK
+            + '**An empty array is the honest answer** for a run whose attempt has not reported a '
+            + 'heartbeat yet. A run that does not exist is a 404, because a mistyped id and a run '
+            + 'that has reported nothing are different answers and a chart cannot tell them apart.'
+            + BREAK
+            + 'Requires the `models:read` permission.',
+        tags: ['V2 · MachineLearning'],
+        parameters: [
+            {
+                in: 'path', name: 'id', required: true, schema: { type: 'integer' },
+                description: 'The training run whose pace to read.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'Its progress samples, oldest first.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    at: { type: 'string', format: 'date-time', description: 'When the sample was taken.' },
+                                    done: { type: 'integer', description: 'Epochs finished at that moment.' },
+                                    total: { type: 'integer', description: 'Epochs the run is doing in all.' },
+                                    unit: { type: 'string', description: 'What is being counted; `epochs` for a training job.' },
+                                    attempt_id: { type: 'integer', description: 'Which attempt reported it.' },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const pace = await datasetRepository.getTrainingRunPace(req.params.id);
+
+            if (!pace) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(pace);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
         path: '/api/training_run/:id/epochs',
         summary: 'Every epoch of one training run',
         description:

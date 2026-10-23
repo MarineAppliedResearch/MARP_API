@@ -39,6 +39,7 @@
 'use strict';
 
 const { QueryTypes } = require('sequelize');
+const { epochMetrics } = require('../db/epoch-metrics');
 
 /**
  * Shared database registry containing the configured Sequelize connection,
@@ -2262,21 +2263,25 @@ class GpuRepository {
             trainingRunId = opened.id;
         }
 
-        /* Ultralytics names its metrics by task and version, which is why the
-           event payload is free-form. These five are the ones `epochs` has
-           columns for; everything else stays in the event, which is the record
-           that does not lose what it was not expecting. */
-        const value = (name) => {
-            const raw = metrics[name];
-            const asNumber = Number(raw);
-            return Number.isFinite(asNumber) ? asNumber : null;
-        };
+        /* Ultralytics names its metrics by task and version, which is why the event
+           payload is free-form, and anything not named in `db/epoch-metrics.js` stays
+           in the event -- the record that does not lose what it was not expecting.
+
+           **This mapped five names and the table has seven columns.** `map50` and
+           `map5095` were never written at all, and the three losses were looked up as
+           `train/box_loss` and friends while the worker sends `val/`. So five of seven
+           metric columns were null on every row MARP had written, with the values
+           sitting in the events the whole time. `scripts/backfill-epoch-metrics.js`
+           recovers them; the mapping is shared with it so the two cannot disagree. */
+        const columns = epochMetrics(metrics);
 
         await this.db.sequelize.query(
             `INSERT INTO epochs (training_run_id, epoch_number, precision, recall,
-                                 box_loss, cls_loss, dfl_loss, timestamp, created_at, updated_at)
+                                 map50, map5095, box_loss, cls_loss, dfl_loss,
+                                 timestamp, created_at, updated_at)
              SELECT :runId, :epochNumber, :precision, :recall,
-                    :boxLoss, :clsLoss, :dflLoss, NOW(), NOW(), NOW()
+                    :map50, :map5095, :box_loss, :cls_loss, :dfl_loss,
+                    NOW(), NOW(), NOW()
               WHERE NOT EXISTS (
                   SELECT 1 FROM epochs WHERE training_run_id = :runId AND epoch_number = :epochNumber
               )`,
@@ -2284,11 +2289,7 @@ class GpuRepository {
                 replacements: {
                     runId: trainingRunId,
                     epochNumber,
-                    precision: value('metrics/precision(B)'),
-                    recall: value('metrics/recall(B)'),
-                    boxLoss: value('train/box_loss'),
-                    clsLoss: value('train/cls_loss'),
-                    dflLoss: value('train/dfl_loss'),
+                    ...columns,
                 },
                 transaction,
             }

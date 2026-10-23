@@ -59,6 +59,60 @@ class DatasetRepository {
 
 
     /**
+     * How fast a training run has been getting through its epochs.
+     *
+     * **The clock, where `GET /training_run/:id/epochs` is the science.** An epoch row is
+     * written when the worker reports its metrics, so that array has one entry per
+     * finished epoch and nothing at all before the first one lands.
+     * `gpu_attempt_progress` is the heartbeat's once-a-minute sample of how many epochs
+     * are done, and it exists from the moment the attempt is leased -- including the
+     * minutes spent fetching the dataset, which is exactly the stretch where a reader
+     * most wants to know the run is alive and `epochs` is still empty.
+     *
+     * **Every attempt of the job, not only the latest.** A training job that was retried
+     * has a second attempt counting from zero again, and a series that silently dropped
+     * the first one would show a gap nothing explains. Each sample says which attempt it
+     * came from, so a reader can draw the retry as a retry.
+     *
+     * **Nothing is derived.** Epochs per minute and a remaining estimate both come out of
+     * these samples, and computing them here would mean choosing a window and a rounding
+     * on the reader's behalf -- which is how a figure nobody can check gets onto a screen.
+     *
+     * @async
+     * @param {number|string} runId - `training_runs.id`.
+     * @returns {Promise<?Array<Object>>} The samples oldest first, or null when there is
+     * no such run -- which is a different answer from a run that has reported nothing.
+     */
+    async getTrainingRunPace(runId) {
+        const [run] = await this.db.sequelize.query(
+            'SELECT id, job_id FROM training_runs WHERE id = :runId',
+            { replacements: { runId }, type: QueryTypes.SELECT }
+        );
+
+        if (!run) return null;
+
+        const samples = await this.db.sequelize.query(
+            `SELECT p.at, p.progress_done AS done, p.progress_total AS total,
+                    p.progress_unit AS unit, p.attempt_id
+               FROM gpu_attempt_progress p
+               JOIN gpu_job_attempts a ON a.id = p.attempt_id
+              WHERE a.job_id = :jobId
+              ORDER BY p.at`,
+            { replacements: { jobId: run.job_id }, type: QueryTypes.SELECT }
+        );
+
+        /* `progress_done` and `progress_total` are BIGINT, which the driver hands back as
+           strings -- a chart plotting those gets a lexical axis, where 10 sorts before 2. */
+        return samples.map((sample) => ({
+            at: sample.at,
+            done: Number(sample.done),
+            total: Number(sample.total),
+            unit: sample.unit,
+            attempt_id: sample.attempt_id,
+        }));
+    }
+
+    /**
      * What one dataset is actually made of: its splits, and its class vocabulary.
      *
      * **Both are recorded and neither was served.** `dataset_observations` has held a row

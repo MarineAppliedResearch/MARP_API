@@ -54,6 +54,9 @@ const SUBSYSTEMS = {
             'gpu-training-submit',
             'gpu-training-run-record',
             'gpu-trained-model-registration',
+            /* #268: what the training panel reads back -- the per-epoch metric names the
+               ingest was getting wrong, and the pace series nothing served. */
+            'training-run-pace',
             /* #268: bulk deletion of failed jobs. Builds and drops its own database,
                because the route deletes every failed job in whatever one it is pointed
                at -- no seeding scopes that. */

@@ -43,6 +43,14 @@ let leaseEpoch;
  * `metric` and moves everything that is not envelope into the payload. So an
  * epoch arrives as `{step, phase, metrics: {...}}`.
  *
+ * **The names here were wrong, and that is why the defect survived.** This sent
+ * `train/box_loss`, the ingest looked for `train/box_loss`, and the test passed — while
+ * the real worker sends `val/box_loss` and the column stayed null on every run MARP
+ * had ever recorded. A fixture that agrees with the code rather than with the thing
+ * being modelled cannot catch a disagreement between them. These names are now copied
+ * from an actual metric event on the development database, and mAP50 and mAP50-95 are
+ * here too because they were never mapped at all.
+ *
  * @param {number} seq - The event's sequence number.
  * @param {number} epoch - Which epoch this is.
  * @param {number} precision - A recognisable precision value.
@@ -59,9 +67,16 @@ function epochEvent(seq, epoch, precision) {
             metrics: {
                 'metrics/precision(B)': precision,
                 'metrics/recall(B)': 0.5 + epoch / 100,
-                'train/box_loss': 1.5 - epoch / 100,
-                'train/cls_loss': 1.1 - epoch / 100,
-                'train/dfl_loss': 0.9 - epoch / 100,
+                'metrics/mAP50(B)': 0.6 + epoch / 100,
+                'metrics/mAP50-95(B)': 0.3 + epoch / 100,
+                'val/box_loss': 1.5 - epoch / 100,
+                'val/cls_loss': 1.1 - epoch / 100,
+                'val/dfl_loss': 0.9 - epoch / 100,
+                /* The training-set losses, which Ultralytics reports as a separate
+                   series and the ingest deliberately does not read: one column cannot
+                   mean training loss on some rows and validation loss on others. Sent
+                   here so that a change accepting them fails this file. */
+                'train/box_loss': 9.9,
                 // Deliberately unmapped: it must survive on the event and not
                 // break the projection.
                 'lr/pg0': 0.00123,
@@ -329,6 +344,15 @@ describe('a training job writes training_runs and epochs', () => {
         expect(Number(rows[1].precision)).toBeCloseTo(0.52);
         expect(Number(rows[1].box_loss)).toBeCloseTo(1.48);
         expect(Number(rows[1].dfl_loss)).toBeCloseTo(0.88);
+
+        /* The two that were never mapped. Until `db/epoch-metrics.js` they were null
+           on every epoch row MARP held, with the values sitting in the events. */
+        expect(Number(rows[1].map50)).toBeCloseTo(0.62);
+        expect(Number(rows[1].map5095)).toBeCloseTo(0.32);
+
+        /* And the training-set loss is not what landed, although the event carried
+           one: 9.9 would be here if the ingest took either name. */
+        expect(Number(rows[1].box_loss)).not.toBeCloseTo(9.9);
     });
 
     test('a replayed batch does not write the same epoch twice', async () => {
