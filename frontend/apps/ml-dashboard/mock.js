@@ -1400,100 +1400,123 @@ function renderTrainingRecent(views) {
 }
 
 /**
- * Puts the real registry and the real datasets into the setup form.
+ * Which task each base-model select is choosing a starting point for.
  *
- * Every one of these selectors was written out by hand: base models that are
- * not in `ml_models`, datasets that are not in `dataset`. A run configured from
- * them names things MARP cannot resolve.
+ * **The checkpoint decides the task, and the engine never learns which task was asked
+ * for.** A detection `.pt` selected for a segmentation run does not fail — it trains a
+ * detector, while the screen says segmentation and the model that comes out is recorded
+ * as whatever was requested. Of the three ways this could have gone that is the worst
+ * one, because nothing downstream can tell the result from a correct run.
  *
- * @param {Object[]} models - From `GET /api/v2/ml_models`.
- * @param {Object[]} datasets - From `GET /api/v2/dataset`.
- */
-/**
- * The upstream checkpoints, by task.
- *
- * YOLO's own starting weights. They are not MARP models, are deliberately not in the
- * registry, and are owned here rather than left in the markup because the markup may state
- * no values -- and because losing them is exactly what happened when the options were
- * stripped out from under a renderer that read them back.
+ * Isaac asked the question directly: *"we don't want to transfer train different model
+ * types from other models? like a segmentation model from a bounding box model?"* Cross-
+ * task transfer is legitimate in principle — backbones do transfer — but the worker would
+ * have to build the target task's architecture and load compatible weights into it
+ * deliberately, which is work nobody has asked for. Until then these do not mix.
  *
  * @constant
  * @type {Object<string, string>}
  */
-const UPSTREAM_CHECKPOINTS = {
-  'base-det': 'YOLO detection — upstream checkpoint',
-  'base-cls': 'YOLO classification — upstream checkpoint',
-  'base-seg': 'YOLO segmentation — upstream checkpoint',
+const BASE_MODEL_TASKS = {
+  'base-det': 'detection',
+  'base-cls': 'classification',
+  'base-seg': 'segmentation',
 };
 
 /**
  * The models the base-model selects were last filled from, by id.
  *
- * Kept because a job spec needs more of a model than its option carries: the name, and
- * the sha256 of its weights that the worker checks its download against. Reading those
- * back out of the option would mean parsing the "name — type" label this screen
- * composes, which is a display string and free to change.
+ * Kept because a job spec needs more of a model than its option carries: the name, the
+ * sha256 of its weights that the worker checks its download against, and the task it was
+ * trained for. Reading those back out of the option would mean parsing the label this
+ * screen composes, which is a display string and free to change — and which is exactly
+ * how the previous version of this renderer worked, until the text it recognised was
+ * stripped out from under it.
  *
  * @type {Map<number, Object>}
  */
 const registeredModels = new Map();
 
+/**
+ * Whether a registered model was trained for the task a panel is setting up.
+ *
+ * **An exact match on `model_type`, with nothing mapped onto anything.** Two rows in
+ * MARP carry `YOLOv8` here — an architecture in a task column, written by a test — and
+ * reading those as detection to make the list longer would be inventing a fact about a
+ * model in order to offer it as a starting point. They match no task and appear nowhere.
+ *
+ * @param {Object} model - A row from `GET /api/v2/ml_models`.
+ * @param {string} task - One of {@link BASE_MODEL_TASKS}'s values.
+ * @returns {boolean}
+ */
+function modelDoesTask(model, task) {
+  return String(model && model.model_type || '').trim().toLowerCase() === task;
+}
+
+/**
+ * Puts the real registry and the real datasets into the setup form.
+ *
+ * Every one of these selectors was written out by hand: base models that are not in
+ * `ml_models`, datasets that are not in `dataset`. A run configured from them names
+ * things MARP cannot resolve.
+ *
+ * @param {Object[]} models - From `GET /api/v2/ml_models`.
+ * @param {Object[]} datasets - From `GET /api/v2/dataset`.
+ * @returns {void}
+ */
 function fillTrainingChoices(models, datasets) {
   registeredModels.clear();
 
   for (const model of models || []) registeredModels.set(Number(model.id), model);
-  /* **Not filtered by status, and not filtered by task, because neither column
-     means what this screen assumed.**
 
-     Measured against MARP: thirteen models carry `model_type: "detection"` with
-     `status: "active"`, and two carry `model_type: "YOLOv8"` with `status:
-     "trained"`. So `model_type` holds a task on some rows and an architecture on
-     others, and `status` holds `active`, which is not one of the four values the
-     generated contract declares. Filtering on either one hid every model MARP
-     has: the two trained ones are "YOLOv8" and matched no task, and the thirteen
-     detection ones are "active" and matched no status.
+  /* **This used to find its targets by reading the fake data.** It decided a select was
+     a base-model picker when its options matched `/^MARP-[\w-]+ — |upstream/` — that is,
+     when they were the invented names the mockup shipped. It worked, and only while the
+     fiction was there: stripping those options, to stop the screen stating models MARP
+     does not have, turned this into a function that matched nothing and filled nothing.
 
-     Every model is offered, with whatever `model_type` says beside it, until
-     somebody settles what those two columns mean. Showing fifteen models and
-     letting a person choose is honest; showing none because a filter the data
-     does not support found nothing is not. */
-
-  /* **This used to find its targets by reading the fake data.** It decided a
-     select was a base-model picker when its options matched
-     `/^MARP-[\w-]+ — |upstream/` -- that is, when they were the invented names
-     the mockup shipped. It worked, and only while the fiction was there:
-     stripping those options, to stop the screen stating models MARP does not
-     have, turned this into a function that matched nothing and filled nothing.
-
-     The markup now says which selects a renderer owns, with `data-fills`. A mark
-     is a statement somebody can check; a pattern that recognises last year's
-     placeholder text is a guess that happens to be right. */
+     The markup now says which selects a renderer owns, with `data-fills`. A mark is a
+     statement somebody can check; a pattern that recognises last year's placeholder text
+     is a guess that happens to be right. */
   const put = (id, options, empty) => {
     const select = $(`[data-fills="${id}"]`);
     if (!select) return;
 
-    const upstream = UPSTREAM_CHECKPOINTS[id]
-      ? [`<option>${UPSTREAM_CHECKPOINTS[id]}</option>`] : [];
-
-    select.innerHTML = (options.length ? options : [`<option value="">${empty}</option>`])
-      .concat(upstream).join('');
+    select.innerHTML = (options.length ? options : [`<option value="">${empty}</option>`]).join('');
   };
 
-  /* The type is shown rather than filtered on, so a person can see that one
-     model says "detection" and another says "YOLOv8" and judge for themselves. */
-  const everyModel = models.map((m) => `<option value="${m.id}">${m.name}`
-    + `${m.model_type ? ` — ${m.model_type}` : ''}</option>`);
+  /* **Filtered by task, and the two columns still do not mean what this screen once
+     assumed.** `status` is not filtered on: every real model says `active`, which is not
+     one of the four values the generated contract declares, so a status filter hides all
+     of them. `model_type` is filtered on, now that there is a reason stronger than
+     tidiness — a model of the wrong task does not fail, it silently trains the wrong
+     thing.
 
-  put('base-det', everyModel, 'No model in the registry');
-  put('base-cls', everyModel, 'No model in the registry');
-  put('base-seg', everyModel, 'No model in the registry');
+     Measured against MARP: fourteen rows say `detection` and two say `YOLOv8`. So
+     Classification and Segmentation come back empty, and that is the honest answer rather
+     than a fault — there are no such models registered. The empty option says which,
+     because an unexplained empty select reads as a broken screen. */
+  const forTask = (task) => models
+    .filter((m) => modelDoesTask(m, task))
+    .map((m) => `<option value="${m.id}">${escapeHtml(m.name)}</option>`);
 
-  const datasetOptions = datasets.map((d) => `<option value="${d.id}">${d.name}</option>`);
+  for (const [id, task] of Object.entries(BASE_MODEL_TASKS)) {
+    put(id, forTask(task), `No ${task} model is registered`);
+  }
+
+  /* **No upstream-checkpoint option.** There was one per task, carrying a sentence as its
+     value where every other option carries a model id — so it would have reached a job
+     spec as `ml_model_id: "YOLO detection — upstream checkpoint"`. Registering a stock
+     YOLO checkpoint is a real question and a parked one; until it is answered, a control
+     that cannot do anything is not drawn. `trainingSubmission` still refuses a selection
+     with no numeric id, which is what keeps this class of thing impossible rather than
+     merely absent. */
+
+  const datasetOptions = datasets.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`);
   for (const id of ['dataset-det', 'dataset-cls', 'dataset-seg']) {
     put(id, datasetOptions, 'No dataset saved in MARP');
   }
 }
-
 /**
  * What the training engine accepts, and nothing else.
  *
@@ -1638,6 +1661,19 @@ function trainingSubmission(root) {
 
   if (!model) {
     return { refusal: `Model ${modelId} is no longer in the registry. Reload the page.` };
+  }
+
+  /* **The filter is what a person sees; this is what makes it true.** A checkpoint
+     decides the task by itself and the engine is never told which task was asked for, so
+     a detection model selected for a segmentation run trains a detector and the result is
+     recorded as a segmentation model. Refusing here means that cannot happen through a
+     stale page, a restored form or anything else that gets a selection past the filter. */
+  if (!modelDoesTask(model, BASE_MODEL_TASKS['base-det'])) {
+    return {
+      refusal: `${model.name} is ${model.model_type ? `a ${model.model_type}` : 'an untyped'} `
+        + 'model, and this is a detection run. The checkpoint decides the task on its own, '
+        + 'so training would succeed and produce the wrong kind of model.',
+    };
   }
 
   if (!model.artifact_sha256) {

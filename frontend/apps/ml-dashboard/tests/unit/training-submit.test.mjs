@@ -1,14 +1,20 @@
 /**
  * The detection form queues a real training job, or says why it cannot.
  *
- * **The refusals are most of what this is for.** A training spec has to carry
- * `spec.model.sha256`; the worker hashes what it fetched and refuses a mismatch, and
- * `validateSubmittedModel` refuses a spec without one. Two things on this screen can
- * produce a selection that has no checksum behind it — a model registered before
- * `ml_models.artifact_sha256` existed, and the *upstream checkpoint* option, whose value
- * is a sentence where every other option carries a model id. Both would reach the API as
- * a 400 that reads like a defect in this screen, so both are caught here and said
- * plainly.
+ * **The refusals are most of what this is for**, and two of them are about things that
+ * do not fail loudly.
+ *
+ * A training spec has to carry `spec.model.sha256`; the worker hashes what it fetched and
+ * refuses a mismatch, and `validateSubmittedModel` refuses a spec without one. A model
+ * registered before `ml_models.artifact_sha256` existed has none, and would reach the API
+ * as a 400 that reads like a defect in this screen.
+ *
+ * The other is worse, because nothing refuses it anywhere: **the checkpoint decides the
+ * task and the engine is never told which task was asked for**, so a detection model
+ * chosen for a segmentation run trains a detector and the result is recorded as a
+ * segmentation model. The dropdown filters by task, and this guard is what makes that
+ * filter a rule rather than a courtesy — a selection that gets past the list, from a stale
+ * page or a restored form, still cannot be submitted.
  *
  * **`spec.dataset` is an id and `spec.model` is not, and that asymmetry is asserted.**
  * `submitTrainingJob` composes the dataset's locator and hash from `datasets` itself;
@@ -149,20 +155,78 @@ test('refuses a model with no recorded checksum, and says what to run', async (t
         'naming the script is the difference between a dead end and a next step');
 });
 
-test('refuses the upstream checkpoint, whose value is a sentence not an id', async (t) => {
-    /* `fillTrainingChoices` appends this option to every base-model select. Registering a
-       stock checkpoint is a separate, parked question; until it is answered this option
-       must not look like it works. */
+test('offers no upstream checkpoint, and refuses a selection carrying no id', async (t) => {
+    /* There was one of these per task, carrying a sentence as its value among options
+       whose values are model ids — so it would have reached a spec as
+       `ml_model_id: "YOLO detection — upstream checkpoint"`. Registering a stock
+       checkpoint is a real and parked question, and a control that cannot do anything is
+       not drawn. */
     const { screen, sent } = await trainingScreen(t);
+    const texts = [...screen.document.querySelector('#base-det').options].map((o) => o.text);
 
-    choose(screen, 'base-det', /upstream checkpoint/);
+    assert.deepEqual(texts.filter((text) => /upstream/i.test(text)), [],
+        'no option offers a checkpoint nothing has registered');
+
+    /* The guard outlives the option on purpose: it is what makes this class of thing
+       impossible rather than merely absent today. An empty value is the same shape of
+       input the removed option would have produced. */
+    const select = screen.document.querySelector('#base-det');
+
+    select.innerHTML = '<option value="">YOLO detection — upstream checkpoint</option>';
     choose(screen, 'dataset-det', /rockfish5/);
 
     const said = await start(screen);
 
     assert.equal(sent.length, 0, 'nothing is submitted');
-    assert.match(said, /registered/,
-        'it fails the same check an empty selection does, rather than being special-cased');
+    assert.match(said, /registered/, 'and it says to choose one MARP has registered');
+});
+
+test('offers only models trained for the panel\'s task', async (t) => {
+    /* **Measured against MARP**: fourteen rows say `detection`, two say `YOLOv8` — an
+       architecture in a task column, written by a test. The second kind matches no task
+       and appears nowhere; mapping it onto detection to lengthen the list would be
+       inventing a fact about a model in order to offer it as a starting point. */
+    const { screen } = await trainingScreen(t, {
+        models: [
+            ROCKFISH5,
+            model(600, 'a-segmenter', 'a'.repeat(64)),
+            model(700, 'jest-ingest-model', 'b'.repeat(64)),
+        ].map((m, i) => (i === 1 ? { ...m, model_type: 'segmentation' } : i === 2 ? { ...m, model_type: 'YOLOv8' } : m)),
+    });
+
+    const named = (id) => [...screen.document.querySelector(`#${id}`).options]
+        .filter((option) => option.value)
+        .map((option) => option.text);
+
+    assert.deepEqual(named('base-det'), ['rockfish5-2026-10-20'],
+        'the detection panel offers the detection model and neither of the others');
+    assert.deepEqual(named('base-seg'), ['a-segmenter']);
+
+    /* Empty is the honest answer when no such model is registered, and the select says
+       which kind is missing — an unexplained empty control reads as a broken screen. */
+    assert.deepEqual(named('base-cls'), []);
+    assert.match(screen.document.querySelector('#base-cls').options[0].text,
+        /no classification model is registered/i);
+});
+
+test('refuses a model trained for a different task', async (t) => {
+    /* The filter is the user-facing half; this is the half that makes it true. Nothing
+       downstream would object: the engine trains whatever the checkpoint is and records
+       the result as what was asked for. */
+    const { screen, sent } = await trainingScreen(t, {
+        models: [{ ...ROCKFISH5, model_type: 'segmentation' }],
+    });
+
+    /* Past the filter by hand, the way a stale page or a restored form would. */
+    screen.document.querySelector('#base-det').innerHTML =
+        `<option value="412">${ROCKFISH5.name}</option>`;
+    choose(screen, 'dataset-det', /rockfish5/);
+
+    const said = await start(screen);
+
+    assert.equal(sent.length, 0, 'nothing is submitted');
+    assert.match(said, /wrong kind of model/,
+        'and it says what would happen, because nothing else would have objected');
 });
 
 test('shows the API\'s own refusal rather than a sentence of its own', async (t) => {
