@@ -714,3 +714,78 @@ test('a job whose spec carries no name falls back to the id, never to blank', as
   assert.equal(row.querySelector('.jdset').textContent.trim(), 'Dataset 41');
   assert.notEqual(row.querySelector('.jdset').textContent.trim(), '', 'never an empty cell');
 });
+
+/** Progress samples as GET /training_run/:id/pace returns them, oldest first. */
+const sample = (minute, done, total = 10) => ({
+  at: `2026-10-23T19:${String(minute).padStart(2, '0')}:00.000Z`,
+  done,
+  total,
+  unit: 'epochs',
+  attempt_id: 900,
+});
+
+test('a remaining estimate is measured from the run, or it is not shown', async (t) => {
+  /* This is where "~4h 10m" lived, for a run that took 27 seconds -- two literals in the
+     markup that no selection moved. Four epochs over eight minutes is half an epoch a
+     minute, so six left is twelve minutes. */
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)], [run(202, 21779, { end_time: null })]),
+    listJobs: async () => ({
+      jobs: [{ ...job(21779, 'leased'), progress_done: 4, progress_total: 10, progress_unit: 'epochs', progress_phase: 'training' }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+    trainingRunPace: async () => [sample(0, 0), sample(4, 2), sample(8, 4)],
+  });
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.match(detail.textContent, /0\.50 \/ min/, 'the rate it has actually held');
+  assert.match(detail.textContent, /~12m/, 'and six epochs left at that rate');
+});
+
+test('one sample is not a rate', async (t) => {
+  /* A single reading has no elapsed time to divide by. Inventing a rate from it would be
+     the old estimate again: a number that looks measured and is not. */
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)], [run(202, 21779, { end_time: null })]),
+    listJobs: async () => ({
+      jobs: [{ ...job(21779, 'leased'), progress_done: 1, progress_total: 10, progress_unit: 'epochs' }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+    trainingRunPace: async () => [sample(0, 1)],
+  });
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.match(detail.textContent, /not enough progress samples yet/);
+  assert.doesNotMatch(detail.textContent, /\/ min/, 'no rate claimed from one reading');
+});
+
+test('a pace route that is not there costs two figures, not the panel', async (t) => {
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1, { precision: 0.5 })], [run(202, 21779, { end_time: null })]),
+    listJobs: async () => ({
+      jobs: [{ ...job(21779, 'leased'), progress_done: 3, progress_total: 10, progress_unit: 'epochs' }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+    // trainingRunPace absent, so the stub 404s the way an older MARP would.
+  });
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.match(detail.textContent, /3 of 10 epochs/, 'the attempt progress still draws');
+  assert.ok(detail.querySelector('.result-line.precision'), 'and so do the charts');
+  assert.match(detail.textContent, /not enough progress samples yet/, 'only the pace is absent');
+});

@@ -1220,6 +1220,24 @@
   }
 
   /**
+   * `GET /api/v2/training_run/:id/pace` -- how fast the epochs are going.
+   *
+   * `gpu_attempt_progress`, sampled about once a minute while the attempt runs: one
+   * `{at, done, total}` per sample, oldest first. **Separate from the epochs** because it
+   * is a different grain and covers the stretch before epoch 1, where `epochs` is empty.
+   *
+   * It is also the only honest source for a remaining estimate. The one this screen used
+   * to show -- "~4h 10m" for a run that took 27 seconds -- was two literals in the markup;
+   * this is the run's own reports, differenced.
+   *
+   * @param {number|string} runId - The training run.
+   * @returns {Promise<Object[]>}
+   */
+  function trainingRunPace(runId) {
+    return request(`/training_run/${encodeURIComponent(runId)}/pace`);
+  }
+
+  /**
    * `GET /api/v2/dataset/builds` -- how far every build still running has got.
    *
    * **The progress is on the attempt, which is why this is not on the dataset.** A
@@ -1651,6 +1669,7 @@
     listDatasets,
     listTrainingRuns,
     trainingRunEpochs,
+    trainingRunPace,
     listDatasetBuilds,
     datasetComposition,
     datasetBuildQueue,

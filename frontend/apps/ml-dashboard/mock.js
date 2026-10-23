@@ -1706,6 +1706,46 @@ function trainingRunDetail(run, epochs, task, spec) {
 }
 
 /**
+ * How fast a run is getting through its epochs, from its own progress samples.
+ *
+ * **Differenced over the whole window rather than the last pair.** Samples are about a
+ * minute apart and an epoch can straddle several, so consecutive samples are often
+ * identical -- a last-pair rate would read zero, then spike, then zero again. First to
+ * last is the rate the run has actually held.
+ *
+ * **Two samples is the floor, and below it this says so.** A single sample has no
+ * elapsed time to divide by, and a rate invented from one reading is the "~4h 10m" this
+ * replaces: a number that looks measured and is not.
+ *
+ * @param {Object[]} pace - From `GET /training_run/:id/pace`, oldest first.
+ * @returns {Object|null} `{perMinute, remainingMs, done, total}`, or null when unknowable.
+ */
+function trainingPace(pace) {
+  if (!Array.isArray(pace) || pace.length < 2) return null;
+
+  const first = pace[0];
+  const last = pace[pace.length - 1];
+  const minutes = (Date.parse(last.at) - Date.parse(first.at)) / 60000;
+  const gained = Number(last.done) - Number(first.done);
+
+  if (!(minutes > 0) || !(gained > 0)) return null;
+
+  const perMinute = gained / minutes;
+  const total = Number(last.total) || 0;
+  const done = Number(last.done) || 0;
+  const left = Math.max(0, total - done);
+
+  return {
+    perMinute,
+    done,
+    total,
+    /* Only when there is a total to count down to. A run whose total is unknown has a
+       rate and no end, and saying "0 left" would be a claim rather than a gap. */
+    remainingMs: total > 0 ? (left / perMinute) * 60000 : null,
+  };
+}
+
+/**
  * What a job's own attempt says it is doing, right now.
  *
  * **The live half, and it needs no training run.** `gpu_job_attempts` carries
@@ -1718,7 +1758,7 @@ function trainingRunDetail(run, epochs, task, spec) {
  * @param {string} state - The view's state word.
  * @returns {string} The progress block.
  */
-function trainingAttemptProgress(job, state) {
+function trainingAttemptProgress(job, state, pace) {
   const done = Number(job.progress_done);
   const total = Number(job.progress_total);
   const unit = job.progress_unit || 'epochs';
@@ -1751,6 +1791,13 @@ function trainingAttemptProgress(job, state) {
     + metric('Epochs', measured ? `${done} / ${total}` : '&mdash;', measured ? escapeHtml(unit) : 'not reported')
     + metric('Elapsed', elapsed, 'since it was queued')
     + metric('Phase', phase ? escapeHtml(phase) : '&mdash;', phase ? 'as the worker reports it' : 'not reported')
+    /* **Measured, or absent.** This is where the screen used to say "~4h 10m" from two
+       literals in the markup, for a run that took 27 seconds. */
+    + (pace
+      ? metric('Pace', `${pace.perMinute.toFixed(pace.perMinute < 1 ? 2 : 1)} / min`, escapeHtml(unit))
+        + metric('Remaining', pace.remainingMs === null ? '&mdash;' : `~${tookText(pace.remainingMs)}`,
+          pace.remainingMs === null ? 'no total to count down to' : 'at the rate it has held')
+      : metric('Pace', '&mdash;', 'not enough progress samples yet'))
     + '</div></section>';
 }
 
@@ -1762,9 +1809,9 @@ function trainingAttemptProgress(job, state) {
  * @param {Object[]} epochs - That run's epochs, or empty.
  * @returns {string}
  */
-function trainingJobDetail(view, run, epochs) {
+function trainingJobDetail(view, run, epochs, pace) {
   const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
-  const live = terminal ? '' : trainingAttemptProgress(view.job, view.state);
+  const live = terminal ? '' : trainingAttemptProgress(view.job, view.state, trainingPace(pace));
 
   if (!run) {
     /* **Expanding is not conditional on a run existing**, which is what broke watching:
@@ -1811,10 +1858,22 @@ function wireTrainingJobDetail(head, detail) {
 
     const run = trainingRunsByJob.get(jobId) || null;
     let epochs = [];
+    let pace = [];
 
     if (run) {
       try {
-        epochs = await window.MarpApi.trainingRunEpochs(run.id);
+        /* **Settled, not awaited together.** The epochs are the charts and the pace is
+           two figures beside them; a pace route that is slow or missing on an older MARP
+           should cost those two figures, not the panel. */
+        const [gotEpochs, gotPace] = await Promise.allSettled([
+          window.MarpApi.trainingRunEpochs(run.id),
+          window.MarpApi.trainingRunPace(run.id),
+        ]);
+
+        if (gotEpochs.status === 'rejected') throw gotEpochs.reason;
+
+        epochs = gotEpochs.value;
+        pace = gotPace.status === 'fulfilled' ? gotPace.value : [];
       } catch (error) {
         cell.innerHTML = '<div class="rundetail jobdetail"><p class="hint">Could not read this '
           + `run's epochs (${error.status || 'no answer'}).</p></div>`;
@@ -1822,7 +1881,7 @@ function wireTrainingJobDetail(head, detail) {
       }
     }
 
-    cell.innerHTML = trainingJobDetail(view, run, epochs);
+    cell.innerHTML = trainingJobDetail(view, run, epochs, pace);
   };
 
   /* **Watched rather than clicked.** The expander is one delegated listener on the
