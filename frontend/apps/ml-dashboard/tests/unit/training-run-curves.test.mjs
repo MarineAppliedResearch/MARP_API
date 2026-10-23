@@ -377,3 +377,53 @@ test('the dataset quad fills what a Dataset records and dashes what it does not'
   assert.ok(cells[2].querySelector('.dash'), 'videos is not recorded on a dataset');
   assert.ok(cells[3].querySelector('.dash'), 'nor is dives');
 });
+
+test('a poll where only updated_at moved repaints that cell and nothing else', async (t) => {
+  /* The Datasets table had this exact cell sit frozen for as long as a build ran: the
+     patch path wrote frames and the pill, and Updated had only ever been refreshed by
+     accident, back when the whole table was thrown away every poll. */
+  let updated = '2026-10-22T11:00:00.000Z';
+
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({
+      jobs: [{ ...job(21782, 'leased'), updated_at: updated, progress_done: 3, progress_total: 10, progress_unit: 'epochs', progress_phase: 'training' }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const head = screen.document.querySelector('.training-table tbody tr[data-job="21782"]');
+  const detail = await open(screen, 21782);
+  const cell = head.querySelector('[data-updated]');
+
+  assert.ok(cell, 'the row should carry the same marker the Datasets row does');
+  assert.equal(cell.dataset.sort, updated);
+
+  const before = cell.textContent.trim();
+
+  /* Only the timestamp moves: no state change, no progress change. */
+  updated = '2026-10-22T11:04:00.000Z';
+
+  let cycle = null;
+  const real = screen.window.setTimeout;
+
+  screen.window.setTimeout = (fn, delay) => {
+    if (delay === 5000 && !cycle) { cycle = fn; return 1; }
+    return real(fn, delay);
+  };
+
+  screen.window.watchTrainingJobs();
+  await cycle();
+
+  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => real(resolve, 20));
+
+  assert.equal(head.querySelector('[data-updated]'), cell, 'the same cell node, not a rebuilt one');
+  assert.notEqual(cell.textContent.trim(), before, 'repainted');
+  assert.equal(cell.dataset.sort, updated,
+    'and its sort key too, or sorting by Updated orders by what the page was drawn with');
+  assert.equal(head.getAttribute('aria-expanded'), 'true', 'with the expansion still open');
+});

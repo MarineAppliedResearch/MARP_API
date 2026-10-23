@@ -601,7 +601,7 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 }
 /* **The only swatch rule, after two of them spent a day disagreeing.** The other lived on
    `.inference-chart-key`, which sits on this same element, and set
-   `background: var(--line)` -- the chart *grid* colour, inherited, cyan at ten per cent --
+   `background: var(--key)` -- the chart *grid* colour, inherited, cyan at ten per cent --
    so every legend painted an invisible bar. It also positioned the mark absolutely while
    this rule lays it out as a flex item, which put it on top of the first letter once it
    became visible.
@@ -637,37 +637,45 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .result-grid line { stroke: rgba(100, 246, 242, .18); stroke-width: 1.2; }
 .result-axis text { fill: var(--text); font: 600 10px var(--body-font); text-anchor: end; }
 .result-axis text:nth-last-child(2) { text-anchor: start; }
-.result-line { fill: none; stroke: var(--line); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* **One token, so the swatch and the line cannot disagree.** This family declared
+   `--line` for the stroke while `.result-legend button::before` paints from `--key` -- so
+   `--key` was unset on all twenty-nine series and every swatch fell back to
+   `currentColor`, painting the muted text grey beside a coloured line. `recall` and
+   `val-loss` are dashed on the chart and were solid in the legend for the same reason.
+   Renamed rather than doubled up: writing both is what the rule above exists to stop. */
+.result-line {
+  fill: none; stroke: var(--key); stroke-width: 2.2; stroke-linecap: round;
+  stroke-linejoin: round; vector-effect: non-scaling-stroke;
+  stroke-dasharray: var(--dash-on) var(--dash-off);
+}
 [data-result-graph].is-highlighted .result-line { opacity: .12; transition: opacity 140ms ease; }
-[data-result-graph].is-highlighted .result-line.highlighted { opacity: 1; stroke-width: 3.2; filter: drop-shadow(0 0 3px var(--line)); }
-.result-line.val-loss, .result-line.recall { stroke-dasharray: 6 4; }
-.train-loss { --line: var(--cyan-300); }
-.val-loss { --line: var(--red-400); }
-.precision { --line: var(--blue-400); }
-.recall { --line: var(--amber-300); }
-.map { --line: var(--mint-400); }
-.class-1 { --line: var(--blue-400); }
-.class-2 { --line: var(--amber-300); }
-.class-3 { --line: var(--violet-300); }
-.class-4 { --line: var(--mint-400); }
-.box-loss { --line: var(--cyan-300); }
-.cls-loss { --line: var(--amber-300); }
-.dfl-loss { --line: var(--violet-300); }
-.map95 { --line: var(--red-400); }
-.pr-rockfish { --line: var(--blue-400); }
-.pr-flatfish { --line: var(--amber-300); }
-.pr-sculpin { --line: var(--violet-300); }
-.pr-other { --line: var(--mint-400); }
-.f1-score { --line: var(--cyan-300); }
-.eval-c1 { --line: var(--blue-400); }
-.eval-c2 { --line: var(--amber-300); }
-.eval-c3 { --line: var(--violet-300); }
-.eval-c4 { --line: var(--mint-400); }
-.eval-c5 { --line: var(--cyan-300); }
-.eval-c6 { --line: var(--red-400); }
-.eval-c7 { --line: var(--blue-400); }
-.eval-c8 { --line: var(--amber-300); }
-.result-line.eval-c5, .result-line.eval-c6 { stroke-dasharray: 8 4; }
+[data-result-graph].is-highlighted .result-line.highlighted { opacity: 1; stroke-width: 3.2; filter: drop-shadow(0 0 3px var(--key)); }
+.train-loss { --key: var(--cyan-300); }
+.val-loss { --key: var(--red-400); --dash-on: 6px; --dash-off: 4px; }
+.precision { --key: var(--blue-400); }
+.recall { --key: var(--amber-300); --dash-on: 6px; --dash-off: 4px; }
+.map { --key: var(--mint-400); }
+.class-1 { --key: var(--blue-400); }
+.class-2 { --key: var(--amber-300); }
+.class-3 { --key: var(--violet-300); }
+.class-4 { --key: var(--mint-400); }
+.box-loss { --key: var(--cyan-300); }
+.cls-loss { --key: var(--amber-300); }
+.dfl-loss { --key: var(--violet-300); }
+.map95 { --key: var(--red-400); }
+.pr-rockfish { --key: var(--blue-400); }
+.pr-flatfish { --key: var(--amber-300); }
+.pr-sculpin { --key: var(--violet-300); }
+.pr-other { --key: var(--mint-400); }
+.f1-score { --key: var(--cyan-300); }
+.eval-c1 { --key: var(--blue-400); }
+.eval-c2 { --key: var(--amber-300); }
+.eval-c3 { --key: var(--violet-300); }
+.eval-c4 { --key: var(--mint-400); }
+.eval-c5 { --key: var(--cyan-300); --dash-on: 8px; --dash-off: 4px; }
+.eval-c6 { --key: var(--red-400); --dash-on: 8px; --dash-off: 4px; }
+.eval-c7 { --key: var(--blue-400); }
+.eval-c8 { --key: var(--amber-300); }
 .result-line.eval-c7, .result-line.eval-c8 { stroke-dasharray: 2 4; }
 .inference-result-grid { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(0, 1.2fr); gap: 12px; align-items: stretch; }
 .finding-list { display: grid; align-content: start; border: 1px solid var(--hairline); border-radius: var(--r-sm); overflow: hidden; background: var(--card-flat); }

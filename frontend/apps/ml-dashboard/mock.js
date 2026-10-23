@@ -1580,6 +1580,22 @@ function patchTrainingRows(body, views) {
 
     if (!view) continue;
 
+    /* **Patched before the terminal check, because it moves for its own reason.** On
+       Datasets this cell sat frozen for as long as a build ran: the patch wrote frames
+       and the pill and nothing else, and the column had only ever been refreshed by
+       accident, when the whole table was still being thrown away every poll. A job's
+       `updated_at` moves on every report, including the one that finishes it. */
+    if (view.job.updated_at) {
+      const updated = $('[data-updated]', head);
+
+      if (updated && updated.dataset.sort !== String(view.job.updated_at)) {
+        updated.innerHTML = datasetStamp(view.job.updated_at);
+        /* The sort key too, or sorting by Updated orders the table by what the
+           timestamps were when the page was drawn. */
+        updated.dataset.sort = String(view.job.updated_at);
+      }
+    }
+
     const status = $('.jstatus', head);
 
     if (status && status.dataset.sort !== String(JOB_STATE_RANK[view.state])) {
@@ -1756,6 +1772,9 @@ function renderTrainingRecent(views) {
       + `<td class="jmap num">${run ? IN_THE_EXPANSION : NO_RUN_RECORDED}</td>`
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
+      /* **The same cell the Datasets table has, with the same marker.** `data-updated` is
+         what the patch path finds and what the DOM tier asserts against. */
+      + `<td class="jtime" data-updated data-sort="${job.updated_at}">${datasetStamp(job.updated_at)}</td>`
       + '</tr>';
   }).join('');
 
@@ -1769,7 +1788,7 @@ function renderTrainingRecent(views) {
 
     detail.className = 'runrow-body';
     detail.hidden = true;
-    detail.innerHTML = '<td colspan="9"><div class="rundetail jobdetail"><p class="hint">Reading this job&hellip;</p></div></td>';
+    detail.innerHTML = '<td colspan="10"><div class="rundetail jobdetail"><p class="hint">Reading this job&hellip;</p></div></td>';
     head.after(detail);
 
     wireTrainingJobDetail(head, detail);
@@ -2351,7 +2370,7 @@ async function renderTrainingScreen() {
   } catch (error) {
     const body = $('.training-table tbody');
     if (body) {
-      body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="9">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
+      body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="10">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
     }
   }
 }
