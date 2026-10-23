@@ -315,6 +315,8 @@ describe('Reporting again', () => {
     });
 
     it('keeps the first report when a later one says something different', async () => {
+        /* Still the rule for a job-sourced value. The one exception is a `resolved`
+           entry, which the engine sends because it overrode what was asked for. */
         const changed = {
             ...REPORT,
             settings: { ...REPORT.settings, confidence: { value: 0.9, type: 'real', source: 'job' } },
@@ -329,6 +331,133 @@ describe('Reporting again', () => {
         // ...but the record is still the first report.
         const confidence = (await recorded(attemptId)).find((row) => row.name === 'confidence');
         expect(confidence.value_real).toBe(0.001);
+    });
+});
+
+/**
+ * The second settings report, and the one thing in it that is allowed to win.
+ *
+ * **Ultralytics resolves `optimizer: auto` and never writes the answer back.**
+ * `build_optimizer` picks an optimizer, a learning rate and a momentum, keeps all three
+ * in local variables, and leaves `trainer.args` reading `auto` and the `lr0` it ignored.
+ * So the worker reads them off the live optimizer and sends a second report from
+ * `on_train_start`, marked `source: "resolved"`.
+ *
+ * It has to be a second report rather than a later first one: the first goes out before
+ * the model is loaded, which is what lets an attempt that dies during setup still say
+ * what it was trying to run (#232). None of these values exist at that point.
+ *
+ * The contract is `268-resolved-settings-contract.md` in the shared notes, written by
+ * the session that built the worker half.
+ */
+describe('A setting the engine resolved for itself', () => {
+    let attemptId;
+
+    beforeAll(async () => {
+        ({ attemptId } = await liveAttempt());
+
+        /* **Registered here, so `afterAll` deletes them.** These four are not in the
+           seeded catalogue, and a settings report registers what it does not find. Left
+           behind, they are rows this file added to a database it does not own — and in CI,
+           where the catalogue starts empty, the guard would fail this file on every run
+           rather than only the first. Which is how it was caught. */
+        created.catalogueNames.push('optimizer', 'lr0', 'momentum', 'epochs');
+
+        /* What the job asked for, before the model is loaded. `auto` is what the
+           dashboard sends by default, and `lr0` is set as well -- which `auto` also
+           discards, so both are wrong by the time the run starts. */
+        await sendEvents(attemptId, [{
+            seq: 0,
+            kind: 'settings',
+            payload: {
+                engine: ENGINE,
+                settings: {
+                    optimizer: { value: 'auto', type: 'text', source: 'job' },
+                    lr0: { value: 0.01, type: 'real', source: 'job' },
+                    epochs: { value: 100, type: 'int', source: 'job' },
+                },
+                ignored: { nonsense_param: 1 },
+            },
+        }]);
+    });
+
+    it('replaces what the job asked for with what the engine chose', async () => {
+        const later = await sendEvents(attemptId, [{
+            seq: 1,
+            kind: 'settings',
+            payload: {
+                engine: ENGINE,
+                settings: {
+                    optimizer: { value: 'AdamW', type: 'text', source: 'resolved' },
+                    lr0: { value: 0.002, type: 'real', source: 'resolved' },
+                    momentum: { value: 0.9, type: 'real', source: 'resolved' },
+                },
+                ignored: {},
+            },
+        }]);
+
+        expect(later.status).toBe(200);
+
+        const rows = await recorded(attemptId);
+        const by = Object.fromEntries(rows.map((row) => [row.name, row]));
+
+        expect(valueOf(by.optimizer)).toBe('AdamW');
+        expect(valueOf(by.lr0)).toBe(0.002);
+        expect(by.optimizer.source).toBe('resolved');
+        expect(by.lr0.source).toBe('resolved');
+
+        /* **A name only the second report carries is recorded too.** `momentum` has no
+           column asking for it, and the worker sends it because `auto` overrides it the
+           same way -- recording two of the three would leave the record quietly wrong
+           about the third. */
+        expect(valueOf(by.momentum)).toBe(0.9);
+
+        /* And everything the second report did not mention is untouched. */
+        expect(valueOf(by.epochs)).toBe(100);
+        expect(by.epochs.source).toBe('job');
+    });
+
+    it('leaves the ignored list to the first report', async () => {
+        /* The second report is documented to send an empty one, and the first owns it.
+           A worker that sent some anyway must not add to a settled record. */
+        await sendEvents(attemptId, [{
+            seq: 2,
+            kind: 'settings',
+            payload: {
+                engine: ENGINE,
+                settings: { lr0: { value: 0.003, type: 'real', source: 'resolved' } },
+                ignored: { a_second_one: 2 },
+            },
+        }]);
+
+        const ignored = await query(
+            'SELECT key FROM gpu_attempt_ignored_params WHERE attempt_id = :attemptId ORDER BY key',
+            { attemptId }
+        );
+
+        expect(ignored.map((row) => row.key)).toEqual(['nonsense_param']);
+    });
+
+    it('does not let a later job-sourced value reopen a settled one', async () => {
+        /* First-wins is the rule for everything that is not the engine saying what it
+           chose. A second report carrying both kinds has to behave per entry. */
+        await sendEvents(attemptId, [{
+            seq: 3,
+            kind: 'settings',
+            payload: {
+                engine: ENGINE,
+                settings: {
+                    epochs: { value: 7, type: 'int', source: 'job' },
+                    lr0: { value: 0.004, type: 'real', source: 'resolved' },
+                },
+                ignored: {},
+            },
+        }]);
+
+        const by = Object.fromEntries((await recorded(attemptId)).map((row) => [row.name, row]));
+
+        expect(valueOf(by.epochs)).toBe(100);
+        expect(valueOf(by.lr0)).toBe(0.004);
     });
 });
 
@@ -402,7 +531,7 @@ describe('A malformed report', () => {
         await refused({ engine: ENGINE, settings: { half: { value: 'yes', type: 'bool', source: 'job' } } });
     });
 
-    it('is refused when the source is not job, default or engine', async () => {
+    it('is refused when the source is not one the catalogue knows', async () => {
         await refused({ engine: ENGINE, settings: { iou: { value: 0.2, type: 'real', source: 'guessed' } } });
     });
 });

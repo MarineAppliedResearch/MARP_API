@@ -149,6 +149,13 @@ afterAll(async () => {
     await db.sequelize.query('DELETE FROM gpu_job_events WHERE attempt_id = :attemptId', {
         replacements: { attemptId }, logging: false,
     });
+    /* The catalogue outlives the attempt its rows came from: `gpu_attempt_settings`
+       cascades, `inference_settings` does not. Left behind, these are rows this file
+       added to a database it does not own. */
+    await db.sequelize.query(
+        "DELETE FROM inference_settings WHERE engine = 'marp_training' AND name IN ('lr0', 'optimizer', 'momentum')",
+        { logging: false }
+    );
     await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE job_id = :jobId', {
         replacements: { jobId }, logging: false,
     });
@@ -189,11 +196,118 @@ describe('a training job writes training_runs and epochs', () => {
         expect(run.dataset_id).toBe(datasetId);
         expect(run.model_id).toBe(modelId);
         expect(Number(run.batch_size)).toBe(16);
-        expect(Number(run.learning_rate)).toBeCloseTo(0.01);
-        expect(run.optimizer).toBe('SGD');
+
+        /* **Null, because nothing resolved them.** The spec asked for `lr0: 0.01` and
+           `optimizer: SGD`, and this run reported no resolved settings -- it is a run
+           that never reached `on_train_start`, or an older worker. The request is still
+           in `gpu_jobs.spec`; what is not known is what the engine actually used, and a
+           column that is sometimes the request and sometimes the truth cannot be read.
+
+           This used to assert 0.01 and SGD, copied straight from the spec. Ultralytics
+           resolves `optimizer: auto` into its own optimizer, learning rate and momentum
+           and logs that it is discarding the submitted ones, so that column was the
+           request wearing the name of the result. */
+        expect(run.learning_rate).toBeNull();
+        expect(run.optimizer).toBeNull();
 
         // Open, because the job has not reported a result yet.
         expect(run.end_time).toBeNull();
+    });
+
+    /**
+     * What the engine resolved reaches the run, and it is not what was asked for.
+     *
+     * The spec says `lr0: 0.01` and `optimizer: SGD`; the engine reports `AdamW` at
+     * `0.002`. Those are deliberately different so a run reading the spec fails here
+     * rather than passing on a coincidence. The second report arrives before the first
+     * epoch, which is where `on_train_start` sits.
+     */
+    test('a run records the optimizer and rate the engine resolved, not the ones asked for', async () => {
+        const [job] = await db.sequelize.query(
+            `INSERT INTO gpu_jobs (kind, spec, state, attempts_made, max_attempts)
+             VALUES ('training', :spec, 'leased', 1, 1)
+             RETURNING id`,
+            {
+                replacements: {
+                    spec: JSON.stringify({
+                        engine: 'marp_training',
+                        model: { ml_model_id: modelId, name: 'jest', sha256: 'a'.repeat(64) },
+                        dataset: { dataset_id: datasetId },
+                        params: { epochs: 50, batch: 8, lr0: 0.01, optimizer: 'SGD' },
+                    }),
+                },
+                type: db.Sequelize.QueryTypes.SELECT,
+                logging: false,
+            }
+        );
+
+        const [attempt] = await db.sequelize.query(
+            `INSERT INTO gpu_job_attempts (job_id, worker_id, slot_index, lease_epoch, state, lease_expires_at)
+             VALUES (:jobId, :workerId, 1, 1, 'running', NOW() + INTERVAL '1 hour')
+             RETURNING id`,
+            { replacements: { jobId: job.id, workerId }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+        );
+
+        const post = (events) => global.api
+            .post(`/api/v2/gpu/attempts/${attempt.id}/events`)
+            .send({ worker_id: workerId, lease_epoch: 1, events });
+
+        try {
+            const settings = await post([{
+                seq: 0,
+                kind: 'settings',
+                payload: {
+                    engine: 'marp_training',
+                    settings: {
+                        optimizer: { value: 'AdamW', type: 'text', source: 'resolved' },
+                        lr0: { value: 0.002, type: 'real', source: 'resolved' },
+                    },
+                    ignored: {},
+                },
+            }]);
+
+            expect(settings.status).toBe(200);
+
+            const first = await post([epochEvent(1, 1, 0.33)]);
+
+            expect(first.status).toBe(200);
+
+            const [run] = await db.sequelize.query(
+                'SELECT * FROM training_runs WHERE job_id = :jobId',
+                { replacements: { jobId: job.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            expect(run).toBeTruthy();
+            expect(Number(run.learning_rate)).toBeCloseTo(0.002);
+            expect(run.optimizer).toBe('AdamW');
+
+            // And the request is untouched where it belongs.
+            const [kept] = await db.sequelize.query(
+                'SELECT spec FROM gpu_jobs WHERE id = :jobId',
+                { replacements: { jobId: job.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            expect(kept.spec.params.optimizer).toBe('SGD');
+            expect(kept.spec.params.lr0).toBe(0.01);
+        } finally {
+            /* Created here, so removed here, whatever the assertions did. */
+            await db.sequelize.query(
+                'DELETE FROM epochs WHERE training_run_id IN (SELECT id FROM training_runs WHERE job_id = :jobId)',
+                { replacements: { jobId: job.id }, logging: false }
+            );
+            await db.sequelize.query('DELETE FROM training_runs WHERE job_id = :jobId', {
+                replacements: { jobId: job.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_job_events WHERE attempt_id = :attemptId', {
+                replacements: { attemptId: attempt.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE id = :attemptId', {
+                replacements: { attemptId: attempt.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_jobs WHERE id = :jobId', {
+                replacements: { jobId: job.id }, logging: false,
+            });
+        }
     });
 
     test('each epoch becomes a row, with the metrics mapped to their columns', async () => {

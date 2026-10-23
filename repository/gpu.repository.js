@@ -1959,10 +1959,23 @@ class GpuRepository {
     /**
      * Record the inference settings an attempt ran with (#232).
      *
-     * **The first report is the record.** An attempt resolves its settings once,
-     * before its first frame, so a second report for the same attempt is kept as
-     * an event but written nowhere else -- the same rule as
+     * **The first report is the record, except for what the engine resolved.** An
+     * inference attempt settles its settings once, before its first frame, so a
+     * second report is kept as an event and written nowhere else -- the same rule as
      * `published_attempt_id`, which is set once and never overwritten.
+     *
+     * **Training does not fit that, and the exception is narrow.** The first report
+     * goes out *before the model is loaded*, which is what lets an attempt that dies
+     * during setup still say what it was trying to run. Ultralytics resolves
+     * `optimizer: auto` into an optimizer, a learning rate and a momentum after that,
+     * inside `build_optimizer`, and never writes them back -- so a second report from
+     * `on_train_start` carries them, read off the live optimizer. Entries marked
+     * `source: 'resolved'` replace the stored value for their name; everything else,
+     * including the ignored list, keeps first-wins.
+     *
+     * **Requested is not lost.** `gpu_jobs.spec` still holds what was asked for, so a
+     * run that asked for `auto` and got `AdamW` has both, and the disagreement is the
+     * interesting part rather than a conflict to resolve.
      *
      * **A setting the catalogue does not know is registered, not refused.** A
      * newer worker reporting a setting this database has not seen would otherwise
@@ -1985,12 +1998,21 @@ class GpuRepository {
             { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
         );
 
-        if (already) {
+        const resolved = report.settings.filter((setting) => setting.source === 'resolved');
+
+        /* A repeat report with nothing resolved in it changes nothing, which is what
+           this has always done and what the log line has always said. */
+        if (already && !resolved.length) {
             logger.info(`attempt ${attemptId} reported its settings again; the first report stands`);
             return;
         }
 
-        for (const setting of report.settings) {
+        /* **Only the resolved entries, once something is stored.** A second report
+           carrying job-sourced values as well must not reopen them -- first-wins is
+           the rule for everything that is not the engine telling us what it chose. */
+        const settings = already ? resolved : report.settings;
+
+        for (const setting of settings) {
             const entry = await this.catalogueEntry(report.engine, setting, transaction);
 
             // The catalogue's type decides the column. A worker reporting a
@@ -2007,10 +2029,17 @@ class GpuRepository {
 
             const column = SETTING_VALUE_COLUMN[entry.value_type];
 
+            /* **`resolved` replaces; everything else defers.** The two conflict
+               clauses are the whole merge rule, and they are here rather than in a
+               branch above so that a report mixing both kinds behaves per entry. */
+            const onConflict = setting.source === 'resolved'
+                ? `DO UPDATE SET ${column} = EXCLUDED.${column}, source = EXCLUDED.source, recorded_at = NOW()`
+                : 'DO NOTHING';
+
             await this.db.sequelize.query(
                 `INSERT INTO gpu_attempt_settings (attempt_id, setting_id, ${column}, source)
                  VALUES (:attemptId, :settingId, :value, :source)
-                 ON CONFLICT (attempt_id, setting_id) DO NOTHING`,
+                 ON CONFLICT (attempt_id, setting_id) ${onConflict}`,
                 {
                     replacements: {
                         attemptId,
@@ -2023,7 +2052,10 @@ class GpuRepository {
             );
         }
 
-        for (const item of report.ignored) {
+        /* The first report owns the ignored list, and the second is documented to
+           send an empty one. Skipped rather than looped over nothing, so a worker
+           that did send some cannot quietly add to a settled record. */
+        for (const item of already ? [] : report.ignored) {
             await this.db.sequelize.query(
                 `INSERT INTO gpu_attempt_ignored_params (attempt_id, key, requested_value)
                  VALUES (:attemptId, :key, :requestedValue)
@@ -2167,6 +2199,37 @@ class GpuRepository {
         let trainingRunId = existing && existing.id;
 
         if (!trainingRunId) {
+            /* **What the run actually used, not what the job asked for.** These two
+               columns were filled from `spec.params`, which is the request -- and
+               Ultralytics discards it: `optimizer: auto` picks its own optimizer, its
+               own learning rate and its own momentum, and says so in its log while
+               leaving `trainer.args` reading the values it ignored. A run that asked
+               for `lr0: 0.01` and got 0.002 had 0.01 recorded against it.
+
+               So the engine reports what it resolved, and that is what a training run
+               -- a record of what happened -- carries. The request is not lost: it is
+               in `gpu_jobs.spec`, where it always was, and the two disagreeing is the
+               fact worth having.
+
+               **Null when nothing resolved them**, which is a run that failed before
+               `on_train_start`, or an older worker. Falling back to the request would
+               put a number in the column that the run may well not have used, and a
+               column that is sometimes the request and sometimes the truth cannot be
+               read at all. The attempt is scoped rather than the job, because a retry
+               resolves its own. */
+            const settled = await this.db.sequelize.query(
+                `SELECT s.name, a.value_real, a.value_text
+                   FROM gpu_attempt_settings a
+                   JOIN inference_settings s ON s.id = a.setting_id
+                  WHERE a.attempt_id = :attemptId AND a.source = 'resolved'
+                    AND s.name IN ('lr0', 'optimizer')`,
+                { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
+            );
+
+            const resolved = new Map(settled.map((row) => [row.name, row]));
+            const resolvedLr = resolved.get('lr0');
+            const resolvedOptimizer = resolved.get('optimizer');
+
             const [opened] = await this.db.sequelize.query(
                 `INSERT INTO training_runs (job_id, model_id, dataset_id, start_time,
                                             total_epochs, batch_size, learning_rate, optimizer,
@@ -2186,8 +2249,10 @@ class GpuRepository {
                         datasetId: (spec.dataset && spec.dataset.dataset_id) || null,
                         totalEpochs: Number.isFinite(Number(params.epochs)) ? Number(params.epochs) : null,
                         batchSize: Number.isFinite(Number(params.batch)) ? Number(params.batch) : null,
-                        learningRate: Number.isFinite(Number(params.lr0)) ? Number(params.lr0) : null,
-                        optimizer: params.optimizer ? String(params.optimizer) : null,
+                        learningRate: resolvedLr && Number.isFinite(Number(resolvedLr.value_real))
+                            ? Number(resolvedLr.value_real) : null,
+                        optimizer: resolvedOptimizer && resolvedOptimizer.value_text
+                            ? String(resolvedOptimizer.value_text) : null,
                         notes: `Opened by GPU job ${job.id}.`,
                     },
                     type: QueryTypes.SELECT,
