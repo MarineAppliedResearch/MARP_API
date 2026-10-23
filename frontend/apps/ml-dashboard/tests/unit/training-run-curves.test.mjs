@@ -27,7 +27,12 @@ const job = (id, state = 'succeeded') => ({
   id,
   kind: 'training',
   name: `Train run ${id}`,
-  spec: { model: { name: 'MARP-Rockfish-Det' } },
+  /* The shape a real training spec has: both halves carry a name beside the id, which is
+     what the row shows and what it used to reach past. */
+  spec: {
+    model: { ml_model_id: 7, name: 'rockfish5-2026-10-20' },
+    dataset: { dataset_id: 41, name: 'CookieStarTest' },
+  },
   state,
   priority: 0,
   attempts_made: 1,
@@ -106,8 +111,17 @@ test('every training job expands, and the run half appears where there is a run'
 
   /* The join itself, which could not be made until `training_runs.job_id` reached the
      model: the column has been in the table since 20261020120000. */
-  assert.match(withRun.querySelector('.jdset').textContent, /Dataset 41/);
-  assert.match(withRun.querySelector('.jmakes').textContent, /Model 7/);
+  /* **Names, with the id kept beside them.** The row printed "Dataset 41" while the spec
+     was carrying `CookieStarTest` in the same object. */
+  assert.match(withRun.querySelector('.jdset').textContent, /CookieStarTest/);
+  assert.match(withRun.querySelector('.jdset').textContent, /41/, 'and the id stays reachable');
+
+  /* Produces is the version the run registers, which a finished run has and a running one
+     does not. This fixture is succeeded. */
+  assert.match(withRun.querySelector('.jmakes').textContent, /rockfish5-2026-10-20/);
+
+  /* The task comes off the base model rather than from which columns are null. */
+  assert.equal(withRun.querySelector('.jtask').textContent.trim(), 'Detection');
 });
 
 test('a null metric is a gap in the line, never a zero', async (t) => {
@@ -633,4 +647,70 @@ test('the trainer plots are captioned by what they are, not by filename', async 
     'something new',
   ], 'PR_curve.png means nothing to someone who has not run YOLO; an undescribed plot is '
     + 'still shown rather than hidden');
+});
+
+test('adding a task is a list of series, not a new component', async (t) => {
+  /* **The test that the structure held.** Every run today is detection, which is exactly
+     when hard-coding box/class/DFL and mAP@50 looks harmless -- and then classification
+     arrives with top-1 and top-5 and no boxes. A task MARP knows about but nobody has
+     described says so; it does not draw detection's charts under a classification run. */
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1, { precision: 0.5 })]),
+    listModels: async () => [{ id: 7, name: 'habitat-cls', model_type: 'classification', status: 'trained', parent_model_id: null, created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z' }],
+  });
+
+  t.after(screen.close);
+
+  const row = screen.document.querySelector('.training-table tbody tr[data-job="21779"]');
+
+  assert.equal(row.querySelector('.jtask').textContent.trim(), 'Classification',
+    'the row says which kind of run it is, which is the point of the column');
+  assert.equal(row.dataset.task, 'classification');
+
+  const detail = await open(screen, 21779);
+
+  assert.match(detail.textContent, /charts a classification run should show are not described yet/,
+    'and the panel says so rather than drawing detection-shaped charts for it');
+  assert.equal(detail.querySelector('.result-line.box-loss'), null,
+    'no box loss on a run that has no boxes');
+
+  /* The sections that are not task-specific still appear. */
+  assert.match(detail.textContent, /Confusion matrix/);
+});
+
+test('a job whose base model is unknown says so rather than guessing', async (t) => {
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)]),
+    listModels: async () => [],
+  });
+
+  t.after(screen.close);
+
+  const row = screen.document.querySelector('.training-table tbody tr[data-job="21779"]');
+
+  assert.ok(row.querySelector('.jtask .dash'), 'a dash, not a guessed task');
+  assert.equal(row.dataset.task, undefined);
+
+  /* The name still shows: it is in the spec and does not depend on the registry. */
+  assert.match(row.querySelector('.jdset').textContent, /CookieStarTest/);
+});
+
+test('a job whose spec carries no name falls back to the id, never to blank', async (t) => {
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)]),
+    listJobs: async () => ({
+      jobs: [{ ...job(21779), spec: { model: { ml_model_id: 7 }, dataset: { dataset_id: 41 } } }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const row = screen.document.querySelector('.training-table tbody tr[data-job="21779"]');
+
+  /* Older jobs predate the spec carrying names. The id alone says what it can. */
+  assert.equal(row.querySelector('.jdset').textContent.trim(), 'Dataset 41');
+  assert.notEqual(row.querySelector('.jdset').textContent.trim(), '', 'never an empty cell');
 });

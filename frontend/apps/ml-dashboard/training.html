@@ -368,11 +368,11 @@
             <a class="more" href="./jobs.html?type=training">All jobs <svg class="ico sm"><use href="#i-arrow"/></svg></a>
             <div class="jobs-sort-mobile" aria-label="Sort recent training jobs">
               <span>Sort</span>
-              <button type="button" data-sort-column="0">Job</button><button type="button" data-sort-column="1">Dataset</button>
-              <button type="button" data-sort-column="2">Produces</button><button type="button" data-sort-column="3">Status</button>
-              <button type="button" data-sort-column="4">Epochs</button><button type="button" data-sort-column="5">Best mAP</button>
-              <button type="button" data-sort-column="6">Started</button><button type="button" data-sort-column="7">Took</button>
-              <button type="button" data-sort-column="8">Updated</button>
+              <button type="button" data-sort-column="0">Job</button><button type="button" data-sort-column="1">Task</button><button type="button" data-sort-column="2">Dataset</button>
+              <button type="button" data-sort-column="3">Produces</button><button type="button" data-sort-column="4">Status</button>
+              <button type="button" data-sort-column="5">Epochs</button><button type="button" data-sort-column="6">Best mAP</button>
+              <button type="button" data-sort-column="7">Started</button><button type="button" data-sort-column="8">Took</button>
+              <button type="button" data-sort-column="9">Updated</button>
             </div>
           </header>
           <div class="panel-bd flush">
@@ -382,6 +382,7 @@
                   <tr>
                     <th class="ex"><span class="vh">Expand</span></th>
                     <th class="hjob sortable" title="Sort by training job name">Job</th>
+                    <th class="jtask sortable" title="Detection, classification or segmentation — the task the base model decides">Task</th>
                     <th class="hscope sortable" title="Sort by the immutable saved dataset">Dataset</th>
                     <th class="hmodel sortable" title="Sort by the model version this run will register">Produces</th>
                     <th class="hstatus sortable" title="Sort by current training state">Status</th>

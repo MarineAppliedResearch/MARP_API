@@ -1278,6 +1278,9 @@ const NO_RUN_RECORDED = '<span class="dash" title="No training run was recorded 
  */
 const IN_THE_EXPANSION = '<span class="dash" title="Computed from the run&apos;s epochs. Open the row to see it.">&mdash;</span>';
 
+/** The registry by id, so a row can read its base model's task. */
+let trainingModelsById = new Map();
+
 /** The latest view per training job id, so an open panel redraws from current data. */
 let trainingViewsByJob = new Map();
 
@@ -1375,6 +1378,108 @@ function epochChart(spec, epochs) {
     + `<g class="result-axis"><text x="38" y="28">${spec.top}</text><text x="38" y="103">${spec.mid}</text>`
     + `<text x="38" y="178">0</text><text x="46" y="196">Epoch ${first}</text>`
     + `<text x="700" y="196">Epoch ${last}</text></g>${lines}</svg></div></article>`;
+}
+
+/**
+ * What a training job is training, and what that task's panel shows.
+ *
+ * **Keyed by task so a second one is a list of series rather than a component.** Every run
+ * today is detection, which makes it tempting to hard-code box/class/DFL loss and mAP@50 --
+ * and then classification arrives with top-1 and top-5 and no boxes, and segmentation with
+ * mask metrics beside box metrics, and the panel has to be taken apart. Adding either is an
+ * entry here.
+ *
+ * **Not built, and saying so rather than drawing nothing.** `classification` and
+ * `segmentation` are named with no charts because nobody has described what their panels
+ * show. A run of either renders the sections it shares and one sentence about the rest,
+ * which is a gap a reader can see instead of a blank.
+ *
+ * @type {Object}
+ */
+const TRAINING_TASKS = {
+  detection: {
+    label: 'Detection',
+    charts: [
+      {
+        title: 'Validation loss',
+        note: 'Lower is better &middot; the trainer&rsquo;s own train-split loss is not recorded',
+        max: 2,
+        top: '2.0',
+        mid: '1.0',
+        series: [['box-loss', 'Box loss', 'box_loss'], ['cls-loss', 'Class loss', 'cls_loss'], ['dfl-loss', 'DFL loss', 'dfl_loss']],
+      },
+      {
+        title: 'Validation quality',
+        note: 'Higher is better &middot; held-out split',
+        max: 1,
+        top: '1.0',
+        mid: '.5',
+        series: [['precision', 'Precision', 'precision'], ['recall', 'Recall', 'recall'], ['map', 'mAP@50', 'map50'], ['map95', 'mAP@50&ndash;95', 'map5095']],
+      },
+    ],
+  },
+  classification: { label: 'Classification', charts: [] },
+  segmentation: { label: 'Segmentation', charts: [] },
+};
+
+/**
+ * Which task a training job is for.
+ *
+ * **From the base model, because the checkpoint decides the task.** A detection `.pt`
+ * selected for a segmentation run trains a detector; the engine is never told which task
+ * was asked for, which is why `trainingSubmission` refuses a mismatch rather than trusting
+ * the form. So the model's own `model_type` is the answer, and it is read rather than
+ * inferred from which metric columns happen to be null.
+ *
+ * **Not the Task column the Datasets screen lost.** That one was a dataset's task, a field
+ * `Dataset` has never had -- Isaac: *"it'll never have a value"*. This is `ml_models.model_type`,
+ * which exists, is required, and genuinely varies. Same word, different column.
+ *
+ * @param {Object} job - The training job.
+ * @returns {string|null} A key into `TRAINING_TASKS`, or null when the model is unknown.
+ */
+function trainingTaskOf(job) {
+  const id = job && job.spec && job.spec.model && job.spec.model.ml_model_id;
+  const model = trainingModelsById.get(Number(id));
+  const task = String((model && model.model_type) || '').trim().toLowerCase();
+
+  return TRAINING_TASKS[task] ? task : null;
+}
+
+/**
+ * A name with its id kept reachable.
+ *
+ * **Both, because both are used.** The row printed `Dataset 384` where the spec was
+ * carrying `CookieStarTest` all along -- it reached past the name to the id. But the ids
+ * are what Isaac works in and what gets quoted between sessions, so the name is the label
+ * and the id is beside it, small, rather than one replacing the other.
+ *
+ * An older job whose spec has no name falls back to the id alone, which is honest; a blank
+ * cell would not be.
+ *
+ * @param {string} noun - What the id names, for the fallback.
+ * @param {Object} from - `spec.dataset` or `spec.model`.
+ * @param {number|string} id - The id.
+ * @param {string} [href] - Where the name should link, if anywhere.
+ * @returns {string}
+ */
+function namedById(noun, from, id, href) {
+  if (id === null || id === undefined || id === '') return NO_RUN_RECORDED;
+
+  const name = from && typeof from.name === 'string' ? from.name.trim() : '';
+  const small = `<span class="b mono" title="${noun} id">${id}</span>`;
+
+  if (!name) {
+    /* No name in the spec -- older jobs predate it being carried. The id alone says what
+       it can, which is more than an empty cell. */
+    return `<span class="two"><span class="a">${noun} ${id}</span></span>`;
+  }
+
+  const label = href
+    ? `<a href="${href}" title="${escapeHtml(name)}">${escapeHtml(name)}</a>`
+    : escapeHtml(name);
+
+  return `<span class="two"><span class="a">${label}</span>${small}</span>`;
 }
 
 /**
@@ -1526,7 +1631,7 @@ function trainingPlots(plots) {
  * @param {Object[]} epochs - Its epochs, earliest first.
  * @returns {string} The run's part of the panel, without the wrapper.
  */
-function trainingRunDetail(run, epochs) {
+function trainingRunDetail(run, epochs, task, spec) {
   /* **Not `NOT_REPORTED`.** That one's tooltip is about worker telemetry, which is not
      what a null batch size on a training run means -- the run simply did not record one. */
   const NONE = '<span class="dash" title="Not recorded on this training run">&mdash;</span>';
@@ -1555,26 +1660,21 @@ function trainingRunDetail(run, epochs) {
     metric('Device', run.compute_device || NONE),
   ].join('');
 
-  /* **Validation loss, and only validation loss.** The ask was train *and* validation --
-     the gap between them is the overfitting signal an ML reader looks for first -- and
-     MARP cannot answer it: the trainer reports `train/*` and `val/*`, the worker sends
-     only `val/*`, and `epochs` has one column per loss with no split. Drawing a train
-     series that can never fill would be a legend entry promising a line that never
-     arrives, so the note says what these are instead. */
-  const charts = epochs.length
-    ? epochChart({
-      title: 'Validation loss',
-      note: 'Lower is better &middot; the trainer&rsquo;s own train-split loss is not recorded',
-      max: 2, top: '2.0', mid: '1.0',
-      series: [['box-loss', 'Box loss', 'box_loss'], ['cls-loss', 'Class loss', 'cls_loss'], ['dfl-loss', 'DFL loss', 'dfl_loss']],
-    }, epochs)
-    + epochChart({
-      title: 'Validation quality',
-      note: 'Higher is better &middot; held-out split',
-      max: 1, top: '1.0', mid: '.5',
-      series: [['precision', 'Precision', 'precision'], ['recall', 'Recall', 'recall'], ['map', 'mAP@50', 'map50'], ['map95', 'mAP@50&ndash;95', 'map5095']],
-    }, epochs)
-    : '<p class="hint">No epoch has been reported yet. This fills in as the run reports them.</p>';
+  /* **The charts come from the task, not from this function.** Every run today is
+     detection, which is exactly when hard-coding box/class/DFL and mAP@50 looks harmless.
+     Classification reports top-1 and top-5 and no boxes; segmentation reports mask
+     metrics beside box ones. `TRAINING_TASKS` is where a second task gets added, and
+     adding it is a list of series rather than a rewrite of this.
+
+     A task nobody has described yet says so, which is a gap a reader can see. */
+  const plan = TRAINING_TASKS[task] || null;
+  const charts = !plan || !plan.charts.length
+    ? `<p class="hint">${plan
+      ? `The charts a ${plan.label.toLowerCase()} run should show are not described yet.`
+      : 'This run&rsquo;s task is unknown, so there is no set of charts to draw for it.'}</p>`
+    : (epochs.length
+      ? plan.charts.map((chart) => epochChart(chart, epochs)).join('')
+      : '<p class="hint">No epoch has been reported yet. This fills in as the run reports them.</p>');
 
   /* **No range control on these.** Their x-axis is the epoch number, not a clock, so
      "the last hour" names nothing -- a run is however many epochs long and all of them
@@ -1585,8 +1685,21 @@ function trainingRunDetail(run, epochs) {
 
   /* The inner content only; `trainingJobDetail` owns the wrapper, because it puts the
      live attempt block above this and the two have to sit in one panel. */
+  /* The same names the row shows, for the same reason: the spec has been carrying them
+     all along and this header was printing the ids beside them. */
+  const named = (noun, from, id) => {
+    const name = from && typeof from.name === 'string' ? from.name.trim() : '';
+
+    return name ? `${escapeHtml(name)} (${noun.toLowerCase()} ${id})` : `${noun} ${id}`;
+  };
+  const about = [
+    run.dataset_id ? named('Dataset', spec && spec.dataset, run.dataset_id) : 'No dataset recorded',
+    run.model_id ? named('Model', spec && spec.model, run.model_id) : null,
+    task ? TRAINING_TASKS[task].label : null,
+  ].filter(Boolean).join(' &middot; ');
+
   return `<div class="jobdetail-head"><div><b>Training run ${run.id}</b>`
-    + `<span>${run.dataset_id ? `Dataset ${run.dataset_id}` : 'No dataset recorded'} &middot; model ${run.model_id}</span></div></div>`
+    + `<span>${about}</span></div></div>`
     + `<div class="jobmetrics">${settings}</div>`
     + `<div class="training-history-grid">${charts}</div>`
     + `<div class="training-evaluation-grid">${evaluation}</div>`;
@@ -1662,7 +1775,7 @@ function trainingJobDetail(view, run, epochs) {
       + 'and mAP appear here as soon as one is.</p></div>';
   }
 
-  return `<div class="rundetail jobdetail">${live}${trainingRunDetail(run, epochs)}</div>`;
+  return `<div class="rundetail jobdetail">${live}${trainingRunDetail(run, epochs, trainingTaskOf(view.job), view.job.spec)}</div>`;
 }
 
 /**
@@ -1916,15 +2029,34 @@ function renderTrainingRecent(views) {
        join until now. */
     const run = trainingRunsByJob.get(job.id) || null;
 
-    return `<tr data-job="${job.id}"${run ? ` data-run="${run.id}"` : ''}>`
+    /* **The names are in the spec and the row was reaching past them to the ids.**
+       `spec.dataset` and `spec.model` each carry `{name, url, sha256}` beside the id, so
+       "Dataset 384" was never the only thing available -- `CookieStarTest` was sitting in
+       the same object. */
+    const spec = job.spec || {};
+    const datasetId = (spec.dataset && spec.dataset.dataset_id) ?? (run && run.dataset_id);
+    const modelId = (spec.model && spec.model.ml_model_id) ?? (run && run.model_id);
+    const task = trainingTaskOf(job);
+
+    return `<tr data-job="${job.id}"${run ? ` data-run="${run.id}"` : ''}${task ? ` data-task="${task}"` : ''}>`
       /* **Every job, not only one with a run.** The expander used to be conditional on
          `run`, so a queued or leased job -- the only kind anybody watches -- had none. */
       + '<td class="ex"><button class="exbtn" type="button" aria-label="Show this job"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
       + `<td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
-      + `<td class="jdset">${run && run.dataset_id
-        ? `<a href="./datasets.html?dataset=${encodeURIComponent(run.dataset_id)}">Dataset ${run.dataset_id}</a>`
-        : NO_RUN_RECORDED}</td>`
-      + `<td class="jmakes">${run ? `Model ${run.model_id}` : NO_RUN_RECORDED}</td>`
+      /* **What the model's task is**, from the base model rather than guessed from which
+         metric columns are null. Once three kinds of run share this table, *Best mAP*
+         means nothing for two of them and the row has to say which it is. */
+      + `<td class="jtask" data-sort="${task || ''}">${task
+        ? `<span class="tag">${TRAINING_TASKS[task].label}</span>`
+        : '<span class="dash" title="The base model this job trains from is not in the registry">&mdash;</span>'}</td>`
+      + `<td class="jdset">${namedById('Dataset', spec.dataset, datasetId,
+        datasetId ? `./datasets.html?dataset=${encodeURIComponent(datasetId)}` : '')}</td>`
+      /* **What it produces, which does not exist yet.** This cell means the model version
+         the run registers, and a run that has not finished has not registered one. The
+         base it trains *from* is a different fact and is in the expansion. */
+      + `<td class="jmakes">${['done', 'issues'].includes(view.state)
+        ? namedById('Model', spec.model, modelId, '')
+        : '<span class="dash" title="The version a run registers does not exist until it succeeds">&mdash;</span>'}</td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
       + `<td class="jepochs num">${run && run.total_epochs
         ? `<span title="Configured for this run. How many have been reported is in the expansion.">${run.total_epochs}</span>`
@@ -1948,7 +2080,7 @@ function renderTrainingRecent(views) {
 
     detail.className = 'runrow-body';
     detail.hidden = true;
-    detail.innerHTML = '<td colspan="10"><div class="rundetail jobdetail"><p class="hint">Reading this job&hellip;</p></div></td>';
+    detail.innerHTML = '<td colspan="11"><div class="rundetail jobdetail"><p class="hint">Reading this job&hellip;</p></div></td>';
     head.after(detail);
 
     wireTrainingJobDetail(head, detail);
@@ -2522,6 +2654,11 @@ async function renderTrainingScreen() {
       if (run.job_id != null && !trainingRunsByJob.has(run.job_id)) trainingRunsByJob.set(run.job_id, run);
     }
 
+    /* **Before `renderTraining`, because the rows read it.** The Task cell comes from the
+       base model's `model_type`, and this used to be filled by `fillTrainingChoices`
+       afterwards -- so every row was built against an empty map and drew a dash. */
+    trainingModelsById = new Map(models.map((model) => [model.id, model]));
+
     renderTraining(jobs.jobs);
     fillTrainingChoices(models, datasets);
     markTrainingRunsUnbacked();
@@ -2530,7 +2667,7 @@ async function renderTrainingScreen() {
   } catch (error) {
     const body = $('.training-table tbody');
     if (body) {
-      body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="10">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
+      body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
     }
   }
 }
