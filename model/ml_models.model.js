@@ -154,6 +154,23 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      artifact_sha256: {
+        /* **Recorded when the weights are staged, not computed when a job is
+           submitted.** A training spec has to carry this -- the worker hashes what it
+           fetched and refuses a mismatch -- and it used to exist only inside a sentence
+           in `notes`, or nowhere at all. Null is "not known", which is why a job
+           cannot be submitted against a model that has none. */
+        type: DataTypes.STRING(64),
+        allowNull: true,
+        comment:
+          'Lowercase sha256 of the weights at storage_path. Null means not known.',
+        jsonSchema: {
+            description: 'Lowercase sha256 of the weights at storage_path, for the job spec '
+                + 'that fetches them. Null when the artifact is not on this machine.',
+            examples: ['5e5aaa5a6ee6023734f154766b000c85805924178b865e3569d61592fcca0b89'],
+        },
+      },
+
       status: {
         type: DataTypes.STRING,
         allowNull: false,

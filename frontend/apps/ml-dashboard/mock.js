@@ -1426,7 +1426,22 @@ const UPSTREAM_CHECKPOINTS = {
   'base-seg': 'YOLO segmentation — upstream checkpoint',
 };
 
+/**
+ * The models the base-model selects were last filled from, by id.
+ *
+ * Kept because a job spec needs more of a model than its option carries: the name, and
+ * the sha256 of its weights that the worker checks its download against. Reading those
+ * back out of the option would mean parsing the "name — type" label this screen
+ * composes, which is a display string and free to change.
+ *
+ * @type {Map<number, Object>}
+ */
+const registeredModels = new Map();
+
 function fillTrainingChoices(models, datasets) {
+  registeredModels.clear();
+
+  for (const model of models || []) registeredModels.set(Number(model.id), model);
   /* **Not filtered by status, and not filtered by task, because neither column
      means what this screen assumed.**
 
@@ -1576,6 +1591,155 @@ function trainingParams(root) {
   }
 
   return params;
+}
+
+/**
+ * What one training submission needs, read off the form, or why it cannot be made.
+ *
+ * **A spec names a model by id AND by checksum.** `validateSubmittedModel` requires
+ * `spec.model.sha256`, because the worker hashes what it fetched and refuses a mismatch —
+ * that check is the only thing standing between a job and training on whatever file
+ * happens to sit at a path. So a model MARP has recorded no checksum for cannot be
+ * submitted, and saying so here beats a 400 from the API that reads as a bug in this
+ * screen.
+ *
+ * **The dataset is named by id alone**, on purpose: `submitTrainingJob` composes the
+ * locator and the hash from `datasets.archive_sha256` itself. The model half is composed
+ * here because that column reached `ml_models` later. If the server ever composes both,
+ * this sends the id alone too and nothing else changes.
+ *
+ * **The upstream-checkpoint option is refused by this rather than special-cased.** Its
+ * value is a sentence where every other option carries a model id, so it fails the same
+ * check an empty selection does. Registering a stock checkpoint is a separate question
+ * and this screen must not imply it is settled.
+ *
+ * @param {Document|Element} [root] - Where to read from; the document by default.
+ * @returns {{body: Object}|{refusal: string}} One or the other, never both.
+ */
+function trainingSubmission(root) {
+  const where = root || document;
+  const value = (id) => {
+    const element = where.querySelector(`#${id}`);
+
+    return element ? element.value : null;
+  };
+
+  const modelId = Number(value('base-det'));
+
+  if (!Number.isInteger(modelId) || modelId <= 0) {
+    return {
+      refusal: 'Choose a base model that MARP has registered. The upstream checkpoint is '
+        + 'not one: nothing has registered those weights, so no worker could be told which '
+        + 'file to fetch.',
+    };
+  }
+
+  const model = registeredModels.get(modelId);
+
+  if (!model) {
+    return { refusal: `Model ${modelId} is no longer in the registry. Reload the page.` };
+  }
+
+  if (!model.artifact_sha256) {
+    /* Null means the checksum is not known, which is not the same as the model being
+       unusable — its weights are simply not on the machine that would have hashed them.
+       Naming the script is the difference between a dead end and a next step. */
+    return {
+      refusal: `${model.name} has no recorded checksum, so a worker would have nothing to `
+        + 'verify its weights against. Run scripts/backfill-model-artifact-sha256.js where '
+        + 'the model store lives.',
+    };
+  }
+
+  const datasetId = Number(value('dataset-det'));
+
+  if (!Number.isInteger(datasetId) || datasetId <= 0) {
+    return { refusal: 'Choose a saved dataset to train on.' };
+  }
+
+  const name = (value('trname') || '').trim();
+
+  return {
+    body: {
+      kind: 'training',
+      // Omitted rather than invented when blank: MARP composes no fallback name.
+      ...(name ? { name } : {}),
+      spec: {
+        engine: 'marp_training',
+        model: {
+          ml_model_id: model.id,
+          name: model.name,
+          /* Coordinator-relative, exactly as the server composes the dataset one, so a
+             worker resolves it against whichever MARP it is enrolled with. */
+          url: `/api/v2/model/${model.id}/artifact`,
+          sha256: String(model.artifact_sha256).toLowerCase(),
+        },
+        // The id alone; the server fills in the locator and the archive hash.
+        dataset: { dataset_id: datasetId },
+        params: trainingParams(where),
+      },
+    },
+  };
+}
+
+/**
+ * Queues the detection run the form describes.
+ *
+ * **Classification and segmentation are deliberately not wired.** Their panels have
+ * fields and no submission; detection goes end to end first, on a real dataset, and the
+ * other two follow once it has.
+ *
+ * The button is disabled while the request is in flight, because the one thing worse than
+ * a run that does not start is three of them that do.
+ *
+ * @returns {void}
+ */
+function wireStartTraining() {
+  const button = $('#trainBtn');
+  const status = $('[data-fills="train-status"]');
+
+  if (!button || !window.MarpApi) return;
+
+  const say = (text, kind) => {
+    if (!status) return;
+
+    status.textContent = text;
+    status.dataset.state = kind || '';
+  };
+
+  button.addEventListener('click', async () => {
+    const asked = trainingSubmission();
+
+    if (asked.refusal) {
+      say(asked.refusal, 'warning');
+
+      return;
+    }
+
+    button.disabled = true;
+    say('Queueing…');
+
+    try {
+      const queued = await window.MarpApi.submitJob(asked.body);
+      const job = (queued.jobs || [])[0];
+
+      /* The id, because it is what every other screen keys on and what somebody types
+         into the Jobs filter when they want to know what became of this. */
+      say(job && job.id
+        ? `Queued as job ${job.id}. It appears below, and on the Jobs screen.`
+        : 'Queued.', 'ok');
+
+      renderTrainingScreen();
+    } catch (error) {
+      /* The API's own message rather than a sentence of this screen's: it is the one that
+         says which field was wrong, and replacing it with "Could not queue" is how a
+         person ends up guessing. */
+      say(`Could not queue it (${error.status || 'no answer'}). ${error.message || ''}`.trim(),
+        'warning');
+    } finally {
+      button.disabled = false;
+    }
+  });
 }
 
 /**
@@ -9753,5 +9917,6 @@ Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), r
      button that visibly worked and highlighted nothing. The row loop guards
      itself against a repeat; the graph bindings could not. */
   wireSelection();
+  wireStartTraining();
   applyTips();
 });
