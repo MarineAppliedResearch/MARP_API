@@ -273,11 +273,13 @@
               </div>
               <span class="hint dataset-owned-note">Dataset variants and preprocessing are fixed when it is saved; this run does not change them.</span>
 
-              <div class="quad">
-                <span><b>12,846</b>observations</span>
-                <span><b>24</b>classes</span>
-                <span><b>142</b>videos</span>
-                <span><b>36</b>dives</span>
+              <!-- Also the selected dataset's, and also four literals before this. Two of
+                   the four are columns on a Dataset; videos and dives are not recorded. -->
+              <div class="quad" data-rendered data-fills="dataset-quad">
+                <span><b></b>observations</span>
+                <span><b></b>classes</span>
+                <span><b></b>videos</span>
+                <span><b></b>dives</span>
               </div>
 
               <div class="field" style="margin-top:15px">
@@ -316,37 +318,19 @@
 
               <div class="field">
                 <label>On success</label>
-                <div class="ro" data-viewof="task" data-view="det">
-                  <span class="a">Registers MARP-Multiclass-Det-XL &nbsp;1.0.3</span>
-                  <span class="b">A new detection version with box and class metrics</span>
-                  <span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>
-                </div>
-                <div class="ro" data-viewof="task" data-view="cls" hidden>
-                  <span class="a">Registers MARP-Habitat-Cls &nbsp;1.2.1</span>
-                  <span class="b">A new classification version with top-1 and per-class metrics</span>
-                  <span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>
-                </div>
-                <div class="ro" data-viewof="task" data-view="seg" hidden>
-                  <span class="a">Registers MARP-Benthic-Seg &nbsp;0.9.1</span>
-                  <span class="b">A new segmentation version with box and mask metrics</span>
-                  <span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>
-                </div>
-              </div>
-
-              <div class="field">
-                <label for="newname">Version name <span class="faint">(optional)</span></label>
-                <input class="inp wide" type="text" id="newname" value="1.0.3">
-                <span class="hint">Blank takes the next patch version.</span>
+                <!-- Filled by renderTrainingResult() from the base model the form has
+                     selected. It said "Registers MARP-Multiclass-Det-XL 1.0.3" whatever
+                     was chosen, and MARP has no version column to produce that from. -->
+                <div class="ro" data-viewof="task" data-view="det" data-rendered data-fills="result-det"></div>
+                <div class="ro" data-viewof="task" data-view="cls" data-rendered data-fills="result-cls" hidden></div>
+                <div class="ro" data-viewof="task" data-view="seg" data-rendered data-fills="result-seg" hidden></div>
               </div>
 
               <div class="field">
                 <label>Traceability</label>
-                <dl class="kv">
-                  <dt>Base</dt><dd>MARP-Multiclass-Det-XL 1.0.2</dd>
-                  <dt>Dataset</dt><dd>ALL_Projects_Inverts_v5</dd>
-                  <dt>Observations</dt><dd>12,846, by membership</dd>
-                  <dt>Run by</dt><dd>itravers</dd>
-                </dl>
+                <!-- Also filled: every one of these was a literal, and all four
+                     contradicted the selections above them. -->
+                <dl class="kv" data-rendered data-fills="trace"></dl>
               </div>
 
 

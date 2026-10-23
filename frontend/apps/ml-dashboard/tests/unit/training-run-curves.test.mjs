@@ -315,3 +315,65 @@ test('a poll patches the rows and leaves an open one open', async (t) => {
   assert.match(head.querySelector('.jepochs').textContent, /7 \/ 10/, 'with the moved number written in');
   assert.match(detail.textContent, /7 of 10 epochs/, 'and the open panel refreshed in place');
 });
+
+test('section 3 follows the form instead of stating a mockup', async (t) => {
+  /* Every value here was a literal that contradicted the selections above it: with a
+     rockfish base and dataset 388 chosen it still read "Registers MARP-Multiclass-Det-XL
+     1.0.3", base 1.0.2, ALL_Projects_Inverts_v5, 12,846 observations and itravers. */
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listModels: async () => [
+      { id: 90, name: 'MARP-Rockfish-Base', model_type: 'detection', status: 'trained', parent_model_id: null, created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z' },
+      { id: 91, name: 'rockfish5-2026-10-20', model_type: 'detection', status: 'trained', parent_model_id: 90, created_at: '2026-10-20T00:00:00.000Z', updated_at: '2026-10-20T00:00:00.000Z' },
+    ],
+    listDatasets: async () => [
+      { id: 388, name: 'CookieStarTest', status: 'ready', num_observations: 3361, num_classes: 2 },
+    ],
+  });
+
+  t.after(screen.close);
+
+  const result = screen.document.querySelector('[data-fills="result-det"]');
+  const trace = screen.document.querySelector('[data-fills="trace"]');
+
+  /* The first option wins by default, which is the base with no parent: generation 1. */
+  assert.match(result.textContent, /Registers a new detection model from MARP-Rockfish-Base/);
+  assert.doesNotMatch(result.textContent, /MARP-Multiclass-Det-XL|1\.0\.3/,
+    'the mockup name and version should be gone');
+  assert.match(result.textContent, /MARP records no version number/,
+    'ml_models has no version column, so the number is not invented -- it is explained');
+
+  assert.match(trace.textContent, /CookieStarTest/, 'the dataset the form has');
+  assert.match(trace.textContent, /3,361, by membership/, "and that dataset's own count");
+  assert.doesNotMatch(trace.textContent, /12,846|itravers|ALL_Projects_Inverts_v5/,
+    'none of the literals should survive');
+
+  /* Changing the selection moves it, which is the half that was most obviously wrong. */
+  const base = screen.document.querySelector('#base-det');
+
+  base.value = '91';
+  base.dispatchEvent(new screen.window.Event('change', { bubbles: true }));
+
+  assert.match(result.textContent, /from rockfish5-2026-10-20/, 'it follows the base picker');
+  assert.match(result.textContent, /Generation v3/,
+    'and the generation is walked from parent_model_id rather than guessed: 91 is a child of 90');
+});
+
+test('the dataset quad fills what a Dataset records and dashes what it does not', async (t) => {
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listDatasets: async () => [{ id: 388, name: 'CookieStarTest', status: 'ready', num_observations: 3361, num_classes: 2 }],
+  });
+
+  t.after(screen.close);
+
+  const cells = [...screen.document.querySelectorAll('[data-fills="dataset-quad"] span b')];
+
+  assert.equal(cells[0].textContent, '3,361', 'observations is a column');
+  assert.equal(cells[1].textContent, '2', 'and so is classes');
+
+  /* Videos and dives belong to what went into a build, not to the dataset row. They read
+     142 and 36 before this, which were simply made up. */
+  assert.ok(cells[2].querySelector('.dash'), 'videos is not recorded on a dataset');
+  assert.ok(cells[3].querySelector('.dash'), 'nor is dives');
+});

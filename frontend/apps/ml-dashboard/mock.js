@@ -1792,6 +1792,154 @@ function renderTrainingRecent(views) {
  * @constant
  * @type {Object<string, string>}
  */
+/** The registry and the catalogue the form is choosing from. Set when the choices fill. */
+let trainingModels = [];
+let trainingDatasets = [];
+
+/** Who is signed in, once `GET /auth/me` has said. Null until it has, or if nobody is. */
+let trainingWhoami = null;
+
+/**
+ * Which task's panel is on screen.
+ *
+ * @returns {string} `det`, `cls` or `seg`.
+ */
+function activeTrainingTask() {
+  const shown = $$('[data-viewof="task"]').find((panel) => !panel.hidden);
+
+  return (shown && shown.dataset.view) || 'det';
+}
+
+/**
+ * Section 3, from what the form actually has selected.
+ *
+ * **Every value here was a literal, and all of them contradicted the selections above.**
+ * With `base-det=91` and `dataset-det=388` chosen, it read *"Registers
+ * MARP-Multiclass-Det-XL 1.0.3"*, base *1.0.2*, dataset *ALL_Projects_Inverts_v5*,
+ * *12,846* observations and *itravers* — none of it true, and none of it moving when the
+ * selections did.
+ *
+ * **The version is the one thing that stays unsaid.** `ml_models` has no version column:
+ * what the Models screen calls *v2* is a position in a `parent_model_id` chain, derived
+ * by walking it. And the submitted spec names no output model at all — it names the base
+ * and the dataset — so the form has no say in what the result is called. Writing a "next
+ * patch version" would be inventing a number MARP cannot produce, which is the rule that
+ * took out the worker selector and the duration estimate. The *Version name* input went
+ * with it: nothing read it, and its hint promised a next patch version that does not
+ * exist.
+ *
+ * @returns {void}
+ */
+function renderTrainingResult() {
+  const byId = new Map(trainingModels.map((model) => [model.id, model]));
+  const datasets = new Map(trainingDatasets.map((set) => [set.id, set]));
+
+  const produces = {
+    det: 'box and class metrics',
+    cls: 'top-1 and per-class metrics',
+    seg: 'box and mask metrics',
+  };
+  const named = { det: 'detection', cls: 'classification', seg: 'segmentation' };
+
+  for (const task of ['det', 'cls', 'seg']) {
+    const into = $(`[data-fills="result-${task}"]`);
+
+    if (!into) continue;
+
+    const base = byId.get(Number($(`#base-${task}`)?.value));
+
+    if (!base) {
+      into.innerHTML = '<span class="a">No base model chosen</span>'
+        + `<span class="b">Pick a ${named[task]} model to fine-tune from.</span>`;
+      continue;
+    }
+
+    /* Generation, not a version: it is the depth of the `parent_model_id` chain, which is
+       the only thing MARP can say about where a model sits in a line. */
+    const generation = modelGeneration(base, byId);
+
+    into.innerHTML = `<span class="a">Registers a new ${named[task]} model from ${escapeHtml(base.name)}</span>`
+      + `<span class="b">Generation v${generation + 1}, with ${produces[task]}</span>`
+      + '<span class="b">MARP records no version number &mdash; the result is its own registry '
+      + 'entry, named by the run that produces it</span>'
+      + '<span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>';
+  }
+
+  const task = activeTrainingTask();
+  const base = byId.get(Number($(`#base-${task}`)?.value));
+  const set = datasets.get(Number($(`#dataset-${task}`)?.value));
+  const trace = $('[data-fills="trace"]');
+
+  const UNKNOWN = '<span class="dash" title="Nothing selected yet">&mdash;</span>';
+
+  if (trace) {
+    const observations = set && set.num_observations != null
+      ? `${Number(set.num_observations).toLocaleString('en-US')}, by membership`
+      : '<span class="dash" title="This dataset records no observation count">&mdash;</span>';
+
+    trace.innerHTML = `<dt>Base</dt><dd>${base ? `${escapeHtml(base.name)} <span class="faint">generation v${modelGeneration(base, byId)}</span>` : UNKNOWN}</dd>`
+      + `<dt>Dataset</dt><dd>${set ? escapeHtml(set.name) : UNKNOWN}</dd>`
+      + `<dt>Observations</dt><dd>${observations}</dd>`
+      /* The signed-in user, not a literal. `created_by` on the job is filled by the API
+         from the session, so this is a statement about who is about to press the button
+         rather than a guess at who it will be recorded as. */
+      + `<dt>Run by</dt><dd>${trainingWhoami
+        ? escapeHtml(trainingWhoami.name || trainingWhoami.username || `User ${trainingWhoami.id}`)
+        : '<span class="dash" title="Not signed in, or the session could not be read">&mdash;</span>'}</dd>`;
+  }
+
+  const quad = $('[data-fills="dataset-quad"]');
+
+  if (quad) {
+    const cells = $$('span', quad);
+    /* **Two of the four are columns on a Dataset and two are not.** Videos and dives are
+       properties of what went into a build, not of the dataset row, and nothing records
+       them -- so they take the dash rather than a plausible number. */
+    const NOT_RECORDED = '<span class="dash" title="Not recorded on a dataset">&mdash;</span>';
+    const values = [
+      set && set.num_observations != null ? Number(set.num_observations).toLocaleString('en-US') : NOT_RECORDED,
+      set && set.num_classes != null ? String(set.num_classes) : NOT_RECORDED,
+      NOT_RECORDED,
+      NOT_RECORDED,
+    ];
+
+    cells.forEach((cell, index) => {
+      const b = $('b', cell);
+
+      if (b) b.innerHTML = values[index] ?? NOT_RECORDED;
+    });
+  }
+}
+
+/**
+ * Keep section 3 following the form.
+ *
+ * @returns {void}
+ */
+function wireTrainingResult() {
+  if (!$('[data-fills="trace"]')) return;
+
+  for (const id of ['base-det', 'base-cls', 'base-seg', 'dataset-det', 'dataset-cls', 'dataset-seg']) {
+    $(`#${id}`)?.addEventListener('change', renderTrainingResult);
+  }
+
+  /* The task switcher hides and shows the panels rather than announcing itself, so the
+     visible one is watched instead -- the same reason the expander is watched. */
+  const panel = $('[data-viewof="task"]')?.parentElement;
+
+  if (panel) {
+    new MutationObserver(renderTrainingResult)
+      .observe(panel, { attributes: true, attributeFilter: ['hidden'], subtree: true });
+  }
+
+  if (window.MarpAccountMenu && typeof window.MarpAccountMenu.whoami === 'function') {
+    window.MarpAccountMenu.whoami().then((user) => {
+      trainingWhoami = user;
+      renderTrainingResult();
+    }).catch(() => { /* Not signed in reads as the dash, which is true. */ });
+  }
+}
+
 const BASE_MODEL_TASKS = {
   'base-det': 'detection',
   'base-cls': 'classification',
@@ -1887,10 +2035,20 @@ function fillTrainingChoices(models, datasets) {
      with no numeric id, which is what keeps this class of thing impossible rather than
      merely absent. */
 
+  /* **The same list in all three, because a dataset does not record a task.** The base
+     pickers filter on `model_type`; `datasets` has no equivalent column -- which is why
+     the Task column was taken off the Datasets screen, Isaac: *"it'll never have a
+     value"*. So these three are independent controls over one catalogue rather than three
+     filtered views, and a reader choosing wrongly is refused at submission by
+     `modelDoesTask`, which is where that can actually be caught. */
   const datasetOptions = datasets.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`);
   for (const id of ['dataset-det', 'dataset-cls', 'dataset-seg']) {
     put(id, datasetOptions, 'No dataset saved in MARP');
   }
+
+  trainingModels = models;
+  trainingDatasets = datasets;
+  renderTrainingResult();
 }
 /**
  * What the training engine accepts, and nothing else.
@@ -2183,6 +2341,7 @@ async function renderTrainingScreen() {
     fillTrainingChoices(models, datasets);
     markTrainingRunsUnbacked();
     watchTrainingJobs();
+    wireTrainingResult();
   } catch (error) {
     const body = $('.training-table tbody');
     if (body) {
