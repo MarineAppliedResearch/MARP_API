@@ -213,6 +213,41 @@
                 </div>
               </details>
 
+              <!-- Everything else the training engine accepts. It reports an unknown
+                   parameter as ignored rather than dropping it silently, so these fields
+                   are its allow-list rather than a guess at one; the fold above holds the
+                   rest. Blank sends nothing, which is not the same as sending a default:
+                   the engine's own default is the thing nobody here has to restate. -->
+              <details class="fold">
+                <summary>Advanced
+                  <span class="now">Engine defaults unless changed</span></summary>
+                <div class="fbody">
+                  <div class="fieldrow">
+                    <div class="field">
+                      <label for="lrf" title="Final learning rate as a fraction of the initial one, reached at the last epoch">Final LR factor</label>
+                      <input class="inp wide" type="number" min="0" max="1" step="0.001" id="lrf" placeholder="engine default">
+                    </div>
+                    <div class="field">
+                      <label for="momentum" title="SGD momentum, or the first-moment term when the optimiser is Adam or AdamW">Momentum</label>
+                      <input class="inp wide" type="number" min="0" max="1" step="0.001" id="momentum" placeholder="engine default">
+                    </div>
+                  </div>
+                  <div class="fieldrow">
+                    <div class="field">
+                      <label for="freeze" title="How many layers to hold fixed from the input end of the network">Frozen layers</label>
+                      <input class="inp wide" type="number" min="0" step="1" id="freeze" placeholder="engine default">
+                      <span class="hint">For fine-tuning a close base model on few images.</span>
+                    </div>
+                    <div class="field">
+                      <label for="workers" title="Dataloader processes per GPU; lower it when the machine runs short of memory">Loader workers</label>
+                      <input class="inp wide" type="number" min="0" step="1" id="workers" placeholder="engine default">
+                    </div>
+                  </div>
+                  <label class="check" title="Anneal the learning rate along a cosine curve rather than linearly"><input type="checkbox" id="cos-lr"><span>Cosine learning-rate schedule</span></label>
+                  <label class="check" title="Letterbox each batch to its own aspect ratio instead of to a square; faster, and it changes what the model sees"><input type="checkbox" id="rect"><span>Rectangular batches</span></label>
+                </div>
+              </details>
+
             </div>
           </section>
 
@@ -347,7 +382,7 @@
                 <label>&nbsp;</label>
                 <button class="btn accent big block" id="trainBtn">
                   <svg class="ico"><use href="#i-play"/></svg>Start training</button>
-                <span class="hint">Mockup &mdash; submits nothing.</span>
+                <span class="hint" data-rendered data-fills="train-status">Queues one training job.</span>
               </div>
             </div>
           </div>

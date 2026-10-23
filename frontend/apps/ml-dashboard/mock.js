@@ -1480,6 +1480,105 @@ function fillTrainingChoices(models, datasets) {
 }
 
 /**
+ * What the training engine accepts, and nothing else.
+ *
+ * **Taken from the worker's own allow-list** in
+ * `src/marp_inference_worker/engines/training_engine.py`, which reports anything outside
+ * it as *ignored* rather than dropping it silently. So a parameter added here that the
+ * worker does not know does not fail -- it arrives, is listed as ignored, and a reader
+ * concludes the setting did nothing. That is worse than a refusal, which is why this list
+ * is written out rather than assembled from whatever fields happen to be on the page.
+ *
+ * **`det-box`, `det-cls` and `det-dfl` are deliberately absent.** The detection loss
+ * weights are not in the allow-list yet; the worker is being widened to take them
+ * separately. Sending them now would put three ignored parameters on every run.
+ *
+ * Each entry says which element holds the value and how to read it. `number` and `flag`
+ * are the two kinds; `pick` is for the selects whose options are prose rather than
+ * values, which is most of them on this screen.
+ *
+ * @constant
+ * @type {Array<{key: string, id: string, as: string, pick: Function}>}
+ */
+const TRAINING_PARAMS = [
+  // The two that always go, from the shared row under the task panels.
+  { key: 'epochs', id: 'epochs', as: 'number' },
+  /* "Auto — 60% GPU memory" is Ultralytics' `batch: -1`. Spelling it out rather than
+     sending the words, which would reach the engine as an unparsable batch size. */
+  { key: 'batch', id: 'batch', as: 'pick', pick: (text) => (/^auto/i.test(text) ? -1 : Number(text)) },
+
+  // Detection's own two. The task panels for cls and seg are not wired yet.
+  { key: 'imgsz', id: 'det-size', as: 'number' },
+  { key: 'single_cls', id: 'det-single', as: 'pick', pick: (text) => /one class/i.test(text) },
+
+  /* Optimisation and stopping. "Auto" means the engine chooses, and the way to say that
+     is to send nothing -- a literal "Auto" would be an optimiser name it cannot resolve. */
+  { key: 'optimizer', id: 'opt', as: 'pick', pick: (text) => (/^auto/i.test(text) ? undefined : text) },
+  { key: 'lr0', id: 'lr', as: 'pick', pick: (text) => (/^auto/i.test(text) ? undefined : Number(text)) },
+  { key: 'weight_decay', id: 'decay', as: 'number' },
+  { key: 'warmup_epochs', id: 'warm', as: 'number' },
+  { key: 'patience', id: 'patience', as: 'number' },
+  { key: 'seed', id: 'seed', as: 'number' },
+
+  // The Advanced fold. All blank by default, so none of them is sent unless asked for.
+  { key: 'lrf', id: 'lrf', as: 'number' },
+  { key: 'momentum', id: 'momentum', as: 'number' },
+  { key: 'freeze', id: 'freeze', as: 'number' },
+  { key: 'workers', id: 'workers', as: 'number' },
+  { key: 'cos_lr', id: 'cos-lr', as: 'flag' },
+  { key: 'rect', id: 'rect', as: 'flag' },
+];
+
+/**
+ * Reads the training form into the `spec.params` the worker understands.
+ *
+ * **Blank sends nothing, and that is the difference between this and a form with
+ * defaults.** The engine's own defaults live in its repository; restating them here would
+ * put a number on the screen that nothing can keep true, and sending them would make
+ * every run look like somebody chose them. An omitted key is the engine deciding.
+ *
+ * A field holding something that is not a number is omitted too, rather than sent as
+ * `NaN` -- which serialises to `null` and reaches the engine as a parameter with no
+ * value.
+ *
+ * @param {Document|Element} [root] - Where to read from; the document by default.
+ * @returns {Object} The parameters, ready for `spec.params`.
+ */
+function trainingParams(root) {
+  const where = root || document;
+  const params = {};
+
+  for (const field of TRAINING_PARAMS) {
+    const element = where.querySelector(`#${field.id}`);
+
+    if (!element) continue;
+
+    if (field.as === 'flag') {
+      /* Only when ticked. An unticked box is "did not ask for it", not "asked for it
+         off" -- and the engine's default for both of these is off anyway. */
+      if (element.checked) params[field.key] = true;
+
+      continue;
+    }
+
+    const raw = field.as === 'pick'
+      ? (element.options[element.selectedIndex] || {}).text
+      : element.value;
+
+    if (raw === undefined || raw === null || String(raw).trim() === '') continue;
+
+    const value = field.pick ? field.pick(String(raw).trim()) : Number(raw);
+
+    if (value === undefined) continue;
+    if (typeof value === 'number' && !Number.isFinite(value)) continue;
+
+    params[field.key] = value;
+  }
+
+  return params;
+}
+
+/**
  * Fills the Training screen from the data layer.
  *
  * @returns {Promise<void>}
