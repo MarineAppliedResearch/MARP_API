@@ -1348,8 +1348,12 @@ function epochChart(spec, epochs) {
      columns are missing instead, because *that* is the useful fact while the worker is
      still being taught to report them. */
   if (!drawn.some((one) => one.measured)) {
+    /* The note goes on the empty card too. It says what these series *are* -- validation
+       rather than train, say -- and that is as worth knowing when the chart is waiting as
+       when it is drawn. */
     return `<article class="evaluation-card history-card"><header><div><h5>${spec.title}</h5>`
-      + `<p>Not reported for this run: ${drawn.map((one) => one.label.toLowerCase()).join(', ')}</p>`
+      + `<p>Not reported for this run: ${drawn.map((one) => one.label.toLowerCase()).join(', ')}`
+      + `${spec.note ? ` &middot; ${spec.note}` : ''}</p>`
       + '</div></header></article>';
   }
 
@@ -1371,6 +1375,148 @@ function epochChart(spec, epochs) {
     + `<g class="result-axis"><text x="38" y="28">${spec.top}</text><text x="38" y="103">${spec.mid}</text>`
     + `<text x="38" y="178">0</text><text x="46" y="196">Epoch ${first}</text>`
     + `<text x="700" y="196">Epoch ${last}</text></g>${lines}</svg></div></article>`;
+}
+
+/**
+ * A section of the run panel that has nothing to draw yet.
+ *
+ * **It says what it is waiting for, and on whom.** An empty frame reads as broken; a
+ * paragraph naming the missing piece reads as a thing in progress, and tells the next
+ * person where to look rather than making them read the code to find out.
+ *
+ * @param {string} title - What the section would show.
+ * @param {string} waiting - What has to exist before it can.
+ * @returns {string}
+ */
+function runSectionWaiting(title, waiting) {
+  return `<article class="evaluation-card history-card"><header><div><h5>${title}</h5>`
+    + `<p>${waiting}</p></div></header></article>`;
+}
+
+/**
+ * The confusion matrix, drawn from numbers if MARP has them.
+ *
+ * **Numbers rather than the Ultralytics PNG, where there is a choice.** That render is a
+ * white-background image: it would sit wrong on this page, could not be hovered for a
+ * count, and could not be read at the size this panel gives it. A matrix MARP carries as
+ * numbers is one this can make legible. The image is the fallback, not the target.
+ *
+ * @param {Object|null} matrix - `{labels, rows}` when MARP has one, else null.
+ * @param {string|null} image - A URL to the rendered matrix, when that is all there is.
+ * @returns {string}
+ */
+function confusionMatrix(matrix, image) {
+  if (matrix && Array.isArray(matrix.labels) && Array.isArray(matrix.rows)) {
+    const total = (row) => row.reduce((sum, n) => sum + (Number(n) || 0), 0);
+
+    const cells = matrix.rows.map((row, r) => {
+      const sum = total(row);
+
+      return `<b>${escapeHtml(matrix.labels[r] ?? `Class ${r}`)}</b>`
+        + row.map((value, c) => {
+          const count = Number(value) || 0;
+          const share = sum ? count / sum : 0;
+
+          return `<i style="--heat:${Math.max(.04, share).toFixed(2)}" `
+            + `data-norm="${Math.round(share * 100)}%" data-count="${count.toLocaleString('en-US')}" `
+            + `title="${escapeHtml(matrix.labels[r] ?? r)} predicted as ${escapeHtml(matrix.labels[c] ?? c)}: `
+            + `${count.toLocaleString('en-US')}">${Math.round(share * 100)}%</i>`;
+        }).join('');
+    }).join('');
+
+    return '<article class="evaluation-card matrix-card"><header><div><h5>Confusion matrix</h5>'
+      + '<p>Rows are the true class; columns are what the model predicted</p></div></header>'
+      + `<div class="matrix-scroll"><div class="confusion" style="--cols:${matrix.labels.length}" role="img" aria-label="Confusion matrix over ${matrix.labels.length} classes">`
+      + `<span></span>${matrix.labels.map((l) => `<b>${escapeHtml(l)}</b>`).join('')}${cells}`
+      + '</div></div></article>';
+  }
+
+  if (image) {
+    /* **Shown as what it is: a render, not a reading.** It cannot be hovered for a count
+       and it carries its own white background, so it is labelled rather than dressed up
+       as part of the page. */
+    return '<article class="evaluation-card"><header><div><h5>Confusion matrix</h5>'
+      + '<p>As the trainer rendered it &mdash; MARP does not carry the counts</p></div></header>'
+      + `<div class="result-plot"><img src="${escapeHtml(image)}" alt="Confusion matrix rendered by the trainer" loading="lazy"></div></article>`;
+  }
+
+  return runSectionWaiting('Confusion matrix',
+    'Nothing records one yet. The trainer produces it at validation; it reaches here once '
+    + 'the worker reports it and MARP keeps it.');
+}
+
+/**
+ * Per-class AP, which is what makes a confusion matrix actionable.
+ *
+ * @param {Object[]} classes - `metrics_summary` rows for this run, or empty.
+ * @returns {string}
+ */
+function perClassTable(classes) {
+  if (!classes.length) {
+    return runSectionWaiting('Per-class quality',
+      'Nothing writes <code>metrics_summary</code> yet, so there is no per-class precision, '
+      + 'recall or AP to show. One row per species per split is the shape the schema already has.');
+  }
+
+  const cell = (value) => (value === null || value === undefined
+    ? '<span class="dash" title="Not reported">&mdash;</span>'
+    : Number(value).toFixed(3));
+
+  const rows = classes.map((row) => `<tr><th scope="row">${escapeHtml(row.species || `Species ${row.species_id}`)}</th>`
+    + `<td>${cell(row.precision)}</td><td>${cell(row.recall)}</td><td>${cell(row.f1_score)}</td>`
+    + `<td>${cell(row.map50)}</td><td>${cell(row.map5095)}</td></tr>`).join('');
+
+  return '<article class="evaluation-card"><header><div><h5>Per-class quality</h5>'
+    + '<p>One row per class, from the run&rsquo;s own metrics</p></div></header>'
+    + '<div class="class-metrics-wrap"><table class="class-metrics"><thead><tr><th>Class</th>'
+    + '<th>Precision</th><th>Recall</th><th>F1</th><th>AP@50</th><th>AP@50&ndash;95</th></tr></thead>'
+    + `<tbody>${rows}</tbody></table></div></article>`;
+}
+
+/**
+ * The plots the trainer draws for itself.
+ *
+ * **A gallery, captioned by what each one is rather than by its filename.** `PR_curve.png`
+ * means nothing to a reader who has not run YOLO; "Precision against recall, per class"
+ * does. The filenames are kept as the lookup key and never as the label.
+ *
+ * @param {Object[]} plots - `{name, url}` for each artifact the run produced.
+ * @returns {string}
+ */
+function trainingPlots(plots) {
+  /* What each of YOLO's own outputs is, in words. Anything not named here is still shown,
+     under its own filename -- a plot nobody has described is better seen than hidden. */
+  const SAID = {
+    PR_curve: 'Precision against recall, per class',
+    F1_curve: 'F1 against confidence threshold',
+    P_curve: 'Precision against confidence threshold',
+    R_curve: 'Recall against confidence threshold',
+    labels: 'How many instances of each class the dataset held',
+    labels_correlogram: 'Where boxes sit and how their sizes relate',
+    results: 'Every metric the run recorded, as the trainer plots it',
+    confusion_matrix: 'Confusion matrix, as the trainer rendered it',
+    confusion_matrix_normalized: 'Confusion matrix, normalised by true class',
+  };
+
+  if (!plots.length) {
+    return runSectionWaiting('Training output',
+      'The trainer writes PR, F1, P and R curves, a label summary and sample predictions. '
+      + 'They appear here once the worker uploads them and MARP serves them back.');
+  }
+
+  const tiles = plots.map((plot) => {
+    const stem = String(plot.name || '').replace(/\.[a-z]+$/i, '');
+    const said = SAID[stem] || (/^val_batch\d+_pred$/.test(stem)
+      ? 'Sample predictions on held-out images'
+      : stem.replace(/[_-]+/g, ' '));
+
+    return `<figure class="result-plot"><img src="${escapeHtml(plot.url)}" alt="${escapeHtml(said)}" loading="lazy">`
+      + `<figcaption>${escapeHtml(said)}</figcaption></figure>`;
+  }).join('');
+
+  return '<article class="evaluation-card"><header><div><h5>Training output</h5>'
+    + `<p>${plots.length} plot${plots.length === 1 ? '' : 's'} the trainer produced</p></div></header>`
+    + `<div class="plot-gallery">${tiles}</div></article>`;
 }
 
 /**
@@ -1409,10 +1555,16 @@ function trainingRunDetail(run, epochs) {
     metric('Device', run.compute_device || NONE),
   ].join('');
 
+  /* **Validation loss, and only validation loss.** The ask was train *and* validation --
+     the gap between them is the overfitting signal an ML reader looks for first -- and
+     MARP cannot answer it: the trainer reports `train/*` and `val/*`, the worker sends
+     only `val/*`, and `epochs` has one column per loss with no split. Drawing a train
+     series that can never fill would be a legend entry promising a line that never
+     arrives, so the note says what these are instead. */
   const charts = epochs.length
     ? epochChart({
-      title: 'Loss',
-      note: 'Lower is better &middot; recorded each epoch',
+      title: 'Validation loss',
+      note: 'Lower is better &middot; the trainer&rsquo;s own train-split loss is not recorded',
       max: 2, top: '2.0', mid: '1.0',
       series: [['box-loss', 'Box loss', 'box_loss'], ['cls-loss', 'Class loss', 'cls_loss'], ['dfl-loss', 'DFL loss', 'dfl_loss']],
     }, epochs)
@@ -1424,12 +1576,20 @@ function trainingRunDetail(run, epochs) {
     }, epochs)
     : '<p class="hint">No epoch has been reported yet. This fills in as the run reports them.</p>';
 
+  /* **No range control on these.** Their x-axis is the epoch number, not a clock, so
+     "the last hour" names nothing -- a run is however many epochs long and all of them
+     belong on the chart. The range controls stay on the charts that are over time. */
+  const evaluation = confusionMatrix(run.confusion_matrix || null, run.confusion_matrix_url || null)
+    + perClassTable(Array.isArray(run.class_metrics) ? run.class_metrics : [])
+    + trainingPlots(Array.isArray(run.plots) ? run.plots : []);
+
   /* The inner content only; `trainingJobDetail` owns the wrapper, because it puts the
      live attempt block above this and the two have to sit in one panel. */
   return `<div class="jobdetail-head"><div><b>Training run ${run.id}</b>`
     + `<span>${run.dataset_id ? `Dataset ${run.dataset_id}` : 'No dataset recorded'} &middot; model ${run.model_id}</span></div></div>`
     + `<div class="jobmetrics">${settings}</div>`
-    + `<div class="training-history-grid">${charts}</div>`;
+    + `<div class="training-history-grid">${charts}</div>`
+    + `<div class="training-evaluation-grid">${evaluation}</div>`;
 }
 
 /**

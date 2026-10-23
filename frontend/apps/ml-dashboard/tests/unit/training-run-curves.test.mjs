@@ -149,7 +149,7 @@ test('a metric nothing reported says so instead of drawing an empty frame', asyn
 
   const detail = await open(screen, 21779);
   const cards = [...detail.querySelectorAll('.evaluation-card')];
-  const loss = cards.find((card) => /Loss/.test(card.querySelector('h5')?.textContent || ''));
+  const loss = cards.find((card) => /Validation loss/.test(card.querySelector('h5')?.textContent || ''));
 
   assert.ok(loss, 'the loss chart should still have a place');
   assert.equal(loss.querySelector('svg'), null,
@@ -554,4 +554,83 @@ test('the pool chart draws a hole as a hole, not a dip to the floor', async (t) 
   /* The shading would fill the gap it was just taught to leave. */
   assert.equal(root.querySelector('[data-ops-area]').getAttribute('d'), '',
     'and no area while the series it shades has a hole in it');
+});
+
+test('the run panel offers every section, and each empty one says what it waits for', async (t) => {
+  const screen = await drawScreen('training.html', answers([epoch(1, { precision: 0.19 })]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const heads = [...detail.querySelectorAll('.evaluation-card h5')].map((h) => h.textContent.trim());
+
+  assert.deepEqual(heads, ['Validation loss', 'Validation quality', 'Confusion matrix', 'Per-class quality', 'Training output'],
+    'every section has a place, whether or not anything fills it yet');
+
+  /* An empty frame reads as broken. Each of these names the missing piece instead. */
+  assert.match(detail.textContent, /Nothing records one yet/, 'the matrix says why it is absent');
+  assert.match(detail.textContent, /Nothing writes .*metrics_summary.* yet/, 'and so does per-class');
+  assert.match(detail.textContent, /once the worker uploads them/, 'and the gallery names who it waits on');
+
+  /* The ask was train *and* validation loss, and MARP records only validation. The chart
+     says which it is rather than carrying a legend entry that can never fill. */
+  assert.match(detail.textContent, /train-split loss is not recorded/);
+});
+
+test('a matrix MARP carries as numbers is drawn, not shown as a picture', async (t) => {
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
+    confusion_matrix: { labels: ['Cookie star', 'Urchin', 'Background'], rows: [[8, 1, 1], [0, 9, 1], [2, 0, 8]] },
+  })]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const grid = detail.querySelector('.confusion');
+
+  assert.ok(grid, 'drawn as a grid rather than an <img>');
+  assert.equal(grid.style.getPropertyValue('--cols'), '3',
+    'sized from the data: the mockup was hardcoded to four classes');
+  assert.equal(detail.querySelectorAll('.confusion > i').length, 9, 'three by three');
+
+  /* The whole reason to prefer numbers: a cell can say what it is. */
+  const first = grid.querySelector('i');
+
+  assert.equal(first.dataset.count, '8');
+  assert.match(first.getAttribute('title'), /Cookie star predicted as Cookie star: 8/);
+});
+
+test('an image-only matrix is shown as a render, and labelled as one', async (t) => {
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
+    confusion_matrix_url: '/api/v2/artifact/abc/confusion_matrix.png',
+  })]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.equal(detail.querySelector('.confusion'), null, 'no grid, because there are no numbers');
+  assert.ok(detail.querySelector('.result-plot img[src$="confusion_matrix.png"]'), 'the render is shown');
+  assert.match(detail.textContent, /MARP does not carry the counts/,
+    'and says so, rather than passing a picture off as a reading');
+});
+
+test('the trainer plots are captioned by what they are, not by filename', async (t) => {
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
+    plots: [
+      { name: 'PR_curve.png', url: '/a/pr.png' },
+      { name: 'val_batch0_pred.jpg', url: '/a/vb.jpg' },
+      { name: 'something_new.png', url: '/a/new.png' },
+    ],
+  })]));
+
+  t.after(screen.close);
+
+  const captions = [...(await open(screen, 21779)).querySelectorAll('figcaption')].map((c) => c.textContent);
+
+  assert.deepEqual(captions, [
+    'Precision against recall, per class',
+    'Sample predictions on held-out images',
+    'something new',
+  ], 'PR_curve.png means nothing to someone who has not run YOLO; an undescribed plot is '
+    + 'still shown rather than hidden');
 });
