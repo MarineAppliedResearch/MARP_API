@@ -73,10 +73,13 @@ function epochEvent(seq, epoch, precision) {
                 'val/cls_loss': 1.1 - epoch / 100,
                 'val/dfl_loss': 0.9 - epoch / 100,
                 /* The training-set losses, which Ultralytics reports as a separate
-                   series and the ingest deliberately does not read: one column cannot
-                   mean training loss on some rows and validation loss on others. Sent
-                   here so that a change accepting them fails this file. */
+                   series and which now have columns of their own. Deliberately far
+                   from the validation values above, so a mapping that confused the
+                   two fails loudly rather than plausibly. */
                 'train/box_loss': 9.9,
+                'train/cls_loss': 8.8,
+                'train/dfl_loss': 7.7,
+                'duration_seconds': 27.5,
                 // Deliberately unmapped: it must survive on the event and not
                 // break the projection.
                 'lr/pg0': 0.00123,
@@ -350,9 +353,15 @@ describe('a training job writes training_runs and epochs', () => {
         expect(Number(rows[1].map50)).toBeCloseTo(0.62);
         expect(Number(rows[1].map5095)).toBeCloseTo(0.32);
 
-        /* And the training-set loss is not what landed, although the event carried
-           one: 9.9 would be here if the ingest took either name. */
-        expect(Number(rows[1].box_loss)).not.toBeCloseTo(9.9);
+        /* **Both series, in their own columns.** The gap between them is the
+           overfitting signal, and it only exists if the two never share a column. */
+        expect(Number(rows[1].box_loss)).toBeCloseTo(1.48);
+        expect(Number(rows[1].train_box_loss)).toBeCloseTo(9.9);
+        expect(Number(rows[1].train_cls_loss)).toBeCloseTo(8.8);
+        expect(Number(rows[1].train_dfl_loss)).toBeCloseTo(7.7);
+
+        /* A column that has existed since the table did and that nothing ever wrote. */
+        expect(Number(rows[1].duration_seconds)).toBeCloseTo(27.5);
     });
 
     test('a replayed batch does not write the same epoch twice', async () => {

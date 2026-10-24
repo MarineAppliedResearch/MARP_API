@@ -119,11 +119,24 @@ afterAll(async () => {
  */
 describe('The metric names an epoch is read from', () => {
 
-    /** A payload exactly as the worker sends it, copied from a real metric event. */
+    /**
+     * A payload as the worker sends one.
+     *
+     * The `metrics/` and `val/` keys are copied from a real event on the development
+     * database. The `train/` ones and `duration_seconds` are from the worker contract
+     * for `268-training-params-and-provenance`, which is built and not yet installed —
+     * so this is the one part of the fixture that is read from a document rather than
+     * from traffic, and it is the part to re-check against a real event once that
+     * build is on the GPU.
+     */
     const PAYLOAD = {
         'val/box_loss': 1.36701,
         'val/cls_loss': 1.51008,
         'val/dfl_loss': 0.81572,
+        'train/box_loss': 1.25,
+        'train/cls_loss': 0.8,
+        'train/dfl_loss': 0.95,
+        'duration_seconds': 27.123,
         'metrics/mAP50(B)': 0.67946,
         'metrics/recall(B)': 0.69565,
         'metrics/mAP50-95(B)': 0.41664,
@@ -139,7 +152,47 @@ describe('The metric names an epoch is read from', () => {
             box_loss: 1.36701,
             cls_loss: 1.51008,
             dfl_loss: 0.81572,
+            train_box_loss: 1.25,
+            train_cls_loss: 0.8,
+            train_dfl_loss: 0.95,
+            duration_seconds: 27.123,
         });
+    });
+
+    /**
+     * **The two loss series are two facts and neither stands in for the other.** The
+     * gap between them is the overfitting signal, so a reader has to be able to tell
+     * a training loss of 1.25 from a validation loss of 1.37 — which is only possible
+     * if they land in different columns.
+     */
+    it('keeps the training and validation losses apart', () => {
+        const read = epochMetrics(PAYLOAD);
+
+        expect(read.box_loss).toBe(1.36701);
+        expect(read.train_box_loss).toBe(1.25);
+
+        // And a payload with only one of the two leaves the other unmeasured.
+        expect(epochMetrics({ 'val/box_loss': 1.1 }).train_box_loss).toBeNull();
+        expect(epochMetrics({ 'train/box_loss': 9.9 }).box_loss).toBeNull();
+    });
+
+    /**
+     * **Zero is a measurement; absent is not.** `tloss` is None through a NaN-recovery
+     * epoch and `epoch_time` is unset before the first one finishes, so an absent key
+     * means the number did not exist — but a loss that really was zero is sent as zero
+     * and has to survive. The worker has a named test on each side of this, and so
+     * does MARP, because the conversion is where the two look alike.
+     */
+    it('tells a loss of zero from a loss that was not reported', () => {
+        const measured = epochMetrics({ 'train/cls_loss': 0, 'duration_seconds': 0 });
+
+        expect(measured.train_cls_loss).toBe(0);
+        expect(measured.duration_seconds).toBe(0);
+
+        const absent = epochMetrics({});
+
+        expect(absent.train_cls_loss).toBeNull();
+        expect(absent.duration_seconds).toBeNull();
     });
 
     /**

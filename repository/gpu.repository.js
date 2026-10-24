@@ -2334,10 +2334,12 @@ class GpuRepository {
         await this.db.sequelize.query(
             `INSERT INTO epochs (training_run_id, epoch_number, precision, recall,
                                  map50, map5095, box_loss, cls_loss, dfl_loss,
-                                 timestamp, created_at, updated_at)
+                                 train_box_loss, train_cls_loss, train_dfl_loss,
+                                 duration_seconds, timestamp, created_at, updated_at)
              SELECT :runId, :epochNumber, :precision, :recall,
                     :map50, :map5095, :box_loss, :cls_loss, :dfl_loss,
-                    NOW(), NOW(), NOW()
+                    :train_box_loss, :train_cls_loss, :train_dfl_loss,
+                    :duration_seconds, NOW(), NOW(), NOW()
               WHERE NOT EXISTS (
                   SELECT 1 FROM epochs WHERE training_run_id = :runId AND epoch_number = :epochNumber
               )`,

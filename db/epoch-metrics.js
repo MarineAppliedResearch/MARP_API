@@ -11,12 +11,23 @@
  * `train/box_loss` and friends while the worker sends `val/`. The values were in the
  * events the whole time, which is what makes the backfill possible.
  *
- * **The losses are validation losses, and the columns mean that.** Ultralytics reports
- * `train/box_loss` and `val/box_loss` as separate series. The worker sends the validation
- * set, so that is what these hold. `train/` is deliberately not accepted as an
- * alternative: a column that means training loss on some rows and validation loss on
- * others cannot be read at all, and the gap between the two -- which is the first thing
- * an ML reader looks for -- needs its own columns rather than a shared one.
+ * **The two sets of losses are two facts, in two sets of columns.** Ultralytics reports
+ * `train/box_loss` and `val/box_loss` as separate series: the first is the mean loss
+ * over the epoch's batches, the second is the validator's. The gap between them is the
+ * overfitting signal and the first thing an ML reader looks for, so neither is allowed
+ * to stand in for the other -- a column meaning training loss on some rows and
+ * validation loss on others could not be read at all.
+ *
+ * The unprefixed columns hold the validation losses, which is what they have always
+ * held; `train_*` is the new fact rather than a rename, because the dashboard is
+ * drawing the old ones.
+ *
+ * **Segmentation will add a fourth loss and this will need a decision.** Ultralytics
+ * names its losses off the criterion, so a segmentation run also reports
+ * `train/seg_loss` — the worker's contract says to match on the `train/` prefix rather
+ * than on a list of three. A map keyed by reported name would survive that without a
+ * migration; three columns will not. Detection is the only task being trained, so that
+ * decision is left to whoever builds segmentation rather than guessed at now.
  *
  * **`(B)` is Ultralytics' box-task suffix.** A segmentation run also reports `(M)` for
  * mask metrics, which nothing here is trained for yet; those stay in the event until
@@ -42,10 +53,23 @@ const EPOCH_METRIC_NAMES = {
     box_loss: 'val/box_loss',
     cls_loss: 'val/cls_loss',
     dfl_loss: 'val/dfl_loss',
+    train_box_loss: 'train/box_loss',
+    train_cls_loss: 'train/cls_loss',
+    train_dfl_loss: 'train/dfl_loss',
+    /* **The one key the worker names itself**, rather than passing an Ultralytics
+       name through: it is named for this column so the mapping is identity. It has
+       existed since the table did and nothing has ever written it. */
+    duration_seconds: 'duration_seconds',
 };
 
 /**
  * Read a metric payload into the columns `epochs` holds.
+ *
+ * **A genuine 0.0 is a measurement and is stored.** `tloss` is None through a
+ * NaN-recovery epoch and `epoch_time` is unset before the first epoch finishes, so an
+ * absent key means the number did not exist — but a loss that really was zero is sent
+ * as zero and has to survive. Absence and zero are told apart before the conversion,
+ * which is the only place they look alike.
  *
  * Anything that is not a finite number becomes null rather than being stored: a metric
  * Ultralytics reports as `nan` on an epoch with no detections is not a measurement of
