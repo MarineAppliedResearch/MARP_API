@@ -163,7 +163,7 @@ test('a metric nothing reported says so instead of drawing an empty frame', asyn
 
   const detail = await open(screen, 21779);
   const cards = [...detail.querySelectorAll('.evaluation-card')];
-  const loss = cards.find((card) => /Validation loss/.test(card.querySelector('h5')?.textContent || ''));
+  const loss = cards.find((card) => /^Loss$/.test(card.querySelector('h5')?.textContent.trim() || ''));
 
   assert.ok(loss, 'the loss chart should still have a place');
   assert.equal(loss.querySelector('svg'), null,
@@ -578,7 +578,7 @@ test('the run panel offers every section, and each empty one says what it waits 
   const detail = await open(screen, 21779);
   const heads = [...detail.querySelectorAll('.evaluation-card h5')].map((h) => h.textContent.trim());
 
-  assert.deepEqual(heads, ['Validation loss', 'Validation quality', 'Confusion matrix', 'Per-class quality', 'Training output'],
+  assert.deepEqual(heads, ['Loss', 'Validation quality', 'Confusion matrix', 'Per-class quality', 'Training output'],
     'every section has a place, whether or not anything fills it yet');
 
   /* An empty frame reads as broken. Each of these names the missing piece instead. */
@@ -586,9 +586,10 @@ test('the run panel offers every section, and each empty one says what it waits 
   assert.match(detail.textContent, /Nothing writes .*metrics_summary.* yet/, 'and so does per-class');
   assert.match(detail.textContent, /once the worker uploads them/, 'and the gallery names who it waits on');
 
-  /* The ask was train *and* validation loss, and MARP records only validation. The chart
-     says which it is rather than carrying a legend entry that can never fill. */
-  assert.match(detail.textContent, /train-split loss is not recorded/);
+  /* This asserted the opposite until `ea964f18`: the worker sent only `val/*`, so the
+     chart said the train split was not recorded. The columns exist now and the chart
+     draws both, which is what makes the overfitting gap readable. */
+  assert.match(detail.textContent, /solid is train, dashed is validation/);
 });
 
 test('a matrix MARP carries as numbers is drawn, not shown as a picture', async (t) => {
@@ -850,4 +851,52 @@ test('a short run is reported in seconds, not rounded to zero minutes', async (t
   assert.match(detail.textContent, /2[5-9]s/, 'elapsed in seconds');
   assert.match(detail.textContent, /12s/, 'and the epoch time');
   assert.doesNotMatch(detail.textContent, /\b0m\b/, 'nothing should read as zero minutes');
+});
+
+test('train and validation loss draw as a pair, so the gap between them is readable', async (t) => {
+  /* The overfitting signal, and the thing this panel could not show until `ea964f18`
+     added the train trio beside the validation one. A pair shares a colour and differs
+     by dash; six unrelated colours would make it a puzzle rather than a comparison. */
+  const screen = await drawScreen('training.html', answers([
+    epoch(1, { train_box_loss: 1.8, box_loss: 1.9 }),
+    epoch(2, { train_box_loss: 1.1, box_loss: 1.6 }),
+  ]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const train = detail.querySelector('.result-line.box-loss-train');
+  const val = detail.querySelector('.result-line.box-loss');
+
+  assert.ok(train.getAttribute('d'), 'the train split draws');
+  assert.ok(val.getAttribute('d'), 'and so does validation');
+  assert.notEqual(train.getAttribute('d'), val.getAttribute('d'),
+    'two different series, not one drawn twice');
+
+  const legend = [...detail.querySelectorAll('.result-legend button')].map((b) => b.textContent);
+
+  assert.ok(legend.includes('Box (train)') && legend.includes('Box (val)'),
+    'the legend names which split each line is');
+});
+
+test('a run from before the train columns draws validation alone, without a hole in the legend', async (t) => {
+  /* Backfilled runs and older ones have the validation three and null for the train
+     three. The pair degrades to one line rather than the chart claiming a collapse. */
+  const screen = await drawScreen('training.html', answers([
+    epoch(1, { box_loss: 1.9 }),
+    epoch(2, { box_loss: 1.6 }),
+  ]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.equal(detail.querySelector('.result-line.box-loss-train').getAttribute('d'), '',
+    'no train line, rather than one along the bottom');
+  assert.ok(detail.querySelector('.result-line.box-loss').getAttribute('d'), 'validation still draws');
+
+  const trainKey = [...detail.querySelectorAll('.result-legend button')]
+    .find((b) => b.textContent === 'Box (train)');
+
+  assert.ok(trainKey.disabled, 'and its key cannot be pressed to reveal nothing');
 });

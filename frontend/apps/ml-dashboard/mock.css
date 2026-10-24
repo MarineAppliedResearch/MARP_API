@@ -659,9 +659,19 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .class-2 { --key: var(--amber-300); }
 .class-3 { --key: var(--violet-300); }
 .class-4 { --key: var(--mint-400); }
-.box-loss { --key: var(--cyan-300); }
-.cls-loss { --key: var(--amber-300); }
-.dfl-loss { --key: var(--violet-300); }
+/* **A pair per loss component: same colour, train solid and validation dashed.** The
+   question an ML reader asks of a loss chart is whether the two are diverging, and that
+   is only readable if the pair shares a colour -- six unrelated colours would make it a
+   puzzle. Dashed for validation follows `.val-loss`, which already did it that way.
+
+   Until `ea964f18` only the validation three existed, so they were solid. They are the
+   dashed half of a pair now, which is also what makes the train lines legible. */
+.box-loss-train { --key: var(--cyan-300); }
+.cls-loss-train { --key: var(--amber-300); }
+.dfl-loss-train { --key: var(--violet-300); }
+.box-loss { --key: var(--cyan-300); --dash-on: 6px; --dash-off: 4px; }
+.cls-loss { --key: var(--amber-300); --dash-on: 6px; --dash-off: 4px; }
+.dfl-loss { --key: var(--violet-300); --dash-on: 6px; --dash-off: 4px; }
 .map95 { --key: var(--red-400); }
 .pr-rockfish { --key: var(--blue-400); }
 .pr-flatfish { --key: var(--amber-300); }

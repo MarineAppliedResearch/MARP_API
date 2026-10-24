@@ -1401,12 +1401,23 @@ const TRAINING_TASKS = {
     label: 'Detection',
     charts: [
       {
-        title: 'Validation loss',
-        note: 'Lower is better &middot; the trainer&rsquo;s own train-split loss is not recorded',
+        /* **Both splits now, which is the question this chart is actually asked.** Until
+           `ea964f18` the worker sent only `val/*` and this said so; the train trio exists
+           beside it now, so the gap between the pairs -- the overfitting signal -- is
+           readable here instead of being a thing the panel admitted it could not show. */
+        title: 'Loss',
+        note: 'Lower is better &middot; solid is train, dashed is validation &middot; the gap between a pair is the overfitting signal',
         max: 2,
         top: '2.0',
         mid: '1.0',
-        series: [['box-loss', 'Box loss', 'box_loss'], ['cls-loss', 'Class loss', 'cls_loss'], ['dfl-loss', 'DFL loss', 'dfl_loss']],
+        series: [
+          ['box-loss-train', 'Box (train)', 'train_box_loss'],
+          ['box-loss', 'Box (val)', 'box_loss'],
+          ['cls-loss-train', 'Class (train)', 'train_cls_loss'],
+          ['cls-loss', 'Class (val)', 'cls_loss'],
+          ['dfl-loss-train', 'DFL (train)', 'train_dfl_loss'],
+          ['dfl-loss', 'DFL (val)', 'dfl_loss'],
+        ],
       },
       {
         title: 'Validation quality',
