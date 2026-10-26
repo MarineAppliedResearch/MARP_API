@@ -1606,10 +1606,25 @@ function perClassTable(classes) {
     ? '<span class="dash" title="Not reported">&mdash;</span>'
     : Number(value).toFixed(3));
 
-  /* `classify` sends no mAP at all. A column of dashes says that; a column of zeroes
-     would say the model scored nothing. */
+  const count = (value) => (value === null || value === undefined
+    ? '<span class="dash" title="The trainer reported no count. Not the same as counting none.">&mdash;</span>'
+    : Number(value).toLocaleString('en-US'));
+
+  /* **Support and images come before the scores, because they qualify them.** A precision
+     of 1.000 over three instances and one over three thousand render identically without
+     them, and on a survey whose point is the rare species that is the difference between
+     a number somebody acts on and a number that misleads them. Reading left to right, the
+     size of the sample arrives before the claim about it.
+
+     `support` is labelled instances; `image_count` is how many frames held them. 142
+     instances across 37 frames is a shoal, across 140 a scatter, and the scores cannot
+     tell those apart. */
   const columns = [['Precision', 'precision'], ['Recall', 'recall'], ['F1', 'f1_score'],
     ['AP@50', 'map50'], ['AP@50&ndash;95', 'map5095']];
+  const counts = [
+    ['Support', 'support', 'Labelled instances of this class in the evaluated split'],
+    ['Images', 'image_count', 'How many frames contained it'],
+  ];
 
   /**
    * What a family is called where a reader sees it.
@@ -1648,8 +1663,19 @@ function perClassTable(classes) {
         ? ' <span class="faint" title="MARP could not resolve this class to a species">unmatched</span>'
         : '';
 
+      /* **Attribution, not a warning.** Flagging "low support" would need a cutoff, and
+         any cutoff here would be mine rather than MARP's -- on a survey whose point is
+         the rare species, an invented threshold is the kind of confident fiction this
+         screen keeps having removed. So every score says what it rests on instead: a
+         precision of 1.000 over 3 instances reads as exactly that when you ask it, and
+         the reader draws their own line. */
+      const over = row.support === null || row.support === undefined
+        ? ''
+        : ` title="over ${Number(row.support).toLocaleString('en-US')} labelled instance${Number(row.support) === 1 ? '' : 's'}"`;
+
       return `<tr><th scope="row">${label}${unresolved}</th>`
-        + columns.map(([, key]) => `<td>${cell(row[key])}</td>`).join('') + '</tr>';
+        + counts.map(([, key]) => `<td class="num">${count(row[key])}</td>`).join('')
+        + columns.map(([, key]) => `<td${over}>${cell(row[key])}</td>`).join('') + '</tr>';
     }).join('');
 
     /* **"Classes seen", not "all classes".** The aggregate is a mean over the classes that
@@ -1659,8 +1685,13 @@ function perClassTable(classes) {
        and the word was wrong. */
     const foot = overall
       ? `<tfoot><tr><th scope="row" title="Mean over the classes that appeared in validation, `
-        + `not over the whole species vocabulary">Classes seen (${named.length})</th>${columns
-          .map(([, key]) => `<td>${cell(overall[key])}</td>`).join('')}</tr></tfoot>`
+        + `not over the whole species vocabulary">Classes seen (${named.length})</th>`
+        /* **Not a sum.** Support and images are reported per class and never on the
+           aggregate, and adding the columns up here would be a figure MARP never sent --
+           images especially, where one frame holding three species would be counted
+           three times. */
+        + counts.map(() => '<td class="num"><span class="dash" title="Reported per class only">&mdash;</span></td>').join('')
+        + `${columns.map(([, key]) => `<td>${cell(overall[key])}</td>`).join('')}</tr></tfoot>`
       : '';
 
     const heading = families.size > 1
@@ -1668,6 +1699,7 @@ function perClassTable(classes) {
       : '';
 
     return `${heading}<div class="class-metrics-wrap"><table class="class-metrics"><thead><tr><th>Class</th>`
+      + `${counts.map(([label, , said]) => `<th class="num" title="${said}">${label}</th>`).join('')}`
       + `${columns.map(([label]) => `<th>${label}</th>`).join('')}</tr></thead>`
       + `<tbody>${body}</tbody>${foot}</table></div>`;
   };

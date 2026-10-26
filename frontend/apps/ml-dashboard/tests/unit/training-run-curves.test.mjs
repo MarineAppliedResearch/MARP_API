@@ -1112,3 +1112,47 @@ test('the shared-threshold caveat sits where two classes get compared', async (t
   assert.match(card.querySelector('header p').textContent, /below its peak/,
     'and says what that costs the reader, not just that it happens');
 });
+
+test('support and images sit before the scores they qualify', async (t) => {
+  /* A precision of 1.000 over three instances and one over three thousand render
+     identically without these, and on a survey whose point is the rare species that is
+     the difference between a number somebody acts on and one that misleads them. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
+    class_metrics: [
+      { species_id: 1, class_name: 'Cookie star', metric_family: 'box', support: 3, image_count: 2, precision: 1, recall: 1, f1_score: 1, map50: 1, map5095: 0.8 },
+      { species_id: 2, class_name: 'Urchin', metric_family: 'box', support: 3412, image_count: 740, precision: 0.81, recall: 0.77, f1_score: 0.79, map50: 0.8, map5095: 0.5 },
+      { species_id: 3, class_name: 'Sponge', metric_family: 'box', support: null, image_count: null, precision: 0.6, recall: 0.5, f1_score: 0.55, map50: 0.58, map5095: 0.3 },
+      { species_id: null, class_name: null, metric_family: 'box', precision: 0.8, recall: 0.75, f1_score: 0.77, map50: 0.79, map5095: 0.53 },
+    ],
+  })]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const headers = [...detail.querySelectorAll('.class-metrics thead th')].map((h) => h.textContent);
+
+  assert.deepEqual(headers, ['Class', 'Support', 'Images', 'Precision', 'Recall', 'F1', 'AP@50', 'AP@50–95'],
+    'the size of the sample arrives before the claim about it');
+
+  const rows = [...detail.querySelectorAll('.class-metrics tbody tr')];
+
+  assert.equal(rows[0].children[1].textContent, '3');
+  assert.equal(rows[1].children[1].textContent, '3,412');
+
+  /* Null means the trainer reported no count; 0 would mean it counted none. */
+  assert.ok(rows[2].children[1].querySelector('.dash'), 'an absent count is a dash, not a zero');
+
+  /* **Attribution rather than a warning.** A "low support" flag would need a cutoff, and
+     any cutoff would be invented here. Each score says what it rests on instead. */
+  assert.match(rows[0].children[3].getAttribute('title'), /over 3 labelled instances/,
+    'the perfect score carries its sample size');
+  assert.equal(rows[2].children[3].getAttribute('title'), null,
+    'and a class with no count claims nothing about one');
+
+  /* The aggregate has neither, and summing would invent one -- images especially, where
+     a frame holding three species would be counted three times. */
+  const foot = detail.querySelector('.class-metrics tfoot tr');
+
+  assert.ok(foot.children[1].querySelector('.dash') && foot.children[2].querySelector('.dash'),
+    'the aggregate shows dashes rather than a sum nobody reported');
+});
