@@ -1327,6 +1327,63 @@ function gappyPath(values, max, box) {
 }
 
 /**
+ * How far above the settled losses the first epoch has to sit before it stops setting the
+ * scale. Twice the highest value every later epoch reached.
+ *
+ * **Not a tuned number: it is the gap between a decay and a warm-up.** A loss that simply
+ * starts high and falls -- which is every healthy curve -- has its first point within a
+ * factor of two of what the rest of the run reaches, so nothing is clipped and the chart
+ * is as it was. A first epoch several times above everything after it is the optimizer
+ * before the model has learned anything, and it is not comparable to the run.
+ */
+const WARMUP_RATIO = 2;
+
+/**
+ * The ceiling for an auto-scaled chart, and which series it had to cut.
+ *
+ * **One warm-up point was setting the scale for sixty.** Run 205 recorded
+ * `train_cls_loss` at 12.10 for epoch 1 and 0.65 for epoch 2; every other value in that
+ * chart lives between 0.35 and 2.27. Scaled to 12.2, validation box loss travelled 3.4px
+ * over ten epochs and DFL loss travelled 0.5px -- six flat lines and a spike, on the chart
+ * whose whole purpose is the gap between each train/validation pair.
+ *
+ * **So the scale follows epoch 2 onward, and what that leaves out is said rather than
+ * hidden.** The alternative was to let `gappyPath` clamp quietly, and a flat line that is
+ * really a clamp cannot be told from a plateau -- which is a finding somebody would act
+ * on. `clipped` is what the caller marks on the chart.
+ *
+ * @param {Object[]} drawn - `{key, label, values}` per series, values one per epoch.
+ * @param {number} count - How many epochs there are.
+ * @returns {{max: number, clipped: Object[]}} The ceiling, and the series above it at epoch 1.
+ */
+function autoCeiling(drawn, count) {
+  const round = (value) => Math.max(1, Math.ceil(value * 10) / 10);
+  const real = (list) => list.filter((value) => value !== null && value !== undefined);
+  const everything = round(Math.max(...real(drawn.flatMap((one) => one.values)), 0));
+
+  /* Two epochs cannot say which of them is the outlier, and dropping one of two leaves
+     nothing to scale by. */
+  if (count < 3) return { max: everything, clipped: [] };
+
+  const settled = real(drawn.flatMap((one) => one.values.slice(1)));
+  const firstMax = Math.max(...real(drawn.map((one) => one.values[0])), 0);
+  const settledMax = Math.max(...settled, 0);
+
+  if (!settled.length || !settledMax || firstMax <= settledMax * WARMUP_RATIO) {
+    return { max: everything, clipped: [] };
+  }
+
+  const max = round(settledMax);
+
+  return {
+    max,
+    clipped: drawn
+      .filter((one) => one.values[0] !== null && one.values[0] !== undefined && one.values[0] > max)
+      .map((one) => ({ key: one.key, label: one.label, value: one.values[0] })),
+  };
+}
+
+/**
  * One chart of several series over the epochs.
  *
  * Built out of the same `result-chart` / `result-line` vocabulary the Jobs detail already
@@ -1368,10 +1425,10 @@ function epochChart(spec, epochs) {
 
      Quality keeps its fixed 1: precision, recall and mAP are 0 to 1 by definition, and a
      fixed axis is what lets two runs be compared by eye. */
-  const measured = drawn.flatMap((one) => one.values).filter((v) => v !== null);
-  const max = spec.max === 'auto'
-    ? Math.max(1, Math.ceil(Math.max(...measured, 0) * 10) / 10)
-    : spec.max;
+  const ceiling = spec.max === 'auto'
+    ? autoCeiling(drawn, epochs.length)
+    : { max: spec.max, clipped: [] };
+  const { max } = ceiling;
   const labels = spec.max === 'auto'
     ? { top: max.toFixed(1), mid: (max / 2).toFixed(1) }
     : { top: spec.top, mid: spec.mid };
@@ -1379,7 +1436,45 @@ function epochChart(spec, epochs) {
   const legend = drawn.map((one) => `<button type="button" class="${one.key}" data-result-highlight="${one.key}"`
     + `${one.measured ? '' : ' disabled title="Not reported for this run"'}>${one.label}</button>`).join('');
 
-  const lines = drawn.map((one) => `<path class="result-line ${one.key}" d="${gappyPath(one.values, max, box)}"/>`).join('');
+  /* The same geometry `gappyPath` works in, needed here to put the break where the line
+     would have left the chart. */
+  const span = Math.max(1, epochs.length - 1);
+  const at = (index) => box.left + (box.right - box.left) * index / span;
+  const height = (value) => box.bottom - (box.bottom - box.top)
+    * Math.max(0, Math.min(max, value)) / (max || 1);
+
+  const cut = new Set(ceiling.clipped.map((one) => one.key));
+
+  /* **A clipped first epoch is dropped from its line rather than pinned to the ceiling.**
+     Clamping it would draw a vertex at the top of the axis that is indistinguishable from
+     a measurement taken there, which is the whole failure this is avoiding. The line
+     starts at epoch 2; a stub shows it coming down from above; the mark and the number
+     say what it was. */
+  const lines = drawn.map((one) => {
+    const values = cut.has(one.key) ? [null, ...one.values.slice(1)] : one.values;
+
+    return `<path class="result-line ${one.key}" d="${gappyPath(values, max, box)}"/>`;
+  }).join('');
+
+  const stubs = ceiling.clipped.map((one) => {
+    const next = drawn.find((series) => series.key === one.key).values[1];
+
+    /* Nothing to come down to when epoch 2 was not measured. The mark still stands. */
+    if (next === null || next === undefined) return '';
+
+    return `<path class="result-stub ${one.key}" `
+      + `d="M${at(0).toFixed(1)},${box.top} L${at(1).toFixed(1)},${height(next).toFixed(1)}"/>`;
+  }).join('');
+
+  /* The number at the break, because it is a real measurement and the most dramatic one
+     in the series -- recoverable by someone looking at the chart, not only from a note
+     somewhere else. */
+  const breaks = ceiling.clipped.map((one, index) => `<g class="result-break ${one.key}" `
+    + `transform="translate(${(at(0) + index * 15).toFixed(1)},${box.top})">`
+    + '<path class="break-mark" d="M-7,7 L-1,-4 M1,7 L7,-4"/>'
+    + `<title>${escapeHtml(one.label)} reached ${one.value.toFixed(2)} at epoch `
+    + `${epochs[0].epoch_number}, above this axis</title>`
+    + `<text x="10" y="4">${one.value.toFixed(2)}</text></g>`).join('');
 
   const grid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
     + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
@@ -1387,13 +1482,26 @@ function epochChart(spec, epochs) {
   const first = epochs.length ? epochs[0].epoch_number : 0;
   const last = epochs.length ? epochs[epochs.length - 1].epoch_number : 0;
 
+  /* The note carries the scale decision; the marks on the chart carry the numbers. Both,
+     because one says why the axis is where it is and the other says what was left out. */
+  const said = ceiling.clipped.length
+    ? ceiling.clipped.map((one) => `${one.label.toLowerCase()} ${one.value.toFixed(2)}`).join(', ')
+    : '';
+  const note = said
+    ? `${spec.note} &middot; scaled to epoch ${epochs[1] ? epochs[1].epoch_number : 2} onward, `
+      + `because epoch ${first} starts above the axis (${escapeHtml(said)})`
+    : spec.note;
+  const label = said
+    ? `${spec.title} by epoch, scaled past epoch ${first}, which reached ${said}`
+    : `${spec.title} by epoch`;
+
   return `<article class="evaluation-card history-card" data-result-graph><header><div><h5>${spec.title}</h5>`
-    + `<p>${spec.note}</p></div><div class="result-legend">${legend}</div></header>`
-    + `<div class="result-chart" role="img" aria-label="${spec.title} by epoch">`
+    + `<p>${note}</p></div><div class="result-legend">${legend}</div></header>`
+    + `<div class="result-chart" role="img" aria-label="${escapeHtml(label)}">`
     + `<svg viewBox="0 0 740 205" aria-hidden="true">${grid}`
     + `<g class="result-axis"><text x="38" y="28">${labels.top}</text><text x="38" y="103">${labels.mid}</text>`
     + `<text x="38" y="178">0</text><text x="46" y="196">Epoch ${first}</text>`
-    + `<text x="700" y="196">Epoch ${last}</text></g>${lines}</svg></div></article>`;
+    + `<text x="700" y="196">Epoch ${last}</text></g>${lines}${stubs}${breaks}</svg></div></article>`;
 }
 
 /**
@@ -5665,7 +5773,10 @@ function wireJobsOverview() {
       const active = results.dataset.resultHighlight === name ? '' : name;
       results.dataset.resultHighlight = active;
       results.classList.toggle('is-highlighted', Boolean(active));
-      $$('.result-line', results).forEach((line) => line.classList.toggle('highlighted', Boolean(active) && line.classList.contains(active)));
+      /* The stub and the break mark belong to a line and carry its key class, so they
+         follow it -- a highlighted series whose off-the-top mark stayed behind at full
+         strength would attach that number to whichever line is lit. */
+      $$('.result-line, .result-stub, .result-break', results).forEach((line) => line.classList.toggle('highlighted', Boolean(active) && line.classList.contains(active)));
       buttons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.resultHighlight === active)));
     };
     buttons.forEach((button) => {

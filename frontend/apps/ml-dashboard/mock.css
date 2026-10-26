@@ -648,8 +648,26 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   stroke-linejoin: round; vector-effect: non-scaling-stroke;
   stroke-dasharray: var(--dash-on) var(--dash-off);
 }
+/* **Where a series left the top of the chart.** The stub shows the line coming down from
+   above without claiming a measurement at the ceiling -- thin and faint, so it cannot be
+   read as data -- and the mark beside it is the broken-axis zigzag, which is what stops a
+   clipped point looking like a plateau at the top. Both take the series' own `--key`, so
+   it is obvious which line went off. */
+.result-stub {
+  fill: none; stroke: var(--key); stroke-width: 1.4; opacity: .45;
+  stroke-dasharray: 3 3; vector-effect: non-scaling-stroke;
+}
+.result-break .break-mark {
+  fill: none; stroke: var(--key); stroke-width: 2; stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.result-break text { fill: var(--key); font: 700 10px var(--body-font); text-anchor: start; }
 [data-result-graph].is-highlighted .result-line { opacity: .12; transition: opacity 140ms ease; }
 [data-result-graph].is-highlighted .result-line.highlighted { opacity: 1; stroke-width: 3.2; filter: drop-shadow(0 0 3px var(--key)); }
+[data-result-graph].is-highlighted .result-stub,
+[data-result-graph].is-highlighted .result-break { opacity: .12; transition: opacity 140ms ease; }
+[data-result-graph].is-highlighted .result-stub.highlighted { opacity: .8; }
+[data-result-graph].is-highlighted .result-break.highlighted { opacity: 1; }
 .train-loss { --key: var(--cyan-300); }
 .val-loss { --key: var(--red-400); --dash-on: 6px; --dash-off: 4px; }
 .precision { --key: var(--blue-400); }

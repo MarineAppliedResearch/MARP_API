@@ -1358,3 +1358,146 @@ test('a panel showing everything does not say "of"', async (t) => {
   assert.match(heading, /\(1\)/);
   assert.doesNotMatch(heading, /of/, 'nothing is truncated, so nothing claims to be');
 });
+
+/**
+ * Run 205, exactly as the development database recorded it: ten epochs, both splits, the
+ * first real paired-loss run MARP has.
+ *
+ * **It is here because it broke the chart and the numbers are what proves it fixed.**
+ * `train_cls_loss` is 12.10 at epoch 1 and 0.65 at epoch 2 -- the optimizer before the
+ * model has learned anything -- while every other value in the chart lives between 0.35
+ * and 2.27. Scaled to the maximum, that one point put validation box loss on 3.4px of
+ * travel and DFL loss on 0.5px.
+ *
+ * Columns in order: train box, box, train class, class, train DFL, DFL, mAP@50.
+ */
+const RUN_205 = [
+  [2.01598, 1.56838, 12.10451, 1.99301, 1.07113, 0.83593, 0.47876],
+  [1.33830, 1.57532, 0.65267, 1.66628, 0.81858, 0.83760, 0.61734],
+  [1.26893, 1.47264, 0.58359, 2.16418, 0.81572, 0.82321, 0.46993],
+  [1.13353, 1.42726, 0.53769, 1.63361, 0.80008, 0.82218, 0.62103],
+  [1.11700, 1.44315, 0.49579, 2.12085, 0.79685, 0.82250, 0.54051],
+  [1.04744, 1.44185, 0.46930, 1.90590, 0.78473, 0.81771, 0.63568],
+  [0.98506, 1.36701, 0.43705, 1.51008, 0.78709, 0.81572, 0.67946],
+  [0.91968, 1.41954, 0.40327, 1.99494, 0.77886, 0.81222, 0.60744],
+  [0.86114, 1.30672, 0.37399, 1.89357, 0.77972, 0.80387, 0.66262],
+  [0.80756, 1.30187, 0.35822, 2.26563, 0.76763, 0.80049, 0.60060],
+].map((row, index) => epoch(index + 1, {
+  train_box_loss: row[0],
+  box_loss: row[1],
+  train_cls_loss: row[2],
+  cls_loss: row[3],
+  train_dfl_loss: row[4],
+  dfl_loss: row[5],
+  map50: row[6],
+}));
+
+/** The Loss card out of an opened run panel. */
+function lossCard(detail) {
+  return [...detail.querySelectorAll('.evaluation-card')]
+    .find((one) => /^Loss$/.test(one.querySelector('h5')?.textContent.trim() || ''));
+}
+
+/** Every point of a drawn line, as `{x, y}` in viewBox units. */
+function points(card, key) {
+  const d = card.querySelector(`.result-line.${key}`)?.getAttribute('d') || '';
+
+  return [...d.matchAll(/[ML](-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g)]
+    .map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+}
+
+test('a warm-up first epoch does not set the scale for the whole run', async (t) => {
+  const screen = await drawScreen('training.html', answers(RUN_205));
+
+  t.after(screen.close);
+
+  const card = lossCard(await open(screen, 21779));
+
+  /* 2.3 is the highest loss any epoch after the first reached. 12.2 was the old answer,
+     and it is the single number this whole change is about. */
+  assert.equal(card.querySelector('.result-axis text').textContent, '2.3',
+    'the axis follows the settled losses, not the warm-up');
+});
+
+test('every loss series uses the chart it is drawn in', async (t) => {
+  /* **The failure stated as a measurement.** Scaled to 12.2 the six series lived in the
+     bottom 16% of a 150px box -- six flat lines, on the chart whose caption says the gap
+     between a pair is the overfitting signal. Epoch 1 is excluded here because it is the
+     point that is deliberately off the top; what is asserted is that everything else
+     spreads out. */
+  const screen = await drawScreen('training.html', answers(RUN_205));
+
+  t.after(screen.close);
+
+  const card = lossCard(await open(screen, 21779));
+  const keys = ['box-loss-train', 'box-loss', 'cls-loss-train', 'cls-loss', 'dfl-loss-train', 'dfl-loss'];
+  const settled = keys.flatMap((key) => points(card, key)).filter((p) => p.x > 46);
+  const ys = settled.map((p) => p.y);
+  const spread = Math.max(...ys) - Math.min(...ys);
+
+  assert.ok(spread > 90,
+    `the settled losses should use most of the 150px box, not ${spread.toFixed(1)}px of it`);
+});
+
+test('the gap between a train and validation pair is readable', async (t) => {
+  /* This is the thing the chart exists to show. At the old scale box train and box
+     validation finished 6.1px apart on a 150px axis, for a validation loss 1.6x the
+     training one. */
+  const screen = await drawScreen('training.html', answers(RUN_205));
+
+  t.after(screen.close);
+
+  const card = lossCard(await open(screen, 21779));
+  const train = points(card, 'box-loss-train').at(-1);
+  const val = points(card, 'box-loss').at(-1);
+  const gap = Math.abs(train.y - val.y);
+
+  assert.ok(gap > 20, `the final pair should be separable, not ${gap.toFixed(1)}px apart`);
+});
+
+test('the clipped epoch is marked as a break and names its real value', async (t) => {
+  const screen = await drawScreen('training.html', answers(RUN_205));
+
+  t.after(screen.close);
+
+  const card = lossCard(await open(screen, 21779));
+  const mark = card.querySelector('.result-break.cls-loss-train');
+
+  assert.ok(mark, 'the series that went off the top is marked where it did');
+  assert.equal(mark.querySelector('text').textContent, '12.10',
+    'and the measurement is on the chart, not only in a note');
+  assert.ok(mark.querySelector('.break-mark'),
+    'with the broken-axis mark, so it cannot read as a point at the ceiling');
+
+  /* **The part that would otherwise be a lie.** A clamped first epoch draws a vertex at
+     the top of the axis that cannot be told from a measurement taken there -- which is
+     the failure this avoids, not a smaller version of it. x=46 is epoch 1. */
+  const first = points(card, 'cls-loss-train')[0];
+
+  assert.ok(first.x > 46, 'the line starts at epoch 2, not pinned to the ceiling');
+  assert.ok(card.querySelector('.result-stub.cls-loss-train'),
+    'and a stub shows it coming down from above');
+
+  assert.match(card.querySelector('p').textContent, /12\.10/,
+    'the note says why the axis is where it is');
+});
+
+test('a loss that merely starts high keeps every point on the chart', async (t) => {
+  /* The guard on the other side: a healthy curve starts at its maximum and falls, and
+     clipping that would throw away a real measurement to tidy the axis. 4.2 is within
+     twice the 2.6 the run settles at, so nothing is cut. */
+  const screen = await drawScreen('training.html', answers([
+    epoch(1, { cls_loss: 4.2 }),
+    epoch(2, { cls_loss: 2.6 }),
+    epoch(3, { cls_loss: 2.4 }),
+  ]));
+
+  t.after(screen.close);
+
+  const card = lossCard(await open(screen, 21779));
+
+  assert.equal(card.querySelector('.result-axis text').textContent, '4.2',
+    'the axis still fits the highest point');
+  assert.equal(card.querySelectorAll('.result-break').length, 0, 'nothing is marked as cut');
+  assert.equal(points(card, 'cls-loss')[0].x, 46, 'and epoch 1 is still drawn');
+});
