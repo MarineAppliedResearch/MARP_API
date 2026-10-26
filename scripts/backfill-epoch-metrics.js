@@ -23,6 +23,22 @@
  *   node scripts/backfill-epoch-metrics.js            # dry run; writes nothing
  *   node scripts/backfill-epoch-metrics.js --apply
  *   node scripts/backfill-epoch-metrics.js --apply --run 203
+ *   node scripts/backfill-epoch-metrics.js --repair --run 204          # dry run
+ *   node scripts/backfill-epoch-metrics.js --repair --apply --run 204
+ *
+ * **`--repair` is a second, narrower job: it rewrites rather than fills.** An API
+ * process that had not been restarted since 21 October served the old mapping for five
+ * days after it was corrected on disk, so job 21782 wrote ten rows carrying the
+ * *training* loss in the *validation* columns. Those rows are not missing a value, they
+ * hold the wrong one, and the fill path refuses them on purpose.
+ *
+ * **How it tells a mis-mapped row from a correct one, without being told which is
+ * which.** A mis-mapped row holds exactly what the old mapping produced -- `box_loss`
+ * equal to the event's `train/box_loss` -- while disagreeing with what the mapping
+ * produces now. A row agreeing with the current mapping is left alone, and a row
+ * matching neither is reported and never touched, because something happened to it that
+ * this script does not model. Measured against 5432 before this was written: 10
+ * mis-mapped, 3 correct, 0 ambiguous.
  *
  * Idempotent: a second run finds nothing null and does nothing. Run from the repository
  * root, so `dotenv` finds `.env`.
@@ -74,6 +90,28 @@ async function candidates(only) {
 }
 
 /**
+ * Whether a stored value is the old mapping's output rather than the current one.
+ *
+ * **Sharper than "the train columns are empty".** Empty says a row is incomplete; this
+ * says *how* it went wrong -- the column holds precisely what the previous mapping would
+ * have put there. A row that is merely missing values is the fill path's business, and a
+ * row holding something matching neither mapping is nobody's business without a person
+ * looking at it.
+ *
+ * @param {?number} stored - What is in the column.
+ * @param {?number} current - What the mapping produces today.
+ * @param {number} previous - What the old mapping would have produced.
+ * @returns {boolean} True only when the row provably came from the old mapping.
+ */
+function wasMisMapped(stored, current, previous) {
+    const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) < 1e-9;
+
+    if (stored === null || stored === undefined) return false;
+
+    return !near(Number(stored), Number(current)) && near(Number(stored), Number(previous));
+}
+
+/**
  * Works out what one epoch row is missing, and fills it.
  *
  * @async
@@ -81,7 +119,7 @@ async function candidates(only) {
  * @param {boolean} apply - Whether to write.
  * @returns {Promise<{outcome: string, disagreed: boolean}>} For the report.
  */
-async function backfill(row, apply) {
+async function backfill(row, apply, repair) {
     const read = epochMetrics(row.payload && row.payload.metrics);
     const filling = {};
     const disagreements = [];
@@ -102,6 +140,32 @@ async function backfill(row, apply) {
            then one of the two readings is of something else. Reported, never written. */
         if (Math.abs(Number(have) - found) > 1e-9) {
             disagreements.push(`${column} recorded ${have}, event says ${found}`);
+        }
+    }
+
+    /* **Repair rewrites exactly the columns that provably came from the old mapping.**
+       The three validation losses are the only ones it could have got wrong -- it read
+       `train/` where the worker sends both -- so the rule is applied per column, and a
+       column disagreeing for any other reason still falls through to the report below
+       rather than being overwritten on the strength of a guess. */
+    if (repair) {
+        const metrics = (row.payload && row.payload.metrics) || {};
+        const previously = {
+            box_loss: metrics['train/box_loss'],
+            cls_loss: metrics['train/cls_loss'],
+            dfl_loss: metrics['train/dfl_loss'],
+        };
+
+        for (const [column, before] of Object.entries(previously)) {
+            if (!wasMisMapped(row[column], read[column], before)) continue;
+
+            filling[column] = read[column];
+
+            /* No longer a disagreement once it is explained: the row held the old
+               mapping's value and is being moved to the current one. */
+            const at = disagreements.findIndex((text) => text.startsWith(`${column} `));
+
+            if (at !== -1) disagreements.splice(at, 1);
         }
     }
 
@@ -134,6 +198,7 @@ async function backfill(row, apply) {
  */
 async function main() {
     const apply = process.argv.includes('--apply');
+    const repair = process.argv.includes('--repair');
     const at = process.argv.indexOf('--run');
     const only = at === -1 ? null : Number(process.argv[at + 1]);
 
@@ -142,6 +207,10 @@ async function main() {
     }
 
     console.log(apply ? '== recording ==' : '== dry run; nothing will be written ==');
+
+    if (repair) {
+        console.log("== repair: rewriting columns that hold the old mapping's value ==");
+    }
 
     const rows = await candidates(only);
 
@@ -154,7 +223,7 @@ async function main() {
     let disagreed = 0;
 
     for (const row of rows) {
-        const { outcome, disagreed: bad } = await backfill(row, apply);
+        const { outcome, disagreed: bad } = await backfill(row, apply, repair);
 
         if (bad) disagreed += 1;
 
@@ -184,10 +253,17 @@ async function main() {
     }
 }
 
-main()
-    .then(() => db.sequelize.close())
-    .catch(async (error) => {
-        console.error(error.message);
-        await db.sequelize.close();
-        process.exitCode = 1;
-    });
+/* **Run when invoked, importable when not.** `wasMisMapped` decides whether a row in
+   a scientific record gets overwritten, which is worth a test of its own -- and a test
+   cannot require this file while requiring it opens a database and starts work. */
+if (require.main === module) {
+    main()
+        .then(() => db.sequelize.close())
+        .catch(async (error) => {
+            console.error(error.message);
+            await db.sequelize.close();
+            process.exitCode = 1;
+        });
+}
+
+module.exports = { wasMisMapped };

@@ -30,6 +30,7 @@ const { QueryTypes } = require('sequelize');
 
 const db = require('../model');
 const { epochMetrics } = require('../db/epoch-metrics');
+const { wasMisMapped } = require('../scripts/backfill-epoch-metrics');
 
 /** Unique per run, so a failed run's leftovers are recognisable. */
 const runId = Date.now();
@@ -278,6 +279,56 @@ describe('The metric names an epoch is read from', () => {
 
         expect(read.map50).toBeNull();
         expect(read.recall).toBeNull();
+    });
+});
+
+/**
+ * The rule that decides whether a recorded epoch gets overwritten.
+ *
+ * **A row written by the old mapping is not missing a value, it holds the wrong one**, so
+ * the fill path refuses it and a repair has to be able to say which rows are wrong. The
+ * API process that served the old mapping for five days after it was fixed on disk wrote
+ * ten such rows: train losses sitting in the validation columns.
+ *
+ * **The discriminator is what the column holds, not what is missing.** A mis-mapped row
+ * carries exactly what the previous mapping produced. That is sharper than "the train
+ * columns are null", which only says a row is incomplete -- and it is why a row matching
+ * neither mapping is reported rather than rewritten on a guess.
+ *
+ * This is the one rule in the repair that can destroy a measurement, which is why it is
+ * tested apart from the script that runs it.
+ */
+describe('Deciding whether an epoch row came from the old mapping', () => {
+    const VAL = 1.56838;
+    const TRAIN = 2.01598;
+
+    it('recognises a row holding the training loss in the validation column', () => {
+        expect(wasMisMapped(TRAIN, VAL, TRAIN)).toBe(true);
+    });
+
+    it('leaves a correctly mapped row alone', () => {
+        expect(wasMisMapped(VAL, VAL, TRAIN)).toBe(false);
+    });
+
+    /* An empty column is the fill path's business, not the repair's. */
+    it('says nothing about a column that is simply empty', () => {
+        expect(wasMisMapped(null, VAL, TRAIN)).toBe(false);
+        expect(wasMisMapped(undefined, VAL, TRAIN)).toBe(false);
+    });
+
+    /**
+     * **The important refusal.** A value matching neither mapping got there some way this
+     * does not model -- a hand edit, a third mapping, a different worker. Overwriting it
+     * would destroy the only evidence of whatever happened.
+     */
+    it('refuses a value that matches neither mapping', () => {
+        expect(wasMisMapped(9.9, VAL, TRAIN)).toBe(false);
+    });
+
+    /* An event with no train loss cannot have produced a mis-mapped row, so there is
+       nothing to recognise and nothing to rewrite. */
+    it('refuses when the event carries no previous value to compare against', () => {
+        expect(wasMisMapped(TRAIN, VAL, undefined)).toBe(false);
     });
 });
 
