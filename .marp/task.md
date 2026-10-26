@@ -227,14 +227,26 @@ Filled at G3.
 
 ## Status
 
-- **Gate:** implementing
-- **Notes:** A1–A3 answered; the design is settled and the worker has confirmed every
-  piece of transport against Ultralytics 8.4.145 rather than from memory.
+- **Gate:** implementing — built, **not verified**, waiting on A4.
+- **Notes:** A1–A3 answered; the design is settled and the worker confirmed every piece
+  of transport against Ultralytics 8.4.145 rather than from memory. Storage, ingest and
+  three read routes are written, and the generated contract and developer docs rebuilt.
 
-  **Not verified, and will not be until A4 is resolved.** This workspace has its
-  dependencies but no database of its own, so no test in this branch has been run and
-  none of the claims below have been executed. `agent.mjs adopt` refuses the worktree's
-  directory name. Nothing here should be read as passing.
+  **Not verified.** This workspace has its dependencies but no database, so **no Jest
+  test in this branch has been executed** — every suite here connects during per-file
+  setup. `db/final-metrics.js` was exercised outside Jest (26 assertions, 26 passed) and
+  its transpose assertions were mutation-checked red; `npm run test:subsystems` passes;
+  the model layer, the app build and the OpenAPI build were each checked against a dead
+  local port. `.marp/verification.md` lists V1–V16, none of which have been run, and
+  V6–V15 are not yet written. The local-database guard was **not** disabled to get round
+  this.
+
+  The ingest's fixture is a contract rather than an observation: no run has ever produced
+  a `final_metrics` artifact, because the worker half is agreed and unbuilt. That is the
+  weakest evidence in this work and it is named in the verification plan.
+
+  `metrics_curves` is deliberately left empty (A7) — the curve numbers are available and
+  out of this task's stated scope, which is a scope decision rather than an omission.
 
   `metrics_curves` is deliberately left empty (A7) — the curve numbers are available and
   out of this task's stated scope, which is a scope decision rather than an omission.
