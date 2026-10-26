@@ -1286,3 +1286,62 @@ test('a long generated name keeps its whole self on hover', async (t) => {
   assert.equal(cell.getAttribute('title'), full,
     'the whole name is one hover away rather than only inside the row');
 });
+
+test('the heading counts the rows it drew, and says what they are out of', async (t) => {
+  /* **The invariant that would have caught this.** The panel ranked by state and took
+     three, so with eight jobs and three failures it drew the three failures and headed
+     them "(8)". A table rendering fewer rows than it claims reads as missing data rather
+     than as a summary -- and here it hid every run that worked, including the first with
+     real train and validation losses. */
+  const at = (h, m) => `2026-10-26T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
+  const states = [
+    ['succeeded', 15, 59], ['failed', 15, 14], ['succeeded', 15, 10],
+    ['cancelled', 14, 30], ['failed', 14, 0], ['succeeded', 13, 0],
+  ];
+
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({
+      jobs: states.map(([state, h, m], index) => ({
+        ...job(21780 + index, state),
+        created_at: at(h, m),
+        updated_at: at(h, m),
+      })),
+      total: states.length,
+      limit: 500,
+      offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const rows = [...screen.document.querySelectorAll('.training-table tbody tr.runrow-head')];
+  const heading = screen.document.querySelector('.training-recent .panel-hd h2').textContent;
+
+  assert.match(heading, /\(3 of 6\)/,
+    'the heading says how many it drew and how many exist, rather than only the total');
+  assert.equal(rows.length, 3, 'and that is how many rows there are');
+
+  /* Newest first, because the panel is called Recent. Under the old state ranking these
+     three would have been the two failures and a cancelled one. */
+  assert.deepEqual(rows.map((r) => r.dataset.job), ['21780', '21781', '21782'],
+    'the three most recent, whatever happened to them');
+
+  /* The run that worked is visible, which is the whole complaint. */
+  assert.ok(rows.some((r) => /Done|Succeeded/i.test(r.querySelector('.jstatus').textContent)),
+    'a successful run is not hidden beneath the failures');
+});
+
+test('a panel showing everything does not say "of"', async (t) => {
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({ jobs: [job(21779)], total: 1, limit: 500, offset: 0 }),
+  });
+
+  t.after(screen.close);
+
+  const heading = screen.document.querySelector('.training-recent .panel-hd h2').textContent;
+
+  assert.match(heading, /\(1\)/);
+  assert.doesNotMatch(heading, /of/, 'nothing is truncated, so nothing claims to be');
+});

@@ -2297,15 +2297,32 @@ function renderTrainingRecent(views) {
   if (!table) return;
 
   const body = $('tbody', table);
-  const rank = { running: 0, issues: 1, failed: 2, expired: 3, queued: 4, cancelled: 5, done: 6 };
+
+  /* **Newest first, because the panel is called Recent.** It ranked by state instead --
+     running, then issues, then failed, then everything that worked -- and then took three.
+     With eight jobs and three failures that meant the three failures, every time: the
+     table showed nothing but red while five jobs including the newest success sat
+     underneath the cut. Isaac saw "Recent training jobs (8)" over three failed rows.
+
+     Severity belongs in the cards above, which already count *Needs attention*. A list
+     headed Recent that hides the most recent run is answering a question nobody asked. */
+  const LIMIT = 3;
   const shown = views
     .slice()
-    .sort((a, b) => (rank[a.state] - rank[b.state])
-      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
-    .slice(0, 3);
+    .sort((a, b) => Date.parse(b.job.created_at) - Date.parse(a.job.created_at))
+    .slice(0, LIMIT);
 
+  /* **The heading counts what is drawn, and says what it is out of.** `(8)` over three
+     rows is the panel misreporting itself, and a table that renders fewer rows than it
+     claims reads as missing data rather than as a summary. The full list is one click
+     away through the All jobs link beside this. */
   const heading = $('.training-recent .panel-hd h2') || $$('.panel-hd h2').find((h) => /Recent training/.test(h.textContent));
-  if (heading) heading.textContent = `Recent training jobs (${views.length.toLocaleString()})`;
+
+  if (heading) {
+    heading.textContent = views.length > shown.length
+      ? `Recent training jobs (${shown.length} of ${views.length.toLocaleString()})`
+      : `Recent training jobs (${views.length.toLocaleString()})`;
+  }
 
   body.innerHTML = shown.map((view) => {
     const { job } = view;
