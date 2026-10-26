@@ -60,7 +60,15 @@ const run = (id, jobId, extra = {}) => ({
   ...extra,
 });
 
-/** One epoch. Anything not named is null, which is the normal case today. */
+/**
+ * One epoch. Anything not named is null, which is the normal case today.
+ *
+ * **Every column the endpoint serves is named here, null rather than left out.** They are
+ * different answers: an absent key says this MARP does not have the column, a null says
+ * this epoch has no value for it. The train trio was absent from the response for a while
+ * — the columns existed and `epochs.model.js` had not declared them — and a fixture that
+ * omits them cannot tell the two apart either.
+ */
 const epoch = (number, values = {}) => ({
   id: 500 + number,
   training_run_id: 202,
@@ -68,11 +76,16 @@ const epoch = (number, values = {}) => ({
   box_loss: null,
   cls_loss: null,
   dfl_loss: null,
+  train_box_loss: null,
+  train_cls_loss: null,
+  train_dfl_loss: null,
   precision: null,
   recall: null,
   map50: null,
   map5095: null,
   duration_seconds: 42,
+  start_offset_s: null,
+  end_offset_s: null,
   ...values,
 });
 
