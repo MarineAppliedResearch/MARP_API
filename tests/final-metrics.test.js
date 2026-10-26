@@ -125,6 +125,32 @@ describe('reading a final report', () => {
         expect(lingcod.map5095).toBe(0.61);
     });
 
+    it('carries the two counts that say how much a class\'s metrics rest on', () => {
+        const counted = report();
+        counted.metrics[0].per_class[0] = {
+            class: 'Lingcod', precision: 0.9, recall: 0.8, support: 142, images: 37,
+        };
+
+        const lingcod = finalMetrics(counted).rows.find((row) => row.class_name === 'Lingcod');
+
+        expect(lingcod.support).toBe(142);
+        expect(lingcod.image_count).toBe(37);
+
+        // The aggregate has neither; the trainer reports them per class only.
+        const aggregate = finalMetrics(counted).rows.find((row) => row.class_name === null);
+
+        expect(aggregate.support).toBeUndefined();
+    });
+
+    it('nulls a count the trainer did not report, rather than calling it zero', () => {
+        // Both are unset until a validation has populated them, and "no instances" and
+        // "not counted" are different facts about a species.
+        const lingcod = finalMetrics(report()).rows.find((row) => row.class_name === 'Lingcod');
+
+        expect(lingcod.support).toBeNull();
+        expect(lingcod.image_count).toBeNull();
+    });
+
     it('writes no row at all for a class the validator never evaluated', () => {
         // `ap_class_index` holds only classes that appeared in the validation set, so an
         // absent class means NEVER EVALUATED, not scored zero. A row of zeros would be a
@@ -240,6 +266,24 @@ describe('the per-threshold curves', () => {
     it('refuses a curves artifact that does not say what it measured', () => {
         expect(metricCurves(curves({ family: undefined }))).toBeNull();
         expect(metricCurves(curves({ split: undefined }))).toBeNull();
+    });
+
+    it('keeps a flat row of zeros, which is a class the model missed entirely', () => {
+        // A class with labels but no predictions leaves precision and recall at zero
+        // across every threshold. That is correct -- nothing was predicted, so recall
+        // really is zero everywhere -- and discarding it would throw away the record of
+        // a class the model completely missed, which is one of the more important
+        // things a reader can learn.
+        const missed = curves();
+        missed.curves.precision[1] = [0, 0, 0];
+        missed.curves.recall[1] = [0, 0, 0];
+        missed.curves.f1[1] = [0, 0, 0];
+
+        const series = metricCurves(missed).byClass[1];
+
+        expect(series.points).toHaveLength(3);
+        expect(series.points[0].recall).toBe(0);
+        expect(series.points[0].recall).not.toBeNull();
     });
 });
 

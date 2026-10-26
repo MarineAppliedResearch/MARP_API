@@ -180,6 +180,112 @@
 
         
             
+<h4 class="name" id="~COUNT_COLUMNS"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>COUNT_COLUMNS<span class="type-signature"> :Object.&lt;string, string></span></h4>
+
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>The two counts a per-class row carries, which say how much its metrics rest on.
+
+A precision of 1.0 over three instances and over three thousand are not the same
+claim, and without these a reader cannot tell them apart -- which on a species list
+whose rare classes are the whole point is the difference between a useful number and
+a misleading one.
+
+**Resolved by the worker, never joined here, and that is the interesting part.**
+Ultralytics indexes `nt_per_class` by *class id* while the per-class metrics beside it
+are indexed by *evaluated position*, and its own validator reads both in one loop. The
+two agree only while every class was evaluated, so taking a raw array and zipping it
+against the metrics would silently attribute one species' instance count to another
+exactly when the evaluated set is smaller than the vocabulary -- the rare-species
+case. It would not throw. So these arrive already attached to their class by name, and
+nothing on this side ever touches that dual index.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="migrations_20261026160000-a-training-run-keeps-what-yolo-measured.js.html">migrations/20261026160000-a-training-run-keeps-what-yolo-measured.js</a>, <a href="migrations_20261026160000-a-training-run-keeps-what-yolo-measured.js.html#line112">line 112</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+<div class="description usertext">
+    The two counts a per-class row carries, which say how much its metrics rest on.
+
+A precision of 1.0 over three instances and over three thousand are not the same
+claim, and without these a reader cannot tell them apart -- which on a species list
+whose rare classes are the whole point is the difference between a useful number and
+a misleading one.
+
+**Resolved by the worker, never joined here, and that is the interesting part.**
+Ultralytics indexes `nt_per_class` by *class id* while the per-class metrics beside it
+are indexed by *evaluated position*, and its own validator reads both in one loop. The
+two agree only while every class was evaluated, so taking a raw array and zipping it
+against the metrics would silently attribute one species' instance count to another
+exactly when the evaluated set is smaller than the vocabulary -- the rare-species
+case. It would not throw. So these arrive already attached to their class by name, and
+nothing on this side ever touches that dual index.
+</div>
+
+
+
+    <h5 class="h5-types">Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Object.&lt;string, string></span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+
+        
+            
 <h4 class="name" id="~SUMMARY_COLUMNS"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>SUMMARY_COLUMNS<span class="type-signature"> :Object.&lt;string, string></span></h4>
 
 

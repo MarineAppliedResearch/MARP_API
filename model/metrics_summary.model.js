@@ -78,6 +78,23 @@ const { Model } = require('sequelize');
  *             Set with a null species_id means a class MARP could not resolve to a
  *             species; the row is kept, because the model is actively predicting that
  *             class and dropping it would hide it.
+ *         support:
+ *           type: integer
+ *           nullable: true
+ *           example: 142
+ *           description: >
+ *             Labelled instances of this class in the evaluated split. Null on the
+ *             aggregate row. A precision of 1.0 over three instances and over three
+ *             thousand are not the same claim; this is what tells them apart, and on a
+ *             species list whose rare classes are the point it is the difference
+ *             between a useful number and a misleading one.
+ *         image_count:
+ *           type: integer
+ *           nullable: true
+ *           example: 37
+ *           description: >
+ *             Images in the evaluated split containing this class. 142 instances across
+ *             37 frames is a different survey from 142 across 140.
  *         precision:
  *           type: number
  *           format: float
@@ -264,6 +281,20 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'The class as the model named it. Null means the all-classes aggregate; set with a null species_id means a class MARP could not resolve to a species, which is kept rather than dropped.',
+      },
+
+      support: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'Labelled instances of this class in the evaluated split. Null on the aggregate row. A precision of 1.0 over three instances and over three thousand are not the same claim, and this is what tells them apart. Resolved against its class by name by the producer, never joined here: the source array is indexed by class id while the metrics beside it are indexed by evaluated position, and joining those would misattribute counts whenever a class went unevaluated.',
+      },
+
+      image_count: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'Images in the evaluated split containing this class. 142 instances across 37 frames is a different survey from 142 across 140, which on transect video is the distinction between a shoal and a scatter.',
       },
 
       precision: {

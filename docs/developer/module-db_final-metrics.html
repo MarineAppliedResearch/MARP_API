@@ -180,6 +180,110 @@
 
         
             
+<h4 class="name" id="~COUNT_FIELDS"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>COUNT_FIELDS<span class="type-signature"> :Object.&lt;string, string></span></h4>
+
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>The two counts that say how much a per-class row's metrics rest on.
+
+A precision of 1.0 over three instances and over three thousand are not the same
+claim. On a species list whose rare classes are the point, that is the difference
+between a useful number and a misleading one.
+
+**They arrive already attached to their class, and must never be joined here.**
+Ultralytics indexes `nt_per_class` by *class id* while the per-class metrics beside it
+are indexed by *evaluated position* -- its own validator reads both in a single loop,
+and they agree only while every class was evaluated. Zipping a raw array against the
+metrics would silently misattribute one species' instance count to another exactly
+when the evaluated set is smaller than the vocabulary, which is the rare-species case,
+and it would not throw. Anyone tempted to "simplify" this into a top-level array
+should read that sentence again.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line213">line 213</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+<div class="description usertext">
+    The two counts that say how much a per-class row's metrics rest on.
+
+A precision of 1.0 over three instances and over three thousand are not the same
+claim. On a species list whose rare classes are the point, that is the difference
+between a useful number and a misleading one.
+
+**They arrive already attached to their class, and must never be joined here.**
+Ultralytics indexes `nt_per_class` by *class id* while the per-class metrics beside it
+are indexed by *evaluated position* -- its own validator reads both in a single loop,
+and they agree only while every class was evaluated. Zipping a raw array against the
+metrics would silently misattribute one species' instance count to another exactly
+when the evaluated set is smaller than the vocabulary, which is the rare-species case,
+and it would not throw. Anyone tempted to "simplify" this into a top-level array
+should read that sentence again.
+</div>
+
+
+
+    <h5 class="h5-types">Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Object.&lt;string, string></span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+
+        
+            
 <h4 class="name" id="~CURVE_COLUMNS"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>CURVE_COLUMNS<span class="type-signature"> :Object.&lt;string, string></span></h4>
 
 
@@ -1075,7 +1179,7 @@ view it is a real outcome, the row sums do not mean anything without it, and
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line407">line 407</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line437">line 437</a>
     </li></ul></dd>
     
 
@@ -1282,7 +1386,7 @@ every stored matrix silently wrong the day it changed.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line343">line 343</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line373">line 373</a>
     </li></ul></dd>
     
 
@@ -1476,7 +1580,7 @@ looks at -- is exactly what a derivation cannot know.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line266">line 266</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line287">line 287</a>
     </li></ul></dd>
     
 
@@ -1649,7 +1753,7 @@ larger than the thing it saves.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line214">line 214</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line235">line 235</a>
     </li></ul></dd>
     
 
@@ -1809,15 +1913,27 @@ after the gap, which on a threshold curve means a precision attributed to the wr
 confidence -- a chart that is subtly and confidently wrong rather than visibly broken.
 A mismatch refuses the whole family rather than storing part of it.
 
-`support` is left null throughout. It is a per-class count, not a per-threshold one,
-so repeating it a thousand times down the column would state a per-threshold fact
-nobody measured.</li></ul></dd>
+`metrics_curves.support` is left null throughout. It is a per-class count, not a
+per-threshold one, so repeating it a thousand times down that column would state a
+per-threshold fact nobody measured. It lives on the class's `metrics_summary` row.
+
+**The `classes` here are the evaluated classes, not the vocabulary**, and that is the
+producer's indexing rather than a convention imposed here: the three curves are filled
+in `unique_classes` order, the same order as the per-class metrics. Everything below
+matches by name anyway, so the two cannot drift apart silently.
+
+**A flat row of zeros is a measurement and is stored.** A class with labels but no
+predictions leaves its precision and recall at zero across every threshold, which is
+correct -- nothing was predicted, so recall really is zero everywhere. The array is
+full length, so it does not trip the length check below, and it must not: refusing it
+would discard the record of a class the model completely missed, which is one of the
+more important things a reader can learn.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line449">line 449</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line491">line 491</a>
     </li></ul></dd>
     
 
@@ -1977,7 +2093,7 @@ nobody measured.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line243">line 243</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line264">line 264</a>
     </li></ul></dd>
     
 
@@ -2135,7 +2251,7 @@ nobody measured.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line229">line 229</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line250">line 250</a>
     </li></ul></dd>
     
 

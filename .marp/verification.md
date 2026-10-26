@@ -31,7 +31,7 @@ not, that is said.
 
 | Run | Result | What it does *not* prove |
 | --- | --- | --- |
-| `db/final-metrics.js` exercised outside Jest, 45 assertions across three files | **45 passed, 0 failed** | Not the Jest suite. No database, no route, no ingest. |
+| `db/final-metrics.js` exercised outside Jest, 52 assertions across four files | **52 passed, 0 failed** | Not the Jest suite. No database, no route, no ingest. |
 | The same, with the transpose deliberately removed | **24 passed, 2 failed** — the two transpose assertions, and only those | That the other 24 are tripwires. Only the transpose was mutation-checked. |
 | `npm run test:subsystems` | **ok — every suite belongs to exactly one subsystem** | Nothing about the tests themselves. |
 | Model layer loaded against a dead port | New model registered, `training_runs.confusion_matrices` associated, `metrics_summary` carries both new columns | That the migration runs. The model is a declaration; the table does not exist anywhere. |
@@ -97,7 +97,14 @@ Not yet written. This is the gap in the plan and it is the biggest one.
 - **V21** A class with no `metrics_summary` row gets no curve — structural, because
   `metrics_summary_id` is NOT NULL, so this test is guarding the structure rather than
   a rule.
-- **V22** `metrics_curves.support` is null on every row written.
+- **V22** `metrics_curves.support` is null on every row written — the count lives on the
+  class's `metrics_summary` row, where its grain is right.
+- **V24** `support` and `image_count` land on the per-class row, and stay null where the
+  trainer reported none. "No instances" and "not counted" are different facts.
+- **V25** A curve that is flat zero across every threshold is **stored**, not refused.
+  The general rule here is that a gap must not read as a zero; this is the converse, and
+  it is the one case where discarding would lose the record of a class the model missed
+  completely.
 - **V23** `GET /v2/training_run/:id/curves` returns index-aligned parallel arrays, and
   an empty array for a run whose worker sent no curves.
 
@@ -146,8 +153,8 @@ Not yet written. This is the gap in the plan and it is the biggest one.
 
 ## Status
 
-Written at G3 and **not yet reviewed**. V6–V15 and V17–V23 are now written, in
-`tests/training-run-yolo-output.test.js` — and **none of V1–V23 has been run**, because
+Written at G3 and **not yet reviewed**. V6–V15 and V17–V25 are now written, in
+`tests/training-run-yolo-output.test.js` — and **none of V1–V25 has been run**, because
 the schema cannot be loaded. That file has never been executed by anything. Whoever runs
 it first should expect to fix something, and should treat a green run as the first real
 evidence rather than as a confirmation of anything claimed here.

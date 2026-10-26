@@ -247,6 +247,41 @@ Where MARP has nothing, the screen shows a gap rather than a number.
   plotted against the stored recall, which is two measurements against each other rather
   than a derivation, and the rendering is kept as an image.
 
+- **2026-10-26 · `support` and `image_count` are columns, and the worker resolves them
+  rather than MARP joining them.** Without them the per-class metrics cannot be judged: a
+  precision of 1.0 over three instances and over three thousand are not the same claim,
+  and on a species list whose rare classes are the whole point that is the difference
+  between a useful number and a misleading one. `image_count` is the second question —
+  142 instances across 37 frames is a different survey from 142 across 140, which on
+  transect video separates a shoal from a scatter.
+
+  **The reason they arrive pre-attached is a trap the worker found and absorbed.**
+  Ultralytics indexes `nt_per_class` by *class id* while the per-class metrics beside it
+  are indexed by *evaluated position*, and its own validator reads both in one loop. They
+  agree only while every class was evaluated. So zipping a raw top-level array against
+  the metrics would silently attribute one species' instance count to another precisely
+  when the evaluated set is smaller than the vocabulary — the rare-species case — and it
+  would not throw. They come keyed by class name instead, and nothing on this side ever
+  touches that dual index. Written into the column comments as well as here, because the
+  obvious future "simplification" is to take the array.
+
+- **2026-10-26 · a flat row of zeros in a curve is a measurement and is stored.** A class
+  with labels but no predictions leaves its precision and recall at zero across every
+  threshold. That is correct — nothing was predicted, so recall really is zero everywhere
+  — and the array is full length, so it does not trip the short-curve refusal and must
+  not. Discarding it would throw away the record of a class the model missed completely,
+  which is among the more important things a reader can learn. The general rule in this
+  work is that a gap must not read as a zero; this is the one place the converse needed
+  saying, and it has its own test.
+
+- **2026-10-26 · three curves, not four, and the worker confirmed why from the source.**
+  `self.px` does double duty: `r_curve` and `p_curve` interpolate against confidence,
+  while `prec_values` interpolates against recall, and `curves_results` labels them
+  honestly ("Recall" on the first, "Confidence" on the other three). So a `prec_values`
+  row in `confidence_threshold` would record a recall as a confidence. Curve rows are
+  also indexed by evaluated class, not by the vocabulary — the same order as
+  `ap_class_index` — and everything here matches by name, so the two cannot drift.
+
 ## Plan
 
 1. Settle A1–A4. Nothing below starts while A1 and A4 are open.

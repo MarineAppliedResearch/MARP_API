@@ -89,6 +89,39 @@ const SUMMARY_COLUMNS = {
         + 'tell those two apart, and the model is actively predicting that class.',
 };
 
+/**
+ * The two counts a per-class row carries, which say how much its metrics rest on.
+ *
+ * A precision of 1.0 over three instances and over three thousand are not the same
+ * claim, and without these a reader cannot tell them apart -- which on a species list
+ * whose rare classes are the whole point is the difference between a useful number and
+ * a misleading one.
+ *
+ * **Resolved by the worker, never joined here, and that is the interesting part.**
+ * Ultralytics indexes `nt_per_class` by *class id* while the per-class metrics beside it
+ * are indexed by *evaluated position*, and its own validator reads both in one loop. The
+ * two agree only while every class was evaluated, so taking a raw array and zipping it
+ * against the metrics would silently attribute one species' instance count to another
+ * exactly when the evaluated set is smaller than the vocabulary -- the rare-species
+ * case. It would not throw. So these arrive already attached to their class by name, and
+ * nothing on this side ever touches that dual index.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const COUNT_COLUMNS = {
+    support: 'Labelled instances of this class in the evaluated split, as the trainer '
+        + 'counted them. Null on the aggregate row and wherever the trainer reported '
+        + 'none. Resolved against its class by name before it arrives: the source array '
+        + 'is indexed by class id while the metrics beside it are indexed by evaluated '
+        + 'position, and joining those two here would misattribute counts whenever a '
+        + 'class went unevaluated.',
+    image_count: 'Images in the evaluated split containing this class. Different from '
+        + 'support and useful beside it: 142 instances across 37 frames is a different '
+        + 'survey from 142 across 140, which on transect video is the distinction '
+        + 'between a shoal and a scatter.',
+};
+
 module.exports = {
     async up(queryInterface, Sequelize) {
         const transaction = await queryInterface.sequelize.transaction();
@@ -107,6 +140,14 @@ module.exports = {
             for (const [name, comment] of Object.entries(SUMMARY_COLUMNS)) {
                 await queryInterface.addColumn('metrics_summary', name, {
                     type: Sequelize.STRING,
+                    allowNull: true,
+                    comment,
+                }, { transaction });
+            }
+
+            for (const [name, comment] of Object.entries(COUNT_COLUMNS)) {
+                await queryInterface.addColumn('metrics_summary', name, {
+                    type: Sequelize.INTEGER,
                     allowNull: true,
                     comment,
                 }, { transaction });
@@ -217,7 +258,7 @@ module.exports = {
                 { transaction }
             );
 
-            for (const name of Object.keys(SUMMARY_COLUMNS)) {
+            for (const name of [...Object.keys(SUMMARY_COLUMNS), ...Object.keys(COUNT_COLUMNS)]) {
                 await queryInterface.removeColumn('metrics_summary', name, { transaction });
             }
 

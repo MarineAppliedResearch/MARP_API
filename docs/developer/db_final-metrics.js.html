@@ -257,6 +257,27 @@ const PER_CLASS_FIELDS = {
 };
 
 /**
+ * The two counts that say how much a per-class row's metrics rest on.
+ *
+ * A precision of 1.0 over three instances and over three thousand are not the same
+ * claim. On a species list whose rare classes are the point, that is the difference
+ * between a useful number and a misleading one.
+ *
+ * **They arrive already attached to their class, and must never be joined here.**
+ * Ultralytics indexes `nt_per_class` by *class id* while the per-class metrics beside it
+ * are indexed by *evaluated position* -- its own validator reads both in a single loop,
+ * and they agree only while every class was evaluated. Zipping a raw array against the
+ * metrics would silently misattribute one species' instance count to another exactly
+ * when the evaluated set is smaller than the vocabulary, which is the rare-species case,
+ * and it would not throw. Anyone tempted to "simplify" this into a top-level array
+ * should read that sentence again.
+ *
+ * @constant
+ * @type {Object&lt;string, string>}
+ */
+const COUNT_FIELDS = { support: 'support', image_count: 'images' };
+
+/**
  * A number the trainer measured, or null because it did not.
  *
  * **`Number(null)` is 0, not NaN**, which is the trap `db/epoch-metrics.js` had to learn
@@ -379,6 +400,15 @@ function finalMetrics(report) {
                 class_name: entry.class.trim(),
                 fitness: null,
                 ...readFields(entry, PER_CLASS_FIELDS),
+                /* Counts, not measurements: a fractional instance count is a transport
+                   fault rather than a number to store, so they are rounded to integers
+                   or dropped. Absent stays absent -- both are unset until a validation
+                   has populated them. */
+                ...Object.fromEntries(Object.entries(COUNT_FIELDS).map(([column, name]) => {
+                    const value = measured(entry[name]);
+
+                    return [column, value === null ? null : Math.round(value)];
+                })),
             });
         }
     }
@@ -502,9 +532,21 @@ function confusionForReading(stored, classes) {
  * confidence -- a chart that is subtly and confidently wrong rather than visibly broken.
  * A mismatch refuses the whole family rather than storing part of it.
  *
- * `support` is left null throughout. It is a per-class count, not a per-threshold one,
- * so repeating it a thousand times down the column would state a per-threshold fact
- * nobody measured.
+ * `metrics_curves.support` is left null throughout. It is a per-class count, not a
+ * per-threshold one, so repeating it a thousand times down that column would state a
+ * per-threshold fact nobody measured. It lives on the class's `metrics_summary` row.
+ *
+ * **The `classes` here are the evaluated classes, not the vocabulary**, and that is the
+ * producer's indexing rather than a convention imposed here: the three curves are filled
+ * in `unique_classes` order, the same order as the per-class metrics. Everything below
+ * matches by name anyway, so the two cannot drift apart silently.
+ *
+ * **A flat row of zeros is a measurement and is stored.** A class with labels but no
+ * predictions leaves its precision and recall at zero across every threshold, which is
+ * correct -- nothing was predicted, so recall really is zero everywhere. The array is
+ * full length, so it does not trip the length check below, and it must not: refusing it
+ * would discard the record of a class the model completely missed, which is one of the
+ * more important things a reader can learn.
  *
  * @param {Object} report - The parsed `metrics_curves` artifact.
  * @returns {?Object} `{schema, split, family, classes, confidence, byClass}` where

@@ -205,7 +205,10 @@ function finalMetricsReport(overrides = {}) {
             family: 'box',
             overall: { precision: 0.81, recall: 0.74, map50: 0.79, map5095: 0.52, fitness: 0.52 },
             per_class: [
-                { class: `jest-known-${runId}`, precision: 0.9, recall: 0.8, f1: 0.85, ap50: 0.88, ap5095: 0.61 },
+                {
+                    class: `jest-known-${runId}`, precision: 0.9, recall: 0.8,
+                    f1: 0.85, ap50: 0.88, ap5095: 0.61, support: 142, images: 37,
+                },
                 { class: `jest-unknown-${runId}`, precision: 0.7, recall: 0.6, f1: 0.65, ap50: 0.68, ap5095: 0.41 },
             ],
         }],
@@ -339,6 +342,28 @@ describe('Taking a final report into the record', () => {
         expect(rows[0].class_name).toBeNull();
         expect(rows[0].map50).toBeCloseTo(0.79);
         expect(rows.every((row) => row.metric_family === 'box')).toBe(true);
+    });
+
+    it('stores the counts a class\'s metrics rest on, and nulls the ones not reported', async () => {
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(finalMetricsReport()));
+
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [counted] = await query(
+            'SELECT support, image_count FROM metrics_summary WHERE training_run_id = :id AND class_name = :name',
+            { id: made.trainingRunId, name: `jest-known-${runId}` }
+        );
+
+        expect(counted.support).toBe(142);
+        expect(counted.image_count).toBe(37);
+
+        // "No instances" and "not counted" are different facts about a species.
+        const [uncounted] = await query(
+            'SELECT support FROM metrics_summary WHERE training_run_id = :id AND class_name = :name',
+            { id: made.trainingRunId, name: `jest-unknown-${runId}` }
+        );
+
+        expect(uncounted.support).toBeNull();
     });
 
     it('keeps a class it cannot resolve, under the name the model used', async () => {
