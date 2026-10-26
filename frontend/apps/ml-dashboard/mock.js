@@ -1686,10 +1686,16 @@ function perClassTable(classes) {
     const foot = overall
       ? `<tfoot><tr><th scope="row" title="Mean over the classes that appeared in validation, `
         + `not over the whole species vocabulary">Classes seen (${named.length})</th>`
-        /* **Not a sum.** Support and images are reported per class and never on the
-           aggregate, and adding the columns up here would be a figure MARP never sent --
-           images especially, where one frame holding three species would be counted
-           three times. */
+        /* **Not a sum, and the two columns have different reasons for it** -- recorded
+           together so neither gets "corrected" on the strength of the other, which is the
+           same guard the API session put in the column comments.
+
+           `image_count` is not summable at all: a frame holding three species is counted
+           once for each, so a total counts that frame three times and answers no question
+           anybody asked. `support` would be summable in principle, since instances really
+           are disjoint -- but the trainer reports no whole-split count, so a figure
+           computed here would be arithmetic of mine rather than a measurement. Same
+           answer, different reasons, and the weaker one is not a licence for the other. */
         + counts.map(() => '<td class="num"><span class="dash" title="Reported per class only">&mdash;</span></td>').join('')
         + `${columns.map(([, key]) => `<td>${cell(overall[key])}</td>`).join('')}</tr></tfoot>`
       : '';
