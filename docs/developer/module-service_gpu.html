@@ -498,13 +498,24 @@ is the comment that should stop it.
 
 **The time is the coordinator's local time**, which is the clock the person reading the
 dashboard is on. Deliberately not UTC: this is a label for a human, and the Created
-column already carries the date.</li></ul></dd>
+column already carries the date.
+
+**It leads, because the column truncates at about thirty-two characters.** The Job
+column is 188px at a 1600px viewport, so every name here is cut: with the time last it
+was the part that disappeared, which is the one part that cannot be spared -- three runs
+of one model over one dataset are told apart by exactly those five characters.
+
+Putting the dataset first instead was tried and is worse: a long dataset name eats the
+budget on its own and the time vanishes again. Leading with it is the only order where
+the disambiguator survives whatever the names are, and it spends the ellipsis on the
+model, which is the part least likely to differ between the runs somebody is comparing.
+The full name is a hover away -- the cell carries it as a title.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line506">line 506</a>
+        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line517">line 517</a>
     </li></ul></dd>
     
 
@@ -873,7 +884,7 @@ each interval, and whatever is left after the last one.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line3156">line 3156</a>
+        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line3167">line 3167</a>
     </li></ul></dd>
     
 
@@ -3330,7 +3341,7 @@ out of its middle, which is why this builds a list rather than trimming ends.</l
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line3112">line 3112</a>
+        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line3123">line 3123</a>
     </li></ul></dd>
     
 

@@ -117,8 +117,18 @@ describe('A training job submitted without a name', () => {
         expect(job.name).toContain('CookieStarTest');
         expect(job.name).toContain('rockfish5-2026-10-20');
 
-        // A 24-hour clock, which is what distinguishes two runs of the same pair.
-        expect(job.name).toMatch(/\b\d{2}:\d{2}$/);
+        /* **A 24-hour clock, and it leads.** The Job column renders about thirty-two
+           characters, so every one of these names is truncated — and with the time last
+           it was the part that disappeared, which is the one part that cannot be spared.
+           Asserted at the start rather than merely present, because the position is the
+           fix: three runs of one model over one dataset are told apart by exactly these
+           five characters. */
+        expect(job.name).toMatch(/^\d{2}:\d{2} · /);
+
+        /* Leading with the dataset instead was tried and is worse: a long dataset name
+           eats the budget alone and the time vanishes again. This is the only order
+           where it survives whatever the names are. */
+        expect(job.name.slice(0, 32)).toMatch(/^\d{2}:\d{2}/);
 
         /* **Not the id**, which is the whole point: "Job 21782" is what this replaces. */
         expect(job.name).not.toContain(String(job.id));
@@ -150,9 +160,9 @@ describe('A training job submitted with a name', () => {
 
     /** Including a name that happens to look like a generated one. */
     it('does not regenerate over a name that resembles a generated one', async () => {
-        const job = await submit({ name: 'something · else · 09:15' });
+        const job = await submit({ name: '09:15 · something · else' });
 
-        expect(job.name).toBe('something · else · 09:15');
+        expect(job.name).toBe('09:15 · something · else');
     });
 });
 
@@ -175,7 +185,7 @@ describe('Two runs of the same model over the same dataset', () => {
            varying field. */
         expect(first.name).toBe(second.name);
 
-        const clock = first.name.match(/(\d{2}:\d{2})$/);
+        const clock = first.name.match(/^(\d{2}:\d{2})/);
 
         expect(clock).toBeTruthy();
         expect(first.name.replace(clock[1], 'HH:MM'))

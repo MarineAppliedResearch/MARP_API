@@ -499,6 +499,17 @@ const GENERATED_NAME_PART = 24;
  * dashboard is on. Deliberately not UTC: this is a label for a human, and the Created
  * column already carries the date.
  *
+ * **It leads, because the column truncates at about thirty-two characters.** The Job
+ * column is 188px at a 1600px viewport, so every name here is cut: with the time last it
+ * was the part that disappeared, which is the one part that cannot be spared -- three runs
+ * of one model over one dataset are told apart by exactly those five characters.
+ *
+ * Putting the dataset first instead was tried and is worse: a long dataset name eats the
+ * budget on its own and the time vanishes again. Leading with it is the only order where
+ * the disambiguator survives whatever the names are, and it spends the ellipsis on the
+ * model, which is the part least likely to differ between the runs somebody is comparing.
+ * The full name is a hover away -- the cell carries it as a title.
+ *
  * @param {Object} spec - The job spec, after the dataset has been composed.
  * @param {Date} [when] - When it was submitted; now by default.
  * @returns {?string} The name, or null when there is not enough to make one.
@@ -521,7 +532,7 @@ function composeTrainingJobName(spec, when = new Date()) {
 
     const clock = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
 
-    return `${dataset} · ${model} · ${clock}`;
+    return `${clock} · ${dataset} · ${model}`;
 }
 
 class GpuService {
