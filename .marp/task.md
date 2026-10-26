@@ -38,24 +38,37 @@ Where MARP has nothing, the screen shows a gap rather than a number.
 
 ## Open assumptions
 
-- [ ] **A1 · environment · blocking** — which branch is the base? The brief says
-  `develop`, but `develop` does not carry `db/epoch-metrics.js`, the `epochs` loss /
-  duration / offset columns, or `GET /training_run/:id/epochs` — those are on
-  `104-dashboard-reads-marp`, 81 commits ahead and still moving, and it rewrote the three
-  files this task edits. Asked 2026-10-26.
-- [ ] **A2 · cross-repository · blocking** — can the worker send the confusion matrix as
-  **numbers**, and in which orientation, with or without the background row/column?
-  Ultralytics' own `matrix[i][j]` is predicted *i* / true *j*, the transpose of how a
-  reader reads one. Storage shape depends on the answer, and getting the orientation
-  wrong would be a confident lie rather than a gap. Asked 2026-10-26
-  (`local_3689d8f0-ee48-4e59-854b-eca2ad1dbb23`). R5 is conditional on it.
-- [ ] **A3 · cross-repository · blocking** — can per-class AP ride along keyed by **class
-  name** rather than class index? `validator.metrics.box` has per-class `p`, `r`, `ap50`,
-  `ap` with `ap_class_index`; an index without the vocabulary is unreadable here. Asked
-  with A2. R3 and R4 depend on it.
-- [ ] **A4 · environment · blocking** — this worktree has no `node_modules` and no `.env`,
-  and the task forbids migrating 5432. Nothing can be run or verified until there is an
-  install and a database of this task's own. Asked 2026-10-26.
+- [x] **A1 · environment · blocking** — answered 2026-10-26: branch from
+  `104-dashboard-reads-marp`, not `develop`. The brief was wrong, and it also matches a
+  standing rule — **one branch per repository per work stream**, open until the stream is
+  finished. `develop` carries neither `db/epoch-metrics.js` nor the epoch loss/duration/
+  offset columns, so building on it would have reproduced the stale-ingest defect this
+  stream just spent a day fixing. Rebased onto `55e82e82`.
+- [x] **A2 · cross-repository · blocking** — answered 2026-10-26 by the worker session,
+  read off Ultralytics 8.4.145 rather than recalled. Yes to numbers.
+  `trainer.validator.confusion_matrix.matrix` is `(nc+1)²` for detect/segment/obb and
+  `nc²` for classify/semantic. `metrics.py:400` is `self.matrix[p][t] += 1`, so **row =
+  predicted, column = true** — the transpose of how a reader reads one, as suspected.
+  Background is index `nc` on both axes: `matrix[nc][j]` is false negatives of true class
+  *j*, `matrix[i][nc]` is false positives of predicted class *i*, and `matrix[nc][nc]` is
+  never incremented. It travels self-describing, with its own `orientation` string. R5
+  stands.
+- [x] **A3 · cross-repository · blocking** — answered 2026-10-26: yes, per-class AP keyed
+  by class name is a zip of `ap_class_index` against `names` and trivial on the worker's
+  side. **With one gap that changes R4: `ap_class_index` contains only classes that
+  appeared in the validation set.** A class with no validation instances gets no row at
+  all, so a missing class means *never evaluated*, not *scored zero* — and on a species
+  list where the rare classes are the point, conflating those is the worst available
+  error. R3 and R4 stand, with D6 below.
+- [ ] **A4 · environment · non-blocking** — retagged 2026-10-26, because it was
+  mis-tagged: whether this workspace has a database is an environment prerequisite, not a
+  question whose different answer changes the behaviour, schema, interface or data. It is
+  **still open and still real**: `npm ci` is done, but `agent.mjs adopt` refuses this
+  worktree (`yolo-training-output-f030ed` does not start with a registry directory name,
+  so it cannot tell which repository it is — the directory was made by the desktop app,
+  not by the harness). Reported rather than improvised around. **Nothing here is verified
+  until it is resolved**, and that limit is stated again under Status rather than left to
+  be inferred from a green-looking spec.
 - [ ] **A5 · scientific / data-meaning · non-blocking** — when a reported class name resolves to more
   than one species, or to none, R4 records it under the reported name with a null
   `species_id`. Confirming that is the wanted behaviour rather than a refusal. (#265
@@ -65,6 +78,13 @@ Where MARP has nothing, the screen shows a gap rather than a number.
 - [ ] **A6 · database/schema · non-blocking** — `metrics_summary`'s eight `*_path` columns are left
   unwritten and commented as superseded rather than dropped. Dropping a published column
   on a scientific record is the human's call. Not blocking.
+- [ ] **A7 · product/UI · non-blocking** — `metrics.box.curves_results` carries the PR, P,
+  R and F1 curves as numbers over ~1000 confidence points, and MARP's empty
+  `metrics_curves` table is exactly that shape. It is **not** in this task's stated scope
+  (the brief named `PR_curve.png`, the image) and 20 classes × 1000 points is 20k rows per
+  run, which is a performance decision rather than an agent's. Asked the worker whether
+  the door is open; raised with the managing session as a scope question. Deliberately not
+  built, and `metrics_curves` stays empty.
 
 ## Decisions
 
@@ -127,6 +147,51 @@ Where MARP has nothing, the screen shows a gap rather than a number.
   run is the existing `training_runs.job_id` join (`20261020120000`), so
   `artifacts.training_run_id` staying null needs no backfill.
 
+- **2026-10-26 · the numbers arrive as one JSON artifact, not as events.** The worker's
+  recommendation, taken. A matrix is not a metric scalar and does not belong in the
+  per-epoch stream; one self-describing file published at `on_train_end` is a single
+  round trip and scales to a hundred classes without bloating an event. Role
+  `final_metrics`, carrying the class vocabulary once, the confusion matrix with its own
+  `orientation` string, and a metrics block per family with `overall` and `per_class`.
+  Six fields were added to the worker's sketch, each because the alternative was MARP
+  deriving a number: the family stated rather than inferred from the `(B)`/`(M)` suffix;
+  `overall` explicitly, because mAP50 over all classes is not the mean of the per-class
+  AP50s when support differs; `f1` from Ultralytics, because its `metrics.box.f1` is
+  taken at the max-F1 confidence and is **not** `2PR/(P+R)` of the reported P and R, so a
+  derived F1 would look like YOLO's and not be it; the split stated rather than assumed
+  to be `val`; the task, which is what says whether a background index should exist at
+  all; and a schema version, so a later change is detectable rather than silent.
+
+- **2026-10-26 · the confusion matrix gets its own small table, and that is the one new
+  table.** It has no home in `metrics_summary`: it is an N² measurement per run per
+  split, not a scalar per class, and a `confusion_matrix jsonb` column would be
+  meaningful on one row in N and null on the rest. Putting it in `details` would make a
+  documented structure undocumented. Rejected also: serving the stored JSON artifact
+  directly and keeping no column — tempting at zero schema cost, but it would make the
+  worker's wire format MARP's public API contract, which is the one thing the API layer
+  exists to prevent, and nothing could then be queried across runs.
+
+  **Stored verbatim, in the trainer's own orientation, with the `orientation` string
+  beside it.** Transposed once at the serving boundary, in a named function with a test,
+  because the reader-facing contract is rows=true/cols=predicted and the trainer's array
+  is the transpose. Storing it rotated would mean that if the worker ever changes
+  orientation, everything already stored becomes a silent lie; storing it as sent with
+  its own label means it stays interpretable either way.
+
+- **2026-10-26 · a class the validator did not evaluate gets no row.** Not a row of
+  zeros, not a row of nulls. `ap_class_index` omits any class with no validation
+  instances (A3), so absence there means *never evaluated* — and a row of nulls would
+  claim MARP looked and found nothing. The dashboard renders what it is given.
+
+- **2026-10-26 · there is no backfill, and that is a fact about the world rather than a
+  choice.** A job workspace is removed once MARP has the result (#65), and the worker
+  confirmed nothing survives under `state/jobs` from the runs this machine has already
+  done. Anything not published inside the attempt is gone permanently. So every training
+  run completed before this lands has no confusion matrix, no per-class AP and no plots,
+  and never will. A **stopped** run likewise produces none of it: the engine unwinds out
+  of `model.train()` by exception, so `final_eval()` and `on_train_end` never execute.
+  Both are absence, and neither is an error.
+
 ## Plan
 
 1. Settle A1–A4. Nothing below starts while A1 and A4 are open.
@@ -162,7 +227,14 @@ Filled at G3.
 
 ## Status
 
-- **Gate:** design
-- **Notes:** Survey done; the central question is answered above with its alternatives.
-  Blocked on A1–A4 — two are the worker's answer, two are this workspace having an
-  install and a database. Nothing is implemented.
+- **Gate:** implementing
+- **Notes:** A1–A3 answered; the design is settled and the worker has confirmed every
+  piece of transport against Ultralytics 8.4.145 rather than from memory.
+
+  **Not verified, and will not be until A4 is resolved.** This workspace has its
+  dependencies but no database of its own, so no test in this branch has been run and
+  none of the claims below have been executed. `agent.mjs adopt` refuses the worktree's
+  directory name. Nothing here should be read as passing.
+
+  `metrics_curves` is deliberately left empty (A7) — the curve numbers are available and
+  out of this task's stated scope, which is a scope decision rather than an omission.
