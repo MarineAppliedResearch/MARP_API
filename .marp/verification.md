@@ -146,5 +146,8 @@ Not yet written. This is the gap in the plan and it is the biggest one.
 
 ## Status
 
-Written at G3 and **not yet reviewed**. V1–V23 have not been run; V6–V15 and V17–V23
-have not been written.
+Written at G3 and **not yet reviewed**. V6–V15 and V17–V23 are now written, in
+`tests/training-run-yolo-output.test.js` — and **none of V1–V23 has been run**, because
+the schema cannot be loaded. That file has never been executed by anything. Whoever runs
+it first should expect to fix something, and should treat a green run as the first real
+evidence rather than as a confirmation of anything claimed here.

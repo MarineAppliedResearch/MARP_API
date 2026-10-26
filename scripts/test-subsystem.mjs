@@ -137,6 +137,8 @@ const SUBSYSTEMS = {
             // confusion matrix, which the trainer indexes as the transpose of how a
             // person reads one. Pure functions, so it costs a second.
             'final-metrics',
+            // #268: the ingest and the three reads, end to end against a database.
+            'training-run-yolo-output',
             'ml_models',
             // #104: preferred models, version chains, dataset status and the
             // training-run listing the registry had no route for.
