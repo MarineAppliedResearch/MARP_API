@@ -1615,3 +1615,52 @@ test('Best mAP follows a running job, in place, including the poll that finishes
   assert.equal(cell.textContent.trim(), '0.679', 'the finishing poll brings the final value');
   assert.equal(mapCell(screen, 21782), cell, 'same cell, not a rebuilt row');
 });
+
+test('the Training screen asks for training jobs, on the first read and on every poll', async (t) => {
+  /* **The defect this pins is invisible in the table and lives in the query string.**
+     `best_map50` is a lateral the API computes only when the list is filtered to
+     training -- unfiltered it omits the field entirely rather than selecting NULL, so
+     thousands of inference jobs do not pay 22ms a page for a column they have no row in.
+     The first read asked for everything, so the field came back absent and every Best mAP
+     cell took the absent branch, while the five-second poll asked correctly and the same
+     table was therefore filled from two different response shapes.
+
+     `renderTraining` discards every job that is not training in any case, so this also
+     stops fetching 500 rows to keep eight. */
+  const asked = [];
+
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async (query) => {
+      asked.push(query);
+      return { jobs: [job(21782, 'leased')], total: 1, limit: 500, offset: 0 };
+    },
+  });
+
+  t.after(screen.close);
+
+  /* The header's three live counters read the job list too, deliberately unfiltered or
+     filtered to another kind. The table's own read is the paged one. */
+  const forTheTable = () => asked.filter((query) => query.limit === 500);
+
+  assert.equal(forTheTable().length, 1, 'one table read on load');
+  assert.equal(forTheTable()[0].kind, 'training', 'filtered, or the API omits best_map50');
+
+  let cycle = null;
+  const real = screen.window.setTimeout;
+
+  screen.window.setTimeout = (fn, delay) => {
+    if (delay === 5000 && !cycle) { cycle = fn; return 1; }
+    return real(fn, delay);
+  };
+
+  screen.window.watchTrainingJobs();
+  await cycle();
+
+  for (let i = 0; i < 4; i += 1) await new Promise((resolve) => real(resolve, 20));
+
+  assert.ok(forTheTable().length > 1, 'the poll reads too');
+  assert.ok(forTheTable().every((query) => query.kind === 'training'),
+    `every table read is filtered, so the rows are filled from one response shape (${
+      forTheTable().map((query) => query.kind || 'unfiltered').join(', ')})`);
+});

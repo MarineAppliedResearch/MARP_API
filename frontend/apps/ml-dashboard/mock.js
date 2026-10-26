@@ -3123,7 +3123,18 @@ async function renderTrainingScreen() {
 
   try {
     const [jobs, models, datasets, runs] = await Promise.all([
-      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 })),
+      /* **Filtered to training, which the poll has always done and this had not.** Two
+         things turned on it. `best_map50` is a lateral the API computes only for a list
+         filtered to training -- 22ms a page otherwise, spent deriving it for thousands of
+         inference jobs that have no epochs and no such column -- so an unfiltered request
+         comes back with the field absent and every Best mAP cell took that branch. And
+         `renderTraining` discards everything that is not training anyway, so this was
+         fetching 500 rows to keep eight of them.
+
+         Safe for the issues rollup, which is the one thing here that reads the other
+         kinds: it groups by `batch_id`, and no training job in the corpus has one -- no
+         batch spans two kinds at all. */
+      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500, kind: 'training' })),
       window.MarpApi.listModels(),
       window.MarpApi.listDatasets(),
       /* Settled rather than awaited with the rest: the runs decorate the table and a
