@@ -294,7 +294,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: true,
         comment:
-          'Images in the evaluated split containing this class. 142 instances across 37 frames is a different survey from 142 across 140, which on transect video is the distinction between a shoal and a scatter.',
+          'Images in the evaluated split containing this class. 142 instances across 37 frames is a different survey from 142 across 140, which on transect video is the distinction between a shoal and a scatter. Never sum this column: a frame holding three species is counted once for each, so a total counts that frame three times. Null on the aggregate row for that reason and because the trainer reports no whole-split count.',
       },
 
       precision: {

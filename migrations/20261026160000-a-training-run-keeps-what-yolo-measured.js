@@ -119,7 +119,13 @@ const COUNT_COLUMNS = {
     image_count: 'Images in the evaluated split containing this class. Different from '
         + 'support and useful beside it: 142 instances across 37 frames is a different '
         + 'survey from 142 across 140, which on transect video is the distinction '
-        + 'between a shoal and a scatter.',
+        + 'between a shoal and a scatter. NEVER SUM THIS COLUMN, and that is why the '
+        + 'aggregate row leaves it null rather than carrying a total: a frame holding '
+        + 'three species is counted once for each of them, so a sum counts that frame '
+        + 'three times and answers no question anybody asked. The same caution does not '
+        + 'apply to support, where instances really are disjoint -- but the aggregate '
+        + 'stays null there too, because the trainer reports neither count for the whole '
+        + 'split and a figure computed here would not be a measurement.',
 };
 
 module.exports = {
