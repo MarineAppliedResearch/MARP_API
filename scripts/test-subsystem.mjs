@@ -133,6 +133,10 @@ const SUBSYSTEMS = {
             'epochs',
             'metrics_curves',
             'metrics_summary',
+            // #268: reading YOLO's end-of-run report -- the per-class rows, and the
+            // confusion matrix, which the trainer indexes as the transpose of how a
+            // person reads one. Pure functions, so it costs a second.
+            'final-metrics',
             'ml_models',
             // #104: preferred models, version chains, dataset status and the
             // training-run listing the registry had no route for.

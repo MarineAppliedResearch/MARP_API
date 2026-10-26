@@ -18,6 +18,7 @@ const fs = require('fs');
 
 const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
 const datasetController = require('../controller/dataset.controller');
+const trainingMetricsController = require('../controller/training-metrics.controller');
 const modelArtifactService = require('../service/model-artifact.service');
 const datasetBuildRepository = require('../repository/dataset-build.repository');
 const { imageSettings, concurrency } = require('../service/dataset-build.service');
@@ -1691,6 +1692,152 @@ function registerDatasetRoutes(app) {
             }
 
             res.json(await datasetController.getEpochsForRun(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/metrics',
+        summary: 'What one training run measured when it finished',
+        description:
+            'The end-of-run record: per-class precision, recall, F1 and AP, the all-classes aggregate, and the confusion matrix as numbers. All of it is carried from the trainer -- **MARP computes none of it**, and an endpoint with nothing to serve serves nothing.\n\n'
+            + '**The confusion matrix is served rows-as-TRUE, columns-as-PREDICTED**, which is how a person reads one. Note that this is the transpose of how Ultralytics indexes it internally (`matrix[predicted][true]`); the stored row keeps the producer\'s own orientation and names it, and the rotation happens once, here, on the way out. A matrix is never derived from the per-class numbers -- one assembled from precision and recall is arithmetic dressed as a measurement, and the off-diagonal, which is the only part anybody looks at, is exactly what a derivation cannot know.\n\n'
+            + '**The background row is kept and labelled rather than trimmed.** It holds the misses and the false positives, and the row sums do not mean anything without it. It is absent for classification, which has no background class.\n\n'
+            + '**Three kinds of metrics row, and they are different quantities.** `class_name` null is the all-classes aggregate. `class_name` set with `species_id` null is a class MARP could not resolve to a species -- kept, because the model is actively predicting it and dropping it would hide it. Everything else is a resolved class. `metric_family` says which vocabulary the numbers are in, so a segmentation run\'s box and mask rows for one class do not silently replace each other and a classification row\'s null mAP is not read as a detection row that failed to measure one.\n\n'
+            + '**A class the validator never evaluated has no row at all.** The trainer reports only classes that appeared in the validation set, so absence means *never evaluated* rather than *scored zero* -- and on a species list where the rare classes are the point, those are not the same fact. Nulls are returned as nulls for the same reason; a reader draws a dash.\n\n'
+            + 'Empty is the honest answer for a run still training, for a run that was stopped before its final validation, and for every run that finished before this was recorded. It is not a 404: the run exists either way.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run.' },
+        ],
+        responses: {
+            200: {
+                description: 'What the run measured. Empty arrays when it measured nothing.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                metrics: {
+                                    type: 'array',
+                                    items: { $ref: '#/components/schemas/MetricsSummary' },
+                                },
+                                confusion_matrices: {
+                                    type: 'array',
+                                    items: { $ref: '#/components/schemas/TrainingRunConfusionMatrix' },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            /* The run is checked rather than assumed, so a mistyped id is a 404 and not
+               an empty panel that looks like a run which measured nothing. */
+            const run = await datasetController.getTrainingRunById(req.params.id);
+
+            if (!run) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(await trainingMetricsController.getMetricsForRun(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/artifacts',
+        summary: 'Every file one training run produced',
+        description:
+            'The run directory\'s output: the confusion matrix images, the PR, F1, P and R curves, the label distribution and correlogram, the validation prediction samples, `results.csv`, and the weights. Each entry carries the URL that serves its bytes.\n\n'
+            + '**An open set, deliberately.** `name` is the real filename stem the worker filed the artifact under and there is no allow-list of recognised ones, so a plot type a later trainer version adds appears here under its own name rather than being dropped for being unfamiliar. A reader should caption what it recognises and show anything else under a tidied version of its own name.\n\n'
+            + '**`content_type` matters and is not decoration.** A run directory holds a CSV among the images, so a gallery that assumes every entry is an image draws a broken icon for it.\n\n'
+            + '**There is no backfill and there never will be.** A job workspace is removed once MARP holds the result, so anything a run did not publish during its attempt is gone permanently -- every training run that finished before this existed has no plots, and a run that was stopped produced none, because the trainer unwinds out of its loop before the final evaluation and the end-of-run callback. Empty is the honest answer in all three cases.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run.' },
+        ],
+        responses: {
+            200: {
+                description: 'The files, or an empty array when the run produced none.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    name: { type: 'string', example: 'confusion_matrix_normalized' },
+                                    url: { type: 'string', example: '/api/v2/training_run/202/artifacts/3464930b…' },
+                                    sha256: { type: 'string' },
+                                    bytes: { type: 'integer', nullable: true },
+                                    content_type: { type: 'string', nullable: true, example: 'image/png' },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const run = await datasetController.getTrainingRunById(req.params.id);
+
+            if (!run) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(await trainingMetricsController.getArtifactsForRun(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/artifacts/:hash',
+        summary: 'The bytes of one of a training run\'s files',
+        description:
+            'Serves one file a training run produced, addressed by the sha256 that identifies it. The same content-addressing the model weights use, so the bytes served are provably the bytes the trainer wrote.\n\n'
+            + '**Scoped to the run rather than looked up by hash alone.** A digest copied from an unrelated record cannot be used to read an artifact through this route, which is why the run id is in the path and not merely decorative.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run.' },
+            { in: 'path', name: 'hash', required: true, schema: { type: 'string' }, description: 'The sha256 addressing the file.' },
+        ],
+        responses: {
+            200: {
+                description: 'The file.',
+                content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const located = await trainingMetricsController.locateArtifact(
+                req.params.id, req.params.hash
+            );
+
+            /* One 404 for "no such run", "no such artifact" and "recorded but its bytes
+               are not on disk". They are the same answer to a reader -- the file is not
+               here -- and distinguishing them would tell a caller which hashes exist. */
+            if (!located) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} has no artifact ${req.params.hash}.`);
+            }
+
+            if (located.content_type) {
+                res.type(located.content_type);
+            }
+
+            res.sendFile(located.file);
         }),
     });
 

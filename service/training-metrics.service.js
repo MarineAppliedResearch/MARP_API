@@ -32,7 +32,7 @@ const path = require('path');
 const db = require('../model');
 const logger = require('../logger/api.logger');
 const { ARTIFACT_DIRECTORY } = require('../config/gpu-orchestration');
-const { FINAL_METRICS_ROLE, finalMetrics } = require('../db/final-metrics');
+const { FINAL_METRICS_ROLE, finalMetrics, confusionForReading } = require('../db/final-metrics');
 const ingestRepository = require('../repository/observation-ingest.repository');
 const trainingMetricsRepository = require('../repository/training-metrics.repository');
 
@@ -108,6 +108,100 @@ class TrainingMetricsService {
 
             return { failed: reason };
         }
+    }
+
+    /**
+     * What a run measured, in the shape a screen draws.
+     *
+     * **An empty answer is the honest one and is never a 404.** The run exists whether
+     * or not it reported anything, a run still training has reported nothing yet, and a
+     * run that was stopped never will. A reader draws its empty state; it does not treat
+     * "nothing yet" as an error.
+     *
+     * **Nulls stay null.** Most of these columns are nullable and a class the validator
+     * never evaluated has no row at all. Coalescing either to zero would turn "not
+     * measured" into "measured as nothing", which on a quality metric reads as a model
+     * that detects nothing -- a lie about the training rather than a gap in it.
+     *
+     * @async
+     * @param {number|string} trainingRunId - The run.
+     * @returns {Promise<Object>} `{metrics, confusion_matrices}`.
+     */
+    async readMetrics(trainingRunId) {
+        const [metrics, stored] = await Promise.all([
+            this.repository.findMetrics(trainingRunId),
+            this.repository.findConfusionMatrices(trainingRunId),
+        ]);
+
+        return {
+            metrics,
+            /* Transposed here, once, on the way out. The stored array is in its
+               producer's orientation and this is the only place that changes. */
+            confusion_matrices: stored
+                .map((row) => {
+                    const read = confusionForReading(row, row.class_names || []);
+
+                    return read === null ? null : { dataset_split: row.dataset_split, ...read };
+                })
+                .filter((row) => row !== null),
+        };
+    }
+
+    /**
+     * Every file a run's attempt handed over, as a list a gallery can render.
+     *
+     * **An open set, deliberately.** `name` is the real filename stem the worker filed
+     * the artifact under, and there is no allow-list of recognised ones: a plot type a
+     * later Ultralytics adds appears under its own name rather than being dropped for
+     * being unfamiliar, which is the one thing a closed set cannot do.
+     *
+     * `content_type` is carried so a reader knows what it is looking at -- the run
+     * directory holds a CSV among the images, and a gallery that assumes everything is
+     * an image draws a broken icon for it.
+     *
+     * @async
+     * @param {number|string} trainingRunId - The run.
+     * @returns {Promise<Array<Object>>} `{name, url, bytes, content_type}` per file.
+     */
+    async readArtifacts(trainingRunId) {
+        const rows = await this.repository.findArtifacts(trainingRunId);
+
+        return rows.map((row) => ({
+            name: row.artifact_type,
+            url: `/api/v2/training_run/${trainingRunId}/artifacts/${row.hash}`,
+            sha256: row.hash,
+            /* From the recorded byte count rather than from `size_mb`, which is a
+               rounded double and would report a 1,023-byte file as 0 MB. */
+            bytes: row.size_mb === null ? null : Math.round(row.size_mb * 1024 * 1024),
+            content_type: row.metadata ? row.metadata.content_type || null : null,
+            created_at: row.created_at,
+        }));
+    }
+
+    /**
+     * One of a run's files, located on disk.
+     *
+     * @async
+     * @param {number|string} trainingRunId - The run.
+     * @param {string} hash - The sha256 addressing it.
+     * @returns {Promise<Object|null>} `{file, content_type, name}` or null.
+     */
+    async locateArtifact(trainingRunId, hash) {
+        /* Lower-cased before the lookup, because a sha256 is stored lower-case and a
+           reader copying one out of a JSON response should not get a 404 for its case. */
+        const row = await this.repository.findArtifact(trainingRunId, String(hash).toLowerCase());
+
+        if (!row) return null;
+
+        const file = path.join(ARTIFACT_DIRECTORY, row.hash);
+
+        if (!fs.existsSync(file)) return null;
+
+        return {
+            file,
+            name: row.artifact_type,
+            content_type: row.metadata ? row.metadata.content_type || null : null,
+        };
     }
 
     /**
