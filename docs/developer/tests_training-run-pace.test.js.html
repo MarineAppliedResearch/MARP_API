@@ -490,6 +490,77 @@ describe('The columns GET /api/v2/training_run/:id/epochs serves', () => {
     });
 });
 
+/**
+ * The best mAP a training job reached, on the list that shows it.
+ *
+ * **Derived on read, and only when the caller asked for training jobs.** The Training
+ * screen shows the column; the Jobs screen does not, and all but eight of the 9,574 jobs
+ * on the development database are inference. Measured over a page of fifty: the lateral
+ * costs +22ms unfiltered and +0.2ms filtered, so it is left out of the statement
+ * entirely when nothing will read it.
+ *
+ * **Not stored, which is the opposite of the call made for dataset image counts and
+ * model checksums.** Those are expensive and immutable. This is an aggregate over tens of
+ * indexed rows, and epochs change — ten were rewritten repairing a mis-mapped run, and a
+ * stored best would have gone stale at that moment with nothing to say so.
+ */
+describe('Best mAP on the training job list', () => {
+    let epochIds = [];
+
+    beforeAll(async () => {
+        /* Three epochs with the best in the middle, so a query taking the first or the
+           last one passes by luck and this does not. */
+        for (const [number, map50] of [[1, 0.41], [2, 0.68], [3, 0.52]]) {
+            const [epoch] = await query(
+                `INSERT INTO epochs (training_run_id, epoch_number, map50, timestamp, created_at, updated_at)
+                 VALUES (:runId, :number, :map50, NOW(), NOW(), NOW())
+                 RETURNING id`,
+                { runId: made.trainingRunId, number, map50 }
+            );
+
+            epochIds.push(epoch.id);
+        }
+    });
+
+    afterAll(async () => {
+        for (const id of epochIds) {
+            await db.sequelize.query('DELETE FROM epochs WHERE id = :id', {
+                replacements: { id }, logging: false,
+            });
+        }
+
+        epochIds = [];
+    });
+
+    it('is the best epoch of the run, not the first or the last', async () => {
+        const res = await global.api.get('/api/v2/gpu/jobs').query({ kind: 'training', limit: 200 });
+
+        expect(res.status).toBe(200);
+
+        const mine = res.body.jobs.find((job) => job.id === made.jobId);
+
+        expect(mine).toBeTruthy();
+        expect(Number(mine.best_map50)).toBeCloseTo(0.68);
+    });
+
+    /**
+     * **Absent, not null, and the difference is load-bearing.** Null means this training
+     * job reached no epoch; absent means this response shape does not carry the field.
+     * Selecting NULL for it when unfiltered would collapse those into one value and
+     * quietly answer "no mAP" for every inference job on the Jobs screen.
+     */
+    it('is not in an unfiltered page at all', async () => {
+        const res = await global.api.get('/api/v2/gpu/jobs').query({ limit: 5 });
+
+        expect(res.status).toBe(200);
+        expect(res.body.jobs.length).toBeGreaterThan(0);
+
+        for (const job of res.body.jobs) {
+            expect(job).not.toHaveProperty('best_map50');
+        }
+    });
+});
+
 describe('GET /api/v2/training_run/:id/pace', () => {
 
     it('answers 404 for a run that does not exist', async () => {

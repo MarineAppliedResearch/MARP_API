@@ -1128,6 +1128,41 @@ class GpuRepository {
             // tied rows in the order they were already in.
             const order = `ORDER BY ${column} ${direction} NULLS LAST, j.id ${direction}`;
 
+            /* **The best mAP a training run reached, and only when the caller asked for
+               training jobs.** The Training screen shows it; the Jobs screen does not,
+               and 9,566 of 9,574 jobs on this database are inference.
+
+               Measured rather than reasoned, over a page of 50:
+
+                 unfiltered   1.4ms -> 23.4ms   (+22ms, paid by rows that cannot use it)
+                 kind=training 0.6ms ->  0.8ms   (+0.2ms)
+
+               So it is scoped to the filter rather than always on. A lateral cannot
+               fire conditionally per row, but it can be left out of the statement
+               entirely when nothing will read it.
+
+               **Derived rather than stored, which is the opposite of the call made for
+               dataset image counts and model checksums, and deliberately so.** Those
+               are expensive and immutable -- counting an archive or hashing a file,
+               for a value that cannot change. This is neither: it is an aggregate over
+               tens of indexed rows, and epochs *do* change. Ten of them were rewritten
+               this afternoon repairing a mis-mapped run, and a stored best would have
+               gone stale at that moment with nothing to say so.
+
+               **Absent on an unfiltered page, rather than null.** The two say different
+               things and the difference is load-bearing here: null means this training
+               job reached no epoch, absent means this response shape does not carry the
+               field at all. Selecting NULL for it when unfiltered would collapse those
+               into one value and quietly answer "no mAP" for every inference job. */
+            const bestMap = filters.kind === 'training'
+                ? `LEFT JOIN LATERAL (
+                        SELECT max(e.map50) AS best_map50
+                          FROM training_runs r
+                          JOIN epochs e ON e.training_run_id = r.id
+                         WHERE r.job_id = j.id
+                   ) best ON TRUE`
+                : '';
+
             const jobs = await this.db.sequelize.query(
                 `SELECT j.*,
                         a.progress_done,
@@ -1147,6 +1182,7 @@ class GpuRepository {
                            smaller problem, and this is the smaller fix. */
                         a.last_heartbeat_at,
                         a.worker_id,
+                        ${filters.kind === 'training' ? 'best.best_map50,' : ''}
                         w.name AS worker_name,
                         (SELECT count(DISTINCT worker_id)::int
                            FROM gpu_job_attempts
@@ -1162,6 +1198,7 @@ class GpuRepository {
                          LIMIT 1
                    ) a ON TRUE
                    LEFT JOIN gpu_workers w ON w.id = a.worker_id
+                   ${bestMap}
                    ${where}
                    ${order}
                   LIMIT :limit OFFSET :offset`,
