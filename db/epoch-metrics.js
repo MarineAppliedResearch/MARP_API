@@ -56,11 +56,29 @@ const EPOCH_METRIC_NAMES = {
     train_box_loss: 'train/box_loss',
     train_cls_loss: 'train/cls_loss',
     train_dfl_loss: 'train/dfl_loss',
-    /* **The one key the worker names itself**, rather than passing an Ultralytics
-       name through: it is named for this column so the mapping is identity. It has
-       existed since the table did and nothing has ever written it. */
+    /* **The three keys the worker names itself**, rather than passing Ultralytics
+       names through: each is named for its column so the mapping is identity.
+       `duration_seconds` has existed since the table did and nothing ever wrote it.
+
+       The offsets are **elapsed seconds, not instants**, and that is a decision
+       rather than a convenience: *"Treat start_time and end_time as ordering and
+       duration only -- valid within a run, never compared across machines."* A
+       volunteer box with a drifting clock cannot put a wrong wall-clock time into
+       the record this way. `epochs.start_time` and `end_time` are timestamps and
+       stay null, because an offset is not a time and the type would have let the
+       lie through. */
     duration_seconds: 'duration_seconds',
+    start_offset_s: 'start_offset_s',
+    end_offset_s: 'end_offset_s',
 };
+
+/**
+ * The offsets, which are one measurement in two columns.
+ *
+ * @constant
+ * @type {string[]}
+ */
+const OFFSET_PAIR = ['start_offset_s', 'end_offset_s'];
 
 /**
  * Read a metric payload into the columns `epochs` holds.
@@ -81,7 +99,7 @@ const EPOCH_METRIC_NAMES = {
 function epochMetrics(metrics) {
     const from = metrics && typeof metrics === 'object' ? metrics : {};
 
-    return Object.fromEntries(Object.entries(EPOCH_METRIC_NAMES).map(([column, name]) => {
+    const read = Object.fromEntries(Object.entries(EPOCH_METRIC_NAMES).map(([column, name]) => {
         const raw = from[name];
 
         /* **`Number(null)` is 0, not NaN**, so a metric the worker sent as null would be
@@ -94,6 +112,16 @@ function epochMetrics(metrics) {
 
         return [column, Number.isFinite(value) ? value : null];
     }));
+
+    /* **Half an interval is not a measurement.** The worker omits the two offsets
+       together, so one arriving alone means something was lost on the way rather
+       than that half of it was measured -- and a start with no end would be read as
+       an epoch that never finished. Dropped as a pair rather than stored as one. */
+    if (OFFSET_PAIR.some((column) => read[column] === null)) {
+        for (const column of OFFSET_PAIR) read[column] = null;
+    }
+
+    return read;
 }
 
 module.exports = { EPOCH_METRIC_NAMES, epochMetrics };

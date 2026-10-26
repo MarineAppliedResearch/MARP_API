@@ -59,7 +59,7 @@ async function candidates(only) {
                 e.precision, e.recall, e.map50, e.map5095,
                 e.box_loss, e.cls_loss, e.dfl_loss,
                 e.train_box_loss, e.train_cls_loss, e.train_dfl_loss,
-                e.duration_seconds,
+                e.duration_seconds, e.start_offset_s, e.end_offset_s,
                 v.payload
            FROM epochs e
            JOIN training_runs r ON r.id = e.training_run_id

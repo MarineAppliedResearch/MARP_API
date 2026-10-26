@@ -80,6 +80,10 @@ function epochEvent(seq, epoch, precision) {
                 'train/cls_loss': 8.8,
                 'train/dfl_loss': 7.7,
                 'duration_seconds': 27.5,
+                /* Elapsed seconds since training began, not instants. The epoch
+                   number scales them so consecutive epochs do not overlap. */
+                'start_offset_s': 27.5 * (epoch - 1),
+                'end_offset_s': 27.5 * epoch,
                 // Deliberately unmapped: it must survive on the event and not
                 // break the projection.
                 'lr/pg0': 0.00123,
@@ -362,6 +366,18 @@ describe('a training job writes training_runs and epochs', () => {
 
         /* A column that has existed since the table did and that nothing ever wrote. */
         expect(Number(rows[1].duration_seconds)).toBeCloseTo(27.5);
+
+        /* **Where the epoch sat in the run, in elapsed seconds.** `start_time` and
+           `end_time` are timestamps and stay null: an offset is not a time, and the
+           column type would have let that lie through. */
+        expect(Number(rows[1].start_offset_s)).toBeCloseTo(27.5);
+        expect(Number(rows[1].end_offset_s)).toBeCloseTo(55);
+        expect(rows[1].start_time).toBeNull();
+        expect(rows[1].end_time).toBeNull();
+
+        // Exactly, because it is the trainer's arithmetic rather than ours.
+        expect(Number(rows[1].end_offset_s) - Number(rows[1].start_offset_s))
+            .toBeCloseTo(Number(rows[1].duration_seconds));
     });
 
     test('a replayed batch does not write the same epoch twice', async () => {

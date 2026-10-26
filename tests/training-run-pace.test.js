@@ -137,6 +137,8 @@ describe('The metric names an epoch is read from', () => {
         'train/cls_loss': 0.8,
         'train/dfl_loss': 0.95,
         'duration_seconds': 27.123,
+        'start_offset_s': 12.5,
+        'end_offset_s': 39.623,
         'metrics/mAP50(B)': 0.67946,
         'metrics/recall(B)': 0.69565,
         'metrics/mAP50-95(B)': 0.41664,
@@ -156,7 +158,59 @@ describe('The metric names an epoch is read from', () => {
             train_cls_loss: 0.8,
             train_dfl_loss: 0.95,
             duration_seconds: 27.123,
+            start_offset_s: 12.5,
+            end_offset_s: 39.623,
         });
+    });
+
+    /**
+     * **The offsets are elapsed seconds, not instants, and that is Isaac's decision:**
+     * *"Treat start_time and end_time as ordering and duration only — valid within a
+     * run, never compared across machines."* A volunteer box with a drifting clock
+     * cannot put a wrong wall-clock time into the record this way.
+     *
+     * **The exactness is the worker's and cannot be re-asserted here**, which is worth
+     * knowing rather than assuming. The trainer computes end - start == duration in its
+     * own floats; MARP receives three decimals and subtracting two of them reintroduces
+     * representation error -- 39.623 - 12.5 is 27.122999999999998, not 27.123. So what
+     * this checks is that the three survive the mapping together and still agree to
+     * within floating point, not that MARP can verify an exact equality it never saw.
+     */
+    it('keeps the interval as long as the duration says', () => {
+        const read = epochMetrics(PAYLOAD);
+
+        expect(read.end_offset_s - read.start_offset_s).toBeCloseTo(read.duration_seconds, 9);
+    });
+
+    /**
+     * **Half an interval is not a measurement.** The worker omits the two together,
+     * so one arriving alone means something was lost on the way rather than that
+     * half of it was measured — and a start with no end reads as an epoch that never
+     * finished, which is a claim rather than a gap.
+     */
+    it('drops a lone offset rather than storing half an interval', () => {
+        expect(epochMetrics({ start_offset_s: 12.5 })).toMatchObject({
+            start_offset_s: null,
+            end_offset_s: null,
+        });
+
+        expect(epochMetrics({ end_offset_s: 39.6 })).toMatchObject({
+            start_offset_s: null,
+            end_offset_s: null,
+        });
+    });
+
+    /**
+     * **The first epoch starts at zero, and zero is a measurement.** This is the
+     * `Number(null)` trap from the other direction: a guard that treated falsy as
+     * absent would throw away the one offset that is certain to occur in every run,
+     * and the pair rule would then discard its end as well.
+     */
+    it('keeps an offset of zero, which every run has exactly one of', () => {
+        const first = epochMetrics({ start_offset_s: 0, end_offset_s: 27.123 });
+
+        expect(first.start_offset_s).toBe(0);
+        expect(first.end_offset_s).toBe(27.123);
     });
 
     /**
