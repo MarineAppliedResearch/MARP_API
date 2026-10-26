@@ -1236,3 +1236,53 @@ test('a job with no heartbeat still shows its own timestamp', async (t) => {
   assert.equal(cell.dataset.sort, stamp);
   assert.ok(cell.textContent.trim(), 'and renders rather than going blank');
 });
+
+test('a heartbeat older than the job row does not drag Updated backwards', async (t) => {
+  /* **Live job 21782 is this case**: updated_at 22:10:47, last_heartbeat_at 22:10:29.
+     A finished or stalled attempt leaves a heartbeat behind the job's own timestamp, and
+     taking the heartbeat unconditionally would walk the column backwards. */
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({
+      jobs: [{
+        ...job(21782, 'succeeded'),
+        updated_at: '2026-10-26T22:10:47.000Z',
+        last_heartbeat_at: '2026-10-26T22:10:29.000Z',
+      }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const cell = screen.document.querySelector('.training-table tbody tr[data-job="21782"] [data-updated]');
+
+  assert.equal(cell.dataset.sort, '2026-10-26T22:10:47.000Z',
+    'the later of the two, which here is the job row rather than the heartbeat');
+});
+
+test('a long generated name keeps its whole self on hover', async (t) => {
+  /* The column is 188px, about thirty-two characters; a generated training name runs to
+     the forties and the time of day is last, so it is what falls off. The time is also
+     what tells three runs of one model over one dataset apart. */
+  const full = 'CookieStarTest · rockfish5-2026-10-20 · 15:44';
+
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({
+      jobs: [{ ...job(21779), name: full }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const cell = screen.document.querySelector('.training-table tbody tr[data-job="21779"] .jname');
+
+  assert.equal(cell.getAttribute('title'), full,
+    'the whole name is one hover away rather than only inside the row');
+});

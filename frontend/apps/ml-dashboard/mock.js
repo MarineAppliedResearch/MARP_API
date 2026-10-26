@@ -963,7 +963,7 @@ function rowFor(view) {
        the job object. */
     + ` data-dataset="${job.kind === 'dataset_build' && job.spec && job.spec.dataset_id != null ? job.spec.dataset_id : ''}">`
     + `<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job ${job.id}"></td>`
-    + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+    + `<td class="jname" title="${escapeHtml(view.title)}"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
     + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
     + `<td class="jscope"><span class="two"><span class="a">${scope}</span><span class="b">${frames}</span></span></td>`
     + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
@@ -2332,7 +2332,13 @@ function renderTrainingRecent(views) {
       /* **Every job, not only one with a run.** The expander used to be conditional on
          `run`, so a queued or leased job -- the only kind anybody watches -- had none. */
       + '<td class="ex"><button class="exbtn" type="button" aria-label="Show this job"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
-      + `<td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
+        /* **Titled, because the column is 188px and these names are longer than that.**
+         A generated training name runs to the forties -- dataset, model, time of day --
+         and about thirty-two characters fit, so the time is the part that falls off the
+         end. It is also the part that tells three runs of the same model over the same
+         dataset apart, which is why losing it silently is worse than losing the middle.
+         The full string is one hover away rather than only inside the row. */
+    + `<td class="jname" title="${escapeHtml(view.title)}"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
       /* **What the model's task is**, from the base model rather than guessed from which
          metric columns are null. Once three kinds of run share this table, *Best mAP*
          means nothing for two of them and the row has to say which it is. */
@@ -4112,7 +4118,7 @@ function historyRow(view) {
 
   return `<tr data-job="${job.id}">`
     + '<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select ' + view.title + '"></td>'
-    + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+    + `<td class="jname" title="${escapeHtml(view.title)}"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
     + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
     + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
     + `<td class="hscope"><span class="two"><span class="a">${view.projectName}</span><span class="b">Dive ${view.session.dive || '?'} &middot; Line ${view.session.line || '?'}</span></span></td>`
