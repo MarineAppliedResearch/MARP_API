@@ -1448,6 +1448,38 @@ const TRAINING_TASKS = {
 };
 
 /**
+ * When a job last showed a sign of life.
+ *
+ * **`gpu_jobs.updated_at` is not it while a job runs.** For job 21782 it sat at the
+ * instant the job was created while the worker heartbeated every sixty seconds and
+ * progress advanced -- nothing on the heartbeat path touches the job row. So an Updated
+ * column reading `updated_at` alone is faithfully showing a stale timestamp, which is
+ * the opposite of the Datasets defect: there the value moved and the patch ignored it.
+ *
+ * **The fix is not to write `updated_at` on every heartbeat.** That is a write per
+ * running job per minute, and `updated_at` moving is exactly what reshuffled rows in
+ * heap order and closed expanded rows on Datasets. Taking the later of the two costs
+ * nothing and reshuffles nothing.
+ *
+ * `last_heartbeat_at` is not in the job list payload yet -- `listJobs` joins the latest
+ * attempt for its progress columns and does not select it. This reads it defensively so
+ * the column is right the moment it is added, and unchanged until then.
+ *
+ * @param {Object} job - From `GET /gpu/jobs`.
+ * @returns {string|null} An ISO instant, or null if the job carries neither.
+ */
+function jobLastSeen(job) {
+  const candidates = [job.updated_at, job.last_heartbeat_at]
+    .filter(Boolean)
+    .map((iso) => [iso, Date.parse(iso)])
+    .filter(([, ms]) => Number.isFinite(ms));
+
+  if (!candidates.length) return null;
+
+  return candidates.reduce((latest, one) => (one[1] > latest[1] ? one : latest))[0];
+}
+
+/**
  * Which task a training job is for.
  *
  * **From the base model, because the checkpoint decides the task.** A detection `.pt`
@@ -2113,14 +2145,16 @@ function patchTrainingRows(body, views) {
        and the pill and nothing else, and the column had only ever been refreshed by
        accident, when the whole table was still being thrown away every poll. A job's
        `updated_at` moves on every report, including the one that finishes it. */
-    if (view.job.updated_at) {
+    const seen = jobLastSeen(view.job);
+
+    if (seen) {
       const updated = $('[data-updated]', head);
 
-      if (updated && updated.dataset.sort !== String(view.job.updated_at)) {
-        updated.innerHTML = datasetStamp(view.job.updated_at);
+      if (updated && updated.dataset.sort !== String(seen)) {
+        updated.innerHTML = datasetStamp(seen);
         /* The sort key too, or sorting by Updated orders the table by what the
            timestamps were when the page was drawn. */
-        updated.dataset.sort = String(view.job.updated_at);
+        updated.dataset.sort = String(seen);
       }
     }
 
@@ -2292,6 +2326,7 @@ function renderTrainingRecent(views) {
     const datasetId = (spec.dataset && spec.dataset.dataset_id) ?? (run && run.dataset_id);
     const modelId = (spec.model && spec.model.ml_model_id) ?? (run && run.model_id);
     const task = trainingTaskOf(job);
+    const lastSeen = jobLastSeen(job) || job.created_at;
 
     return `<tr data-job="${job.id}"${run ? ` data-run="${run.id}"` : ''}${task ? ` data-task="${task}"` : ''}>`
       /* **Every job, not only one with a run.** The expander used to be conditional on
@@ -2321,7 +2356,7 @@ function renderTrainingRecent(views) {
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
       /* **The same cell the Datasets table has, with the same marker.** `data-updated` is
          what the patch path finds and what the DOM tier asserts against. */
-      + `<td class="jtime" data-updated data-sort="${job.updated_at}">${datasetStamp(job.updated_at)}</td>`
+      + `<td class="jtime" data-updated data-sort="${lastSeen}">${datasetStamp(lastSeen)}</td>`
       + '</tr>';
   }).join('');
 

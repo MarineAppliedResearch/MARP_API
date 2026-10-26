@@ -1156,3 +1156,83 @@ test('support and images sit before the scores they qualify', async (t) => {
   assert.ok(foot.children[1].querySelector('.dash') && foot.children[2].querySelector('.dash'),
     'the aggregate shows dashes rather than a sum nobody reported');
 });
+
+test('Updated follows the heartbeat when the job row itself is frozen', async (t) => {
+  /* **The real shape of job 21782.** `gpu_jobs.updated_at` sat at the instant the job was
+     created while the worker heartbeated every sixty seconds and progress advanced --
+     nothing on the heartbeat path touches the job row. So the fixture freezes updated_at
+     and moves only the heartbeat, which is what the server actually does. */
+  const created = '2026-10-26T14:21:57.000Z';
+  let heartbeat = '2026-10-26T14:47:13.000Z';
+
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({
+      jobs: [{
+        ...job(21782, 'leased'),
+        created_at: created,
+        updated_at: created,
+        last_heartbeat_at: heartbeat,
+        progress_done: 5,
+        progress_total: 10,
+        progress_unit: 'epochs',
+      }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const head = screen.document.querySelector('.training-table tbody tr[data-job="21782"]');
+  const cell = head.querySelector('[data-updated]');
+
+  assert.equal(cell.dataset.sort, heartbeat,
+    'the later of the two, not the job row that has not moved since it was created');
+
+  const detail = await open(screen, 21782);
+
+  /* A minute later: still no progress, still no change to the job row, new heartbeat. */
+  heartbeat = '2026-10-26T14:48:13.000Z';
+
+  let cycle = null;
+  const real = screen.window.setTimeout;
+
+  screen.window.setTimeout = (fn, delay) => {
+    if (delay === 5000 && !cycle) { cycle = fn; return 1; }
+    return real(fn, delay);
+  };
+
+  screen.window.watchTrainingJobs();
+  await cycle();
+
+  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => real(resolve, 20));
+
+  assert.equal(cell.dataset.sort, heartbeat, 'and the patch path follows it');
+  assert.equal(head.querySelector('[data-updated]'), cell, 'same cell, not a rebuilt row');
+  assert.equal(head.getAttribute('aria-expanded'), 'true', 'with the expansion still open');
+});
+
+test('a job with no heartbeat still shows its own timestamp', async (t) => {
+  /* Queued jobs and every job on a MARP that does not yet serve the column. Reading the
+     heartbeat defensively means this is unchanged rather than blank. */
+  const stamp = '2026-10-26T14:21:57.000Z';
+
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({
+      jobs: [{ ...job(21783, 'queued'), created_at: stamp, updated_at: stamp }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const cell = screen.document.querySelector('.training-table tbody tr[data-job="21783"] [data-updated]');
+
+  assert.equal(cell.dataset.sort, stamp);
+  assert.ok(cell.textContent.trim(), 'and renders rather than going blank');
+});
