@@ -266,10 +266,18 @@ describe('The metric names an epoch is read from', () => {
     });
 
     /**
-     * **The first epoch starts at zero, and zero is a measurement.** This is the
-     * `Number(null)` trap from the other direction: a guard that treated falsy as
-     * absent would throw away the one offset that is certain to occur in every run,
-     * and the pair rule would then discard its end as well.
+     * **The first epoch starts at zero, and zero is a measurement.**
+     *
+     * Every run has exactly one of these, and it is not an edge case: Ultralytics
+     * sets the origin at `_do_train` entry, after setup has built the dataloaders and
+     * the optimizer, so epoch 1 begins at roughly 0.000 however long setup took.
+     * Setup time is the gap between the attempt's first event and the
+     * `on_train_start` report, and is deliberately not inside these numbers.
+     *
+     * So this is the `Number(null)` trap from the other direction: a guard treating
+     * falsy as absent would throw away the one offset certain to occur in every run,
+     * and the pair rule would then discard its end as well — leaving the first epoch
+     * of every run with no position in it.
      */
     it('keeps an offset of zero, which every run has exactly one of', () => {
         const first = epochMetrics({ start_offset_s: 0, end_offset_s: 27.123 });

@@ -1641,7 +1641,21 @@ function confusionMatrix(matrix, image) {
 }
 
 /**
- * Per-class AP, which is what makes a confusion matrix actionable.
+ * Per-class quality, one table per metric family.
+ *
+ * **A family, not a split, is what makes a row unique.** A segmentation run reports `box`
+ * and `mask` for the same class — the same four metric names twice — so a table keyed on
+ * class alone would silently show one and drop the other, or interleave them. Grouping
+ * here means segmentation arrives as a second table rather than a rewrite. Today every
+ * row is `box`, so there is one table and no heading noise.
+ *
+ * **Three kinds of row, and they are not interchangeable:**
+ *
+ * - a class MARP resolved to a species: `species_id` and `class_name` both set;
+ * - a class it could not resolve: `species_id` null, `class_name` set. Shown under the
+ *   name the model used, because dropping it would hide a class the model is predicting;
+ * - the all-classes aggregate: `class_name` null. Pulled out and shown apart, because
+ *   listing it among the classes makes it look like one of them.
  *
  * @param {Object[]} classes - `metrics_summary` rows for this run, or empty.
  * @returns {string}
@@ -1650,22 +1664,67 @@ function perClassTable(classes) {
   if (!classes.length) {
     return runSectionWaiting('Per-class quality',
       'Nothing writes &lt;code>metrics_summary&lt;/code> yet, so there is no per-class precision, '
-      + 'recall or AP to show. One row per species per split is the shape the schema already has.');
+      + 'recall or AP to show.');
   }
 
   const cell = (value) => (value === null || value === undefined
     ? '&lt;span class="dash" title="Not reported">&amp;mdash;&lt;/span>'
     : Number(value).toFixed(3));
 
-  const rows = classes.map((row) => `&lt;tr>&lt;th scope="row">${escapeHtml(row.species || `Species ${row.species_id}`)}&lt;/th>`
-    + `&lt;td>${cell(row.precision)}&lt;/td>&lt;td>${cell(row.recall)}&lt;/td>&lt;td>${cell(row.f1_score)}&lt;/td>`
-    + `&lt;td>${cell(row.map50)}&lt;/td>&lt;td>${cell(row.map5095)}&lt;/td>&lt;/tr>`).join('');
+  /* `classify` sends no mAP at all. A column of dashes says that; a column of zeroes
+     would say the model scored nothing. */
+  const columns = [['Precision', 'precision'], ['Recall', 'recall'], ['F1', 'f1_score'],
+    ['AP@50', 'map50'], ['AP@50&amp;ndash;95', 'map5095']];
+
+  /** What a family is called where a reader sees it. */
+  const FAMILY = { box: 'Box', mask: 'Mask', classify: 'Classification' };
+
+  const families = new Map();
+
+  for (const row of classes) {
+    const family = row.metric_family || 'box';
+
+    if (!families.has(family)) families.set(family, []);
+    families.get(family).push(row);
+  }
+
+  const tableFor = (family, rows) => {
+    /* The aggregate is the row with no class name. It is a different quantity from the
+       classes above it and reads as one of them if it is left in the list. */
+    const overall = rows.find((row) => !row.class_name);
+    const named = rows.filter((row) => row.class_name);
+
+    const body = named.map((row) => {
+      const label = escapeHtml(row.class_name);
+      /* A class the model predicted and MARP could not place. Worth seeing, and worth
+         marking: it means the species lookup found nothing, not that the class is odd. */
+      const unresolved = row.species_id === null || row.species_id === undefined
+        ? ' &lt;span class="faint" title="MARP could not resolve this class to a species">unmatched&lt;/span>'
+        : '';
+
+      return `&lt;tr>&lt;th scope="row">${label}${unresolved}&lt;/th>`
+        + columns.map(([, key]) => `&lt;td>${cell(row[key])}&lt;/td>`).join('') + '&lt;/tr>';
+    }).join('');
+
+    const foot = overall
+      ? `&lt;tfoot>&lt;tr>&lt;th scope="row">All classes&lt;/th>${columns
+        .map(([, key]) => `&lt;td>${cell(overall[key])}&lt;/td>`).join('')}&lt;/tr>&lt;/tfoot>`
+      : '';
+
+    const heading = families.size > 1
+      ? `&lt;h6>${FAMILY[family] || escapeHtml(family)}&lt;/h6>`
+      : '';
+
+    return `${heading}&lt;div class="class-metrics-wrap">&lt;table class="class-metrics">&lt;thead>&lt;tr>&lt;th>Class&lt;/th>`
+      + `${columns.map(([label]) => `&lt;th>${label}&lt;/th>`).join('')}&lt;/tr>&lt;/thead>`
+      + `&lt;tbody>${body}&lt;/tbody>${foot}&lt;/table>&lt;/div>`;
+  };
 
   return '&lt;article class="evaluation-card">&lt;header>&lt;div>&lt;h5>Per-class quality&lt;/h5>'
-    + '&lt;p>One row per class, from the run&amp;rsquo;s own metrics&lt;/p>&lt;/div>&lt;/header>'
-    + '&lt;div class="class-metrics-wrap">&lt;table class="class-metrics">&lt;thead>&lt;tr>&lt;th>Class&lt;/th>'
-    + '&lt;th>Precision&lt;/th>&lt;th>Recall&lt;/th>&lt;th>F1&lt;/th>&lt;th>AP@50&lt;/th>&lt;th>AP@50&amp;ndash;95&lt;/th>&lt;/tr>&lt;/thead>'
-    + `&lt;tbody>${rows}&lt;/tbody>&lt;/table>&lt;/div>&lt;/article>`;
+    + `&lt;p>${families.size > 1 ? 'One table per metric family' : 'One row per class, from the run&amp;rsquo;s own metrics'}`
+    + '&lt;/p>&lt;/div>&lt;/header>'
+    + [...families].map(([family, rows]) => tableFor(family, rows)).join('')
+    + '&lt;/article>';
 }
 
 /**
@@ -1688,7 +1747,7 @@ function trainingPlots(plots) {
     R_curve: 'Recall against confidence threshold',
     labels: 'How many instances of each class the dataset held',
     labels_correlogram: 'Where boxes sit and how their sizes relate',
-    results: 'Every metric the run recorded, as the trainer plots it',
+    results: 'Every metric the run recorded, as a spreadsheet',
     confusion_matrix: 'Confusion matrix, as the trainer rendered it',
     confusion_matrix_normalized: 'Confusion matrix, normalised by true class',
   };
@@ -1704,6 +1763,20 @@ function trainingPlots(plots) {
     const said = SAID[stem] || (/^val_batch\d+_pred$/.test(stem)
       ? 'Sample predictions on held-out images'
       : stem.replace(/[_-]+/g, ' '));
+
+    /* **Not everything in this array is a picture.** `results` is Ultralytics' CSV of
+       every metric it recorded, and an `&lt;img>` pointed at a CSV is a broken image icon
+       with a caption under it. The content type decides; anything that is not an image is
+       offered as a file instead of being drawn as one. */
+    const isImage = /^image\//.test(plot.content_type || '')
+      || (!plot.content_type &amp;&amp; !/\.(csv|txt|ya?ml|json)$/i.test(plot.name || ''));
+
+    if (!isImage) {
+      const size = Number(plot.bytes) > 0 ? ` &lt;span class="faint">${Math.round(Number(plot.bytes) / 1024)} KB&lt;/span>` : '';
+
+      return `&lt;figure class="result-plot is-file">&lt;figcaption>&lt;a href="${escapeHtml(plot.url)}" download>`
+        + `${escapeHtml(said)}&lt;/a>${size}&lt;span class="b mono">${escapeHtml(plot.name)}&lt;/span>&lt;/figcaption>&lt;/figure>`;
+    }
 
     return `&lt;figure class="result-plot">&lt;img src="${escapeHtml(plot.url)}" alt="${escapeHtml(said)}" loading="lazy">`
       + `&lt;figcaption>${escapeHtml(said)}&lt;/figcaption>&lt;/figure>`;
