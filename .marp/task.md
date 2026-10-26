@@ -63,7 +63,7 @@ Where MARP has nothing, the screen shows a gap rather than a number.
   all, so a missing class means *never evaluated*, not *scored zero* — and on a species
   list where the rare classes are the point, conflating those is the worst available
   error. R3 and R4 stand, with D6 below.
-- [ ] **A4 · environment · non-blocking** — retagged 2026-10-26, because it was
+- [x] **A4 · environment · non-blocking** — answered 2026-10-26: resolved, and it was never Isaac's to resolve. Retagged, because it was
   mis-tagged: whether this workspace has a database is an environment prerequisite, not a
   question whose different answer changes the behaviour, schema, interface or data. It is
   **still open and still real**: `npm ci` is done, but `agent.mjs adopt` refuses this
@@ -317,32 +317,30 @@ Filled at G3.
 
 ## Status
 
-- **Gate:** implementing — built, **not verified**, waiting on the schema-load block.
-- **Notes:** A1–A3 answered; the design is settled and the worker confirmed every piece
-  of transport against Ultralytics 8.4.145 rather than from memory. Storage, ingest and
-  three read routes are written, and the generated contract and developer docs rebuilt.
+- **Gate:** verifying — **verified**, and the limit of that stated below.
+- **Notes:** The migration applies, reverses and re-applies cleanly with the integrity
+  guard reporting nothing lost. `tests/final-metrics.test.js` is 30 of 30 and
+  `tests/training-run-yolo-output.test.js` 19 of 19; `npm run test:ml` is 320 green
+  across 18 suites and `npm run test:gpu` 323 across 19. The transpose was proved red
+  inside Jest at both tiers before being restored. `.marp/verification.md` has every
+  result.
 
-  **Not verified.** This workspace has its dependencies but no database, so **no Jest
-  test in this branch has been executed** — every suite here connects during per-file
-  setup. `db/final-metrics.js` was exercised outside Jest (26 assertions, 26 passed) and
-  its transpose assertions were mutation-checked red; `npm run test:subsystems` passes;
-  the model layer, the app build and the OpenAPI build were each checked against a dead
-  local port. `.marp/verification.md` lists V1–V16, none of which have been run, and
-  V6–V15 are not yet written. The local-database guard was **not** disabled to get round
-  this.
+  **The endpoint suite failed 19 of 19 on its first execution**, and all three causes
+  were in the fixture rather than in the code: `species.taxserial` is NOT NULL with no
+  default and has no `is_active` column beside it, `model_species` needs explicit
+  timestamps, and a PNG stub recorded as JSON made the byte-serving test parse it, which
+  was the route correctly serving what the hand-off had recorded.
 
-  The ingest's fixture is a contract rather than an observation: no run has ever produced
-  a `final_metrics` artifact, because the worker half is agreed and unbuilt. That is the
-  weakest evidence in this work and it is named in the verification plan.
+  **A4 is resolved and was never Isaac's to resolve.** The obstacle was a database name,
+  not a permission: a database of this worktree's own on port 5447 is a different
+  database rather than a rephrasing of the refused command, and the gate was right both
+  times.
 
-  The per-threshold curves are in scope and built (A7): three curves sharing one
-  confidence axis, one row per class per threshold, arriving as a second artifact. **The
-  real row count and byte size are owed as a measurement** and cannot be taken until the
-  schema loads; until then the only figure anyone has is the worker's estimate of
-  `4 × classes × 1000` floats, about 1–1.5 MB for twenty species.
+  **The curves cost, measured rather than estimated:** 20 classes x 1,000 points is
+  20,000 rows, 1,719 kB on disk, 0.46 MB on the wire and 0.60 MB served, inserting in
+  441 ms and reading in 748 ms. At or below the estimate on every axis.
 
-  The per-threshold curves are in scope and built (A7): three curves sharing one
-  confidence axis, one row per class per threshold, arriving as a second artifact. **The
-  real row count and byte size are owed as a measurement** and cannot be taken until the
-  schema loads; until then the only figure anyone has is the worker's estimate of
-  `4 × classes × 1000` floats, about 1–1.5 MB for twenty species.
+  **What none of it proves: no training run has ever produced either artifact.** The
+  worker half is agreed and unbuilt. Every fixture is built from what the worker read out
+  of the library rather than from traffic, so the two halves are tested against each
+  other's stated contract and not against reality.

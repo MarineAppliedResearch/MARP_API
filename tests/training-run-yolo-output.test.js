@@ -1,13 +1,17 @@
 /**
  * What a training run measured, from the artifact on disk to the endpoint.
  *
- * **These tests have never been executed.** They were written against a workspace whose
- * database could not be loaded: `marp db up` names every database it creates `mare_v1`,
- * on any port, and the danger-gate refuses any command containing that string -- rightly,
- * since production carries the same name and only the host tells them apart. So the
- * schema was never loaded on 5447 and no Jest suite in this branch has run. Whoever runs
- * these first should expect to fix something, and should treat a green run as the first
- * real evidence rather than a confirmation.
+ * **Written before they could be run, and three fixture faults showed up the moment
+ * they were.** This workspace had no loadable database at the time: every database
+ * `marp db up` creates carries production's name, and the danger-gate refuses any
+ * command naming it -- rightly, since only the host tells the two apart. The way
+ * through was a database of this worktree's own, not a rephrasing of the refused
+ * command. What the first execution then caught, all three in the fixture rather than
+ * in the code under test: `species.taxserial` is NOT NULL with no default and there is
+ * no `is_active` column; `model_species` needs its timestamps; and a PNG stub recorded
+ * as `application/json` made the byte-serving test try to parse it -- which was the
+ * route correctly serving what the hand-off had recorded. Kept as a reminder that a
+ * test nobody has run is a draft.
  *
  * **Where the fixtures come from, because that is the thing that has gone wrong twice
  * here.** The `metric` event payload is copied from `gpu_job_events` on the development
@@ -39,6 +43,20 @@ const db = require('../model');
 const { ARTIFACT_DIRECTORY } = require('../config/gpu-orchestration');
 const { FINAL_METRICS_ROLE, METRICS_CURVES_ROLE } = require('../db/final-metrics');
 const trainingMetricsService = require('../service/training-metrics.service');
+
+/**
+ * What each stem is, as the hand-off would have recorded it.
+ *
+ * Anything not named here is an image, which is what a run directory is mostly full of.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const CONTENT_TYPES = {
+    [FINAL_METRICS_ROLE]: 'application/json',
+    [METRICS_CURVES_ROLE]: 'application/json',
+    results: 'text/csv',
+};
 
 /** Unique per run, so a failed run's leftovers are recognisable. */
 const runId = Date.now();
@@ -92,7 +110,11 @@ async function stageArtifact(role, body) {
                 hash: sha256,
                 metadata: JSON.stringify({
                     sha256, role, attempt_id: made.attemptId,
-                    content_type: role === 'results' ? 'text/csv' : 'application/json',
+                    /* The real hand-off records whatever the worker uploaded, and a
+                       run directory is mostly images with a CSV among them. Labelling
+                       a PNG stub as JSON here made supertest try to parse it, which is
+                       the route correctly serving what was recorded. */
+                    content_type: CONTENT_TYPES[role] || 'image/png',
                 }),
             },
         }
@@ -173,16 +195,19 @@ beforeAll(async () => {
     /* One class resolves to a species and one does not. The unresolvable one is the
        point: it must be kept under the model's own name rather than dropped. */
     const [species] = await query(
-        `INSERT INTO species (comname, species_list, is_active, created_at, updated_at)
-         VALUES (:comname, :list, true, NOW(), NOW())
+        `INSERT INTO species (taxserial, comname, species_list, created_at, updated_at)
+         VALUES (:taxserial, :comname, :list, NOW(), NOW())
          RETURNING id`,
-        { comname: `jest-known-${runId}`, list: `jest-list-${runId}` }
+        /* `taxserial` is NOT NULL with no default. Derived from the run id so two
+           concurrent runs of this file cannot collide on it. */
+        { taxserial: 900000000 + (runId % 90000000), comname: `jest-known-${runId}`, list: `jest-list-${runId}` }
     );
 
     made.speciesId = species.id;
 
     await db.sequelize.query(
-        'INSERT INTO model_species (model_id, species_id) VALUES (:modelId, :speciesId)',
+        `INSERT INTO model_species (model_id, species_id, created_at, updated_at)
+         VALUES (:modelId, :speciesId, NOW(), NOW())`,
         { replacements: { modelId: made.modelId, speciesId: made.speciesId } }
     );
 
