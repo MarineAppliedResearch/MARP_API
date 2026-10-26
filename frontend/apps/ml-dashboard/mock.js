@@ -1360,10 +1360,26 @@ function epochChart(spec, epochs) {
       + '</div></header></article>';
   }
 
+  /* **An axis that fits the data, where the data has no ceiling of its own.** `gappyPath`
+     clamps to `max`, so a fixed 2 draws every loss above 2 flat along the top -- and a
+     YOLO class loss routinely starts above 2 with many classes. A flat line that is
+     really a clamp is indistinguishable from a plateau, which is the worst way to be
+     wrong about a loss curve.
+
+     Quality keeps its fixed 1: precision, recall and mAP are 0 to 1 by definition, and a
+     fixed axis is what lets two runs be compared by eye. */
+  const measured = drawn.flatMap((one) => one.values).filter((v) => v !== null);
+  const max = spec.max === 'auto'
+    ? Math.max(1, Math.ceil(Math.max(...measured, 0) * 10) / 10)
+    : spec.max;
+  const labels = spec.max === 'auto'
+    ? { top: max.toFixed(1), mid: (max / 2).toFixed(1) }
+    : { top: spec.top, mid: spec.mid };
+
   const legend = drawn.map((one) => `<button type="button" class="${one.key}" data-result-highlight="${one.key}"`
     + `${one.measured ? '' : ' disabled title="Not reported for this run"'}>${one.label}</button>`).join('');
 
-  const lines = drawn.map((one) => `<path class="result-line ${one.key}" d="${gappyPath(one.values, spec.max, box)}"/>`).join('');
+  const lines = drawn.map((one) => `<path class="result-line ${one.key}" d="${gappyPath(one.values, max, box)}"/>`).join('');
 
   const grid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
     + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
@@ -1375,7 +1391,7 @@ function epochChart(spec, epochs) {
     + `<p>${spec.note}</p></div><div class="result-legend">${legend}</div></header>`
     + `<div class="result-chart" role="img" aria-label="${spec.title} by epoch">`
     + `<svg viewBox="0 0 740 205" aria-hidden="true">${grid}`
-    + `<g class="result-axis"><text x="38" y="28">${spec.top}</text><text x="38" y="103">${spec.mid}</text>`
+    + `<g class="result-axis"><text x="38" y="28">${labels.top}</text><text x="38" y="103">${labels.mid}</text>`
     + `<text x="38" y="178">0</text><text x="46" y="196">Epoch ${first}</text>`
     + `<text x="700" y="196">Epoch ${last}</text></g>${lines}</svg></div></article>`;
 }
@@ -1407,9 +1423,7 @@ const TRAINING_TASKS = {
            readable here instead of being a thing the panel admitted it could not show. */
         title: 'Loss',
         note: 'Lower is better &middot; solid is train, dashed is validation &middot; the gap between a pair is the overfitting signal',
-        max: 2,
-        top: '2.0',
-        mid: '1.0',
+        max: 'auto',
         series: [
           ['box-loss-train', 'Box (train)', 'train_box_loss'],
           ['box-loss', 'Box (val)', 'box_loss'],

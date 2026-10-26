@@ -900,3 +900,50 @@ test('a run from before the train columns draws validation alone, without a hole
 
   assert.ok(trainKey.disabled, 'and its key cannot be pressed to reveal nothing');
 });
+
+test('a loss above the old ceiling is drawn, not flattened against it', async (t) => {
+  /* `gappyPath` clamps to the chart's max, so the fixed 2 this used to carry drew every
+     higher loss flat along the top -- and a YOLO class loss routinely starts above 2 when
+     there are many classes. A flat line that is really a clamp cannot be told from a
+     plateau, which is the worst way to be wrong about a loss curve. */
+  const screen = await drawScreen('training.html', answers([
+    epoch(1, { cls_loss: 4.2 }),
+    epoch(2, { cls_loss: 2.6 }),
+    epoch(3, { cls_loss: 1.3 }),
+  ]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const card = [...detail.querySelectorAll('.evaluation-card')]
+    .find((one) => /^Loss$/.test(one.querySelector('h5')?.textContent.trim() || ''));
+
+  /* 24 is the top of the plot box. Three distinct heights, not two of them pinned there. */
+  const d = card.querySelector('.result-line.cls-loss').getAttribute('d');
+  const ys = [...d.matchAll(/,(\d+\.\d)/g)].map((m) => Number(m[1]));
+
+  assert.equal(new Set(ys).size, 3, `three different losses should draw at three heights (d="${d}")`);
+  assert.equal(ys.filter((y) => y === 24).length, 1,
+    'only the largest sits at the top of the axis');
+
+  /* And the axis says what it is scaled to, rather than a literal 2.0. */
+  assert.equal(card.querySelector('.result-axis text').textContent, '4.2');
+});
+
+test('the quality chart keeps a fixed axis, so two runs can be compared by eye', async (t) => {
+  /* Precision, recall and mAP are 0 to 1 by definition. Scaling this one to its data
+     would make a weak run look like a strong one. */
+  const screen = await drawScreen('training.html', answers([
+    epoch(1, { map50: 0.12 }),
+    epoch(2, { map50: 0.19 }),
+  ]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const card = [...detail.querySelectorAll('.evaluation-card')]
+    .find((one) => /Validation quality/.test(one.querySelector('h5')?.textContent || ''));
+
+  assert.equal(card.querySelector('.result-axis text').textContent, '1.0',
+    'a run topping out at 0.19 still draws against a full axis');
+});
