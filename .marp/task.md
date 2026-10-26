@@ -1,198 +1,168 @@
-# Build training datasets from the ML Dashboard
-
-Issue: MarineAppliedResearch/MARP_API#268
-Branch: `104-dashboard-reads-marp`
-Related: #104 (the dashboard's design), #265 (registering a trained model), #120 (the
-file server), `MarineAppliedResearch/marp-inference-worker#68` (the training half, merged)
+---
+task: MarineAppliedResearch/MARP_API#268
+repos: [marp-api]
+status: design
+needs: []
+---
 
 ## Goal
 
-Build a training dataset out of MARP's own observations, from the ML Dashboard, ending in
-an archive the API can already serve to a worker — and **record what it is made of**, which
-is the part nothing has ever done.
-
-`dataset_observations` holds 0 rows for 0 datasets. Every dataset in MARP today says how
-many classes it has and nothing about which, and cannot say which observations it came
-from. #265 works around that by resolving packaged class names against `species.comname`,
-which happens to work for `rockfish5` and is not a design.
+A person looking at a finished training run in the ML Dashboard can see everything YOLO
+itself produced about it: the confusion matrix, per-class precision/recall/AP, and the
+curve and sample images Ultralytics writes to every run directory — the PR, F1, P and R
+curves, the label distribution and correlogram, and the validation prediction samples.
+None of it is computed by MARP. All of it is carried from the worker, stored, and served.
+Where MARP has nothing, the screen shows a gap rather than a number.
 
 ## Requirements
 
-- **R1 — A build is a job, not a request.** `rockfish5` is 11,845 images and 4.9 GB;
-  `CAMPA_STAR_TEST3` is 20 GB. A build gets a `gpu_jobs` row so it has progress somebody
-  can watch, cancellation, retry, and a record of what it produced — and so the Jobs and
-  History screens show it with no new rendering.
-- **R2 — The API runs it, not a worker.** Settled by the human on 2026-10-20: *"It doesn't
-  really make sense to be streaming the video over to a worker and then to re-download the
-  entire thing when it can just be a background thread on the API."* `POST /gpu/poll` never
-  offers `dataset_build` to a worker.
-- **R3 — Membership is recorded.** Every observation that went in gets a
-  `dataset_observations` row naming its split.
-- **R4 — The vocabulary is recorded, in order.** A class index in a YOLO label file is
-  meaningless without the ordered list it indexes. `datasets.num_classes` cannot carry it.
-- **R5 — Frames come from the video, with YOLO labels.** A keyframe is a box at a frame
-  number; the frames between two keyframes are interpolated and are trained on as well
-  (settled 2026-10-20, and the reason `/mosaic/observations/frames` counts the span).
-- **R6 — The archive is the shape `scripts/package-dataset.js` already produces**:
-  `train/images`, `train/labels`, `eval/images`, `eval/labels` and a `data.yaml` carrying
-  `names`, `nc`, `train: train/images`, `val: eval/images`. Content-addressed by SHA-256,
-  recorded on `datasets.archive_path` / `archive_sha256` / `archive_bytes`.
-- **R7 — No frame leaks across splits.** The Datasets screen states the rule: *"An
-  observation or connected frame group keeps its first split assignment."* Two observations
-  that share any frame are one group and go to one split.
-- **R8 — A failed or cancelled build leaves nothing half-served.** The archive may be
-  gigabytes by the time it fails. The dataset ends `failed`, with no `archive_*` set and no
-  partial file left behind.
+- **R1** — Every file a training attempt hands over is stored by content, addressable,
+  and identifiable by what it is rather than being an anonymous `result`.
+- **R2** — A training run's files can be listed and fetched by a browser through the API,
+  including a file type MARP has never seen before.
+- **R3** — Per-class quality — precision, recall, F1, AP50, AP50-95 — is recorded per
+  class per split, and the all-classes aggregate is distinguishable from a per-class row.
+- **R4** — A class the model reported that MARP cannot resolve to a species is recorded
+  under the name the model used, not dropped and not merged into the aggregate.
+- **R5** — The confusion matrix is stored as numbers as well as the rendered image, with
+  its class order and its orientation recorded, so it can be read, compared and
+  re-bucketed rather than only looked at. *(Conditional on A2.)*
+- **R6** — Nothing is synthesised. A run that reported no confusion matrix and no
+  per-class metrics serves nothing, and an absent measurement is served as null, never
+  as zero.
+- **R7** — `results.csv` is stored as the file the trainer wrote and does not produce a
+  second set of epoch rows; `epochs` stays fed by the live metric events.
+- **R8** — The record says which task's vocabulary a metric row is in, so a future
+  classification or segmentation run is not misread as a detection run that failed to
+  measure its mAP.
 
 ## Open assumptions
 
-- [x] **A1 · architectural · blocking** — **Who executes a build.** Answered by the human
-  2026-10-20: the API, as a background runner. Not a GPU worker, and the worker-side framing
-  in #268 was the other agent's presupposition rather than his intent. A `gpu_jobs` row is
-  still the record, because progress, cancel, retry and the dashboard already work on one.
-- [x] **A2 · database/schema · blocking** — **Where the ordered vocabulary lives.** A new
-  `dataset_classes` table: `dataset_id`, `class_index`, `species_id`. A table rather than a
-  JSONB column because #265 needs to resolve a model's species *by join*, which is the whole
-  reason the gap was noticed. Decided, not asked: `datasets` has no column that could carry
-  an ordered list and inventing a delimited string in `notes` is the alternative.
-- [x] **A3 · data-meaning · non-blocking** — **What `dataset_observations.inclusion_type`
-  means.** Nothing has ever written the column, so there is no existing meaning to preserve
-  and nothing downstream to break. Defined here as the split: `train` or `eval`.
-  `selection_method` records how the observation was chosen, which for a dashboard build is
-  the saved query.
-- [ ] **A4 · product/UI · non-blocking** — **Whether a built dataset is immutable.** #104
-  describes saved datasets as immutable with a fingerprint, and the archive is already
-  content-addressed, so this implementation does not edit in place: a rebuild produces a new
-  archive. Flagged rather than asked because nothing here depends on the answer; it matters
-  the first time somebody wants to add observations to a dataset that exists.
-- [ ] **A5 · performance · non-blocking** — **Extraction concurrency.** The thumbnail
-  extractor has a measured ceiling that exists to protect Jellyfin (`task-118`, R20). A
-  build is a second consumer of the same media server and should share that ceiling rather
-  than set its own. Not blocking: one build at a time, inside the existing limit, is
-  correct and is what this implements.
-- [ ] **A6 · environment · non-blocking** — **Eviction.** Built archives accumulate on the
-  API host and nothing removes them. Same shape as #65 for job workspaces. Out of scope
-  here, and named so it is not mistaken for finished.
+- [ ] **A1 · environment · blocking** — which branch is the base? The brief says
+  `develop`, but `develop` does not carry `db/epoch-metrics.js`, the `epochs` loss /
+  duration / offset columns, or `GET /training_run/:id/epochs` — those are on
+  `104-dashboard-reads-marp`, 81 commits ahead and still moving, and it rewrote the three
+  files this task edits. Asked 2026-10-26.
+- [ ] **A2 · cross-repository · blocking** — can the worker send the confusion matrix as
+  **numbers**, and in which orientation, with or without the background row/column?
+  Ultralytics' own `matrix[i][j]` is predicted *i* / true *j*, the transpose of how a
+  reader reads one. Storage shape depends on the answer, and getting the orientation
+  wrong would be a confident lie rather than a gap. Asked 2026-10-26
+  (`local_3689d8f0-ee48-4e59-854b-eca2ad1dbb23`). R5 is conditional on it.
+- [ ] **A3 · cross-repository · blocking** — can per-class AP ride along keyed by **class
+  name** rather than class index? `validator.metrics.box` has per-class `p`, `r`, `ap50`,
+  `ap` with `ap_class_index`; an index without the vocabulary is unreadable here. Asked
+  with A2. R3 and R4 depend on it.
+- [ ] **A4 · environment · blocking** — this worktree has no `node_modules` and no `.env`,
+  and the task forbids migrating 5432. Nothing can be run or verified until there is an
+  install and a database of this task's own. Asked 2026-10-26.
+- [ ] **A5 · scientific / data-meaning · non-blocking** — when a reported class name resolves to more
+  than one species, or to none, R4 records it under the reported name with a null
+  `species_id`. Confirming that is the wanted behaviour rather than a refusal. (#265
+  resolves 11 of 11 for rockfish5 against `species.comname`, which is one dataset's good
+  luck rather than a guarantee; `Red sea urchin` is already known to be on two lists.)
+  Not blocking: recording more than MARP can resolve loses nothing either way.
+- [ ] **A6 · database/schema · non-blocking** — `metrics_summary`'s eight `*_path` columns are left
+  unwritten and commented as superseded rather than dropped. Dropping a published column
+  on a scientific record is the human's call. Not blocking.
 
 ## Decisions
 
-- **2026-10-20 · A `gpu_jobs` row for work no GPU touches.** The table is named for its
-  first use, not its only one. What a build needs — a queue, a state machine, attempts,
-  progress, cancel, and a row the Jobs screen can draw — is exactly what `gpu_jobs` is, and
-  the alternative was a second table carrying all of it again plus new rendering.
-  `dataset_build` is excluded from what `poll` offers, the way `INGESTIBLE_JOB_KINDS`
-  already subsets kinds for a different reason.
-- **2026-10-20 · The build reuses `service/thumbnail-extraction.service.js`.** It already
-  cuts a set of frames from one video in a single ffmpeg pass, already talks to Jellyfin,
-  and already interpolates a box between two keyframes. #268 predicted a dataset build
-  would be a second consumer of that capability; it is.
+- **2026-10-26 · the plots do not go in `metrics_summary`'s path columns.** They go in
+  `artifacts`, content-addressed, served by a new read route. Three reasons, in order of
+  force. Ultralytics writes three `val_batch*_pred.jpg` files and there is **no column
+  for any of them**, so a closed set of eight columns is structurally the wrong shape for
+  an open set of files — it can only drop what it has no column for, and the frontend has
+  asked for an open array keyed by the real filename stem precisely so an unanticipated
+  plot appears instead of disappearing. A path is not a hash, and
+  `ml_models.artifact_sha256` (2026-10-23) is this platform having already decided that
+  immutable bytes are addressed by content; a second pathing scheme beside the weights'
+  would be exactly the drift that decision avoided. And `artifacts`' own table comment
+  already claims this job — "files and outputs produced during a training run, including
+  weights, logs, and result visualizations".
+
+  The alternatives considered and rejected: writing the eight columns (cannot hold the
+  prediction samples, cannot hold an unknown plot); a new `training_run_plots` table
+  (a second copy of `artifacts` with nothing to justify it).
+
+- **2026-10-26 · the numbers do go in `metrics_summary`, plus two columns.** The catch
+  the handoff note named is real — `map50`, `map5095`, `box_*` are detection's
+  vocabulary and classification and segmentation are the next two tasks — but it is
+  narrower than it looks: **`precision`, `recall`, `f1_score` and `fitness` are
+  task-neutral; all three tasks report them.** Only the two mAP columns are not. And
+  Ultralytics hands over the discriminator itself — `(B)` for box, `(M)` for mask, the
+  same four metric names otherwise — so a segmentation run does not need new metric
+  columns at all. It needs a second *row*.
+
+  So: add **`metric_family`** (`box` | `mask` | `classify`) and **`class_name`**.
+  Detection writes `box`. Segmentation will write a `box` row and a `mask` row per class,
+  using the same four columns, because that is literally what it reports. Classification
+  will write `classify`, leave the two mAP columns null, and carry top-1/top-5 in
+  `details` until there is real data to justify columns for them.
+
+  `metric_family` is not decoration. Without it, a classification row with a null `map50`
+  is indistinguishable from a detection row that failed to measure one — the same
+  "a gap that reads as a measurement" failure this stream has already fixed once, in a
+  new place. `class_name` exists because `species_id` is nullable and already means "the
+  all-classes aggregate"; an unresolved class landing as a second kind of null would make
+  the aggregate ambiguous. With both columns: `class_name` null is the aggregate,
+  `class_name` set with `species_id` null is a class MARP could not resolve, and that is
+  a fact worth keeping.
+
+  One migration today, none for segmentation, a small one or none for classification.
+  Rejected: new per-task tables (speculative, for tasks nobody has trained, and #68's
+  history is a record of what building to a line nobody decided costs); a metric
+  name/value row shape (survives anything, but discards columns that already exist and
+  are already right for the only task being trained, and makes every read a pivot).
+
+- **2026-10-26 · `results.csv` is a file, not a second ingest.** `epochs` is fed from the
+  live metric events, which is what makes a chart move while a run is going. The CSV is
+  kept because it is what the trainer wrote; it is not re-read into epoch rows.
+
+- **2026-10-26 · the existing hand-off is reused rather than extended.** Artifacts already
+  reach `artifacts` rows with their sha256, size and content type through
+  `POST /api/v2/gpu/artifacts/check` and `/upload/:sha256` — `recordJobArtifacts` runs for
+  every attempt whatever the job kind, and `role` is validated as a non-empty string with
+  no allow-list to extend. So no new event kind and no new upload route. The link to the
+  run is the existing `training_runs.job_id` join (`20261020120000`), so
+  `artifacts.training_run_id` staying null needs no backfill.
 
 ## Plan
 
-1. Migration: `dataset_classes`, and `dataset_build` accepted as a job kind.
-2. `repository/dataset-build.repository.js` — selection, membership, vocabulary.
-3. `service/dataset-build.service.js` — the runner: select, extract, label, split, package.
-4. Route: queue a build from a saved query; the existing job routes do the rest.
-5. The Datasets screen's *Queue dataset build* button calls it.
+1. Settle A1–A4. Nothing below starts while A1 and A4 are open.
+2. Migration: `metrics_summary` gains `metric_family` and `class_name`, both nullable,
+   both commented. Confusion-matrix storage added per A2's answer.
+3. A shared mapping module for the final-metrics names, beside `db/epoch-metrics.js` and
+   for the same reason — one copy, because two would drift.
+4. Ingest: read the worker's end-of-run report into `metrics_summary` rows and the
+   confusion matrix, inside the existing result transaction.
+5. Role convention for the handed-over files, keyed off the real filename stem.
+6. Read routes on the training run: its metrics, its confusion matrix, its artifact list,
+   and one serving an artifact's bytes. `permission: 'models:read'`, following
+   `/training_run/:id/epochs`.
+7. Decision record for the two decisions above, since both constrain what classification
+   and segmentation do next.
 
 ## Acceptance criteria
 
-- A build queued from the dashboard produces an archive `GET /gpu/datasets/:id/archive`
-  serves, which the worker's existing verification accepts.
-- `dataset_observations` has one row per included observation, naming its split.
-- `dataset_classes` gives the ordered vocabulary, and its order matches `data.yaml`'s
-  `names`.
-- Two observations sharing a frame are in the same split, always.
-- A cancelled build leaves `status = 'failed'`, no `archive_*`, and no partial file.
+- A training attempt that hands over the eleven Ultralytics files produces eleven
+  `artifacts` rows with distinguishable roles, and the dashboard can list and fetch every
+  one of them, including one whose stem this code has never seen.
+- Per-class rows exist for each class the run reported, the aggregate is tellable from
+  them, and a class MARP cannot resolve is present under its reported name.
+- A run that reported no confusion matrix serves no confusion matrix, and the endpoint
+  says nothing rather than zero.
+- No metric column is written from a value MARP computed.
+- Every fixture in the new tests is built from a real stored event payload, not from this
+  document.
 
 ## Test plan
 
-Written in full at G3, before anything is run. Tiers that can see this: the repository and
-service against a seeded database (fast), and one end-to-end build over a short real video.
+Filled at G3.
 
 ## Status
 
-G1 — spec written, A1 and A2 settled. Not yet implemented.
-
----
-
-# 1.2 — Progress on the Datasets screen
-
-Issue: MarineAppliedResearch/MARP_API#268, planning comment of 2026-10-21, item 1.2.
-Branch: `claude/268-dataset-build-progress-261a94`, cut from `104-dashboard-reads-marp`.
-
-## Goal
-
-A build's progress is only on the Jobs screen. The Datasets screen — the one place somebody
-watching a four-hour build actually looks — shows `—` in FRAMES for a build in flight, and
-draws its *Building now* and *Queued builds* cards from six fixture rows typed into
-`screens.js`. Join each building dataset to its `dataset_build` job and show what it is doing.
-
-## Requirements
-
-- **P1 — A building row says frames done against total.** `42,816 / 63,200`, from the
-  latest attempt's `progress_done` / `progress_total`, not a percentage alone.
-- **P2 — And the phase.** `selecting`, `extracting`, `packaging` — because a build sits at
-  `0` for minutes during `selecting`, and a reader who sees `0 / 0` with no phase concludes
-  it is stuck.
-- **P3 — Queued is distinct from building.** `datasets.status` is `building` from the
-  instant the build is queued, so the dataset alone cannot say whether anything has started.
-  The job's state can: `queued` draws *Queued*, `leased` draws the phase.
-- **P4 — Poll while anything is building, and stop when nothing is.** No timer running on a
-  screen with nothing in flight.
-- **P5 — The cards and the donut count what MARP holds**, not fixtures. The six fixture
-  build rows in `screens.js` go; they would otherwise sit above the real rows showing invented
-  progress, and the cards would count them.
-- **P6 — Nothing invented.** A build's elapsed time is derivable and is shown; its archive
-  size so far, its fingerprint and a remaining-time estimate are not recorded anywhere and
-  say so, the way every other unbacked field on this screen does.
-
-## The join, and what was rejected
-
-**`GET /api/v2/dataset/builds`** — one request, every `dataset_build` job that is `queued`
-or `leased`, with its latest attempt's progress, at most one row per dataset.
-
-Three reasons it is a route of its own rather than a field on the dataset:
-
-1. **`Dataset`'s schema is generated from the Sequelize model.** `docs/openapi.js` derives
-   it in `GENERATED_SCHEMAS`, so a `build` object hung on the row is a field the published
-   contract cannot describe without a hand-maintained parallel schema — a document that
-   promises to stay in sync with code it cannot observe, which `AGENTS.md` names by name.
-2. **Progress is not a property of a dataset.** It belongs to the latest attempt of the job
-   building it. What the dataset itself records is `status`, and `num_samples` once the
-   build finishes.
-3. **Polling.** `GET /api/v2/dataset` is unpaged and grows without bound; polling it every
-   few seconds to watch one row move re-fetches every saved dataset. This route answers
-   only about work in flight, and answers `[]` — at which point the screen stops polling.
-
-**Rejected — a `build` field on `GET /api/v2/dataset`.** One request rather than two, and
-the completion transition (`status` → `ready`, `num_samples` filled) would arrive in the
-same payload as the last progress report. Rejected for 1 and 3 above.
-
-**Rejected — asking the existing jobs route.** `GET /api/v2/gpu/jobs` carries no progress
-at all: it is on the attempt, and only `GET /api/v2/gpu/jobs/:id` returns attempts. That is
-one detail request per building row, which is the request-per-row-to-draw-one-page this app
-rejected on the Models screen for the same reason.
-
-## Open assumptions
-
-- [x] **P-A1 · product/UI · non-blocking** — **The Status pill shows the phase while a
-  build runs**, rather than a generic *Building* with the phase elsewhere. The filter still
-  keys on `building`, so filtering is unchanged. Taken because the pill is the row's one
-  piece of prose and *Extracting* is strictly more useful there than *Building*.
-- [x] **P-A2 · product/UI · non-blocking** — **Five seconds between polls.** Progress is
-  reported once per video, and a video is minutes; a faster poll would redraw a table that
-  has not changed.
-
-## Acceptance criteria
-
-- A dataset whose build is `leased` shows `done / total` and the phase; one whose build is
-  `queued` shows neither and says *Queued*.
-- With nothing building, no timer is running and the cards read nothing building / nothing
-  waiting.
-- `node frontend/apps/ml-dashboard/tools/markup-check.mjs` reports no more than the 129 it
-  reported before.
-
-## Status
-
-G1 — written, both assumptions answered as non-blocking.
+- **Gate:** design
+- **Notes:** Survey done; the central question is answered above with its alternatives.
+  Blocked on A1–A4 — two are the worker's answer, two are this workspace having an
+  install and a database. Nothing is implemented.
