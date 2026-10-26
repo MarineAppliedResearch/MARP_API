@@ -24,11 +24,13 @@
 'use strict';
 
 const {
+    METRIC_FAMILIES,
     ORIENTATIONS,
     SERVED_ORIENTATION,
     finalMetrics,
     confusionFromReport,
     confusionForReading,
+    metricCurves,
 } = require('../db/final-metrics');
 
 /**
@@ -161,19 +163,128 @@ describe('reading a final report', () => {
         expect(finalMetrics(unlabelled).rows).toHaveLength(0);
     });
 
-    it('keeps box and mask as separate rows for one class', () => {
+    it('keeps box and seg as separate rows for one class', () => {
         const segmentation = report({ task: 'segment' });
         segmentation.metrics.push({
-            family: 'mask',
+            family: 'seg',
             overall: { precision: 0.6, recall: 0.5, map50: 0.55, map5095: 0.3, f1: 0.54 },
             per_class: [{ class: 'Lingcod', precision: 0.61, recall: 0.51, ap50: 0.56 }],
         });
 
         const lingcod = finalMetrics(segmentation).rows.filter((row) => row.class_name === 'Lingcod');
 
-        expect(lingcod.map((row) => row.metric_family).sort()).toEqual(['box', 'mask']);
+        expect(lingcod.map((row) => row.metric_family).sort()).toEqual(['box', 'seg']);
         // Keyed on class alone these would silently replace each other.
-        expect(lingcod.find((row) => row.metric_family === 'mask').map50).toBe(0.56);
+        expect(lingcod.find((row) => row.metric_family === 'seg').map50).toBe(0.56);
+    });
+});
+
+describe('the per-threshold curves', () => {
+    const curves = (overrides = {}) => ({
+        schema: 1,
+        split: 'val',
+        family: 'box',
+        classes: ['Lingcod', 'Rockfish'],
+        confidence: [0.0, 0.5, 1.0],
+        curves: {
+            precision: [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+            recall: [[0.9, 0.8, 0.7], [0.6, 0.5, 0.4]],
+            f1: [[0.2, 0.3, 0.4], [0.5, 0.6, 0.7]],
+        },
+        ...overrides,
+    });
+
+    it('puts all three measurements for one threshold in one point', () => {
+        // The three curves share one x axis, so a row holds precision, recall and F1 at
+        // a single threshold rather than three rows holding one each.
+        expect(metricCurves(curves()).byClass[1].points[1]).toEqual({
+            confidence_threshold: 0.5, precision: 0.5, recall: 0.5, f1_score: 0.6,
+        });
+    });
+
+    it('refuses the whole family when one curve is shorter than the axis', () => {
+        // A curve one point short silently shifts every later reading onto the wrong
+        // confidence -- a chart that is subtly wrong rather than visibly broken.
+        const short = curves();
+        short.curves.recall = [[0.9, 0.8], [0.6, 0.5]];
+
+        expect(metricCurves(short)).toBeNull();
+    });
+
+    it('refuses a curve with the wrong number of classes', () => {
+        const wrong = curves();
+        wrong.curves.f1 = [[0.2, 0.3, 0.4]];
+
+        expect(metricCurves(wrong)).toBeNull();
+    });
+
+    it('leaves an absent curve null without losing the ones that came', () => {
+        const partial = curves();
+        delete partial.curves.f1;
+
+        const point = metricCurves(partial).byClass[0].points[0];
+
+        expect(point.f1_score).toBeNull();
+        expect(point.precision).toBe(0.1);
+    });
+
+    it('never invents support, which is not a per-threshold quantity', () => {
+        expect('support' in metricCurves(curves()).byClass[0].points[0]).toBe(false);
+    });
+
+    it('refuses a threshold that is not a number', () => {
+        // `confidence_threshold` is NOT NULL and a non-number cannot index anything.
+        expect(metricCurves(curves({ confidence: [0, 'x', 1] }))).toBeNull();
+    });
+
+    it('refuses a curves artifact that does not say what it measured', () => {
+        expect(metricCurves(curves({ family: undefined }))).toBeNull();
+        expect(metricCurves(curves({ split: undefined }))).toBeNull();
+    });
+});
+
+describe('what the trainer does not report', () => {
+    it('leaves the aggregate f1_score null rather than deriving one', () => {
+        // `mean_results()` returns [mp, mr, map50, map] and no F1. The tempting fill is
+        // 2*mp*mr/(mp+mr), which is a mean of ratios rather than a ratio of means -- a
+        // third quantity the trainer never computes, in a column whose other rows hold
+        // a real measurement.
+        const noF1 = report();
+        delete noF1.metrics[0].overall.f1;
+
+        const aggregate = finalMetrics(noF1).rows.find((row) => row.class_name === null);
+
+        expect(aggregate.f1_score).toBeNull();
+        expect(aggregate.precision).toBe(0.81);
+    });
+
+    it('takes a classification run as one row with no per-class numbers', () => {
+        // ClassifyMetrics has no .box, no per-class array, and no precision, recall or
+        // AP -- only top-1 and top-5. A nullable detection row standing in for that
+        // would be the "a gap reads as a measurement" failure in a new costume, so the
+        // family is what tells a reader these columns do not apply.
+        const classify = finalMetrics({
+            schema: 1,
+            task: 'classify',
+            split: 'val',
+            classes: ['Lingcod', 'Rockfish'],
+            metrics: [{ family: METRIC_FAMILIES.CLASSIFY, overall: {} }],
+        });
+
+        expect(classify.rows).toHaveLength(1);
+        expect(classify.rows[0].class_name).toBeNull();
+        expect(classify.rows[0].metric_family).toBe('classify');
+
+        for (const column of ['precision', 'recall', 'map50', 'map5095', 'f1_score']) {
+            expect(classify.rows[column]).toBeUndefined();
+            expect(classify.rows[0][column]).toBeNull();
+        }
+    });
+
+    it('names the segmentation family seg, matching the library rather than the suffix', () => {
+        // The metric-key suffix is (M); the attribute is SegmentMetrics.seg. Two halves
+        // disagreeing on this string is a silent bug six weeks later, so it is pinned.
+        expect(METRIC_FAMILIES.SEG).toBe('seg');
     });
 });
 

@@ -58,14 +58,18 @@ const { Model } = require('sequelize');
  *           description: Specifies which dataset split these metrics apply to - "train", "val", or "test".
  *         metric_family:
  *           type: string
- *           enum: [box, mask, classify]
+ *           enum: [box, seg, classify]
  *           nullable: true
  *           description: >
  *             Which vocabulary this row's numbers are in. A segmentation run reports the
  *             same four metric names for boxes and for masks, so it writes a "box" row
- *             and a "mask" row per class. A "classify" row leaves map50 and map5095
- *             null, and that is a different fact from a detection row that failed to
- *             measure them - which is what this column exists to keep tellable apart.
+ *             and a "seg" row per class - "seg" because that is the library's own
+ *             attribute name, while "(M)" is only the metric-key suffix. A "classify"
+ *             run writes ONE aggregate row with every metric column null and its top-1
+ *             and top-5 in details, because classification reports no per-class array
+ *             and no precision, recall or AP at all. That is a different fact from a
+ *             detection row which failed to measure them, and telling those two apart
+ *             is what this column exists for.
  *         class_name:
  *           type: string
  *           nullable: true
@@ -252,7 +256,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: true,
         comment:
-          'Which vocabulary this row\'s numbers are in: "box", "mask" or "classify". A segmentation run reports the same four metric names twice, once per family, so it writes two rows per class rather than needing extra columns. Null on rows written before this column existed.',
+          'Which vocabulary this row\'s numbers are in: "box", "seg" or "classify". A segmentation run reports the same four metric names twice, once per family, so it writes two rows per class rather than needing extra columns. "seg" matches the library\'s own attribute; "(M)" is only the metric-key suffix. Null on rows written before this column existed.',
       },
 
       class_name: {

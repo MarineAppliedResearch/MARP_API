@@ -35,6 +35,9 @@ Where MARP has nothing, the screen shows a gap rather than a number.
 - **R8** — The record says which task's vocabulary a metric row is in, so a future
   classification or segmentation run is not misread as a detection run that failed to
   measure its mAP.
+- **R9** — Precision, recall and F1 are stored at every confidence threshold the trainer
+  evaluated, per class, so the PR curve can be drawn from numbers rather than only looked
+  at as a white-background image.
 
 ## Open assumptions
 
@@ -78,13 +81,20 @@ Where MARP has nothing, the screen shows a gap rather than a number.
 - [ ] **A6 · database/schema · non-blocking** — `metrics_summary`'s eight `*_path` columns are left
   unwritten and commented as superseded rather than dropped. Dropping a published column
   on a scientific record is the human's call. Not blocking.
-- [ ] **A7 · product/UI · non-blocking** — `metrics.box.curves_results` carries the PR, P,
-  R and F1 curves as numbers over ~1000 confidence points, and MARP's empty
-  `metrics_curves` table is exactly that shape. It is **not** in this task's stated scope
-  (the brief named `PR_curve.png`, the image) and 20 classes × 1000 points is 20k rows per
-  run, which is a performance decision rather than an agent's. Asked the worker whether
-  the door is open; raised with the managing session as a scope question. Deliberately not
-  built, and `metrics_curves` stays empty.
+- [x] **A7 · product/UI · non-blocking** — answered 2026-10-26: **in scope, build it.**
+  `metrics_curves` existing, empty and shaped exactly for per-threshold precision, recall
+  and F1 is the table for this rather than a coincidence to work around, and an
+  interactive curve beats a white-background PNG that cannot be read on a dark page. Two
+  conditions attached: the image is kept as well, and the **real** row count and byte size
+  are reported once measured rather than estimated — if it is far worse than ~20k rows
+  the work stops and it becomes Isaac's call. Cheap on the worker's side: one property
+  access, no computation.
+- [ ] **A8 · scientific / data-meaning · non-blocking** — a classification run writes one
+  aggregate row with every metric column null and its top-1/top-5 in `details`.
+  `ClassifyMetrics` has no per-class array and no precision, recall or AP at all, so it
+  cannot fill these columns; the rule is recorded and **nothing is built for it**, since
+  this engine declares detection. Confirm the shape when classification is actually the
+  task rather than designing it now against a model nobody has trained.
 
 ## Decisions
 
@@ -192,6 +202,51 @@ Where MARP has nothing, the screen shows a gap rather than a number.
   of `model.train()` by exception, so `final_eval()` and `on_train_end` never execute.
   Both are absence, and neither is an error.
 
+- **2026-10-26 · five corrections from the worker, read out of the library rather than
+  recalled, and one of them was mine to own.**
+
+  **I was wrong about F1.** I had written that deriving per-class F1 from the reported
+  precision and recall would give a different number from Ultralytics'. It would not:
+  `p`, `r` and `f1` are all sliced at the same index, so `f1[c]` is exactly
+  `2·p[c]·r[c]/(p[c]+r[c])` for the very values being reported. The real subtlety is
+  more useful and is now in the column comment and the route description: **that index
+  is chosen to maximise F1 averaged across classes**, so every class is reported at one
+  shared confidence threshold and a class whose own optimum lies elsewhere is reported
+  off its peak. Comparing two classes here compares them at one operating point.
+
+  **The segmentation family is `seg`, not `mask`.** `SegmentMetrics.seg` is the library's
+  own attribute; `(M)` is only the metric-key suffix, which is where the wrong guess came
+  from. Settled before either side built anything, because a string two halves disagree
+  about is a silent bug six weeks later.
+
+  **`fitness` is `map5095` exactly**, under weights `[0, 0, 0, 1]` in 8.4.145, so those
+  two columns will always agree. Both kept, with the reason in the column comment:
+  fitness is a different concept — what checkpoints are ranked by — and the weights are
+  Ultralytics' to change, so a history holding only one could not be read afterwards.
+
+  **There is no overall F1**, and the aggregate row's `f1_score` stays null.
+  `mean_results()` returns `[mp, mr, map50, map]` and nothing else. `2·mp·mr/(mp+mr)` is
+  a mean of ratios rather than a ratio of means — a third quantity the trainer never
+  computes, which would sit in a column whose other rows hold a real measurement.
+
+  **"Overall" means over the classes that were evaluated**, not over the species list:
+  `mp` and `mr` are means over the arrays indexed by `ap_class_index`. A vocabulary whose
+  rare classes never appeared in validation has an aggregate that does not describe it.
+
+- **2026-10-26 · the curves are a second artifact, and the trainer's PR curve is not
+  stored.** Separate role `metrics_curves` on the worker's advice: a consumer wanting
+  only the headline numbers should not parse a megabyte to skip one. The three
+  confidence-indexed curves share one x axis, so one row holds a class's precision,
+  recall and F1 at a single threshold — a third of the rows for the same measurements.
+
+  Ultralytics' fourth curve interpolates precision onto a fixed **recall** grid, and
+  `metrics_curves.confidence_threshold` is NOT NULL and means confidence. Writing a
+  recall value into it would make every row of that table unreadable without knowing
+  which curve it came from — a column meaning two things, which is the defect this
+  project keeps having to undo. Nothing is lost: a PR curve is the stored precision
+  plotted against the stored recall, which is two measurements against each other rather
+  than a derivation, and the rendering is kept as an image.
+
 ## Plan
 
 1. Settle A1–A4. Nothing below starts while A1 and A4 are open.
@@ -227,7 +282,7 @@ Filled at G3.
 
 ## Status
 
-- **Gate:** implementing — built, **not verified**, waiting on A4.
+- **Gate:** implementing — built, **not verified**, waiting on the schema-load block.
 - **Notes:** A1–A3 answered; the design is settled and the worker confirmed every piece
   of transport against Ultralytics 8.4.145 rather than from memory. Storage, ingest and
   three read routes are written, and the generated contract and developer docs rebuilt.
@@ -245,8 +300,14 @@ Filled at G3.
   a `final_metrics` artifact, because the worker half is agreed and unbuilt. That is the
   weakest evidence in this work and it is named in the verification plan.
 
-  `metrics_curves` is deliberately left empty (A7) — the curve numbers are available and
-  out of this task's stated scope, which is a scope decision rather than an omission.
+  The per-threshold curves are in scope and built (A7): three curves sharing one
+  confidence axis, one row per class per threshold, arriving as a second artifact. **The
+  real row count and byte size are owed as a measurement** and cannot be taken until the
+  schema loads; until then the only figure anyone has is the worker's estimate of
+  `4 × classes × 1000` floats, about 1–1.5 MB for twenty species.
 
-  `metrics_curves` is deliberately left empty (A7) — the curve numbers are available and
-  out of this task's stated scope, which is a scope decision rather than an omission.
+  The per-threshold curves are in scope and built (A7): three curves sharing one
+  confidence axis, one row per class per threshold, arriving as a second artifact. **The
+  real row count and byte size are owed as a measurement** and cannot be taken until the
+  schema loads; until then the only figure anyone has is the worker's estimate of
+  `4 × classes × 1000` floats, about 1–1.5 MB for twenty species.

@@ -5,11 +5,24 @@ and separated, because most of it has not been.
 
 ## The limit that shapes this whole document
 
-**This workspace has no database.** `npm ci` succeeded; `agent.mjs adopt` refuses the
-worktree's directory name, so there is nothing to migrate against and nothing to run a
-database-backed test against. Every Jest suite in this repository connects during its
-per-file setup, so **not one test in this branch has been executed by Jest** — including
-the one written for this work.
+**There is a database, and nothing can be loaded into it.** `marp db up --port 5447`
+worked and that port is this worktree's. Two things then stopped it being usable, and
+neither was worked around:
+
+- `.env` cannot be written here — it is covered by a Read deny rule in this session's
+  permissions. Not a problem on its own: real environment variables take precedence over
+  dotenv, so `DB_*` can be passed per command and no credential reaches disk.
+- **The danger-gate refuses every command containing `mare_v1`**, which is what
+  `marp db up` names every database it creates, on any port. So `init-database.js` is
+  refused against an empty database on 5447 exactly as it would be against production on
+  5432. The gate is right to match and cannot see the difference; the fix is to teach it
+  host and port, or to have `db up --port` name a non-default database something else.
+  That is shared tooling and the decision sits with Isaac. The hook says explicitly not
+  to look for another phrasing, so nothing was attempted, and it was not routed through
+  another session either.
+
+So: no schema is loaded, no migration has run anywhere, and **not one test in this branch
+has been executed by Jest** — every suite here connects during per-file setup.
 
 Nothing below should be read as passing. Where evidence exists it is named; where it does
 not, that is said.
@@ -18,7 +31,7 @@ not, that is said.
 
 | Run | Result | What it does *not* prove |
 | --- | --- | --- |
-| `db/final-metrics.js` exercised outside Jest, 26 assertions | **26 passed, 0 failed** | Not the Jest suite. No database, no route, no ingest. |
+| `db/final-metrics.js` exercised outside Jest, 45 assertions across three files | **45 passed, 0 failed** | Not the Jest suite. No database, no route, no ingest. |
 | The same, with the transpose deliberately removed | **24 passed, 2 failed** — the two transpose assertions, and only those | That the other 24 are tripwires. Only the transpose was mutation-checked. |
 | `npm run test:subsystems` | **ok — every suite belongs to exactly one subsystem** | Nothing about the tests themselves. |
 | Model layer loaded against a dead port | New model registered, `training_runs.confusion_matrices` associated, `metrics_summary` carries both new columns | That the migration runs. The model is a declaration; the table does not exist anywhere. |
@@ -69,6 +82,25 @@ Not yet written. This is the gap in the plan and it is the biggest one.
 - **V10** A training attempt that hands over no `final_metrics` writes nothing and is
   not an error.
 
+### The curves (R9)
+
+- **V17** A `metrics_curves` artifact produces `classes × confidence` rows, each holding
+  precision, recall and F1 at one threshold — not three rows per threshold.
+- **V18** **The measurement the managing session asked for: the real row count and byte
+  size for a run.** The estimate is 20 classes × 1,000 points = 20,000 rows and 1–1.5 MB
+  of JSON. If the measurement is far worse, that is Isaac's call and the work stops
+  there rather than continuing on the estimate.
+- **V19** A curve one point shorter than the confidence axis stores nothing for that
+  family. Proven red by shortening a fixture, since a shifted curve is subtly wrong
+  rather than visibly broken.
+- **V20** A curves artifact whose `split` disagrees with the report's stores nothing.
+- **V21** A class with no `metrics_summary` row gets no curve — structural, because
+  `metrics_summary_id` is NOT NULL, so this test is guarding the structure rather than
+  a rule.
+- **V22** `metrics_curves.support` is null on every row written.
+- **V23** `GET /v2/training_run/:id/curves` returns index-aligned parallel arrays, and
+  an empty array for a run whose worker sent no curves.
+
 ### The routes (R2, R6)
 
 - **V11** `GET /v2/training_run/:id/metrics` on a run with nothing returns empty arrays
@@ -99,12 +131,20 @@ Not yet written. This is the gap in the plan and it is the biggest one.
   and until then this is the exact failure mode that has already bitten this stream twice.
   The per-epoch fixture *is* from stored rows, including the `child_kind` field no
   document mentions, as a standing reminder of the difference.
-- **`metrics_curves`.** Left empty on purpose (A7), so there is nothing to verify.
+- **Ultralytics' own PR curve**, the one interpolating precision onto a fixed *recall*
+  grid. Not stored, because `metrics_curves.confidence_threshold` is NOT NULL and means
+  confidence; a recall value in it would make the table unreadable without knowing which
+  curve each row came from. A PR curve is drawn by plotting the stored precision against
+  the stored recall, which is two measurements against each other rather than a
+  derivation, and the trainer's rendering is kept as an image besides.
+- **`metrics_curves.support`.** A per-class count, not a per-threshold one. Left null
+  rather than repeated a thousand times down a column that would then state something
+  nobody measured.
 - **The dashboard's rendering.** Another session's, built against this shape already.
 - **Any backfill.** There is none and there cannot be one: the run directory is deleted
   once MARP holds the result.
 
 ## Status
 
-Written at G3 and **not yet reviewed**. V1–V16 have not been run. V6–V15 have not been
-written.
+Written at G3 and **not yet reviewed**. V1–V23 have not been run; V6–V15 and V17–V23
+have not been written.

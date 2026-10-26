@@ -170,6 +170,119 @@ class TrainingMetricsRepository {
     }
 
     /**
+     * The `metrics_summary` rows a run holds for one split and family, by class name.
+     *
+     * Curves hang off `metrics_summary_id`, which is NOT NULL, so a curve can only be
+     * stored for a class that has a row -- which is the "only evaluated classes" rule
+     * holding by construction rather than by a second check.
+     *
+     * @async
+     * @param {Object} params
+     * @param {number} params.trainingRunId - The run.
+     * @param {string} params.split - The split.
+     * @param {string} params.family - The metric family.
+     * @param {Object} params.transaction - Transaction to read in.
+     * @returns {Promise<Map<string, Object>>} Class name to `{id, species_id}`.
+     */
+    async findClassRows({ trainingRunId, split, family, transaction }) {
+        const rows = await this.db.sequelize.query(
+            `SELECT id, class_name, species_id FROM metrics_summary
+              WHERE training_run_id = :trainingRunId
+                AND dataset_split = :split
+                AND metric_family = :family
+                AND class_name IS NOT NULL`,
+            {
+                replacements: { trainingRunId, split, family },
+                type: QueryTypes.SELECT,
+                transaction,
+            }
+        );
+
+        return new Map(rows.map((row) => [row.class_name, row]));
+    }
+
+    /**
+     * Replace the per-threshold curves belonging to a run's split and family.
+     *
+     * **Inserted in batches rather than row by row, because this is the one place here
+     * that is not a handful of rows.** A thousand confidence points per class is twenty
+     * thousand rows for a twenty-species model, and a round trip each would turn an
+     * ingest into minutes of waiting.
+     *
+     * @async
+     * @param {Object} params
+     * @param {Array<number>} params.summaryIds - The `metrics_summary` rows being replaced.
+     * @param {Array<Object>} params.rows - `{metrics_summary_id, species_id,
+     *   confidence_threshold, precision, recall, f1_score}`.
+     * @param {Object} params.transaction - Transaction to write in.
+     * @returns {Promise<number>} How many rows were written.
+     */
+    async replaceCurves({ summaryIds, rows, transaction }) {
+        if (summaryIds.length > 0) {
+            await this.db.sequelize.query(
+                'DELETE FROM metrics_curves WHERE metrics_summary_id IN (:summaryIds)',
+                { replacements: { summaryIds }, transaction }
+            );
+        }
+
+        const now = new Date();
+        const BATCH = 500;
+
+        for (let start = 0; start < rows.length; start += BATCH) {
+            const batch = rows.slice(start, start + BATCH);
+
+            const values = batch.map((_, index) => `(:s${index}, :sp${index}, :c${index}, `
+                + `:p${index}, :r${index}, :f${index}, :now, :now)`).join(', ');
+
+            const replacements = { now };
+
+            batch.forEach((row, index) => {
+                replacements[`s${index}`] = row.metrics_summary_id;
+                replacements[`sp${index}`] = row.species_id;
+                replacements[`c${index}`] = row.confidence_threshold;
+                replacements[`p${index}`] = row.precision;
+                replacements[`r${index}`] = row.recall;
+                replacements[`f${index}`] = row.f1_score;
+            });
+
+            /* `support` is left out of the insert entirely rather than written as null
+               per point: it is a per-class count and repeating it down a per-threshold
+               column would state something nobody measured. */
+            await this.db.sequelize.query(
+                `INSERT INTO metrics_curves
+                     (metrics_summary_id, species_id, confidence_threshold,
+                      "precision", recall, f1_score, created_at, updated_at)
+                 VALUES ${values}`,
+                { replacements, transaction }
+            );
+        }
+
+        return rows.length;
+    }
+
+    /**
+     * A run's curves for one split, as a series per class.
+     *
+     * Returned already grouped, because the alternative is a reader receiving twenty
+     * thousand flat rows and doing the grouping itself on every draw.
+     *
+     * @async
+     * @param {number} trainingRunId - The run.
+     * @returns {Promise<Array<Object>>} Flat points, ordered by class then threshold.
+     */
+    async findCurves(trainingRunId) {
+        return this.db.sequelize.query(
+            `SELECT m.metric_family, m.dataset_split, m.class_name, c.species_id,
+                    c.confidence_threshold, c."precision", c.recall, c.f1_score
+               FROM metrics_curves c
+               JOIN metrics_summary m ON m.id = c.metrics_summary_id
+              WHERE m.training_run_id = :trainingRunId
+              ORDER BY m.dataset_split, m.metric_family, m.class_name, c.confidence_threshold`,
+            { replacements: { trainingRunId }, type: QueryTypes.SELECT }
+        );
+    }
+
+    /**
      * Every metrics row a run holds, with the species name where one resolved.
      *
      * Ordered so a reader gets the all-classes row first within each family and the

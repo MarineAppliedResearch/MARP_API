@@ -10,11 +10,25 @@
  *
  * **The numbers fit, because the catch is narrower than it looks.** `map50`, `map5095`
  * and the `box_*` names are detection's vocabulary, and classification and segmentation
- * are the next two tasks — but `precision`, `recall`, `f1_score` and `fitness` are
- * task-neutral and all three tasks report them. Only the two mAP columns are not. And
- * Ultralytics hands over its own discriminator: `(B)` for box, `(M)` for mask, the same
- * four metric names otherwise. **So a segmentation run needs no new metric columns at
- * all. It needs a second row.** Hence `metric_family` rather than a table per task.
+ * are the next two tasks — but `precision`, `recall` and `f1_score` are shared by
+ * detection and segmentation, and Ultralytics hands over its own discriminator: the same
+ * four metric names, suffixed `(B)` for box and `(M)` for mask. **So a segmentation run
+ * needs no new metric columns at all. It needs a second row.** Hence `metric_family`
+ * rather than a table per task.
+ *
+ * **Classification is the exception and it is deliberately not built.** `ClassifyMetrics`
+ * has no per-class array and no precision, recall or AP -- only top-1 and top-5 accuracy
+ * -- so it cannot fill these columns and must not be given a nullable detection row
+ * pretending otherwise. When it arrives it writes one aggregate row, `classify`, with
+ * the metric columns null and its accuracies in `details`. Its confusion matrix needs
+ * nothing new.
+ *
+ * **Two columns here will always hold the same number, and that is not a mistake.**
+ * `fitness` is a weighted sum over `[P, R, mAP50, mAP50-95]` whose weights are
+ * `[0, 0, 0, 1]` in 8.4.145, so it *is* `map5095`. Both are kept because fitness is a
+ * different concept -- what checkpoints are ranked by -- and those weights are
+ * Ultralytics' to change; a history holding only one of them could not be read after
+ * they diverged.
  *
  * Rejected: a table per task (speculative, for tasks nobody has trained); a
  * metric-name/value row shape (survives anything, but discards columns that already
@@ -60,12 +74,15 @@ const { guardDataIntegrity } = require('../db/data-integrity');
  * @type {Object<string, string>}
  */
 const SUMMARY_COLUMNS = {
-    metric_family: 'Which vocabulary this row\'s numbers are in: box, mask or classify. '
-        + 'Ultralytics suffixes its metrics (B) for box and (M) for mask and reports the '
-        + 'same four names otherwise, so a segmentation run writes a box row and a mask '
-        + 'row per class rather than needing new columns. Without this column a '
-        + 'classification row with a null map50 is indistinguishable from a detection '
-        + 'row that failed to measure one.',
+    metric_family: 'Which vocabulary this row\'s numbers are in: box, seg or classify. '
+        + 'Ultralytics reports the same four metric names for boxes and for masks, so a '
+        + 'segmentation run writes a box row and a seg row per class rather than needing '
+        + 'new columns. "seg" rather than "mask" because that is the library\'s own '
+        + 'attribute name; (M) is only the metric-key suffix. Without this column a '
+        + 'classification row is indistinguishable from a detection row that failed to '
+        + 'measure its mAP. A classify run writes ONE aggregate row with the five metric '
+        + 'columns null and its top-1 and top-5 in details, because ClassifyMetrics has '
+        + 'no per-class array and no precision, recall or AP at all.',
     class_name: 'The class as the model named it. Null means this is the all-classes '
         + 'aggregate. Set with a null species_id means a class MARP could not resolve to '
         + 'a species, which is kept rather than dropped -- species_id alone could not '

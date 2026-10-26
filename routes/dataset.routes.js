@@ -1704,7 +1704,8 @@ function registerDatasetRoutes(app) {
             'The end-of-run record: per-class precision, recall, F1 and AP, the all-classes aggregate, and the confusion matrix as numbers. All of it is carried from the trainer -- **MARP computes none of it**, and an endpoint with nothing to serve serves nothing.\n\n'
             + '**The confusion matrix is served rows-as-TRUE, columns-as-PREDICTED**, which is how a person reads one. Note that this is the transpose of how Ultralytics indexes it internally (`matrix[predicted][true]`); the stored row keeps the producer\'s own orientation and names it, and the rotation happens once, here, on the way out. A matrix is never derived from the per-class numbers -- one assembled from precision and recall is arithmetic dressed as a measurement, and the off-diagonal, which is the only part anybody looks at, is exactly what a derivation cannot know.\n\n'
             + '**The background row is kept and labelled rather than trimmed.** It holds the misses and the false positives, and the row sums do not mean anything without it. It is absent for classification, which has no background class.\n\n'
-            + '**Three kinds of metrics row, and they are different quantities.** `class_name` null is the all-classes aggregate. `class_name` set with `species_id` null is a class MARP could not resolve to a species -- kept, because the model is actively predicting it and dropping it would hide it. Everything else is a resolved class. `metric_family` says which vocabulary the numbers are in, so a segmentation run\'s box and mask rows for one class do not silently replace each other and a classification row\'s null mAP is not read as a detection row that failed to measure one.\n\n'
+            + '**Three kinds of metrics row, and they are different quantities.** `class_name` null is the all-classes aggregate. `class_name` set with `species_id` null is a class MARP could not resolve to a species -- kept, because the model is actively predicting it and dropping it would hide it. Everything else is a resolved class. `metric_family` says which vocabulary the numbers are in (`box`, `seg`, `classify`), so a segmentation run\'s box and seg rows for one class do not silently replace each other, and a classification run -- which reports only top-1 and top-5, with no per-class array at all -- is not read as a detection run that failed to measure its mAP.\n\n'
+            + '**Four things about these numbers that a reader will otherwise get wrong.** *"Overall" means over the classes that were evaluated*, not over the whole species list: the aggregate precision and recall are means over the classes that appeared in validation, so a vocabulary with rare classes absent from the split has an aggregate that does not describe it. *Every class is reported at one shared confidence threshold*, chosen to maximise F1 averaged across classes rather than per class, so a class whose own optimum lies elsewhere is reported off its peak and two classes here are compared at one operating point rather than at their best. *`fitness` and `map5095` will always be equal* -- fitness is a weighted sum whose weights are `[0, 0, 0, 1]`, so it is mAP50-95 exactly; both are kept because those weights are the trainer\'s to change and a history holding one of them could not be read afterwards. *There is no overall F1* -- the trainer does not compute one, and `2PR/(P+R)` of the aggregate P and R is a third quantity rather than the missing number, so the aggregate row\'s `f1_score` is null.\n\n'
             + '**A class the validator never evaluated has no row at all.** The trainer reports only classes that appeared in the validation set, so absence means *never evaluated* rather than *scored zero* -- and on a species list where the rare classes are the point, those are not the same fact. Nulls are returned as nulls for the same reason; a reader draws a dash.\n\n'
             + 'Empty is the honest answer for a run still training, for a run that was stopped before its final validation, and for every run that finished before this was recorded. It is not a 404: the run exists either way.',
         tags: ['V1 · MachineLearning'],
@@ -1746,6 +1747,60 @@ function registerDatasetRoutes(app) {
             }
 
             res.json(await trainingMetricsController.getMetricsForRun(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/curves',
+        summary: 'A training run\'s precision, recall and F1 across every confidence threshold',
+        description:
+            'The per-threshold curves as numbers: one series per class per metric family, over the 1,000 confidence points the trainer evaluated at. **This is the PR curve the run rendered as a PNG, readable** -- re-scalable, comparable between runs, and legible on a dark page, which a white-background image is not.\n\n'
+            + '**Its own read, not part of `/metrics`.** A thousand points per class is around a megabyte for a twenty-species model, and a screen showing headline numbers should not fetch that to ignore it.\n\n'
+            + '**Returned as parallel arrays** -- `confidence`, `precision`, `recall`, `f1_score`, all the same length and index-aligned -- rather than as a thousand four-key objects per class. The same numbers at a fraction of the JSON, and the shape every plotting library takes.\n\n'
+            + '**To draw a precision-recall curve, plot the stored `precision` against the stored `recall`.** That is two measurements plotted against each other, not a derivation. MARP deliberately does not store the trainer\'s own PR curve, which interpolates precision onto a fixed *recall* grid: its x axis is recall, and the column that would have to hold it means confidence. A column meaning two things depending on which curve a row came from is unreadable, and the trainer\'s rendering is kept as an image regardless.\n\n'
+            + '**Only classes that were evaluated appear**, structurally: a curve hangs off the class\'s metrics row, and a class with no validation instances has no row. Empty is the honest answer for a run whose worker sent no curves.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run.' },
+        ],
+        responses: {
+            200: {
+                description: 'One series per class, or an empty array.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    dataset_split: { type: 'string' },
+                                    metric_family: { type: 'string', enum: ['box', 'seg', 'classify'] },
+                                    class_name: { type: 'string' },
+                                    species_id: { type: 'integer', nullable: true },
+                                    confidence: { type: 'array', items: { type: 'number' } },
+                                    precision: { type: 'array', items: { type: 'number', nullable: true } },
+                                    recall: { type: 'array', items: { type: 'number', nullable: true } },
+                                    f1_score: { type: 'array', items: { type: 'number', nullable: true } },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const run = await datasetController.getTrainingRunById(req.params.id);
+
+            if (!run) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(await trainingMetricsController.getCurvesForRun(req.params.id));
         }),
     });
 

@@ -30,6 +30,18 @@ class TrainingMetricsController {
     }
 
     /**
+     * One run's per-threshold curves, a series per class.
+     *
+     * @async
+     * @param {number|string} runId - Training run identifier.
+     * @returns {Promise<Array<Object>>} The series.
+     */
+    async getCurvesForRun(runId) {
+        logger.info('Controller: getCurvesForRun');
+        return await trainingMetricsService.readCurves(runId);
+    }
+
+    /**
      * Every file one run's attempt handed over.
      *
      * @async

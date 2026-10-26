@@ -50,6 +50,40 @@ const FINAL_METRICS_SCHEMA = 1;
 const FINAL_METRICS_ROLE = 'final_metrics';
 
 /**
+ * The role the per-threshold curves travel under.
+ *
+ * **A separate artifact from the report, on the worker's advice and for a good reason.**
+ * The curves are `4 x classes x 1000` floats -- roughly 1 to 1.5 MB of JSON for twenty
+ * species -- and a consumer that only wants the headline numbers should not have to
+ * parse a megabyte in order to skip it.
+ *
+ * @constant
+ * @type {string}
+ */
+const METRICS_CURVES_ROLE = 'metrics_curves';
+
+/**
+ * The three curves `metrics_curves` can hold, by the column each fills.
+ *
+ * **All three share one x axis**, the 1,000 confidence points Ultralytics evaluates at,
+ * so one row holds a class's precision, recall and F1 at a single threshold rather than
+ * three rows holding one each. That is a third of the rows for the same measurements.
+ *
+ * **Ultralytics' fourth curve is deliberately not stored.** Its PR curve is precision
+ * interpolated onto a fixed *recall* grid, so its x axis is recall and not confidence --
+ * and `metrics_curves.confidence_threshold` is NOT NULL and means confidence. Writing a
+ * recall value into it would make every row of that table unreadable without knowing
+ * which curve it came from, which is precisely the kind of column that means two things
+ * this project keeps having to undo. Nothing is lost: precision and recall are stored at
+ * each threshold, so a PR curve is drawn by plotting the two stored measurements against
+ * each other, and the trainer's own rendering is kept as an image besides.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const CURVE_COLUMNS = { precision: 'precision', recall: 'recall', f1_score: 'f1' };
+
+/**
  * How the trainer's own confusion matrix is indexed.
  *
  * Ultralytics' `metrics.py:400` is `self.matrix[p][t] += 1`, so its **row is the
@@ -75,15 +109,51 @@ const ORIENTATIONS = {
 const SERVED_ORIENTATION = ORIENTATIONS.ROWS_TRUE;
 
 /**
+ * The metric families a row's numbers can be in.
+ *
+ * **`seg`, not `mask`.** The metric *key* suffix is `(M)`, which is where the obvious
+ * guess comes from, but the library's own attribute is `SegmentMetrics.seg` and its
+ * vocabulary is what a reader of either side will look for. Settled with the worker
+ * session before anything was built, because a string the two halves disagree about is
+ * the kind of mismatch that surfaces as a silent bug six weeks later.
+ *
+ * **`classify` does not fit the row shape below and nothing builds it yet.**
+ * `ClassifyMetrics` has no `.box`, no per-class array, and no precision, recall or AP at
+ * all -- its whole vocabulary is `metrics/accuracy_top1` and `metrics/accuracy_top5`. So
+ * a classification run writes **one** aggregate row with the five metric columns null
+ * and its top-1 and top-5 in `details`, plus its confusion matrix, which needs nothing
+ * new (it is `nc x nc` with no background row). What must not happen is a nullable
+ * detection row standing in for it: `metric_family` exists so a reader can tell that
+ * those columns do not apply here, rather than reading a null mAP as a detection run
+ * that failed to measure one.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const METRIC_FAMILIES = { BOX: 'box', SEG: 'seg', CLASSIFY: 'classify' };
+
+/**
  * The per-class and overall metric fields, by the column that holds each.
  *
- * `precision`, `recall`, `f1_score` and `fitness` are **task-neutral** -- detection,
- * segmentation and classification all report them -- which is why one table serves all
- * three and `metric_family` says which vocabulary a row is in rather than the column
- * names doing it. Only `map50` and `map5095` are detection's and segmentation's alone.
+ * `precision`, `recall` and `f1_score` are shared by detection and segmentation, which
+ * is why one table serves both and `metric_family` says which vocabulary a row is in
+ * rather than the column names doing it.
  *
  * The per-class names differ from the overall ones because Ultralytics' own do: a class
  * has an AP, a run has a mAP, and flattening that distinction here would lose it.
+ *
+ * **There is no overall F1 and the column stays null.** `mean_results()` returns four
+ * values -- `[mp, mr, map50, map]` -- and no F1 among them. The tempting fill is
+ * `2*mp*mr/(mp+mr)`, and it is wrong: a mean of ratios is not the ratio of means, so
+ * that is a third quantity Ultralytics never computes, sitting in a column whose other
+ * rows hold a real measurement. Left null, which is the honest answer.
+ *
+ * **`fitness` is `map5095`, exactly, and the two columns will always agree.** The
+ * weights are `[0.0, 0.0, 0.0, 1.0]` over `[P, R, mAP50, mAP50-95]` in 8.4.145, so
+ * fitness is mAP50-95 and nothing else. Both are kept rather than one dropped, because
+ * fitness is a different *concept* -- the number checkpoints are ranked by -- and those
+ * weights are Ultralytics' to change; the day they do, a history with only one of them
+ * could not be read. Anyone wondering why two columns never differ is answered here.
  *
  * @constant
  * @type {Object<string, string>}
@@ -98,6 +168,18 @@ const OVERALL_FIELDS = {
 };
 
 /**
+ * The per-class fields.
+ *
+ * **Every class is reported at one shared confidence threshold**, not at its own
+ * optimum: Ultralytics picks the index that maximises the F1 curve *averaged across
+ * classes* and slices every class's precision, recall and F1 at that same index. So a
+ * class whose own best threshold sits elsewhere is reported off its peak, and comparing
+ * two classes here compares them at one operating point rather than at their best. That
+ * is a property of the measurement rather than of this storage, and it is the thing a
+ * reader needs to know -- not, as first assumed here, any mismatch in how F1 is derived.
+ * `f1` is exactly `2pr/(p+r)` of the same `p` and `r` in the row, because all three come
+ * from that one index.
+ *
  * @constant
  * @type {Object<string, string>}
  */
@@ -346,9 +428,91 @@ function confusionForReading(stored, classes) {
     };
 }
 
+/**
+ * Read a curves artifact into per-class, per-threshold points.
+ *
+ * **Every array is checked against the shared x axis before anything is stored.** A
+ * curve one point shorter than the confidence axis would silently shift every reading
+ * after the gap, which on a threshold curve means a precision attributed to the wrong
+ * confidence -- a chart that is subtly and confidently wrong rather than visibly broken.
+ * A mismatch refuses the whole family rather than storing part of it.
+ *
+ * `support` is left null throughout. It is a per-class count, not a per-threshold one,
+ * so repeating it a thousand times down the column would state a per-threshold fact
+ * nobody measured.
+ *
+ * @param {Object} report - The parsed `metrics_curves` artifact.
+ * @returns {?Object} `{schema, split, family, classes, confidence, byClass}` where
+ *   `byClass` is one entry per class, each with its points in axis order. Null when the
+ *   artifact carries nothing usable.
+ */
+function metricCurves(report) {
+    if (!report || typeof report !== 'object' || Array.isArray(report)) return null;
+
+    const split = named(report.split) ? report.split.trim() : null;
+    const family = named(report.family) ? report.family.trim() : null;
+
+    if (!split || !family) return null;
+
+    const confidence = Array.isArray(report.confidence) ? report.confidence.map(measured) : [];
+    const classes = Array.isArray(report.classes) ? report.classes.filter(named) : [];
+
+    if (confidence.length === 0 || classes.length === 0) return null;
+
+    /* A threshold that is not a number cannot index anything, and the column is NOT
+       NULL. Refused as a set rather than skipped point by point, because dropping one
+       point silently renumbers nothing but quietly changes the curve's shape. */
+    if (confidence.some((point) => point === null)) return null;
+
+    const curves = report.curves && typeof report.curves === 'object' ? report.curves : {};
+
+    const series = {};
+
+    for (const [column, name] of Object.entries(CURVE_COLUMNS)) {
+        const rows = Array.isArray(curves[name]) ? curves[name] : null;
+
+        // A curve may be absent entirely; that is a gap, and the column stays null.
+        if (rows === null) continue;
+
+        if (rows.length !== classes.length) return null;
+
+        for (const row of rows) {
+            if (!Array.isArray(row) || row.length !== confidence.length) return null;
+        }
+
+        series[column] = rows;
+    }
+
+    if (Object.keys(series).length === 0) return null;
+
+    const byClass = classes.map((className, classIndex) => ({
+        class_name: className,
+        points: confidence.map((threshold, pointIndex) => ({
+            confidence_threshold: threshold,
+            ...Object.fromEntries(Object.keys(CURVE_COLUMNS).map((column) => [
+                column,
+                series[column] ? measured(series[column][classIndex][pointIndex]) : null,
+            ])),
+        })),
+    }));
+
+    return {
+        schema: Number.isFinite(Number(report.schema)) ? Number(report.schema) : null,
+        split,
+        family,
+        classes,
+        confidence,
+        byClass,
+    };
+}
+
 module.exports = {
     FINAL_METRICS_SCHEMA,
+    METRICS_CURVES_ROLE,
+    CURVE_COLUMNS,
+    metricCurves,
     FINAL_METRICS_ROLE,
+    METRIC_FAMILIES,
     ORIENTATIONS,
     SERVED_ORIENTATION,
     OVERALL_FIELDS,

@@ -32,7 +32,13 @@ const path = require('path');
 const db = require('../model');
 const logger = require('../logger/api.logger');
 const { ARTIFACT_DIRECTORY } = require('../config/gpu-orchestration');
-const { FINAL_METRICS_ROLE, finalMetrics, confusionForReading } = require('../db/final-metrics');
+const {
+    FINAL_METRICS_ROLE,
+    METRICS_CURVES_ROLE,
+    finalMetrics,
+    metricCurves,
+    confusionForReading,
+} = require('../db/final-metrics');
 const ingestRepository = require('../repository/observation-ingest.repository');
 const trainingMetricsRepository = require('../repository/training-metrics.repository');
 
@@ -98,7 +104,21 @@ class TrainingMetricsService {
 
             const rows = await this.resolveClasses(parsed.rows, run.model_id);
 
-            return await this.store({ run, parsed, rows });
+            /* A second artifact, deliberately: the curves are about a megabyte and a
+               consumer wanting only the headline numbers should not parse one to skip
+               it. Absent is normal -- an older worker sends none. */
+            const curvesArtifact = (job.artifacts || []).find(
+                (row) => row.artifact_type === METRICS_CURVES_ROLE
+            );
+
+            const curvesReport = curvesArtifact ? this.readReport(job, curvesArtifact) : null;
+
+            return await this.store({
+                run,
+                parsed,
+                rows,
+                curves: curvesReport === null ? null : metricCurves(curvesReport),
+            });
         } catch (error) {
             const reason = error && error.message ? error.message : String(error);
 
@@ -350,7 +370,7 @@ class TrainingMetricsService {
      * @param {Array<Object>} params.rows - Rows with species resolved.
      * @returns {Promise<Object>} `{stored}`.
      */
-    async store({ run, parsed, rows }) {
+    async store({ run, parsed, rows, curves }) {
         const transaction = await this.db.sequelize.transaction();
 
         try {
@@ -376,6 +396,8 @@ class TrainingMetricsService {
                 });
             }
 
+            const curvePoints = await this.storeCurves({ run, parsed, curves, transaction });
+
             await transaction.commit();
 
             return {
@@ -383,6 +405,7 @@ class TrainingMetricsService {
                     training_run_id: run.id,
                     split: parsed.split,
                     metrics_rows: written,
+                    curve_points: curvePoints,
                     confusion_matrix: Boolean(parsed.confusion),
                     unresolved_classes: rows.filter(
                         (row) => row.class_name !== null && row.species_id === null
@@ -393,6 +416,105 @@ class TrainingMetricsService {
             await transaction.rollback();
             throw error;
         }
+    }
+
+    /**
+     * Store the per-threshold curves, where the run sent any.
+     *
+     * **A curve is only stored for a class that already has a metrics row.**
+     * `metrics_curves.metrics_summary_id` is NOT NULL and points at that row, so this is
+     * structural rather than a rule being enforced twice: a class the validator never
+     * evaluated has no row, and therefore can have no curve either.
+     *
+     * A curves artifact naming a split or family the report did not is ignored rather
+     * than stored against the nearest one. Two artifacts from one attempt that disagree
+     * about what they measured are a transport fault, and attaching curves to the wrong
+     * family would be a chart confidently drawn from another measurement.
+     *
+     * @async
+     * @param {Object} params
+     * @param {Object} params.run - The training run.
+     * @param {Object} params.parsed - What `finalMetrics` read.
+     * @param {?Object} params.curves - What `metricCurves` read, or null.
+     * @param {Object} params.transaction - Transaction to write in.
+     * @returns {Promise<number>} How many points were written.
+     */
+    async storeCurves({ run, parsed, curves, transaction }) {
+        if (!curves || curves.split !== parsed.split) return 0;
+
+        const classRows = await this.repository.findClassRows({
+            trainingRunId: run.id,
+            split: curves.split,
+            family: curves.family,
+            transaction,
+        });
+
+        const rows = [];
+        const summaryIds = [];
+
+        for (const series of curves.byClass) {
+            const classRow = classRows.get(series.class_name);
+
+            if (!classRow) continue;
+
+            summaryIds.push(classRow.id);
+
+            for (const point of series.points) {
+                rows.push({
+                    metrics_summary_id: classRow.id,
+                    species_id: classRow.species_id,
+                    ...point,
+                });
+            }
+        }
+
+        return await this.repository.replaceCurves({ summaryIds, rows, transaction });
+    }
+
+    /**
+     * A run's per-threshold curves, grouped into one series per class.
+     *
+     * **Its own read rather than part of `/metrics`.** This is a thousand points per
+     * class and a screen showing headline numbers should not fetch a megabyte to ignore
+     * it.
+     *
+     * @async
+     * @param {number|string} trainingRunId - The run.
+     * @returns {Promise<Array<Object>>} One entry per split, family and class.
+     */
+    async readCurves(trainingRunId) {
+        const points = await this.repository.findCurves(trainingRunId);
+
+        const series = new Map();
+
+        for (const point of points) {
+            const key = `${point.dataset_split}\u0000${point.metric_family}\u0000${point.class_name}`;
+
+            if (!series.has(key)) {
+                series.set(key, {
+                    dataset_split: point.dataset_split,
+                    metric_family: point.metric_family,
+                    class_name: point.class_name,
+                    species_id: point.species_id,
+                    confidence: [],
+                    precision: [],
+                    recall: [],
+                    f1_score: [],
+                });
+            }
+
+            const entry = series.get(key);
+
+            /* Parallel arrays rather than a thousand four-key objects per class: the
+               same numbers at a fraction of the JSON, and every plotting library takes
+               them in this shape anyway. */
+            entry.confidence.push(point.confidence_threshold);
+            entry.precision.push(point.precision);
+            entry.recall.push(point.recall);
+            entry.f1_score.push(point.f1_score);
+        }
+
+        return [...series.values()];
     }
 }
 
