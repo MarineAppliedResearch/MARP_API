@@ -1501,3 +1501,117 @@ test('a loss that merely starts high keeps every point on the chart', async (t) 
   assert.equal(card.querySelectorAll('.result-break').length, 0, 'nothing is marked as cut');
   assert.equal(points(card, 'cls-loss')[0].x, 46, 'and epoch 1 is still drawn');
 });
+
+/** The Best mAP cell of a row. */
+const mapCell = (screen, id) => screen.document
+  .querySelector(`.training-table tbody tr[data-job="${id}"] .jmap`);
+
+/** A one-job table, so each case stands alone. */
+const onlyJob = (one) => ({
+  ...answers([], []),
+  listJobs: async () => ({ jobs: [one], total: 1, limit: 500, offset: 0 }),
+});
+
+test('Best mAP shows the number the job list carries', async (t) => {
+  const screen = await drawScreen('training.html',
+    onlyJob({ ...job(21785), best_map50: 0.67946 }));
+
+  t.after(screen.close);
+
+  const cell = mapCell(screen, 21785);
+
+  assert.equal(cell.textContent.trim(), '0.679');
+  assert.equal(cell.dataset.sort, '0.67946', 'and sorts on the value, not the rendered text');
+});
+
+test('a training job that reached no epoch says so, and sorts below the ones that did', async (t) => {
+  /* null is an answer about this job: it ran and produced no epoch. Job 21784 queued and
+     never started, which is exactly this. */
+  const screen = await drawScreen('training.html',
+    onlyJob({ ...job(21784, 'queued'), best_map50: null }));
+
+  t.after(screen.close);
+
+  const cell = mapCell(screen, 21784);
+
+  assert.equal(cell.textContent.trim(), '—');
+  assert.equal(cell.dataset.sort, '-1', 'unmeasured sorts below every real mAP');
+});
+
+test('a response that does not carry best_map50 is not read as "no mAP"', async (t) => {
+  /* **Absent is not null, and this is the fourth time today that distinction mattered.**
+     `GET /gpu/jobs` unfiltered omits the field deliberately -- deriving it costs 22ms a
+     page for thousands of inference jobs that have no epochs. An older API omits it too.
+     Neither is a statement that this job has no mAP, so the cell must not make one. */
+  const { best_map50: _unused, ...withoutTheField } = { ...job(21785), best_map50: 0.5 };
+
+  const screen = await drawScreen('training.html', {
+    ...onlyJob(withoutTheField),
+    listTrainingRuns: async () => [run(202, 21785)],
+  });
+
+  t.after(screen.close);
+
+  const cell = mapCell(screen, 21785);
+  const title = cell.querySelector('[title]').getAttribute('title');
+
+  assert.equal(cell.textContent.trim(), '—');
+  assert.match(title, /open the row/i,
+    'it points at where the number is, rather than claiming there is none');
+  assert.doesNotMatch(title, /no epoch|no mAP/i,
+    'a response that was never asked for the field answers nothing about the job');
+});
+
+test('a best mAP of zero is a measurement, not a missing value', async (t) => {
+  /* The `||` trap in one test. A model that found nothing scored 0.000, and that is a
+     result somebody needs to see rather than a dash that reads as not yet run. */
+  const screen = await drawScreen('training.html',
+    onlyJob({ ...job(21785), best_map50: 0 }));
+
+  t.after(screen.close);
+
+  assert.equal(mapCell(screen, 21785).textContent.trim(), '0.000');
+});
+
+test('Best mAP follows a running job, in place, including the poll that finishes it', async (t) => {
+  /* **Patched before the terminal check**, like Updated. The poll that marks a job done
+     is the one carrying its final mAP, so patching after the check would leave every
+     finished run showing the second-to-last number it had. */
+  let state = 'leased';
+  let best = 0.41;
+
+  const screen = await drawScreen('training.html', {
+    ...answers([], []),
+    listJobs: async () => ({
+      jobs: [{ ...job(21782, state), best_map50: best }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const cell = mapCell(screen, 21782);
+
+  assert.equal(cell.textContent.trim(), '0.410');
+
+  state = 'succeeded';
+  best = 0.67946;
+
+  let cycle = null;
+  const real = screen.window.setTimeout;
+
+  screen.window.setTimeout = (fn, delay) => {
+    if (delay === 5000 && !cycle) { cycle = fn; return 1; }
+    return real(fn, delay);
+  };
+
+  screen.window.watchTrainingJobs();
+  await cycle();
+
+  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => real(resolve, 20));
+
+  assert.equal(cell.textContent.trim(), '0.679', 'the finishing poll brings the final value');
+  assert.equal(mapCell(screen, 21782), cell, 'same cell, not a rebuilt row');
+});

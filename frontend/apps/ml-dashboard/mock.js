@@ -1278,6 +1278,54 @@ const NO_RUN_RECORDED = '<span class="dash" title="No training run was recorded 
  */
 const IN_THE_EXPANSION = '<span class="dash" title="Computed from the run&apos;s epochs. Open the row to see it.">&mdash;</span>';
 
+/**
+ * The best validation mAP@50 a training job reached, for the table's own column.
+ *
+ * **Absent and null are different answers, and this is the fourth place today where
+ * collapsing them would have been wrong.** `GET /gpu/jobs?kind=training` derives
+ * `best_map50` over the run's epochs. The same endpoint unfiltered does not carry the
+ * field at all, deliberately: the aggregate costs about 22ms a page, paid almost entirely
+ * by the thousands of inference jobs that have no epochs and no such column. So there are
+ * three states and only two of them are about this job:
+ *
+ * - **a number** — the best epoch of the run, not its last;
+ * - **null** — this training job reached no epoch. That is an answer, and the dash is it;
+ * - **absent** — this response was never asked for the field. Not a statement about the
+ *   job, so the cell says what it said before the field existed rather than inventing
+ *   *no mAP* — which is what an older API, or the unfiltered Jobs screen, would get.
+ *
+ * `job.best_map50 || dash` would collapse all three, and would read a genuine 0.000 —
+ * a model that found nothing — as nothing recorded.
+ *
+ * @param {Object} job - The job as the list returned it.
+ * @param {Object|null} run - Its training run, when one was recorded.
+ * @returns {{html: string, sort: number}} The cell, and its sort key.
+ */
+function bestMap(job, run) {
+  /* Unmeasured sorts below every real mAP, which cannot be negative. */
+  const NOT_A_NUMBER = -1;
+
+  if (!('best_map50' in job)) {
+    return { html: run ? IN_THE_EXPANSION : NO_RUN_RECORDED, sort: NOT_A_NUMBER };
+  }
+
+  if (job.best_map50 === null || job.best_map50 === undefined) {
+    return {
+      html: run
+        ? '<span class="dash" title="This run has reported no epoch yet, so there is no mAP to be best">&mdash;</span>'
+        : NO_RUN_RECORDED,
+      sort: NOT_A_NUMBER,
+    };
+  }
+
+  const best = Number(job.best_map50);
+
+  return {
+    html: `<span title="The best epoch of this run, not its last">${best.toFixed(3)}</span>`,
+    sort: best,
+  };
+}
+
 /** The registry by id, so a row can read its base model's task. */
 let trainingModelsById = new Map();
 
@@ -2273,6 +2321,18 @@ function patchTrainingRows(body, views) {
       status.dataset.sort = String(JOB_STATE_RANK[view.state]);
     }
 
+    /* **Before the terminal check, for the same reason Updated is.** Best mAP climbs as
+       epochs land, and the poll that marks a job done is the one carrying its final
+       value -- patching after the check would leave every finished run showing the
+       second-to-last number it had. */
+    const map = $('.jmap', head);
+    const best = bestMap(view.job, trainingRunsByJob.get(view.job.id) || null);
+
+    if (map && map.dataset.sort !== String(best.sort)) {
+      map.innerHTML = best.html;
+      map.dataset.sort = String(best.sort);
+    }
+
     if (['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state)) continue;
 
     /* Epochs, from the attempt rather than from a run: it is what moves while the job
@@ -2452,6 +2512,7 @@ function renderTrainingRecent(views) {
     const modelId = (spec.model && spec.model.ml_model_id) ?? (run && run.model_id);
     const task = trainingTaskOf(job);
     const lastSeen = jobLastSeen(job) || job.created_at;
+    const map = bestMap(job, run);
 
     return `<tr data-job="${job.id}"${run ? ` data-run="${run.id}"` : ''}${task ? ` data-task="${task}"` : ''}>`
       /* **Every job, not only one with a run.** The expander used to be conditional on
@@ -2485,7 +2546,7 @@ function renderTrainingRecent(views) {
       + `<td class="jepochs num">${run && run.total_epochs
         ? `<span title="Configured for this run. How many have been reported is in the expansion.">${run.total_epochs}</span>`
         : (run ? IN_THE_EXPANSION : NO_RUN_RECORDED)}</td>`
-      + `<td class="jmap num">${run ? IN_THE_EXPANSION : NO_RUN_RECORDED}</td>`
+      + `<td class="jmap num" data-sort="${map.sort}">${map.html}</td>`
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
       /* **The same cell the Datasets table has, with the same marker.** `data-updated` is
