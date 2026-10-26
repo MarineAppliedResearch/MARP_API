@@ -947,3 +947,67 @@ test('the quality chart keeps a fixed axis, so two runs can be compared by eye',
   assert.equal(card.querySelector('.result-axis text').textContent, '1.0',
     'a run topping out at 0.19 still draws against a full axis');
 });
+
+test('run 203 draws as the curve it is, dips and all', async (t) => {
+  /* **Real values, not invented ones.** These are the eight mAP@50 the backfill recovered
+     for run 203 from the event stream. Worth pinning with the real numbers because the
+     shape is the awkward case: it falls at epoch 3, recovers, falls again at the end. A
+     chart that only ever saw a smooth fixture could mishandle that and look fine. */
+  const map50 = [0.479, 0.617, 0.470, 0.621, 0.541, 0.636, 0.679, 0.607];
+
+  const screen = await drawScreen('training.html', answers(
+    map50.map((value, index) => epoch(index + 1, {
+      map50: value,
+      /* Populated by the same backfill; train_* and duration_seconds were not. */
+      box_loss: 1.6 - index * 0.05,
+      duration_seconds: null,
+    })),
+  ));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const quality = [...detail.querySelectorAll('.evaluation-card')]
+    .find((one) => /Validation quality/.test(one.querySelector('h5')?.textContent || ''));
+
+  const d = quality.querySelector('.result-line.map').getAttribute('d');
+  const ys = [...d.matchAll(/,(\d+\.\d)/g)].map((m) => Number(m[1]));
+
+  assert.equal(ys.length, 8, 'eight epochs, eight points');
+  assert.equal((d.match(/M/g) || []).length, 1, 'one unbroken line: every epoch reported one');
+
+  /* The dip at epoch 3 has to be lower on the page than epochs 2 and 4 -- y grows
+     downward, so a dip is a larger y. This is the assertion a smooth fixture cannot make. */
+  assert.ok(ys[2] > ys[1] && ys[2] > ys[3], `epoch 3 should sit below its neighbours (${ys.join(', ')})`);
+  assert.ok(ys[6] < ys[7], 'and the best epoch, 7, should be the highest point');
+
+  /* The axis stays fixed, so 0.679 does not touch the top. */
+  assert.equal(quality.querySelector('.result-axis text').textContent, '1.0');
+  assert.ok(Math.min(...ys) > 24, 'nothing is pinned to the ceiling');
+});
+
+test('run 203 draws validation loss alone, with the train keys disabled', async (t) => {
+  /* The other half of that chart, on the same real row shape: the backfill filled the
+     validation three and could not fill the train three, because no existing event
+     carries them. Absent, not zero -- and the legend says which. */
+  const screen = await drawScreen('training.html', answers([
+    epoch(1, { box_loss: 1.62, cls_loss: 2.41, dfl_loss: 1.11, duration_seconds: null }),
+    epoch(2, { box_loss: 1.48, cls_loss: 2.02, dfl_loss: 1.04, duration_seconds: null }),
+  ]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const key = (text) => [...detail.querySelectorAll('.result-legend button')].find((b) => b.textContent === text);
+
+  assert.ok(detail.querySelector('.result-line.box-loss').getAttribute('d'), 'validation box loss draws');
+  assert.equal(detail.querySelector('.result-line.box-loss-train').getAttribute('d'), '', 'train does not');
+
+  assert.ok(key('Box (train)').disabled, 'and its key cannot be pressed');
+  assert.ok(!key('Box (val)').disabled, 'while the one with data can');
+
+  /* Mean epoch time is in the same position: correct code, no data until 0.1.6. */
+  const card = [...detail.querySelectorAll('.jobmetric')].find((m) => /Epoch time/.test(m.textContent));
+
+  assert.ok(card.querySelector('.dash'), 'epoch time is a dash, not a zero');
+});
