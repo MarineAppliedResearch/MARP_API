@@ -736,6 +736,10 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .plot-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; padding: 10px; }
 .result-plot { margin: 0; border: 1px solid var(--hairline-2); border-radius: var(--r-sm); background: var(--white); overflow: hidden; }
 .result-plot img { display: block; width: 100%; height: auto; }
+/* A member of the gallery that is a file rather than a picture: no white plate, because
+   there is no render to sit on. */
+.result-plot.is-file { background: var(--sunk); }
+.result-plot.is-file figcaption { border-top: 0; display: grid; gap: 2px; }
 .result-plot figcaption { padding: 6px 8px; border-top: 1px solid var(--hairline-2); background: var(--sunk); color: var(--muted); font-size: 10px; }
 
 .confusion.eight { width: 820px; grid-template-columns: 92px repeat(8, 88px); margin: 0; padding: 10px; }

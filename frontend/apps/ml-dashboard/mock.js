@@ -1576,7 +1576,21 @@ function confusionMatrix(matrix, image) {
 }
 
 /**
- * Per-class AP, which is what makes a confusion matrix actionable.
+ * Per-class quality, one table per metric family.
+ *
+ * **A family, not a split, is what makes a row unique.** A segmentation run reports `box`
+ * and `mask` for the same class — the same four metric names twice — so a table keyed on
+ * class alone would silently show one and drop the other, or interleave them. Grouping
+ * here means segmentation arrives as a second table rather than a rewrite. Today every
+ * row is `box`, so there is one table and no heading noise.
+ *
+ * **Three kinds of row, and they are not interchangeable:**
+ *
+ * - a class MARP resolved to a species: `species_id` and `class_name` both set;
+ * - a class it could not resolve: `species_id` null, `class_name` set. Shown under the
+ *   name the model used, because dropping it would hide a class the model is predicting;
+ * - the all-classes aggregate: `class_name` null. Pulled out and shown apart, because
+ *   listing it among the classes makes it look like one of them.
  *
  * @param {Object[]} classes - `metrics_summary` rows for this run, or empty.
  * @returns {string}
@@ -1585,22 +1599,67 @@ function perClassTable(classes) {
   if (!classes.length) {
     return runSectionWaiting('Per-class quality',
       'Nothing writes <code>metrics_summary</code> yet, so there is no per-class precision, '
-      + 'recall or AP to show. One row per species per split is the shape the schema already has.');
+      + 'recall or AP to show.');
   }
 
   const cell = (value) => (value === null || value === undefined
     ? '<span class="dash" title="Not reported">&mdash;</span>'
     : Number(value).toFixed(3));
 
-  const rows = classes.map((row) => `<tr><th scope="row">${escapeHtml(row.species || `Species ${row.species_id}`)}</th>`
-    + `<td>${cell(row.precision)}</td><td>${cell(row.recall)}</td><td>${cell(row.f1_score)}</td>`
-    + `<td>${cell(row.map50)}</td><td>${cell(row.map5095)}</td></tr>`).join('');
+  /* `classify` sends no mAP at all. A column of dashes says that; a column of zeroes
+     would say the model scored nothing. */
+  const columns = [['Precision', 'precision'], ['Recall', 'recall'], ['F1', 'f1_score'],
+    ['AP@50', 'map50'], ['AP@50&ndash;95', 'map5095']];
+
+  /** What a family is called where a reader sees it. */
+  const FAMILY = { box: 'Box', mask: 'Mask', classify: 'Classification' };
+
+  const families = new Map();
+
+  for (const row of classes) {
+    const family = row.metric_family || 'box';
+
+    if (!families.has(family)) families.set(family, []);
+    families.get(family).push(row);
+  }
+
+  const tableFor = (family, rows) => {
+    /* The aggregate is the row with no class name. It is a different quantity from the
+       classes above it and reads as one of them if it is left in the list. */
+    const overall = rows.find((row) => !row.class_name);
+    const named = rows.filter((row) => row.class_name);
+
+    const body = named.map((row) => {
+      const label = escapeHtml(row.class_name);
+      /* A class the model predicted and MARP could not place. Worth seeing, and worth
+         marking: it means the species lookup found nothing, not that the class is odd. */
+      const unresolved = row.species_id === null || row.species_id === undefined
+        ? ' <span class="faint" title="MARP could not resolve this class to a species">unmatched</span>'
+        : '';
+
+      return `<tr><th scope="row">${label}${unresolved}</th>`
+        + columns.map(([, key]) => `<td>${cell(row[key])}</td>`).join('') + '</tr>';
+    }).join('');
+
+    const foot = overall
+      ? `<tfoot><tr><th scope="row">All classes</th>${columns
+        .map(([, key]) => `<td>${cell(overall[key])}</td>`).join('')}</tr></tfoot>`
+      : '';
+
+    const heading = families.size > 1
+      ? `<h6>${FAMILY[family] || escapeHtml(family)}</h6>`
+      : '';
+
+    return `${heading}<div class="class-metrics-wrap"><table class="class-metrics"><thead><tr><th>Class</th>`
+      + `${columns.map(([label]) => `<th>${label}</th>`).join('')}</tr></thead>`
+      + `<tbody>${body}</tbody>${foot}</table></div>`;
+  };
 
   return '<article class="evaluation-card"><header><div><h5>Per-class quality</h5>'
-    + '<p>One row per class, from the run&rsquo;s own metrics</p></div></header>'
-    + '<div class="class-metrics-wrap"><table class="class-metrics"><thead><tr><th>Class</th>'
-    + '<th>Precision</th><th>Recall</th><th>F1</th><th>AP@50</th><th>AP@50&ndash;95</th></tr></thead>'
-    + `<tbody>${rows}</tbody></table></div></article>`;
+    + `<p>${families.size > 1 ? 'One table per metric family' : 'One row per class, from the run&rsquo;s own metrics'}`
+    + '</p></div></header>'
+    + [...families].map(([family, rows]) => tableFor(family, rows)).join('')
+    + '</article>';
 }
 
 /**
@@ -1623,7 +1682,7 @@ function trainingPlots(plots) {
     R_curve: 'Recall against confidence threshold',
     labels: 'How many instances of each class the dataset held',
     labels_correlogram: 'Where boxes sit and how their sizes relate',
-    results: 'Every metric the run recorded, as the trainer plots it',
+    results: 'Every metric the run recorded, as a spreadsheet',
     confusion_matrix: 'Confusion matrix, as the trainer rendered it',
     confusion_matrix_normalized: 'Confusion matrix, normalised by true class',
   };
@@ -1639,6 +1698,20 @@ function trainingPlots(plots) {
     const said = SAID[stem] || (/^val_batch\d+_pred$/.test(stem)
       ? 'Sample predictions on held-out images'
       : stem.replace(/[_-]+/g, ' '));
+
+    /* **Not everything in this array is a picture.** `results` is Ultralytics' CSV of
+       every metric it recorded, and an `<img>` pointed at a CSV is a broken image icon
+       with a caption under it. The content type decides; anything that is not an image is
+       offered as a file instead of being drawn as one. */
+    const isImage = /^image\//.test(plot.content_type || '')
+      || (!plot.content_type && !/\.(csv|txt|ya?ml|json)$/i.test(plot.name || ''));
+
+    if (!isImage) {
+      const size = Number(plot.bytes) > 0 ? ` <span class="faint">${Math.round(Number(plot.bytes) / 1024)} KB</span>` : '';
+
+      return `<figure class="result-plot is-file"><figcaption><a href="${escapeHtml(plot.url)}" download>`
+        + `${escapeHtml(said)}</a>${size}<span class="b mono">${escapeHtml(plot.name)}</span></figcaption></figure>`;
+    }
 
     return `<figure class="result-plot"><img src="${escapeHtml(plot.url)}" alt="${escapeHtml(said)}" loading="lazy">`
       + `<figcaption>${escapeHtml(said)}</figcaption></figure>`;

@@ -1011,3 +1011,91 @@ test('run 203 draws validation loss alone, with the train keys disabled', async 
 
   assert.ok(card.querySelector('.dash'), 'epoch time is a dash, not a zero');
 });
+
+test('a class MARP could not resolve is shown under the name the model used', async (t) => {
+  /* `species_id` null with `class_name` set means the lookup found nothing -- not that
+     the row is junk. Dropping it would hide a class the model is actively predicting. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
+    class_metrics: [
+      { species_id: 775, class_name: 'Cookie star', metric_family: 'box', precision: 0.81, recall: 0.74, f1_score: 0.77, map50: 0.8, map5095: 0.5 },
+      { species_id: null, class_name: 'Unknown urchin', metric_family: 'box', precision: 0.4, recall: 0.3, f1_score: 0.34, map50: 0.35, map5095: 0.2 },
+      { species_id: null, class_name: null, metric_family: 'box', precision: 0.6, recall: 0.52, f1_score: 0.56, map50: 0.57, map5095: 0.35 },
+    ],
+  })]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const bodyRows = [...detail.querySelectorAll('.class-metrics tbody tr')];
+
+  assert.deepEqual(bodyRows.map((r) => r.querySelector('th').textContent.replace(/\s+/g, ' ').trim()),
+    ['Cookie star', 'Unknown urchin unmatched'],
+    'both classes listed, the unresolved one marked rather than hidden');
+
+  /* **The aggregate is not one of the classes.** Left in the list it reads as a species
+     called nothing, and it is a different quantity from the rows above it. */
+  const foot = detail.querySelector('.class-metrics tfoot tr');
+
+  assert.ok(foot, 'the all-classes row is pulled out');
+  assert.match(foot.textContent, /All classes/);
+  assert.match(foot.textContent, /0\.570/, 'with its own numbers');
+});
+
+test('two metric families are two tables, so segmentation is not a rewrite', async (t) => {
+  /* A segmentation run reports box and mask for the same class -- the same four metric
+     names twice. Keyed on class alone, one would silently replace the other. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
+    class_metrics: [
+      { species_id: 775, class_name: 'Cookie star', metric_family: 'box', precision: 0.81, recall: 0.74, f1_score: 0.77, map50: 0.8, map5095: 0.5 },
+      { species_id: 775, class_name: 'Cookie star', metric_family: 'mask', precision: 0.72, recall: 0.66, f1_score: 0.69, map50: 0.71, map5095: 0.41 },
+    ],
+  })]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.equal(detail.querySelectorAll('.class-metrics').length, 2, 'one table per family');
+  assert.deepEqual([...detail.querySelectorAll('.evaluation-card h6')].map((h) => h.textContent),
+    ['Box', 'Mask'], 'each named, which only appears when there is more than one');
+});
+
+test('a classification run shows dashes for mAP, not zeroes', async (t) => {
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
+    class_metrics: [
+      { species_id: 775, class_name: 'Cookie star', metric_family: 'classify', precision: 0.9, recall: 0.88, f1_score: 0.89, map50: null, map5095: null },
+    ],
+  })]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const cells = [...detail.querySelectorAll('.class-metrics tbody td')];
+
+  assert.ok(cells[3].querySelector('.dash') && cells[4].querySelector('.dash'),
+    'classify sends no mAP at all; a zero would say the model scored nothing');
+});
+
+test('a CSV in the gallery is offered as a file, not drawn as a picture', async (t) => {
+  /* `results` is Ultralytics' CSV of every metric it recorded. An <img> pointed at it is
+     a broken image icon with a caption underneath. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
+    plots: [
+      { name: 'PR_curve.png', url: '/a/pr.png', content_type: 'image/png', bytes: 40000 },
+      { name: 'results.csv', url: '/a/results.csv', content_type: 'text/csv', bytes: 2048 },
+    ],
+  })]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.equal(detail.querySelectorAll('.result-plot img').length, 1, 'only the image is drawn');
+
+  const file = detail.querySelector('.result-plot.is-file');
+
+  assert.ok(file, 'the CSV gets a file tile');
+  assert.ok(file.querySelector('a[download][href="/a/results.csv"]'), 'offered for download');
+  assert.match(file.textContent, /spreadsheet/, 'and captioned as what it is');
+  assert.match(file.textContent, /2 KB/);
+});
