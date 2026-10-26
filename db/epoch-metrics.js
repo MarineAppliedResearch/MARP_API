@@ -66,7 +66,14 @@ const EPOCH_METRIC_NAMES = {
        volunteer box with a drifting clock cannot put a wrong wall-clock time into
        the record this way. `epochs.start_time` and `end_time` are timestamps and
        stay null, because an offset is not a time and the type would have let the
-       lie through. */
+       lie through.
+
+       **The origin is the start of training, so epoch 1 sits at roughly 0.000.**
+       Ultralytics sets `train_time_start` after `_setup_train` has built the
+       dataloaders, loaded the model and built the optimizer, so however long setup
+       took is not inside these numbers -- it is the gap between the attempt's first
+       event and the `on_train_start` settings report. Anyone reading a non-zero
+       first offset as setup time will find 0.000 and think the worker is broken. */
     duration_seconds: 'duration_seconds',
     start_offset_s: 'start_offset_s',
     end_offset_s: 'end_offset_s',

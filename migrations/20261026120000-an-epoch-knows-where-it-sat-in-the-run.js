@@ -17,10 +17,22 @@
  * writing one into a timestamp column would be a lie the type system would have let
  * through. They stay null and keep meaning what their type says.
  *
+ * **The origin is the start of training, not the start of the job, and epoch 1 sits
+ * at roughly 0.000 however long setup took.** Ultralytics sets `train_time_start` at
+ * `_do_train` entry — *after* `_setup_train` has built the dataloaders, loaded the
+ * model and built the optimizer — so a three-minute setup appears nowhere in these
+ * numbers. Anyone expecting a non-zero first offset to reveal it will find `0.000`
+ * and conclude the worker is broken.
+ *
+ * **Setup cost is still recoverable, just not from here:** it is the gap between the
+ * attempt's first event and the settings report sent from `on_train_start`.
+ *
  * **Three properties the worker guarantees, and the storage keeps:**
  *
  * - `end_offset_s - start_offset_s` equals `duration_seconds` exactly. It is the
- *   trainer's own arithmetic recovered, not recomputed here.
+ *   trainer's own arithmetic recovered, not recomputed here. MARP cannot re-assert
+ *   that exactness: subtracting the two decimals it receives reintroduces
+ *   representation error, so the test checks they agree to floating point.
  * - Both are omitted together when there is no duration. Half an interval is not a
  *   measurement, and `db/epoch-metrics.js` drops a lone one rather than storing it.
  * - Both are omitted entirely when there is no origin.
@@ -42,12 +54,22 @@
 
 /** Column to what it holds. */
 const COLUMNS = {
-    start_offset_s: 'Seconds from the start of training to the start of this epoch. '
-        + 'Elapsed time, not an instant: valid for ordering and duration within one run, '
-        + 'never comparable across machines. Null when the run reported no origin.',
+    start_offset_s: 'Seconds from the start of TRAINING to the start of this epoch. '
+        + 'The origin is Ultralytics trainer.train_time_start, set after setup has built '
+        + 'the dataloaders, loaded the model and built the optimizer -- so epoch 1 sits '
+        + 'at roughly 0.000 however long setup took, and setup is not inside these '
+        + 'numbers. It is recoverable as the gap between the attempt first event and '
+        + 'the on_train_start settings report. Elapsed time measured by the trainer, '
+        + "not an instant: Isaac's words, \"ordering and duration only -- valid within "
+        + "a run, never compared across machines.\" A machine an hour out of sync still "
+        + 'measures 42 seconds as 42 seconds, so these depend on its clock ticking '
+        + 'evenly rather than on it being right. Null when the run reported no origin.',
     end_offset_s: 'Seconds from the start of training to the end of this epoch. '
-        + 'end_offset_s minus start_offset_s is duration_seconds exactly, because it is '
-        + "the trainer's own arithmetic rather than a figure recomputed here.",
+        + 'end_offset_s minus start_offset_s is duration_seconds exactly in the trainer, '
+        + 'which computed all three; re-subtracting the decimals stored here agrees only '
+        + 'to floating point. Not a position on any MARP-wide timeline -- nothing the '
+        + 'worker sends asserts one, and if MARP ever places them on its own by adding '
+        + 'an instant it stamped itself, the accuracy of that is MARP to state.',
 };
 
 module.exports = {
