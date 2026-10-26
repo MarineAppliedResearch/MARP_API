@@ -1611,8 +1611,19 @@ function perClassTable(classes) {
   const columns = [['Precision', 'precision'], ['Recall', 'recall'], ['F1', 'f1_score'],
     ['AP@50', 'map50'], ['AP@50&ndash;95', 'map5095']];
 
-  /** What a family is called where a reader sees it. */
-  const FAMILY = { box: 'Box', mask: 'Mask', classify: 'Classification' };
+  /**
+   * What a family is called where a reader sees it.
+   *
+   * **`seg`, not `mask`.** `SegmentMetrics.seg` is Ultralytics' own name for it; `(M)`
+   * is only the suffix on the metric keys. An unlisted family falls through to its own
+   * key below, so a wrong guess here would have shown up as a heading reading "seg"
+   * rather than as a dropped table -- but it would have shown up on the first
+   * segmentation run and nowhere before it.
+   *
+   * Classification is deliberately absent: it reports top-1 and top-5 and no per-class
+   * array at all, so it never arrives as rows of this shape.
+   */
+  const FAMILY = { box: 'Box', seg: 'Segmentation' };
 
   const families = new Map();
 
@@ -1641,9 +1652,15 @@ function perClassTable(classes) {
         + columns.map(([, key]) => `<td>${cell(row[key])}</td>`).join('') + '</tr>';
     }).join('');
 
+    /* **"Classes seen", not "all classes".** The aggregate is a mean over the classes that
+       actually appeared in validation, not over the vocabulary -- a species the run never
+       saw is not a zero in it, it is absent from it. Labelling it "all" invites exactly
+       the reading it cannot support, which is the VRAM problem again: the number is fine
+       and the word was wrong. */
     const foot = overall
-      ? `<tfoot><tr><th scope="row">All classes</th>${columns
-        .map(([, key]) => `<td>${cell(overall[key])}</td>`).join('')}</tr></tfoot>`
+      ? `<tfoot><tr><th scope="row" title="Mean over the classes that appeared in validation, `
+        + `not over the whole species vocabulary">Classes seen (${named.length})</th>${columns
+          .map(([, key]) => `<td>${cell(overall[key])}</td>`).join('')}</tr></tfoot>`
       : '';
 
     const heading = families.size > 1
@@ -1656,7 +1673,14 @@ function perClassTable(classes) {
   };
 
   return '<article class="evaluation-card"><header><div><h5>Per-class quality</h5>'
-    + `<p>${families.size > 1 ? 'One table per metric family' : 'One row per class, from the run&rsquo;s own metrics'}`
+    /* **The caveat goes where the comparison is made.** Every class here is scored at one
+       shared confidence threshold, picked from the mean F1 across classes -- so a class
+       whose own best threshold sits elsewhere is reported off its peak, and two classes
+       read against each other are not each at their best. Buried in a tooltip this would
+       be true and useless. */
+    + `<p>${families.size > 1 ? 'One table per metric family. ' : ''}`
+    + 'All classes are scored at one shared confidence threshold, chosen from the mean F1 '
+    + '&mdash; so a class whose own best threshold is elsewhere reads below its peak.'
     + '</p></div></header>'
     + [...families].map(([family, rows]) => tableFor(family, rows)).join('')
     + '</article>';

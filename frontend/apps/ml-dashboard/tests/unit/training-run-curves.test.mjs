@@ -1036,8 +1036,12 @@ test('a class MARP could not resolve is shown under the name the model used', as
      called nothing, and it is a different quantity from the rows above it. */
   const foot = detail.querySelector('.class-metrics tfoot tr');
 
-  assert.ok(foot, 'the all-classes row is pulled out');
-  assert.match(foot.textContent, /All classes/);
+  assert.ok(foot, 'the aggregate row is pulled out');
+  /* **"Classes seen", not "all classes".** It is a mean over the classes that appeared in
+     validation, not over the vocabulary -- a species the run never saw is absent from it,
+     not a zero in it. */
+  assert.match(foot.textContent, /Classes seen \(2\)/);
+  assert.doesNotMatch(foot.textContent, /All classes/);
   assert.match(foot.textContent, /0\.570/, 'with its own numbers');
 });
 
@@ -1047,7 +1051,7 @@ test('two metric families are two tables, so segmentation is not a rewrite', asy
   const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
     class_metrics: [
       { species_id: 775, class_name: 'Cookie star', metric_family: 'box', precision: 0.81, recall: 0.74, f1_score: 0.77, map50: 0.8, map5095: 0.5 },
-      { species_id: 775, class_name: 'Cookie star', metric_family: 'mask', precision: 0.72, recall: 0.66, f1_score: 0.69, map50: 0.71, map5095: 0.41 },
+      { species_id: 775, class_name: 'Cookie star', metric_family: 'seg', precision: 0.72, recall: 0.66, f1_score: 0.69, map50: 0.71, map5095: 0.41 },
     ],
   })]));
 
@@ -1056,24 +1060,11 @@ test('two metric families are two tables, so segmentation is not a rewrite', asy
   const detail = await open(screen, 21779);
 
   assert.equal(detail.querySelectorAll('.class-metrics').length, 2, 'one table per family');
+  /* `seg` is Ultralytics' own name -- `SegmentMetrics.seg`. `(M)` is only the suffix on
+     the metric keys, and guessing "mask" would have shown up on the first segmentation
+     run and nowhere before it. */
   assert.deepEqual([...detail.querySelectorAll('.evaluation-card h6')].map((h) => h.textContent),
-    ['Box', 'Mask'], 'each named, which only appears when there is more than one');
-});
-
-test('a classification run shows dashes for mAP, not zeroes', async (t) => {
-  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
-    class_metrics: [
-      { species_id: 775, class_name: 'Cookie star', metric_family: 'classify', precision: 0.9, recall: 0.88, f1_score: 0.89, map50: null, map5095: null },
-    ],
-  })]));
-
-  t.after(screen.close);
-
-  const detail = await open(screen, 21779);
-  const cells = [...detail.querySelectorAll('.class-metrics tbody td')];
-
-  assert.ok(cells[3].querySelector('.dash') && cells[4].querySelector('.dash'),
-    'classify sends no mAP at all; a zero would say the model scored nothing');
+    ['Box', 'Segmentation'], 'each named, which only appears when there is more than one');
 });
 
 test('a CSV in the gallery is offered as a file, not drawn as a picture', async (t) => {
@@ -1098,4 +1089,26 @@ test('a CSV in the gallery is offered as a file, not drawn as a picture', async 
   assert.ok(file.querySelector('a[download][href="/a/results.csv"]'), 'offered for download');
   assert.match(file.textContent, /spreadsheet/, 'and captioned as what it is');
   assert.match(file.textContent, /2 KB/);
+});
+
+test('the shared-threshold caveat sits where two classes get compared', async (t) => {
+  /* Per-class precision, recall and F1 are all reported at one confidence threshold,
+     chosen from the mean F1 across classes -- so a class whose own optimum is elsewhere
+     reads below its peak. That is a caveat about comparing two rows, so it belongs on the
+     card where the rows are, not in a tooltip somebody has to find. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
+    class_metrics: [
+      { species_id: 1, class_name: 'A', metric_family: 'box', precision: 0.9, recall: 0.8, f1_score: 0.85, map50: 0.88, map5095: 0.6 },
+      { species_id: 2, class_name: 'B', metric_family: 'box', precision: 0.4, recall: 0.9, f1_score: 0.56, map50: 0.5, map5095: 0.3 },
+    ],
+  })]));
+
+  t.after(screen.close);
+
+  const card = [...(await open(screen, 21779)).querySelectorAll('.evaluation-card')]
+    .find((one) => /Per-class quality/.test(one.querySelector('h5')?.textContent || ''));
+
+  assert.match(card.querySelector('header p').textContent, /one shared confidence threshold/);
+  assert.match(card.querySelector('header p').textContent, /below its peak/,
+    'and says what that costs the reader, not just that it happens');
 });
