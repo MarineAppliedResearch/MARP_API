@@ -53,6 +53,8 @@ const SUBSYSTEMS = {
             'gpu-dataset-archive',
             'gpu-training-submit',
             'gpu-training-run-record',
+            /* #268: the name a training job gets when nobody typed one. */
+            'gpu-training-job-name',
             'gpu-trained-model-registration',
             /* #268: what the training panel reads back -- the per-epoch metric names the
                ingest was getting wrong, and the pace series nothing served. */

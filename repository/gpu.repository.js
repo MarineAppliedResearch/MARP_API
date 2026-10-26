@@ -1070,6 +1070,17 @@ class GpuRepository {
                         a.progress_unit,
                         a.progress_phase,
                         a.progress_elapsed_s,
+                        /* **The Updated column is otherwise faithfully stale.** Nothing on
+                           the heartbeat path touches the job row, so gpu_jobs.updated_at
+                           stops moving the moment a job is created while its attempt keeps
+                           reporting every minute.
+
+                           Added to the read rather than making the write churn. An UPDATE
+                           per running job per minute writes a new tuple at the end of the
+                           heap, and that is exactly what reshuffled rows and closed expanded
+                           panels on the Datasets screen -- see c49990fd. A stale cell is the
+                           smaller problem, and this is the smaller fix. */
+                        a.last_heartbeat_at,
                         a.worker_id,
                         w.name AS worker_name,
                         (SELECT count(DISTINCT worker_id)::int
@@ -1078,7 +1089,8 @@ class GpuRepository {
                    FROM gpu_jobs j
                    LEFT JOIN LATERAL (
                         SELECT progress_done, progress_total, progress_unit,
-                               progress_phase, progress_elapsed_s, worker_id
+                               progress_phase, progress_elapsed_s, last_heartbeat_at,
+                               worker_id
                           FROM gpu_job_attempts
                          WHERE job_id = j.id
                          ORDER BY id DESC

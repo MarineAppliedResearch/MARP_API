@@ -457,6 +457,73 @@ function sleep(milliseconds) {
  *
  * @class GpuService
  */
+/**
+ * How much of a dataset or model name a generated job name keeps.
+ *
+ * The Jobs table gives this column perhaps forty characters before it ellipsizes, and two
+ * full names plus a time is more than that. Twenty-four keeps the distinctive part of
+ * every name MARP currently holds -- the longest is `MBARI-Benthic-Supercategory-2025` at
+ * thirty-two -- while leaving the result readable. The full names are in the spec either
+ * way, so nothing is lost, only shortened.
+ *
+ * @constant
+ * @type {number}
+ */
+const GENERATED_NAME_PART = 24;
+
+/**
+ * A name for a training job nobody named, from what it is actually training.
+ *
+ * **`Job 21782` is not a name**, and the submit form has been promising this all along --
+ * its Run name field reads *"Optional. Blank is left to MARP."* So the UI said MARP names
+ * it and MARP did not; `gpu_jobs.name` is null on every training job ever queued.
+ *
+ * **Dataset, model, and the time of day.** Isaac asked for the first two. The third is
+ * there because he has run the same model over the same dataset three times in a day, and
+ * a name that is identical across those stops being useful at exactly the moment there is
+ * most to tell apart. The job id would disambiguate too, and is excluded deliberately --
+ * not showing an id is the point of the exercise.
+ *
+ * **It collides when the same dataset and model are submitted inside the same minute**,
+ * which is a double submission rather than two runs worth distinguishing. Uniqueness is
+ * not enforced: that would mean a round trip per submit to ask what exists, and
+ * `gpu_jobs.name` has never been unique -- two people may legitimately type the same
+ * thing. A name is a label here, not a key.
+ *
+ * **Nothing parses this**, which is why it can be prose. The dashboard reads
+ * `job.name || source || "Job <id>"` and the search box matches it as text; no code
+ * anywhere splits it, and the job id remains the identifier. If that ever changes, this
+ * is the comment that should stop it.
+ *
+ * **The time is the coordinator's local time**, which is the clock the person reading the
+ * dashboard is on. Deliberately not UTC: this is a label for a human, and the Created
+ * column already carries the date.
+ *
+ * @param {Object} spec - The job spec, after the dataset has been composed.
+ * @param {Date} [when] - When it was submitted; now by default.
+ * @returns {?string} The name, or null when there is not enough to make one.
+ */
+function composeTrainingJobName(spec, when = new Date()) {
+    const shorten = (value) => {
+        const text = String(value === undefined || value === null ? '' : value).trim();
+
+        return text.length > GENERATED_NAME_PART ? `${text.slice(0, GENERATED_NAME_PART - 1)}…` : text;
+    };
+
+    const dataset = shorten(spec && spec.dataset && spec.dataset.name);
+    const model = shorten(spec && spec.model && spec.model.name);
+
+    /* **Null rather than a name with a hole in it.** A spec missing one of the two is
+       already refused by the time this runs, so this is the belt rather than the braces --
+       but "undefined · rockfish5" reaching the screen would be worse than `Job 21782`,
+       which at least resolves to something. */
+    if (!dataset || !model) return null;
+
+    const clock = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
+
+    return `${dataset} · ${model} · ${clock}`;
+}
+
 class GpuService {
 
     /**
@@ -2072,6 +2139,15 @@ class GpuService {
             }
         }
 
+        /* **An explicit name always wins, and blank counts as absent.** The form treats a
+           cleared field as not answering rather than as answering with nothing, so the
+           condition above is what decides -- a name is generated only where a person left
+           it alone, and nothing here can overwrite what somebody typed.
+
+           Training only. The same block in submitJob above is untouched: an inference job
+           names a video, which the screens already fall back to, so there is nothing a
+           generated name would add there. */
+
         /* Composed here rather than taken from the submitter. The locator is
            coordinator-relative, exactly as a model artifact's is, so a worker
            resolves it against whichever MARP it is enrolled with and a spec
@@ -2085,6 +2161,11 @@ class GpuService {
                 sha256: String(archive.archive_sha256).toLowerCase(),
             },
         };
+
+        /* Composed from `jobSpec` rather than from `spec`, because the dataset name is
+           filled in up there from the archive row -- the submitter sends a dataset id and
+           nothing else, so naming off the raw spec would produce a name with a hole in it. */
+        if (name === null) name = composeTrainingJobName(jobSpec);
 
         const createdBy = principal && principal.type === 'user' ? principal.id : null;
         const jobs = await gpuRepository.createJobs([{
