@@ -2333,11 +2333,14 @@ function renderTrainingRecent(views) {
          `run`, so a queued or leased job -- the only kind anybody watches -- had none. */
       + '<td class="ex"><button class="exbtn" type="button" aria-label="Show this job"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
         /* **Titled, because the column is 188px and these names are longer than that.**
-         A generated training name runs to the forties -- dataset, model, time of day --
-         and about thirty-two characters fit, so the time is the part that falls off the
-         end. It is also the part that tells three runs of the same model over the same
-         dataset apart, which is why losing it silently is worse than losing the middle.
-         The full string is one hover away rather than only inside the row. */
+         A generated training name runs to the forties and about thirty-two characters
+         fit, so every one of them truncates -- including names a person typed.
+
+         The time of day leads, which is deliberate and was measured: it is what tells
+         three runs of one model over one dataset apart, and at the tail a long dataset
+         name ate the budget and lost it. So what falls off now is the model name, which
+         is the part least likely to differ between the runs somebody is comparing. The
+         full string is one hover away regardless. */
     + `<td class="jname" title="${escapeHtml(view.title)}"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
       /* **What the model's task is**, from the base model rather than guessed from which
          metric columns are null. Once three kinds of run share this table, *Best mAP*

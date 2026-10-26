@@ -1264,10 +1264,10 @@ test('a heartbeat older than the job row does not drag Updated backwards', async
 });
 
 test('a long generated name keeps its whole self on hover', async (t) => {
-  /* The column is 188px, about thirty-two characters; a generated training name runs to
-     the forties and the time of day is last, so it is what falls off. The time is also
-     what tells three runs of one model over one dataset apart. */
-  const full = 'CookieStarTest · rockfish5-2026-10-20 · 15:44';
+  /* The column is 188px, about thirty-two characters, and a generated name runs to the
+     forties -- so every one truncates. The time leads so that the part telling three runs
+     of one model over one dataset apart survives; the model name is what falls off. */
+  const full = '15:44 · CookieStarTest · rockfish5-2026-10-20';
 
   const screen = await drawScreen('training.html', {
     ...answers([], []),
