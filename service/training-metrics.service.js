@@ -1,0 +1,306 @@
+/**
+ * Taking what YOLO measured about a finished run into MARP.
+ *
+ * **Half of this already worked and that shaped the design.** Every file an attempt
+ * hands over already becomes an `artifacts` row with its sha256, size and content type,
+ * through the content-addressed upload the model weights use -- `recordJobArtifacts`
+ * runs for every attempt whatever the job kind, and the role it files them under is
+ * validated as a non-empty string with no allow-list. So the plots needed no new
+ * transport, no new event kind and no new route. What was missing was a role convention,
+ * a way to read them back, and the numbers.
+ *
+ * This service is the numbers: one JSON artifact, published at `on_train_end` after the
+ * final validation, carrying the class vocabulary once, the confusion matrix, and a
+ * metrics block per family. `db/final-metrics.js` reads it; this writes what it read.
+ *
+ * **It never fails the attempt.** The observation ingest withdraws a success that did
+ * not reach the database (#225) because observations *are* the deliverable of an
+ * inference job. A training job's deliverable is the weights, which are already stored
+ * and verified by hash by the time this runs. Costing somebody hours of GPU time because
+ * a plot's JSON was malformed would be the wrong trade, so a failure here is recorded
+ * and reported and the run stays succeeded.
+ *
+ * @fileoverview Ingesting a training run's end-of-run report.
+ * @module service/training-metrics.service
+ */
+
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const db = require('../model');
+const logger = require('../logger/api.logger');
+const { ARTIFACT_DIRECTORY } = require('../config/gpu-orchestration');
+const { FINAL_METRICS_ROLE, finalMetrics } = require('../db/final-metrics');
+const ingestRepository = require('../repository/observation-ingest.repository');
+const trainingMetricsRepository = require('../repository/training-metrics.repository');
+
+class TrainingMetricsService {
+    /**
+     * @param {Object} [repository] - Metrics repository.
+     * @param {Object} [database] - Model registry.
+     */
+    constructor(repository = trainingMetricsRepository, database = db) {
+        this.repository = repository;
+        this.db = database;
+    }
+
+    /**
+     * Read an attempt's `final_metrics` artifact into the run's record.
+     *
+     * **Absence is the normal case and is not an error.** A stopped run produces none of
+     * this -- the trainer unwinds out of its training loop by exception, so the final
+     * evaluation and the end-of-run callback never execute -- and every run that
+     * finished before this feature existed has none either, permanently, because the job
+     * workspace is deleted once MARP holds the result (#65). There is no backfill
+     * anywhere, so a run without a report is simply a run without one.
+     *
+     * @async
+     * @param {Object} job - The job row, with `artifacts` filtered to this attempt.
+     * @returns {Promise<Object>} `{stored}` with what was written, or `{skipped}`, or
+     *   `{failed}` with the reason. Never throws.
+     */
+    async ingestFinalMetrics(job) {
+        try {
+            if (!job || job.kind !== 'training') {
+                return { skipped: 'not a training job' };
+            }
+
+            const artifact = (job.artifacts || []).find(
+                (row) => row.artifact_type === FINAL_METRICS_ROLE
+            );
+
+            if (!artifact) {
+                return { skipped: `this attempt handed over no ${FINAL_METRICS_ROLE} artifact` };
+            }
+
+            const report = this.readReport(job, artifact);
+
+            if (report === null) {
+                return { failed: `job ${job.id}'s ${FINAL_METRICS_ROLE} artifact is not readable JSON` };
+            }
+
+            const parsed = finalMetrics(report);
+
+            /* The split names a NOT NULL column. A report that does not say which split
+               it evaluated cannot be stored against one, and defaulting it would make a
+               guess indistinguishable from something the worker said. */
+            if (!parsed || !parsed.split) {
+                return { failed: `job ${job.id}'s report does not say which split it evaluated` };
+            }
+
+            const run = await this.repository.findTrainingRunByJob(job.id);
+
+            if (!run) {
+                return { skipped: `job ${job.id} has no training run to record metrics against` };
+            }
+
+            const rows = await this.resolveClasses(parsed.rows, run.model_id);
+
+            return await this.store({ run, parsed, rows });
+        } catch (error) {
+            const reason = error && error.message ? error.message : String(error);
+
+            logger.error(
+                `Error::final metrics ingest failed for job ${job && job.id}: ${reason}`
+            );
+
+            return { failed: reason };
+        }
+    }
+
+    /**
+     * Take the end-of-run report from an attempt that has just published a result.
+     *
+     * **Only this attempt's artifacts**, for the same reason the observation ingest
+     * filters them: a job finished by several volunteers in sequence accumulates one set
+     * per attempt, and the newest report is the one that describes the model that was
+     * actually produced.
+     *
+     * @async
+     * @param {Object} published - What `publishResult` returned.
+     * @returns {Promise<Object>} The same answer `ingestFinalMetrics` gives.
+     */
+    async ingestForPublishedAttempt(published) {
+        if (!published || !published.job_id) {
+            return { skipped: 'nothing was published' };
+        }
+
+        try {
+            /* Required here rather than at the top of the file: `gpu.repository` is the
+               busiest module in this repository and a top-level cycle through it would
+               be a trap for whoever next reorders imports there. */
+            const gpuRepository = require('../repository/gpu.repository');
+
+            const detail = await gpuRepository.getJobDetail(published.job_id);
+
+            if (!detail || detail.job.kind !== 'training') {
+                return { skipped: 'not a training job' };
+            }
+
+            const mine = (detail.artifacts || []).filter(
+                (artifact) => artifact.metadata
+                    && Number(artifact.metadata.attempt_id) === Number(published.attempt_id)
+            );
+
+            return await this.ingestFinalMetrics({ ...detail.job, artifacts: mine });
+        } catch (error) {
+            const reason = error && error.message ? error.message : String(error);
+
+            logger.error(
+                `Error::final metrics lookup failed for job ${published.job_id}: ${reason}`
+            );
+
+            return { failed: reason };
+        }
+    }
+
+    /**
+     * Read and parse the report's bytes.
+     *
+     * @param {Object} job - The job, for the message.
+     * @param {Object} artifact - The artifact row.
+     * @returns {?Object} The parsed report, or null when it could not be read.
+     */
+    readReport(job, artifact) {
+        const file = path.join(ARTIFACT_DIRECTORY, artifact.hash);
+
+        if (!fs.existsSync(file)) {
+            logger.error(
+                `Error::job ${job.id}'s ${FINAL_METRICS_ROLE} artifact ${artifact.hash} `
+                + 'is recorded but its bytes are not on disk'
+            );
+
+            return null;
+        }
+
+        try {
+            return JSON.parse(fs.readFileSync(file, 'utf8'));
+        } catch (error) {
+            return null;
+        }
+    }
+
+    /**
+     * Attach a species to each per-class row, where MARP can tell which one.
+     *
+     * **A class that does not resolve keeps its row.** The observation ingest refuses an
+     * unresolvable name, and rightly: an observation with no species is not an
+     * observation. A metrics row is different -- the class is a fact about the model
+     * whatever MARP can match it to, the model is actively predicting it, and dropping
+     * it would hide exactly the class somebody needs to see. So `class_name` is kept and
+     * `species_id` stays null, which is why both columns exist.
+     *
+     * The lookup narrows to the model's trained species before the whole catalogue, for
+     * the reason recorded in the repository's own notes: common names are not unique
+     * across species lists -- `Red sea urchin` is on two -- so the unnarrowed lookup can
+     * match twice with no grounds to choose. Two matches resolve to null here rather
+     * than picking one.
+     *
+     * @async
+     * @param {Array<Object>} rows - Rows from `db/final-metrics.js`.
+     * @param {number} modelId - The model the run trained.
+     * @returns {Promise<Array<Object>>} The same rows, each with `species_id`.
+     */
+    async resolveClasses(rows, modelId) {
+        const cache = new Map();
+
+        const resolved = [];
+
+        for (const row of rows) {
+            if (row.class_name === null) {
+                resolved.push({ ...row, species_id: null });
+                continue;
+            }
+
+            if (!cache.has(row.class_name)) {
+                cache.set(row.class_name, await this.speciesFor(row.class_name, modelId));
+            }
+
+            resolved.push({ ...row, species_id: cache.get(row.class_name) });
+        }
+
+        return resolved;
+    }
+
+    /**
+     * The one species a class name means, or null when MARP cannot tell.
+     *
+     * @async
+     * @param {string} className - The class as the model named it.
+     * @param {number} modelId - The model.
+     * @returns {Promise<?number>} A species id, or null.
+     */
+    async speciesFor(className, modelId) {
+        const trained = await ingestRepository.findTrainedSpeciesByName(modelId, className);
+
+        if (trained.length === 1) return trained[0].id;
+
+        // More than one even within the model's own species is not resolvable, and
+        // guessing would attach a measurement to the wrong species permanently.
+        if (trained.length > 1) return null;
+
+        const all = await ingestRepository.findSpeciesByName(className);
+
+        return all.length === 1 ? all[0].id : null;
+    }
+
+    /**
+     * Write the rows and the matrix, in one transaction.
+     *
+     * @async
+     * @param {Object} params
+     * @param {Object} params.run - The training run.
+     * @param {Object} params.parsed - What `finalMetrics` read.
+     * @param {Array<Object>} params.rows - Rows with species resolved.
+     * @returns {Promise<Object>} `{stored}`.
+     */
+    async store({ run, parsed, rows }) {
+        const transaction = await this.db.sequelize.transaction();
+
+        try {
+            const written = await this.repository.replaceMetrics({
+                trainingRunId: run.id,
+                split: parsed.split,
+                rows,
+                transaction,
+            });
+
+            /* A report with no matrix stores no matrix, and no existing one is deleted
+               on its behalf: a run that reported numbers but not a matrix has not
+               retracted a matrix it reported earlier. Nothing is ever derived to fill
+               the gap -- a matrix built from per-class precision and recall is
+               arithmetic dressed as a measurement. */
+            if (parsed.confusion) {
+                await this.repository.storeConfusionMatrix({
+                    trainingRunId: run.id,
+                    split: parsed.split,
+                    confusion: parsed.confusion,
+                    classes: parsed.classes,
+                    transaction,
+                });
+            }
+
+            await transaction.commit();
+
+            return {
+                stored: {
+                    training_run_id: run.id,
+                    split: parsed.split,
+                    metrics_rows: written,
+                    confusion_matrix: Boolean(parsed.confusion),
+                    unresolved_classes: rows.filter(
+                        (row) => row.class_name !== null && row.species_id === null
+                    ).length,
+                },
+            };
+        } catch (error) {
+            await transaction.rollback();
+            throw error;
+        }
+    }
+}
+
+module.exports = new TrainingMetricsService();
+module.exports.TrainingMetricsService = TrainingMetricsService;

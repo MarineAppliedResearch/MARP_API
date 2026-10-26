@@ -30,6 +30,7 @@ const ingestRepository = require('../repository/observation-ingest.repository');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const gpuPlaybackService = require('./gpu-playback.service');
 const observationIngestService = require('./observation-ingest.service');
+const trainingMetricsService = require('./training-metrics.service');
 const logger = require('../logger/api.logger');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const {
@@ -1352,6 +1353,15 @@ class GpuService {
 
         const ingest = await this.ingestPublishedJob(published);
 
+        // **What YOLO measured, which is not an ingest and must not behave like one.**
+        // A training job is not in `INGESTIBLE_JOB_KINDS`, so the branch below never
+        // fires for one, and this deliberately cannot withdraw a success: the
+        // deliverable of a training run is the weights, which are already stored and
+        // verified by hash. Costing a volunteer hours of GPU time because a plot's JSON
+        // was malformed would be the wrong trade, so a failure here is reported and the
+        // run stays succeeded.
+        const trainingMetrics = await trainingMetricsService.ingestForPublishedAttempt(published);
+
         // **A success that did not reach the database is withdrawn** (#225).
         // `publishResult` marked the attempt succeeded because the bytes arrived;
         // that is only half of finishing, and an ingest that refused them means
@@ -1382,7 +1392,15 @@ class GpuService {
             };
         }
 
-        return ingest === null ? published : { ...published, ingest };
+        const answer = ingest === null ? { ...published } : { ...published, ingest };
+
+        // Only when there was something to say. A `skipped` on every inference result
+        // would be noise in an answer the worker reads.
+        if (!trainingMetrics.skipped) {
+            answer.training_metrics = trainingMetrics;
+        }
+
+        return answer;
     }
 
     /**
