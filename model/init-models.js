@@ -47,6 +47,7 @@ var _epochs = require("./epochs.model");
 var _hyperparameters = require("./hyperparameters.model");
 var _metrics_summary = require("./metrics_summary.model");
 var _metrics_curves = require("./metrics_curves.model");
+var _training_run_confusion_matrices = require("./training_run_confusion_matrices.model");
 var _artifacts = require("./artifacts.model");
 
 /**
@@ -78,6 +79,7 @@ function initModels(sequelize) {
   var hyperparameters = _hyperparameters(sequelize, DataTypes);
   var metrics_summary = _metrics_summary(sequelize, DataTypes);
   var metrics_curves = _metrics_curves(sequelize, DataTypes);
+  var training_run_confusion_matrices = _training_run_confusion_matrices(sequelize, DataTypes);
   var artifacts = _artifacts(sequelize, DataTypes);
 
 
@@ -118,6 +120,7 @@ function initModels(sequelize) {
     hyperparameters,
     metrics_summary,
     metrics_curves,
+    training_run_confusion_matrices,
     artifacts,
   };
 }

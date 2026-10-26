@@ -56,6 +56,24 @@ const { Model } = require('sequelize');
  *           type: string
  *           enum: [train, val, test]
  *           description: Specifies which dataset split these metrics apply to - "train", "val", or "test".
+ *         metric_family:
+ *           type: string
+ *           enum: [box, mask, classify]
+ *           nullable: true
+ *           description: >
+ *             Which vocabulary this row's numbers are in. A segmentation run reports the
+ *             same four metric names for boxes and for masks, so it writes a "box" row
+ *             and a "mask" row per class. A "classify" row leaves map50 and map5095
+ *             null, and that is a different fact from a detection row that failed to
+ *             measure them - which is what this column exists to keep tellable apart.
+ *         class_name:
+ *           type: string
+ *           nullable: true
+ *           description: >
+ *             The class as the model named it. Null means the all-classes aggregate.
+ *             Set with a null species_id means a class MARP could not resolve to a
+ *             species; the row is kept, because the model is actively predicting that
+ *             class and dropping it would hide it.
  *         precision:
  *           type: number
  *           format: float
@@ -228,6 +246,20 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         comment:
           'Specifies which dataset split these metrics apply to: "train", "val", or "test".',
+      },
+
+      metric_family: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment:
+          'Which vocabulary this row\'s numbers are in: "box", "mask" or "classify". A segmentation run reports the same four metric names twice, once per family, so it writes two rows per class rather than needing extra columns. Null on rows written before this column existed.',
+      },
+
+      class_name: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment:
+          'The class as the model named it. Null means the all-classes aggregate; set with a null species_id means a class MARP could not resolve to a species, which is kept rather than dropped.',
       },
 
       precision: {

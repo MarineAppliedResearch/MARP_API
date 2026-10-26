@@ -79,6 +79,13 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
       });
 
+      // One training run can have one confusion matrix per evaluated split
+      this.hasMany(models.training_run_confusion_matrices, {
+        as: 'confusion_matrices',
+        foreignKey: 'training_run_id',
+        onDelete: 'CASCADE',
+      });
+
       // One training run can have one hyperparameter record
       this.hasOne(models.hyperparameters, {
         as: 'hyperparameters',
