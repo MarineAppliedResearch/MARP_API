@@ -6912,6 +6912,36 @@
             "nullable": true,
             "description": "Distribution Focal Loss (DFL) for this epoch, if applicable to the model type."
           },
+          "train_box_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean training box loss over this epoch. The box_loss column beside it is the validation loss; the gap between the two is the overfitting signal."
+          },
+          "train_cls_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean training classification loss over this epoch. Null means not reported -- the trainer has none through a NaN-recovery epoch -- never zero."
+          },
+          "train_dfl_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean training distribution-focal loss over this epoch. A genuine 0.0 is stored as 0.0; an absent reading is null."
+          },
+          "start_offset_s": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Seconds from the start of training to the start of this epoch. Elapsed time measured by the trainer, not an instant, and not a position on any MARP-wide timeline."
+          },
+          "end_offset_s": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Seconds from the start of training to the end of this epoch. Its difference from start_offset_s is duration_seconds, exactly in the trainer that computed all three."
+          },
           "timestamp": {
             "type": "string",
             "format": "date-time",

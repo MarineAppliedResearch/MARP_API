@@ -397,6 +397,99 @@ describe('Deciding whether an epoch row came from the old mapping', () => {
     });
 });
 
+/**
+ * Every column the table holds reaches the endpoint that serves it.
+ *
+ * **A column can exist, be written, hold the right value, and still be invisible.** The
+ * training losses were added by migration, written by the ingest in raw SQL, verified in
+ * the database and repaired on an earlier run — and `GET /training_run/:id/epochs`
+ * returned them nowhere, because `getEpochsForRun` is a Sequelize `findAll` and the model
+ * never declared them. Not null in the response: **absent**. So the dashboard drew its
+ * empty state, correctly, over data that was sitting right there.
+ *
+ * The migration is not the contract; the model is what the read can see. This test is the
+ * one that would have caught it, and it asserts presence rather than value — a null is a
+ * fine answer, an absent key is not.
+ */
+describe('The columns GET /api/v2/training_run/:id/epochs serves', () => {
+    let epochId;
+
+    beforeAll(async () => {
+        const [epoch] = await query(
+            `INSERT INTO epochs (training_run_id, epoch_number, precision, recall,
+                                 map50, map5095, box_loss, cls_loss, dfl_loss,
+                                 train_box_loss, train_cls_loss, train_dfl_loss,
+                                 duration_seconds, start_offset_s, end_offset_s,
+                                 timestamp, created_at, updated_at)
+             VALUES (:runId, 1, 0.7, 0.69, 0.68, 0.42,
+                     1.36, 1.51, 0.81, 0.98, 0.43, 0.78,
+                     27.123, 12.5, 39.623, NOW(), NOW(), NOW())
+             RETURNING id`,
+            { runId: made.trainingRunId }
+        );
+
+        epochId = epoch.id;
+    });
+
+    afterAll(async () => {
+        if (epochId) {
+            await db.sequelize.query('DELETE FROM epochs WHERE id = :id', {
+                replacements: { id: epochId }, logging: false,
+            });
+        }
+    });
+
+    it('includes both loss series, so the overfitting gap can be drawn', async () => {
+        const res = await global.api.get(`/api/v2/training_run/${made.trainingRunId}/epochs`);
+
+        expect(res.status).toBe(200);
+        expect(res.body).toHaveLength(1);
+
+        const epoch = res.body[0];
+
+        /* The validation set, which has always come through. */
+        expect(epoch.box_loss).toBeCloseTo(1.36);
+
+        /* And the training set, which did not — the whole point of the columns. */
+        expect(epoch.train_box_loss).toBeCloseTo(0.98);
+        expect(epoch.train_cls_loss).toBeCloseTo(0.43);
+        expect(epoch.train_dfl_loss).toBeCloseTo(0.78);
+    });
+
+    /**
+     * **Present, not merely non-null.** The failure was an absent key, which reads as
+     * "this MARP does not have the column" rather than "this epoch has no value" — so a
+     * chart cannot tell a gap in the data from a gap in the API. `toHaveProperty` is the
+     * assertion that distinguishes them; `toBeNull` would pass on neither.
+     */
+    it('names every column it holds, even where the value is null', async () => {
+        const res = await global.api.get(`/api/v2/training_run/${made.trainingRunId}/epochs`);
+        const epoch = res.body[0];
+
+        for (const column of [
+            'train_box_loss', 'train_cls_loss', 'train_dfl_loss',
+            'start_offset_s', 'end_offset_s', 'duration_seconds',
+            'map50', 'map5095', 'precision', 'recall',
+            'box_loss', 'cls_loss', 'dfl_loss', 'start_time', 'end_time',
+        ]) {
+            expect(epoch).toHaveProperty(column);
+        }
+
+        /* The two that stay null until a worker sends them, which is a value rather
+           than an omission. */
+        expect(epoch.start_time).toBeNull();
+        expect(epoch.end_time).toBeNull();
+    });
+
+    it('carries the offsets, for when a build that sends them lands', async () => {
+        const res = await global.api.get(`/api/v2/training_run/${made.trainingRunId}/epochs`);
+        const epoch = res.body[0];
+
+        expect(epoch.start_offset_s).toBeCloseTo(12.5);
+        expect(epoch.end_offset_s).toBeCloseTo(39.623);
+    });
+});
+
 describe('GET /api/v2/training_run/:id/pace', () => {
 
     it('answers 404 for a run that does not exist', async () => {

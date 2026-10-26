@@ -286,6 +286,83 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      // -------------------------------
+      // TRAINING LOSSES
+      //
+      // The three above are the VALIDATION losses, which is what the worker has always
+      // sent. Ultralytics reports the training losses as a separate series, and the gap
+      // between the two is the overfitting signal -- the first thing an ML reader looks
+      // for. Neither set is allowed to stand in for the other: one column meaning
+      // training loss on some rows and validation loss on others could not be read at all.
+      // -------------------------------
+
+      train_box_loss: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Mean training box loss over this epoch, against the validation loss in box_loss.',
+        jsonSchema: {
+            description: 'Mean training box loss over this epoch. The box_loss column beside '
+                + 'it is the validation loss; the gap between the two is the overfitting signal.',
+        },
+      },
+
+      train_cls_loss: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Mean training classification loss over this epoch.',
+        jsonSchema: {
+            description: 'Mean training classification loss over this epoch. Null means not '
+                + 'reported -- the trainer has none through a NaN-recovery epoch -- never zero.',
+        },
+      },
+
+      train_dfl_loss: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Mean training distribution-focal loss over this epoch.',
+        jsonSchema: {
+            description: 'Mean training distribution-focal loss over this epoch. A genuine 0.0 '
+                + 'is stored as 0.0; an absent reading is null.',
+        },
+      },
+
+      // -------------------------------
+      // WHERE THE EPOCH SAT IN THE RUN
+      //
+      // Elapsed seconds since training began, not instants: "ordering and duration only
+      // -- valid within a run, never compared across machines." The origin is set after
+      // setup has built the dataloaders and the optimizer, so epoch 1 sits at roughly
+      // 0.000 however long setup took. start_time and end_time are timestamps, stay null,
+      // and keep meaning what their type says.
+      // -------------------------------
+
+      start_offset_s: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Seconds from the start of training to the start of this epoch.',
+        jsonSchema: {
+            description: 'Seconds from the start of training to the start of this epoch. '
+                + 'Elapsed time measured by the trainer, not an instant, and not a position '
+                + 'on any MARP-wide timeline.',
+        },
+      },
+
+      end_offset_s: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Seconds from the start of training to the end of this epoch.',
+        jsonSchema: {
+            description: 'Seconds from the start of training to the end of this epoch. Its '
+                + 'difference from start_offset_s is duration_seconds, exactly in the trainer '
+                + 'that computed all three.',
+        },
+      },
+
       timestamp: {
         // Optional: record when this epoch was logged
         type: DataTypes.DATE,

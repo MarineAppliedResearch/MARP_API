@@ -2362,15 +2362,32 @@ function renderTrainingRecent(views) {
   if (!table) return;
 
   const body = $('tbody', table);
-  const rank = { running: 0, issues: 1, failed: 2, expired: 3, queued: 4, cancelled: 5, done: 6 };
+
+  /* **Newest first, because the panel is called Recent.** It ranked by state instead --
+     running, then issues, then failed, then everything that worked -- and then took three.
+     With eight jobs and three failures that meant the three failures, every time: the
+     table showed nothing but red while five jobs including the newest success sat
+     underneath the cut. Isaac saw "Recent training jobs (8)" over three failed rows.
+
+     Severity belongs in the cards above, which already count *Needs attention*. A list
+     headed Recent that hides the most recent run is answering a question nobody asked. */
+  const LIMIT = 3;
   const shown = views
     .slice()
-    .sort((a, b) => (rank[a.state] - rank[b.state])
-      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
-    .slice(0, 3);
+    .sort((a, b) => Date.parse(b.job.created_at) - Date.parse(a.job.created_at))
+    .slice(0, LIMIT);
 
+  /* **The heading counts what is drawn, and says what it is out of.** `(8)` over three
+     rows is the panel misreporting itself, and a table that renders fewer rows than it
+     claims reads as missing data rather than as a summary. The full list is one click
+     away through the All jobs link beside this. */
   const heading = $('.training-recent .panel-hd h2') || $$('.panel-hd h2').find((h) => /Recent training/.test(h.textContent));
-  if (heading) heading.textContent = `Recent training jobs (${views.length.toLocaleString()})`;
+
+  if (heading) {
+    heading.textContent = views.length > shown.length
+      ? `Recent training jobs (${shown.length} of ${views.length.toLocaleString()})`
+      : `Recent training jobs (${views.length.toLocaleString()})`;
+  }
 
   body.innerHTML = shown.map((view) => {
     const { job } = view;
@@ -2398,11 +2415,14 @@ function renderTrainingRecent(views) {
          `run`, so a queued or leased job -- the only kind anybody watches -- had none. */
       + '&lt;td class="ex">&lt;button class="exbtn" type="button" aria-label="Show this job">&lt;svg class="ico sm">&lt;use href="#i-right"/>&lt;/svg>&lt;/button>&lt;/td>'
         /* **Titled, because the column is 188px and these names are longer than that.**
-         A generated training name runs to the forties -- dataset, model, time of day --
-         and about thirty-two characters fit, so the time is the part that falls off the
-         end. It is also the part that tells three runs of the same model over the same
-         dataset apart, which is why losing it silently is worse than losing the middle.
-         The full string is one hover away rather than only inside the row. */
+         A generated training name runs to the forties and about thirty-two characters
+         fit, so every one of them truncates -- including names a person typed.
+
+         The time of day leads, which is deliberate and was measured: it is what tells
+         three runs of one model over one dataset apart, and at the tail a long dataset
+         name ate the budget and lost it. So what falls off now is the model name, which
+         is the part least likely to differ between the runs somebody is comparing. The
+         full string is one hover away regardless. */
     + `&lt;td class="jname" title="${escapeHtml(view.title)}">&lt;span class="name">&lt;svg class="ico training">&lt;use href="#i-training"/>&lt;/svg>&lt;span class="t">${view.title}&lt;/span>&lt;/span>&lt;/td>`
       /* **What the model's task is**, from the base model rather than guessed from which
          metric columns are null. Once three kinds of run share this table, *Best mAP*
