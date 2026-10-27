@@ -465,6 +465,116 @@ describe('A classification run\'s class handles', () => {
     });
 });
 
+/**
+ * A detection run, which has a dataset like any other and no class folders in it.
+ *
+ * **This is the regression test that matters, and my first attempt at it was weaker
+ * than it looked.** That one set `training_runs.dataset_id` to NULL and asserted names
+ * still resolved -- but a real detection run *has* a dataset id: the job spec carries
+ * `dataset.dataset_id` and the ingest writes it. So the test exercised a run MARP does
+ * not produce, and the thing actually protecting detection -- `folder IS NOT NULL` in
+ * `classFoldersFor` -- was never reached.
+ *
+ * Caught by the session that wrote this ingest. It is the same shape as the fixture I
+ * caught in my own folder test an hour earlier: an assertion that passes for a reason
+ * other than the one it claims.
+ *
+ * So this run has a dataset, that dataset has class rows, and those rows have no
+ * `folder` -- which is exactly what every dataset built before classification existed
+ * looks like, and what every detection dataset built since looks like too.
+ */
+describe('A detection run whose dataset has class rows but no folders', () => {
+    let datasetId;
+
+    beforeEach(async () => {
+        await db.sequelize.query(
+            `DELETE FROM metrics_curves WHERE metrics_summary_id IN
+                 (SELECT id FROM metrics_summary WHERE training_run_id = :id)`,
+            { replacements: { id: made.trainingRunId }, logging: false }
+        );
+        await db.sequelize.query(
+            'DELETE FROM metrics_summary WHERE training_run_id = :id',
+            { replacements: { id: made.trainingRunId }, logging: false }
+        );
+        await db.sequelize.query('DELETE FROM artifacts WHERE job_id = :id', {
+            replacements: { id: made.jobId }, logging: false,
+        });
+    });
+
+    beforeAll(async () => {
+        const [dataset] = await query(
+            `INSERT INTO datasets (name, status, source, task, created_at, updated_at)
+             VALUES (:name, 'ready', 'jest', 'detection', NOW(), NOW())
+             RETURNING id`,
+            { name: `jest-detection-dataset-${runId}` }
+        );
+
+        datasetId = dataset.id;
+
+        /* **A class row with no folder, which is what a detection dataset records.**
+           Its archive names classes by index in `data.yaml`; there are no directories
+           to name. */
+        await query(
+            `INSERT INTO dataset_classes (dataset_id, species_id, class_index, folder, created_at, updated_at)
+             VALUES (:datasetId, :speciesId, 0, NULL, NOW(), NOW())`,
+            { datasetId, speciesId: made.speciesId }
+        );
+
+        await query(
+            'UPDATE training_runs SET dataset_id = :datasetId WHERE id = :id',
+            { datasetId, id: made.trainingRunId }
+        );
+    });
+
+    afterAll(async () => {
+        await db.sequelize.query(
+            'UPDATE training_runs SET dataset_id = NULL WHERE id = :id',
+            { replacements: { id: made.trainingRunId }, logging: false }
+        );
+        await db.sequelize.query('DELETE FROM dataset_classes WHERE dataset_id = :id', {
+            replacements: { id: datasetId }, logging: false,
+        });
+        await db.sequelize.query('DELETE FROM datasets WHERE id = :id', {
+            replacements: { id: datasetId }, logging: false,
+        });
+    });
+
+    /**
+     * **Plain common names, resolved the way they always were.** Nothing about adding a
+     * folder mapping may change what a detection run records -- its classes are species
+     * names and the model's own trained species are what narrow them.
+     */
+    it('still resolves its classes by name', async () => {
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(finalMetricsReport()));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [resolved] = await query(
+            'SELECT species_id FROM metrics_summary WHERE training_run_id = :id AND class_name = :name',
+            { id: made.trainingRunId, name: `jest-known-${runId}` }
+        );
+
+        expect(resolved).toBeTruthy();
+        expect(resolved.species_id).toBe(made.speciesId);
+    });
+
+    /**
+     * **And one it cannot place is still kept unresolved**, rather than being caught by
+     * a folder mapping that happens to hold a null key.
+     */
+    it('still keeps an unknown class under the name the model used', async () => {
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(finalMetricsReport()));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [unresolved] = await query(
+            'SELECT class_name, species_id FROM metrics_summary WHERE training_run_id = :id AND class_name = :name',
+            { id: made.trainingRunId, name: `jest-unknown-${runId}` }
+        );
+
+        expect(unresolved).toBeTruthy();
+        expect(unresolved.species_id).toBeNull();
+    });
+});
+
 describe('Taking a final report into the record', () => {
     beforeEach(async () => {
         await db.sequelize.query(
