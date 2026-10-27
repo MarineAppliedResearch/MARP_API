@@ -52,13 +52,46 @@ class TrainingMetricsRepository {
      */
     async findTrainingRunByJob(jobId, transaction) {
         const [row] = await this.db.sequelize.query(
-            'SELECT id, model_id FROM training_runs WHERE job_id = :jobId ORDER BY id LIMIT 1',
+            `SELECT id, model_id, dataset_id FROM training_runs
+              WHERE job_id = :jobId ORDER BY id LIMIT 1`,
             { replacements: { jobId }, type: QueryTypes.SELECT, transaction }
         );
 
         return row || null;
     }
 
+    /**
+     * What each class folder in a dataset means, keyed by the folder name.
+     *
+     * **A classification model reports folder names, and MARP's folders are handles.**
+     * Ultralytics takes a classify vocabulary from the subfolder names and keeps no
+     * other list, so a model trained on a MARP archive calls its class
+     * `145_blue-deacon-rockfish` -- and that string is baked into the published `.pt`,
+     * which is why MARP stores what the model said as well as what MARP made of it.
+     *
+     * **Read from the row the build wrote, not parsed back out of the handle.** The
+     * build generated that name and recorded what it meant at the same moment;
+     * re-deriving it here would be the API round-tripping its own output through a
+     * lossy format, which breaks silently the first time the convention moves.
+     *
+     * @async
+     * @param {number} datasetId - The dataset the run trained on.
+     * @param {Object} [transaction] - Transaction to read in.
+     * @returns {Promise<Map<string, number>>} Folder name to species id. Empty for a
+     * detection dataset, which has no class folders, and for any dataset built before
+     * the column existed.
+     */
+    async classFoldersFor(datasetId, transaction) {
+        if (!datasetId) return new Map();
+
+        const rows = await this.db.sequelize.query(
+            `SELECT folder, species_id FROM dataset_classes
+              WHERE dataset_id = :datasetId AND folder IS NOT NULL`,
+            { replacements: { datasetId }, type: QueryTypes.SELECT, transaction }
+        );
+
+        return new Map(rows.map((row) => [row.folder, Number(row.species_id)]));
+    }
     /**
      * Replace a run's metrics rows for one split with the ones just reported.
      *
