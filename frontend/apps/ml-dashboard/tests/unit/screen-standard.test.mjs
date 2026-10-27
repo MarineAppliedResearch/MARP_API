@@ -190,3 +190,67 @@ test('the pool says a worker went quiet, without closing an expanded one', async
     'the same row, so an expanded one stays open');
   assert.equal(row.getAttribute('aria-expanded'), 'true', 'and it is still open');
 });
+
+test('Jobs says when something last happened, not only when it arrived', async (t) => {
+  /* **`gpu_jobs.updated_at` does not move while a job runs.** Nothing on the heartbeat
+     path writes the job row, so for job 21782 it sat at the instant of creation while
+     the worker reported progress every sixty seconds. Submitted answers when it arrived;
+     this column has to answer whether anything has happened since, which means the later
+     of the row's own timestamp and the latest heartbeat. */
+  const beat = '2026-10-27T11:30:00.000Z';
+
+  const screen = await drawScreen('jobs.html', {
+    listJobs: async () => ({
+      jobs: [job(910, 'leased', { created_at: '2026-10-27T09:00:00.000Z', updated_at: '2026-10-27T09:00:00.000Z', last_heartbeat_at: beat })],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    }),
+    listSessions: async () => [],
+    listWorkers: async () => [],
+  });
+
+  t.after(screen.close);
+
+  const row = screen.document.querySelector('table#jobs tbody tr[data-job="910"]');
+
+  assert.equal(row.querySelector('.jseen').dataset.sort, beat,
+    'the heartbeat, which is newer than the job row');
+  assert.notEqual(row.querySelector('.jseen').dataset.sort, row.querySelector('.jtime').dataset.sort,
+    'and not the same answer as Submitted');
+});
+
+test('a worker mid-job does not read as quieter than an idle one', async (t) => {
+  /* Workers already had this column under a better name — *Last heard* is what Updated
+     means for a machine — so the rule lands as a correction to which timestamp it reads
+     rather than a thirteenth header. `last_seen_at` is the worker's own heartbeat; a
+     running attempt's is the job's, and it can be the newer of the two. */
+  const beat = new Date(Date.now() - 60000).toISOString();
+
+  const screen = await drawScreen('workers.html', {
+    listWorkers: async () => [worker(6, 'rig-02', 30, {
+      activity: 'busy',
+      /* The fields the row actually reads off an attempt, taken from the code rather
+         than imagined — the corpus has no leased worker to copy one from. */
+      attempts: [{
+        id: 1,
+        job_id: 21790,
+        state: 'leased',
+        slot_index: 0,
+        last_heartbeat_at: beat,
+        progress_done: 3,
+        progress_total: 10,
+        progress_unit: 'epochs',
+      }],
+    })],
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    listSessions: async () => [],
+  });
+
+  t.after(screen.close);
+
+  const cell = screen.document.querySelector('table#workers tbody tr[data-worker="6"] .whb');
+
+  assert.equal(cell.dataset.sort, String(-Date.parse(beat)),
+    'the running attempt is what it was last heard from');
+});

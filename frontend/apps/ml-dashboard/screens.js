@@ -980,6 +980,14 @@ function rowFor(view) {
     + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
     + `<td class="jworker" data-sort="${job.worker_name || ''}">${workerCell(job)}</td>`
     + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${hhmm}</span><span class="b">${date}</span></span></td>`
+    /* **Submitted says when it arrived; this says whether anything has happened since.**
+       The later of the job row's own timestamp and its latest heartbeat, because
+       `gpu_jobs.updated_at` does not move while a job runs -- nothing on the heartbeat
+       path writes the job row, so for job 21782 it sat at the instant of creation while
+       the worker reported progress every sixty seconds. A column reading `updated_at`
+       alone is faithfully showing a stale timestamp, which is worse than no column. */
+    + `<td class="jseen" data-updated data-sort="${jobLastSeen(job) || job.created_at}">`
+    + `${datasetStamp(jobLastSeen(job) || job.created_at)}</td>`
     + `<td class="jacts"><span>${actions}</span></td>`
     + '</tr>';
 }
@@ -1193,7 +1201,7 @@ const JOBS_SORT_KEYS = {
  *
  * @type {string[]}
  */
-const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hprog', 'hworker', 'hupd'];
+const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hprog', 'hworker', 'hupd', 'hseen'];
 
 /** The window the whole screen is drawn from, refetched only when the API query changes. */
 let jobsWindow = null;
@@ -5425,6 +5433,31 @@ const workersQuery = {
 };
 
 /**
+ * When a machine was last heard from, by either of the two things that count.
+ *
+ * **Workers already had this column, under a better name**, so the every-screen rule
+ * lands as a correction rather than a thirteenth header: *Last heard* is what Updated
+ * means for a machine, and adding a second column beside it would have been the rule
+ * being obeyed rather than understood.
+ *
+ * The correction is which timestamp it reads. `last_seen_at` is the worker's own
+ * heartbeat; an attempt's `last_heartbeat_at` is the running job's, and it can be the
+ * newer of the two. Taking the later means a machine that is mid-job never reads as
+ * quieter than one that is idle.
+ *
+ * @param {Object} worker - A row from `GET /gpu/workers`.
+ * @returns {?string} An ISO instant, or null if it has never been heard from.
+ */
+function workerLastSeen(worker) {
+  const times = [worker.last_seen_at, ...(worker.attempts || []).map((one) => one.last_heartbeat_at)]
+    .filter(Boolean)
+    .map((at) => Date.parse(at))
+    .filter((at) => Number.isFinite(at));
+
+  return times.length ? new Date(Math.max(...times)).toISOString() : null;
+}
+
+/**
  * Write what moves on a worker row, leaving the row itself alone.
  *
  * The two cells that change while somebody watches: the status pill, and how long since
@@ -5473,7 +5506,7 @@ const WORKERS_SORT_KEYS = {
   wver: (v) => v.worker.worker_version || '',
   wgpu: (v) => v.gpu.toLowerCase(),
   wjobs: (v) => v.used / Math.max(1, v.worker.slot_count),
-  whb: (v) => (v.worker.last_seen_at ? -Date.parse(v.worker.last_seen_at) : Infinity),
+  whb: (v) => (workerLastSeen(v.worker) ? -Date.parse(workerLastSeen(v.worker)) : Infinity),
 };
 
 /** The pool, as fetched. The route does not page, so this is all of it. */
@@ -5539,7 +5572,7 @@ function workerRows(view) {
     + `<td class="wmodel">${NOT_REPORTED}</td>`
     + `<td class="num" data-sort="${view.used}">${view.used} / ${worker.slot_count}</td>`
     + `<td class="wup">${NOT_REPORTED}</td>`
-    + `<td class="whb" data-sort="${WORKERS_SORT_KEYS.whb(view)}">${sinceText(worker.last_seen_at)}</td>`
+    + `<td class="whb" data-updated data-sort="${WORKERS_SORT_KEYS.whb(view)}">${sinceText(workerLastSeen(worker))}</td>`
     + '</tr>';
 
   const progress = attempt && attempt.progress_done !== null
@@ -6569,7 +6602,7 @@ function wireJobsOverview() {
     const detail = document.createElement('tr');
     detail.className = 'runrow-body';
     detail.hidden = true;
-    detail.innerHTML = `<td colspan="11"><div class="rundetail jobdetail">
+    detail.innerHTML = `<td colspan="12"><div class="rundetail jobdetail">
       <div class="jobdetail-head"><div><b>${name}</b><span>Job ${id} · ${type}</span>${datasetLink}</div><span class="st" data-state="${state}"><span class="dot"></span>${status}</span></div>
       <div class="jobdetail-grid jobidentity">
         <dl class="kv"><dt>Job ID</dt><dd class="mono">${id}</dd><dt>Type</dt><dd>${type}</dd><dt>Scope</dt><dd>${scope}${scopeContext ? ` <span class="faint">· ${scopeContext}</span>` : ''}</dd><dt>${isDatasetBuild ? 'Build output' : 'Locked model'}</dt><dd>${model} <span class="faint">${modelVersion}</span><div class="locked">Immutable from submission</div></dd></dl>

@@ -118,7 +118,7 @@
             <button type="button" data-sort-column="0">Job</button><button type="button" data-sort-column="1">Type</button>
             <button type="button" data-sort-column="2">Scope</button><button type="button" data-sort-column="3">Model / output</button>
             <button type="button" data-sort-column="4">Status</button><button type="button" data-sort-column="5">Progress</button>
-            <button type="button" data-sort-column="6">Worker</button><button type="button" data-sort-column="7">Submitted</button>
+            <button type="button" data-sort-column="6">Worker</button><button type="button" data-sort-column="7">Submitted</button><button type="button" data-sort-column="8">Updated</button>
           </div>
           <div class="bulk" id="bulk" hidden>
             <span><span class="n" id="bulkN"></span> selected</span>
@@ -138,7 +138,7 @@
                   <th class="chk"><input class="chkbox" type="checkbox" id="all" aria-label="Select every job on this page"></th>
                   <th class="hjob sortable">Job</th><th class="htype sortable">Type</th><th class="hscope sortable">Scope</th>
                   <th class="hmodel sortable">Model / output</th><th class="hstatus sortable">Status</th><th class="hprog sortable">Progress</th>
-                  <th class="hworker sortable" title="The machine that made the latest attempt">Worker</th><th class="hupd sortable" aria-sort="descending">Submitted</th>
+                  <th class="hworker sortable" title="The machine that made the latest attempt">Worker</th><th class="hupd sortable" aria-sort="descending">Submitted</th><th class="hseen sortable" title="The later of the job's own timestamp and its latest heartbeat">Updated</th>
                   <th class="hacts"><span class="vh">Actions</span></th>
                 </tr>
               </thead>
