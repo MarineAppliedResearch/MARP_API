@@ -268,6 +268,203 @@ afterAll(async () => {
     }
 });
 
+/**
+ * Reading a classification model's class names back into species.
+ *
+ * **A classify model's classes are folder names, and MARP's folders are handles.**
+ * Ultralytics takes a classification vocabulary from the subfolder names of the
+ * dataset and keeps no other list, so a model trained on a MARP archive reports
+ * `145_blue-deacon-rockfish` -- and that string is in the published `.pt`, which is why
+ * MARP stores what the model said *and* what MARP made of it rather than replacing one
+ * with the other.
+ *
+ * The archive names classes that way because `species.comname` cannot be a directory:
+ * 37 of 1,404 names contain a path separator, and `Fish` and `fish` are two species
+ * rows and one directory on Windows.
+ */
+describe('A classification run\'s class handles', () => {
+    let datasetId;
+
+    /** A species id that exists in no catalogue row, for the unresolvable case. */
+    const absentSpecies = 2000000000;
+
+    /**
+     * A report whose per-class entries are named the way a classify model names them.
+     *
+     * @param {Array<string>} classes - The handles.
+     * @returns {Object} The report.
+     */
+    const handleReport = (classes) => finalMetricsReport({
+        confusion_matrix: {
+            orientation: 'rows_predicted_cols_true',
+            classes,
+            background_index: classes.length,
+            matrix: classes.concat([null]).map(() => classes.concat([null]).map(() => 1)),
+        },
+        metrics: [{
+            family: 'classify',
+            overall: { accuracy_top1: 0.87, accuracy_top5: 0.99 },
+            per_class: classes.map((name, at) => ({
+                class: name, precision: 0.9 - (at / 100), recall: 0.8, f1: 0.85,
+            })),
+        }],
+    });
+
+    beforeAll(async () => {
+        const [dataset] = await query(
+            `INSERT INTO datasets (name, status, source, task, crop_source, created_at, updated_at)
+             VALUES (:name, 'ready', 'jest', 'classification', 'mosaic_thumbnail', NOW(), NOW())
+             RETURNING id`,
+            { name: `jest-classify-dataset-${runId}` }
+        );
+
+        datasetId = dataset.id;
+
+        /* The mapping the build writes: this folder means this species. Only the first
+           class is recorded, so the second has to fall back to the id on its front and
+           the third to nothing -- three readings, one report. */
+        await query(
+            `INSERT INTO dataset_classes (dataset_id, species_id, class_index, folder, created_at, updated_at)
+             VALUES (:datasetId, :speciesId, 0, :folder, NOW(), NOW())`,
+            /* **The id in the handle is deliberately NOT this species.** If the folder
+               carried its own species id, the mapping and the id-prefix fallback would
+               give the same answer and this test would pass with the mapping removed --
+               proving nothing. 2000000000 names no row, so only the recorded mapping can
+               resolve it. */
+            { datasetId, speciesId: made.speciesId, folder: `${absentSpecies}_recorded-${runId}` }
+        );
+
+        await query(
+            'UPDATE training_runs SET dataset_id = :datasetId WHERE id = :id',
+            { datasetId, id: made.trainingRunId }
+        );
+    });
+
+    /* **One report per test, because the job accumulates artifacts.** `stageArtifact`
+       adds a row and `jobWithArtifacts` hands the ingest every artifact the job has, so
+       a second staged report does not replace the first -- it joins it, and the ingest
+       reads whichever it finds. Without this, the first test's classes answered all four
+       and three of them failed looking for rows that were never written. */
+    beforeEach(async () => {
+        await db.sequelize.query(
+            `DELETE FROM metrics_curves WHERE metrics_summary_id IN
+                 (SELECT id FROM metrics_summary WHERE training_run_id = :id)`,
+            { replacements: { id: made.trainingRunId }, logging: false }
+        );
+        await db.sequelize.query(
+            'DELETE FROM metrics_summary WHERE training_run_id = :id',
+            { replacements: { id: made.trainingRunId }, logging: false }
+        );
+        await db.sequelize.query('DELETE FROM artifacts WHERE job_id = :id', {
+            replacements: { id: made.jobId }, logging: false,
+        });
+    });
+
+    afterAll(async () => {
+        await db.sequelize.query(
+            'UPDATE training_runs SET dataset_id = NULL WHERE id = :id',
+            { replacements: { id: made.trainingRunId }, logging: false }
+        );
+        await db.sequelize.query('DELETE FROM dataset_classes WHERE dataset_id = :id', {
+            replacements: { id: datasetId }, logging: false,
+        });
+        await db.sequelize.query('DELETE FROM datasets WHERE id = :id', {
+            replacements: { id: datasetId }, logging: false,
+        });
+    });
+
+    /**
+     * **The dataset's own record, which is exact.** The build generated the folder name
+     * and wrote down what it meant at the same moment. Matching on it is a join;
+     * anything else here is a search or a parse.
+     */
+    it('resolves a handle the dataset recorded, by the mapping rather than the name', async () => {
+        const folder = `${absentSpecies}_recorded-${runId}`;
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(handleReport([folder])));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [row] = await query(
+            'SELECT class_name, species_id FROM metrics_summary WHERE training_run_id = :id AND class_name = :name',
+            { id: made.trainingRunId, name: folder }
+        );
+
+        expect(row).toBeTruthy();
+
+        /* **Only the recorded mapping can produce this.** The id on the front of the
+           handle names no species at all, so a resolution that reached the fallback
+           would be null here. */
+        expect(row.species_id).toBe(made.speciesId);
+
+        /* **Both are kept.** The handle is what the checkpoint will say for ever, and
+           the species is MARP's reading of it. Replacing the one with the other would
+           make the row disagree with an artifact that is still sitting there. */
+        expect(row.class_name).toBe(folder);
+    });
+
+    /**
+     * **The id on the front, for a handle the dataset does not record** -- a model
+     * trained from an archive whose dataset row is gone, or one built elsewhere by the
+     * same convention. Validated against `species` rather than trusted: an id naming no
+     * row is not a resolution.
+     */
+    it('falls back to the species id in front of a handle it has no mapping for', async () => {
+        const unmapped = `${made.speciesId}_not-in-the-dataset-${runId}`;
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(handleReport([unmapped])));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [row] = await query(
+            'SELECT species_id FROM metrics_summary WHERE training_run_id = :id AND class_name = :name',
+            { id: made.trainingRunId, name: unmapped }
+        );
+
+        expect(row.species_id).toBe(made.speciesId);
+    });
+
+    /**
+     * **An id that names nothing resolves to null, not to itself.** Writing the integer
+     * straight into `species_id` would attach a measurement to whatever row happens to
+     * hold that number, or to a row that does not exist -- permanently, and invisibly.
+     */
+    it('does not invent a species from an id the catalogue does not hold', async () => {
+        const absent = `${absentSpecies}_no-such-species-${runId}`;
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(handleReport([absent])));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [row] = await query(
+            'SELECT class_name, species_id FROM metrics_summary WHERE training_run_id = :id AND class_name = :name',
+            { id: made.trainingRunId, name: absent }
+        );
+
+        /* Kept under the name the model used, which is what a reader needs to see to
+           know the vocabularies disagree. */
+        expect(row).toBeTruthy();
+        expect(row.species_id).toBeNull();
+    });
+
+    /**
+     * **A name that merely begins with digits is not a handle.** A species genuinely
+     * called `2024 survey marker` must not be read as species 2024, which is why the
+     * pattern requires the underscore and why the id is checked rather than assumed.
+     */
+    it('does not read a leading number as an id when nothing separates it', async () => {
+        const notAHandle = `2024 survey marker ${runId}`;
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(handleReport([notAHandle])));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [row] = await query(
+            'SELECT species_id FROM metrics_summary WHERE training_run_id = :id AND class_name = :name',
+            { id: made.trainingRunId, name: notAHandle }
+        );
+
+        expect(row).toBeTruthy();
+        expect(row.species_id).toBeNull();
+    });
+});
+
 describe('Taking a final report into the record', () => {
     beforeEach(async () => {
         await db.sequelize.query(
