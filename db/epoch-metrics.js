@@ -131,4 +131,64 @@ function epochMetrics(metrics) {
     return read;
 }
 
-module.exports = { EPOCH_METRIC_NAMES, epochMetrics };
+/**
+ * What a `metric` event's `phase` may say, and which one is an epoch.
+ *
+ * **A metric event is not automatically an epoch, and until the batch samples arrived
+ * nothing had to say so.** The discriminator used to be the step: per-epoch reports
+ * carried one and progress samples did not, so `Number.isInteger(step)` was enough and
+ * the comment in the ingest said as much.
+ *
+ * The worker now reports per-batch samples through the same call, with a global batch
+ * counter as the step. Routing on the step would then mean distinguishing the two
+ * series by the *magnitude* of a number -- fine on a long run, and wrong the first time
+ * a one-epoch run makes both equal 1, which is the worst shape a defect can have.
+ *
+ * **The cost of getting it wrong is not noise, it is loss.** The epoch insert is
+ * first-write-wins on `(training_run_id, epoch_number)`, so a batch sample taking
+ * `epoch_number = 1` means the real epoch 1 is then never written, permanently, with
+ * nothing in the row to say what happened.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const METRIC_PHASES = {
+    /** One row in `epochs`. The step is the epoch number. */
+    training: 'epoch',
+
+    /** A sample inside a training epoch. The step is a global batch counter. */
+    training_batch: 'sample',
+
+    /** A sample inside the validation pass that follows an epoch. */
+    validating_batch: 'sample',
+};
+
+/**
+ * Whether a metric event is reporting a finished epoch.
+ *
+ * **A missing phase still means an epoch**, because that is what every metric event
+ * carrying a step has meant since MARP started recording them, and an older worker must
+ * not have its epochs dropped by a rule written after it shipped.
+ *
+ * **An unrecognised phase is not an epoch, and the caller is expected to say so.**
+ * Guessing in either direction is worse: treating it as an epoch invites exactly the
+ * overwrite above, and discarding it quietly is how an unmapped `metric_family` turned
+ * into a chart that was empty for weeks with nothing to explain it.
+ *
+ * @param {*} phase - The event payload's `phase`, whatever arrived.
+ * @returns {{epoch: boolean, known: boolean}} Whether to write an epoch row, and
+ * whether MARP recognised the phase at all.
+ */
+function readPhase(phase) {
+    if (phase === null || phase === undefined || phase === '') {
+        return { epoch: true, known: true };
+    }
+
+    const kind = METRIC_PHASES[String(phase)];
+
+    if (!kind) return { epoch: false, known: false };
+
+    return { epoch: kind === 'epoch', known: true };
+}
+
+module.exports = { EPOCH_METRIC_NAMES, METRIC_PHASES, epochMetrics, readPhase };
