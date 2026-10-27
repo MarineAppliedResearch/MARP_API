@@ -2495,7 +2495,12 @@ tr[aria-expanded="true"] td { box-shadow: inset 0 1px 0 rgba(45, 156, 255, 0.34)
 #workers .wname  { width: 15%; }
 #workers .wstate { width: 8%; }
 #workers .wver   { width: 8%; }
-#workers .wgpu   { width: 10%; }
+/* **Wide enough for a card's model number, and it wraps rather than clipping.** At 10%
+   this read "NVIDIA GeForce RTX 4…", cutting off the one part that tells two machines
+   apart. The prefix every card in the pool shares is dropped in the cell instead, and the
+   full name is on the title. */
+#workers .wgpu   { width: 13%; }
+#workers td.wgpu .a { overflow-wrap: anywhere; white-space: normal; }
 #workers .wcpu   { width: 11%; }
 #workers .wmem   { width: 11%; }
 #workers .wmodel { width: 16%; }

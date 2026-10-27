@@ -299,7 +299,11 @@ test('a machine that is on and sampling shows what it reported, not a note', asy
 
   const row = screen.document.querySelector('table#workers tbody tr[data-worker="7"]');
 
-  assert.match(row.querySelector('.wgpu').textContent, /RTX 4080 SUPER/, 'the GPU it has');
+  assert.match(row.querySelector('.wgpu').textContent, /RTX 4080 SUPER/, 'the whole model number');
+  assert.doesNotMatch(row.querySelector('.wgpu').textContent, /NVIDIA GeForce/,
+    'without the two words every card in the pool shares');
+  assert.equal(row.querySelector('.wgpu').getAttribute('title'), 'NVIDIA GeForce RTX 4080 SUPER',
+    'which stays whole on the title');
   assert.match(row.querySelector('.wgpu').textContent, /16 GB/, 'and its VRAM');
   assert.match(row.querySelector('.wcpu').textContent, /29%/, 'GPU load');
   assert.match(row.querySelector('.wmem').textContent, /8%/, 'VRAM load');

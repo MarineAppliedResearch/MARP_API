@@ -5632,7 +5632,13 @@ function workerView(worker) {
   return {
     worker, caps, state, label,
     activity: worker.activity,
-    gpu: device ? device.name : 'Not reported',
+    /* **The model number is the part that tells two machines apart**, and it is the part
+       a 10% column was cutting off: *"NVIDIA GeForce RTX 4…"*. Every card in this pool is
+       an NVIDIA GeForce, so the two words that are the same on every row are what gets
+       dropped, and the full string stays in the title. A card from another maker keeps
+       its whole name, because only this prefix is stripped. */
+    gpu: device ? device.name.replace(/^NVIDIA\s+GeForce\s+/i, '') : 'Not reported',
+    gpuFull: device ? device.name : '',
     vram: vramGb ? `${vramGb} GB` : '',
     load: reading && reading.gpu_utilization_percent !== null
       ? Math.round(reading.gpu_utilization_percent) : null,
@@ -5665,7 +5671,8 @@ function workerRows(view) {
     + `<td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">${worker.name}</span></span></td>`
     + `<td class="jstatus" data-sort="${WORKERS_SORT_KEYS.wstate(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
     + `<td class="wver">${worker.worker_version || NOT_REPORTED}</td>`
-    + `<td class="wgpu"><span class="two"><span class="a">${view.gpu}</span><span class="b">${view.vram}</span></span></td>`
+    + `<td class="wgpu"${view.gpuFull ? ` title="${escapeHtml(view.gpuFull)}"` : ''}>`
+    + `<span class="two"><span class="a">${view.gpu}</span><span class="b">${view.vram}</span></span></td>`
     + `<td class="wcpu" data-sort="${view.load ?? -1}">${gpuLoadCell(view)}</td>`
     + `<td class="wmem" data-sort="${view.vramUsed ?? -1}">${vramLoadCell(view)}</td>`
     + `<td class="wmodel">${thermalCell(view)}</td>`
