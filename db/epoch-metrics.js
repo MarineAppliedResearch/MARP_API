@@ -56,6 +56,23 @@ const EPOCH_METRIC_NAMES = {
     train_box_loss: 'train/box_loss',
     train_cls_loss: 'train/cls_loss',
     train_dfl_loss: 'train/dfl_loss',
+
+    /* **A classifier reports one loss, and it is not cls_loss.** In a detector,
+       cls_loss is one component of three; here it is the whole thing. Mapping it onto
+       the detector column would make that column a component on some rows and a total
+       on others, with nothing on the row to say which.
+
+       Unprefixed is validation, as everywhere above: loss is val/loss, train_loss is
+       train/loss. Read off a real two-epoch run rather than described -- the same rule
+       that would have caught the train/-versus-val/ mix-up these columns were repaired
+       for. */
+    loss: 'val/loss',
+    train_loss: 'train/loss',
+
+    /* Named exactly as metrics_summary names the end-of-run figures. No (B) suffix:
+       that marks box versus mask, and classification is neither. */
+    accuracy_top1: 'metrics/accuracy_top1',
+    accuracy_top5: 'metrics/accuracy_top5',
     /* **The three keys the worker names itself**, rather than passing Ultralytics
        names through: each is named for its column so the mapping is identity.
        `duration_seconds` has existed since the table did and nothing ever wrote it.

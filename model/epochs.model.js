@@ -265,6 +265,68 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       // -------------------------------
+      // WHAT A CLASSIFIER MEASURES
+      //
+      // A classification run reports one loss, not three, and two accuracies. Declared
+      // here as well as added by migration because a column the model does not name is
+      // ABSENT from a findAll rather than null -- so a chart cannot tell "this MARP has
+      // no such column" from "this epoch has no value". That gap cost five columns on
+      // this very table: written, verified in the database, and served nowhere.
+      // -------------------------------
+
+      loss: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Mean validation loss over this epoch, for a task reporting a single loss.',
+        jsonSchema: {
+            description: 'Mean validation loss over this epoch, for a task that reports a '
+                + 'single loss -- a classifier does. Null on a detection run, which reports '
+                + 'box, classification and distribution-focal losses separately and no total. '
+                + 'Not the same quantity as cls_loss, which is one component of three.',
+        },
+      },
+
+      train_loss: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Mean training loss over this epoch, against the validation loss in loss.',
+        jsonSchema: {
+            description: 'Mean training loss over this epoch. The loss column beside it is '
+                + 'the validation loss; the gap between the two is the overfitting signal.',
+        },
+      },
+
+      accuracy_top1: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Share of validation images whose top prediction was correct, this epoch.',
+        jsonSchema: {
+            description: 'Share of validation images whose top prediction was correct at the '
+                + 'end of this epoch, 0 to 1. Named as metrics_summary names the end-of-run '
+                + 'figure, because two names for one quantity at two granularities reads as '
+                + 'two quantities.',
+            examples: [0.87],
+        },
+      },
+
+      accuracy_top5: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Share of validation images whose correct class was in the top five, this epoch.',
+        jsonSchema: {
+            description: 'Share of validation images whose correct class was among the top '
+                + 'five predictions, 0 to 1. On a short class list this saturates at 1.0 early '
+                + 'and says little; it is kept because the trainer reports it, and a run that '
+                + 'stops reporting it should look different from one measuring zero.',
+            examples: [0.99],
+        },
+      },
+
+      // -------------------------------
       // WHERE THE EPOCH SAT IN THE RUN
       //
       // Elapsed seconds since training began, not instants: "ordering and duration only

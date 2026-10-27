@@ -161,6 +161,15 @@ describe('The metric names an epoch is read from', () => {
             duration_seconds: 27.123,
             start_offset_s: 12.5,
             end_offset_s: 39.623,
+
+            /* **A detection payload leaves the classification columns null**, and that is
+               the assertion rather than an omission: null here means this task does not
+               report that quantity. A detector has no single total loss and no accuracy,
+               and summing or deriving one would be arithmetic dressed as a measurement. */
+            loss: null,
+            train_loss: null,
+            accuracy_top1: null,
+            accuracy_top5: null,
         });
     });
 

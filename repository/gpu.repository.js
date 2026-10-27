@@ -2587,11 +2587,13 @@ class GpuRepository {
             `INSERT INTO epochs (training_run_id, epoch_number, precision, recall,
                                  map50, map5095, box_loss, cls_loss, dfl_loss,
                                  train_box_loss, train_cls_loss, train_dfl_loss,
+                                 loss, train_loss, accuracy_top1, accuracy_top5,
                                  duration_seconds, start_offset_s, end_offset_s,
                                  timestamp, created_at, updated_at)
              SELECT :runId, :epochNumber, :precision, :recall,
                     :map50, :map5095, :box_loss, :cls_loss, :dfl_loss,
                     :train_box_loss, :train_cls_loss, :train_dfl_loss,
+                    :loss, :train_loss, :accuracy_top1, :accuracy_top5,
                     :duration_seconds, :start_offset_s, :end_offset_s,
                     NOW(), NOW(), NOW()
               WHERE NOT EXISTS (

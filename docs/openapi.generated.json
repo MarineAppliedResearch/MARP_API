@@ -7113,6 +7113,32 @@
             "nullable": true,
             "description": "Mean training distribution-focal loss over this epoch. A genuine 0.0 is stored as 0.0; an absent reading is null."
           },
+          "loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean validation loss over this epoch, for a task that reports a single loss -- a classifier does. Null on a detection run, which reports box, classification and distribution-focal losses separately and no total. Not the same quantity as cls_loss, which is one component of three."
+          },
+          "train_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean training loss over this epoch. The loss column beside it is the validation loss; the gap between the two is the overfitting signal."
+          },
+          "accuracy_top1": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Share of validation images whose top prediction was correct at the end of this epoch, 0 to 1. Named as metrics_summary names the end-of-run figure, because two names for one quantity at two granularities reads as two quantities.",
+            "example": 0.87
+          },
+          "accuracy_top5": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Share of validation images whose correct class was among the top five predictions, 0 to 1. On a short class list this saturates at 1.0 early and says little; it is kept because the trainer reports it, and a run that stops reporting it should look different from one measuring zero.",
+            "example": 0.99
+          },
           "start_offset_s": {
             "type": "number",
             "format": "float",
