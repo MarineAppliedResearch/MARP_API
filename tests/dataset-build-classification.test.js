@@ -400,6 +400,44 @@ describe('a classification dataset build, end to end (#268)', () => {
         }
     });
 
+    /**
+     * **The mapping is in the database too, not only in the archive.**
+     *
+     * A classify model reports its classes as the folder names, so something has to map
+     * `145_blue-deacon-rockfish` back to a species. Parsing the id off the front would
+     * work and would be the API re-deriving a string it generated itself -- a round trip
+     * through a lossy format, which breaks the first time the slug convention moves. The
+     * build knows the answer as it writes the folder, so it records it, and reading it
+     * back is a join.
+     *
+     * `classes.json` is not made redundant by this: that copy is for whoever unpacks the
+     * tar without a database.
+     */
+    test('records each class folder on dataset_classes, beside its species', async () => {
+        const rows = await q(
+            `SELECT species_id, class_index, folder
+               FROM dataset_classes WHERE dataset_id = :id ORDER BY class_index`,
+            { id: dataset.id }
+        );
+
+        expect(rows.length).toBeGreaterThan(0);
+
+        const written = JSON.parse(
+            fs.readFileSync(path.join(archive.root, 'classes.json'), 'utf8')
+        );
+
+        /* The row and the archive agree, class by class -- they are two writes of one
+           vocabulary and a disagreement between them would mean the dataset described an
+           archive it did not produce. */
+        for (const row of rows) {
+            const declared = written.classes.find((entry) => entry.class_index === row.class_index);
+
+            expect(declared).toBeTruthy();
+            expect(row.folder).toBe(declared.folder);
+            expect(row.species_id).toBe(declared.species_id);
+        }
+    });
+
     /** Every folder on disk is named in the file, and every name in the file is real. */
     test('agrees with the folders that are actually in the archive', () => {
         const written = JSON.parse(

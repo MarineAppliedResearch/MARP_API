@@ -1020,13 +1020,23 @@ async function recordBuild({
 
         for (const entry of classes) {
             await db.sequelize.query(
-                `INSERT INTO dataset_classes (dataset_id, species_id, class_index, created_at, updated_at)
-                 VALUES (:datasetId, :speciesId, :classIndex, NOW(), NOW())`,
+                `INSERT INTO dataset_classes (dataset_id, species_id, class_index, folder, created_at, updated_at)
+                 VALUES (:datasetId, :speciesId, :classIndex, :folder, NOW(), NOW())`,
                 {
                     replacements: {
                         datasetId,
                         speciesId: entry.species_id,
                         classIndex: entry.class_index,
+                        /* **The handle the model will report, written where the mapping
+                           back lives.** A classify model takes its class names from the
+                           folder names and keeps no other list, so this is the string that
+                           comes back on a confusion matrix. Recorded here rather than
+                           parsed out of the handle later: the build generated it and
+                           re-deriving it would be a round trip through a lossy format.
+
+                           Null for a detection dataset, which has no class folders -- its
+                           data.yaml names classes by the index that is already in the row. */
+                        folder: entry.folder === undefined ? null : entry.folder,
                     },
                     transaction,
                 }

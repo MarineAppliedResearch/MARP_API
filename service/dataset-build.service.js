@@ -849,6 +849,14 @@ function packageArchive(staging) {
 async function runClassificationBuild({ job, attempt, datasetId, staging, splits, classes }) {
     const wanted = plan.classificationPlan(splits, classes);
 
+    /* **The vocabulary with the handle each class was written as.** A classify model
+       reports folder names and keeps no other list, so this is the string that will come
+       back on its confusion matrix -- recorded on `dataset_classes` beside the species it
+       means, so reading it back is a join rather than parsing a string MARP generated.
+       `classFolderName` is pure, so the name here, the directory on disk and the entry in
+       classes.json are three calls to one function rather than three conventions. */
+    const labelled = classes.map((entry) => ({ ...entry, folder: plan.classFolderName(entry) }));
+
     if (!wanted.some((item) => item.directory === 'train')) {
         throw new Error(
             'A classification dataset must have a train split. Ultralytics splits what it '
@@ -935,7 +943,7 @@ async function runClassificationBuild({ job, attempt, datasetId, staging, splits
         attemptId: attempt.id,
         datasetId,
         members,
-        classes,
+        classes: labelled,
         archive,
         frames: cut.written,
         observations: members.length,
