@@ -748,6 +748,26 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 /* The run panel's lower half: the things that describe a finished run rather than its
    progress. One column, because a matrix and a gallery both want the width. */
 .training-evaluation-grid { display: grid; gap: var(--gap); margin-top: var(--gap); }
+/* **Ultralytics' own layout, in MARP's palette.** The four threshold charts go two up
+   where there is room, because they are read against each other: precision and recall
+   against confidence are the two halves of one trade, and a reader comparing them should
+   not have to scroll between them. */
+.curve-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--gap); }
+/* Thin per-class lines under one thick mean, which is the shape of the plot everybody
+   who has trained a model already knows. The classes are deliberately quiet: they are
+   the spread, and the mean is the reading. */
+.curve-class { stroke-width: 1.2; opacity: .42; }
+.curve-mean { --key: var(--cyan-300); stroke-width: 3.2; opacity: 1; }
+.curve-key { display: flex; align-items: center; gap: 6px; padding: 0 12px 10px; color: var(--muted); font-size: 10.5px; }
+.curve-key .mean { width: 16px; height: 3px; border-radius: 2px; background: var(--cyan-300); }
+/* The AP column reads as a ranking rather than as five decimals to compare by eye. The
+   bar sits behind the number rather than beside it, so the column keeps its width. */
+.apcell { position: relative; isolation: isolate; }
+.apbar {
+  position: absolute; z-index: -1; inset: 2px auto 2px 0; width: calc(var(--v, 0) * 100%);
+  border-radius: 2px; background: rgba(45, 156, 255, .28);
+}
+.apnum { position: relative; }
 
 /* The trainer's own plots. They are white-background renders, so each sits on its own
    light card rather than bleeding into the page -- showing them as what they are reads
@@ -762,6 +782,21 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .result-plot figcaption { padding: 6px 8px; border-top: 1px solid var(--hairline-2); background: var(--sunk); color: var(--muted); font-size: 10px; }
 
 .confusion.eight { width: 820px; grid-template-columns: 92px repeat(8, 88px); margin: 0; padding: 10px; }
+/* **The axes say True and Predicted in words, beside the grid.** A confusion matrix read
+   the wrong way round is completely plausible and asserts the reverse of what happened,
+   and a sentence in the card header is not where somebody checks. The y label is rotated
+   up the left edge, which is where every matrix in the field puts it. */
+.matrix-frame { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px; align-items: center; }
+.matrix-frame .axis-y {
+  grid-row: 1; writing-mode: vertical-rl; transform: rotate(180deg);
+  justify-self: center; color: var(--muted); font-size: 9.5px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+.matrix-frame .confusion { grid-column: 2; }
+.matrix-frame .axis-x {
+  grid-column: 2; text-align: center; padding-top: 4px; color: var(--muted);
+  font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
 .confusion > b { display: grid; place-items: center; min-width: 0; padding: 5px 3px; color: var(--muted); font-size: 8.5px; font-weight: 700; overflow-wrap: anywhere; text-align: center; }
 .confusion > i { position: relative; isolation: isolate; display: grid; place-items: center; min-height: 48px; border-radius: 3px; color: var(--white); font-size: 10.5px; font-style: normal; font-weight: 700; background: var(--sunk); }
 .confusion > i::before { content: ""; position: absolute; z-index: -1; inset: 0; border-radius: inherit; background: rgba(45, 156, 255, var(--heat)); }

@@ -1346,6 +1346,16 @@ let trainingRunsByJob = new Map();
 const TRAINING_EPOCH_POLL_MS = 5000;
 
 /**
+ * Per-threshold curves by run id, once each.
+ *
+ * `/curves` is about a thousand points per class where `/metrics` is a handful of rows,
+ * which is why the API serves it separately. Re-reading it on every five-second poll of
+ * an open panel would be a megabyte a minute for numbers that cannot change: a run that
+ * has finished evaluating does not evaluate again.
+ */
+const trainingCurvesByRun = new Map();
+
+/**
  * A path through a series that may have holes in it.
  *
  * **Null is not zero, and this is where that is decided.** Most epoch metrics are null
@@ -1749,11 +1759,25 @@ function confusionMatrix(matrix, image) {
         }).join('');
     }).join('');
 
-    return '<article class="evaluation-card matrix-card"><header><div><h5>Confusion matrix</h5>'
-      + '<p>Rows are the true class; columns are what the model predicted</p></div></header>'
-      + `<div class="matrix-scroll"><div class="confusion" style="--cols:${matrix.labels.length}" role="img" aria-label="Confusion matrix over ${matrix.labels.length} classes">`
-      + `<span></span>${matrix.labels.map((l) => `<b>${escapeHtml(l)}</b>`).join('')}${cells}`
-      + '</div></div></article>';
+    /* **The axes are named in words on the chart, not only in the caption.** True and
+       Predicted is the one thing a reader has to have right, and a confusion matrix read
+       the wrong way round is completely plausible while asserting the reverse of what
+       happened. The API transposes Ultralytics' own `matrix[predicted][true]` once on
+       the way out so that rows are true here, and this says so where it is being read. */
+    const split = matrix.dataset_split ? ` &middot; ${escapeHtml(matrix.dataset_split)} split` : '';
+
+    return '<article class="evaluation-card matrix-card" data-matrix><header><div><h5>Confusion matrix</h5>'
+      + `<p>Rows are the true class; columns are what the model predicted${split}</p></div>`
+      + '<div class="seg matrix-modes" aria-label="Confusion matrix values">'
+      + '<button type="button" class="on" data-matrix-mode="norm" aria-pressed="true" '
+      + 'title="Each cell as a share of its true class">Normalised</button>'
+      + '<button type="button" data-matrix-mode="count" aria-pressed="false" '
+      + 'title="The instance counts the trainer recorded">Counts</button></div></header>'
+      + '<div class="matrix-scroll"><div class="matrix-frame">'
+      + '<span class="axis-y">True class</span>'
+      + `<div class="confusion" style="--cols:${matrix.labels.length}" role="img" aria-label="Confusion matrix over ${matrix.labels.length} classes, rows true and columns predicted">`
+      + `<span></span>${matrix.labels.map((l) => `<b>${escapeHtml(l ?? '')}</b>`).join('')}${cells}`
+      + '</div><span class="axis-x">Predicted class</span></div></div></article>';
   }
 
   if (image) {
@@ -1766,8 +1790,8 @@ function confusionMatrix(matrix, image) {
   }
 
   return runSectionWaiting('Confusion matrix',
-    'Nothing records one yet. The trainer produces it at validation; it reaches here once '
-    + 'the worker reports it and MARP keeps it.');
+    'This run recorded none. The trainer builds one at validation; it reaches here when the '
+    + 'worker publishes it with the rest of its final metrics.');
 }
 
 /**
@@ -1793,8 +1817,8 @@ function confusionMatrix(matrix, image) {
 function perClassTable(classes) {
   if (!classes.length) {
     return runSectionWaiting('Per-class quality',
-      'Nothing writes <code>metrics_summary</code> yet, so there is no per-class precision, '
-      + 'recall or AP to show.');
+      'This run recorded no per-class precision, recall or AP. The trainer measures them at '
+      + 'validation; they reach here when the worker publishes its final metrics.');
   }
 
   const cell = (value) => (value === null || value === undefined
@@ -1848,7 +1872,15 @@ function perClassTable(classes) {
     /* The aggregate is the row with no class name. It is a different quantity from the
        classes above it and reads as one of them if it is left in the list. */
     const overall = rows.find((row) => !row.class_name);
-    const named = rows.filter((row) => row.class_name);
+    /* **Worst AP first, which is the question this table is actually asked.** Nobody
+       scans a species list alphabetically to find what the model is bad at, and the
+       sorted bar is the form the field uses for exactly that. A class with no AP sorts
+       last rather than first: not measured is not the same as measured badly, and
+       putting it at the top would answer the question wrongly. */
+    const score = (row) => (row.map50 === null || row.map50 === undefined
+      ? Number.POSITIVE_INFINITY : Number(row.map50));
+    const named = rows.filter((row) => row.class_name)
+      .sort((a, b) => score(a) - score(b) || String(a.class_name).localeCompare(String(b.class_name)));
 
     const body = named.map((row) => {
       const label = escapeHtml(row.class_name);
@@ -1870,7 +1902,12 @@ function perClassTable(classes) {
 
       return `<tr><th scope="row">${label}${unresolved}</th>`
         + counts.map(([, key]) => `<td class="num">${count(row[key])}</td>`).join('')
-        + columns.map(([, key]) => `<td${over}>${cell(row[key])}</td>`).join('') + '</tr>';
+        /* The AP@50 cell carries its own bar, so the column reads as a ranking at a
+           glance rather than as five decimals to compare by eye. */
+        + columns.map(([, key]) => (key === 'map50' && row[key] !== null && row[key] !== undefined
+          ? `<td class="apcell"${over}><span class="apbar" style="--v:${Math.max(0, Math.min(1, Number(row[key]))).toFixed(3)}"></span>`
+            + `<span class="apnum">${cell(row[key])}</span></td>`
+          : `<td${over}>${cell(row[key])}</td>`)).join('') + '</tr>';
     }).join('');
 
     /* **"Classes seen", not "all classes".** The aggregate is a mean over the classes that
@@ -1929,6 +1966,136 @@ function perClassTable(classes) {
  * @param {Object[]} plots - `{name, url}` for each artifact the run produced.
  * @returns {string}
  */
+/**
+ * One curve chart: every class as a thin line, their mean as a thick one.
+ *
+ * **This is Ultralytics' own layout, deliberately.** Anybody who has trained a YOLO
+ * model has read `PR_curve.png` a hundred times -- faint per-class lines with one bold
+ * mean over them -- so the shape is borrowed and only the styling is MARP's. A cleverer
+ * encoding would be a worse chart here, because recognising it at a glance is the whole
+ * requirement.
+ *
+ * Both axes are 0 to 1 by definition, so the scale is fixed rather than fitted: two runs
+ * can be compared by eye, which an axis that moved with the data would prevent.
+ *
+ * @param {Object} spec - `{title, note, x, y, xLabel, yLabel}`; `x` and `y` name arrays.
+ * @param {Object[]} series - One entry per class, with parallel arrays.
+ * @returns {string}
+ */
+function curveChart(spec, series) {
+  const box = { left: 46, right: 700, top: 24, bottom: 174 };
+  const at = (value) => box.left + (box.right - box.left) * Math.max(0, Math.min(1, value));
+  const up = (value) => box.bottom - (box.bottom - box.top) * Math.max(0, Math.min(1, value));
+
+  const pathOf = (xs, ys) => xs.map((x, index) => {
+    const y = ys[index];
+
+    if (x === null || x === undefined || y === null || y === undefined) return '';
+
+    return `${index ? 'L' : 'M'}${at(Number(x)).toFixed(1)},${up(Number(y)).toFixed(1)}`;
+  }).filter(Boolean).join(' ');
+
+  const lines = series.map((one, index) => `<path class="result-line curve-class class-${(index % 4) + 1}" `
+    + `data-class="${escapeHtml(one.class_name || '')}" d="${pathOf(one[spec.x], one[spec.y])}"/>`).join('');
+
+  /* **The mean across classes, which is the line a reader looks at first.** Index-wise
+     rather than interpolated: the API refuses a family whose arrays disagree in length,
+     so every class shares one x axis and the columns line up by construction. */
+  const width = series.reduce((most, one) => Math.max(most, (one[spec.y] || []).length), 0);
+  const mean = [];
+  const meanX = [];
+
+  for (let index = 0; index < width; index += 1) {
+    const values = series.map((one) => one[spec.y][index])
+      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+      .map(Number);
+    const across = series.map((one) => one[spec.x][index])
+      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+      .map(Number);
+
+    mean.push(values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
+    meanX.push(across.length ? across.reduce((sum, value) => sum + value, 0) / across.length : null);
+  }
+
+  const grid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
+    + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
+
+  return '<article class="evaluation-card history-card curve-card">'
+    + `<header><div><h5>${spec.title}</h5><p>${spec.note}</p></div></header>`
+    + `<div class="result-chart" role="img" aria-label="${escapeHtml(spec.title)} over ${series.length} classes">`
+    + `<svg viewBox="0 0 740 205" aria-hidden="true">${grid}`
+    + '<g class="result-axis"><text x="38" y="28">1.0</text><text x="38" y="103">.5</text>'
+    + `<text x="38" y="178">0</text><text x="46" y="196">${spec.xLabel} 0</text>`
+    + `<text x="700" y="196">${spec.xLabel} 1</text></g>${lines}`
+    + `<path class="result-line curve-mean" d="${pathOf(meanX, mean)}"/></svg></div>`
+    + `<p class="curve-key"><span class="mean"></span>Mean of ${series.length} class${series.length === 1 ? '' : 'es'}`
+    + ` &middot; ${escapeHtml(spec.yLabel)} against ${escapeHtml(spec.xLabel.toLowerCase())}</p></article>`;
+}
+
+/**
+ * The four threshold charts YOLO draws for every run, from numbers.
+ *
+ * **Read on asking, because this is the big one.** `/curves` is about a thousand points
+ * per class where `/metrics` is a handful of rows; the API serves it separately for that
+ * reason and a panel that pulled it on every expansion would be spending a megabyte on a
+ * section most readers scroll past.
+ *
+ * @param {Object[]} curves - One entry per split, family and class.
+ * @param {string} state - `read` once the request has been made, else `unread`.
+ * @returns {string}
+ */
+function thresholdCurves(curves, state) {
+  if (state !== 'read') {
+    return '<article class="evaluation-card history-card"><header><div><h5>Threshold curves</h5>'
+      + '<p>Precision against recall, and precision, recall and F1 against the confidence '
+      + 'threshold &mdash; one line per class with their mean, as the trainer plots them</p></div>'
+      + '<button class="btn sm" type="button" data-read-curves>Read them</button></header>'
+      + '<p class="hint">About a thousand points per class, so this is fetched when you ask '
+      + 'for it rather than with the rest of the run.</p></article>';
+  }
+
+  /* One family and one split at a time. Today every run is detection on the validation
+     split, so this picks the only one there is; a segmentation run will carry `box` and
+     `seg` and the first is as good a default as any until somebody asks for a switch. */
+  const named = curves.filter((one) => one.class_name);
+
+  if (!named.length) {
+    return runSectionWaiting('Threshold curves',
+      'This run recorded no per-threshold precision, recall or F1. The trainer measures them '
+      + 'at validation; they reach here when the worker publishes its curves artifact.');
+  }
+
+  const family = named[0].metric_family;
+  const split = named[0].dataset_split;
+  const series = named.filter((one) => one.metric_family === family && one.dataset_split === split);
+
+  const charts = [
+    {
+      title: 'Precision–recall',
+      note: 'The curve mAP@50 is the area under &middot; higher and further right is better',
+      x: 'recall', y: 'precision', xLabel: 'Recall', yLabel: 'Precision',
+    },
+    {
+      title: 'F1 against confidence',
+      note: 'Where the mean peaks is the confidence this model is best operated at',
+      x: 'confidence', y: 'f1_score', xLabel: 'Confidence', yLabel: 'F1',
+    },
+    {
+      title: 'Precision against confidence',
+      note: 'Rises towards 1 as the threshold admits only what the model is sure of',
+      x: 'confidence', y: 'precision', xLabel: 'Confidence', yLabel: 'Precision',
+    },
+    {
+      title: 'Recall against confidence',
+      note: 'Falls as the threshold rises &middot; the trade against precision above',
+      x: 'confidence', y: 'recall', xLabel: 'Confidence', yLabel: 'Recall',
+    },
+  ];
+
+  return `<div class="curve-grid" data-family="${escapeHtml(family)}" data-split="${escapeHtml(split)}">`
+    + charts.map((spec) => curveChart(spec, series)).join('') + '</div>';
+}
+
 function trainingPlots(plots) {
   /* What each of YOLO's own outputs is, in words. Anything not named here is still shown,
      under its own filename -- a plot nobody has described is better seen than hidden. */
@@ -1986,7 +2153,7 @@ function trainingPlots(plots) {
  * @param {Object[]} epochs - Its epochs, earliest first.
  * @returns {string} The run's part of the panel, without the wrapper.
  */
-function trainingRunDetail(run, epochs, task, spec) {
+function trainingRunDetail(run, epochs, task, spec, evidence) {
   /* **Not `NOT_REPORTED`.** That one's tooltip is about worker telemetry, which is not
      what a null batch size on a training run means -- the run simply did not record one. */
   const NONE = '<span class="dash" title="Not recorded on this training run">&mdash;</span>';
@@ -2054,9 +2221,22 @@ function trainingRunDetail(run, epochs, task, spec) {
   /* **No range control on these.** Their x-axis is the epoch number, not a clock, so
      "the last hour" names nothing -- a run is however many epochs long and all of them
      belong on the chart. The range controls stay on the charts that are over time. */
-  const evaluation = confusionMatrix(run.confusion_matrix || null, run.confusion_matrix_url || null)
-    + perClassTable(Array.isArray(run.class_metrics) ? run.class_metrics : [])
-    + trainingPlots(Array.isArray(run.plots) ? run.plots : []);
+  /* **Everything below comes from the three end-of-run reads, not from the run row.**
+     It used to read `run.confusion_matrix`, `run.class_metrics` and `run.plots`, which
+     `GET /training_run/:id` has never carried and never will -- so all three sections
+     drew their empty state for ever, over a gap that looked like missing data and was a
+     missing request. `/metrics`, `/curves` and `/artifacts` are where they live. */
+  const found = evidence || {};
+  const files = Array.isArray(found.files) ? found.files : [];
+  /* The split a confusion matrix is for is its own; the first is the validation one in
+     every run so far, and the card names whichever it drew rather than assuming. */
+  const matrices = Array.isArray(found.matrices) ? found.matrices : [];
+  const rendered = files.find((file) => /^confusion_matrix$/.test(file.name || ''));
+
+  const evaluation = confusionMatrix(matrices[0] || null, rendered ? rendered.url : null)
+    + perClassTable(Array.isArray(found.metrics) ? found.metrics : [])
+    + thresholdCurves(Array.isArray(found.curves) ? found.curves : [], found.curvesState)
+    + trainingPlots(files);
 
   /* The inner content only; `trainingJobDetail` owns the wrapper, because it puts the
      live attempt block above this and the two have to sit in one panel. */
@@ -2198,9 +2378,12 @@ function trainingAttemptProgress(job, state, pace) {
  * @param {Object} view - The job view.
  * @param {Object|null} run - Its training run, when one has been recorded.
  * @param {Object[]} epochs - That run's epochs, or empty.
+ * @param {Object[]} pace - Its progress samples, or empty.
+ * @param {Object} [evidence] - `{metrics, matrices, curves, files}` from the three
+ *   end-of-run reads. Empty when the run has not produced them.
  * @returns {string}
  */
-function trainingJobDetail(view, run, epochs, pace) {
+function trainingJobDetail(view, run, epochs, pace, evidence) {
   const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
   const live = terminal ? '' : trainingAttemptProgress(view.job, view.state, trainingPace(pace));
 
@@ -2213,7 +2396,8 @@ function trainingJobDetail(view, run, epochs, pace) {
       + 'and mAP appear here as soon as one is.</p></div>';
   }
 
-  return `<div class="rundetail jobdetail">${live}${trainingRunDetail(run, epochs, trainingTaskOf(view.job), view.job.spec)}</div>`;
+  return `<div class="rundetail jobdetail">${live}`
+    + `${trainingRunDetail(run, epochs, trainingTaskOf(view.job), view.job.spec, evidence)}</div>`;
 }
 
 /**
@@ -2250,21 +2434,39 @@ function wireTrainingJobDetail(head, detail) {
     const run = trainingRunsByJob.get(jobId) || null;
     let epochs = [];
     let pace = [];
+    let evidence = null;
 
     if (run) {
       try {
         /* **Settled, not awaited together.** The epochs are the charts and the pace is
            two figures beside them; a pace route that is slow or missing on an older MARP
            should cost those two figures, not the panel. */
-        const [gotEpochs, gotPace] = await Promise.allSettled([
+        const [gotEpochs, gotPace, gotMetrics, gotFiles] = await Promise.allSettled([
           window.MarpApi.trainingRunEpochs(run.id),
           window.MarpApi.trainingRunPace(run.id),
+          window.MarpApi.trainingRunMetrics(run.id),
+          window.MarpApi.trainingRunArtifacts(run.id),
         ]);
 
         if (gotEpochs.status === 'rejected') throw gotEpochs.reason;
 
         epochs = gotEpochs.value;
         pace = gotPace.status === 'fulfilled' ? gotPace.value : [];
+
+        /* **Settled, not awaited together, and the same rule the pace follows.** These
+           three are what a finished run produced; a MARP that does not serve them yet,
+           or a run that produced none, costs those sections and not the panel. A 404
+           from an older API lands here as a rejection and reads as "nothing recorded",
+           which is the honest rendering of both. */
+        const measured = gotMetrics.status === 'fulfilled' ? gotMetrics.value : {};
+
+        evidence = {
+          metrics: Array.isArray(measured.metrics) ? measured.metrics : [],
+          matrices: Array.isArray(measured.confusion_matrices) ? measured.confusion_matrices : [],
+          files: gotFiles.status === 'fulfilled' ? gotFiles.value : [],
+          curves: trainingCurvesByRun.get(run.id) || [],
+          curvesState: trainingCurvesByRun.has(run.id) ? 'read' : 'unread',
+        };
       } catch (error) {
         cell.innerHTML = '<div class="rundetail jobdetail"><p class="hint">Could not read this '
           + `run's epochs (${error.status || 'no answer'}).</p></div>`;
@@ -2272,7 +2474,51 @@ function wireTrainingJobDetail(head, detail) {
       }
     }
 
-    cell.innerHTML = trainingJobDetail(view, run, epochs, pace);
+    cell.innerHTML = trainingJobDetail(view, run, epochs, pace, evidence);
+
+    /* **The curves are fetched on asking, once per run.** A thousand points per class is
+       a megabyte a panel should not pull on every expansion, still less on every
+       five-second poll of an open one -- so the card draws its own control, and what it
+       reads is kept for as long as the page lives. The numbers cannot change: a run that
+       has finished evaluating does not re-evaluate. */
+    /* **Both readings of the same matrix, because they answer different questions.**
+       The share says how a true class was split across predictions; the count says how
+       much evidence that share rests on, and a convincing 100% over two instances is the
+       thing a normalised matrix alone will not tell you. Both are already on the cell,
+       so the swap is text rather than a redraw. */
+    const modes = $$('[data-matrix-mode]', cell);
+
+    modes.forEach((button) => button.addEventListener('click', () => {
+      modes.forEach((other) => {
+        const on = other === button;
+
+        other.classList.toggle('on', on);
+        other.setAttribute('aria-pressed', String(on));
+      });
+
+      for (const tile of $$('.confusion i[data-norm]', cell)) {
+        tile.textContent = tile.dataset[button.dataset.matrixMode];
+      }
+    }));
+
+    const asking = $('[data-read-curves]', cell);
+
+    if (asking && run) {
+      asking.addEventListener('click', async () => {
+        asking.disabled = true;
+        asking.textContent = 'Reading…';
+
+        try {
+          trainingCurvesByRun.set(run.id, await window.MarpApi.trainingRunCurves(run.id));
+        } catch (error) {
+          trainingCurvesByRun.set(run.id, []);
+          asking.textContent = `Could not read them (${error.status || 'no answer'})`;
+          return;
+        }
+
+        detail.redraw();
+      });
+    }
   };
 
   /* **Watched rather than clicked.** The expander is one delegated listener on the

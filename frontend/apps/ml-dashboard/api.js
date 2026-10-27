@@ -1238,6 +1238,74 @@
   }
 
   /**
+   * `GET /api/v2/training_run/:id/metrics` -- what the run measured when it finished.
+   *
+   * `{metrics, confusion_matrices}`. `metrics` is one `metrics_summary` row per split,
+   * per metric family and per class, carrying `metric_family` (`box`, `mask` or
+   * `classify`), `class_name`, `species_id`, `species_name`, `precision`, `recall`,
+   * `map50`, `map5095`, `f1_score`, `fitness`, `accuracy_top1`, `accuracy_top5`,
+   * `support` and `image_count`.
+   *
+   * **Three row kinds, and the nulls distinguish them.** `class_name` null is the
+   * all-classes aggregate; `class_name` set with `species_id` null is a class MARP could
+   * not resolve to a species; both set is a resolved class. A class the validator never
+   * evaluated -- one with no instances in the validation split -- has **no row at all**,
+   * which means *never measured* rather than *measured as zero*.
+   *
+   * **`confusion_matrices` arrive rows=true, columns=predicted**, which is how a person
+   * reads one and the transpose of how Ultralytics indexes it; the API turns it once on
+   * the way out. `labels[background_index]` is the string `background`, and
+   * `background_index` equals the number of classes. A null cell is a gap, not a zero.
+   *
+   * @param {number|string} runId - The training run.
+   * @returns {Promise<Object>}
+   */
+  function trainingRunMetrics(runId) {
+    return request(`/training_run/${encodeURIComponent(runId)}/metrics`);
+  }
+
+  /**
+   * `GET /api/v2/training_run/:id/curves` -- precision, recall and F1 at every threshold.
+   *
+   * One entry per split, family and class, each carrying parallel `confidence`,
+   * `precision`, `recall` and `f1_score` arrays in axis order. That is what draws a PR
+   * curve and the three confidence curves from numbers rather than from a
+   * white-background PNG.
+   *
+   * **Its own read because it is big** -- about a thousand points per class, where
+   * `/metrics` is a handful of rows. A panel showing headline numbers must not fetch it
+   * to ignore it, and nothing should fetch it twice for one run.
+   *
+   * @param {number|string} runId - The training run.
+   * @returns {Promise<Object[]>}
+   */
+  function trainingRunCurves(runId) {
+    return request(`/training_run/${encodeURIComponent(runId)}/curves`);
+  }
+
+  /**
+   * `GET /api/v2/training_run/:id/artifacts` -- every file the run produced.
+   *
+   * `{name, url, sha256, bytes, content_type, created_at}` per file, where `name` is the
+   * filename stem the worker filed it under -- `PR_curve`, `confusion_matrix`,
+   * `val_batch0_pred`, `results`.
+   *
+   * **An open set on purpose.** There is no allow-list: a plot a later Ultralytics adds
+   * appears under its own name instead of being dropped for being unfamiliar, which is
+   * the one thing a fixed list of columns cannot do. So a caller captions what it
+   * recognises and still shows what it does not.
+   *
+   * `content_type` is carried because the run directory holds a CSV among the images,
+   * and a gallery that assumes every file is an image draws a broken icon for it.
+   *
+   * @param {number|string} runId - The training run.
+   * @returns {Promise<Object[]>}
+   */
+  function trainingRunArtifacts(runId) {
+    return request(`/training_run/${encodeURIComponent(runId)}/artifacts`);
+  }
+
+  /**
    * `GET /api/v2/dataset/builds` -- how far every build still running has got.
    *
    * **The progress is on the attempt, which is why this is not on the dataset.** A
@@ -1670,6 +1738,9 @@
     listTrainingRuns,
     trainingRunEpochs,
     trainingRunPace,
+    trainingRunMetrics,
+    trainingRunCurves,
+    trainingRunArtifacts,
     listDatasetBuilds,
     datasetComposition,
     datasetBuildQueue,

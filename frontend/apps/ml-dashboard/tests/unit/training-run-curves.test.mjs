@@ -89,7 +89,26 @@ const epoch = (number, values = {}) => ({
   ...values,
 });
 
-const answers = (epochs, runs = [run(202, 21779)]) => ({
+/**
+ * What the three end-of-run reads answer.
+ *
+ * **They are requests, not fields on the run.** The panel used to read
+ * `run.confusion_matrix`, `run.class_metrics` and `run.plots`, which
+ * `GET /training_run/:id` has never carried — so every section drew its empty state
+ * over a gap that looked like missing data and was a missing request. The evidence
+ * comes from `/metrics`, `/curves` and `/artifacts`, and the fixtures say so too.
+ */
+const found = (evidence = {}) => ({
+  trainingRunMetrics: async () => ({
+    metrics: evidence.metrics || [],
+    confusion_matrices: evidence.matrices || [],
+  }),
+  trainingRunCurves: async () => evidence.curves || [],
+  trainingRunArtifacts: async () => evidence.files || [],
+});
+
+const answers = (epochs, runs = [run(202, 21779)], evidence = {}) => ({
+  ...found(evidence),
   listJobs: async () => ({ jobs: [job(21779), job(21780)], total: 2, limit: 500, offset: 0 }),
   listModels: async () => [{ id: 7, name: 'MARP-Rockfish-Det', model_type: 'detection', status: 'trained', created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z' }],
   listDatasets: async () => [{ id: 41, name: 'CAMPA_2024_Rockfish_v3', status: 'ready' }],
@@ -591,13 +610,22 @@ test('the run panel offers every section, and each empty one says what it waits 
   const detail = await open(screen, 21779);
   const heads = [...detail.querySelectorAll('.evaluation-card h5')].map((h) => h.textContent.trim());
 
-  assert.deepEqual(heads, ['Loss', 'Validation quality', 'Confusion matrix', 'Per-class quality', 'Training output'],
+  assert.deepEqual(heads,
+    ['Loss', 'Validation quality', 'Confusion matrix', 'Per-class quality', 'Threshold curves', 'Training output'],
     'every section has a place, whether or not anything fills it yet');
 
-  /* An empty frame reads as broken. Each of these names the missing piece instead. */
-  assert.match(detail.textContent, /Nothing records one yet/, 'the matrix says why it is absent');
-  assert.match(detail.textContent, /Nothing writes .*metrics_summary.* yet/, 'and so does per-class');
+  /* **An empty frame reads as broken, and a stale sentence is worse.** Each of these
+     names what is missing *about this run* rather than what MARP has not built: the
+     matrix, the per-class rows and the curves are all served now, so "nothing writes
+     metrics_summary yet" would be a sentence that was true in October and is not. */
+  assert.match(detail.textContent, /This run recorded none/, 'the matrix says why it is absent');
+  assert.match(detail.textContent, /This run recorded no per-class/, 'and so does per-class');
   assert.match(detail.textContent, /once the worker uploads them/, 'and the gallery names who it waits on');
+
+  /* The curves are the one section that is not fetched with the rest, so its empty state
+     is an offer rather than a wait. */
+  assert.ok(detail.querySelector('[data-read-curves]'),
+    'the curves are read on asking, because they are a thousand points per class');
 
   /* This asserted the opposite until `ea964f18`: the worker sent only `val/*`, so the
      chart said the train split was not recorded. The columns exist now and the chart
@@ -606,9 +634,15 @@ test('the run panel offers every section, and each empty one says what it waits 
 });
 
 test('a matrix MARP carries as numbers is drawn, not shown as a picture', async (t) => {
-  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
-    confusion_matrix: { labels: ['Cookie star', 'Urchin', 'Background'], rows: [[8, 1, 1], [0, 9, 1], [2, 0, 8]] },
-  })]));
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    matrices: [{
+      dataset_split: 'val',
+      labels: ['Cookie star', 'Urchin', 'background'],
+      rows: [[8, 1, 1], [0, 9, 1], [2, 0, 8]],
+      orientation: 'rows_true_cols_predicted',
+      background_index: 2,
+    }],
+  }));
 
   t.after(screen.close);
 
@@ -628,9 +662,16 @@ test('a matrix MARP carries as numbers is drawn, not shown as a picture', async 
 });
 
 test('an image-only matrix is shown as a render, and labelled as one', async (t) => {
-  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
-    confusion_matrix_url: '/api/v2/artifact/abc/confusion_matrix.png',
-  })]));
+  /* The matrix as the trainer rendered it and nothing else: the numbers never arrived,
+     so the picture is all MARP has. `confusion_matrix` is the role the worker files it
+     under, which is what the gallery and this card both key on. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    files: [{
+      name: 'confusion_matrix',
+      url: '/api/v2/training_run/202/artifacts/abc/confusion_matrix.png',
+      content_type: 'image/png',
+    }],
+  }));
 
   t.after(screen.close);
 
@@ -643,13 +684,13 @@ test('an image-only matrix is shown as a render, and labelled as one', async (t)
 });
 
 test('the trainer plots are captioned by what they are, not by filename', async (t) => {
-  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
-    plots: [
-      { name: 'PR_curve.png', url: '/a/pr.png' },
-      { name: 'val_batch0_pred.jpg', url: '/a/vb.jpg' },
-      { name: 'something_new.png', url: '/a/new.png' },
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    files: [
+      { name: 'PR_curve', url: '/a/pr.png', content_type: 'image/png' },
+      { name: 'val_batch0_pred', url: '/a/vb.jpg', content_type: 'image/jpeg' },
+      { name: 'something_new', url: '/a/new.png', content_type: 'image/png' },
     ],
-  })]));
+  }));
 
   t.after(screen.close);
 
@@ -1028,21 +1069,22 @@ test('run 203 draws validation loss alone, with the train keys disabled', async 
 test('a class MARP could not resolve is shown under the name the model used', async (t) => {
   /* `species_id` null with `class_name` set means the lookup found nothing -- not that
      the row is junk. Dropping it would hide a class the model is actively predicting. */
-  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
-    class_metrics: [
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    metrics: [
       { species_id: 775, class_name: 'Cookie star', metric_family: 'box', precision: 0.81, recall: 0.74, f1_score: 0.77, map50: 0.8, map5095: 0.5 },
       { species_id: null, class_name: 'Unknown urchin', metric_family: 'box', precision: 0.4, recall: 0.3, f1_score: 0.34, map50: 0.35, map5095: 0.2 },
       { species_id: null, class_name: null, metric_family: 'box', precision: 0.6, recall: 0.52, f1_score: 0.56, map50: 0.57, map5095: 0.35 },
     ],
-  })]));
+  }));
 
   t.after(screen.close);
 
   const detail = await open(screen, 21779);
   const bodyRows = [...detail.querySelectorAll('.class-metrics tbody tr')];
 
+  /* Worst AP first, so the unresolved class at .35 leads the resolved one at .80. */
   assert.deepEqual(bodyRows.map((r) => r.querySelector('th').textContent.replace(/\s+/g, ' ').trim()),
-    ['Cookie star', 'Unknown urchin unmatched'],
+    ['Unknown urchin unmatched', 'Cookie star'],
     'both classes listed, the unresolved one marked rather than hidden');
 
   /* **The aggregate is not one of the classes.** Left in the list it reads as a species
@@ -1061,12 +1103,12 @@ test('a class MARP could not resolve is shown under the name the model used', as
 test('two metric families are two tables, so segmentation is not a rewrite', async (t) => {
   /* A segmentation run reports box and mask for the same class -- the same four metric
      names twice. Keyed on class alone, one would silently replace the other. */
-  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
-    class_metrics: [
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    metrics: [
       { species_id: 775, class_name: 'Cookie star', metric_family: 'box', precision: 0.81, recall: 0.74, f1_score: 0.77, map50: 0.8, map5095: 0.5 },
       { species_id: 775, class_name: 'Cookie star', metric_family: 'seg', precision: 0.72, recall: 0.66, f1_score: 0.69, map50: 0.71, map5095: 0.41 },
     ],
-  })]));
+  }));
 
   t.after(screen.close);
 
@@ -1083,12 +1125,12 @@ test('two metric families are two tables, so segmentation is not a rewrite', asy
 test('a CSV in the gallery is offered as a file, not drawn as a picture', async (t) => {
   /* `results` is Ultralytics' CSV of every metric it recorded. An <img> pointed at it is
      a broken image icon with a caption underneath. */
-  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
-    plots: [
-      { name: 'PR_curve.png', url: '/a/pr.png', content_type: 'image/png', bytes: 40000 },
-      { name: 'results.csv', url: '/a/results.csv', content_type: 'text/csv', bytes: 2048 },
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    files: [
+      { name: 'PR_curve', url: '/a/pr.png', content_type: 'image/png', bytes: 40000 },
+      { name: 'results', url: '/a/results.csv', content_type: 'text/csv', bytes: 2048 },
     ],
-  })]));
+  }));
 
   t.after(screen.close);
 
@@ -1109,12 +1151,12 @@ test('the shared-threshold caveat sits where two classes get compared', async (t
      chosen from the mean F1 across classes -- so a class whose own optimum is elsewhere
      reads below its peak. That is a caveat about comparing two rows, so it belongs on the
      card where the rows are, not in a tooltip somebody has to find. */
-  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
-    class_metrics: [
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    metrics: [
       { species_id: 1, class_name: 'A', metric_family: 'box', precision: 0.9, recall: 0.8, f1_score: 0.85, map50: 0.88, map5095: 0.6 },
       { species_id: 2, class_name: 'B', metric_family: 'box', precision: 0.4, recall: 0.9, f1_score: 0.56, map50: 0.5, map5095: 0.3 },
     ],
-  })]));
+  }));
 
   t.after(screen.close);
 
@@ -1130,14 +1172,14 @@ test('support and images sit before the scores they qualify', async (t) => {
   /* A precision of 1.000 over three instances and one over three thousand render
      identically without these, and on a survey whose point is the rare species that is
      the difference between a number somebody acts on and one that misleads them. */
-  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779, {
-    class_metrics: [
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    metrics: [
       { species_id: 1, class_name: 'Cookie star', metric_family: 'box', support: 3, image_count: 2, precision: 1, recall: 1, f1_score: 1, map50: 1, map5095: 0.8 },
       { species_id: 2, class_name: 'Urchin', metric_family: 'box', support: 3412, image_count: 740, precision: 0.81, recall: 0.77, f1_score: 0.79, map50: 0.8, map5095: 0.5 },
       { species_id: 3, class_name: 'Sponge', metric_family: 'box', support: null, image_count: null, precision: 0.6, recall: 0.5, f1_score: 0.55, map50: 0.58, map5095: 0.3 },
       { species_id: null, class_name: null, metric_family: 'box', precision: 0.8, recall: 0.75, f1_score: 0.77, map50: 0.79, map5095: 0.53 },
     ],
-  })]));
+  }));
 
   t.after(screen.close);
 
@@ -1147,19 +1189,24 @@ test('support and images sit before the scores they qualify', async (t) => {
   assert.deepEqual(headers, ['Class', 'Support', 'Images', 'Precision', 'Recall', 'F1', 'AP@50', 'AP@50–95'],
     'the size of the sample arrives before the claim about it');
 
-  const rows = [...detail.querySelectorAll('.class-metrics tbody tr')];
+  /* **Worst AP first**, which is what the table is asked: Sponge .58, Urchin .80,
+     Cookie star 1.00. Looked up by name rather than by position, so the sort can change
+     without this test quietly asserting the old one. */
+  const byName = new Map([...detail.querySelectorAll('.class-metrics tbody tr')]
+    .map((row) => [row.querySelector('th').textContent.trim(), row]));
 
-  assert.equal(rows[0].children[1].textContent, '3');
-  assert.equal(rows[1].children[1].textContent, '3,412');
+  assert.equal(byName.get('Cookie star').children[1].textContent, '3');
+  assert.equal(byName.get('Urchin').children[1].textContent, '3,412');
 
   /* Null means the trainer reported no count; 0 would mean it counted none. */
-  assert.ok(rows[2].children[1].querySelector('.dash'), 'an absent count is a dash, not a zero');
+  assert.ok(byName.get('Sponge').children[1].querySelector('.dash'),
+    'an absent count is a dash, not a zero');
 
   /* **Attribution rather than a warning.** A "low support" flag would need a cutoff, and
      any cutoff would be invented here. Each score says what it rests on instead. */
-  assert.match(rows[0].children[3].getAttribute('title'), /over 3 labelled instances/,
+  assert.match(byName.get('Cookie star').children[3].getAttribute('title'), /over 3 labelled instances/,
     'the perfect score carries its sample size');
-  assert.equal(rows[2].children[3].getAttribute('title'), null,
+  assert.equal(byName.get('Sponge').children[3].getAttribute('title'), null,
     'and a class with no count claims nothing about one');
 
   /* The aggregate has neither, and summing would invent one -- images especially, where
@@ -1815,4 +1862,158 @@ test('a run outside the recent three still opens', async (t) => {
   assert.doesNotMatch(detail.textContent, /Reading this run/,
     'it resolved rather than sitting on its placeholder');
   assert.ok(detail.querySelector('.result-line'), 'and drew the run&rsquo;s curves');
+});
+
+/* ------------------------------------------- what a finished run produced */
+
+/** A per-threshold series for one class, as `/curves` groups them. */
+const curve = (name, at) => ({
+  dataset_split: 'val',
+  metric_family: 'box',
+  class_name: name,
+  species_id: 1,
+  confidence: [0, 0.25, 0.5, 0.75, 1],
+  precision: at.map((v) => v),
+  recall: at.map((v) => 1 - v),
+  f1_score: at.map((v) => v * 0.9),
+});
+
+test('the evaluation comes from the end-of-run reads, not from the run row', async (t) => {
+  /* **The defect this pins is a missing request, not missing data.** The panel read
+     `run.confusion_matrix`, `run.class_metrics` and `run.plots`, which
+     `GET /training_run/:id` has never carried, so all three sections drew their empty
+     state for ever over a gap that looked like the API not having the numbers. */
+  const asked = [];
+
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)], [run(202, 21779)]),
+    trainingRunMetrics: async (id) => {
+      asked.push(`metrics:${id}`);
+      return {
+        metrics: [{ species_id: 1, class_name: 'Cookie star', metric_family: 'box', precision: 0.8, recall: 0.7, f1_score: 0.75, map50: 0.79, map5095: 0.5 }],
+        confusion_matrices: [],
+      };
+    },
+    trainingRunArtifacts: async (id) => {
+      asked.push(`artifacts:${id}`);
+      return [{ name: 'PR_curve', url: '/a/pr.png', content_type: 'image/png' }];
+    },
+  });
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.deepEqual(asked, ['metrics:202', 'artifacts:202'], 'both reads, against the run id');
+  assert.ok(detail.querySelector('.class-metrics'), 'the per-class table drew from /metrics');
+  assert.ok(detail.querySelector('.plot-gallery img'), 'and the gallery from /artifacts');
+});
+
+test('the confusion matrix names its axes in words and can be read as counts', async (t) => {
+  /* **True and Predicted is the one thing a reader must have right.** A matrix read the
+     wrong way round is entirely plausible and asserts the reverse of what happened, and
+     a sentence in the card header is not where somebody checks. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    matrices: [{
+      dataset_split: 'val',
+      labels: ['Cookie star', 'Urchin', 'background'],
+      rows: [[8, 1, 1], [0, 9, 1], [2, 0, 8]],
+      orientation: 'rows_true_cols_predicted',
+      background_index: 2,
+    }],
+  }));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.equal(detail.querySelector('.matrix-frame .axis-y').textContent, 'True class');
+  assert.equal(detail.querySelector('.matrix-frame .axis-x').textContent, 'Predicted class');
+
+  /* The background row is kept and labelled rather than trimmed: from the model's point
+     of view it is a real outcome and the row sums mean nothing without it. */
+  const labels = [...detail.querySelectorAll('.confusion > b')].map((b) => b.textContent);
+
+  assert.ok(labels.includes('background'), 'the background row is labelled, not dropped');
+
+  /* A share of 100% over two instances and over two thousand look identical, which is
+     why both readings are offered rather than one. */
+  const first = detail.querySelector('.confusion i');
+
+  assert.equal(first.textContent, '80%', 'normalised by default');
+
+  detail.querySelector('[data-matrix-mode="count"]').click();
+
+  assert.equal(first.textContent, '8', 'and the counts are one press away');
+  assert.equal(detail.querySelector('[data-matrix-mode="norm"]').getAttribute('aria-pressed'), 'false');
+});
+
+test('per-class quality leads with the worst class, and shows the AP as a bar', async (t) => {
+  /* Nobody scans a species list alphabetically to find what the model is bad at. The
+     sorted bar is the form the field uses for exactly that question. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    metrics: [
+      { species_id: 1, class_name: 'Good', metric_family: 'box', precision: 0.9, recall: 0.9, f1_score: 0.9, map50: 0.91, map5095: 0.7 },
+      { species_id: 2, class_name: 'Bad', metric_family: 'box', precision: 0.2, recall: 0.2, f1_score: 0.2, map50: 0.19, map5095: 0.1 },
+      { species_id: 3, class_name: 'Unmeasured', metric_family: 'box', precision: null, recall: null, f1_score: null, map50: null, map5095: null },
+    ],
+  }));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const names = [...detail.querySelectorAll('.class-metrics tbody th')].map((th) => th.textContent.trim());
+
+  /* **Unmeasured sorts last, not first.** Never measured is not the same as measured
+     badly, and putting it at the top would answer the question wrongly. */
+  assert.deepEqual(names, ['Bad', 'Good', 'Unmeasured']);
+
+  const bar = detail.querySelector('.class-metrics tbody tr .apbar');
+
+  assert.equal(bar.style.getPropertyValue('--v'), '0.190', 'the bar is the AP it sits behind');
+});
+
+test('the threshold curves are read on asking, once, and drawn per class with a mean', async (t) => {
+  /* About a thousand points per class, which is why the API serves them separately and
+     why a panel polling every five seconds must not pull them again. */
+  let reads = 0;
+
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)], [run(202, 21779)]),
+    trainingRunCurves: async () => {
+      reads += 1;
+      return [curve('Cookie star', [0.2, 0.4, 0.6, 0.8, 1]), curve('Urchin', [0.1, 0.2, 0.3, 0.4, 0.5])];
+    },
+  });
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.equal(reads, 0, 'nothing is fetched until it is asked for');
+
+  detail.querySelector('[data-read-curves]').click();
+
+  for (let i = 0; i < 8; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const panel = screen.document.querySelector('.training-table tbody tr[data-job="21779"]').nextElementSibling;
+  const heads = [...panel.querySelectorAll('.curve-card h5')].map((h) => h.textContent.trim());
+
+  assert.deepEqual(heads, ['Precision–recall', 'F1 against confidence',
+    'Precision against confidence', 'Recall against confidence'],
+    'the four YOLO draws, by the names it draws them under');
+
+  const pr = panel.querySelector('.curve-card');
+
+  assert.equal(pr.querySelectorAll('.curve-class').length, 2, 'one thin line per class');
+  assert.ok(pr.querySelector('.curve-mean').getAttribute('d'), 'and the bold mean over them');
+
+  assert.equal(reads, 1, 'read once');
+
+  /* A redraw must not re-read: the numbers cannot change once a run has evaluated. */
+  await panel.redraw();
+
+  for (let i = 0; i < 4; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(reads, 1, 'and kept, rather than fetched again on every poll');
 });
