@@ -195,7 +195,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line241">line 241</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line243">line 243</a>
     </li></ul></dd>
     
 
@@ -735,13 +735,13 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The per-class and overall metric fields, by the column that holds each.`precision`, `recall` and `f1_score` are shared by detection and segmentation, whichis why one table serves both and `metric_family` says which vocabulary a row is inrather than the column names doing it.The per-class names differ from the overall ones because Ultralytics' own do: a classhas an AP, a run has a mAP, and flattening that distinction here would lose it.**There is no overall F1 and the column stays null.** `mean_results()` returns fourvalues -- `[mp, mr, map50, map]` -- and no F1 among them. The tempting fill is`2*mp*mr/(mp+mr)`, and it is wrong: a mean of ratios is not the ratio of means, sothat is a third quantity Ultralytics never computes, sitting in a column whose otherrows hold a real measurement. Left null, which is the honest answer.**`fitness` is `map5095`, exactly, and the two columns will always agree.** Theweights are `[0.0, 0.0, 0.0, 1.0]` over `[P, R, mAP50, mAP50-95]` in 8.4.145, sofitness is mAP50-95 and nothing else. Both are kept rather than one dropped, becausefitness is a different *concept* -- the number checkpoints are ranked by -- and thoseweights are Ultralytics' to change; the day they do, a history with only one of themcould not be read. Anyone wondering why two columns never differ is answered here.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The per-class and overall metric fields, by the column that holds each.`precision`, `recall` and `f1_score` are shared by detection and segmentation, whichis why one table serves both and `metric_family` says which vocabulary a row is inrather than the column names doing it.The per-class names differ from the overall ones because Ultralytics' own do: a classhas an AP, a run has a mAP, and flattening that distinction here would lose it.**There is no overall F1 and the column stays null.** `mean_results()` returns fourvalues -- `[mp, mr, map50, map]` -- and no F1 among them. The tempting fill is`2*mp*mr/(mp+mr)`, and it is wrong: a mean of ratios is not the ratio of means, sothat is a third quantity Ultralytics never computes, sitting in a column whose otherrows hold a real measurement. Left null, which is the honest answer.**`fitness` is `map5095` exactly ON A DETECTION RUN**, where the two columns willalways agree: the weights are `[0.0, 0.0, 0.0, 1.0]` over `[P, R, mAP50, mAP50-95]` in8.4.145. **That identity is detection's and does not generalise** -- a classificationrun has no mAP at all and reports its own fitness beside top-1 and top-5, so there thecolumn is a real number of its own rather than a duplicate. Both are kept rather than one dropped, becausefitness is a different *concept* -- the number checkpoints are ranked by -- and thoseweights are Ultralytics' to change; the day they do, a history with only one of themcould not be read. Anyone wondering why two columns never differ is answered here.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line182">line 182</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line184">line 184</a>
     </li></ul></dd>
     
 
@@ -781,7 +781,7 @@
 
 
 <div class="description usertext">
-    The per-class and overall metric fields, by the column that holds each.`precision`, `recall` and `f1_score` are shared by detection and segmentation, whichis why one table serves both and `metric_family` says which vocabulary a row is inrather than the column names doing it.The per-class names differ from the overall ones because Ultralytics' own do: a classhas an AP, a run has a mAP, and flattening that distinction here would lose it.**There is no overall F1 and the column stays null.** `mean_results()` returns fourvalues -- `[mp, mr, map50, map]` -- and no F1 among them. The tempting fill is`2*mp*mr/(mp+mr)`, and it is wrong: a mean of ratios is not the ratio of means, sothat is a third quantity Ultralytics never computes, sitting in a column whose otherrows hold a real measurement. Left null, which is the honest answer.**`fitness` is `map5095`, exactly, and the two columns will always agree.** Theweights are `[0.0, 0.0, 0.0, 1.0]` over `[P, R, mAP50, mAP50-95]` in 8.4.145, sofitness is mAP50-95 and nothing else. Both are kept rather than one dropped, becausefitness is a different *concept* -- the number checkpoints are ranked by -- and thoseweights are Ultralytics' to change; the day they do, a history with only one of themcould not be read. Anyone wondering why two columns never differ is answered here.
+    The per-class and overall metric fields, by the column that holds each.`precision`, `recall` and `f1_score` are shared by detection and segmentation, whichis why one table serves both and `metric_family` says which vocabulary a row is inrather than the column names doing it.The per-class names differ from the overall ones because Ultralytics' own do: a classhas an AP, a run has a mAP, and flattening that distinction here would lose it.**There is no overall F1 and the column stays null.** `mean_results()` returns fourvalues -- `[mp, mr, map50, map]` -- and no F1 among them. The tempting fill is`2*mp*mr/(mp+mr)`, and it is wrong: a mean of ratios is not the ratio of means, sothat is a third quantity Ultralytics never computes, sitting in a column whose otherrows hold a real measurement. Left null, which is the honest answer.**`fitness` is `map5095` exactly ON A DETECTION RUN**, where the two columns willalways agree: the weights are `[0.0, 0.0, 0.0, 1.0]` over `[P, R, mAP50, mAP50-95]` in8.4.145. **That identity is detection's and does not generalise** -- a classificationrun has no mAP at all and reports its own fitness beside top-1 and top-5, so there thecolumn is a real number of its own rather than a duplicate. Both are kept rather than one dropped, becausefitness is a different *concept* -- the number checkpoints are ranked by -- and thoseweights are Ultralytics' to change; the day they do, a history with only one of themcould not be read. Anyone wondering why two columns never differ is answered here.
 </div>
 
 
@@ -819,7 +819,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line214">line 214</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line216">line 216</a>
     </li></ul></dd>
     
 
@@ -985,7 +985,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line492">line 492</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line499">line 499</a>
     </li></ul></dd>
     
 
@@ -1155,7 +1155,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line423">line 423</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line430">line 430</a>
     </li></ul></dd>
     
 
@@ -1313,7 +1313,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line316">line 316</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line318">line 318</a>
     </li></ul></dd>
     
 
@@ -1629,7 +1629,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line263">line 263</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line265">line 265</a>
     </li></ul></dd>
     
 
@@ -1787,7 +1787,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line548">line 548</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line555">line 555</a>
     </li></ul></dd>
     
 
@@ -1945,7 +1945,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line292">line 292</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line294">line 294</a>
     </li></ul></dd>
     
 
@@ -2103,7 +2103,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line278">line 278</a>
+        <a href="db_final-metrics.js.html">db/final-metrics.js</a>, <a href="db_final-metrics.js.html#line280">line 280</a>
     </li></ul></dd>
     
 

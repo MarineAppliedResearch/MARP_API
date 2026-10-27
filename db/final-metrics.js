@@ -169,9 +169,11 @@ function isKnownFamily(family) {
  * that is a third quantity Ultralytics never computes, sitting in a column whose other
  * rows hold a real measurement. Left null, which is the honest answer.
  *
- * **`fitness` is `map5095`, exactly, and the two columns will always agree.** The
- * weights are `[0.0, 0.0, 0.0, 1.0]` over `[P, R, mAP50, mAP50-95]` in 8.4.145, so
- * fitness is mAP50-95 and nothing else. Both are kept rather than one dropped, because
+ * **`fitness` is `map5095` exactly ON A DETECTION RUN**, where the two columns will
+ * always agree: the weights are `[0.0, 0.0, 0.0, 1.0]` over `[P, R, mAP50, mAP50-95]` in
+ * 8.4.145. **That identity is detection's and does not generalise** -- a classification
+ * run has no mAP at all and reports its own fitness beside top-1 and top-5, so there the
+ * column is a real number of its own rather than a duplicate. Both are kept rather than one dropped, because
  * fitness is a different *concept* -- the number checkpoints are ranked by -- and those
  * weights are Ultralytics' to change; the day they do, a history with only one of them
  * could not be read. Anyone wondering why two columns never differ is answered here.
@@ -363,6 +365,11 @@ function finalMetrics(report) {
             });
         }
 
+        /* **A missing `per_class` is absence, on every family, and is not malformed.**
+           The producer omits it rather than sending `[]`, because no rows means nothing
+           was scored per class. Classification never has one at all -- `ClassifyMetrics`
+           has no per-class quantity of any kind, and its confusion matrix is the only
+           per-class thing it produces. */
         const perClass = Array.isArray(block.per_class) ? block.per_class : [];
 
         for (const entry of perClass) {

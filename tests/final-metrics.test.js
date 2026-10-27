@@ -360,6 +360,40 @@ describe('what the trainer does not report', () => {
         }
     });
 
+    it('takes a missing per_class as absence, on any family', () => {
+        // The producer omits `per_class` rather than sending `[]`, because no rows means
+        // nothing was scored per class. Classification never has one at all:
+        // ClassifyMetrics has no per-class quantity of any kind, and its confusion
+        // matrix is the only per-class thing it produces.
+        const noPerClass = report();
+        delete noPerClass.metrics[0].per_class;
+
+        const parsed = finalMetrics(noPerClass);
+
+        // The aggregate still lands; only the per-class rows are absent.
+        expect(parsed.rows).toHaveLength(1);
+        expect(parsed.rows[0].class_name).toBeNull();
+        expect(parsed.rows[0].map50).toBe(0.79);
+    });
+
+    it('keeps a classification fitness, which is not a duplicate of anything', () => {
+        // On a detection run `fitness` equals `map5095` under Ultralytics' [0,0,0,1]
+        // weights. That identity is detection's alone -- classification has no mAP, so
+        // its fitness is a measurement of its own and must not be read as a copy.
+        const classify = finalMetrics({
+            schema: 1,
+            task: 'classify',
+            split: 'val',
+            metrics: [{
+                family: METRIC_FAMILIES.CLASSIFY,
+                overall: { accuracy_top1: 0.82, accuracy_top5: 0.97, fitness: 0.895 },
+            }],
+        });
+
+        expect(classify.rows[0].fitness).toBeCloseTo(0.895);
+        expect(classify.rows[0].map5095).toBeNull();
+    });
+
     it('stores classification accuracy as the fraction it is', () => {
         // Accuracies, not counts. An integer column would round 0.873 to 1 and report
         // a perfect classifier, which is why these are double precision and `support`

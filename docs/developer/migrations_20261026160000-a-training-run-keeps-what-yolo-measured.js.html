@@ -89,8 +89,9 @@
  * nothing new.
  *
  * **Two columns here will always hold the same number, and that is not a mistake.**
- * `fitness` is a weighted sum over `[P, R, mAP50, mAP50-95]` whose weights are
- * `[0, 0, 0, 1]` in 8.4.145, so it *is* `map5095`. Both are kept because fitness is a
+ * on a DETECTION run `fitness` is a weighted sum over `[P, R, mAP50, mAP50-95]` whose
+ * weights are `[0, 0, 0, 1]` in 8.4.145, so it *is* `map5095`. The identity is
+ * detection's alone: classification has no mAP and reports its own fitness. Both are kept because fitness is a
  * different concept -- what checkpoints are ranked by -- and those weights are
  * Ultralytics' to change; a history holding only one of them could not be read after
  * they diverged.
