@@ -105,7 +105,8 @@
             </span>
             <select class="sel" aria-label="Job type"><option>All job types</option><option>Inference</option><option>Tracking</option><option>Training</option><option>Diagnostic</option></select>
             <select class="sel" aria-label="Status"><option>All statuses</option><option>Running</option><option>Queued</option><option>Done</option><option>Issues</option><option>Failed</option><option>Cancelled</option><option>Expired</option></select>
-            <select data-choices class="sel" aria-label="Window"><option>Last 7 days</option><option>Last 24 hours</option><option>Last 30 days</option></select>
+            <select data-choices class="sel" aria-label="Window" title="Jobs is the job history; this is how far back it reaches"><option>Last 7 days</option><option>Last 24 hours</option><option>Last 30 days</option><option>Last 90 days</option><option>This year</option></select>
+            <button class="btn" type="button" data-jobs-export title="Download every job in this window as CSV"><svg class="ico"><use href="#i-download"/></svg>Export</button>
             <button class="btn" type="button" id="expandAll"><svg class="ico"><use href="#i-right"/></svg>Expand all</button>
             <!-- Clearing the whole pile is only offered once the list IS the pile. Drawn
                  by wireJobsDelete() when Status is Failed and absent otherwise, because a
