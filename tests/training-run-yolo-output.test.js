@@ -326,6 +326,38 @@ describe('Taking a final report into the record', () => {
         expect(uncounted.support).toBeNull();
     });
 
+    it('names an unrecognised family rather than refusing it or swallowing it', async () => {
+        // `mask` was the wrong guess for `seg` before both sides agreed. A typo like
+        // that otherwise lands silently as a table nobody is looking for. Reported, and
+        // still stored -- Ultralytics has `pose` and `obb`, and an allow-list would
+        // reject a whole run's metrics the first time somebody trained one.
+        const mistyped = finalMetricsReport();
+        mistyped.metrics[0].family = 'mask';
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(mistyped));
+
+        const result = await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        expect(result.stored.unknown_families).toEqual(['mask']);
+
+        // Stored, not dropped.
+        const [{ count }] = await query(
+            `SELECT COUNT(*)::int AS count FROM metrics_summary
+              WHERE training_run_id = :id AND metric_family = 'mask'`,
+            { id: made.trainingRunId }
+        );
+
+        expect(count).toBe(3);
+    });
+
+    it('says nothing when every family is one it knows', async () => {
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(finalMetricsReport()));
+
+        const result = await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        expect(result.stored.unknown_families).toEqual([]);
+    });
+
     it('keeps a class it cannot resolve, under the name the model used', async () => {
         await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(finalMetricsReport()));
 

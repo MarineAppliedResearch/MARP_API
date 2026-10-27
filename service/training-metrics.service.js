@@ -37,6 +37,7 @@ const {
     METRICS_CURVES_ROLE,
     finalMetrics,
     metricCurves,
+    isKnownFamily,
     confusionForReading,
 } = require('../db/final-metrics');
 const ingestRepository = require('../repository/observation-ingest.repository');
@@ -397,6 +398,23 @@ class TrainingMetricsService {
 
             const curvePoints = await this.storeCurves({ run, parsed, curves, transaction });
 
+            /* **Reported, not refused.** An unrecognised family is almost always a typo
+               -- `mask` where the two sides agreed `seg` -- and it otherwise lands
+               silently as a table nobody is looking for. Named here and in the log it is
+               visible the first time, while a family MARP has genuinely not met yet
+               (Ultralytics has `pose` and `obb`) still arrives intact. */
+            const unknownFamilies = [...new Set(
+                rows.map((row) => row.metric_family).filter((family) => !isKnownFamily(family))
+            )];
+
+            if (unknownFamilies.length > 0) {
+                logger.info(
+                    `training run ${run.id} reported metric families MARP does not `
+                    + `recognise: ${unknownFamilies.join(', ')}. Stored, but nothing is `
+                    + 'built to read them -- check this is not a spelling difference.'
+                );
+            }
+
             await transaction.commit();
 
             return {
@@ -409,6 +427,7 @@ class TrainingMetricsService {
                     unresolved_classes: rows.filter(
                         (row) => row.class_name !== null && row.species_id === null
                     ).length,
+                    unknown_families: unknownFamilies,
                 },
             };
         } catch (error) {

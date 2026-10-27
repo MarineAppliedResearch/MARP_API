@@ -133,6 +133,27 @@ const SERVED_ORIENTATION = ORIENTATIONS.ROWS_TRUE;
 const METRIC_FAMILIES = { BOX: 'box', SEG: 'seg', CLASSIFY: 'classify' };
 
 /**
+ * Whether a family is one MARP recognises.
+ *
+ * **Recognised, not permitted.** An unknown family is reported and stored, never
+ * refused: Ultralytics has `pose` and `obb` beyond the three here, and an allow-list
+ * would reject a whole run's metrics the first time somebody trained one -- the same
+ * closed-set mistake as an allow-list of plot stems, which this work already rejected
+ * once.
+ *
+ * What it buys is the opposite of refusal: a typo like `mask` for `seg` otherwise lands
+ * silently and produces a table nobody is looking for, with no error to point at. Named
+ * in the ingest's answer and in the log, it is visible the first time it happens while a
+ * genuinely new family still arrives intact.
+ *
+ * @param {string} family - The family as reported.
+ * @returns {boolean} True when MARP has seen this one before.
+ */
+function isKnownFamily(family) {
+    return Object.values(METRIC_FAMILIES).includes(family);
+}
+
+/**
  * The per-class and overall metric fields, by the column that holds each.
  *
  * `precision`, `recall` and `f1_score` are shared by detection and segmentation, which
@@ -590,6 +611,7 @@ module.exports = {
     metricCurves,
     FINAL_METRICS_ROLE,
     METRIC_FAMILIES,
+    isKnownFamily,
     ORIENTATIONS,
     SERVED_ORIENTATION,
     OVERALL_FIELDS,
