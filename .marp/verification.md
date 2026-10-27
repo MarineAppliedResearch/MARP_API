@@ -33,6 +33,33 @@ had never been run: `species.taxserial` is NOT NULL with no default and there is
 correctly serving the content type the hand-off had recorded. A test nobody has run is a
 draft.
 
+### Re-read against live traffic, 2026-10-27
+
+**A fact in this record went stale within a day, which is the point of re-reading.** On
+2026-10-26 no stored event had ever carried `fitness`, `duration_seconds` or a `train/*`
+loss, and this document said so. Worker 0.1.6 landed in between, and three of those are
+now in traffic on jobs 21782, 21785 and 21786. The fixture in `tests/final-metrics.test.js`
+is re-copied from job 21786 attempt 19223, and the tripwire that asserted
+`train/box_loss` was absent now asserts its value instead -- kept rather than deleted,
+because a fixture agreeing with yesterday's traffic is exactly the failure this work keeps
+guarding against.
+
+Two things that re-read also settled:
+
+- **`fitness` has still never appeared in any metric event MARP has stored**, checked
+  across every training attempt rather than one payload. `OVERALL_FIELDS` maps it for the
+  end-of-run report, which is a different payload, so nothing changes.
+- **The offsets are a version boundary, not a gap.** Jobs 21782 and 21785 carry the
+  training losses and duration with no offsets; 21786 carries all five. `epochs` mirrors
+  it exactly -- run 205 has ten rows with durations and no offsets, run 206 one row with
+  both. Working as intended.
+
+**No `final_metrics` or `metrics_curves` artifact exists yet.** `artifacts` holds only
+`weights` (5) and `observations` (3,053), and job 21786 succeeded on 2026-10-27 with
+weights alone. So the end-of-run fixtures are still derived from the library rather than
+from traffic, and V18's sizes are still synthetic. Both are owed again once a run emits
+one.
+
 ### V18, measured rather than estimated
 
 20 classes x 1,000 confidence points, which is the shape the worker described:

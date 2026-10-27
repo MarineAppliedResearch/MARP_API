@@ -36,21 +36,38 @@ const {
 /**
  * A metric event exactly as the development database holds one.
  *
- * Job 21779, the most recent succeeded training job. Note what is *not* here: no
- * `fitness`, no `duration_seconds`, no `train/*` loss. Those are the worker's unmerged
- * branch, so no stored event has ever contained them.
+ * **Job 21786, attempt 19223, the newest training event on 5432 (2026-10-27).** Re-read
+ * from traffic rather than carried forward: an earlier version of this fixture came from
+ * job 21779 and its comment said `fitness`, `duration_seconds` and the `train/*` losses
+ * had never appeared in a stored event. That was true when written and is now false --
+ * worker 0.1.6 landed and three of those are here. `fitness` still is not, in any event
+ * MARP has ever stored.
+ *
+ * `start_offset_s` and `end_offset_s` arrived later still: jobs 21782 and 21785 carry the
+ * training losses and duration without them, 21786 carries all five. That is a worker
+ * version boundary rather than a gap, and `epochs` reflects it exactly -- run 205 has ten
+ * rows with durations and no offsets, run 206 has one row with both.
+ *
+ * `child_kind` is in every one of them and in no document anywhere, which is why this is
+ * copied rather than typed.
  */
 const REAL_METRIC_EVENT = {
     step: 1,
     phase: 'training',
     metrics: {
-        'val/box_loss': 0.75845,
-        'val/cls_loss': 0.62161,
-        'val/dfl_loss': 1.01172,
-        'metrics/mAP50(B)': 0.82506,
-        'metrics/recall(B)': 0.88513,
-        'metrics/mAP50-95(B)': 0.65858,
-        'metrics/precision(B)': 0.76877,
+        end_offset_s: 140.969,
+        'val/box_loss': 1.6818,
+        'val/cls_loss': 127.14748,
+        'val/dfl_loss': 0.85276,
+        start_offset_s: 0,
+        'train/box_loss': 3.15601,
+        'train/cls_loss': 26.33998,
+        'train/dfl_loss': 1.41446,
+        duration_seconds: 140.969,
+        'metrics/mAP50(B)': 0.11645,
+        'metrics/recall(B)': 0.40423,
+        'metrics/mAP50-95(B)': 0.05488,
+        'metrics/precision(B)': 0.1932,
     },
     child_kind: 'metrics',
 };
@@ -96,8 +113,23 @@ describe('the event stream as it really is', () => {
         // A tripwire, not an assertion about this module. If a future ingest reads the
         // event shape, this is the shape it will actually meet.
         expect(REAL_METRIC_EVENT.child_kind).toBe('metrics');
+    });
+
+    it('carries the training losses and duration, which it did not a day ago', () => {
+        // This assertion was the exact opposite on 2026-10-26, and was correct then.
+        // Worker 0.1.6 landed in between. Kept pointing at the live shape rather than
+        // deleted, because a fixture agreeing with yesterday's traffic is the failure
+        // this whole file exists to avoid.
+        expect(REAL_METRIC_EVENT.metrics['train/box_loss']).toBeCloseTo(3.15601);
+        expect(REAL_METRIC_EVENT.metrics.duration_seconds).toBeCloseTo(140.969);
+        expect(REAL_METRIC_EVENT.metrics.start_offset_s).toBe(0);
+    });
+
+    it('still carries no fitness, in any event MARP has ever stored', () => {
+        // Checked across every metric event on every training attempt on 5432, not just
+        // this one. `OVERALL_FIELDS` maps `fitness` for the end-of-run report, which is
+        // a different payload -- so this is a fact about the epoch stream, not a gap.
         expect(REAL_METRIC_EVENT.metrics.fitness).toBeUndefined();
-        expect(REAL_METRIC_EVENT.metrics['train/box_loss']).toBeUndefined();
     });
 });
 
