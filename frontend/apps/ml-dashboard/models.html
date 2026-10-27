@@ -102,10 +102,6 @@
               <option>All statuses</option><option>Trained</option>
               <option>Training</option><option>Draft</option><option>Archived</option>
             </select>
-            <select class="sel" aria-label="Dataset" title="Show models trained on one dataset">
-              <option>All datasets</option><option>ALL_Projects_Inverts_v5</option>
-              <option>SALT_2024_Habitat_v2</option>
-            </select>
             <select class="sel" aria-label="Base model" title="Show models fine-tuned from one base">
               <option>All base models</option><option>YOLOv8l</option><option>YOLOv8m</option>
             </select>
@@ -122,9 +118,7 @@
                   <th class="hver sortable" title="The version this row describes">Version</th>
                   <th class="hstatus sortable" title="Whether the artifact is usable">Status</th>
                   <th class="hbase sortable" title="What it was fine-tuned from">Base model</th>
-                  <th class="hdset sortable" title="The saved dataset it trained on">Training dataset</th>
-                  <th class="hmodel sortable" title="The headline score for its task">Key metrics</th>
-                  <th class="hcache sortable num" title="Workers holding a copy">Cached</th>
+                  <th class="hdset" title="What a model trained on: MARP records no link from a model to the run that produced it, so this is empty for every model">Training dataset</th>
                   <th class="hupd sortable" aria-sort="descending" title="When it was registered">Updated</th>
                   <th class="hacts"><span class="vh">Actions</span></th>
                 </tr>

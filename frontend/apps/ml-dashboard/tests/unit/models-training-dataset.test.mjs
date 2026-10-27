@@ -1,21 +1,26 @@
 /**
- * Which dataset a model learned from, in the registry's Training dataset column.
+ * The registry does not credit a model with a dataset it never trained on.
  *
- * **It was a permanent dash over data MARP already holds.** `ml_models` carries no
- * dataset link and never will -- the link is `training_runs.dataset_id` -- and the column
- * said so with a tooltip claiming training runs "cannot be listed". That stopped being
- * true when #260 added the collection read, and nothing noticed for weeks because a dash
- * that is always a dash looks the same whether it is honest or stale.
+ * **This file used to assert the opposite, and the opposite was wrong.** It pinned a join
+ * from `ml_models` through `training_runs.model_id` to `dataset_id`, read as "the dataset
+ * this model learned from". That column means the base model a run started *from* —
+ * `gpu.service.js` says so where it refuses a training submission without one: *"The
+ * starting model has to be one MARP knows, because the run that comes out of it is
+ * recorded against it."*
  *
- * So what is pinned here is the join, and the three ways it can be empty, because they
- * are three different facts that have to read as one dash:
+ * So the join named every model after what some *other* run trained on. On Isaac's own
+ * corpus six runs carried `model_id = 412` (rockfish5-2026-10-20) and `dataset_id = 384`
+ * (CookieStarTest); the registry credited rockfish5 with CookieStarTest, which it never
+ * saw, while the five models those runs actually produced showed a dash. One confident
+ * lie and five blanks from one misreading — which is worse than a column of dashes,
+ * because a reader cannot tell the lie from a fact.
  *
- * - a model with a run that names a dataset gets the name, linked;
- * - a model with no run at all gets the dash;
- * - a model whose run trained on something outside MARP gets the dash too.
+ * **Nothing records which run produced which model.** `ml_models` has no
+ * `training_run_id` and `training_runs` has no produced-model column, so there is no
+ * correct answer to show yet. The column keeps its place and says nothing.
  *
- * And the one behavioural rule underneath: **the newest run wins.** A model retrained on
- * a wider dataset shows the wider one, or the column is a record of what it used to be.
+ * What is pinned here is therefore a refusal: given exactly the shape of data that
+ * produced the wrong answer, the screen must not produce it again.
  *
  * @author Isaac Travers
  */
@@ -26,146 +31,120 @@ import assert from 'node:assert/strict';
 import { drawScreen } from './screen.mjs';
 
 /** One registry row, with the columns `modelView` reads. */
-const model = (id, name) => ({
+const model = (id, name, parent = null) => ({
   id,
   name,
   model_type: 'detection',
   architecture_version: 'YOLOv8l',
   status: 'trained',
-  parent_model_id: null,
+  parent_model_id: parent,
   storage_path: `/weights/${name}.pt`,
   created_at: '2026-10-01T10:00:00.000Z',
   updated_at: '2026-10-20T10:00:00.000Z',
 });
 
-/** One training run. The route answers newest first, so order here is the route's. */
-const run = (id, modelId, datasetId, createdAt) => ({
-  id,
-  model_id: modelId,
-  dataset_id: datasetId,
-  created_at: createdAt,
-  start_time: createdAt,
-  end_time: null,
-  total_epochs: 100,
+/** The base model six runs started from, and two of the models they produced. */
+const BASE = model(412, 'rockfish5-2026-10-20');
+const PRODUCED = [model(433, 'CookieStarTest-2026-10-23', 412), model(434, 'CookieStarTest-2026-10-26', 412)];
+
+/**
+ * Runs shaped the way MARP actually writes them: against the model they started from.
+ *
+ * @returns {Object[]}
+ */
+const runsFromBase = () => [
+  { id: 205, model_id: 412, dataset_id: 384, job_id: 21785 },
+  { id: 204, model_id: 412, dataset_id: 384, job_id: 21782 },
+];
+
+/**
+ * Draw the registry.
+ *
+ * `listTrainingRuns` and `listDatasets` are still answered even though the screen no
+ * longer asks: a stub that throws would pass this test for the wrong reason, by making
+ * the join impossible rather than unused.
+ *
+ * @param {Object[]} models - The registry.
+ * @returns {Promise<Object>} From `drawScreen`.
+ */
+const drawRegistry = (models) => drawScreen('models.html', {
+  listModels: async () => models,
+  listTrainingRuns: async () => runsFromBase(),
+  listDatasets: async () => [{ id: 384, name: 'CookieStarTest' }],
 });
 
-/** The cell, for one model id. */
-const cell = (screen, modelId) =>
-  screen.document.querySelector(`#models tbody tr[data-model="${modelId}"] .hdset`);
+/**
+ * The Training dataset cell of one row.
+ *
+ * @param {Object} document - The drawn document.
+ * @param {number} id - The model id.
+ * @returns {Object} `{text, link}`.
+ */
+function datasetCell(document, id) {
+  const row = document.querySelector(`#models tbody tr[data-model="${id}"]`);
+  assert.ok(row, `the fixture should have drawn a row for model ${id}`);
+  const cell = row.querySelector('.hdset');
+  return { text: cell?.textContent.trim(), link: cell?.querySelector('a')?.getAttribute('href') ?? null };
+}
 
-/** Everything the registry needs drawn, with three models standing for three cases. */
-const answers = {
-  listModels: async () => [
-    model(1, 'MARP-Rockfish-Det'),
-    model(2, 'MARP-Legacy-Det'),
-    model(3, 'MARP-External-Det'),
-  ],
-  listDatasets: async () => [
-    { id: 41, name: 'CAMPA_2024_Rockfish_v3', status: 'ready' },
-    { id: 42, name: 'ALL_Projects_Inverts_v5', status: 'ready' },
-  ],
-  listTrainingRuns: async () => [
-    /* Newest first, as the repository orders it. Model 1 has two: the wider dataset is
-       the recent one, and it is what the column must show. */
-    run(12, 1, 42, '2026-10-18T10:00:00.000Z'),
-    run(11, 1, 41, '2026-10-02T10:00:00.000Z'),
-    /* Model 3 trained on something outside MARP. A run, but no dataset. */
-    run(13, 3, null, '2026-10-15T10:00:00.000Z'),
-    /* Model 2 has no run at all and is simply absent here. */
-  ],
-};
-
-test('a model shows the dataset its most recent run learned from, linked', async (t) => {
-  const screen = await drawScreen('models.html', answers);
+test('a model that runs merely started from is not credited with their dataset', async (t) => {
+  const screen = await drawRegistry([BASE, ...PRODUCED]);
   t.after(screen.close);
 
-  const link = cell(screen, 1).querySelector('a');
-
-  assert.ok(link, 'the column should carry a link rather than a dash');
-  assert.equal(link.textContent.trim(), 'ALL_Projects_Inverts_v5',
-    'the newest run wins: this model was retrained on the wider dataset, and showing the '
-    + 'older one would make the column a record of what it used to be');
-  assert.equal(link.getAttribute('href'), './datasets.html?dataset=42',
-    'and it should land on that dataset, the way a build does from the Jobs screen');
+  const base = datasetCell(screen.document, 412);
+  assert.equal(base.link, null,
+    'rockfish5 was linked to CookieStarTest on the strength of runs that started FROM it');
+  assert.ok(!base.text.includes('CookieStarTest'),
+    'the dataset of a run that started from this model is not what this model trained on');
 });
 
-test('a model with no training run reads as the same dash as the columns beside it', async (t) => {
-  const screen = await drawScreen('models.html', answers);
+test('every row reads the same, so no row looks more known than another', async (t) => {
+  const screen = await drawRegistry([BASE, ...PRODUCED]);
   t.after(screen.close);
 
-  const mine = cell(screen, 2);
-  const beside = screen.document.querySelector('#models tbody tr[data-model="2"] .hcache');
-
-  assert.equal(mine.querySelector('a'), null, 'nothing to link to');
-
-  /* **Identical, deliberately.** Some models predate runs being kept, and an honest "no
-     run for this" has to look like the other empty columns rather than become a third
-     kind of empty -- a blank, a zero or a "None" would each read as a different fact. */
-  assert.ok(mine.querySelector('.dash'), 'it should be a dash');
-  assert.equal(mine.textContent.trim(), beside.textContent.trim(),
-    'and the same dash the Cached column draws, character for character');
-
-  /* The tooltip is the one thing that differs, because the reason differs. */
-  assert.notEqual(mine.querySelector('.dash').getAttribute('title'),
-    beside.querySelector('.dash').getAttribute('title'),
-    'the reason should differ even though the glyph does not: a reader who hovers deserves '
-    + 'the real one rather than a sentence about ml_models');
-  assert.match(mine.querySelector('.dash').getAttribute('title'), /no training run/i);
+  const cells = [412, 433, 434].map((id) => datasetCell(screen.document, id).text);
+  assert.equal(new Set(cells).size, 1,
+    'one populated cell among dashes reads as a fact the others are missing, when it was the only wrong one');
 });
 
-test('a run that trained outside MARP reads as a dash, not as a broken link', async (t) => {
-  const screen = await drawScreen('models.html', answers);
+test('the registry drops the columns nothing can ever fill', async (t) => {
+  /* `Key metrics` and `Cached` were hardcoded to the same dash on every row, for every
+     model, always. Isaac asked for them once and asked for them gone after looking at
+     them; a column that cannot be filled is a promise the screen cannot keep. */
+  const screen = await drawRegistry([BASE]);
   t.after(screen.close);
 
-  const mine = cell(screen, 3);
+  const headers = [...screen.document.querySelectorAll('#models thead th')].map((th) => th.textContent.trim());
+  assert.ok(!headers.includes('Key metrics'), 'Key metrics was a permanent dash');
+  assert.ok(!headers.includes('Cached'), 'Cached was a permanent dash');
 
-  /* A run with a null `dataset_id` is not the same fact as having no run, but it is the
-     same answer to "which dataset" -- and a link to `?dataset=null` would be worse than
-     either. */
-  assert.equal(mine.querySelector('a'), null, 'a null dataset_id should not become a link');
-  assert.ok(mine.querySelector('.dash'), 'it should take the dash');
+  const cells = screen.document.querySelector('#models tbody tr.runrow-head').children.length;
+  assert.equal(cells, headers.length, 'every row should carry one cell per column');
+
+  const detail = screen.document.querySelector('#models tbody tr.runrow-body td');
+  assert.equal(Number(detail.getAttribute('colspan')), headers.length,
+    'the detail row should span the columns that are actually there');
 });
 
-test('the registry still draws when training runs cannot be fetched', async (t) => {
-  /* The registry is the screen; the runs are a column on it. A catalogue that is slow or
-     a route that 404s on an older MARP should cost one column, not the table. */
-  const screen = await drawScreen('models.html', {
-    listModels: answers.listModels,
-    listDatasets: answers.listDatasets,
-    // listTrainingRuns deliberately absent, so the stub answers 404.
-  });
-
+test('the expansion states facts and does not explain itself', async (t) => {
+  /* DESIGN.md rule 7: no paragraph of prose on a screen, ever. The panel it replaces had
+     been rewritten twice because it kept outliving what it described. */
+  const screen = await drawRegistry([BASE]);
   t.after(screen.close);
 
-  assert.equal(screen.document.querySelectorAll('#models tbody tr.runrow-head').length, 3,
-    'every model should still have a row');
-  assert.ok(cell(screen, 1).querySelector('.dash'),
-    'and the column it could not fill should be a dash rather than empty');
+  const detail = screen.document.querySelector('#models tbody tr.runrow-body');
+  assert.ok(detail.textContent.includes('In the registry'), 'the facts stay');
+  assert.ok(!detail.textContent.includes('Not in the registry'),
+    'the paragraph explaining what MARP does not store is documentation, not interface');
+  assert.equal(detail.querySelectorAll('p').length, 0, 'no prose in the expansion');
 });
 
-test('the dataset filter offers what models actually trained on, and narrows to it', async (t) => {
-  const screen = await drawScreen('models.html', answers);
+test('the dataset filter goes with the association it narrowed on', async (t) => {
+  const screen = await drawRegistry([BASE, ...PRODUCED]);
   t.after(screen.close);
 
-  const select = [...screen.document.querySelectorAll('select')]
-    .find((one) => one.getAttribute('aria-label') === 'Dataset');
-
-  assert.ok(select, 'the registry should have a dataset filter');
-  assert.equal(select.disabled, false,
-    'it was disabled for a reason that stopped being true: training runs can be listed since #260');
-
-  /* Only what something trained on. Offering the whole catalogue means offering options
-     that narrow to nothing, which is a filter nobody trusts twice. */
-  assert.deepEqual([...select.options].map((one) => one.textContent),
-    ['All datasets', 'ALL_Projects_Inverts_v5'],
-    'the options should be the datasets models here actually used');
-
-  select.value = 'ALL_Projects_Inverts_v5';
-  select.dispatchEvent(new screen.window.Event('change', { bubbles: true }));
-
-  assert.deepEqual(
-    [...screen.document.querySelectorAll('#models tbody tr.runrow-head')].map((row) => row.dataset.model),
-    ['1'],
-    'choosing it should leave the one model that trained on it -- the filter had options '
-    + 'and no listener before, so even enabled it would have done nothing');
+  const labels = [...screen.document.querySelectorAll('#models select')]
+    .map((s) => s.getAttribute('aria-label'));
+  assert.ok(!labels.includes('Dataset'),
+    'it offered the datasets of runs that started from a model, which is not what it said it filtered');
 });

@@ -286,7 +286,11 @@ function mountTopbar() {
     + '<input class="inp" type="search" placeholder="'
     + (cfg.search || 'Search jobs, models, datasets\u2026') + '"'
     + ' aria-label="Search"></span>'
-    + '<button class="btn icon" aria-label="Reload" title="Reload">' + ico('refresh') + '</button>'
+    /* **On every screen, because it is the same question on every screen.** Isaac asked
+       for it on Models and it was absent everywhere; building it into the shared chrome
+       is the difference between answering him once and answering him seven times. */
+    + '<span class="fresh" data-freshness aria-live="polite" title="When MARP last answered"></span>'
+    + '<button class="btn icon" data-reload aria-label="Reload" title="Reload">' + ico('refresh') + '</button>'
     + (cfg.actions || []).map(btn).join('')
     + (cfg.kebab
       ? '<button class="btn icon" aria-label="More" title="Export, columns and settings">'
@@ -4345,7 +4349,7 @@ const NOT_IN_REGISTRY = '<span class="dash" title="Nothing serves this yet: metr
  * a "None" would all read as a different sort of fact. Only the tooltip differs, because
  * the reason differs and a reader who asks deserves the real one.
  */
-const NO_TRAINING_RUN = '<span class="dash" title="No training run recorded for this model, so there is nothing to say what it learned from">&mdash;</span>';
+const NO_TRAINING_RUN = '<span class="dash" title="MARP records no link from a model to the run that produced it: training_runs.model_id is the base model a run started FROM, not the model it produced">&mdash;</span>';
 
 /** MARP's `ml_models.status`, in the design's own state words. @type {Object} */
 const MODEL_STATE = {
@@ -4357,7 +4361,7 @@ const MODEL_STATE = {
 
 /** What the Models screen is asking for. The route takes no parameters. */
 const modelsQuery = {
-  task: '', status: '', base: '', dataset: '', search: '',
+  task: '', status: '', base: '', search: '',
   sort: { key: 'hupd', dir: 'descending' },
   page: 1, perPage: 8,
 };
@@ -4369,13 +4373,10 @@ const MODELS_SORT_KEYS = {
   hver: (v) => v.version,
   hstatus: (v) => ['training', 'draft', 'trained', 'archived'].indexOf(v.model.status),
   hbase: (v) => (v.model.architecture_version || '').toLowerCase(),
-  /* **It claimed to sort and did not.** Three headers here are marked `sortable` with no
-     key, so the loop that wires them skips each one -- `if (!key) continue` -- and the
-     click does nothing. This is the one that now has a value to order by; `hmodel` and
-     `hcache` still do not, and still say they sort. Named in the report rather than
-     quietly unmarked, because that is a decision about two columns Isaac asked to keep.
-     Empty sorts together rather than scattering. */
-  hdset: (v) => (v.trainedOn ? v.trainedOn.name.toLowerCase() : ''),
+  /* **No `hdset` key, deliberately.** The column has nothing to sort: every row is the
+     same dash until MARP records which run produced a model. `Key metrics` and `Cached`
+     were the other two keyless-but-sortable headers and they are gone -- Isaac asked to
+     keep them once and to remove them now; the later call wins. */
   hupd: (v) => v.model.updated_at,
 };
 
@@ -4383,7 +4384,6 @@ const MODELS_SORT_KEYS = {
 let modelsRegistry = null;
 
 /** What each model trained on, by model id. Empty until the registry has loaded. */
-let modelsTrainedOn = new Map();
 
 /**
  * Which generation a model is, by walking `parent_model_id`.
@@ -4413,39 +4413,6 @@ function modelGeneration(model, byId) {
   return depth;
 }
 
-/**
- * Which dataset each model learned from, by model id.
- *
- * **The newest run wins, and the route already answers in that order.** A model can have
- * several runs -- a retry, a rerun on a wider dataset -- and the one worth showing beside
- * it is the one that produced what is in the registry now. `created_at DESC, id DESC` is
- * the repository's own ordering, so first-seen is newest and no sort is repeated here.
- *
- * A run with a null `dataset_id` is a run that trained on something outside MARP. That is
- * not the same as having no run, but it reads the same in a single cell, so both take the
- * dash and the tooltip carries the difference.
- *
- * @param {Object[]} runs - From `GET /training_run`, newest first.
- * @param {Object[]} datasets - From `GET /dataset`, for the names.
- * @returns {Map<number, Object>} `{id, name}` per model id.
- */
-function trainingDatasetByModel(runs, datasets) {
-  const names = new Map(datasets.map((set) => [set.id, set.name]));
-  const found = new Map();
-
-  for (const run of runs) {
-    if (found.has(run.model_id) || run.dataset_id == null) continue;
-
-    found.set(run.model_id, {
-      id: run.dataset_id,
-      /* A dataset the catalogue did not return -- deleted, or a read that failed -- is
-         still a real link, so it is named by its id rather than dropped. */
-      name: names.get(run.dataset_id) || `Dataset ${run.dataset_id}`,
-    });
-  }
-
-  return found;
-}
 
 /**
  * One model, reduced to what the table shows and sorts on.
@@ -4456,15 +4423,11 @@ function trainingDatasetByModel(runs, datasets) {
  */
 function modelView(model, byId) {
   const [state, label] = MODEL_STATE[model.status] || ['queued', model.status];
-  const trainedOn = modelsTrainedOn.get(model.id) || null;
 
   return {
     model, state, label,
     version: modelGeneration(model, byId),
-    trainedOn,
-    /* Searchable by what it trained on, which is how somebody looks for "every model
-       that saw the inverts dataset". */
-    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status} ${trainedOn ? trainedOn.name : ''}`.toLowerCase(),
+    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status}`.toLowerCase(),
   };
 }
 
@@ -4486,14 +4449,15 @@ function modelRows(view, byId) {
     + `<td class="hver">v${view.version}</td>`
     + `<td class="hstatus" data-sort="${MODELS_SORT_KEYS.hstatus(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
     + `<td class="hbase">${model.architecture_version || NOT_REPORTED}</td>`
-    /* Linked, because the question after "which dataset" is always "which dataset is
-       that" -- the same link a dataset build carries on the Jobs screen, landing on the
-       row rather than on a table to search. */
-    + `<td class="hdset">${view.trainedOn
-      ? `<a href="./datasets.html?dataset=${encodeURIComponent(view.trainedOn.id)}" title="The dataset this model's most recent training run learned from">${escapeHtml(view.trainedOn.name)}</a>`
-      : NO_TRAINING_RUN}</td>`
-    + `<td class="hmodel">${NOT_IN_REGISTRY}</td>`
-    + `<td class="hcache num">${NOT_IN_REGISTRY}</td>`
+    /* **Empty, because the link does not exist rather than because it is missing.**
+       This used to read `training_runs.model_id` as the model a run produced. It is the
+       base model the run started FROM -- `gpu.service.js` says so where it refuses a
+       submission without one -- so every row that showed a dataset was crediting a model
+       with what some *other* run trained on. rockfish5-2026-10-20 was named against
+       CookieStarTest on that basis, which it never saw. Nothing in `ml_models` or
+       `training_runs` records which run produced which model; until something does, this
+       column says so instead of guessing. */
+    + `<td class="hdset">${NO_TRAINING_RUN}</td>`
     + `<td class="hupd">${sinceText(model.updated_at)}</td>`
     + '<td class="hacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
     + '</tr>';
@@ -4507,11 +4471,11 @@ function modelRows(view, byId) {
      It read worse than it sounds: `aria-expanded` on the head was `"false"` the whole
      time, so the row said shut while the panel was open, and the first click on any row
      set them to agree and changed nothing visible. */
-  const body = '<tr class="runrow-body" hidden><td colspan="11"><div class="rundetail">'
+  const body = '<tr class="runrow-body" hidden><td colspan="9"><div class="rundetail">'
     + `<div class="wdhead"><span class="name"><svg class="ico models"><use href="#i-models"/></svg><span class="t">${model.name}</span></span>`
     + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
     + `<span class="wid mono" title="Model id as the registry reports it">ml_${model.id}</span></div>`
-    + '<div class="grid" data-cols="2">'
+    + '<div class="grid" data-cols="1">'
     + '<div class="sect"><h3>In the registry</h3><dl class="kv">'
     + `<dt>Task</dt><dd>${model.model_type}</dd>`
     + `<dt>Architecture</dt><dd>${model.architecture_version || NOT_REPORTED}</dd>`
@@ -4520,17 +4484,6 @@ function modelRows(view, byId) {
     + `<dt>Registered</dt><dd>${new Date(model.created_at).toISOString().slice(0, 10)}</dd>`
     + `<dt>Updated</dt><dd>${sinceText(model.updated_at)}</dd>`
     + '</dl></div>'
-    /* **Rewritten twice now, both times because it outlived what it described.** It said
-       training runs could not be listed after #260 made them listable, and it said the
-       dataset and the metrics were absent after the registry started showing the dataset
-       and the Training screen started drawing per-epoch curves. A panel headed *Not in
-       the registry* has to be the shortest list that is still true, or it is the screen
-       arguing with the table beside it. */
-    + '<div class="sect"><h3>Not in the registry</h3>'
-    + '<p class="muted">How many workers hold a copy is recorded nowhere, and per-run '
-    + 'summary scores — <code>metrics_summary</code> — can be written and fetched by id but '
-    + 'not listed for a run. What a model trained on is on the Training dataset column, and '
-    + 'its per-epoch losses and mAP are under the run on the Training screen.</p></div>'
     + '</div></div></td></tr>';
 
   return head + body;
@@ -4551,7 +4504,6 @@ function applyModelsQuery() {
   if (modelsQuery.task) views = views.filter((v) => v.model.model_type === modelsQuery.task);
   if (modelsQuery.status) views = views.filter((v) => v.model.status === modelsQuery.status);
   if (modelsQuery.base) views = views.filter((v) => v.model.architecture_version === modelsQuery.base);
-  if (modelsQuery.dataset) views = views.filter((v) => v.trainedOn?.name === modelsQuery.dataset);
   if (modelsQuery.search) views = views.filter((v) => v.haystack.includes(modelsQuery.search));
 
   const key = MODELS_SORT_KEYS[modelsQuery.sort.key] || MODELS_SORT_KEYS.hupd;
@@ -4691,22 +4643,10 @@ async function renderModelsScreen() {
   body.innerHTML = `<tr class="tblmsg"><td class="loading" colspan="${columns}">Loading the registry&hellip;</td></tr>`;
 
   try {
-    /* **Three reads, one of which is allowed to fail.** The registry is the screen; the
-       runs and the datasets are what turn `training_runs.dataset_id` into a name. A
-       registry that drew nothing because the dataset catalogue was slow would be worse
-       than one with a dash in one column, so those two are settled rather than awaited
-       together -- `allSettled`, and an empty map is the honest fallback. */
-    const [registry, runs, datasets] = await Promise.all([
-      window.MarpApi.listModels(),
-      Promise.allSettled([window.MarpApi.listTrainingRuns(), window.MarpApi.listDatasets()]),
-    ]).then(([models, [runResult, setResult]]) => [
-      models,
-      runResult.status === 'fulfilled' ? runResult.value : [],
-      setResult.status === 'fulfilled' ? setResult.value : [],
-    ]);
-
-    modelsRegistry = registry;
-    modelsTrainedOn = trainingDatasetByModel(runs, datasets);
+    /* **One read now.** The runs and the dataset catalogue were fetched only to turn
+       `training_runs.dataset_id` into a name for a column that was reading the wrong
+       association; with that gone they answer nothing this screen asks. */
+    modelsRegistry = await window.MarpApi.listModels();
     fillModelsFilterOptions();
     applyModelsQuery();
   } catch (error) {
@@ -4734,25 +4674,6 @@ function fillModelsFilterOptions() {
   }
   if (selects['Base model']) {
     selects['Base model'].innerHTML = ['<option>All base models</option>', ...bases.map((b) => `<option>${b}</option>`)].join('');
-  }
-  /* **Enabled, because the reason it was disabled has gone.** It carried
-     *"the connection lives on a training run, which cannot be listed"* -- true when it
-     was written and not since #260. It is the filter for the column, so wiring one and
-     leaving the other greyed out beside it would deliver half the thing. The options are
-     the datasets models actually trained on, not the whole catalogue: a filter offering
-     eighty datasets that narrow to nothing is a filter nobody trusts twice. */
-  if (selects.Dataset) {
-    const trained = [...new Set([...modelsTrainedOn.values()].map((one) => one.name))].sort();
-
-    selects.Dataset.disabled = false;
-    selects.Dataset.title = trained.length
-      ? 'Show models whose most recent training run used one dataset'
-      : 'No model here has a training run recording the dataset it used';
-    selects.Dataset.innerHTML = trained.length
-      ? ['<option>All datasets</option>', ...trained.map((name) => `<option>${escapeHtml(name)}</option>`)].join('')
-      : '<option>No training runs recorded</option>';
-
-    if (!trained.length) selects.Dataset.disabled = true;
   }
 }
 
@@ -12174,6 +12095,114 @@ function wireModelRegistration() {
  * @param {Function} wire - The wiring.
  * @returns {void}
  */
+/**
+ * How long ago, in the fewest words that are still true.
+ *
+ * Seconds for the first minute because that is the window in which somebody is watching
+ * something happen; after that nobody cares about the seconds and a number that changes
+ * every second is noise.
+ *
+ * @param {number} ms - Milliseconds since the last answer.
+ * @returns {string}
+ */
+function agoText(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+
+  if (seconds < 5) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+
+  return `${Math.round(seconds / 3600)}h ago`;
+}
+
+/**
+ * Paint the shared freshness label from the data layer's own record.
+ *
+ * **Four states, and the two that matter are the unhappy ones.** A number with no time on
+ * it is a claim about now that may be an hour old, and the worst version of that is a
+ * screen whose polling has stopped or whose API is not answering while the figures sit
+ * there looking current. So a failure says so in place of the time rather than beside it.
+ *
+ * @returns {void}
+ */
+function paintFreshness() {
+  const into = $('[data-freshness]');
+
+  if (!into || !window.MarpApi) return;
+
+  let state;
+
+  /* **Guarded, because the chrome must not be what breaks a page.** This runs every
+     second on every screen; a data layer that is older, stubbed, or simply does not
+     answer this should cost the label and nothing else. */
+  try {
+    if (typeof window.MarpApi.freshness !== 'function') return;
+    state = window.MarpApi.freshness();
+  } catch {
+    return;
+  }
+
+  /* **A thenable is not an answer.** A data layer that does not know this member may hand
+     back a rejected promise rather than throwing, and an unhandled rejection from the
+     chrome would fail whatever test happened to be running. Swallowed deliberately: there
+     is nothing to report about a clock that is not there. */
+  if (state && typeof state.then === 'function') {
+    state.catch(() => {});
+    return;
+  }
+
+  if (!state || typeof state !== 'object') return;
+
+  const { at, failed, inFlight } = state;
+
+  if (failed) {
+    into.dataset.state = 'failed';
+    into.textContent = failed.status === 0 ? 'not answering' : `error ${failed.status}`;
+    into.title = failed.message || 'The last read failed';
+    return;
+  }
+
+  if (at === null) {
+    into.dataset.state = inFlight ? 'reading' : 'idle';
+    into.textContent = inFlight ? 'reading…' : '';
+    return;
+  }
+
+  into.dataset.state = inFlight ? 'reading' : 'ok';
+  into.textContent = `updated ${agoText(Date.now() - at)}`;
+  into.title = `MARP last answered at ${new Date(at).toTimeString().slice(0, 8)}`;
+}
+
+/**
+ * Keep the label honest, and wire the Reload button that was drawn and inert.
+ *
+ * One second, because the label counts seconds for its first minute. It is a text write
+ * against one element, not a render.
+ *
+ * @returns {void}
+ */
+function wireFreshness() {
+  if (!$('[data-freshness]')) return;
+
+  paintFreshness();
+
+  const tick = setInterval(paintFreshness, 1000);
+
+  /* **Stopped when the page goes**, which matters more than it looks: a timer with no
+     end keeps a jsdom window alive, so the DOM tier hangs rather than failing -- and a
+     suite that never finishes is harder to diagnose than one that goes red. */
+  window.addEventListener('pagehide', () => clearInterval(tick));
+  window.addEventListener('unload', () => clearInterval(tick));
+
+  const reload = $('[data-reload]');
+
+  /* The button has been in the chrome on every screen since the mockups and has never
+     done anything. A full reload is the honest implementation: every screen reads on
+     load, so this is exactly "read it all again" without each screen having to expose a
+     refresh of its own. */
+  if (reload) reload.addEventListener('click', () => location.reload());
+}
+
 function boot(name, wire) {
   try {
     const result = wire();
@@ -12193,6 +12222,7 @@ boot('rail', mountRail);
 boot('rail-badges', fillRailBadges);
 boot('topbar', mountTopbar);
 boot('topbar autohide', wireTopbarAutohide);
+boot('freshness', wireFreshness);
 boot('rail sheet', wireRailSheet);
 
 boot('switchers', wireSwitchers);
