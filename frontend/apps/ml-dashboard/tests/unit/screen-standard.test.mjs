@@ -386,3 +386,66 @@ test('a machine last heard from days ago shows no live readings, and folds away'
   assert.equal(screen.document.querySelector('[data-workers-fold]').getAttribute('aria-expanded'), 'true',
     'and pressing it opens them');
 });
+
+test('a worker opens onto its own readings, and says which it has none of', async (t) => {
+  /* Isaac: *"the worker section should have a chart for every worker when you expand it
+     showing its memory usage, cpu utilization, disk etc."*
+
+     The GPU half has been sampled per minute for a while; `cpu`, `memory` and `disk` only
+     exist on samples taken since the worker began sending them, which is almost none of
+     what is stored. **A series of nulls is not a series of zeros** — a flat line along the
+     floor would say this machine idled through hours it was switched off — so a chart with
+     nothing measured says so instead of drawing one. */
+  let asked = null;
+
+  const screen = await drawScreen('workers.html', {
+    listWorkers: async () => [worker(11, 'rig-03', 1, { activity: 'busy' })],
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    listSessions: async () => [],
+    workerSeries: async (id, window) => {
+      asked = { id, window };
+      return {
+        at: ['2026-10-27T22:45:00.000Z', '2026-10-27T22:46:00.000Z', '2026-10-27T22:47:00.000Z'],
+        gpu: [22, null, 29],
+        vram: [7, 8, 9],
+        temperature: [34, 35, 35],
+        power: [7.6, 8.1, 7.8],
+        cpu: [null, null, null],
+        memory: [null, null, null],
+        disk: [null, null, null],
+      };
+    },
+  });
+
+  t.after(screen.close);
+
+  const head = screen.document.querySelector('table#workers tbody tr[data-worker="11"]');
+
+  assert.equal(asked, null, 'nothing is read until the row is opened');
+
+  head.querySelector('.exbtn').click();
+
+  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const into = head.nextElementSibling.querySelector('[data-worker-readings]');
+  const heads = [...into.querySelectorAll('.evaluation-card h5')].map((h) => h.textContent.trim());
+
+  assert.equal(asked.id, '11', 'read for this machine');
+  assert.deepEqual(heads, ['GPU utilisation', 'VRAM in use', 'CPU', 'System memory',
+    'Disk used', 'Temperature', 'Power']);
+
+  const card = (title) => [...into.querySelectorAll('.evaluation-card')]
+    .find((one) => one.querySelector('h5').textContent.trim() === title);
+
+  assert.ok(card('GPU utilisation').querySelector('.result-line').getAttribute('d'),
+    'the GPU series draws');
+
+  /* The gap in the middle is a break, not a line through zero. */
+  const d = card('GPU utilisation').querySelector('.result-line').getAttribute('d');
+
+  assert.equal((d.match(/M/g) || []).length, 2, 'the unmeasured minute breaks the line');
+
+  assert.equal(card('CPU').querySelector('.result-line'), null, 'nothing drawn for CPU');
+  assert.match(card('CPU').textContent, /Not reported in the last hour/,
+    'and it says so rather than drawing a floor');
+});

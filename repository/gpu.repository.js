@@ -40,6 +40,7 @@
 
 const { QueryTypes } = require('sequelize');
 const { epochMetrics, readPhase } = require('../db/epoch-metrics');
+const { systemReading } = require('../db/worker-telemetry');
 
 /**
  * Shared database registry containing the configured Sequelize connection,
@@ -778,19 +779,76 @@ class GpuRepository {
      * @param {Object} sample
      * @param {number} sample.workerId - The worker that polled.
      * @param {Array<Object>} sample.devices - Its GPU readings, as the snapshot holds them.
+     * @param {?Object} [sample.system] - Its CPU, memory and disk, where it sent them.
      * @returns {Promise<void>} Resolves when the reading is kept, or skipped.
      */
-    async sampleIdleWorker({ workerId, devices }) {
-        if (!Array.isArray(devices) || !devices.length) return;
+    /**
+     * One machine's readings over a window, oldest first.
+     *
+     * **Every sample as it was taken, not an average.** The pool charts roll the whole
+     * fleet up per bucket because that is a question about capacity; this is a question
+     * about one computer, and smoothing it would hide the spike somebody opened the row
+     * to look at.
+     *
+     * **Gaps stay gaps.** A minute with no row is a minute nobody measured — the machine
+     * was off, or between builds — and the caller draws a break rather than joining
+     * across it. Nothing is interpolated here and nothing should be.
+     *
+     * `system` is null on every sample taken before worker 0.1.10, which is most of
+     * them, so a CPU series starts where its data starts rather than at the window's edge.
+     *
+     * @async
+     * @param {Object} query
+     * @param {number} query.workerId - The machine.
+     * @param {string} query.since - ISO instant, inclusive.
+     * @param {string} query.until - ISO instant, exclusive.
+     * @returns {Promise<Array<Object>>} `{at, devices, system, job_kind}` per sample.
+     */
+    async listWorkerSamples({ workerId, since, until }) {
+        try {
+            return await this.db.sequelize.query(
+                `SELECT at, devices, system, job_kind
+                   FROM gpu_worker_samples
+                  WHERE worker_id = :workerId
+                    AND at >= :since
+                    AND at < :until
+                  ORDER BY at ASC`,
+                { replacements: { workerId, since, until }, type: QueryTypes.SELECT }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    async sampleIdleWorker({ workerId, devices, system = null }) {
+        const gpus = Array.isArray(devices) ? devices : [];
+
+        /* **A machine with no GPU is still a machine worth charting.** This used to
+           refuse any sample without devices, so a CPU-only volunteer recorded nothing
+           at all -- and the worker session has just fixed its side of the same thing.
+           Either reading alone is enough to keep the row. */
+        if (!gpus.length && !system) return;
 
         try {
             await this.db.sequelize.query(
-                `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, job_kind)
-                 VALUES (:workerId, NULL, date_trunc('minute', NOW()), :devices, NULL)
+                `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, system, job_kind)
+                 VALUES (:workerId, NULL, date_trunc('minute', NOW()), :devices, :system, NULL)
                  ON CONFLICT (worker_id, at)
-                 DO UPDATE SET devices = EXCLUDED.devices
+                 DO UPDATE SET devices = EXCLUDED.devices,
+                               system = COALESCE(EXCLUDED.system, gpu_worker_samples.system)
                  WHERE gpu_worker_samples.attempt_id IS NULL`,
-                { replacements: { workerId, devices: JSON.stringify(devices) } }
+                {
+                    replacements: {
+                        workerId,
+                        devices: JSON.stringify(gpus),
+                        /* `COALESCE` above rather than a plain overwrite: two polls can
+                           land in one minute and the second may carry no system block,
+                           and losing a reading to a later emptier one would be a gap
+                           nobody caused. */
+                        system: system ? JSON.stringify(system) : null,
+                    },
+                }
             );
         } catch (error) {
             /* **Never fails the poll.** A worker asking for work must not be turned away
@@ -1900,19 +1958,28 @@ class GpuRepository {
             // Written here rather than left to the poll's snapshot because the
             // poll happens before the machine starts work -- that is the whole
             // reason this table exists.
-            if (telemetry && Array.isArray(telemetry.devices) && telemetry.devices.length) {
+            const heartbeatGpus = telemetry && Array.isArray(telemetry.devices)
+                ? telemetry.devices : [];
+            /* Worker 0.1.10 sends `cpu`, `memory` and `disk` beside the devices, so a
+               machine with no GPU is worth a row of its own -- its fix, and this is the
+               matching half here. */
+            const heartbeatSystem = systemReading(telemetry);
+
+            if (heartbeatGpus.length || heartbeatSystem) {
                 await this.db.sequelize.query(
-                    `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, job_kind)
-                     VALUES (:workerId, :attemptId, date_trunc('minute', NOW()), :devices, :jobKind)
+                    `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, system, job_kind)
+                     VALUES (:workerId, :attemptId, date_trunc('minute', NOW()), :devices, :system, :jobKind)
                      ON CONFLICT (worker_id, at)
                      DO UPDATE SET devices = EXCLUDED.devices,
+                                   system = COALESCE(EXCLUDED.system, gpu_worker_samples.system),
                                    attempt_id = EXCLUDED.attempt_id,
                                    job_kind = EXCLUDED.job_kind`,
                     {
                         replacements: {
                             workerId,
                             attemptId: attempt.id,
-                            devices: JSON.stringify(telemetry.devices),
+                            devices: JSON.stringify(heartbeatGpus),
+                            system: heartbeatSystem ? JSON.stringify(heartbeatSystem) : null,
                             /* Written onto the sample rather than joined at read
                                time: the attempt is nulled when a job is cleared,
                                and a reading is a fact about the machine that

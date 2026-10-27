@@ -5786,12 +5786,153 @@ function workerRows(view) {
     + '</dl>'
     + '</div>'
     + live
-    + '</div></div></td></tr>';
+    /* Filled when the row is opened rather than with the table: a series per machine for
+       thirteen machines, most of which nobody expands, is a read for nothing. */
+    + '</div><div class="worker-readings" data-worker-readings>'
+    + '<p class="hint">Reading this machine…</p></div>'
+    + '</div></td></tr>';
 
   return head + body;
 }
 
+/**
+ * Fill a worker's expansion with its own charts, once it is opened.
+ *
+ * **Read on opening, not with the table.** A series per machine for a pool of thirteen,
+ * most of which nobody expands, is a request for nothing — the same reason the training
+ * curves are fetched when the row opens.
+ *
+ * **Kept per worker and per range**, so switching back to a window already read redraws
+ * from what is in hand rather than asking again.
+ *
+ * @param {Element} head - The worker's head row.
+ * @returns {void}
+ */
+function wireWorkerReadings(head) {
+  const detail = head.nextElementSibling;
+  const into = detail && $('[data-worker-readings]', detail);
+
+  if (!into) return;
+
+  const workerId = head.dataset.worker;
+  const held = new Map();
+  let range = '1h';
+
+  const draw = async () => {
+    if (head.getAttribute('aria-expanded') !== 'true') return;
+
+    if (!held.has(range)) {
+      const { hours } = WORKER_RANGES[range];
+      const until = new Date();
+      const since = new Date(until.getTime() - hours * 3600000);
+
+      try {
+        held.set(range, await window.MarpApi.workerSeries(workerId, {
+          since: since.toISOString(),
+          until: until.toISOString(),
+        }));
+      } catch (error) {
+        into.innerHTML = `<p class="hint">Could not read this machine (${error.status || 'no answer'}).</p>`;
+        return;
+      }
+    }
+
+    into.innerHTML = workerCharts(held.get(range), range);
+
+    for (const button of $$('[data-worker-range]', into)) {
+      button.addEventListener('click', () => {
+        range = button.dataset.workerRange;
+        draw();
+      });
+    }
+  };
+
+  /* Watched rather than clicked, for the reason the training panel is: the expander is a
+     delegated listener, so a click handler here would read `aria-expanded` before it had
+     been flipped. */
+  new MutationObserver(draw).observe(head, { attributes: true, attributeFilter: ['aria-expanded'] });
+}
+
 /** Narrows, sorts and pages the pool, then draws it. */
+/**
+ * What a machine's own charts show, and from which series.
+ *
+ * **Keyed like the training charts, for the same reason**: a reading that gets added
+ * later is an entry here rather than a component. Each is drawn on its own axis because
+ * they are different quantities — a percentage, a temperature and a wattage share no
+ * scale, and putting them on one would make the temperature line look flat beside a
+ * figure that reaches 320.
+ */
+const WORKER_CHARTS = [
+  { key: 'gpu', title: 'GPU utilisation', unit: '%', max: 100 },
+  { key: 'vram', title: 'VRAM in use', unit: '%', max: 100 },
+  { key: 'cpu', title: 'CPU', unit: '%', max: 100 },
+  { key: 'memory', title: 'System memory', unit: '%', max: 100 },
+  { key: 'disk', title: 'Disk used', unit: '%', max: 100 },
+  { key: 'temperature', title: 'Temperature', unit: '°C', max: 'auto' },
+  { key: 'power', title: 'Power', unit: 'W', max: 'auto' },
+];
+
+/** The windows a worker's charts can be read over. An hour by default, as elsewhere. */
+const WORKER_RANGES = {
+  '1h': { hours: 1, label: 'the last hour' },
+  '24h': { hours: 24, label: 'the last 24 hours' },
+  '7d': { hours: 168, label: 'the last 7 days' },
+  '30d': { hours: 720, label: 'the last 30 days' },
+};
+
+/**
+ * One machine's readings, drawn.
+ *
+ * **A chart with nothing in it says so and is not drawn as a flat line at zero.** Most of
+ * what is stored predates the worker sending CPU, memory and disk, so those three are
+ * null for every older sample — and null here means *nobody measured*, which is the one
+ * thing a line must never render as a floor.
+ *
+ * @param {Object} series - From `GET /gpu/workers/:id/series`.
+ * @param {string} range - Which window is selected.
+ * @returns {string}
+ */
+function workerCharts(series, range) {
+  const box = { left: 46, right: 700, top: 24, bottom: 174 };
+  const measured = (values) => values.some((value) => value !== null && value !== undefined);
+
+  const cards = WORKER_CHARTS.map((spec) => {
+    const values = series[spec.key] || [];
+
+    if (!measured(values)) {
+      /* Named rather than drawn empty: *this machine did not report it in this window* is
+         a different fact from *it reported zero*, and the three system series will say
+         this for every window that reaches back before the worker build that sends them. */
+      return `<article class="evaluation-card history-card"><header><div><h5>${spec.title}</h5>`
+        + `<p>Not reported in ${WORKER_RANGES[range].label}</p></div></header></article>`;
+    }
+
+    const real = values.filter((value) => value !== null && value !== undefined).map(Number);
+    const top = spec.max === 'auto'
+      ? Math.max(1, Math.ceil(Math.max(...real) * 1.1))
+      : spec.max;
+    const last = [...values].reverse().find((value) => value !== null && value !== undefined);
+
+    return '<article class="evaluation-card history-card" data-result-graph>'
+      + `<header><div><h5>${spec.title}</h5><p>${WORKER_RANGES[range].label}`
+      + ` &middot; now ${Math.round(Number(last))}${spec.unit}</p></div></header>`
+      + `<div class="result-chart" role="img" aria-label="${spec.title} over ${WORKER_RANGES[range].label}">`
+      + '<svg viewBox="0 0 740 205" aria-hidden="true">'
+      + '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
+      + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>'
+      + `<g class="result-axis"><text x="38" y="28">${top}</text>`
+      + `<text x="38" y="103">${Math.round(top / 2)}</text><text x="38" y="178">0</text></g>`
+      + `<path class="result-line worker-series" d="${gappyPath(values, top, box)}"/></svg></div></article>`;
+  }).join('');
+
+  const buttons = Object.keys(WORKER_RANGES).map((key) => `<button type="button" class="${key === range ? 'on' : ''}"`
+    + ` data-worker-range="${key}" aria-pressed="${key === range}">${key}</button>`).join('');
+
+  return `<div class="sect worker-charts"><h3>Readings<span class="seg worker-ranges">${buttons}</span></h3>`
+    + `<div class="curve-grid">${cards}</div></div>`;
+}
+
 /** Whether the long-gone machines are currently shown. Off until somebody asks. */
 let workersFoldOpen = false;
 
@@ -5894,6 +6035,8 @@ function applyWorkersQuery() {
     head.dataset.gone = 'yes';
     if (head.nextElementSibling) head.nextElementSibling.dataset.gone = 'yes';
   }
+
+  for (const head of $$(':scope > tr[data-worker]', body)) wireWorkerReadings(head);
 
   renderWorkersFold(gone.length);
 

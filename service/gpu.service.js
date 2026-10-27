@@ -67,6 +67,7 @@ const {
  * are recorded at.
  */
 const { ASSUMED_FPS } = require('../db/timecode');
+const { systemReading } = require('../db/worker-telemetry');
 
 /**
  * Which job states can be cleared wholesale.
@@ -693,12 +694,16 @@ class GpuService {
            was granted, as the attempt snapshot -- so the activity charts could show only
            the minutes a machine happened to be holding one, and an idle pool looked like
            no pool. Same field, written down instead of dropped. */
+        /* The machine's own reading goes with it. `capabilities.resources` is overwritten
+           on every poll, so without keeping it here a worker's CPU ten minutes ago is not
+           knowable anywhere -- which is why the Workers page could show a current figure
+           and no history. */
+        const resources = (body.capabilities && body.capabilities.resources) || null;
+
         await gpuRepository.sampleIdleWorker({
             workerId,
-            devices: body.capabilities
-                && body.capabilities.resources
-                && body.capabilities.resources.nvidia
-                && body.capabilities.resources.nvidia.devices,
+            devices: resources && resources.nvidia && resources.nvidia.devices,
+            system: systemReading(resources),
         });
 
         // And while something is happening, retire whatever has stopped
@@ -1620,6 +1625,59 @@ class GpuService {
      * @async
      * @returns {Promise<Array<Object>>} One entry per worker.
      */
+    /**
+     * One machine's readings over a window, shaped for a chart.
+     *
+     * **Parallel arrays, and nulls kept as nulls.** A caller plots `at` against each
+     * series; a minute the machine did not report is a `null` in every one of them rather
+     * than a missing entry, so the arrays stay the same length and a break is drawn where
+     * the machine was off. Collapsing those would silently join Tuesday to Thursday.
+     *
+     * **The first GPU only.** Every machine in this pool has one card, and a second would
+     * need its own series rather than an average — a mean across two cards is a number no
+     * sensor reported, which is the rule the rest of this file keeps.
+     *
+     * @async
+     * @param {number|string} workerId - The machine.
+     * @param {Object} [window] - `{since, until}` as ISO instants. Defaults to an hour.
+     * @returns {Promise<Object>} `{at, gpu, vram, temperature, power, cpu, memory, disk}`.
+     */
+    async readWorkerSeries(workerId, { since, until } = {}) {
+        const end = until ? new Date(until) : new Date();
+        const start = since ? new Date(since) : new Date(end.getTime() - 3600000);
+
+        const rows = await gpuRepository.listWorkerSamples({
+            workerId,
+            since: start.toISOString(),
+            until: end.toISOString(),
+        });
+
+        const series = {
+            at: [], gpu: [], vram: [], temperature: [], power: [], cpu: [], memory: [], disk: [],
+        };
+        /* A reading that is absent is null, never zero: the difference between a machine
+           that was idle and one that was not asked is the whole reason these charts are
+           worth drawing. */
+        const read = (from, key) => (from && from[key] !== undefined && from[key] !== null
+            ? Number(from[key]) : null);
+
+        for (const row of rows) {
+            const device = Array.isArray(row.devices) ? row.devices[0] : null;
+            const system = row.system || null;
+
+            series.at.push(row.at);
+            series.gpu.push(read(device, 'gpu_utilization_percent'));
+            series.vram.push(read(device, 'memory_percent_used'));
+            series.temperature.push(read(device, 'temperature_c'));
+            series.power.push(read(device, 'power_usage_watts'));
+            series.cpu.push(read(system && system.cpu, 'cpu_percent'));
+            series.memory.push(read(system && system.memory, 'percent_used'));
+            series.disk.push(read(system && system.disk, 'percent_used'));
+        }
+
+        return { worker_id: Number(workerId), since: start.toISOString(), until: end.toISOString(), ...series };
+    }
+
     async listPool() {
         // Sweeping here too, so the pool view does not show a machine as busy
         // with a job whose lease ran out an hour ago. A read that reports a state

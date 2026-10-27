@@ -975,6 +975,25 @@
    *
    * @returns {Promise<Object[]>}
    */
+  /**
+   * `GET /api/v2/gpu/workers/:id/series` -- one machine's readings over a window.
+   *
+   * Parallel arrays against `at`: `gpu`, `vram`, `temperature`, `power` from the GPU
+   * block, and `cpu`, `memory`, `disk` from the system block.
+   *
+   * **Nulls are gaps and must stay gaps.** A minute the machine did not report is null in
+   * every series, and the system three are null on every sample taken before the worker
+   * began sending them -- which is most of what is stored. A chart that reads those as
+   * zero draws a machine idling through hours it was switched off.
+   *
+   * @param {number|string} workerId - The machine.
+   * @param {Object} [window] - `{since, until}` as ISO instants.
+   * @returns {Promise<Object>}
+   */
+  function workerSeries(workerId, window) {
+    return request(`/gpu/workers/${encodeURIComponent(workerId)}/series`, { query: window || {} });
+  }
+
   function listWorkers() {
     return serve('workers', () => request('/gpu/workers'), () => {
       if (SWITCH.fail.has('@empty')) return [];
@@ -1800,6 +1819,7 @@
     throughputSeries,
     registrySeries,
     listWorkers,
+    workerSeries,
     listJobs,
     getJob,
     listModels,
