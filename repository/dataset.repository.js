@@ -619,9 +619,16 @@ class DatasetRepository {
     // ------------------------------------------------------------
     // Fetches all models from the database.
     // ------------------------------------------------------------
-    async getMl_models() {
+    async getMl_models(options = {}) {
         try {
-            const models = await this.db.ml_models.findAll();
+            /* **`runnable` asks a capability question, not a column question.** A picker
+               wants "models I can run inference with"; today the only thing that
+               disqualifies one is being a pretrained base model, but a retired status or
+               missing bytes would disqualify one too. Asking by capability means the
+               caller does not have to change when the reason does -- `is_base=false`
+               would hard-code today's single reason into every picker in the app. */
+            const where = options.runnable === 'inference' ? { is_base: false } : undefined;
+            const models = await this.db.ml_models.findAll(where ? { where } : undefined);
             console.log(`[INFO] Retrieved ${models.length} models`);
             return models;
         } catch (err) {

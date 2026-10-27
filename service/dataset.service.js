@@ -164,8 +164,8 @@ class DatasetService {
      * failure rejects the returned promise rather than resolving to an
      * empty array.
      */
-    async getMl_models() {
-        return await datasetRepository.getMl_models();
+    async getMl_models(options) {
+        return await datasetRepository.getMl_models(options);
     }
 
     /**

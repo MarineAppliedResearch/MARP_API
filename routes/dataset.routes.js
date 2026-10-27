@@ -48,8 +48,23 @@ function registerDatasetRoutes(app) {
         path: '/api/ml_models',
         summary: 'Fetch all ML models',
         description:
-            "Returns every ML model record. A database failure rejects rather than resolving to an empty array; the route's .catch() handles this and responds with HTTP 500.",
+            "Returns every ML model record. A database failure rejects rather than resolving to an empty array; the route's .catch() handles this and responds with HTTP 500."
+            + BREAK
+            + '**`runnable=inference` narrows it to the models inference may actually use**, which is what a model picker wants. Today the only thing that disqualifies one is being a pretrained base model: a base model carries the upstream vocabulary rather than MARP species, so running it over video would resolve ImageNet class names against `species.comname` and write invented records into the scientific record. Job submission refuses one outright, so a picker that offers one is offering something the API will reject.'
+            + BREAK
+            + '**It asks a capability question rather than naming a column** — not `is_base=false` — because the reason a model is unusable can grow. A retired status or missing bytes would disqualify one too, and a caller asking "what can I run?" should not have to be rewritten when the answer gains a second reason.'
+            + BREAK
+            + '**Unfiltered is still the default**, deliberately. A base model is a real registered model and the registry screen should show it; hiding rows by default would be a change to what this route has always returned.',
         tags: ['V1 · MachineLearning'],
+        parameters: [
+            {
+                in: 'query',
+                name: 'runnable',
+                required: false,
+                schema: { type: 'string', enum: ['inference'] },
+                description: 'Narrow to the models this kind of job may use. Only `inference` is defined; anything else is ignored and the full list is returned.',
+            },
+        ],
         responses: {
             200: {
                 description: 'MlModel list returned successfully.',
@@ -62,7 +77,10 @@ function registerDatasetRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            const data = await datasetController.getMl_models();
+            /* An unrecognised value is ignored rather than refused: a caller asking for
+               a narrowing MARP does not have is better served the whole list than a 400
+               it has no way to act on. */
+            const data = await datasetController.getMl_models({ runnable: req.query.runnable });
             res.json(data);
         }),
     });

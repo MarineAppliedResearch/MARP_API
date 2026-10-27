@@ -184,9 +184,9 @@ class DatasetController {
      * empty array; the `/api/ml_models` route catches that rejection and
      * responds with HTTP 500.
      */
-    async getMl_models() {
+    async getMl_models(options) {
         logger.info('Controller: getMl_models')
-        return await datasetService.getMl_models();
+        return await datasetService.getMl_models(options);
     }
 
     /**

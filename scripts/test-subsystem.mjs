@@ -143,6 +143,8 @@ const SUBSYSTEMS = {
             // #268: a pretrained base model must never reach inference, where its
             // upstream class names would be resolved against the species catalogue.
             'base-model-guard',
+            // #268: which models a picker may offer for inference.
+            'ml-models-runnable',
             // #104: preferred models, version chains, dataset status and the
             // training-run listing the registry had no route for.
             'ml-registry',
