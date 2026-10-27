@@ -151,6 +151,22 @@ test('Export writes every job the filters leave, not the page on screen', async 
   assert.ok(lines.some((l) => l.includes('3019')), 'a job on the second page should be in the file');
 });
 
+test('Export quotes a field that carries a comma', async (t) => {
+  /* Job names are typed by a person. `Build ALLTEST2, second pass` splits one column into
+     two in every spreadsheet that opens the file, and nothing about the file looks wrong.
+     Written against History's export and kept when that screen folded into this one,
+     because the writer it guards is the one Jobs exports through. */
+  const screen = await drawJobs([job({ id: 21999, name: 'Build "Quillback", second pass' })]);
+  t.after(screen.close);
+
+  const blobs = captureDownloads(screen.window);
+  exportControl(screen.document).click();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.match(await blobs[0].text(), /"Build ""Quillback"", second pass"/,
+    'a field with a comma is quoted and an embedded quote doubled, which is what RFC 4180 readers expect');
+});
+
 test('Export honours the filters rather than dumping the fetch', async (t) => {
   /* An export that ignores the narrowing is worse than one that ignores the paging: it
      looks complete, so nobody checks it against what they were looking at. */

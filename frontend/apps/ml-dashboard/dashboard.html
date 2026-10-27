@@ -64,17 +64,15 @@
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
 
-        <a class="stat stat-link" data-state="done" href="./history.html">
-          <span class="stat-ico"><svg class="ico"><use href="#i-history"/></svg></span>
-          <span class="stat-lab">History</span>
-          <b class="stat-num"></b>
-          <span class="stat-sub"></span>
-          <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
-        </a>
       </nav>
 
       <div class="dashboard-panels">
-        <section class="panel" id="worker-pool">
+        <div class="panel-row" data-cols="2">
+        <article class="panel"><header class="panel-hd"><div><h2>Outcomes</h2><p data-outcomes-window>How work ended recently</p></div></header><div class="panel-bd jobs-mix-bd"><div class="job-donut" data-rendered role="img" aria-label="Status breakdown"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="donut-track" cx="60" cy="60" r="43"/><circle class="donut-part done" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="198 49"/><circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="28 219" stroke-dashoffset="-198"/><circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="21 226" stroke-dashoffset="-226"/></svg><span><b></b><small>finished jobs</small></span></div><div class="job-mix-key"></div></div></article>
+        <article class="panel inference-flow ops-activity" data-ops-activity="outcomes"><header class="panel-hd inference-flow-hd"><div><h2>Completion activity</h2><p>Finished work, issue rate and median turnaround</p></div><div class="seg" aria-label="Completion activity range"><button type="button" data-ops-range="24h">24h</button><button type="button" data-ops-range="7d">7d</button><button type="button" class="on" data-ops-range="30d" aria-pressed="true">30d</button><button type="button" data-ops-range="1y">1y</button></div></header><div class="panel-bd inference-flow-bd"><div class="inference-chart ops-chart" role="img" aria-label="Completion activity over 30 days"><svg viewBox="0 0 780 248" aria-hidden="true"><g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g><g class="inference-axis left"><text x="46" y="32"></text><text x="46" y="88"></text><text x="46" y="144"></text><text x="46" y="200"></text><text x="54" y="225" data-ops-time></text><text x="390" y="225" data-ops-time></text><text x="726" y="225" data-ops-time></text><text class="axis-title" x="54" y="15">JOBS / DAY</text></g><g class="inference-axis right"><text x="734" y="32"></text><text x="734" y="88"></text><text x="734" y="144"></text><text x="734" y="200"></text><text class="axis-title" x="726" y="15">MEDIAN TURNAROUND</text></g><path class="ops-area completed" data-ops-area="completed"/><path class="ops-line completed" data-ops-line="completed"/><path class="ops-line issues" data-ops-line="issues"/><path class="ops-line turnaround" data-ops-line="turnaround"/></svg></div><div class="inference-flow-foot"><div class="inference-chart-key result-legend"><button class="completed" data-ops-highlight="completed">Completed jobs</button><button class="issues" data-ops-highlight="issues">Issue / failure rate</button><button class="turnaround" data-ops-highlight="turnaround">Median turnaround</button></div><div class="inference-current"><span><b data-ops-current="completed"></b> completed today</span><span><b data-ops-current="issues"></b> issue rate</span><span><b data-ops-current="turnaround"></b> median</span><span class="live"><i class="dot"></i>Live</span></div></div></div></article>
+      </div>
+
+      <section class="panel" id="worker-pool">
           <header class="panel-hd">
             <h2 title="Paused machines stay reachable and take no new work. A worker counts as quiet only after 90 seconds, because an idle machine on a long poll can legitimately go a minute without speaking.">Worker pool</h2>
             <a class="more" href="./workers.html">All workers <svg class="ico sm"><use href="#i-arrow"/></svg></a>

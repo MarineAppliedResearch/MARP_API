@@ -117,7 +117,6 @@ const OWNED = [
 const FILLED_TABLES = {
     'dashboard.html': /<section[^>]*id="current-activity"[\s\S]*?<tbody[^>]*>/,
     'datasets.html': /<table[^>]*id="saved-datasets"[\s\S]*?<tbody[^>]*>/,
-    'history.html': /<table[^>]*id="history"[\s\S]*?<tbody[^>]*>/,
     'inference.html': /<table[^>]*class="[^"]*inference-table[^"]*"[\s\S]*?<tbody[^>]*>/,
     'jobs.html': /<table[^>]*id="jobs"[\s\S]*?<tbody[^>]*>/,
     'models.html': /<table[^>]*id="models"[\s\S]*?<tbody[^>]*>/,
