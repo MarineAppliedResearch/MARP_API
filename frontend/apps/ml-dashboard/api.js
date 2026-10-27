@@ -1167,6 +1167,24 @@
   }
 
   /**
+   * `GET /api/v2/ml_models?runnable=inference` -- the models inference may actually run.
+   *
+   * **A narrower list than the registry, and deliberately a separate call.** A
+   * pretrained base model is a real registered model and the registry screen should
+   * keep showing it; it is only *inference* that must never be handed one, because its
+   * classes are the upstream vocabulary rather than MARP species, so whatever it emits
+   * would be resolved against `species.comname` and written into the scientific record.
+   * Submission refuses one outright -- so a picker offering them was offering something
+   * the API would reject, which is how this was found.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listRunnableModels() {
+    return serve('models', () => request('/ml_models?runnable=inference'),
+      () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.models).filter((m) => !m.is_base)));
+  }
+
+  /**
    * `POST /api/v2/dataset/build` -- build a dataset out of the matching observations.
    *
    * **Answers immediately with the dataset and the job, not with a dataset.** A real
@@ -1787,6 +1805,7 @@
     listJobs,
     getJob,
     listModels,
+    listRunnableModels,
     listModelVersions,
     listModelSpecies,
     listDatasets,

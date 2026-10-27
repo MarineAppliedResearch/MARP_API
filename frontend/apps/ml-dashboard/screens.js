@@ -7398,13 +7398,20 @@ let registryAsked = null;
 const MODEL_SPECIES = new Map();
 
 /**
- * MARP's models, once.
+ * The models inference may actually run, once.
  *
- * @returns {Promise<Object[]>} Active models, by name. Empty if MARP would not say.
+ * **Not the whole registry.** A pretrained base model is registered and the registry
+ * screen should show it, but inference must never be handed one: its classes are the
+ * upstream vocabulary rather than MARP species, so what it emits would be resolved
+ * against the species catalogue and written into the record. Submission refuses one,
+ * so this picker was offering a choice the API would reject -- found by driving the
+ * tab rather than by reading it.
+ *
+ * @returns {Promise<Object[]>} Active, runnable models by name. Empty if MARP would not say.
  */
-function loadModels() {
+function loadRunnableModels() {
   if (!registryAsked) {
-    registryAsked = (window.MarpApi?.listModels?.() || Promise.resolve([]))
+    registryAsked = (window.MarpApi?.listRunnableModels?.() || Promise.resolve([]))
       /* **Active only.** `status` is what says a model is released to run; a draft
          has no weights worth sending and an archived one is retired. The thirteen
          real models here are active, and the two that are not are leftovers from a
@@ -7464,15 +7471,24 @@ function modelConfigMarkup() {
     + '<details class="fold model-settings">'
     + '<summary>Inference &amp; ByteTrack settings <span class="now" data-settings-now></span></summary>'
     + '<div class="fbody settings-grid">'
-    + '<label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.25" data-setting="conf"></label>'
+    /* **Named for the keys the worker reads, and opened at the values it would use.**
+       Every one of these was a name the worker does not honour, so a run reported
+       them as ignored and used its own number instead. Detection confidence showed
+       0.25 while an unset confidence runs at 0.15 -- the screen stating one
+       measurement and the GPU applying another. `tracking_engine.py` is the source:
+       `params.get("confidence", params.get("conf", 0.15))`, `_INFERENCE_OPTIONS` for
+       the predict() settings, and ByteTrack's own four. */
+    + '<label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.15" data-setting="confidence"></label>'
     + '<label>NMS IoU<input class="inp" type="number" min="0" max="1" step="0.01" value="0.45" data-setting="iou"></label>'
-    + '<label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30" data-setting="track"></label>'
-    + '<label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70" data-setting="match"></label>'
-    + '<label>Track buffer (frames)<input class="inp" type="number" min="1" value="240" data-setting="buffer"></label>'
-    + '<label>Range size (frames)<input class="inp" type="number" min="1" value="900" data-setting="range"></label>'
+    + '<label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30" data-setting="track_thresh"></label>'
+    + '<label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70" data-setting="match_thresh"></label>'
+    + '<label>Track buffer (frames)<input class="inp" type="number" min="1" value="240" data-setting="track_buffer"></label>'
+    + '<label>Piece size (frames)<input class="inp" type="number" min="1" value="900" data-setting="piece_frames"></label>'
     + '<label class="check"><input type="checkbox" data-setting="mot20"><span>MOT20 mode</span></label>'
-    + '<label>Reduction<select class="sel" data-setting="reduction">'
-    + '<option>Best frame of each track</option><option>Every detection</option></select></label>'
+    /* Stated rather than chosen. `reduction/keyframes.py` registers exactly one --
+       `("v3_dirpad", "1")` -- and the two options here were "Best frame of each
+       track" and "Every detection", neither of which a worker could have run. */
+    + '<label>Reduction<input class="inp" type="text" value="v3_dirpad v1" readonly disabled></label>'
     + '</div></details>'
     + '<button class="text-action danger" type="button" data-remove-model>Remove model</button>'
     + '</div></details>';
@@ -7493,7 +7509,7 @@ const MODEL_MARK_TONES = ['gorg', 'star', ''];
  */
 async function refreshModelConfig(config) {
   const pick = $('[data-model-pick]', config);
-  const models = await loadModels();
+  const models = await loadRunnableModels();
 
   if (!pick) return;
 
@@ -7597,14 +7613,14 @@ function refreshConfigSummary(config, known = {}) {
         ? `${checked} of ${total} ${total === 1 ? 'species' : 'species'}`
         : (total === 1 ? 'its one species' : `all ${total} species`))
       : 'no classes mapped';
-    note.textContent = `${chosen}${classes} · conf ${get('conf') ?? ''}`;
+    note.textContent = `${chosen}${classes} · conf ${get('confidence') ?? ''}`;
   }
 
   /* The leading zero goes, because the fold's own line is tight and ".18" reads
      as a confidence to anybody who has used one. */
   const trim = (value) => String(value ?? '').replace(/^0(?=\.)/, '');
 
-  if (now) now.textContent = `conf ${trim(get('conf'))} · match ${trim(get('match'))} · buffer ${get('buffer') ?? ''}`;
+  if (now) now.textContent = `conf ${trim(get('confidence'))} · match ${trim(get('match_thresh'))} · buffer ${get('track_buffer') ?? ''}`;
 }
 
 /**
