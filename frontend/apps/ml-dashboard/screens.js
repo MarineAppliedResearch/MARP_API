@@ -5583,6 +5583,19 @@ const resourceDisk = (caps) => {
     + `${disk.percent_used === undefined ? '' : ` &middot; ${Math.round(disk.percent_used)}% used`}`;
 };
 
+/**
+ * How old a GPU sample may be and still be called a reading.
+ *
+ * The sampler writes once a minute, so five intervals is generous for a machine that is
+ * actually reporting and decisive for one that stopped days ago. The number matters less
+ * than that there is one: without it, the newest row for a switched-off machine is shown
+ * as its current state for ever.
+ */
+const SAMPLE_STALE_MS = 5 * 60 * 1000;
+
+/** How long unheard before a machine is folded away rather than listed with the pool. */
+const WORKER_GONE_MS = 2 * 24 * 60 * 60 * 1000;
+
 /** Bytes as whole gigabytes, for a column 70px wide. */
 const gb = (bytes) => (Number.isFinite(Number(bytes)) ? Math.round(Number(bytes) / 1073741824) : null);
 
@@ -5599,21 +5612,36 @@ const gb = (bytes) => (Number.isFinite(Number(bytes)) ? Math.round(Number(bytes)
  * reading, and a dash is the honest cell. The difference is that it is now a fact about
  * that machine rather than a standing claim about MARP.
  */
-const gpuLoadCell = (view) => (view.load === null
-  ? NOT_REPORTED
-  : `<span class="prog" data-state="${view.state}" title="GPU utilisation, ${view.asOf}">`
-    + `<span class="bar"><i style="width:${view.load}%"></i></span><span class="pct">${view.load}%</span></span>`);
+/** A dash that says when the last reading was, rather than that there was never one. */
+const staleCell = (view) => `<span class="dash" title="${escapeHtml(view.stale)}">&mdash;</span>`;
 
-const vramLoadCell = (view) => (view.vramUsed === null
-  ? NOT_REPORTED
-  : `<span class="two" title="VRAM in use, ${view.asOf}"><span class="a">${view.vramPct}%</span>`
-    + `<span class="b">${gb(view.vramUsed)} of ${gb(view.vramTotal)} GB</span></span>`);
+const gpuLoadCell = (view) => {
+  if (view.stale) return staleCell(view);
 
-const thermalCell = (view) => (view.tempC === null && view.watts === null
-  ? NOT_REPORTED
-  : `<span class="two" title="As last sampled, ${view.asOf}">`
-    + `<span class="a">${view.tempC === null ? '&mdash;' : `${view.tempC}&deg;C`}</span>`
-    + `<span class="b">${view.watts === null ? '&mdash;' : `${Math.round(view.watts)} W`}</span></span>`);
+  return view.load === null
+    ? NOT_REPORTED
+    : `<span class="prog" data-state="${view.state}" title="GPU utilisation, ${view.asOf}">`
+      + `<span class="bar"><i style="width:${view.load}%"></i></span><span class="pct">${view.load}%</span></span>`;
+};
+
+const vramLoadCell = (view) => {
+  if (view.stale) return staleCell(view);
+
+  return view.vramUsed === null
+    ? NOT_REPORTED
+    : `<span class="two" title="VRAM in use, ${view.asOf}"><span class="a">${view.vramPct}%</span>`
+      + `<span class="b">${gb(view.vramUsed)} of ${gb(view.vramTotal)} GB</span></span>`;
+};
+
+const thermalCell = (view) => {
+  if (view.stale) return staleCell(view);
+
+  return view.tempC === null && view.watts === null
+    ? NOT_REPORTED
+    : `<span class="two" title="As last sampled, ${view.asOf}">`
+      + `<span class="a">${view.tempC === null ? '&mdash;' : `${view.tempC}&deg;C`}</span>`
+      + `<span class="b">${view.watts === null ? '&mdash;' : `${Math.round(view.watts)} W`}</span></span>`;
+};
 
 function workerView(worker) {
   const caps = worker.capabilities || {};
@@ -5626,8 +5654,27 @@ function workerView(worker) {
   const device = (caps.cuda_devices || [])[0] || null;
   const vramGb = device ? gb(device.total_memory_bytes) : null;
 
-  /* The machine's own latest sample, which exists whether or not it is working. */
-  const reading = (worker.telemetry && (worker.telemetry.gpus || [])[0]) || null;
+  /* **The machine's own latest sample, and only while it is still a reading.**
+     `gpu_worker_samples` keeps every sample for ever, so the newest row for a machine
+     that was switched off on Wednesday is Wednesday's. Isaac found ABYSS *offline, last
+     heard 6d ago*, sitting next to **46°C and 123 W** -- presented as current, in the
+     present tense, with no indication of its age. A six-day-old temperature shown as now
+     is a confident wrong answer, which is worse than the dash that was there before I
+     filled this in.
+
+     A few sample intervals is the window: the sampler writes once a minute, so anything
+     older than five has stopped being a reading and becomes a historical fact, which
+     belongs in the chart below rather than in a column headed *GPU load*. */
+  const sample = (worker.telemetry && (worker.telemetry.gpus || [])[0]) || null;
+  const sampledAt = worker.telemetry ? Date.parse(worker.telemetry.as_of) : NaN;
+  const fresh = Number.isFinite(sampledAt)
+    && window.MarpApi.now() - sampledAt < SAMPLE_STALE_MS;
+  /* **Two gates on purpose.** The cells below check `stale` and draw the dash that says
+     when the last reading was; this one keeps the stale numbers out of the view model
+     entirely, so the next thing to read `view.load` -- a chart, a card, a tooltip --
+     cannot pick up a six-day-old value by accident. Only the first is observable today,
+     so only the first is pinned; this one is the belt. */
+  const reading = fresh ? sample : null;
 
   return {
     worker, caps, state, label,
@@ -5651,6 +5698,17 @@ function workerView(worker) {
     /* Said on every cell that shows a reading, because a number with no time on it is a
        claim about now that may be an hour old. */
     asOf: worker.telemetry ? sinceText(worker.telemetry.as_of) : 'not sampled',
+    /* What the dash says instead, when the only reading is too old to be one. */
+    stale: !fresh && sample
+      ? `Last sampled ${sinceText(worker.telemetry.as_of)}, too old to show as current`
+      : null,
+    /* A machine nobody has heard from in days is folded away rather than filling the
+       table above the ones that are working. */
+    gone: (() => {
+      const heard = Date.parse(workerLastSeen(worker) || '');
+
+      return Number.isFinite(heard) ? window.MarpApi.now() - heard > WORKER_GONE_MS : true;
+    })(),
     used: (worker.attempts || []).length,
     haystack: `${worker.name} ${worker.worker_id} ${caps.gpu || ''} ${worker.worker_version || ''}`.toLowerCase(),
   };
@@ -5734,6 +5792,52 @@ function workerRows(view) {
 }
 
 /** Narrows, sorts and pages the pool, then draws it. */
+/** Whether the long-gone machines are currently shown. Off until somebody asks. */
+let workersFoldOpen = false;
+
+/**
+ * The control that says how many machines are folded away, and opens them.
+ *
+ * **The count is the point.** Hiding rows is only safe if the screen says it is hiding
+ * them; a pool that quietly lists four of thirteen is how somebody concludes nine were
+ * de-enrolled. It sits under the table rather than above it, because it is a footnote to
+ * the pool rather than a filter on it.
+ *
+ * @param {number} count - How many rows are folded.
+ * @returns {void}
+ */
+function renderWorkersFold(count) {
+  const panel = $('#worker-pool');
+
+  if (!panel) return;
+
+  const wrap = $('.tblwrap', panel);
+  let fold = $('[data-workers-fold]', panel);
+
+  if (!count) {
+    if (fold) fold.remove();
+    return;
+  }
+
+  if (!fold) {
+    fold = document.createElement('button');
+    fold.type = 'button';
+    fold.className = 'btn sm workers-fold';
+    fold.setAttribute('data-workers-fold', '');
+    fold.addEventListener('click', () => {
+      workersFoldOpen = !workersFoldOpen;
+      applyWorkersQuery();
+    });
+    wrap.after(fold);
+  }
+
+  fold.textContent = workersFoldOpen
+    ? `Hide ${count} machine${count === 1 ? '' : 's'} not heard from in days`
+    : `Show ${count} machine${count === 1 ? '' : 's'} not heard from in days`;
+  fold.setAttribute('aria-expanded', String(workersFoldOpen));
+  panel.dataset.foldOpen = workersFoldOpen ? 'yes' : 'no';
+}
+
 function applyWorkersQuery() {
   const table = $('table#workers');
   if (table) table.dataset.sortsItsOwnData = 'true';
@@ -5762,9 +5866,36 @@ function applyWorkersQuery() {
   const from = (workersQuery.page - 1) * workersQuery.perPage;
   const shown = views.slice(from, from + workersQuery.perPage);
 
-  body.innerHTML = shown.length
-    ? shown.map(workerRows).join('')
+  /* **Machines nobody has heard from in days are folded away, not deleted.** The pool
+     holds thirteen workers and two of them have ever been near this project; the rest
+     are test enrolments and a laptop that was on once. Listing them with the ones doing
+     work makes the table about history rather than about now -- Isaac: *"maybe it should
+     be below the fold or not shown if it's not online, or hasn't been online in a day or
+     two?"*
+
+     Folded rather than filtered, and the count stays on the toggle, because a machine
+     that silently vanished from a pool list is how somebody concludes it was
+     de-enrolled. They are still searchable and still sortable: only the default view
+     leaves them out. */
+  const here = shown.filter((view) => !view.gone);
+  const gone = shown.filter((view) => view.gone);
+
+  body.innerHTML = here.length || gone.length
+    ? here.map(workerRows).join('') + (gone.length ? gone.map(workerRows).join('') : '')
     : '<tr class="tblmsg"><td class="empty" colspan="11">No workers match these filters.</td></tr>';
+
+  /* Marked after rendering rather than in the row builder: `workerRows` returns two rows
+     per worker and the detail must fold with its head. */
+  for (const view of gone) {
+    const head = $(`tr[data-worker="${view.worker.worker_id}"]`, body);
+
+    if (!head) continue;
+
+    head.dataset.gone = 'yes';
+    if (head.nextElementSibling) head.nextElementSibling.dataset.gone = 'yes';
+  }
+
+  renderWorkersFold(gone.length);
 
   const count = $('#worker-pool .panel-hd .count');
   if (count) count.textContent = `(${total.toLocaleString()})`;

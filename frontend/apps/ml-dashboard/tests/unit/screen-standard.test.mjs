@@ -323,3 +323,66 @@ test('a machine that is on and sampling shows what it reported, not a note', asy
   assert.doesNotMatch(detail.textContent, /are not reported|gap 27/,
     'and no paragraph explaining away what the machine is plainly sending');
 });
+
+test('a machine last heard from days ago shows no live readings, and folds away', async (t) => {
+  /* **Isaac, on the pool:** ABYSS, *offline, last heard 6d ago*, sitting next to **46°C
+     and 123 W** — a six-day-old temperature presented as current. `gpu_worker_samples`
+     keeps every sample for ever, so the newest row for a switched-off machine is the day
+     it was switched off, and showing it in a column headed *GPU load* is a confident
+     wrong answer rather than a missing one.
+
+     The hardware facts stay: a card's name and its total VRAM do not go stale. */
+  const sixDays = new Date(Date.now() - 6 * 86400000).toISOString();
+
+  const screen = await drawScreen('workers.html', {
+    listWorkers: async () => [
+      worker(8, 'ABYSS', 6 * 24 * 60, {
+        state: 'offline',
+        activity: 'offline',
+        capabilities: {
+          cuda_devices: [{ name: 'NVIDIA GeForce RTX 4080 SUPER', index: 0, total_memory_bytes: 17170956288 }],
+        },
+        telemetry: {
+          live: true,
+          as_of: sixDays,
+          gpus: [{ gpu_utilization_percent: 43, memory_used_bytes: 2147483648, memory_total_bytes: 17171480576, memory_percent_used: 11, temperature_c: 46, power_usage_watts: 123 }],
+        },
+      }),
+      worker(9, 'rig-live', 1, { activity: 'idle' }),
+    ],
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    listSessions: async () => [],
+  });
+
+  t.after(screen.close);
+
+  const old = screen.document.querySelector('table#workers tbody tr[data-worker="8"]');
+
+  for (const [cell, what] of [['.wcpu', 'GPU load'], ['.wmem', 'VRAM'], ['.wmodel', 'temperature and power']]) {
+    assert.ok(old.querySelector(`${cell} .dash`), `${what} is a dash, not a six-day-old number`);
+  }
+
+  assert.match(old.querySelector('.wcpu .dash').getAttribute('title'), /Last sampled/,
+    'and it says when the last reading was, rather than that there was never one');
+
+  /* The card and its VRAM are facts about the machine, not readings. */
+  assert.match(old.querySelector('.wgpu').textContent, /RTX 4080 SUPER/);
+  assert.match(old.querySelector('.wgpu').textContent, /16 GB/);
+
+  /* Folded, with the count visible: a machine that silently vanished from a pool list is
+     how somebody concludes it was de-enrolled. */
+  assert.equal(old.dataset.gone, 'yes', 'the long-gone machine is marked');
+  assert.equal(screen.document.querySelector('tr[data-worker="9"]').dataset.gone, undefined,
+    'and the live one is not');
+
+  const fold = screen.document.querySelector('[data-workers-fold]');
+
+  assert.ok(fold, 'the count is on screen');
+  assert.match(fold.textContent, /Show 1 machine not heard from in days/);
+  assert.equal(fold.getAttribute('aria-expanded'), 'false');
+
+  fold.click();
+
+  assert.equal(screen.document.querySelector('[data-workers-fold]').getAttribute('aria-expanded'), 'true',
+    'and pressing it opens them');
+});
