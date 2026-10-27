@@ -1316,6 +1316,24 @@ function bestMap(job, run) {
     return { html: run ? IN_THE_EXPANSION : NO_RUN_RECORDED, sort: NOT_A_NUMBER };
   }
 
+  /* **A fourth state, and the only one that is about the task rather than the data.**
+     `best_map50` is `max(map50)` over the run's epochs, and a classification run has no
+     mAP at all -- so it comes back present and null, exactly like a detection run that
+     reached no epoch. Without the task those two are indistinguishable, and this cell
+     would tell a reader that a finished classifier "has reported no epoch yet", which is
+     false and confidently so. Null means *not this task* here, and only the task says
+     which null it is. */
+  const task = trainingTaskOf(job);
+  const headline = task ? TRAINING_TASKS[task].headline : null;
+
+  if (headline && headline.from !== 'map50') {
+    return {
+      html: `<span class="dash" title="A ${TRAINING_TASKS[task].label.toLowerCase()} run has no mAP. `
+        + `It reports ${escapeHtml(headline.label.toLowerCase())}, which is in the expansion.">&mdash;</span>`,
+      sort: NOT_A_NUMBER,
+    };
+  }
+
   if (job.best_map50 === null || job.best_map50 === undefined) {
     return {
       html: run
@@ -1615,9 +1633,36 @@ const TRAINING_TASKS = {
         series: [['precision', 'Precision', 'precision'], ['recall', 'Recall', 'recall'], ['map', 'mAP@50', 'map50'], ['map95', 'mAP@50&ndash;95', 'map5095']],
       },
     ],
+    sections: ['matrix', 'classes', 'curves', 'files'],
+    headline: { label: 'Best mAP@50', from: 'map50', note: 'across reported epochs' },
   },
-  classification: { label: 'Classification', charts: [] },
-  segmentation: { label: 'Segmentation', charts: [] },
+  classification: {
+    label: 'Classification',
+    charts: [],
+    /* **Not "nobody has described it".** It is described -- one training loss, one
+       validation loss, top-1 and top-5 per epoch -- and it cannot be stored. `epochs`
+       has no accuracy columns at all, and its three loss pairs are named for a
+       detector's components, so writing classify's single total into `cls_loss` would
+       make that column mean two different quantities on two rows with nothing to say
+       which. Both are schema questions, raised rather than guessed; a chart pointed at a
+       column name invented here would look built and render nothing. */
+    chartsWaiting: 'A classification run reports one training and one validation loss each '
+      + 'epoch, with top-1 and top-5 accuracy. <code>epochs</code> has no accuracy columns, '
+      + 'and its loss columns are named for a detector&rsquo;s components &mdash; so none of '
+      + 'it can be recorded yet. The final accuracy is below.',
+    /* **No `classes` and no `curves`, rather than empty ones.** `ClassifyMetrics` has no
+       per-class array and no thresholds at all, so a section saying "this run recorded
+       none" would read as a run that failed to measure something instead of a task with
+       no such measurement. A section that does not apply does not appear. */
+    sections: ['matrix', 'files'],
+    headline: { label: 'Top-1 accuracy', from: 'accuracy_top1', note: 'at the end of the run' },
+  },
+  segmentation: {
+    label: 'Segmentation',
+    charts: [],
+    sections: ['matrix', 'classes', 'curves', 'files'],
+    headline: { label: 'Best mAP@50', from: 'map50', note: 'across reported epochs' },
+  },
 };
 
 /**
@@ -2166,10 +2211,29 @@ function trainingRunDetail(run, epochs, task, spec, evidence) {
   const metric = (label, value, note = '') =>
     `<div class="jobmetric"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`;
 
-  const best = epochs.reduce((top, epoch) => {
-    const value = epoch.map50 === null || epoch.map50 === undefined ? null : Number(epoch.map50);
-    return value !== null && (top === null || value > top) ? value : top;
-  }, null);
+  /* **The headline metric is the task's, not detection's.** A classification run has no
+     mAP and reports top-1 instead, so this block named a quantity the run does not
+     measure and would have shown a permanent dash under it. `from` says where it comes
+     from as well as what it is called: `map50` is the best over the epochs as they
+     arrive, top-1 is a single end-of-run figure on the aggregate row. */
+  const plan = TRAINING_TASKS[task] || null;
+  const headline = (plan && plan.headline) || TRAINING_TASKS.detection.headline;
+
+  const best = headline.from === 'map50'
+    ? epochs.reduce((top, epoch) => {
+      const value = epoch.map50 === null || epoch.map50 === undefined ? null : Number(epoch.map50);
+
+      return value !== null && (top === null || value > top) ? value : top;
+    }, null)
+    /* The aggregate row -- the one with no class name -- is where an end-of-run figure
+       lives. Absent until the run has finished and published its metrics. */
+    : (() => {
+      const rows = (evidence && Array.isArray(evidence.metrics)) ? evidence.metrics : [];
+      const overall = rows.find((row) => !row.class_name);
+      const value = overall ? overall[headline.from] : null;
+
+      return value === null || value === undefined ? null : Number(value);
+    })();
 
   const done = epochs.length;
   const total = Number(run.total_epochs) || null;
@@ -2201,7 +2265,7 @@ function trainingRunDetail(run, epochs, task, spec, evidence) {
        seconds are the ordinary case here rather than the edge. */
     metric('Epoch time', meanEpoch === null ? NONE : shortDuration(meanEpoch),
       meanEpoch === null ? 'not reported' : `mean of ${timed.length} reported`),
-    metric('Best mAP@50', best === null ? NONE : best.toFixed(3), 'across reported epochs'),
+    metric(headline.label, best === null ? NONE : best.toFixed(3), headline.note),
     metric('Batch size', run.batch_size ?? NONE),
     metric('Learning rate', run.learning_rate ?? NONE),
     metric('Optimizer', run.optimizer || NONE),
@@ -2215,10 +2279,10 @@ function trainingRunDetail(run, epochs, task, spec, evidence) {
      adding it is a list of series rather than a rewrite of this.
 
      A task nobody has described yet says so, which is a gap a reader can see. */
-  const plan = TRAINING_TASKS[task] || null;
   const charts = !plan || !plan.charts.length
     ? `<p class="hint">${plan
-      ? `The charts a ${plan.label.toLowerCase()} run should show are not described yet.`
+      ? (plan.chartsWaiting
+        || `The charts a ${plan.label.toLowerCase()} run should show are not described yet.`)
       : 'This run&rsquo;s task is unknown, so there is no set of charts to draw for it.'}</p>`
     : (epochs.length
       ? plan.charts.map((chart) => epochChart(chart, epochs)).join('')
@@ -2239,10 +2303,23 @@ function trainingRunDetail(run, epochs, task, spec, evidence) {
   const matrices = Array.isArray(found.matrices) ? found.matrices : [];
   const rendered = files.find((file) => /^confusion_matrix$/.test(file.name || ''));
 
-  const evaluation = confusionMatrix(matrices[0] || null, rendered ? rendered.url : null)
-    + perClassTable(Array.isArray(found.metrics) ? found.metrics : [])
-    + thresholdCurves(Array.isArray(found.curves) ? found.curves : [], found.curvesState)
-    + trainingPlots(files);
+  /* **Which sections exist is the task's to say, and this is the part that was a
+     rewrite rather than a list.** These four were concatenated unconditionally, so a
+     classification run drew "this run recorded no per-class precision, recall or AP" and
+     a control offering to read threshold curves -- both reading as a run that failed to
+     measure something, when `ClassifyMetrics` has no per-class array and no thresholds at
+     all. A section that does not apply to the task does not appear.
+
+     A task MARP does not recognise keeps all four: it is the only honest default, since
+     nothing here knows what such a run does or does not report. */
+  const drawn = {
+    matrix: () => confusionMatrix(matrices[0] || null, rendered ? rendered.url : null),
+    classes: () => perClassTable(Array.isArray(found.metrics) ? found.metrics : []),
+    curves: () => thresholdCurves(Array.isArray(found.curves) ? found.curves : [], found.curvesState),
+    files: () => trainingPlots(files),
+  };
+  const wanted = (plan && plan.sections) || Object.keys(drawn);
+  const evaluation = wanted.map((section) => (drawn[section] ? drawn[section]() : '')).join('');
 
   /* The inner content only; `trainingJobDetail` owns the wrapper, because it puts the
      live attempt block above this and the two have to sit in one panel. */

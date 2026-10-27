@@ -724,8 +724,12 @@ test('adding a task is a list of series, not a new component', async (t) => {
 
   const detail = await open(screen, 21779);
 
-  assert.match(detail.textContent, /charts a classification run should show are not described yet/,
-    'and the panel says so rather than drawing detection-shaped charts for it');
+  /* **Described, and not storable — which is a different sentence.** This said "not
+     described yet" while the shape was settled between the API and worker sessions; what
+     is actually missing is columns, so the panel names that rather than implying nobody
+     has thought about it. */
+  assert.match(detail.textContent, /epochs.*has no accuracy columns/,
+    'and says what is missing rather than drawing detection-shaped charts for it');
   assert.equal(detail.querySelector('.result-line.box-loss'), null,
     'no box loss on a run that has no boxes');
 
@@ -2040,4 +2044,112 @@ test('a matrix label MARP does not have is named the same way on both axes', asy
 
   assert.equal(headers.filter((text) => text === 'Class 1').length, 2,
     'the unnamed class is Class 1 on the row and on the column, not blank on one of them');
+});
+
+/* ------------------------------------------------------- the classify task */
+
+/**
+ * A classification run: the model's `model_type` is what decides the task.
+ *
+ * **The per-epoch half is an assumption and is marked as one.** The worker session is
+ * scoping Ultralytics' classify trainer and the literal metric keys are not confirmed,
+ * so nothing here feeds epoch columns for classify — `epochs` has no accuracy columns
+ * and its loss pairs are named for a detector's components. The end-of-run accuracy is
+ * real: `accuracy_top1` and `accuracy_top5` are on `metrics_summary` as of
+ * `20261027120000-a-classification-run-records-its-accuracy`.
+ */
+const classifyScreen = (evidence = {}) => ({
+  ...answers([epoch(1)], [run(202, 21779)], evidence),
+  listModels: async () => [{
+    id: 7, name: 'habitat-cls', model_type: 'classification', status: 'trained',
+    parent_model_id: null, created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z',
+  }],
+});
+
+test('a classification run shows no section that does not apply to it', async (t) => {
+  /* **The part of the panel that was a rewrite rather than a list.** The four evaluation
+     sections were concatenated unconditionally, so a classify run drew "this run recorded
+     no per-class precision, recall or AP" and a control offering to read threshold
+     curves. `ClassifyMetrics` has no per-class array and no thresholds at all, so both
+     read as a run that failed to measure something rather than as a task with no such
+     measurement. */
+  const screen = await drawScreen('training.html', classifyScreen());
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const heads = [...detail.querySelectorAll('.evaluation-card h5')].map((h) => h.textContent.trim());
+
+  assert.deepEqual(heads, ['Confusion matrix', 'Training output'],
+    'the matrix and the gallery, and nothing that classification does not report');
+  assert.equal(detail.querySelector('[data-read-curves]'), null,
+    'no offer to read curves that cannot exist');
+  assert.doesNotMatch(detail.textContent, /per-class/i,
+    'and no empty per-class section to read as a failure');
+});
+
+test('a classification run is headlined by its own metric, not by mAP', async (t) => {
+  const screen = await drawScreen('training.html', classifyScreen({
+    metrics: [{
+      metric_family: 'classify', class_name: null, species_id: null,
+      precision: null, recall: null, map50: null, map5095: null, f1_score: null,
+      accuracy_top1: 0.864, accuracy_top5: 0.981,
+    }],
+  }));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const labels = [...detail.querySelectorAll('.jobmetric span')].map((s) => s.textContent);
+
+  assert.ok(labels.includes('Top-1 accuracy'), 'the metric the task actually reports');
+  assert.ok(!labels.includes('Best mAP@50'), 'and not one it has no measure of');
+
+  const figure = [...detail.querySelectorAll('.jobmetric')]
+    .find((one) => one.querySelector('span').textContent === 'Top-1 accuracy');
+
+  /* End of run rather than best-so-far: top-1 is a single figure on the aggregate row,
+     where mAP is the best across the epochs as they arrive. */
+  assert.equal(figure.querySelector('b').textContent, '0.864');
+  assert.match(figure.textContent, /at the end of the run/);
+});
+
+test('Best mAP on a classification row says it is not that task, not that no epoch ran', async (t) => {
+  /* **The one that would have reached Isaac as a wrong sentence rather than a blank.**
+     `best_map50` is max(map50) over the epochs, so a classify run comes back present and
+     null -- identical to a detection run that reached no epoch. Without the task the cell
+     cannot tell those apart, and it was saying a finished classifier "has reported no
+     epoch yet". */
+  const screen = await drawScreen('training.html', {
+    ...classifyScreen(),
+    listJobs: async () => ({
+      jobs: [{ ...job(21779), best_map50: null }],
+      total: 1, limit: 500, offset: 0,
+    }),
+  });
+
+  t.after(screen.close);
+
+  const cell = screen.document.querySelector('.training-table tbody tr[data-job="21779"] .jmap');
+  const title = cell.querySelector('[title]').getAttribute('title');
+
+  assert.match(title, /classification run has no mAP/i, 'the null is about the task');
+  assert.doesNotMatch(title, /no epoch/i, 'and not a claim that nothing ran');
+  assert.match(title, /top-1 accuracy/i, 'with what it does report instead');
+});
+
+test('detection keeps every section and its own headline', async (t) => {
+  /* The other half of the same change: making sections task-declared must not quietly
+     drop one from the task that has them all. */
+  const screen = await drawScreen('training.html', answers([epoch(1)]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const heads = [...detail.querySelectorAll('.evaluation-card h5')].map((h) => h.textContent.trim());
+
+  assert.deepEqual(heads,
+    ['Loss', 'Validation quality', 'Confusion matrix', 'Per-class quality', 'Threshold curves', 'Training output']);
+  assert.ok([...detail.querySelectorAll('.jobmetric span')].map((s) => s.textContent)
+    .includes('Best mAP@50'));
 });
