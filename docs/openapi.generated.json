@@ -6261,6 +6261,18 @@
             "description": "Identifier of the user who recorded or owns this session.",
             "example": 8
           },
+          "created_by": {
+            "type": "integer",
+            "nullable": true,
+            "description": "The person who asked for this session, carried from the job that created it. Null on a session nobody requested through a job.",
+            "example": 8
+          },
+          "is_automated": {
+            "type": "boolean",
+            "default": false,
+            "description": "True when a machine produced this session. False means it was not recorded as automated rather than that a person made it: sessions created before this existed all read false, including machine-produced ones.",
+            "example": true
+          },
           "dive": {
             "type": "string",
             "maxLength": 255,
@@ -6301,6 +6313,7 @@
         "additionalProperties": false,
         "required": [
           "session_id",
+          "is_automated",
           "dive",
           "line",
           "lineId",

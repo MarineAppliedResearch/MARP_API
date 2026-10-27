@@ -106,6 +106,33 @@ module.exports = (sequelize, DataTypes) => {
             examples: [8],
         },
       },
+      created_by: {
+        /* Who asked for this session, as against `user_id` which is who produced its
+           observations. For an automated run they differ by design: the producer is the
+           service user the pipeline runs as, this is whoever submitted the job. */
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'users',
+          key: 'user_id',
+        },
+        jsonSchema: {
+            description: 'The person who asked for this session, carried from the job that created it. Null on a session nobody requested through a job.',
+            examples: [8],
+        },
+      },
+      is_automated: {
+        /* **Not backfilled, by decision.** `false` means "not recorded as automated",
+           not "made by a human" -- every session predating this column reads false,
+           including the ones a service user produced. */
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        jsonSchema: {
+            description: 'True when a machine produced this session. False means it was not recorded as automated rather than that a person made it: sessions created before this existed all read false, including machine-produced ones.',
+            examples: [true],
+        },
+      },
       dive: {
         type: DataTypes.STRING(255),
         allowNull: false,
