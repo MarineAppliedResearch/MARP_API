@@ -16162,6 +16162,67 @@
         }
       }
     },
+    "/v2/gpu/workers/{id}/series": {
+      "get": {
+        "summary": "One machine's readings over time",
+        "description": "Every per-minute sample this machine recorded in the window, oldest first, as parallel arrays against `at`. GPU utilisation, VRAM, temperature and power come from the GPU block, which has been sampled since the poll started keeping it; CPU, memory and disk come from the system block, which only exists on samples taken since the worker began sending it, so those series are null before that point rather than zero. **A minute with no sample is null in every series**, not a missing entry: the machine was off or between builds, and a chart draws a break there rather than joining across it. The first GPU only -- a mean across two cards would be a number no sensor reported. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The worker id."
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Inclusive start. Defaults to an hour before `until`."
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Exclusive end. Defaults to now."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The readings, or empty arrays where nothing was recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/gpu/workers/{id}/rename": {
       "post": {
         "summary": "Rename a GPU machine",
