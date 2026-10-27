@@ -33,18 +33,29 @@ const job = (id, state, extra = {}) => ({
   ...extra,
 });
 
+/**
+ * A worker, in the shape  really returns.
+ *
+ * **Read off the running API rather than imagined.** The first version of this fixture
+ * was invented — `status`, `gpu_name`, `gpu_memory_mb` — and the screen rendered its
+ * error state, so the test would have asserted against a broken page rather than a
+ * feature. The real row carries `state` and `activity` beside each other, the GPU inside
+ * `capabilities` as `gpu` and `vram_mb`, and `attempts` as the live leases.
+ *
+ * Same mistake as the Produces column, one layer down: a fixture that agrees with what I
+ * expected instead of with the API.
+ */
 const worker = (id, name, seenMinutesAgo, extra = {}) => ({
   worker_id: id,
   name,
-  status: 'online',
+  state: 'online',
   activity: 'idle',
-  attempts: [],
-  capabilities: { gpu_name: 'RTX 4090', gpu_memory_mb: 24576 },
   slot_count: 1,
   worker_version: '0.1.9',
-  gpu_name: 'RTX 4090',
-  gpu_memory_mb: 24576,
+  capabilities: { gpu: 'RTX 4090', vram_mb: 24576, slots: 1 },
+  enrolled_at: '2026-10-01T00:00:00.000Z',
   last_seen_at: new Date(Date.now() - seenMinutesAgo * 60000).toISOString(),
+  attempts: [],
   ...extra,
 });
 
@@ -138,4 +149,44 @@ test('every screen says when MARP last answered', async (t) => {
 
     screen.close();
   }
+});
+
+test('the pool says a worker went quiet, without closing an expanded one', async (t) => {
+  /* **A pool screen that does not move is the one that misleads most**: a worker going
+     offline looks exactly like one that was offline when the tab was opened. Only the
+     pill and the heartbeat are written — a name or a GPU changes when a machine is
+     reconfigured, not under a reader's eyes, and rewriting the row would close an
+     expansion for nothing. */
+  let seen = 1;
+  let activity = 'busy';
+
+  const screen = await drawScreen('workers.html', {
+    listWorkers: async () => [worker(5, 'rig-01', seen, { activity })],
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    listSessions: async () => [],
+  });
+
+  t.after(screen.close);
+
+  const row = screen.document.querySelector('table#workers tbody tr[data-worker="5"]');
+
+  assert.ok(row, 'the worker drew');
+  assert.match(row.querySelector('.jstatus').textContent, /Busy/i);
+
+  row.querySelector('.exbtn').click();
+
+  /* `data-sort` rather than the text: `sinceText` rounds against the data layer's fixed
+     present, so two timestamps minutes apart can read the same while the cell has
+     genuinely been rewritten. The sort key is the value itself. */
+  const before = row.querySelector('.whb').dataset.sort;
+
+  seen = 9;
+  activity = 'offline';
+  await poll(screen);
+
+  assert.match(row.querySelector('.jstatus').textContent, /Offline/i, 'the pill followed');
+  assert.notEqual(row.querySelector('.whb').dataset.sort, before, 'and so did the heartbeat');
+  assert.equal(screen.document.querySelector('table#workers tbody tr[data-worker="5"]'), row,
+    'the same row, so an expanded one stays open');
+  assert.equal(row.getAttribute('aria-expanded'), 'true', 'and it is still open');
 });
