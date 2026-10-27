@@ -175,7 +175,10 @@ afterAll(async () => {
        cascades, `inference_settings` does not. Left behind, these are rows this file
        added to a database it does not own. */
     await db.sequelize.query(
-        "DELETE FROM inference_settings WHERE engine = 'marp_training' AND name IN ('lr0', 'optimizer', 'momentum')",
+        `DELETE FROM inference_settings
+          WHERE engine = 'marp_training'
+            AND name IN ('lr0', 'optimizer', 'momentum',
+                         'compute_device', 'compute_device_index', 'train_script_commit')`,
         { logging: false }
     );
     await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE job_id = :jobId', {
@@ -330,6 +333,173 @@ describe('a training job writes training_runs and epochs', () => {
                 replacements: { jobId: job.id }, logging: false,
             });
         }
+    });
+
+    /**
+     * What the worker observed about the machine reaches the run.
+     *
+     * **Three things are under test here and only one of them is a column.**
+     *
+     * The first is that the report is accepted at all. `compute_device` arrives with
+     * `source: 'worker'`, which is a fifth source and was not in `SETTING_SOURCES` --
+     * so until it was added the service refused the request with a 400. **And a
+     * settings report does not travel alone:** it shares an event batch with metrics,
+     * and the batch is accepted or refused as one. So the settings event and the epoch
+     * event go in a single POST below, deliberately, because that is the shape in which
+     * the failure costs an epoch rather than a label.
+     *
+     * The second is that the card reaches `training_runs.compute_device`. The column
+     * asks for hardware -- the example in its own comment is an RTX 6000 Ada -- and the
+     * worker sent `cuda:0` until 2026-10-27. The fixture sends both the card and the
+     * slot, with values that cannot be confused, so a promotion that took the slot
+     * fails here instead of looking right.
+     *
+     * The third is that the slot is kept and is not promoted. It is diagnostic for a
+     * multi-GPU machine with one bad card, and it is not comparable between machines,
+     * which is what a column on `training_runs` would imply that it is.
+     */
+    test('a run records the card it trained on, and leaves the slot in the settings', async () => {
+        const [job] = await db.sequelize.query(
+            `INSERT INTO gpu_jobs (kind, spec, state, attempts_made, max_attempts)
+             VALUES ('training', :spec, 'leased', 1, 1)
+             RETURNING id`,
+            {
+                replacements: {
+                    spec: JSON.stringify({
+                        engine: 'marp_training',
+                        model: { ml_model_id: modelId, name: 'jest', sha256: 'a'.repeat(64) },
+                        dataset: { dataset_id: datasetId },
+                        params: { epochs: 50, batch: 8 },
+                    }),
+                },
+                type: db.Sequelize.QueryTypes.SELECT,
+                logging: false,
+            }
+        );
+
+        const [attempt] = await db.sequelize.query(
+            `INSERT INTO gpu_job_attempts (job_id, worker_id, slot_index, lease_epoch, state, lease_expires_at)
+             VALUES (:jobId, :workerId, 2, 1, 'running', NOW() + INTERVAL '1 hour')
+             RETURNING id`,
+            { replacements: { jobId: job.id, workerId }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+        );
+
+        try {
+            /* **One batch, both events.** Settings first, as the worker sends them --
+               the report goes out at `on_train_start` and the first epoch follows. If
+               the source were refused, this POST would be a 400 and the epoch inside
+               it would be lost with it. */
+            const posted = await global.api
+                .post(`/api/v2/gpu/attempts/${attempt.id}/events`)
+                .send({
+                    worker_id: workerId,
+                    lease_epoch: 1,
+                    events: [
+                        {
+                            seq: 0,
+                            kind: 'settings',
+                            payload: {
+                                engine: 'marp_training',
+                                settings: {
+                                    /* The card and the slot, chosen so that one standing
+                                       in for the other cannot pass. */
+                                    compute_device: {
+                                        value: 'NVIDIA GeForce RTX 4080 SUPER', type: 'text', source: 'worker',
+                                    },
+                                    compute_device_index: {
+                                        value: 'cuda:1', type: 'text', source: 'worker',
+                                    },
+                                    train_script_commit: {
+                                        value: '1e53c5af5093862ddf5c0a28d0', type: 'text', source: 'worker',
+                                    },
+                                },
+                                ignored: {},
+                            },
+                        },
+                        epochEvent(1, 1, 0.37),
+                    ],
+                });
+
+            /* The refusal this guards against is a 400 on the whole request, so the
+               status is the assertion rather than a precondition for one. */
+            expect(posted.status).toBe(200);
+            expect(posted.body.accepted).toBe(2);
+
+            const [run] = await db.sequelize.query(
+                'SELECT * FROM training_runs WHERE job_id = :jobId',
+                { replacements: { jobId: job.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            expect(run).toBeTruthy();
+
+            /* The card, which is what the column asks for. */
+            expect(run.compute_device).toBe('NVIDIA GeForce RTX 4080 SUPER');
+
+            /* **Not the slot**, which is the whole reason the worker changed what it
+               sends. Asserted negatively as well, because a promotion that read
+               `compute_device_index` would otherwise produce a plausible-looking
+               string in a column nobody could compare across two machines. */
+            expect(run.compute_device).not.toMatch(/^cuda:/);
+
+            expect(run.train_script_commit).toBe('1e53c5af5093862ddf5c0a28d0');
+
+            /* And the epoch that shared the batch is there, which is what the refusal
+               used to cost. */
+            const epochs = await db.sequelize.query(
+                'SELECT epoch_number FROM epochs WHERE training_run_id = :runId',
+                { replacements: { runId: run.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            expect(epochs).toHaveLength(1);
+
+            /* The slot is kept where it was reported, and nowhere else. */
+            const [slot] = await db.sequelize.query(
+                `SELECT a.value_text, a.source
+                   FROM gpu_attempt_settings a
+                   JOIN inference_settings s ON s.id = a.setting_id
+                  WHERE a.attempt_id = :attemptId AND s.name = 'compute_device_index'`,
+                { replacements: { attemptId: attempt.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            expect(slot).toBeTruthy();
+            expect(slot.value_text).toBe('cuda:1');
+            expect(slot.source).toBe('worker');
+        } finally {
+            await db.sequelize.query(
+                'DELETE FROM epochs WHERE training_run_id IN (SELECT id FROM training_runs WHERE job_id = :jobId)',
+                { replacements: { jobId: job.id }, logging: false }
+            );
+            await db.sequelize.query('DELETE FROM training_runs WHERE job_id = :jobId', {
+                replacements: { jobId: job.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_job_events WHERE attempt_id = :attemptId', {
+                replacements: { attemptId: attempt.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE id = :attemptId', {
+                replacements: { attemptId: attempt.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_jobs WHERE id = :jobId', {
+                replacements: { jobId: job.id }, logging: false,
+            });
+        }
+    });
+
+    /**
+     * **Null rather than a guess, when no worker said.** An older worker reports no
+     * device at all, and a run that died before `on_train_start` reports none either.
+     * The job spec is not a fallback: it holds what was asked for, and what `auto`
+     * resolved to against this machine is the only thing that is a fact about the
+     * hardware.
+     */
+    test('a run whose worker reported no device leaves the column null', async () => {
+        const [run] = await db.sequelize.query(
+            'SELECT compute_device, train_script_commit FROM training_runs WHERE job_id = :jobId',
+            { replacements: { jobId }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+        );
+
+        expect(run).toBeTruthy();
+        expect(run.compute_device).toBeNull();
+        expect(run.train_script_commit).toBeNull();
     });
 
     test('each epoch becomes a row, with the metrics mapped to their columns', async () => {

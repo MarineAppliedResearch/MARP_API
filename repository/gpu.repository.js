@@ -2323,25 +2323,58 @@ class GpuRepository {
                column that is sometimes the request and sometimes the truth cannot be
                read at all. The attempt is scoped rather than the job, because a retry
                resolves its own. */
+            /* **Two rules in one statement, because the two halves answer different
+               questions.**
+
+               `lr0` and `optimizer` are scoped to `resolved` because a *requested*
+               value for them exists and is wrong: the paragraph above is about
+               exactly that. Anything else in the column would be the ask rather than
+               the outcome.
+
+               `compute_device` and `train_script_commit` have no requested form.
+               Nobody submits a graphics card. A job may name a device, but what it
+               gets is whatever the worker resolves that to against the hardware it
+               has, so the only value that ever reaches this table is already the
+               fact -- and the merge rule in `recordAttemptSettings` means the stored
+               row IS the answer: `resolved` replaced, everything else first-wins.
+               Filtering by source here would re-decide a precedence that has already
+               been applied, and would drop these two, whose source is `worker`. */
             const settled = await this.db.sequelize.query(
                 `SELECT s.name, a.value_real, a.value_text
                    FROM gpu_attempt_settings a
                    JOIN inference_settings s ON s.id = a.setting_id
-                  WHERE a.attempt_id = :attemptId AND a.source = 'resolved'
-                    AND s.name IN ('lr0', 'optimizer')`,
+                  WHERE a.attempt_id = :attemptId
+                    AND (
+                         (a.source = 'resolved' AND s.name IN ('lr0', 'optimizer'))
+                      OR s.name IN ('compute_device', 'train_script_commit')
+                    )`,
                 { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
             );
 
-            const resolved = new Map(settled.map((row) => [row.name, row]));
-            const resolvedLr = resolved.get('lr0');
-            const resolvedOptimizer = resolved.get('optimizer');
+            const byName = new Map(settled.map((row) => [row.name, row]));
+            const resolvedLr = byName.get('lr0');
+            const resolvedOptimizer = byName.get('optimizer');
+
+            /* **The card, not the slot.** The column asks for hardware -- its comment
+               says 'e.g. "RTX 6000 Ada"' -- and the worker sent `cuda:0` until
+               2026-10-27, which answers a different question: two runs on two
+               different cards both reported `cuda:0`, so the column could not have
+               told them apart even once something read it. The slot is still
+               reported, as `compute_device_index`, and is deliberately left in
+               `gpu_attempt_settings` -- it is diagnostic for a multi-GPU machine
+               with one bad card, and it is not comparable between machines, which is
+               what a column on `training_runs` is for. */
+            const card = byName.get('compute_device');
+            const scriptCommit = byName.get('train_script_commit');
 
             const [opened] = await this.db.sequelize.query(
                 `INSERT INTO training_runs (job_id, model_id, dataset_id, start_time,
                                             total_epochs, batch_size, learning_rate, optimizer,
+                                            compute_device, train_script_commit,
                                             notes, created_at, updated_at)
                  VALUES (:jobId, :modelId, :datasetId, NOW(),
                          :totalEpochs, :batchSize, :learningRate, :optimizer,
+                         :computeDevice, :trainScriptCommit,
                          :notes, NOW(), NOW())
                  RETURNING id`,
                 {
@@ -2359,6 +2392,12 @@ class GpuRepository {
                             ? Number(resolvedLr.value_real) : null,
                         optimizer: resolvedOptimizer && resolvedOptimizer.value_text
                             ? String(resolvedOptimizer.value_text) : null,
+                        /* Null when no worker reported one -- an older worker, or a run
+                           that died before its settings report. Never a guess at the
+                           machine from the job spec. */
+                        computeDevice: card && card.value_text ? String(card.value_text) : null,
+                        trainScriptCommit: scriptCommit && scriptCommit.value_text
+                            ? String(scriptCommit.value_text) : null,
                         notes: `Opened by GPU job ${job.id}.`,
                     },
                     type: QueryTypes.SELECT,
