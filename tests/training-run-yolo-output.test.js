@@ -326,6 +326,25 @@ describe('Taking a final report into the record', () => {
         expect(uncounted.support).toBeNull();
     });
 
+    it('takes a report with no metrics block as empty, not malformed', async () => {
+        // The producer omits it only when nothing was scored, and a confusion matrix can
+        // be real beside it. Worth pinning as a contract rather than leaving accidental:
+        // the emitting side separately found that a swallowed crash produced exactly
+        // this shape, so "empty" and "broken" must stay distinguishable by agreement.
+        const nothingScored = finalMetricsReport();
+        delete nothingScored.metrics;
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(nothingScored));
+
+        const result = await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        expect(result.failed).toBeUndefined();
+        expect(result.stored.metrics_rows).toBe(0);
+
+        // The matrix still lands, because it was still measured.
+        expect(result.stored.confusion_matrix).toBe(true);
+    });
+
     it('names an unrecognised family rather than refusing it or swallowing it', async () => {
         // `mask` was the wrong guess for `seg` before both sides agreed. A typo like
         // that otherwise lands silently as a table nobody is looking for. Reported, and

@@ -331,6 +331,13 @@ function finalMetrics(report) {
        different lists look like one: the confusion matrix's axes are the model's full
        vocabulary while `per_class` covers only what the validator evaluated. Each now
        carries the list it is indexed by, beside the numbers it labels. */
+    /* **A missing `metrics` block is empty-but-valid, not malformed.** The producer
+       omits it only when nothing was scored -- a run whose validation set yielded no
+       class it could measure -- and a confusion matrix can still be real beside it. So
+       it yields no rows rather than refusing the file, and the caller reports the
+       emptiness rather than this swallowing it. The worker separately found that its own
+       broad `except` would have produced exactly this shape from a crash; that is fixed
+       on its side, which is what makes an empty block trustworthy here. */
     const blocks = Array.isArray(report.metrics) ? report.metrics : [];
 
     const rows = [];

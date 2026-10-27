@@ -472,6 +472,20 @@ class TrainingMetricsService {
                 rows.map((row) => row.metric_family).filter((family) => !isKnownFamily(family))
             )];
 
+            /* **A report that scored nothing is legitimate and still worth saying.**
+               The producer omits its metrics block only when there was genuinely nothing
+               to score, so this is not a refusal -- but a run that measured no class at
+               all is unusual enough that it should not pass in silence, and a confusion
+               matrix landing beside no metrics is exactly the shape a swallowed crash
+               used to produce on the emitting side. */
+            if (rows.length === 0) {
+                logger.info(
+                    `training run ${run.id} reported no per-class or aggregate metrics `
+                    + `for split ${parsed.split}. Stored as empty, which is what a run `
+                    + 'that scored nothing looks like.'
+                );
+            }
+
             if (unknownFamilies.length > 0) {
                 logger.info(
                     `training run ${run.id} reported metric families MARP does not `
