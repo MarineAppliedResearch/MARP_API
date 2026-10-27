@@ -619,7 +619,13 @@ test('the run panel offers every section, and each empty one says what it waits 
      matrix, the per-class rows and the curves are all served now, so "nothing writes
      metrics_summary yet" would be a sentence that was true in October and is not. */
   assert.match(detail.textContent, /This run recorded none/, 'the matrix says why it is absent');
-  assert.match(detail.textContent, /This run recorded no per-class/, 'and so does per-class');
+  /* **And it does not promise the numbers are coming.** An empty `metrics` block is a
+     valid answer — a run that scored nothing — so for a finished run this section is not
+     waiting on anybody. */
+  assert.match(detail.textContent, /No per-class precision, recall or AP for this run/,
+    'and so does per-class');
+  assert.doesNotMatch(detail.textContent, /per-class[\s\S]{0,120}when the worker publishes/,
+    'without claiming a settled empty result is still on its way');
   assert.match(detail.textContent, /once the worker uploads them/, 'and the gallery names who it waits on');
 
   /* The curves are the one section that is not fetched with the rest, so its empty state

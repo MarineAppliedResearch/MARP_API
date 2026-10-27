@@ -1675,27 +1675,35 @@ const TRAINING_TASKS = {
   classification: {
     label: 'Classification',
     charts: [],
-    /* **Not "nobody has described it".** It is described, from a real one-epoch run the
-       worker session probed rather than from documentation, and it cannot be stored.
-       Every per-epoch key a classify run produces is `train/loss`,
-       `metrics/accuracy_top1` and `metrics/accuracy_top5`.
+    /* **Not "nobody has described it".** It is described, off a real two-epoch run the
+       worker session captured, and it cannot be stored. Every per-epoch key a classify
+       run produces is `train/loss`, `val/loss`, `metrics/accuracy_top1` and
+       `metrics/accuracy_top5`, plus the three the worker adds for every task.
 
-       **There is no validation loss, and that is a measured fact rather than an
-       omission.** Ultralytics seeds val-prefixed loss keys on the first batch and then
-       `self.metrics = self.validate()` replaces the whole dict with the classify
-       validator's stats, which are the two accuracies -- so nothing val-prefixed reaches
-       the epoch callback. A `val_` column for classify would be permanently null with
-       nothing to explain why, which is the trap this panel keeps finding in new places.
+       **This said "no validation loss at all" for a few hours, and that was wrong.** The
+       first probe ran one epoch and kept the last callback; at `epochs=1` the callback
+       fires twice, and the second comes after `final_eval()`, which runs the validator
+       without a trainer and so has no loss accumulator to report a validation loss
+       against. Absent from the call that was kept became absent from the task. The extra
+       call never reaches MARP -- the engine's epoch guard drops it rather than counting
+       it as an epoch.
 
-       So: `epochs` has no accuracy columns, and `train/loss` is its own quantity needing
-       its own column -- not `cls_loss`, which is the classification *component* of a
-       detector's loss and shares only a word. Both are schema questions, raised with the
-       sessions that own them rather than guessed; a chart pointed at a column name
-       invented here would look built and render nothing. */
-    chartsWaiting: 'A classification run reports one training loss and no validation loss '
-      + 'at all, with top-1 and top-5 accuracy every epoch. <code>epochs</code> has no '
-      + 'accuracy columns, and none of its loss columns is the one a classifier reports '
-      + '&mdash; so none of it can be recorded yet. The final accuracy is below.',
+       Worth keeping because it is the lesson one level up from the one this file already
+       carries: reading the literal keys off the trainer rather than off a description is
+       necessary and **not sufficient**. A capture that keeps the wrong call produces a
+       confident falsehood with evidence attached, which is harder to doubt than a guess.
+
+       So: a loss **pair**, the same shape as detection with one pair instead of three,
+       and the real train/validation gap to draw once there are columns. `epochs` has no
+       accuracy columns, and `train/loss` is its own quantity -- not `cls_loss`, which is
+       the classification *component* of a detector's loss and shares only a word. Both
+       are schema questions, raised with the sessions that own them rather than guessed;
+       a chart pointed at a column name invented here would look built and render
+       nothing. */
+    chartsWaiting: 'A classification run reports a training and a validation loss each '
+      + 'epoch, with top-1 and top-5 accuracy. <code>epochs</code> has no accuracy columns, '
+      + 'and none of its loss columns is the one a classifier reports &mdash; so none of it '
+      + 'can be recorded yet. The final accuracy is below.',
     /* **No `classes` and no `curves`, rather than empty ones.** `ClassifyMetrics` has no
        per-class array and no thresholds at all, so a section saying "this run recorded
        none" would read as a run that failed to measure something instead of a task with
@@ -1913,9 +1921,16 @@ function confusionMatrix(matrix, image) {
  */
 function perClassTable(classes) {
   if (!classes.length) {
+    /* **"Recorded none" rather than "not yet", because an empty answer is an answer.**
+       The API session settled that a final-metrics report with no `metrics` block is
+       empty-but-valid -- a run that scored nothing -- so for a finished run this section
+       is not waiting for anything. Saying *they reach here when the worker publishes*
+       about a settled result is the stale-text defect this screen keeps producing: true
+       while a run is going, and a small lie the moment it has stopped. */
     return runSectionWaiting('Per-class quality',
-      'This run recorded no per-class precision, recall or AP. The trainer measures them at '
-      + 'validation; they reach here when the worker publishes its final metrics.');
+      'No per-class precision, recall or AP for this run. The trainer measures them at '
+      + 'validation, so a run still going fills this in &mdash; and one that has finished '
+      + 'scored nothing per class.');
   }
 
   const cell = (value) => (value === null || value === undefined
