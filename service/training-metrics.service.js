@@ -103,7 +103,7 @@ class TrainingMetricsService {
                 return { skipped: `job ${job.id} has no training run to record metrics against` };
             }
 
-            const rows = await this.resolveClasses(parsed.rows, run.model_id);
+            const rows = await this.resolveClasses(parsed.rows, run);
 
             /* A second artifact, deliberately: the curves are about a megabyte and a
                consumer wanting only the headline numbers should not parse one to skip
@@ -314,14 +314,24 @@ class TrainingMetricsService {
      * than picking one.
      *
      * @async
+     * **A classification run names its classes with MARP's own folder handles**, so
+     * the dataset's recorded mapping is consulted before any name matching. That is
+     * exact where name matching is a search, and it is the reason
+     * `dataset_classes.folder` exists.
+     *
      * @param {Array<Object>} rows - Rows from `db/final-metrics.js`.
-     * @param {number} modelId - The model the run trained.
+     * @param {Object} run - The training run, for its model and its dataset.
      * @returns {Promise<Array<Object>>} The same rows, each with `species_id`.
      */
-    async resolveClasses(rows, modelId) {
+    async resolveClasses(rows, run) {
         const cache = new Map();
 
+        /* Loaded once per report rather than per class: a hundred-class model would
+           otherwise be a hundred round trips for one small table. */
+        const folders = await this.repository.classFoldersFor(run.dataset_id);
+
         const resolved = [];
+        const unresolved = [];
 
         for (const row of rows) {
             if (row.class_name === null) {
@@ -330,10 +340,28 @@ class TrainingMetricsService {
             }
 
             if (!cache.has(row.class_name)) {
-                cache.set(row.class_name, await this.speciesFor(row.class_name, modelId));
+                cache.set(row.class_name, await this.speciesFor(row.class_name, run, folders));
             }
 
-            resolved.push({ ...row, species_id: cache.get(row.class_name) });
+            const speciesId = cache.get(row.class_name);
+
+            if (speciesId === null && !unresolved.includes(row.class_name)) {
+                unresolved.push(row.class_name);
+            }
+
+            resolved.push({ ...row, species_id: speciesId });
+        }
+
+        /* **Said out loud, once, with the names.** A class MARP cannot place is
+           stored with its reported name and a null species, which is honest and
+           invisible -- the row looks like every other row to anyone not already
+           suspicious. Reported here so a mismatch between a model's vocabulary and
+           MARP's catalogue is something somebody learns rather than discovers. */
+        if (unresolved.length) {
+            logger.info(
+                `training run ${run.id}: ${unresolved.length} class name(s) could not be `
+                + `resolved to a species and are stored unresolved: ${unresolved.join(', ')}`
+            );
         }
 
         return resolved;
@@ -343,12 +371,42 @@ class TrainingMetricsService {
      * The one species a class name means, or null when MARP cannot tell.
      *
      * @async
+     * **Three readings, most exact first.**
+     *
+     * 1. **The dataset's own record of what that folder was.** A classification
+     *    archive's folders are handles MARP generated, and the build wrote down what
+     *    each one meant. Nothing to match and nothing to parse.
+     * 2. **The species id on the front of the handle.** For a model whose dataset row
+     *    is gone, or one trained elsewhere from a MARP archive. Validated against
+     *    `species` rather than trusted: an id that names nothing is not a resolution,
+     *    and splitting on the *first* underscore only, because a slug contains them.
+     * 3. **The name, as detection class names have always resolved** -- narrowed to
+     *    the model's trained species first, because common names are not unique
+     *    across lists.
+     *
+     * Null when none of the three answers, and the caller reports it.
+     *
+     * @async
      * @param {string} className - The class as the model named it.
-     * @param {number} modelId - The model.
+     * @param {Object} run - The training run, for its model id.
+     * @param {Map<string, number>} folders - The dataset's folder mapping.
      * @returns {Promise<?number>} A species id, or null.
      */
-    async speciesFor(className, modelId) {
-        const trained = await ingestRepository.findTrainedSpeciesByName(modelId, className);
+    async speciesFor(className, run, folders) {
+        if (folders && folders.has(className)) return folders.get(className);
+
+        /* The leading integer, and only when it really is one followed by a
+           separator -- a species genuinely called "2024 survey marker" must not be
+           read as species 2024. */
+        const prefixed = /^(\d+)_/.exec(className);
+
+        if (prefixed) {
+            const exists = await ingestRepository.findSpeciesById(Number(prefixed[1]));
+
+            if (exists) return exists.id;
+        }
+
+        const trained = await ingestRepository.findTrainedSpeciesByName(run.model_id, className);
 
         if (trained.length === 1) return trained[0].id;
 

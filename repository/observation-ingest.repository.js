@@ -284,6 +284,35 @@ class ObservationIngestRepository {
     }
 
     /**
+     * One species by its id, or null.
+     *
+     * **For reading a species id back out of something that carries one.** A
+     * classification archive names its class folders `<species_id>_<slug>`, and a model
+     * trained on one reports those names -- so a handle whose dataset row is gone can
+     * still be placed by the id on the front of it.
+     *
+     * **It exists so that the id is validated rather than trusted.** Taking the integer
+     * and writing it into `species_id` would attach a measurement to whatever row happens
+     * to hold that number, or to no row at all; asking first means an id that names
+     * nothing resolves to null and is reported, which is the honest answer.
+     *
+     * @async
+     * @param {number} id - The species id.
+     * @param {Object} [transaction] - Transaction to read inside.
+     * @returns {Promise<?Object>} The species row, or null.
+     */
+    async findSpeciesById(id, transaction) {
+        if (!Number.isInteger(id)) return null;
+
+        const [row] = await this.db.sequelize.query(
+            `SELECT id, comname, species_list FROM species WHERE id = :id`,
+            { replacements: { id }, type: QueryTypes.SELECT, transaction }
+        );
+
+        return row || null;
+    }
+
+    /**
      * The distinct species lists a model was trained against.
      *
      * What the session type is checked against: an inverts model writing into a
