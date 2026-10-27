@@ -200,6 +200,47 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      // -------------------------------
+      // WHAT KIND OF DATASET THIS IS
+      //
+      // Declared here and not only in the migration. A column the model does not name
+      // is ABSENT from a findAll, not null, so a reader cannot tell "this MARP has no
+      // such column" from "this dataset has no value" -- which is how five epoch
+      // columns were written, verified in the database and served nowhere.
+      // -------------------------------
+
+      task: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'detection',
+        comment:
+          'Which kind of model this dataset was built to train.',
+        jsonSchema: {
+            description: 'Which kind of model this dataset was built to train. A detection '
+                + 'dataset holds whole frames with YOLO label files and a data.yaml; a '
+                + 'classification dataset holds one picture per annotated box, in a folder '
+                + 'named for its class, with no data.yaml. Every dataset built before this '
+                + 'column existed is detection, which is what they are.',
+            examples: ['detection', 'classification'],
+        },
+      },
+
+      crop_source: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment:
+          'How a classification dataset\'s pictures were cut from their frames.',
+        jsonSchema: {
+            description: 'How this dataset\'s pictures were cut from their frames. '
+                + 'mosaic_thumbnail means each picture is the observation thumbnail a '
+                + 'reviewer sees -- the box plus 10% padding, squared, at 320x320. Null on '
+                + 'a detection dataset, which holds whole frames and crops nothing. '
+                + 'Recorded rather than assumed: which pixels a crop took is a judgement, '
+                + 'and two datasets made by different judgements look identical without it.',
+            examples: ['mosaic_thumbnail'],
+        },
+      },
+
       status: {
         // What the process building this dataset last reported. MARP does not
         // run the build -- what does is still an open question (DESIGN.md gap

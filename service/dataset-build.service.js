@@ -41,6 +41,11 @@ const jellyfinRepository = require('../repository/jellyfin.repository');
 const mosaicRepository = require('../repository/mosaic.repository');
 const buildRepository = require('../repository/dataset-build.repository');
 const extraction = require('./thumbnail-extraction.service');
+/* **The same resolved directory the extractor writes to**, never a path computed
+   here. A corpus and its thumbnails are one unit -- a worktree reading a shared
+   database must carry that database's THUMBNAIL_STORAGE_DIR -- and config/thumbnails
+   is the one place that decides which directory this process is looking at. */
+const { STORAGE_DIR: THUMBNAIL_DIR } = require('../config/thumbnails');
 const plan = require('./dataset-build-plan');
 
 /*
@@ -120,6 +125,46 @@ function directoryFor(split) {
  * build asks for `{format: 'png'}` and nothing else has to change.
  */
 const DEFAULT_IMAGE = { format: 'jpeg', quality: 95 };
+
+/**
+ * How a classification build cuts one annotated box into one picture.
+ *
+ * **The mosaic tile, which is the picture a reviewer actually saw.** Isaac:
+ * *"whatever the ideal is for training? i was thinking the mosaic tiles."* So the
+ * classifier learns from exactly what a person judged, and MARP does not acquire a
+ * second definition of what a crop of an observation is -- the geometry in
+ * `service/thumbnail-geometry.js` stays the only one, and these builds are a second
+ * consumer of its output rather than a second implementation of it.
+ *
+ * **Recorded on the dataset rather than assumed**, which was the worker's objection
+ * and is the reason `datasets.crop_source` exists. Two classification datasets made
+ * from different crop rules look identical in every other column; a model trained on
+ * one can be traced to the pixels it learned from only if the row says which rule
+ * made them.
+ *
+ * **Padding and squareness come with it, and are worth knowing.** The tile is the
+ * box plus 10% on each side, expanded to a square, and stored at 320x320 -- so a
+ * classification dataset built this way carries a little context around each animal
+ * rather than a tight crop, and no aspect distortion. Ultralytics classify trains at
+ * 224 by default, so 320 is above what it will ask for.
+ *
+ * @constant
+ * @type {string}
+ */
+/**
+ * The kinds of dataset a build can produce.
+ *
+ * **One list, because three places have to agree about it**: the route that refuses an
+ * unknown task, the runner that branches on it, and the check constraint on
+ * `datasets.task`. A fourth copy in the dashboard would be a fourth thing to keep in
+ * step, which is why the route imports this rather than restating it.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const BUILD_TASKS = ['detection', 'classification'];
+
+const CROP_SOURCE = 'mosaic_thumbnail';
 
 /** The formats a build may ask for. */
 const IMAGE_FORMATS = ['jpeg', 'png'];
@@ -608,6 +653,103 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
 }
 
 /**
+ * Write one picture per selected observation into its split and class folder.
+ *
+ * **Copied, not cut.** The tile already exists: the thumbnail extractor made it when
+ * a reviewer first needed to look at that observation, through the geometry in
+ * `service/thumbnail-geometry.js`. So a classification build opens no video, holds no
+ * Jellyfin stream and is bounded by disk rather than by anybody else's streaming
+ * ceiling -- which is why it is minutes where a detection build of the same selection
+ * is hours.
+ *
+ * **An observation with no tile is counted, never skipped quietly.** About 3% of the
+ * corpus has a `failed` thumbnail -- a video that would not resolve, a frame rate that
+ * disagreed -- and a build that silently wrote fewer pictures than it recorded members
+ * would produce a dataset whose own row overstates it. The count comes back and the
+ * caller records it.
+ *
+ * **The file is named for its observation.** A picture in the archive traces back to
+ * the row that produced it, which is the same property the thumbnail record was built
+ * for; the tile's own filename is its content hash and says nothing about where it
+ * came from.
+ *
+ * @async
+ * @param {Object} options - What to write and where.
+ * @param {Array<Object>} options.wanted - From `plan.classificationPlan`.
+ * @param {Map<number, Object>} options.tiles - From `buildRepository.thumbnailsFor`.
+ * @param {string} options.staging - The directory the archive is built in.
+ * @param {Function} [options.onProgress] - Called with the running count; returning
+ * false stops the build, the way the extraction callback does.
+ * @returns {Promise<{written: number, missing: number, stopped: boolean,
+ * perSplit: Map<string, number>, perSplitClass: Map<string, Map<number, number>>}>}
+ * What was written, counted the way the detection path counts it.
+ */
+async function writeCrops({ wanted, tiles, staging, onProgress = null }) {
+    const perSplit = new Map();
+    const perSplitClass = new Map();
+
+    let written = 0;
+    let missing = 0;
+    let stopped = false;
+
+    /* Reported every so often rather than per picture: copying a 320x320 JPEG is
+       sub-millisecond, and a progress write per file would be the slow part. */
+    const REPORT_EVERY = 200;
+
+    for (const item of wanted) {
+        const tile = tiles.get(item.observation_id);
+
+        /* Absent from the map means no usable tile -- failed, evicted, or never
+           requested. One count for all three: what the dataset needs to say is how
+           many of its observations have no picture. */
+        if (!tile) {
+            missing += 1;
+            continue;
+        }
+
+        const source = path.join(THUMBNAIL_DIR, tile.filename);
+
+        /* **The row said ready and the file decides.** A tile can be evicted between
+           the query and the copy, and a build that trusted the row would fail here
+           with ENOENT halfway through instead of counting it. */
+        if (!fs.existsSync(source)) {
+            missing += 1;
+            continue;
+        }
+
+        /* **The encoded folder, never the species name.** 37 names in the catalogue
+           hold a path separator, so joining the raw name here is how a class becomes
+           a nested directory and trains as the wrong thing. classes.json carries the
+           real name. */
+        const folder = path.join(staging, item.directory, item.folder);
+
+        fs.mkdirSync(folder, { recursive: true });
+        fs.copyFileSync(source, path.join(folder, `obs-${item.observation_id}.jpg`));
+
+        written += 1;
+
+        /* Counted by the split the builder named, not by the directory: `eval` and
+           `validation` share a directory and are different splits, which is the same
+           distinction the extraction path keeps. */
+        perSplit.set(item.split, (perSplit.get(item.split) || 0) + 1);
+
+        if (!perSplitClass.has(item.split)) perSplitClass.set(item.split, new Map());
+
+        const into = perSplitClass.get(item.split);
+
+        into.set(item.class_index, (into.get(item.class_index) || 0) + 1);
+
+        if (onProgress && written % REPORT_EVERY === 0) {
+            if (!await onProgress(written)) {
+                stopped = true;
+                break;
+            }
+        }
+    }
+
+    return { written, missing, stopped, perSplit, perSplitClass };
+}
+/**
  * Package a staging directory into one content-addressed tar.
  *
  * **Named for its own SHA-256**, so building the same dataset twice is the same file and
@@ -626,9 +768,19 @@ function packageArchive(staging) {
     /* Every split directory that was actually written, not a fixed pair. The fixed pair
        is how a subset sent to Test was cut, recorded as a member and then left out of
        the tar -- the dataset claiming observations its own archive did not hold. */
-    const present = [...new Set(Object.values(SPLIT_DIRECTORIES)), 'data.yaml'].filter(
-        (name) => fs.existsSync(path.join(staging, name))
-    );
+    /* **Both mappings, because there are two archive shapes.** A detection archive
+       holds `train`/`eval`/`test` and a `data.yaml`; a classification archive holds
+       `train`/`val`/`test` and no yaml at all. Listing the union and filtering by
+       what exists keeps one packaging function: a detection build has no `val`
+       directory to include, and a classification build has no `data.yaml`. */
+    const candidates = [...new Set([
+        ...Object.values(SPLIT_DIRECTORIES),
+        ...Object.values(plan.CLASSIFICATION_DIRECTORIES),
+        'data.yaml',
+        'classes.json',
+    ])];
+
+    const present = candidates.filter((name) => fs.existsSync(path.join(staging, name)));
 
     /* **A bare filename, with `cwd` set.** `tar -cf C:\\...` is read as a remote host
        called `C`, because a colon in an archive path means `host:path` to GNU tar. The
@@ -668,6 +820,148 @@ function packageArchive(staging) {
     return { path: `${ARCHIVE_PATH_PREFIX}/${sha256}.tar`, sha256, bytes };
 }
 
+/**
+ * Build a classification dataset: one picture per annotated box, in a class folder.
+ *
+ * **A different archive shape, from the same selection and the same splits.**
+ * Ultralytics classify takes a directory tree -- `<root>/train/<class>/*.jpg` with
+ * `val/` beside it -- and has no `data.yaml`, so the folder names *are* the class
+ * vocabulary. Everything before this point is shared with a detection build on
+ * purpose: the same query, the same connected groups, the same frame-based
+ * stratification. A crop therefore lands in the split its frame landed in, and two
+ * models built from one selection are evaluated on the same held-out video. Splitting
+ * the crops independently would leak two crops of one frame across both sides and
+ * would also make the pair incomparable, which is the thing the dataset is for.
+ *
+ * **Two refusals, both before anything is written**, because each produces an archive
+ * that trains and is worthless rather than one that fails:
+ *
+ * 1. No `train` split. **Ultralytics splits 80/20 at random when `train/` is absent**,
+ *    which puts crops seconds apart on both sides and reports an accuracy that looks
+ *    excellent and means nothing. The worker refuses this too; a builder that can
+ *    produce it at all is the wrong place to leave the only guard.
+ * 2. Nothing written at all, which is a selection whose observations have no tiles.
+ *
+ * @async
+ * @param {Object} options - The claimed job and its settled selection.
+ * @returns {Promise<Object>} What `runOne` returns for a finished or cancelled build.
+ */
+async function runClassificationBuild({ job, attempt, datasetId, staging, splits, classes }) {
+    const wanted = plan.classificationPlan(splits, classes);
+
+    /* **The vocabulary with the handle each class was written as.** A classify model
+       reports folder names and keeps no other list, so this is the string that will come
+       back on its confusion matrix -- recorded on `dataset_classes` beside the species it
+       means, so reading it back is a join rather than parsing a string MARP generated.
+       `classFolderName` is pure, so the name here, the directory on disk and the entry in
+       classes.json are three calls to one function rather than three conventions. */
+    const labelled = classes.map((entry) => ({ ...entry, folder: plan.classFolderName(entry) }));
+
+    if (!wanted.some((item) => item.directory === 'train')) {
+        throw new Error(
+            'A classification dataset must have a train split. Ultralytics splits what it '
+            + 'finds 80/20 at random when train/ is missing, which puts crops of the same '
+            + 'scene on both sides and reports an accuracy that means nothing.'
+        );
+    }
+
+    const included = [...splits.values()].reduce((sum, rows) => sum + rows.length, 0);
+
+    await buildRepository.recordSelection({
+        datasetId,
+        observations: included,
+        classes: classes.length,
+    });
+
+    await buildRepository.reportProgress(attempt.id, { phase: 'reading tiles', unit: 'crops' });
+
+    const tiles = await buildRepository.thumbnailsFor(wanted.map((item) => item.observation_id));
+
+    await buildRepository.reportProgress(attempt.id, {
+        phase: 'cutting', done: 0, total: wanted.length, unit: 'crops',
+    });
+
+    const cut = await writeCrops({
+        wanted,
+        tiles,
+        staging,
+        onProgress: async (soFar) => {
+            await buildRepository.reportProgress(attempt.id, {
+                phase: 'cutting', done: soFar, total: wanted.length, unit: 'crops',
+            });
+
+            return !await buildRepository.isCancelled(job.id);
+        },
+    });
+
+    if (cut.stopped) {
+        await buildRepository.failBuild({
+            jobId: job.id,
+            attemptId: attempt.id,
+            datasetId,
+            reason: 'Cancelled while cutting.',
+            cancelled: true,
+        });
+
+        return { cancelled: true, jobId: job.id };
+    }
+
+    if (!cut.written) {
+        throw new Error(
+            'None of these observations has a mosaic tile, so there is nothing to train on. '
+            + 'Thumbnails are extracted when an observation is first reviewed; a selection of '
+            + 'observations nobody has looked at yet has no pictures.'
+        );
+    }
+
+    await buildRepository.reportProgress(attempt.id, {
+        phase: 'packaging', done: cut.written, total: wanted.length, unit: 'crops',
+    });
+
+    /* **The vocabulary, in MARP's own words, as data.** The folder names are encoded
+       handles -- a species name is not a filesystem-safe string -- so without this the
+       archive states its classes only in a form nothing can read back. Written from the
+       same `classes` array that `recordBuild` writes to `dataset_classes` a moment later,
+       so the file and the rows cannot disagree about what class 2 is. */
+    fs.writeFileSync(path.join(staging, 'classes.json'), plan.classesJson(classes, CROP_SOURCE), 'utf8');
+
+    const archive = packageArchive(staging);
+
+    /* **Members are what was selected, not what was written**, exactly as the detection
+       path records them: an observation whose tile is missing was still chosen by the
+       query, and `num_samples` beside it is the picture count. The two numbers
+       disagreeing is the fact worth keeping -- it is how a reader sees that 3% of a
+       selection had no thumbnail. */
+    const members = [];
+
+    for (const [split, rows] of splits) {
+        for (const row of rows) members.push({ observation_id: row.observation_id, split });
+    }
+
+    await buildRepository.recordBuild({
+        jobId: job.id,
+        attemptId: attempt.id,
+        datasetId,
+        members,
+        classes: labelled,
+        archive,
+        frames: cut.written,
+        observations: members.length,
+        splitImages: cut.perSplit,
+        splitClassImages: cut.perSplitClass,
+        task: 'classification',
+        cropSource: CROP_SOURCE,
+    });
+
+    if (cut.missing) {
+        logger.info(
+            `dataset ${datasetId}: ${cut.missing} of ${wanted.length} selected observations `
+            + 'had no usable mosaic tile and are not in the archive'
+        );
+    }
+
+    return { jobId: job.id, datasetId, written: cut.written, missing: cut.missing };
+}
 /**
  * Run one queued build, if there is one.
  *
@@ -740,6 +1034,19 @@ async function runOne() {
         }
 
         const classes = plan.vocabulary(rows);
+
+        /* **The task decides the archive shape, and it is asked for rather than
+           inferred.** A build that guessed from the selection would be guessing: the
+           same observations make a perfectly good detection dataset and a perfectly
+           good classification one, and which is wanted is a thing somebody chose.
+           Anything that is not classification is detection, which is what every
+           build before this one was. */
+        if (spec.task === 'classification') {
+            return await runClassificationBuild({
+                job, attempt, datasetId, staging, splits, classes,
+            });
+        }
+
         const videos = plan.extractionPlan(splits, classes);
         const total = [...videos.values()].reduce((sum, entry) => sum + entry.frames.size, 0);
 
@@ -1105,6 +1412,8 @@ function stop() {
 
 module.exports = {
     ARCHIVE_DIRECTORY,
+    BUILD_TASKS,
+    CROP_SOURCE,
     DEFAULT_CONCURRENCY,
     DEFAULT_IMAGE,
     FRAMES_PER_PASS,
@@ -1117,6 +1426,7 @@ module.exports = {
     concurrency,
     cutVideo,
     directoryFor,
+    writeCrops,
     imageSettings,
     dataYaml,
     packageArchive,

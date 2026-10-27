@@ -158,6 +158,10 @@ const SUBSYSTEMS = {
             'dataset-build-queue',
             'dataset-build-runner',
             'dataset-build-lifecycle',
+            /* #268: the classification archive -- class folders, no data.yaml, and the
+               refusals that stop one being built that trains on a random split. Opens
+               the tar, because the directory names are the whole contract. */
+            'dataset-build-classification',
             /* #268 1.2: the build's progress as the Datasets screen reads it. Written
                on another branch, and registered from here deliberately -- this file has
                one writer, and two agents editing it from different assumptions is a
