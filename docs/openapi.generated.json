@@ -6802,6 +6802,11 @@
             "default": false,
             "description": "True when this is a pretrained starting point for training rather than a model MARP trained. Never selectable for inference."
           },
+          "training_run_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "The training run that produced this model. Null when no run did."
+          },
           "preferred": {
             "type": "boolean",
             "default": false,

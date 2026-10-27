@@ -148,3 +148,58 @@ test('the dataset filter goes with the association it narrowed on', async (t) =>
   assert.ok(!labels.includes('Dataset'),
     'it offered the datasets of runs that started from a model, which is not what it said it filtered');
 });
+
+/* ---------------------------------------------------------------- the recorded link */
+
+/* `ml_models.training_run_id` records which run produced a model, written at
+   registration. These fixtures are the real shape from Isaac's corpus: model 412 was
+   produced by run 199 over the rockfish5 dataset, and 435 by run 205 over CookieStarTest.
+   Under the old join both were named CookieStarTest, because six runs started FROM 412. */
+const LINKED = [
+  { ...model(412, 'rockfish5-2026-10-20'), training_run_id: 199 },
+  { ...model(435, 'CookieStarTest-2026-10-26-2', 412), training_run_id: 205 },
+  /* Registered outside the pool: no run produced it, and that is a fact not a gap. */
+  model(197, 'rockfish2'),
+];
+
+const LINKED_RUNS = [
+  { id: 205, model_id: 412, dataset_id: 384, job_id: 21785 },
+  { id: 199, model_id: 197, dataset_id: 294, job_id: 21542 },
+];
+
+const LINKED_SETS = [{ id: 384, name: 'CookieStarTest' }, { id: 294, name: 'rockfish5' }];
+
+const drawLinked = () => drawScreen('models.html', {
+  listModels: async () => LINKED,
+  listTrainingRuns: async () => LINKED_RUNS,
+  listDatasets: async () => LINKED_SETS,
+});
+
+test('a model names the dataset the run that produced it learned from', async (t) => {
+  const screen = await drawLinked();
+  t.after(screen.close);
+
+  const made = datasetCell(screen.document, 435);
+  assert.equal(made.text, 'CookieStarTest', 'run 205 trained on CookieStarTest');
+  assert.equal(made.link, './datasets.html?dataset=384', 'and the dataset is reachable');
+});
+
+test('the base model keeps its own dataset, not the one its children trained on', async (t) => {
+  /* The regression in one assertion. Six runs started FROM 412, all over CookieStarTest,
+     and the old join credited 412 with it. 412 was produced by run 199, over rockfish5. */
+  const screen = await drawLinked();
+  t.after(screen.close);
+
+  const base = datasetCell(screen.document, 412);
+  assert.equal(base.text, 'rockfish5', 'what 412 itself was trained on');
+  assert.ok(!base.text.includes('CookieStarTest'),
+    'CookieStarTest is what runs starting FROM 412 used, which is a different fact');
+});
+
+test('a model no run produced still reads as a dash', async (t) => {
+  const screen = await drawLinked();
+  t.after(screen.close);
+
+  assert.equal(datasetCell(screen.document, 197).text, '—',
+    'registered outside the pool: no run, so nothing to name');
+});

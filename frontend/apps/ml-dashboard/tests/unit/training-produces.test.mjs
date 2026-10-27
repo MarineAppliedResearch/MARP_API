@@ -126,3 +126,51 @@ test('the header still means what it meant', async (t) => {
   const headers = [...screen.document.querySelectorAll('table thead th')].map((th) => th.textContent.trim());
   assert.ok(headers.includes('Produces'), 'the column stays, for the value that belongs in it');
 });
+
+/* ---------------------------------------------------------------- the recorded link */
+
+/**
+ * The same screen, with the model that run 205 produced carrying `training_run_id`.
+ *
+ * This is the shape `registerTrainedModel` writes: 435 was produced by run 205, which
+ * fine-tuned from 412. Both facts are now recorded separately, which is the whole point —
+ * the column that means "produced" reads the first, and the expansion reads the second.
+ *
+ * @returns {Promise<Object>} From `drawScreen`.
+ */
+const drawLinked = () => drawScreen('training.html', {
+  listJobs: async () => ({ jobs: [finishedJob(21785)], total: 1, limit: 500, offset: 0 }),
+  listTrainingRuns: async () => [{ id: 205, model_id: 412, dataset_id: 384, job_id: 21785, total_epochs: 10 }],
+  listDatasets: async () => [{ id: 384, name: 'CookieStarTest' }],
+  listModels: async () => [
+    { id: 412, name: 'rockfish5-2026-10-20', model_type: 'detection', status: 'trained', parent_model_id: null, training_run_id: null, created_at: '2026-10-20T10:00:00.000Z', updated_at: '2026-10-20T10:00:00.000Z' },
+    { id: 435, name: 'CookieStarTest-2026-10-26-2', model_type: 'detection', status: 'trained', parent_model_id: 412, training_run_id: 205, created_at: '2026-10-26T16:06:00.000Z', updated_at: '2026-10-26T16:06:00.000Z' },
+  ],
+  listProjects: async () => [],
+  listUsers: async () => [{ user_id: 7, name: 'Isaac Assegai' }],
+  listSessions: async () => [],
+});
+
+test('a finished run names the model it registered', async (t) => {
+  const screen = await drawLinked();
+  t.after(screen.close);
+
+  const cells = producesCells(screen.document);
+  assert.ok(cells.length > 0, 'the fixture should have drawn rows');
+
+  for (const cell of cells) {
+    assert.match(cell, /CookieStarTest-2026-10-26-2/, 'run 205 registered model 435');
+    assert.ok(!cell.includes('rockfish5'), 'and 412 is what it trained from, which is not this column');
+  }
+});
+
+test('the produced model is reachable from the cell', async (t) => {
+  /* The question after "which model" is always "that one, show me" — the same link the
+     registry's dataset cell carries. */
+  const screen = await drawLinked();
+  t.after(screen.close);
+
+  const link = screen.document.querySelector('.jmakes a');
+  assert.ok(link, 'the produced model should be a link');
+  assert.equal(link.getAttribute('href'), './models.html?model=435');
+});

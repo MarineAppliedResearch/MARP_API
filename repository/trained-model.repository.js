@@ -199,11 +199,18 @@ async function registerTrainedModel({ db, job, transaction }) {
            `ARTIFACT_DIRECTORY/<hash>`. So recording the checksum here costs nothing
            and hashes nothing; it stops being a sentence in `notes` that only a person
            can read and becomes the field a job spec is composed from. */
+        /* **`training_run_id` is set here, where the answer is known.** The sentence
+           appended to `training_runs.notes` below recorded the same link in prose, which
+           no query can join on -- the registry read `training_runs.model_id` instead and
+           named every model after the checkpoint it trained from. The subquery is the
+           same run that sentence is written to. */
         `INSERT INTO ml_models (name, parent_model_id, model_type, architecture_version,
                                 storage_path, artifact_sha256, status, preferred, notes,
-                                created_at, updated_at)
+                                training_run_id, created_at, updated_at)
          VALUES (:name, :parent, 'detection', :architecture, :storagePath, :sha256, 'active',
-                 false, :notes, now(), now())
+                 false, :notes,
+                 (SELECT id FROM training_runs WHERE job_id = :jobId ORDER BY id DESC LIMIT 1),
+                 now(), now())
          RETURNING id`,
         {
             replacements: {
@@ -216,6 +223,7 @@ async function registerTrainedModel({ db, job, transaction }) {
                    guard at the top of this function reads it to refuse registering the
                    same job twice. */
                 notes: `Weights ${artifact.hash} trained by GPU job ${job.id}.`,
+                jobId: job.id,
             },
             type: db.Sequelize.QueryTypes.INSERT,
             transaction,

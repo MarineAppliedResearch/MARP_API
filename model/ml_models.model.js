@@ -199,6 +199,23 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      training_run_id: {
+        /* **The run that produced this model, not the one it started from.** Those are
+           different facts and reading one as the other made three cells on two screens
+           wrong: `training_runs.model_id` is the base checkpoint a run fine-tunes from,
+           so every finished run appeared to have produced what it trained from. Written
+           by `registerTrainedModel` at the moment it knows, rather than derived later
+           from the weights digest -- `artifacts.hash` carries no uniqueness constraint
+           and a retry reproducing identical bytes would put two rows behind one hash. */
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'The training run that produced this model, when one did. NULL for a model registered outside the pool, which is not an error. Not training_runs.model_id, which is the base model a run started FROM.',
+        jsonSchema: {
+            description: 'The training run that produced this model. Null when no run did.',
+        },
+      },
+
       preferred: {
         // One per model_type, enforced by a partial unique index.
         type: DataTypes.BOOLEAN,

@@ -1400,6 +1400,26 @@ let trainingViewsByJob = new Map();
 /** What each training run was, by the job that produced it. Empty until the screen loads. */
 let trainingRunsByJob = new Map();
 
+/* The model each run produced, keyed by run id. `ml_models.training_run_id` is written at
+   registration and is the only record of this: `training_runs.model_id` is the base the
+   run started from, and reading that as the produced model is what made this column
+   name every run after the checkpoint it fine-tuned from. */
+let modelByTrainingRun = new Map();
+
+/**
+ * The model a run registered, as a link to it, or the dash saying none is recorded.
+ *
+ * @param {?Object} run - The run, when the job has one.
+ * @returns {string} A table cell's contents.
+ */
+function producedModelCell(run) {
+  const made = run && modelByTrainingRun.get(run.id);
+
+  return made
+    ? `<a href="./models.html?model=${encodeURIComponent(made.id)}" title="The model version this run registered">${escapeHtml(made.name)}</a>`
+    : NO_REGISTERED_MODEL;
+}
+
 /** How often an open expansion re-reads a run that is still going. */
 const TRAINING_EPOCH_POLL_MS = 5000;
 
@@ -3059,7 +3079,7 @@ function renderTrainingRecent(views) {
          expansion named the same model again as the base. A run that trained from itself.
          Nothing records which model a run registered; until something does, this says so. */
       + `<td class="jmakes">${['done', 'issues'].includes(view.state)
-        ? NO_REGISTERED_MODEL
+        ? producedModelCell(run)
         : '<span class="dash" title="The version a run registers does not exist until it succeeds">&mdash;</span>'}</td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
       + `<td class="jepochs num">${run && run.total_epochs
@@ -3669,6 +3689,11 @@ async function renderTrainingScreen() {
 
     /* Newest first from the route, so the first run seen for a job is its latest. */
     trainingRunsByJob = new Map();
+    modelByTrainingRun = new Map();
+
+    for (const model of models) {
+      if (model.training_run_id != null) modelByTrainingRun.set(model.training_run_id, model);
+    }
 
     for (const run of runs) {
       if (run.job_id != null && !trainingRunsByJob.has(run.job_id)) trainingRunsByJob.set(run.job_id, run);
@@ -3885,7 +3910,7 @@ function renderTrainingRuns() {
         /* Same rule as the table above: a run registers a version only once it has
            succeeded, so an unfinished one has nothing to name here. */
         + `<td class="jmakes">${['done', 'issues'].includes(row.state)
-          ? NO_REGISTERED_MODEL
+          ? producedModelCell(run)
           : '<span class="dash" title="The version a run registers does not exist until it succeeds">&mdash;</span>'}</td>`
         + `<td class="jstatus" data-sort="${JOB_STATE_RANK[row.state]}">`
         + `<span class="st" data-state="${row.state}"><span class="dot"></span>${row.label}</span></td>`
@@ -4398,6 +4423,8 @@ const NOT_IN_REGISTRY = '<span class="dash" title="Nothing serves this yet: metr
  */
 const NO_REGISTERED_MODEL = '<span class="dash" title="MARP records no link from a run to the model it registered: training_runs.model_id and spec.model.ml_model_id are both the base model the run started FROM">&mdash;</span>';
 
+let modelsTrainedOn = new Map();
+
 const NO_TRAINING_RUN = '<span class="dash" title="MARP records no link from a model to the run that produced it: training_runs.model_id is the base model a run started FROM, not the model it produced">&mdash;</span>';
 
 /** MARP's `ml_models.status`, in the design's own state words. @type {Object} */
@@ -4464,6 +4491,43 @@ function modelGeneration(model, byId) {
 
 
 /**
+ * Which dataset each model actually learned from, by model id.
+ *
+ * **Through `ml_models.training_run_id`, which is the run that produced the model.** The
+ * column this replaces walked `training_runs.model_id`, the base a run started FROM, so
+ * it named a model after what some *other* run trained on -- rockfish5-2026-10-20 was
+ * credited with CookieStarTest, which it never saw.
+ *
+ * A model with no recorded run, or a run with a null `dataset_id` -- one that trained on
+ * something outside MARP -- both take the dash. They are different facts and read the
+ * same in a single cell, so the tooltip carries the difference.
+ *
+ * @param {Object[]} models - The registry.
+ * @param {Object[]} runs - From `GET /training_run`.
+ * @param {Object[]} datasets - From `GET /dataset`, for the names.
+ * @returns {Map<number, Object>} `{id, name}` per model id.
+ */
+function datasetByModel(models, runs, datasets) {
+  const names = new Map(datasets.map((set) => [set.id, set.name]));
+  const runById = new Map(runs.map((run) => [run.id, run]));
+  const found = new Map();
+
+  for (const model of models) {
+    const run = model.training_run_id != null && runById.get(model.training_run_id);
+    if (!run || run.dataset_id == null) continue;
+
+    found.set(model.id, {
+      id: run.dataset_id,
+      /* A dataset the catalogue did not return -- deleted, or a read that failed -- is
+         still a real link, so it is named by its id rather than dropped. */
+      name: names.get(run.dataset_id) || `Dataset ${run.dataset_id}`,
+    });
+  }
+
+  return found;
+}
+
+/**
  * One model, reduced to what the table shows and sorts on.
  *
  * @param {Object} model - From `GET /api/v2/ml_models`.
@@ -4473,10 +4537,15 @@ function modelGeneration(model, byId) {
 function modelView(model, byId) {
   const [state, label] = MODEL_STATE[model.status] || ['queued', model.status];
 
+  const trainedOn = modelsTrainedOn.get(model.id) || null;
+
   return {
     model, state, label,
     version: modelGeneration(model, byId),
-    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status}`.toLowerCase(),
+    trainedOn,
+    /* Searchable by what it trained on, which is how somebody looks for "every model
+       that saw the inverts dataset". */
+    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status} ${trainedOn ? trainedOn.name : ''}`.toLowerCase(),
   };
 }
 
@@ -4506,7 +4575,9 @@ function modelRows(view, byId) {
        CookieStarTest on that basis, which it never saw. Nothing in `ml_models` or
        `training_runs` records which run produced which model; until something does, this
        column says so instead of guessing. */
-    + `<td class="hdset">${NO_TRAINING_RUN}</td>`
+    + `<td class="hdset">${view.trainedOn
+      ? `<a href="./datasets.html?dataset=${encodeURIComponent(view.trainedOn.id)}" title="The dataset the run that produced this model learned from">${escapeHtml(view.trainedOn.name)}</a>`
+      : NO_TRAINING_RUN}</td>`
     + `<td class="hupd">${sinceText(model.updated_at)}</td>`
     + '<td class="hacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
     + '</tr>';
@@ -4605,6 +4676,34 @@ function applyModelsQuery() {
   }
 
   wireAccordions();
+  openRequestedModel();
+}
+
+/* Once per load. The table is redrawn by every filter and sort, and reopening the
+   asked-for row each time would fight whoever is using the screen. */
+let openedRequestedModel = false;
+
+/**
+ * Expand the model a `?model=` link asked for.
+ *
+ * The Training screen's *Produces* column links here, the way a dataset build links to
+ * `datasets.html?dataset=`. Without this the link lands on the registry and leaves the
+ * reader to find the row, which for eight models is tolerable and for eighty is not.
+ *
+ * @returns {void}
+ */
+function openRequestedModel() {
+  if (openedRequestedModel) return;
+
+  const wanted = new URLSearchParams(window.location.search).get('model');
+  if (!wanted) return;
+
+  const head = $(`#models tbody tr[data-model="${CSS.escape(wanted)}"]`);
+  if (!head) return;
+
+  openedRequestedModel = true;
+  $('.exbtn', head)?.click();
+  requestAnimationFrame(() => head.scrollIntoView({ block: 'start' }));
 }
 
 /**
@@ -4692,10 +4791,21 @@ async function renderModelsScreen() {
   body.innerHTML = `<tr class="tblmsg"><td class="loading" colspan="${columns}">Loading the registry&hellip;</td></tr>`;
 
   try {
-    /* **One read now.** The runs and the dataset catalogue were fetched only to turn
-       `training_runs.dataset_id` into a name for a column that was reading the wrong
-       association; with that gone they answer nothing this screen asks. */
-    modelsRegistry = await window.MarpApi.listModels();
+    /* **Three reads, two of which may fail.** The registry is the screen; the runs and
+       the dataset catalogue turn `ml_models.training_run_id` into a dataset name. A
+       registry that drew nothing because the catalogue was slow would be worse than one
+       with a dash in one column, so those two are settled rather than awaited. */
+    const [registry, runs, datasets] = await Promise.all([
+      window.MarpApi.listModels(),
+      Promise.allSettled([window.MarpApi.listTrainingRuns(), window.MarpApi.listDatasets()]),
+    ]).then(([models, [runResult, setResult]]) => [
+      models,
+      runResult.status === 'fulfilled' ? runResult.value : [],
+      setResult.status === 'fulfilled' ? setResult.value : [],
+    ]);
+
+    modelsRegistry = registry;
+    modelsTrainedOn = datasetByModel(registry, runs, datasets);
     fillModelsFilterOptions();
     applyModelsQuery();
   } catch (error) {
