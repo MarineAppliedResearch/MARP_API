@@ -6797,6 +6797,11 @@
             "description": "Lifecycle state of the model (\"draft\", \"training\", \"trained\", or \"archived\").",
             "example": "draft"
           },
+          "is_base": {
+            "type": "boolean",
+            "default": false,
+            "description": "True when this is a pretrained starting point for training rather than a model MARP trained. Never selectable for inference."
+          },
           "preferred": {
             "type": "boolean",
             "default": false,
@@ -6830,6 +6835,7 @@
           "name",
           "model_type",
           "status",
+          "is_base",
           "preferred",
           "created_at",
           "updated_at"

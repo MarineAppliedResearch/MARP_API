@@ -140,6 +140,9 @@ const SUBSYSTEMS = {
             // #268: the ingest and the three reads, end to end against a database.
             'training-run-yolo-output',
             'ml_models',
+            // #268: a pretrained base model must never reach inference, where its
+            // upstream class names would be resolved against the species catalogue.
+            'base-model-guard',
             // #104: preferred models, version chains, dataset status and the
             // training-run listing the registry had no route for.
             'ml-registry',

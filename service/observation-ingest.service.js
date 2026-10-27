@@ -631,6 +631,22 @@ class ObservationIngestService {
      * @throws {ApiError} 409 when they are not.
      */
     async checkSessionTypeAgainstModel(sessionRow, model) {
+        /* **A base model is refused before the no-species shortcut below can let it
+           through.** That shortcut is right for an unseeded *trained* model, which is
+           unhelpful rather than wrong -- but a pretrained base model has no species by
+           definition, and its classes are the upstream vocabulary rather than MARP's.
+           Resolving ImageNet labels against `species.comname` and writing what matches
+           into observations would put invented records into the scientific record.
+           Submission refuses this first and far more cheaply; this is the backstop for a
+           job queued before that gate existed. */
+        if (model.is_base) {
+            unreconcilable(
+                `Model ${model.id} (${model.name}) is a pretrained base model, so its classes are `
+                + 'the upstream vocabulary rather than MARP species and none of its output can '
+                + 'become an observation. Train from it and ingest the model that comes out.'
+            );
+        }
+
         const lists = await ingestRepository.listModelSpeciesLists(model.id);
 
         if (lists.length === 0) {

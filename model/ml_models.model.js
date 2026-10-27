@@ -184,6 +184,21 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      is_base: {
+        /* A pretrained starting point rather than a model MARP trained. Stated, never
+           inferred from having no species: a trained model whose species nobody seeded
+           yet also has none, and that one is merely unhelpful while this one must never
+           reach inference. */
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment:
+          'True when this is a pretrained starting point for training rather than a model MARP trained. It has no species, so it must never be selectable for inference, where its class names would be resolved against the species catalogue and written into observations.',
+        jsonSchema: {
+            description: 'True when this is a pretrained starting point for training rather than a model MARP trained. Never selectable for inference.',
+        },
+      },
+
       preferred: {
         // One per model_type, enforced by a partial unique index.
         type: DataTypes.BOOLEAN,

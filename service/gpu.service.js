@@ -1984,6 +1984,7 @@ class GpuService {
 
         this.validateSubmittedVideo(spec.video);
         this.validateSubmittedModel(spec.model);
+        await this.refuseBaseModelForInference(spec.model);
         this.validateSubmittedReduction(spec.reduction);
         await this.validateSubmittedObservationTarget(kind, spec);
 
@@ -2638,6 +2639,50 @@ class GpuService {
      * @returns {void}
      * @throws {ApiError} 400 when the locator is not one a worker could fetch.
      */
+    /**
+     * Refuse a pretrained base model for inference.
+     *
+     * **Its classes are not MARP's.** A base model carries the upstream vocabulary --
+     * ImageNet's thousand labels for a classifier -- and the ingest resolves whatever a
+     * run reports against `species.comname`. Run one over video and the names it emits
+     * are resolved against the species catalogue and written into observations, which
+     * puts invented records into the scientific record.
+     *
+     * **Refused here rather than at ingest, because here it costs one response.** At
+     * ingest it costs the GPU hours first, and the one check that would have caught it --
+     * `checkSessionTypeAgainstModel` -- returns early for a model with no species, by a
+     * deliberate decision that was correct while every registered model was a trained
+     * detector. There is a backstop there too, but this is the gate that should fire.
+     *
+     * Only when the spec names a registered model: `ml_model_id` is optional on an
+     * inference spec, and a spec that names no model by id cannot be checked against the
+     * registry at all. Training is untouched -- starting from a base model is the whole
+     * reason one is registered.
+     *
+     * @async
+     * @param {Object} [model] - `spec.model` as supplied.
+     * @returns {Promise<void>} Resolves when the model is one inference may use.
+     * @throws {ApiError} 400 when it names a base model.
+     */
+    async refuseBaseModelForInference(model) {
+        const modelId = model && model.ml_model_id;
+
+        if (!modelId) {
+            return;
+        }
+
+        const row = await ingestRepository.getModel(modelId);
+
+        if (row && row.is_base) {
+            invalid(
+                `Model ${modelId} (${row.name}) is a pretrained base model and cannot be used for `
+                + 'inference: its classes are the upstream vocabulary rather than MARP species, so its '
+                + 'output would be resolved against the species catalogue and written into observations. '
+                + 'Train from it first, and run inference with the model that comes out.'
+            );
+        }
+    }
+
     validateSubmittedModel(model) {
         if (model === undefined || model === null) {
             invalid(
