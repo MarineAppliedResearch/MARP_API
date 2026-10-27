@@ -765,8 +765,8 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums;
   white-space: nowrap; padding: 0 2px;
 }
-.topbar .fresh[data-state="reading"] { opacity: .65; }
-.topbar .fresh[data-state="failed"] { color: var(--red-400); font-weight: 700; }
+.topbar .fresh[data-fresh="reading"] { opacity: .65; }
+.topbar .fresh[data-fresh="failed"] { color: var(--red-400); font-weight: 700; }
 /* The one way to reach what MARP read, for the one reader who wants it. Quiet on purpose:
    it is a footnote to the matrix, not a feature of it. */
 .raw-metrics { display: flex; gap: 12px; padding: 0 12px 10px; }

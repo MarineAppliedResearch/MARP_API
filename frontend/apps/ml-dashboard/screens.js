@@ -2278,18 +2278,36 @@ function trainingPlots(plots) {
     return runSectionWaiting('Training output');
   }
 
+  /* **The stems MARP serves carry no extension and no reliable type**, so the two that
+     are not pictures are named. Everything else in a run directory is. Run 207 arrived
+     as twenty artifacts: sixteen images, this CSV, these weights, and the two the ingest
+     reads, which never reach here. */
+  const NOT_PICTURES = new Set(['weights', 'results']);
+
   const tiles = plots.map((plot) => {
     const stem = String(plot.name || '').replace(/\.[a-z]+$/i, '');
-    const said = SAID[stem] || (/^val_batch\d+_pred$/.test(stem)
-      ? 'Sample predictions on held-out images'
-      : stem.replace(/[_-]+/g, ' '));
+    /* **`Box`-prefixed for detection**, which is Ultralytics' own naming and not
+       something anybody told us until the files arrived: `BoxPR_curve`, not `PR_curve`.
+       Segmentation will bring `Mask` ones beside them, so the prefix is stripped for the
+       lookup rather than four more entries being added above. */
+    const curve = stem.replace(/^(Box|Mask|Seg)(?=[A-Z])/, '');
+    const said = SAID[stem] || SAID[curve]
+      || (/^val_batch\d+_pred$/.test(stem) ? 'Sample predictions on held-out images' : '')
+      || (/^val_batch\d+_labels$/.test(stem) ? 'The labels those predictions were scored against' : '')
+      || (/^train_batch\d+$/.test(stem) ? 'A batch as the model saw it, augmentations included' : '')
+      || stem.replace(/[_-]+/g, ' ');
 
-    /* **Not everything in this array is a picture.** `results` is Ultralytics' CSV of
-       every metric it recorded, and an `<img>` pointed at a CSV is a broken image icon
-       with a caption under it. The content type decides; anything that is not an image is
-       offered as a file instead of being drawn as one. */
-    const isImage = /^image\//.test(plot.content_type || '')
-      || (!plot.content_type && !/\.(csv|txt|ya?ml|json)$/i.test(plot.name || ''));
+    /* **Not everything in this array is a picture, and the type often does not say.**
+       Run 207's twenty artifacts are every one `application/octet-stream`, including a
+       verified 3000x2250 PNG -- worker 0.1.8 declared nothing on upload. That is fixed
+       for later runs and 21787 keeps its wrong types for ever, so a declared *specific*
+       type wins and the generic one falls back on what the file is known to be. The
+       broken-image fallback below catches anything this gets wrong. */
+    const declared = String(plot.content_type || '');
+    const vague = !declared || declared === 'application/octet-stream';
+    const isImage = /^image\//.test(declared)
+      || (vague && !NOT_PICTURES.has(stem)
+        && !/\.(csv|txt|ya?ml|json|pt|pth|zip)$/i.test(plot.name || ''));
 
     if (!isImage) {
       const size = Number(plot.bytes) > 0 ? ` <span class="faint">${Math.round(Number(plot.bytes) / 1024)} KB</span>` : '';
@@ -2298,7 +2316,10 @@ function trainingPlots(plots) {
         + `${escapeHtml(said)}</a>${size}<span class="b mono">${escapeHtml(plot.name)}</span></figcaption></figure>`;
     }
 
-    return `<figure class="result-plot"><img src="${escapeHtml(plot.url)}" alt="${escapeHtml(said)}" loading="lazy">`
+    /* `data-file` carries what the fallback needs, so a tile that turns out not to be an
+       image can become the file form without the panel being redrawn. */
+    return `<figure class="result-plot" data-file="${escapeHtml(plot.url)}" data-said="${escapeHtml(said)}">`
+      + `<img src="${escapeHtml(plot.url)}" alt="${escapeHtml(said)}" loading="lazy">`
       + `<figcaption>${escapeHtml(said)}</figcaption></figure>`;
   }).join('');
 
@@ -2692,6 +2713,26 @@ function wireTrainingJobDetail(head, detail) {
        much evidence that share rests on, and a convincing 100% over two instances is the
        thing a normalised matrix alone will not tell you. Both are already on the cell,
        so the swap is text rather than a redraw. */
+    /* **The browser decides what a file really is, where the type did not say.** A tile
+       drawn as an image whose bytes are not one leaves a broken icon with a caption
+       under it -- so the figure becomes the download form instead. Captured rather than
+       bubbled, because `error` on an element does not bubble. One listener for the
+       panel; a tile that loads never reaches it. */
+    cell.addEventListener('error', (event) => {
+      const img = event.target;
+
+      if (!img || img.tagName !== 'IMG') return;
+
+      const figure = img.closest('.result-plot[data-file]');
+
+      if (!figure) return;
+
+      figure.classList.add('is-file');
+      figure.innerHTML = `<figcaption><a href="${escapeHtml(figure.dataset.file)}" download>`
+        + `${escapeHtml(figure.dataset.said || 'Download')}</a>`
+        + '<span class="b mono">not an image</span></figcaption>';
+    }, true);
+
     const modes = $$('[data-matrix-mode]', cell);
 
     modes.forEach((button) => button.addEventListener('click', () => {
@@ -12156,19 +12197,19 @@ function paintFreshness() {
   const { at, failed, inFlight } = state;
 
   if (failed) {
-    into.dataset.state = 'failed';
+    into.dataset.fresh = 'failed';
     into.textContent = failed.status === 0 ? 'not answering' : `error ${failed.status}`;
     into.title = failed.message || 'The last read failed';
     return;
   }
 
   if (at === null) {
-    into.dataset.state = inFlight ? 'reading' : 'idle';
+    into.dataset.fresh = inFlight ? 'reading' : 'idle';
     into.textContent = inFlight ? 'reading…' : '';
     return;
   }
 
-  into.dataset.state = inFlight ? 'reading' : 'ok';
+  into.dataset.fresh = inFlight ? 'reading' : 'ok';
   into.textContent = `updated ${agoText(Date.now() - at)}`;
   into.title = `MARP last answered at ${new Date(at).toTimeString().slice(0, 8)}`;
 }

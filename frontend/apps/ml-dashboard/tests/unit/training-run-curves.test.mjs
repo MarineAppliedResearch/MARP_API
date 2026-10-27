@@ -2272,3 +2272,37 @@ test('the two artifacts MARP reads are a link by the matrix, not tiles in the ga
   /* An entity in a caption would render literally: these are escaped on the way out. */
   assert.ok(!captions.some((text) => /&[a-z]+;/.test(text)), 'no raw entities in a caption');
 });
+
+test('run 207 arrives with no declared types, and the gallery still draws it', async (t) => {
+  /* **Every one of job 21787's twenty artifacts is `application/octet-stream`**, a
+     verified 3000x2250 PNG included: worker 0.1.8 declared nothing on upload. That is
+     fixed for later runs and 21787 keeps its wrong types for ever, so the generic type
+     falls back on what the file is known to be rather than drawing sixteen plots as
+     download cards. A declared specific type still wins. */
+  const octet = (name) => ({ name, url: `/a/${name}`, content_type: 'application/octet-stream', bytes: 90000 });
+
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    files: [octet('BoxPR_curve'), octet('train_batch0'), octet('val_batch0_labels'),
+      octet('results'), octet('weights')],
+  }));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+
+  assert.equal(detail.querySelectorAll('.plot-gallery img').length, 3,
+    'the three pictures draw as pictures');
+  assert.equal(detail.querySelectorAll('.plot-gallery .is-file').length, 2,
+    'and the CSV and the weights do not');
+
+  /* The stems are Box-prefixed for detection, which nobody knew until the files came. */
+  const captions = [...detail.querySelectorAll('figcaption')].map((c) => c.textContent);
+
+  assert.ok(captions.some((text) => /Precision against recall/.test(text)),
+    'BoxPR_curve is captioned as the PR curve, prefix and all');
+  assert.ok(captions.some((text) => /augmentations included/.test(text)),
+    'and train_batch0, which was never on the list I was given');
+  assert.ok(captions.some((text) => /scored against/.test(text)), 'and val_batch0_labels');
+  assert.ok(!captions.some((text) => /box ?pr curve/i.test(text)),
+    'none of them falls through to its own stem');
+});
