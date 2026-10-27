@@ -282,6 +282,25 @@ Where MARP has nothing, the screen shows a gap rather than a number.
   also indexed by evaluated class, not by the vocabulary — the same order as
   `ap_class_index` — and everything here matches by name, so the two cannot drift.
 
+- **2026-10-27 · the confusion matrix carries its own class list, and there is no shared
+  one.** The worker caught this before either side shipped, and it is the same shape as
+  the `nt_per_class` trap: **`ConfusionMatrix.names` is the model's FULL vocabulary while
+  `ap_class_index` is the evaluated classes only**, and the two differ exactly when a
+  species had no instances in the validation split. A single top-level `classes` array
+  made those look like one list. Labelling the matrix axes from the evaluated list would
+  shift every label from the missing species onward and attribute confusions to the wrong
+  animal — silently, and only in the rare-species case these metrics exist to serve.
+
+  So each array is labelled where it is used: `confusion_matrix.classes` (vocabulary,
+  axis labels), `per_class` rows which name themselves, and the curves artifact's own
+  `classes` (evaluated, parallel to its arrays). The top-level list is gone.
+  `background_index` is now exactly `classes.length`, which makes it checkable rather
+  than taken on trust, and absent rather than null for classification.
+
+  **What the old code would have done is worth recording**: the length check refused the
+  matrix outright rather than mislabelling it, because the vocabulary no longer accounted
+  for every index. A silent gap rather than a silent lie — better, and still wrong.
+
 ## Plan
 
 1. Settle A1–A4. Nothing below starts while A1 and A4 are open.

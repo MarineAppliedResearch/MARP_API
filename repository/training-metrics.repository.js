@@ -142,7 +142,7 @@ class TrainingMetricsRepository {
      * @param {Object} params.transaction - Transaction to write in.
      * @returns {Promise<void>} Nothing.
      */
-    async storeConfusionMatrix({ trainingRunId, split, confusion, classes, transaction }) {
+    async storeConfusionMatrix({ trainingRunId, split, confusion, transaction }) {
         const now = new Date();
 
         await this.db.sequelize.query(
@@ -163,7 +163,7 @@ class TrainingMetricsRepository {
                     trainingRunId,
                     split,
                     orientation: confusion.orientation,
-                    classNames: JSON.stringify(classes),
+                    classNames: JSON.stringify(confusion.classes),
                     backgroundIndex: confusion.background_index,
                     matrix: JSON.stringify(confusion.matrix),
                     now,

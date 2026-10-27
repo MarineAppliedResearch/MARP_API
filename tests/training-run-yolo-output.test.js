@@ -152,9 +152,9 @@ function finalMetricsReport(overrides = {}) {
         schema: 1,
         task: 'detect',
         split: 'val',
-        classes: [`jest-known-${runId}`, `jest-unknown-${runId}`],
         confusion_matrix: {
             orientation: 'rows_predicted_cols_true',
+            classes: [`jest-known-${runId}`, `jest-unknown-${runId}`],
             background_index: 2,
             matrix: [[10, 3, 5], [1, 20, 7], [2, 4, 0]],
         },

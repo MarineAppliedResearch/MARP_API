@@ -346,8 +346,9 @@ function named(value) {
  * looks at -- is exactly what a derivation cannot know.
  *
  * @param {Object} report - The parsed `final_metrics` artifact.
- * @returns {?Object} `{schema, task, split, classes, rows, confusion}`, or null when the
- *   report carries nothing usable.
+ * @returns {?Object} `{schema, task, split, rows, confusion}`, or null when the report
+ *   carries nothing usable. The class lists live on `confusion` and on the curves
+ *   artifact, each beside the numbers it indexes.
  */
 function finalMetrics(report) {
     if (!report || typeof report !== 'object' || Array.isArray(report)) return null;
@@ -359,8 +360,14 @@ function finalMetrics(report) {
        indistinguishable from a report. */
     const split = named(report.split) ? report.split.trim() : null;
 
-    const classes = Array.isArray(report.classes) ? report.classes.filter(named) : [];
-
+    /* **There is deliberately no top-level class list.** It was the thing that made two
+       different lists look like one: the matrix's axes are the full vocabulary and
+       `per_class` covers only what was evaluated. Each now carries the list it is
+       indexed by, beside the numbers it labels. */
+    /* **There is deliberately no top-level class list.** It was the thing that made two
+       different lists look like one: the confusion matrix's axes are the model's full
+       vocabulary while `per_class` covers only what the validator evaluated. Each now
+       carries the list it is indexed by, beside the numbers it labels. */
     const blocks = Array.isArray(report.metrics) ? report.metrics : [];
 
     const rows = [];
@@ -417,9 +424,8 @@ function finalMetrics(report) {
         schema: Number.isFinite(Number(report.schema)) ? Number(report.schema) : null,
         task: named(report.task) ? report.task.trim() : null,
         split,
-        classes,
         rows,
-        confusion: confusionFromReport(report.confusion_matrix, classes),
+        confusion: confusionFromReport(report.confusion_matrix),
     };
 }
 
@@ -431,11 +437,20 @@ function finalMetrics(report) {
  * interpretable. Rotating here would bake today's convention into the record and make
  * every stored matrix silently wrong the day it changed.
  *
+ * **The matrix carries its own class list, and that is load-bearing rather than
+ * convenience.** Its axes are the model's FULL vocabulary, while `per_class` and the
+ * curves cover only the classes the validator actually evaluated -- `ConfusionMatrix.names`
+ * against `ap_class_index`. Those two lists differ exactly when a species had no
+ * validation instances, which is the rare-species case this work exists to serve. A
+ * single shared list would have labelled these axes with the evaluated one, shifting
+ * every label from the missing species onward and attributing confusions to the wrong
+ * animals -- no exception, no null, just wrong. So the labels live here, beside the
+ * numbers they label.
+ *
  * @param {*} raw - `report.confusion_matrix`.
- * @param {string[]} classes - The run's class vocabulary.
- * @returns {?Object} `{orientation, background_index, matrix}`, or null.
+ * @returns {?Object} `{orientation, classes, background_index, matrix}`, or null.
  */
-function confusionFromReport(raw, classes) {
+function confusionFromReport(raw) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
 
     const matrix = Array.isArray(raw.matrix) ? raw.matrix : null;
@@ -450,6 +465,10 @@ function confusionFromReport(raw, classes) {
        correct for having none. */
     if (!Object.values(ORIENTATIONS).includes(orientation)) return null;
 
+    const classes = Array.isArray(raw.classes) ? raw.classes.filter(named) : [];
+
+    if (classes.length === 0) return null;
+
     /* Square, and every row the same length. A ragged matrix is a transport fault, and
        serving it would misalign every label after the short row. */
     const size = matrix.length;
@@ -458,26 +477,26 @@ function confusionFromReport(raw, classes) {
         if (!Array.isArray(row) || row.length !== size) return null;
     }
 
-    const background = Number(raw.background_index);
+    const hasBackground = raw.background_index !== undefined &amp;&amp; raw.background_index !== null;
 
-    /* Background is index `nc` on both axes for detect, segment and obb, and absent for
-       classify and semantic, which have no background class at all. Accepted only where
-       it is the last index, which is the only place Ultralytics puts it. */
-    const backgroundIndex = Number.isInteger(background) &amp;&amp; background === size - 1
-        ? background
-        : null;
-
-    /* The vocabulary has to account for every index. With a background row the matrix is
-       one wider than the class list; without one they match. Anything else means the two
-       halves of the report disagree, and a label list that does not line up with the
-       numbers is how a cell gets read as the wrong class. */
-    const expected = backgroundIndex === null ? size : size - 1;
-
-    if (classes.length !== expected) return null;
+    /* **`background_index` is checkable rather than taken on trust**: the background row
+       is always the one past the last real class, so it is exactly `classes.length`.
+       Anything else means the two halves of the report disagree about what the axes are,
+       and a label list that does not line up with the numbers is how a cell gets read as
+       the wrong species. Absent for classify and semantic, which have no background
+       class -- absent, not null, the same absence rule as everywhere else. */
+    if (hasBackground) {
+        if (!Number.isInteger(raw.background_index)) return null;
+        if (raw.background_index !== classes.length) return null;
+        if (size !== classes.length + 1) return null;
+    } else if (size !== classes.length) {
+        return null;
+    }
 
     return {
         orientation,
-        background_index: backgroundIndex,
+        classes,
+        background_index: hasBackground ? raw.background_index : null,
         matrix: matrix.map((row) => row.map((cell) => measured(cell))),
     };
 }
@@ -495,11 +514,14 @@ function confusionFromReport(raw, classes) {
  * view it is a real outcome, the row sums do not mean anything without it, and
  * `matrix[nc][nc]` being permanently zero is a true zero rather than a gap.
  *
- * @param {?Object} stored - `{orientation, background_index, matrix}` as stored.
- * @param {string[]} classes - The run's class vocabulary, in index order.
+ * @param {?Object} stored - `{orientation, classes, background_index, matrix}` as stored.
+ *   The labels come from the row itself, never from a list passed in beside it: the
+ *   axes are the full vocabulary and anything else shifts them.
  * @returns {?Object} `{labels, rows, orientation, background_index}`, or null.
  */
-function confusionForReading(stored, classes) {
+function confusionForReading(stored) {
+    const classes = stored &amp;&amp; Array.isArray(stored.classes) ? stored.classes : [];
+
     if (!stored || !Array.isArray(stored.matrix) || stored.matrix.length === 0) return null;
 
     const { matrix } = stored;
@@ -562,6 +584,12 @@ function metricCurves(report) {
     if (!split || !family) return null;
 
     const confidence = Array.isArray(report.confidence) ? report.confidence.map(measured) : [];
+
+    /* **This artifact's own list, and it is the EVALUATED classes.** Not the vocabulary:
+       the curve arrays are filled in `unique_classes` order, the same order as the
+       per-class metrics, so a species with nothing in the validation split is absent
+       here and present on the confusion matrix's axes. Each list lives beside the
+       numbers it indexes, which is the whole reason there is no shared one. */
     const classes = Array.isArray(report.classes) ? report.classes.filter(named) : [];
 
     if (confidence.length === 0 || classes.length === 0) return null;

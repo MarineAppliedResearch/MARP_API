@@ -159,7 +159,7 @@ class TrainingMetricsService {
                producer's orientation and this is the only place that changes. */
             confusion_matrices: stored
                 .map((row) => {
-                    const read = confusionForReading(row, row.class_names || []);
+                    const read = confusionForReading({ ...row, classes: row.class_names || [] });
 
                     return read === null ? null : { dataset_split: row.dataset_split, ...read };
                 })
@@ -391,7 +391,6 @@ class TrainingMetricsService {
                     trainingRunId: run.id,
                     split: parsed.split,
                     confusion: parsed.confusion,
-                    classes: parsed.classes,
                     transaction,
                 });
             }

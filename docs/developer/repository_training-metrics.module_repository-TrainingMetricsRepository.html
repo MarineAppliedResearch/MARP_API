@@ -259,10 +259,7 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>One of a run's artifacts, by the hash that addresses it.
-
-Scoped to the run rather than looked up by hash alone, so a caller cannot read any
-artifact in MARP by guessing a digest off an unrelated record.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>One of a run's artifacts, by the hash that addresses it.Scoped to the run rather than looked up by hash alone, so a caller cannot read anyartifact in MARP by guessing a digest off an unrelated record.</li></ul></dd>
     
 
     
@@ -444,11 +441,7 @@ artifact in MARP by guessing a digest off an unrelated record.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Every file a run's job handed over.
-
-**Reached through the job rather than through `artifacts.training_run_id`**, which
-the hand-off leaves null: `recordJobArtifacts` knows the job and not the run. The
-join exists, so this needs no backfill and no second write.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Every file a run's job handed over.**Reached through the job rather than through `artifacts.training_run_id`**, whichthe hand-off leaves null: `recordJobArtifacts` knows the job and not the run. Thejoin exists, so this needs no backfill and no second write.</li></ul></dd>
     
 
     
@@ -606,11 +599,7 @@ join exists, so this needs no backfill and no second write.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The `metrics_summary` rows a run holds for one split and family, by class name.
-
-Curves hang off `metrics_summary_id`, which is NOT NULL, so a curve can only be
-stored for a class that has a row -- which is the "only evaluated classes" rule
-holding by construction rather than by a second check.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The `metrics_summary` rows a run holds for one split and family, by class name.Curves hang off `metrics_summary_id`, which is NOT NULL, so a curve can only bestored for a class that has a row -- which is the "only evaluated classes" ruleholding by construction rather than by a second check.</li></ul></dd>
     
 
     
@@ -1048,10 +1037,7 @@ holding by construction rather than by a second check.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>A run's curves for one split, as a series per class.
-
-Returned already grouped, because the alternative is a reader receiving twenty
-thousand flat rows and doing the grouping itself on every draw.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>A run's curves for one split, as a series per class.Returned already grouped, because the alternative is a reader receiving twentythousand flat rows and doing the grouping itself on every draw.</li></ul></dd>
     
 
     
@@ -1209,11 +1195,7 @@ thousand flat rows and doing the grouping itself on every draw.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Every metrics row a run holds, with the species name where one resolved.
-
-Ordered so a reader gets the all-classes row first within each family and the
-per-class rows alphabetically after it -- the aggregate is a different quantity
-from the classes and reads wrongly buried among them.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Every metrics row a run holds, with the species name where one resolved.Ordered so a reader gets the all-classes row first within each family and theper-class rows alphabetically after it -- the aggregate is a different quantityfrom the classes and reads wrongly buried among them.</li></ul></dd>
     
 
     
@@ -1371,10 +1353,7 @@ from the classes and reads wrongly buried among them.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The training run a job produced, if it has one.
-
-`training_runs.job_id` has existed since `20261020120000`, which is what makes an
-artifact recorded against a job reachable from its run without a second column.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The training run a job produced, if it has one.`training_runs.job_id` has existed since `20261020120000`, which is what makes anartifact recorded against a job reachable from its run without a second column.</li></ul></dd>
     
 
     
@@ -1576,12 +1555,7 @@ artifact recorded against a job reachable from its run without a second column.<
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Replace the per-threshold curves belonging to a run's split and family.
-
-**Inserted in batches rather than row by row, because this is the one place here
-that is not a handful of rows.** A thousand confidence points per class is twenty
-thousand rows for a twenty-species model, and a round trip each would turn an
-ingest into minutes of waiting.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Replace the per-threshold curves belonging to a run's split and family.**Inserted in batches rather than row by row, because this is the one place herethat is not a handful of rows.** A thousand confidence points per class is twentythousand rows for a twenty-species model, and a round trip each would turn aningest into minutes of waiting.</li></ul></dd>
     
 
     
@@ -1743,8 +1717,7 @@ ingest into minutes of waiting.</li></ul></dd>
 
             
 
-            <td class="description last">`{metrics_summary_id, species_id,
-  confidence_threshold, precision, recall, f1_score}`.</td>
+            <td class="description last">`{metrics_summary_id, species_id,  confidence_threshold, precision, recall, f1_score}`.</td>
         </tr>
 
     
@@ -1838,15 +1811,7 @@ ingest into minutes of waiting.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Replace a run's metrics rows for one split with the ones just reported.
-
-**Replaced rather than appended, because a re-reported result is the same
-measurement arriving twice.** The artifact hand-off is idempotent on its hash and
-this has to be idempotent for the same reason: an attempt that reports a result,
-fails to be acknowledged and reports again would otherwise double every class.
-
-Deleting only this run's own rows for this split, which are rows this ingest
-wrote. Nothing else in MARP writes `metrics_summary` at all.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Replace a run's metrics rows for one split with the ones just reported.**Replaced rather than appended, because a re-reported result is the samemeasurement arriving twice.** The artifact hand-off is idempotent on its hash andthis has to be idempotent for the same reason: an attempt that reports a result,fails to be acknowledged and reports again would otherwise double every class.Deleting only this run's own rows for this split, which are rows this ingestwrote. Nothing else in MARP writes `metrics_summary` at all.</li></ul></dd>
     
 
     
@@ -2032,9 +1997,7 @@ wrote. Nothing else in MARP writes `metrics_summary` at all.</li></ul></dd>
 
             
 
-            <td class="description last">Rows from `db/final-metrics.js`, each already
-  carrying `metric_family`, `class_name` and the metric columns, plus a resolved
-  `species_id` or null.</td>
+            <td class="description last">Rows from `db/final-metrics.js`, each already  carrying `metric_family`, `class_name` and the metric columns, plus a resolved  `species_id` or null.</td>
         </tr>
 
     
@@ -2128,10 +2091,7 @@ wrote. Nothing else in MARP writes `metrics_summary` at all.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Store a run's confusion matrix for one split, replacing any already there.
-
-Stored in the orientation its producer named, never rotated on the way in. See
-`db/final-metrics.js` for why that matters.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Store a run's confusion matrix for one split, replacing any already there.Stored in the orientation its producer named, never rotated on the way in. See`db/final-metrics.js` for why that matters.</li></ul></dd>
     
 
     

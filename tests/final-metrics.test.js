@@ -83,9 +83,9 @@ function report(overrides = {}) {
         schema: 1,
         task: 'detect',
         split: 'val',
-        classes: ['Lingcod', 'Rockfish'],
         confusion_matrix: {
             orientation: ORIENTATIONS.ROWS_PREDICTED,
+            classes: ['Lingcod', 'Rockfish'],
             background_index: 2,
             matrix: [
                 [10, 3, 5],
@@ -366,7 +366,7 @@ describe('what the trainer does not report', () => {
 
 describe('the confusion matrix, which is the thing most easily got backwards', () => {
     it('stores the trainer\'s array verbatim, unrotated', () => {
-        const stored = confusionFromReport(report().confusion_matrix, ['Lingcod', 'Rockfish']);
+        const stored = confusionFromReport(report().confusion_matrix);
 
         expect(stored.orientation).toBe(ORIENTATIONS.ROWS_PREDICTED);
         expect(stored.matrix[0]).toEqual([10, 3, 5]);
@@ -374,8 +374,8 @@ describe('the confusion matrix, which is the thing most easily got backwards', (
     });
 
     it('transposes to rows-are-true when serving', () => {
-        const stored = confusionFromReport(report().confusion_matrix, ['Lingcod', 'Rockfish']);
-        const served = confusionForReading(stored, ['Lingcod', 'Rockfish']);
+        const stored = confusionFromReport(report().confusion_matrix);
+        const served = confusionForReading(stored);
 
         expect(served.orientation).toBe(SERVED_ORIENTATION);
 
@@ -391,17 +391,18 @@ describe('the confusion matrix, which is the thing most easily got backwards', (
     it('does not transpose a matrix already sent rows-are-true', () => {
         const already = confusionFromReport({
             orientation: ORIENTATIONS.ROWS_TRUE,
+            classes: ['Lingcod', 'Rockfish'],
             background_index: 2,
             matrix: [[10, 3, 5], [1, 20, 7], [2, 4, 0]],
-        }, ['Lingcod', 'Rockfish']);
+        });
 
-        expect(confusionForReading(already, ['Lingcod', 'Rockfish']).rows[0]).toEqual([10, 3, 5]);
+        expect(confusionForReading(already).rows[0]).toEqual([10, 3, 5]);
     });
 
     it('labels the background row rather than trimming it', () => {
-        const stored = confusionFromReport(report().confusion_matrix, ['Lingcod', 'Rockfish']);
+        const stored = confusionFromReport(report().confusion_matrix);
 
-        expect(confusionForReading(stored, ['Lingcod', 'Rockfish']).labels)
+        expect(confusionForReading(stored).labels)
             .toEqual(['Lingcod', 'Rockfish', 'background']);
     });
 
@@ -409,33 +410,74 @@ describe('the confusion matrix, which is the thing most easily got backwards', (
         // Guessing produces a chart that looks plausible and asserts the opposite of
         // what happened. No matrix is better than a reversed one.
         expect(confusionFromReport({
+            classes: ['Lingcod', 'Rockfish'],
             background_index: 2,
             matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 0]],
-        }, ['Lingcod', 'Rockfish'])).toBeNull();
+        })).toBeNull();
     });
 
     it('refuses a ragged matrix', () => {
         expect(confusionFromReport({
             orientation: ORIENTATIONS.ROWS_PREDICTED,
+            classes: ['Lingcod', 'Rockfish'],
             background_index: 2,
             matrix: [[1, 0, 0], [0, 1], [0, 0, 0]],
-        }, ['Lingcod', 'Rockfish'])).toBeNull();
+        })).toBeNull();
     });
 
-    it('refuses a matrix whose size does not match the vocabulary', () => {
+    it('refuses a matrix whose size does not match its own vocabulary', () => {
         // A label list that does not line up with the numbers is how a cell gets read
         // as the wrong class.
-        expect(confusionFromReport(report().confusion_matrix, ['Lingcod'])).toBeNull();
+        const short = report().confusion_matrix;
+        short.classes = ['Lingcod'];
+
+        expect(confusionFromReport(short)).toBeNull();
+    });
+
+    it('refuses a background_index that is not one past the last class', () => {
+        // Checkable rather than taken on trust: the background row is always at
+        // `classes.length`. Anything else means the two halves of the report disagree
+        // about what the axes are.
+        const wrong = report().confusion_matrix;
+        wrong.background_index = 1;
+
+        expect(confusionFromReport(wrong)).toBeNull();
+    });
+
+    it('labels the axes with the FULL vocabulary, not the evaluated classes', () => {
+        // **The bug this shape exists to prevent.** The matrix spans every class the
+        // model knows; `per_class` covers only those the validator evaluated. They
+        // differ exactly when a species had no validation instances -- the rare-species
+        // case -- and labelling these axes with the evaluated list would shift every
+        // label from that species onward and attribute confusions to the wrong animal.
+        const sparse = report();
+        sparse.confusion_matrix.classes = ['Lingcod', 'Rockfish', 'Cookie star'];
+        sparse.confusion_matrix.background_index = 3;
+        sparse.confusion_matrix.matrix = [
+            [10, 3, 0, 5], [1, 20, 0, 7], [0, 0, 0, 0], [2, 4, 0, 0],
+        ];
+        // Only two classes were evaluated; Cookie star had nothing to score against.
+        sparse.metrics[0].per_class = sparse.metrics[0].per_class.slice(0, 2);
+
+        const parsed = finalMetrics(sparse);
+        const served = confusionForReading(parsed.confusion);
+
+        expect(served.labels).toEqual(['Lingcod', 'Rockfish', 'Cookie star', 'background']);
+
+        // And the unevaluated species is in the matrix while having no metrics row --
+        // a real fact, not an error and not a zero.
+        expect(parsed.rows.some((row) => row.class_name === 'Cookie star')).toBe(false);
     });
 
     it('accepts a classification matrix, which has no background row', () => {
         const stored = confusionFromReport({
             orientation: ORIENTATIONS.ROWS_PREDICTED,
+            classes: ['Lingcod', 'Rockfish'],
             matrix: [[7, 2], [1, 9]],
-        }, ['Lingcod', 'Rockfish']);
+        });
 
         expect(stored.background_index).toBeNull();
-        expect(confusionForReading(stored, ['Lingcod', 'Rockfish']).labels)
+        expect(confusionForReading(stored).labels)
             .toEqual(['Lingcod', 'Rockfish']);
     });
 

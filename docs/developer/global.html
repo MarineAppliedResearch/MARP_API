@@ -4350,17 +4350,13 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>A metric event exactly as the development database holds one.
-
-Job 21779, the most recent succeeded training job. Note what is *not* here: no
-`fitness`, no `duration_seconds`, no `train/*` loss. Those are the worker's unmerged
-branch, so no stored event has ever contained them.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>A metric event exactly as the development database holds one.**Job 21786, attempt 19223, the newest training event on 5432 (2026-10-27).** Re-readfrom traffic rather than carried forward: an earlier version of this fixture came fromjob 21779 and its comment said `fitness`, `duration_seconds` and the `train/*` losseshad never appeared in a stored event. That was true when written and is now false --worker 0.1.6 landed and three of those are here. `fitness` still is not, in any eventMARP has ever stored.`start_offset_s` and `end_offset_s` arrived later still: jobs 21782 and 21785 carry thetraining losses and duration without them, 21786 carries all five. That is a workerversion boundary rather than a gap, and `epochs` reflects it exactly -- run 205 has tenrows with durations and no offsets, run 206 has one row with both.`child_kind` is in every one of them and in no document anywhere, which is why this iscopied rather than typed.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="tests_final-metrics.test.js.html">tests/final-metrics.test.js</a>, <a href="tests_final-metrics.test.js.html#line43">line 43</a>
+        <a href="tests_final-metrics.test.js.html">tests/final-metrics.test.js</a>, <a href="tests_final-metrics.test.js.html#line54">line 54</a>
     </li></ul></dd>
     
 
@@ -4400,11 +4396,7 @@ branch, so no stored event has ever contained them.</li></ul></dd>
 
 
 <div class="description usertext">
-    A metric event exactly as the development database holds one.
-
-Job 21779, the most recent succeeded training job. Note what is *not* here: no
-`fitness`, no `duration_seconds`, no `train/*` loss. Those are the worker's unmerged
-branch, so no stored event has ever contained them.
+    A metric event exactly as the development database holds one.**Job 21786, attempt 19223, the newest training event on 5432 (2026-10-27).** Re-readfrom traffic rather than carried forward: an earlier version of this fixture came fromjob 21779 and its comment said `fitness`, `duration_seconds` and the `train/*` losseshad never appeared in a stored event. That was true when written and is now false --worker 0.1.6 landed and three of those are here. `fitness` still is not, in any eventMARP has ever stored.`start_offset_s` and `end_offset_s` arrived later still: jobs 21782 and 21785 carry thetraining losses and duration without them, 21786 carries all five. That is a workerversion boundary rather than a gap, and `epochs` reflects it exactly -- run 205 has tenrows with durations and no offsets, run 206 has one row with both.`child_kind` is in every one of them and in no document anywhere, which is why this iscopied rather than typed.
 </div>
 
 
@@ -51291,16 +51283,13 @@ branch, so no stored event has ever contained them.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>A two-class detection report, which therefore has a 3x3 matrix.
-
-The numbers are deliberately asymmetric so a transpose cannot pass by accident: a
-symmetric matrix makes the single most dangerous bug in this file invisible.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>A two-class detection report, which therefore has a 3x3 matrix.The numbers are deliberately asymmetric so a transpose cannot pass by accident: asymmetric matrix makes the single most dangerous bug in this file invisible.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="tests_final-metrics.test.js.html">tests/final-metrics.test.js</a>, <a href="tests_final-metrics.test.js.html#line64">line 64</a>
+        <a href="tests_final-metrics.test.js.html">tests/final-metrics.test.js</a>, <a href="tests_final-metrics.test.js.html#line81">line 81</a>
     </li></ul></dd>
     
 
