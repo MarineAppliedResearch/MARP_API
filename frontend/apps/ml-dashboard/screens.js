@@ -223,8 +223,38 @@ function mountRail() {
 
 /* ================================================================ the top bar */
 
-const PROJECTS = ['All projects', 'CAMPA 2024', 'GULF 2025', 'PACIFIC 2023',
-  'SALT 2024', 'VENTS 2025', 'ARCTIC 2024'];
+/**
+ * Put MARP's own projects into the top bar's filter.
+ *
+ * **These were six invented names** -- CAMPA 2024, GULF 2025, PACIFIC 2023 and three more
+ * -- written into the chrome when it was a mockup and never replaced, so every screen in
+ * the application offered a project list MARP has never held. The same defect as the
+ * Inference form's picker, in the one place it appears seven times.
+ *
+ * Filled after the bar is drawn rather than awaited before it: a top bar that waits on
+ * the network is a page that renders late, and "All projects" is true on its own.
+ *
+ * @async
+ * @param {Element} select - The bar's project select.
+ * @returns {Promise<void>}
+ */
+async function fillTopProjects(select) {
+  if (!select || !window.MarpApi || !window.MarpApi.listProjects) return;
+
+  try {
+    const projects = await window.MarpApi.listProjects();
+
+    select.insertAdjacentHTML('beforeend', (projects || [])
+      .map((project) => '<option>' + escapeHtml(project.name
+        || ('Project ' + (project.project_id === undefined ? project.id : project.project_id))) + '</option>')
+      .join(''));
+  } catch (error) {
+    /* Says it could not ask, rather than leaving a lone "All projects" that reads as
+       MARP having no projects -- the same distinction the dataset pickers make. */
+    select.insertAdjacentHTML('beforeend',
+      '<option disabled>Could not load (' + (error.status || 'no answer') + ')</option>');
+  }
+}
 
 /* The actions a top bar can offer, defined once so two screens cannot describe
    the same button two ways. */
@@ -279,8 +309,9 @@ function mountTopbar() {
   tools.className = 'tools' + (cfg.wide ? ' wide' : '');
   tools.innerHTML =
     (cfg.project
-      ? '<span class="lab">Project</span><select class="sel" aria-label="Project">'
-        + PROJECTS.map((p) => '<option>' + p + '</option>').join('') + '</select>'
+      ? '<span class="lab">Project</span><select class="sel" data-top-project aria-label="Project">'
+        /* Only the one option that is true before MARP has answered. */
+        + '<option>All projects</option></select>'
       : '')
     + '<span class="search">' + ico('search', 'sm')
     + '<input class="inp" type="search" placeholder="'
@@ -317,6 +348,8 @@ function mountTopbar() {
     + '<button class="account__item" type="button" role="menuitem" data-account-signout hidden>Sign out</button>'
     + '</div></div>';
   bar.appendChild(tools);
+
+  fillTopProjects($('[data-top-project]', tools));
 }
 
 /* =============================================================== behaviour */
@@ -4198,6 +4231,22 @@ async function wireVideoPicker() {
           + `<div class="video-thumb"><img loading="lazy" src="/api/v2/jellyfin/items/${encodeURIComponent(file.id)}/images/Primary" alt="${escape(file.name)}"></div>`
           + `<div class="video-meta"><b>${escape(file.name)}</b>`
           + `<span class="faint">${escape(file.path || '')}${when ? ` &middot; ${when}` : ''}</span></div>`
+          /* **The line and the frame range, which nothing else can supply.** The picker
+             was rewritten to read the real Jellyfin library and these went with the old
+             markup, while `choiceParts` kept reading selectors for them -- so every
+             target it produced had no line, and a line is half of what places a session.
+             The range went the same way, leaving no way to run part of a video at all.
+
+             Blank frames mean the whole video, and MARP says what it worked that out to
+             be rather than this screen guessing at a length it cannot know. */
+          + '<div class="video-scope">'
+          + '<label class="line-entry">Line<input class="inp" type="text" inputmode="numeric"'
+          + ` aria-label="Line for ${escape(file.name)}" placeholder="e.g. 4"></label>`
+          + '<label>From frame<input class="inp" type="number" min="0" step="1" data-start-frame'
+          + ` aria-label="First frame of ${escape(file.name)}" placeholder="start"></label>`
+          + '<label>To frame<input class="inp" type="number" min="1" step="1" data-end-frame'
+          + ` aria-label="Last frame of ${escape(file.name)}" placeholder="whole video"></label>`
+          + '</div>'
           + '</article>';
       }).join('') : '<p class="nodata">That dive holds no video files.</p>';
     } catch (error) {
@@ -8614,6 +8663,20 @@ async function inferenceSubmissions() {
           },
         };
 
+        /* **Sent only when somebody scoped the run.** Left out, MARP derives the end
+           from the Jellyfin item and reports back what it decided -- which is the one
+           thing this screen could not work out for itself. A half-open range, so
+           `to` is one past the last frame, exactly as the API documents it. */
+        const from = (target.dataset.startFrame || '').trim();
+        const to = (target.dataset.endFrame || '').trim();
+
+        if (from !== '' || to !== '') {
+          body.spec.range = {};
+
+          if (from !== '') body.spec.range.start_frame = Number(from);
+          if (to !== '') body.spec.range.end_frame = Number(to);
+        }
+
         if (Number.isInteger(pieceFrames) && pieceFrames > 0) body.piece_frames = pieceFrames;
         if (Object.keys(params).length) body.spec.params = params;
 
@@ -8637,10 +8700,20 @@ function wireInferenceForm() {
     const title = $('.video-meta b', choice)?.textContent.trim() || 'video';
     const dive = (choice.dataset.videoDive || '').trim();
     const line = $('.line-entry .inp', choice)?.value.trim();
-    const mode = $('[data-video-range]', choice)?.value || 'all';
-    const times = $$('.time-range .inp', choice).map((input) => input.value);
-    return { id: choice.dataset.videoId, title, dive, line,
-      range: mode === 'time' ? times.join('–') : 'Entire video' };
+    /* Read as text and kept as text: an empty box is "not set", and `Number('')` is 0,
+       which would silently submit frame 0 as a deliberate start. */
+    const from = $('[data-start-frame]', choice)?.value.trim() || '';
+    const to = $('[data-end-frame]', choice)?.value.trim() || '';
+
+    return {
+      id: choice.dataset.videoId,
+      title,
+      dive,
+      line,
+      from,
+      to,
+      range: from || to ? `Frames ${from || '0'}\u2013${to || 'end'}` : 'Entire video',
+    };
   };
 
   const refreshSelected = () => {
@@ -8682,7 +8755,9 @@ function wireInferenceForm() {
     + safe(parts.id) + '" data-video-dive="' + safe(parts.dive || '')
     /* The line was in the card's prose and nowhere a submission could read it, so a
        plan that displayed "Line 4" submitted nothing of the sort. */
-    + '" data-video-line="' + safe(parts.line || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
+    + '" data-video-line="' + safe(parts.line || '')
+    + '" data-start-frame="' + safe(parts.from || '')
+    + '" data-end-frame="' + safe(parts.to || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
     + (parts.line ? 'L' + safe(parts.line) : '—') + '</span><span><b class="mono">' + safe(parts.title)
     + '</b><small>' + (parts.dive ? safe(parts.dive) + ' · ' : '')
     + (parts.line ? 'Line ' + safe(parts.line) : 'Line not assigned') + ' · ' + safe(parts.range)
