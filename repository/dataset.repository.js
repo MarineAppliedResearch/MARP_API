@@ -38,6 +38,22 @@ const logger = require('../logger/api.logger');
 
 
 /**
+ * The most points a single read will return.
+ *
+ * **A bound on the read rather than on what is stored.** A multi-hour run holds tens
+ * of thousands of samples and no chart can draw them -- a 900-pixel canvas cannot show
+ * 30,000 points, so sending them is bytes nobody can see.
+ *
+ * 2,000 is comfortably more than any chart width and small enough to be a quick
+ * response. **A polling client never meets it**: it asks for samples after the last
+ * step it has, which is a few seconds' worth, so the stride only ever applies to the
+ * first load of a long run.
+ *
+ * @constant
+ * @type {number}
+ */
+const MAX_SAMPLES_PER_READ = 2000;
+/**
  * Repository for ML pipeline database operations covering models,
  * datasets, dataset observations, training runs, epochs, and metrics.
  *
@@ -58,7 +74,102 @@ class DatasetRepository {
     }
 
 
-    /**
+        /**
+     * One training run's per-batch samples, oldest first, from a step onwards.
+     *
+     * **The live view of a run, where `/epochs` is the finished one.** An epoch row
+     * lands every couple of minutes; these land every two or three seconds, which is
+     * what makes a chart move while somebody watches it.
+     *
+     * **Incremental, because it is polled.** `afterStep` is the last step the caller
+     * already has, so a poll every few seconds carries a handful of rows rather than
+     * the whole run again. Steps are per attempt, so the filter is applied per attempt
+     * and a retry is not hidden by the first attempt's higher numbers.
+     *
+     * **Every attempt of the job, each sample saying which** -- the same rule the pace
+     * series follows. A retried run restarts its counter, and dropping the earlier
+     * attempt would leave an unexplained step in the series; keeping `attempt_id` on
+     * each sample lets a reader draw the seam.
+     *
+     * **Strided rather than truncated when there are too many.** Taking the first
+     * 2,000 would show the beginning of a run and claim it was the whole; taking the
+     * last 2,000 would silently drop the start. Striding keeps the shape of the curve,
+     * which is the thing being read, and the final sample is always included so the
+     * series never appears to stop before it did.
+     *
+     * @async
+     * @param {number|string} runId - The training run.
+     * @param {Object} [options] - Paging.
+     * @param {number} [options.afterStep] - Only samples past this step.
+     * @param {number} [options.limit] - Cap, up to {@link MAX_SAMPLES_PER_READ}.
+     * @returns {Promise<?Object>} `{samples, returned, matched, strided}`, or null when
+     * no such run exists -- a mistyped id and a run that has reported nothing are
+     * different answers and a chart cannot tell them apart.
+     */
+    async getTrainingRunSamples(runId, { afterStep = null, limit = null } = {}) {
+        const [run] = await this.db.sequelize.query(
+            'SELECT id, job_id FROM training_runs WHERE id = :runId',
+            { replacements: { runId }, type: QueryTypes.SELECT }
+        );
+
+        if (!run) return null;
+
+        const cap = Math.min(
+            Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.trunc(Number(limit)) : MAX_SAMPLES_PER_READ,
+            MAX_SAMPLES_PER_READ
+        );
+
+        const after = Number.isFinite(Number(afterStep)) ? Math.trunc(Number(afterStep)) : null;
+
+        /* **Strided in the database rather than in Node.** The alternative is reading
+           every row across the wire to throw most of them away, which is the cost this
+           is here to avoid. `row_number()` numbers the matching rows per attempt and
+           `count(*) OVER ()` gives the total in the same pass, so the stride is decided
+           without a second query.
+
+           `OR rn = n` keeps the newest sample whatever the stride lands on, because a
+           chart whose last point is forty samples behind the run looks stalled. */
+        const samples = await this.db.sequelize.query(
+            `WITH matched AS (
+                 SELECT s.id, s.attempt_id, s.step, s.phase, s.epoch, s.batch,
+                        s.batches_total, s.at, s.metrics,
+                        row_number() OVER (ORDER BY s.attempt_id, s.step, s.id) AS rn,
+                        count(*) OVER () AS n
+                   FROM training_batch_samples s
+                   JOIN gpu_job_attempts a ON a.id = s.attempt_id
+                  WHERE a.job_id = :jobId
+                    AND (:after IS NULL OR s.step > :after)
+             )
+             SELECT id, attempt_id, step, phase, epoch, batch, batches_total, at, metrics, n
+               FROM matched
+              WHERE (rn - 1) % GREATEST(1, CEIL(n::numeric / :cap)::int) = 0
+                 OR rn = n
+              ORDER BY attempt_id, step, id`,
+            { replacements: { jobId: run.job_id, after, cap }, type: QueryTypes.SELECT }
+        );
+
+        const matched = samples.length ? Number(samples[0].n) : 0;
+
+        return {
+            /* Stated rather than left to be inferred from the length: a caller cannot
+               otherwise tell a complete series from a strided one, and the difference
+               decides whether "no new samples" means the run has stopped. */
+            matched,
+            returned: samples.length,
+            strided: matched > cap,
+            samples: samples.map((sample) => ({
+                attempt_id: sample.attempt_id,
+                step: sample.step,
+                phase: sample.phase,
+                epoch: sample.epoch,
+                batch: sample.batch,
+                batches_total: sample.batches_total,
+                at: sample.at,
+                metrics: sample.metrics,
+            })),
+        };
+    }
+/**
      * How fast a training run has been getting through its epochs.
      *
      * **The clock, where `GET /training_run/:id/epochs` is the science.** An epoch row is

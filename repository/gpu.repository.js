@@ -2246,6 +2246,78 @@ class GpuRepository {
     }
 
     /**
+ * Keep one per-batch sample of a training attempt.
+ *
+ * **The other half of {@link recordTrainingEpoch}, and the two are exclusive.** Both
+ * read the same `metric` events; `db/epoch-metrics.js` decides which is which from the
+ * phase, so a finished epoch writes a row in `epochs` and a sample writes one here, and
+ * neither can write the other's. That routing is the whole reason the phase vocabulary
+ * exists -- the two series overlap numerically, since a sample's step is a global batch
+ * counter and an epoch's is the epoch number.
+ *
+ * **Every sample is kept, not just the latest.** A progress snapshot answers "where is
+ * this now" and is overwritten; this answers "what has it been doing", which is a
+ * series and cannot be. The volume is a chart rather than a flood: about 64 points per
+ * epoch at the worker's 2.5-second rate.
+ *
+ * **The measurements are stored as they arrived.** A detector reports three losses by
+ * name and a classifier one; nothing here maps, renames or drops them, so a worker that
+ * starts sending a new number records it the day it does rather than the day MARP
+ * learns about it. The four fields lifted out into columns -- epoch, batch,
+ * batches_total and the step -- are the ones a query orders and pages on.
+ *
+ * @async
+ * @param {number} attemptId - The attempt that reported it.
+ * @param {Object} event - The `metric` event, already accepted onto the stream.
+ * @param {Object} transaction - The events transaction, so the sample and its event
+ * land together or not at all.
+ * @returns {Promise<void>} Resolves once the row is written, or skipped.
+ */
+    async recordTrainingSample(attemptId, event, transaction) {
+        const payload = event.payload || {};
+        const metrics = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : null;
+        const step = Number(payload.step);
+
+        if (!metrics || !Number.isInteger(step)) return;
+
+        const phase = readPhase(payload.phase);
+
+        /* An epoch, or a phase MARP does not know. `recordTrainingEpoch` has already
+           said so for the unknown one; saying it twice would double every log line. */
+        if (phase.epoch || !phase.known) return;
+
+        /* **Lifted out, not removed.** These four stay in `metrics` as well as becoming
+           columns: the column is what a query uses, and the untouched bag is what lets
+           a reader see exactly what the worker sent. */
+        const whole = (value) => (Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : null);
+
+        /* The worker's own clock, kept as it sent it. Ordering and duration only --
+           valid within a run, never compared against MARP's clock or another machine's.
+           A sample with no usable timestamp keeps its step, which is what the series is
+           ordered by anyway. */
+        const at = event.at && !Number.isNaN(Date.parse(event.at)) ? event.at : null;
+
+        await this.db.sequelize.query(
+            `INSERT INTO training_batch_samples
+                 (attempt_id, step, phase, epoch, batch, batches_total, at, metrics, created_at)
+             VALUES (:attemptId, :step, :phase, :epoch, :batch, :batchesTotal, :at, :metrics, NOW())
+             ON CONFLICT (attempt_id, step, phase) DO NOTHING`,
+            {
+                replacements: {
+                    attemptId,
+                    step,
+                    phase: String(payload.phase),
+                    epoch: whole(metrics.epoch),
+                    batch: whole(metrics.batch),
+                    batchesTotal: whole(metrics.batches_total),
+                    at,
+                    metrics: JSON.stringify(metrics),
+                },
+                transaction,
+            }
+        );
+    }
+/**
      * Writes one epoch of a training run, opening the run if this is its first.
      *
      * **Why this exists at all.** The ML schema -- `training_runs`, `epochs`,
@@ -2537,6 +2609,7 @@ class GpuRepository {
                     // so a replayed batch cannot write an epoch twice.
                     if (event.kind === 'metric') {
                         await this.recordTrainingEpoch(attemptId, event, transaction);
+                        await this.recordTrainingSample(attemptId, event, transaction);
                     }
                 }
             }

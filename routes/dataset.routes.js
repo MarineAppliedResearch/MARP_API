@@ -1652,6 +1652,141 @@ function registerDatasetRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'models:read',
+        path: '/api/training_run/:id/samples',
+        summary: 'What a training run has been doing between its epochs',
+        description:
+            'The per-batch samples a training attempt reports while it runs, about one every two '
+            + 'or three seconds, oldest first.'
+            + BREAK
+            + '**This is the live view; `/training_run/:id/epochs` is the finished one.** An epoch '
+            + 'row is written when an epoch ends, and a real epoch here takes minutes -- so a reader '
+            + 'watching a run learned something every couple of minutes while the console the run is '
+            + 'printing to moved every batch. These are that console, as a series.'
+            + BREAK
+            + '**Poll it with `after_step`.** It is the last step already held, and a poll carrying it '
+            + 'returns only what is new -- a few rows every few seconds rather than the whole run '
+            + 'again. Steps count per attempt, so the filter is applied per attempt and a retry is '
+            + "not hidden behind the first attempt's higher numbers."
+            + BREAK
+            + '**Every attempt, each sample saying which.** A retried run restarts its step counter; '
+            + 'dropping the earlier attempt would leave a step in the chart that nothing explains, so '
+            + 'both are served and `attempt_id` is what draws the seam.'
+            + BREAK
+            + '**A wide read is strided, never truncated.** Past the cap, every nth sample is returned '
+            + 'rather than the first or last n: truncating either end would show part of a run and '
+            + 'claim it was the whole. The newest sample is always included, so the series never looks '
+            + 'as though it stopped early, and `strided` says plainly whether thinning happened. A '
+            + 'polling client never meets it, because it asks only for what is new.'
+            + BREAK
+            + '**`metrics` is free-form on purpose.** A detector reports `train/box_loss`, '
+            + '`train/cls_loss` and `train/dfl_loss`; a classifier reports one `train/loss`. Columns '
+            + 'for those would be a migration per task and a row full of nulls meaning "not this kind '
+            + 'of run". The numbers arrive under the names the trainer uses and are stored as sent, so '
+            + 'a worker that begins reporting something new is recorded the day it does.'
+            + BREAK
+            + '**Two things it will never carry**, so nothing waits for them: instances per batch is '
+            + "unreachable from Ultralytics' callback, and image counts during caching have no callback "
+            + 'at all.'
+            + BREAK
+            + '**An empty array is the honest answer** for a run that has not reported a sample yet. A '
+            + 'run that does not exist is a 404, because a mistyped id and a silent run are different '
+            + 'answers and a chart cannot tell them apart.'
+            + BREAK
+            + 'Requires the `models:read` permission.',
+        tags: ['V2 · MachineLearning'],
+        parameters: [
+            {
+                in: 'path', name: 'id', required: true, schema: { type: 'integer' },
+                description: 'The training run whose samples to read.',
+            },
+            {
+                in: 'query', name: 'after_step', required: false, schema: { type: 'integer' },
+                description:
+                    'Only samples past this step, which is how a poll asks for what it does not '
+                    + 'already have. Omitted means the whole series.',
+            },
+            {
+                in: 'query', name: 'limit', required: false,
+                schema: { type: 'integer', minimum: 1, maximum: 2000 },
+                description:
+                    'The most points to return, capped at 2000. A smaller value strides harder; it '
+                    + 'does not truncate.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'Its samples, oldest first, by attempt then step.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                matched: {
+                                    type: 'integer',
+                                    description: 'How many samples the query matched before any striding.',
+                                },
+                                returned: {
+                                    type: 'integer', description: 'How many are in this response.',
+                                },
+                                strided: {
+                                    type: 'boolean',
+                                    description:
+                                        'Whether thinning happened. A caller cannot otherwise tell a '
+                                        + 'complete series from a sampled one.',
+                                },
+                                samples: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            attempt_id: { type: 'integer', description: 'Which attempt reported it.' },
+                                            step: { type: 'integer', description: "The worker's global batch counter, per attempt." },
+                                            phase: { type: 'string', enum: ['training_batch', 'validating_batch'] },
+                                            epoch: { type: 'integer', nullable: true, description: 'Which epoch the sample is inside.' },
+                                            batch: { type: 'integer', nullable: true, description: 'Which batch within that epoch.' },
+                                            batches_total: { type: 'integer', nullable: true, description: 'Batches in the epoch.' },
+                                            at: {
+                                                type: 'string', format: 'date-time', nullable: true,
+                                                description:
+                                                    "The worker's own clock. Ordering and duration only -- valid "
+                                                    + 'within a run, never compared across machines.',
+                                            },
+                                            metrics: {
+                                                type: 'object', additionalProperties: true,
+                                                description:
+                                                    'The numbers as the trainer named them -- the running losses, '
+                                                    + '`iterations_per_second`, `epoch_eta_seconds`, `gpu_memory_bytes` '
+                                                    + 'and `imgsz`. Bytes rather than gigabytes: 700 MB at gigabyte '
+                                                    + 'precision rounds to 0.0, which reads as no memory in use.',
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const samples = await datasetRepository.getTrainingRunSamples(req.params.id, {
+                afterStep: req.query.after_step,
+                limit: req.query.limit,
+            });
+
+            if (!samples) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(samples);
+        }),
+    });
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
         path: '/api/training_run/:id/pace',
         summary: 'How fast one training run has been getting through its epochs',
         description:
