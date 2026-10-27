@@ -6632,6 +6632,18 @@
             "nullable": true,
             "description": "Size of the packaged archive in bytes. Null until a build finishes."
           },
+          "task": {
+            "type": "string",
+            "default": "detection",
+            "description": "Which kind of model this dataset was built to train. A detection dataset holds whole frames with YOLO label files and a data.yaml; a classification dataset holds one picture per annotated box, in a folder named for its class, with no data.yaml. Every dataset built before this column existed is detection, which is what they are.",
+            "example": "detection"
+          },
+          "crop_source": {
+            "type": "string",
+            "nullable": true,
+            "description": "How this dataset's pictures were cut from their frames. mosaic_thumbnail means each picture is the observation thumbnail a reviewer sees -- the box plus 10% padding, squared, at 320x320. Null on a detection dataset, which holds whole frames and crops nothing. Recorded rather than assumed: which pixels a crop took is a judgement, and two datasets made by different judgements look identical without it.",
+            "example": "mosaic_thumbnail"
+          },
           "status": {
             "type": "string",
             "maxLength": 16,
@@ -6667,6 +6679,7 @@
         "required": [
           "id",
           "name",
+          "task",
           "status",
           "created_at",
           "updated_at"
@@ -10464,6 +10477,15 @@
                         "example": 95
                       }
                     }
+                  },
+                  "task": {
+                    "type": "string",
+                    "enum": [
+                      "detection",
+                      "classification"
+                    ],
+                    "example": "detection",
+                    "description": "Which kind of model this dataset is for. Omitted means `detection`, which is what every dataset built before this existed is. The two produce different archives and are not interchangeable: a detection archive holds whole frames with YOLO label files and a `data.yaml`; a classification archive holds one picture per annotated box in a folder named for its class, with no `data.yaml` at all, because Ultralytics classify reads the class vocabulary from the folder names. **The pictures are the mosaic tiles a reviewer sees** -- the box plus 10% padding, squared, 320x320 -- and the dataset row records `crop_source` so nothing downstream has to assume which pixels were taken. Folder names are `<species_id>_<slug>` rather than species names, because 37 names in the catalogue contain a path separator and case alone does not distinguish two directories on Windows; `classes.json` beside the splits maps every folder back to its species and its exact common name. A classification build with no train split is refused, because Ultralytics would otherwise split what it finds 80/20 at random and report an accuracy that means nothing."
                   },
                   "splits": {
                     "type": "object",

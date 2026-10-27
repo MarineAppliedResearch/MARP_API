@@ -87,15 +87,23 @@ async function apiWorkerId() {
  * @returns {Promise<{dataset: Object, job: Object}>} Both rows.
  * @throws {Error} Re-throws any database failure.
  */
-async function queueBuild({ name, description = null, filters = {}, subsets = null, image = null, splits, createdBy = null }) {
+async function queueBuild({
+    name, description = null, filters = {}, subsets = null, image = null, splits,
+    createdBy = null, task = 'detection',
+}) {
     const transaction = await db.sequelize.transaction();
 
     try {
         const [dataset] = await db.sequelize.query(
-            `INSERT INTO datasets (name, description, status, source, created_at, updated_at)
-             VALUES (:name, :description, 'building', 'ml-dashboard', NOW(), NOW())
+            /* **The task is written when the row is created, not when the build
+               finishes.** A dataset sits at `building` for minutes or hours, and the
+               screen shows it the whole time -- so a row that only learns what kind
+               of dataset it is at the end reads as a detection dataset until it
+               succeeds, and as a detection dataset for ever if it fails. */
+            `INSERT INTO datasets (name, description, status, source, task, created_at, updated_at)
+             VALUES (:name, :description, 'building', 'ml-dashboard', :task, NOW(), NOW())
              RETURNING *`,
-            { replacements: { name, description }, type: QueryTypes.SELECT, transaction }
+            { replacements: { name, description, task }, type: QueryTypes.SELECT, transaction }
         );
 
         const [job] = await db.sequelize.query(
@@ -106,7 +114,7 @@ async function queueBuild({ name, description = null, filters = {}, subsets = nu
             {
                 replacements: {
                     name: `Build ${name}`,
-                    spec: JSON.stringify({ dataset_id: dataset.id, filters, subsets, image, splits }),
+                    spec: JSON.stringify({ dataset_id: dataset.id, filters, subsets, image, splits, task }),
                     createdBy,
                 },
                 type: QueryTypes.SELECT,
@@ -916,6 +924,60 @@ async function settleCancelledBuilds() {
 }
 
 /**
+ * The mosaic tile each of these observations has, where there is one.
+ *
+ * **A classification build is made of these files, so what it can build is decided
+ * here.** Every observation carries at most one thumbnail row, and 3,514 of the
+ * 114,925 on the development corpus are `failed` -- a video that could not be
+ * resolved, a frame rate that disagreed -- so about 3% of any selection has no
+ * picture and never will without another extraction pass.
+ *
+ * **`thumbnail_evicted_at` is checked, not just `status`.** Tiles are evictable: the
+ * row stays `ready` and the JPEG is deleted. Nothing on this corpus is evicted today,
+ * which is exactly why a build that trusted the status would pass here and fail on a
+ * machine where the sweep has run.
+ *
+ * @async
+ * @param {Array<number>} observationIds - The observations a build selected.
+ * @returns {Promise<Map<number, {filename: string, framenum: number, subset: string}>>}
+ * Keyed by observation id; an observation with no usable tile is absent, which is the
+ * caller's cue to count it rather than to write a picture that is not there.
+ */
+async function thumbnailsFor(observationIds) {
+    const found = new Map();
+
+    if (!observationIds.length) return found;
+
+    /* Chunked for the same reason the membership insert is batched: a build can select
+       tens of thousands of observations, and one parameter each exceeds what the
+       driver will bind in a single statement. */
+    const BATCH = 1000;
+
+    for (let at = 0; at < observationIds.length; at += BATCH) {
+        const slice = observationIds.slice(at, at + BATCH);
+
+        const rows = await db.sequelize.query(
+            `SELECT observation_id, filename, framenum, subset
+               FROM observation_thumbnails
+              WHERE observation_id IN (:ids)
+                AND status = 'ready'
+                AND thumbnail_evicted_at IS NULL
+                AND filename IS NOT NULL`,
+            { replacements: { ids: slice }, type: QueryTypes.SELECT }
+        );
+
+        for (const row of rows) {
+            found.set(Number(row.observation_id), {
+                filename: row.filename,
+                framenum: row.framenum,
+                subset: row.subset,
+            });
+        }
+    }
+
+    return found;
+}
+/**
  * Record what a build produced, and mark everything finished.
  *
  * **One transaction over membership, vocabulary, the archive and both states.** A dataset
@@ -933,7 +995,17 @@ async function settleCancelledBuilds() {
  * @returns {Promise<void>}
  * @throws {Error} Re-throws any database failure.
  */
-async function recordBuild({ jobId, attemptId, datasetId, members, classes, archive, frames, observations, splitImages, splitClassImages }) {
+async function recordBuild({
+    jobId, attemptId, datasetId, members, classes, archive, frames, observations,
+    splitImages, splitClassImages,
+    /* **Defaulted to detection rather than required**, because every caller that
+       existed before classification builds is one, and a required argument would
+       make them all pass a constant. `cropSource` has no default worth having: a
+       detection dataset crops nothing, and a classification build that forgot to
+       say how it cut its pictures should leave the column visibly empty rather
+       than claim a method. */
+    task = 'detection', cropSource = null,
+}) {
     const transaction = await db.sequelize.transaction();
 
     try {
@@ -1005,6 +1077,8 @@ async function recordBuild({ jobId, attemptId, datasetId, members, classes, arch
                     archive_path = :archivePath,
                     archive_sha256 = :sha256,
                     archive_bytes = :bytes,
+                    task = :task,
+                    crop_source = :cropSource,
                     updated_at = NOW()
               WHERE id = :datasetId`,
             {
@@ -1016,6 +1090,8 @@ async function recordBuild({ jobId, attemptId, datasetId, members, classes, arch
                     archivePath: archive.path,
                     sha256: archive.sha256,
                     bytes: archive.bytes,
+                    task,
+                    cropSource,
                 },
                 transaction,
             }
@@ -1177,4 +1253,5 @@ module.exports = {
     settleCancelledBuilds,
     recordSelection,
     sampleProgress,
+    thumbnailsFor,
 };

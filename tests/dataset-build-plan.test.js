@@ -26,6 +26,10 @@ const {
     assignFromSubsets,
     assignSplits,
     boxAt,
+    classFolderName,
+    classesJson,
+    classificationDirectoryFor,
+    classificationPlan,
     connectedGroups,
     extractionPlan,
     vocabulary,
@@ -751,5 +755,202 @@ describe('the interpolated box (#268)', () => {
 
         expect(boxAt(one, 7)).not.toBeNull();
         expect(boxAt(one, 8)).toBeNull();
+    });
+});
+
+/**
+ * The classification archive's shape, which is decided entirely by these functions.
+ *
+ * **A classification dataset has no `data.yaml`.** Ultralytics keeps no names list for
+ * one: it reads the subfolder names and that is the whole class vocabulary. So the
+ * directory layout is the contract, and every mistake available here produces an
+ * archive that trains happily and means something other than what it says.
+ */
+describe('the classification archive layout', () => {
+
+    /**
+     * **`eval` is a detection directory and would be invisible to classify.** A
+     * detection archive can call the held-out split anything because `data.yaml` names
+     * it; a classification archive cannot, and Ultralytics looks for `val`. An archive
+     * built through the detection mapping would ship `train/` and `eval/` and have no
+     * validation split at all -- which reads as Ultralytics being broken.
+     */
+    test('the held-out split is val, not eval, whichever name the builder used', () => {
+        expect(classificationDirectoryFor('train')).toBe('train');
+        expect(classificationDirectoryFor('eval')).toBe('val');
+        expect(classificationDirectoryFor('validation')).toBe('val');
+        expect(classificationDirectoryFor('test')).toBe('test');
+    });
+
+    test('an unknown split is refused rather than given a directory', () => {
+        expect(() => classificationDirectoryFor('holdout')).toThrow(/not a split/);
+    });
+});
+
+/**
+ * Turning a species name into a directory name, which the catalogue makes impossible
+ * to do literally.
+ *
+ * Every case below is a real row in `species`, not an invented edge: the counts and
+ * the names were read off the development catalogue before this was written.
+ */
+describe('the directory name a class gets', () => {
+
+    /**
+     * **The slash is the one that would have shipped.** `Blue/Deacon Rockfish` has
+     * 5,576 observations, so it is in any realistic selection. Written literally it is
+     * not a folder with a slash in its name -- there is no such thing -- it is two
+     * nested folders, and Ultralytics reads the class as `Blue`.
+     */
+    test('a species whose name holds a path separator still gets one directory', () => {
+        const folder = classFolderName({ species_id: 145, comname: 'Blue/Deacon Rockfish' });
+
+        expect(folder).toBe('145_blue-deacon-rockfish');
+
+        /* The assertion that matters: one path segment. A name that still contained a
+           separator would pass a regex check on the text and still make two folders. */
+        expect(folder.split('/')).toHaveLength(1);
+        expect(folder.split('\\')).toHaveLength(1);
+    });
+
+    /**
+     * **Two species, two directories, on a case-insensitive filesystem.** `Fish` and
+     * `fish` are separate rows holding 194 and 124 observations. Folder names that
+     * differed only in case would be one directory on Windows and on macOS, and 318
+     * crops of two species would train as one class with nothing to say so.
+     */
+    test('two species whose names differ only in case do not collide', () => {
+        const upper = classFolderName({ species_id: 801, comname: 'Fish' });
+        const lower = classFolderName({ species_id: 802, comname: 'fish' });
+
+        expect(upper).not.toBe(lower);
+
+        /* Folded, because folding is what the filesystem does. Comparing them as
+           written would pass while the directories still merged. */
+        expect(upper.toLowerCase()).not.toBe(lower.toLowerCase());
+    });
+
+    /** Windows strips a trailing dot silently, so the directory stops being the name. */
+    test('a name ending in a dot does not end in a dot', () => {
+        expect(classFolderName({ species_id: 728, comname: 'UI Cancer sp.' }))
+            .toBe('728_ui-cancer-sp');
+    });
+
+    /** The id alone is still unique, which is the point of putting it first. */
+    test('a name with nothing alphanumeric in it leaves the id standing alone', () => {
+        expect(classFolderName({ species_id: 99, comname: '???' })).toBe('99');
+        expect(classFolderName({ species_id: 99, comname: '' })).toBe('99');
+        expect(classFolderName({ species_id: 99, comname: null })).toBe('99');
+    });
+
+    /** Truncation must not reintroduce the trailing-separator problem it just solved. */
+    test('a very long name is cut without leaving a dash on the end', () => {
+        const folder = classFolderName({
+            species_id: 834,
+            comname: 'Lost/ abandoned/ or irretrievable instrument/marker',
+        });
+
+        expect(folder.startsWith('834_')).toBe(true);
+        expect(folder.endsWith('-')).toBe(false);
+    });
+});
+
+/**
+ * `classes.json`, which is the only thing that makes the encoding reversible.
+ *
+ * **A classify model reports folder names.** Ultralytics has no other vocabulary, so a
+ * model trained on this archive calls its class `145_blue-deacon-rockfish`. Without
+ * this file, mapping that back to a species means parsing a convention; with it, the
+ * archive says so in MARP's own words.
+ */
+describe('the vocabulary the archive carries', () => {
+    const classes = [
+        { species_id: 145, comname: 'Blue/Deacon Rockfish', class_index: 0 },
+        { species_id: 801, comname: 'Fish', class_index: 1 },
+    ];
+
+    test('maps every folder back to its species and its exact name', () => {
+        const written = JSON.parse(classesJson(classes, 'mosaic_thumbnail'));
+
+        expect(written.classes).toHaveLength(2);
+
+        const first = written.classes[0];
+
+        expect(first.folder).toBe('145_blue-deacon-rockfish');
+
+        /* **Untouched, slash and all.** The folder name is lossy on purpose; this is
+           the half that is not, and a build that slugged it here too would record the
+           encoding twice and the species nowhere. */
+        expect(first.comname).toBe('Blue/Deacon Rockfish');
+        expect(first.species_id).toBe(145);
+        expect(first.class_index).toBe(0);
+    });
+
+    /** The archive says how its pictures were cut, for a reader holding only the tar. */
+    test('says what it is and how its pictures were cut', () => {
+        const written = JSON.parse(classesJson(classes, 'mosaic_thumbnail'));
+
+        expect(written.task).toBe('classification');
+        expect(written.crop_source).toBe('mosaic_thumbnail');
+    });
+});
+
+/**
+ * Which picture goes where, and the split rule it inherits.
+ */
+describe('the classification plan', () => {
+    const classes = [
+        { species_id: 10, comname: 'Yelloweye Rockfish', class_index: 0 },
+        { species_id: 20, comname: 'Blue/Deacon Rockfish', class_index: 1 },
+    ];
+
+    const splits = new Map([
+        ['train', [
+            { observation_id: 3, species_id: 20 },
+            { observation_id: 1, species_id: 10 },
+        ]],
+        ['validation', [{ observation_id: 2, species_id: 10 }]],
+    ]);
+
+    test('puts each observation in its split directory and its class folder', () => {
+        const wanted = classificationPlan(splits, classes);
+
+        expect(wanted).toHaveLength(3);
+
+        const byObservation = new Map(wanted.map((item) => [item.observation_id, item]));
+
+        expect(byObservation.get(3).directory).toBe('train');
+        expect(byObservation.get(3).folder).toBe('20_blue-deacon-rockfish');
+
+        /* `validation` is a split the screen offers and `val` is the directory classify
+           reads; the plan keeps both, because the split is what the membership row and
+           the per-split counts are recorded against. */
+        expect(byObservation.get(2).split).toBe('validation');
+        expect(byObservation.get(2).directory).toBe('val');
+    });
+
+    /**
+     * **Deterministic, because the archive is named for its own hash.** `packageArchive`
+     * takes the SHA-256 of the tar, so a build whose file order wandered would produce a
+     * different archive -- and a different dataset row -- for a selection that had not
+     * changed.
+     */
+    test('is ordered, so the same selection makes the same archive twice', () => {
+        const once = classificationPlan(splits, classes).map((item) => item.observation_id);
+
+        expect(once).toEqual([1, 3, 2]);
+        expect(classificationPlan(splits, classes).map((item) => item.observation_id))
+            .toEqual(once);
+    });
+
+    /**
+     * A selection that disagrees with its own vocabulary is a bug in the build, not a
+     * row to quietly drop -- dropping it would write a dataset smaller than its own
+     * membership says, which is the failure the archive-versus-rows checks exist for.
+     */
+    test('refuses an observation whose species is not in the vocabulary', () => {
+        const stray = new Map([['train', [{ observation_id: 9, species_id: 999 }]]]);
+
+        expect(() => classificationPlan(stray, classes)).toThrow(/not in this build/);
     });
 });
