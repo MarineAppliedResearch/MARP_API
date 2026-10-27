@@ -2159,3 +2159,30 @@ test('detection keeps every section and its own headline', async (t) => {
   assert.ok([...detail.querySelectorAll('.jobmetric span')].map((s) => s.textContent)
     .includes('Best mAP@50'));
 });
+
+test('the weights file is captioned and counted as a file, not as a plot', async (t) => {
+  /* **Found from live data rather than from a fixture.** `/artifacts` lists everything
+     the attempt handed over, and runs 205 and 206 each return exactly one file: `weights`.
+     Every run that predates the plot work will therefore show this section with one tile
+     in it, and "1 plot the trainer produced" over a 50MB .pt is a confident falsehood. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    files: [{
+      name: 'weights',
+      url: '/api/v2/training_run/202/artifacts/abc',
+      content_type: 'application/octet-stream',
+      bytes: 52428800,
+    }],
+  }));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const card = [...detail.querySelectorAll('.evaluation-card')]
+    .find((one) => one.querySelector('h5')?.textContent.trim() === 'Training output');
+
+  assert.match(card.querySelector('p').textContent, /1 file this run produced/);
+  assert.doesNotMatch(card.querySelector('p').textContent, /plot/);
+  assert.match(card.textContent, /The trained model itself/, 'captioned by what it is');
+  assert.ok(card.querySelector('.result-plot.is-file'),
+    'offered as a download rather than drawn as a broken image');
+});

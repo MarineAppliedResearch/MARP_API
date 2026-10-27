@@ -2221,6 +2221,11 @@ function trainingPlots(plots) {
     results: 'Every metric the run recorded, as a spreadsheet',
     confusion_matrix: 'Confusion matrix, as the trainer rendered it',
     confusion_matrix_normalized: 'Confusion matrix, normalised by true class',
+    /* **Already here, on every run that predates the artifact work.** `/artifacts` lists
+       everything the attempt handed over, and the weights have always been handed over --
+       runs 205 and 206 each return exactly one file and it is this. Found by asking the
+       service rather than by waiting for the first run that uploads plots. */
+    weights: 'The trained model itself',
   };
 
   if (!plots.length) {
@@ -2254,7 +2259,11 @@ function trainingPlots(plots) {
   }).join('');
 
   return '<article class="evaluation-card"><header><div><h5>Training output</h5>'
-    + `<p>${plots.length} plot${plots.length === 1 ? '' : 's'} the trainer produced</p></div></header>`
+    /* **Files, not plots.** `/artifacts` is an open set of everything the attempt handed
+       over, and on every run that predates the plot work that is exactly one file: the
+       weights. "1 plot the trainer produced" over a 50MB `.pt` is a small confident
+       falsehood of the kind this panel keeps being corrected for. */
+    + `<p>${plots.length} file${plots.length === 1 ? '' : 's'} this run produced</p></div></header>`
     + `<div class="plot-gallery">${tiles}</div></article>`;
 }
 
