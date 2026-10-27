@@ -37,6 +37,7 @@ const { pipeline } = require('stream/promises');
 
 const gpuController = require('../controller/gpu.controller');
 const workerProvisioningController = require('../controller/worker_provisioning.controller');
+const inferenceOutcomeController = require('../controller/inference-outcome.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
 const {
@@ -864,6 +865,65 @@ function registerGpuRoutes(app) {
         },
         handler: asyncHandler(async (req, res) => {
             res.json(await gpuController.deletableJobs(req.query || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
+        path: '/api/gpu/jobs/:id/observations',
+        summary: 'What an inference job actually produced',
+        description:
+            'The count of observations a job wrote, broken down by species, plus the session and model it wrote them under so a reader can open them. **This is the answer to "did it work", which a job state cannot give**: a job succeeds when its bytes arrive and are ingested, and ingesting an empty detections file is a success that produced nothing.\n\n'
+            + '**Grouped by `species_id`, with the label the model gave beside it.** Those are two different facts and they drift apart as soon as anybody reviews the output: a species correction changes `species_id` and deliberately never rewrites `comname`, which stays the label the model produced. A breakdown keyed on that label would keep counting a corrected observation under a name somebody has already rejected, so `species_name` is what it is and `reported_name` is what the model said. Where they disagree, the disagreement is the interesting part.\n\n'
+            + '**An unresolved species is counted, not dropped.** An observation whose `species_id` is null is still something the job produced, and a breakdown that omitted it would not add up to the total beside it.\n\n'
+            + '**Zero observations is a real answer, not an error.** A job can run every frame, hand over an empty detections file, be ingested correctly and have found nothing -- which is what happened on job 21789.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the job.' },
+        ],
+        responses: {
+            200: {
+                description: 'What the job produced.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                job_id: { type: 'integer' },
+                                kind: { type: 'string' },
+                                state: { type: 'string' },
+                                session_id: { type: 'integer', nullable: true, description: 'From the job spec. Null for a job whose spec names no session, which can never produce observations.' },
+                                ml_model_id: { type: 'integer', nullable: true },
+                                observations: { type: 'integer' },
+                                species: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            species_id: { type: 'integer', nullable: true },
+                                            species_name: { type: 'string', nullable: true, description: 'What it is, after any correction. Null when the species was never resolved.' },
+                                            reported_name: { type: 'string', nullable: true, description: 'What the model called it, which a correction never rewrites.' },
+                                            observations: { type: 'integer' },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const outcome = await inferenceOutcomeController.getJobOutcome(req.params.id);
+
+            if (!outcome) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `GPU job ${req.params.id} was not found.`);
+            }
+
+            res.json(outcome);
         }),
     });
 

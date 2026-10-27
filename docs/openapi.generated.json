@@ -16732,6 +16732,98 @@
         }
       }
     },
+    "/v2/gpu/jobs/{id}/observations": {
+      "get": {
+        "summary": "What an inference job actually produced",
+        "description": "The count of observations a job wrote, broken down by species, plus the session and model it wrote them under so a reader can open them. **This is the answer to \"did it work\", which a job state cannot give**: a job succeeds when its bytes arrive and are ingested, and ingesting an empty detections file is a success that produced nothing.\n\n**Grouped by `species_id`, with the label the model gave beside it.** Those are two different facts and they drift apart as soon as anybody reviews the output: a species correction changes `species_id` and deliberately never rewrites `comname`, which stays the label the model produced. A breakdown keyed on that label would keep counting a corrected observation under a name somebody has already rejected, so `species_name` is what it is and `reported_name` is what the model said. Where they disagree, the disagreement is the interesting part.\n\n**An unresolved species is counted, not dropped.** An observation whose `species_id` is null is still something the job produced, and a breakdown that omitted it would not add up to the total beside it.\n\n**Zero observations is a real answer, not an error.** A job can run every frame, hand over an empty detections file, be ingested correctly and have found nothing -- which is what happened on job 21789. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the job."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the job produced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job_id": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "session_id": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "From the job spec. Null for a job whose spec names no session, which can never produce observations."
+                    },
+                    "ml_model_id": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "observations": {
+                      "type": "integer"
+                    },
+                    "species": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "species_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "species_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "What it is, after any correction. Null when the species was never resolved."
+                          },
+                          "reported_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "What the model called it, which a correction never rewrites."
+                          },
+                          "observations": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/gpu/jobs/{id}": {
       "get": {
         "summary": "Fetch one job with its attempts and artifacts",

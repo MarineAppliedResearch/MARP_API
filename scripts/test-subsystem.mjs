@@ -53,6 +53,8 @@ const SUBSYSTEMS = {
             'gpu-dataset-archive',
             'gpu-training-submit',
             'gpu-training-run-record',
+            // #104: what an inference job produced, which its state cannot say.
+            'inference-job-outcome',
             /* #268: the name a training job gets when nobody typed one. */
             'gpu-training-job-name',
             'gpu-trained-model-registration',
