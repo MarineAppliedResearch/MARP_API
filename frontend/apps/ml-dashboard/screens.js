@@ -7643,6 +7643,226 @@ function defaultJobName() {
   return scope ? `${scope}_${day}` : `inference_${day}`;
 }
 
+/**
+ * The engine a "Detection + ByteTrack" run is.
+ *
+ * **Read off the worker's own registry, not chosen.** `engines/engine_registry.py`
+ * registers `mock`, `ultralytics`, `marp_tracking` and `marp_training`, and
+ * `get_job_engine` refuses anything that is not a `BaseEngine` -- `UltralyticsEngine` is
+ * `FrameInferenceCapable`, the single-frame engine behind the frame routes, so a video
+ * job must be `marp_tracking`. There is no `marp_inference`, whatever MARP's older notes
+ * say.
+ *
+ * @constant {string}
+ */
+const INFERENCE_ENGINE = 'marp_tracking';
+
+/**
+ * The keyframe rule applied to finished tracks.
+ *
+ * `reduction/keyframes.py` registers exactly one, keyed `("v3_dirpad", "1")`. The version
+ * is sent as a string because that tuple key is a string; the worker stringifies anyway,
+ * but relying on that is relying on a coincidence.
+ *
+ * @constant {{name: string, version: string}}
+ */
+const INFERENCE_REDUCTION = Object.freeze({ name: 'v3_dirpad', version: '1' });
+
+/**
+ * Say how a submission went, where somebody about to click again will see it.
+ *
+ * @param {string} text - What happened.
+ * @param {string} [kind] - `ok` or `warning`, for the styling.
+ * @returns {void}
+ */
+function sayRunStatus(text, kind) {
+  const status = $('[data-fills="run-status"]');
+
+  if (!status) return;
+
+  status.textContent = text;
+  status.dataset.state = kind || '';
+}
+
+/**
+ * Fill every run group's MARP project picker.
+ *
+ * **MARP projects, not the Jellyfin folders above.** The video query panel browses
+ * Jellyfin's own hierarchy, whose "project" is a directory name; a session belongs to a
+ * row in `projects`, and the two are not the same thing. Submitting the Jellyfin name
+ * would be submitting a string MARP cannot resolve.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function fillProjectPickers() {
+  const pickers = $$('[data-marp-project]');
+
+  if (!pickers.length || !window.MarpApi) return;
+
+  const projects = await (window.MarpApi.listProjects
+    ? window.MarpApi.listProjects().catch(() => [])
+    : Promise.resolve([]));
+
+  /* **Nothing selected to begin with.** A select takes its first option by default, so a
+     picker that opened on a project nobody chose would file a dive's observations under
+     whichever project sorted first -- silently, and in a record people query later. The
+     empty option makes the refusal below fire instead. */
+  const options = (projects || []).length
+    ? '<option value="">Choose a project</option>' + projects.map((project) => {
+      const id = project.project_id === undefined ? project.id : project.project_id;
+
+      return '<option value="' + id + '">' + escapeHtml(project.name || ('Project ' + id)) + '</option>';
+    }).join('')
+    : '<option value="">No projects</option>';
+
+  pickers.forEach((picker) => {
+    /* Only an empty one, so refilling does not throw away a choice somebody made. */
+    if (!picker.options.length) picker.innerHTML = options;
+  });
+}
+
+/**
+ * The settings a model config asks for, under the names the worker reads.
+ *
+ * **Only what was changed is sent.** The worker records each setting with a `source` of
+ * `job` or `default`, so a value sent because it happened to be sitting in the box
+ * reports as a choice somebody made. Confidence is the one that matters: the field opens
+ * at the worker's own 0.15, and sending that back would claim a decision nobody took.
+ *
+ * @param {Element} config - The `[data-model-config]` element.
+ * @returns {Object} `spec.params`, which may be empty.
+ */
+function inferenceParams(config) {
+  const params = {};
+
+  $$('[data-setting]', config).forEach((input) => {
+    const key = input.dataset.setting;
+
+    // Not a worker setting: it splits the submission into jobs, which is MARP's business.
+    if (key === 'piece_frames' || input.disabled) return;
+
+    if (input.type === 'checkbox') {
+      if (input.checked) params[key] = true;
+
+      return;
+    }
+
+    const raw = String(input.value === undefined || input.value === null ? '' : input.value).trim();
+
+    if (raw === '' || Number(raw) === Number(input.defaultValue)) return;
+
+    params[key] = Number(raw);
+  });
+
+  return params;
+}
+
+/**
+ * Every job the plan on screen describes, or why none of them can be submitted.
+ *
+ * One body per target per model configuration, which is what the plan's own arithmetic
+ * already says: *N model runs across M selected video ranges*.
+ *
+ * **Refusals rather than a partial submission.** Each is something a person can act on,
+ * and all of them are collected rather than the first -- a plan missing a line on four
+ * cards should say so once, not four times over four clicks.
+ *
+ * @async
+ * @returns {Promise<{bodies: Object[]}|{refusals: string[]}>}
+ */
+async function inferenceSubmissions() {
+  const models = await loadRunnableModels();
+  const bodies = [];
+  const refusals = [];
+  const name = ($('#jobname') ? $('#jobname').value : '').trim() || defaultJobName();
+
+  $$('[data-run-group]').forEach((group, index) => {
+    const where = 'Run group ' + (index + 1);
+    const picker = $('[data-marp-project]', group);
+    const projectId = Number(picker ? picker.value : NaN);
+    const targets = $$('[data-target]', group);
+    const configs = $$('[data-model-config]', group);
+
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      refusals.push(where + ': choose the MARP project its observations belong to.');
+    }
+
+    if (!targets.length) refusals.push(where + ': add at least one video range.');
+    if (!configs.length) refusals.push(where + ': add at least one model.');
+
+    targets.forEach((target) => {
+      const dive = (target.dataset.videoDive || '').trim();
+      const line = (target.dataset.videoLine || '').trim();
+      const named = $('b', target);
+      const label = (named ? named.textContent.trim() : '') || target.dataset.videoId;
+
+      /* Both identify the session and neither can be guessed. A line is typed onto the
+         card and saved; a dive comes from the Jellyfin hierarchy. */
+      if (!dive) refusals.push(where + ': ' + label + ' has no dive, so its session cannot be placed.');
+      if (!line) refusals.push(where + ': ' + label + ' has no line. Enter one on the card and save it.');
+
+      configs.forEach((config) => {
+        const pick = $('[data-model-pick]', config);
+        const model = models.find((row) => row.id === Number(pick ? pick.value : NaN));
+
+        if (!model) {
+          refusals.push(where + ': choose a model.');
+
+          return;
+        }
+
+        /* **The worker hashes what it fetched and refuses a mismatch**, and MARP refuses
+           a spec without a hash. A model registered before `artifact_sha256` existed has
+           none, and reaches the API as a 400 that reads like a defect in this screen. */
+        if (!model.artifact_sha256) {
+          refusals.push(where + ': ' + model.name + ' has no recorded checksum, so a worker would '
+            + 'have nothing to verify its weights against. Run '
+            + 'scripts/backfill-model-artifact-sha256.js where the model store lives.');
+
+          return;
+        }
+
+        const piece = $('[data-setting="piece_frames"]', config);
+        const pieceFrames = Number(piece ? piece.value : NaN);
+        const params = inferenceParams(config);
+        const body = {
+          kind: 'inference',
+          name,
+          spec: {
+            engine: INFERENCE_ENGINE,
+            /* An item id, never a URL: MARP resolves it to something playable when the
+               job is leased, and the Jellyfin item supplies `source_name`. */
+            video: { jellyfin_item_id: target.dataset.videoId },
+            model: {
+              ml_model_id: model.id,
+              name: model.name,
+              // Coordinator-relative, so a worker resolves it against whichever MARP it
+              // is enrolled with rather than a path on somebody's disk.
+              url: '/api/v2/model/' + model.id + '/artifact',
+              sha256: String(model.artifact_sha256).toLowerCase(),
+            },
+            reduction: Object.assign({}, INFERENCE_REDUCTION),
+            /* **A session per run, under the dive**, and `type` left out so MARP derives
+               it from the model's species list -- the screen has no business restating
+               something the registry already knows. No `range`: MARP works the frame
+               count out from the Jellyfin item and reports back what it decided, which
+               beats this screen guessing at a video's length. */
+            session: { project_id: projectId, dive, line, per_run: true },
+          },
+        };
+
+        if (Number.isInteger(pieceFrames) && pieceFrames > 0) body.piece_frames = pieceFrames;
+        if (Object.keys(params).length) body.spec.params = params;
+
+        bodies.push(body);
+      });
+    });
+  });
+
+  return refusals.length ? { refusals } : { bodies };
+}
+
 function wireInferenceForm() {
   const run = $('#runBtn');
   if (!run) return;
@@ -7697,7 +7917,10 @@ function wireInferenceForm() {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[character]));
   const targetMarkup = (parts) => '<article class="plan-target" data-target data-video-id="'
-    + safe(parts.id) + '" data-video-dive="' + safe(parts.dive || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
+    + safe(parts.id) + '" data-video-dive="' + safe(parts.dive || '')
+    /* The line was in the card's prose and nowhere a submission could read it, so a
+       plan that displayed "Line 4" submitted nothing of the sort. */
+    + '" data-video-line="' + safe(parts.line || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
     + (parts.line ? 'L' + safe(parts.line) : '—') + '</span><span><b class="mono">' + safe(parts.title)
     + '</b><small>' + (parts.dive ? safe(parts.dive) + ' · ' : '')
     + (parts.line ? 'Line ' + safe(parts.line) : 'Line not assigned') + ' · ' + safe(parts.range)
@@ -7799,32 +8022,56 @@ function wireInferenceForm() {
     }
   });
 
-  run.addEventListener('click', () => {
-    const groups = $$('[data-run-group]').map((group, index) => ({
-      order: index + 1,
-      targets: $$('[data-target]', group).map((target) => ({
-        jellyfin_item_id: target.dataset.videoId,
-        label: $('b', target)?.textContent.trim(),
-        selection: $('small', target)?.textContent.trim(),
-      })),
-      models: $$('[data-model-config]', group).map((model) => ({
-        model: $('summary b', model)?.textContent.trim(),
-        summary: $('summary small', model)?.textContent.trim(),
-      })),
-    }));
-    const spec = { kind: 'inference_plan', pipeline: 'detection_bytetrack',
-      /* Blank means "name it after the plan", which is what the placeholder says.
-         The box used to open pre-filled with `CAMPA_2024_Dives_0103_0125`, so every
-         plan anybody submitted without noticing carried that name. */
-      name: $('#jobname')?.value.trim() || defaultJobName(), groups,
-      output: 'unreviewed_observations', worker_selection: $('table#workers')?.value };
-    $('#specText').textContent = JSON.stringify(spec, null, 2);
+  run.addEventListener('click', async () => {
+    const asked = await inferenceSubmissions();
+
+    /* The spec panel still opens, because somebody about to spend GPU hours should be
+       able to read what is going. It shows what was actually sent, not a sketch of it:
+       it used to print a `kind: 'inference_plan'` object that no MARP route accepts,
+       naming models by their display text and carrying no session, no hash and no
+       frames. Nothing was ever submitted. */
+    $('#specText').textContent = JSON.stringify(asked.bodies || asked.refusals, null, 2);
     $('#specOut').hidden = false;
-    $('#specOut').scrollIntoView({ block: 'nearest' });
+
+    if (asked.refusals) {
+      sayRunStatus(asked.refusals[0], 'warning');
+      return;
+    }
+
+    run.disabled = true;
+    sayRunStatus(`Queueing ${asked.bodies.length} run${asked.bodies.length === 1 ? '' : 's'}…`);
+
+    const queued = [];
+
+    try {
+      /* One at a time, deliberately. Each submission creates its own session, and a
+         burst of parallel posts would interleave those writes for no gain -- there are
+         a handful of runs here, not hundreds. */
+      for (const body of asked.bodies) {
+        const answer = await window.MarpApi.submitJob(body);
+
+        queued.push(...(answer.jobs || []).map((job) => job.id));
+      }
+
+      sayRunStatus(`Queued ${queued.length} job${queued.length === 1 ? '' : 's'}: `
+        + `${queued.join(', ')}. They appear below, and on the Jobs screen.`, 'ok');
+      renderInferenceScreen();
+    } catch (error) {
+      /* MARP's own message, which names the field that was wrong. Replacing it with
+         "Could not queue" is how somebody ends up guessing. Says what already went, so
+         a failure halfway through a plan is not read as nothing having happened. */
+      const sent = queued.length ? ` ${queued.length} already queued (${queued.join(', ')}).` : '';
+
+      sayRunStatus(`Could not queue it (${error.status || 'no answer'}). ${error.message || ''}${sent}`.trim(),
+        'warning');
+    } finally {
+      run.disabled = false;
+    }
   });
 
   refreshSelected();
   refreshPlan();
+  fillProjectPickers();
 
   /* One configuration to start with, so the panel shows the control rather than an
      empty box somebody has to guess at. The markup used to carry two, named after
