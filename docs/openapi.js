@@ -2941,6 +2941,17 @@ const buildOpenApiSpec = () => {
                         properties: {
                             batch_id: { type: 'string', format: 'uuid', nullable: true, description: 'Null when the submission was a single job; set when it was split, and the way to find the pieces again.' },
                             jobs: { type: 'array', items: { $ref: '#/components/schemas/GpuJob' } },
+                            session: {
+                                type: 'object',
+                                nullable: true,
+                                description: 'The session created for this run, present only when `spec.session.per_run` asked for one. Reported because MARP worked it out on the submitter’s behalf -- including the type, when that was derived from the model -- and a derivation nobody can look at is how a wrong one survives.',
+                                properties: {
+                                    session_id: { type: 'integer', example: 1402 },
+                                    type: { type: 'string', example: 'Invert', description: 'Derived from the model’s species list unless the spec named one.' },
+                                    dive: { type: 'string', example: 'Dive 895' },
+                                    line: { type: 'string', example: '4' },
+                                },
+                            },
                         },
                     },
                     GpuJobList: {
