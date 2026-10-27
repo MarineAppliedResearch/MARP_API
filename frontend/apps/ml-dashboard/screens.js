@@ -5415,7 +5415,16 @@ async function renderDashboardScreen() {
    than invented. Gap 27. */
 
 /** Not measured is not zero. One dash, one explanation, used everywhere. */
-const NOT_REPORTED = '<span class="dash" title="MARP records no live machine telemetry: a worker reports its capabilities at enrolment and its attempt progress on heartbeat">&mdash;</span>';
+/**
+ * A cell this machine has not reported.
+ *
+ * **The tooltip used to say MARP records no live machine telemetry and that a worker
+ * reports its capabilities at enrolment.** Both false: the worker sends GPU utilisation,
+ * VRAM, temperature, power, CPU, system RAM and disk on every poll, and
+ * `gpu_worker_samples` has stored the GPU half every minute since `d60fd0fe`. It is a
+ * fact about *this machine* now, which is the only kind of absence worth drawing.
+ */
+const NOT_REPORTED = '<span class="dash" title="This machine has not reported it">&mdash;</span>';
 
 /** Activity to the design's state word. The API derives `activity` already. */
 const WORKER_ACTIVITY = {
@@ -5523,7 +5532,7 @@ let workersPool = null;
  */
 function sinceText(iso) {
   if (!iso) return 'never';
-  const seconds = Math.max(0, Math.round((window.MarpApi._meta.NOW - Date.parse(iso)) / 1000));
+  const seconds = Math.max(0, Math.round((window.MarpApi.now() - Date.parse(iso)) / 1000));
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
@@ -5536,16 +5545,106 @@ function sinceText(iso) {
  * @param {Object} worker - A worker from `GET /gpu/workers`.
  * @returns {Object}
  */
+/**
+ * The system side of what a worker reports, from `capabilities.resources`.
+ *
+ * It sends `cpu`, `memory`, `disk`, `host`, `torch`, `nvidia`, `python`, `network` and
+ * `job_pressure` on every poll. The screen said none of it was reported.
+ *
+ * Each of these returns a dash rather than inventing a zero: a machine that genuinely
+ * sends no memory block has not told us it is using none.
+ */
+const resourceCpu = (caps) => {
+  const cpu = (caps.resources || {}).cpu;
+
+  if (!cpu || cpu.cpu_percent === null || cpu.cpu_percent === undefined) return NOT_REPORTED;
+
+  const cores = cpu.physical_cpu_count
+    ? ` of ${cpu.physical_cpu_count} cores` : '';
+
+  return `${Math.round(cpu.cpu_percent)}%${cores}`;
+};
+
+const resourceMemory = (caps) => {
+  const memory = (caps.resources || {}).memory;
+
+  if (!memory || !memory.total_bytes) return NOT_REPORTED;
+
+  return `${gb(memory.used_bytes)} of ${gb(memory.total_bytes)} GB`
+    + `${memory.percent_used === undefined ? '' : ` &middot; ${Math.round(memory.percent_used)}%`}`;
+};
+
+const resourceDisk = (caps) => {
+  const disk = (caps.resources || {}).disk;
+
+  if (!disk || !disk.total_bytes) return NOT_REPORTED;
+
+  return `${gb(disk.free_bytes)} GB free`
+    + `${disk.percent_used === undefined ? '' : ` &middot; ${Math.round(disk.percent_used)}% used`}`;
+};
+
+/** Bytes as whole gigabytes, for a column 70px wide. */
+const gb = (bytes) => (Number.isFinite(Number(bytes)) ? Math.round(Number(bytes) / 1073741824) : null);
+
+/**
+ * The cells that read a machine's live GPU reading.
+ *
+ * **These said "Not reported" under a note explaining that workers do not report them.**
+ * They do, every minute, into `gpu_worker_samples` — utilisation, VRAM used and total,
+ * temperature and power, all of it. The service only ever attached the reading to a
+ * running *attempt*, so a machine that was plainly on and sampling showed nothing, and
+ * the screen explained the absence rather than the absence being real.
+ *
+ * Each still says nothing when there is nothing: a worker with no sample yet has no
+ * reading, and a dash is the honest cell. The difference is that it is now a fact about
+ * that machine rather than a standing claim about MARP.
+ */
+const gpuLoadCell = (view) => (view.load === null
+  ? NOT_REPORTED
+  : `<span class="prog" data-state="${view.state}" title="GPU utilisation, ${view.asOf}">`
+    + `<span class="bar"><i style="width:${view.load}%"></i></span><span class="pct">${view.load}%</span></span>`);
+
+const vramLoadCell = (view) => (view.vramUsed === null
+  ? NOT_REPORTED
+  : `<span class="two" title="VRAM in use, ${view.asOf}"><span class="a">${view.vramPct}%</span>`
+    + `<span class="b">${gb(view.vramUsed)} of ${gb(view.vramTotal)} GB</span></span>`);
+
+const thermalCell = (view) => (view.tempC === null && view.watts === null
+  ? NOT_REPORTED
+  : `<span class="two" title="As last sampled, ${view.asOf}">`
+    + `<span class="a">${view.tempC === null ? '&mdash;' : `${view.tempC}&deg;C`}</span>`
+    + `<span class="b">${view.watts === null ? '&mdash;' : `${Math.round(view.watts)} W`}</span></span>`);
+
 function workerView(worker) {
   const caps = worker.capabilities || {};
   const [state, label] = WORKER_ACTIVITY[worker.activity] || WORKER_ACTIVITY.idle;
-  const vramGb = caps.vram_mb ? Math.round(caps.vram_mb / 1024) : null;
+
+  /* **`cuda_devices`, not `gpu`.** The GPU name and its VRAM were read from `caps.gpu`
+     and `caps.vram_mb`, keys no worker has ever sent -- not 0.1.1, not 0.1.9. So the
+     column has been empty since it was written, and it looked like a worker problem.
+     What arrives is `cuda_devices[]`, each with a `name` and `total_memory_bytes`. */
+  const device = (caps.cuda_devices || [])[0] || null;
+  const vramGb = device ? gb(device.total_memory_bytes) : null;
+
+  /* The machine's own latest sample, which exists whether or not it is working. */
+  const reading = (worker.telemetry && (worker.telemetry.gpus || [])[0]) || null;
 
   return {
     worker, caps, state, label,
     activity: worker.activity,
-    gpu: caps.gpu || 'Not reported',
+    gpu: device ? device.name : 'Not reported',
     vram: vramGb ? `${vramGb} GB` : '',
+    load: reading && reading.gpu_utilization_percent !== null
+      ? Math.round(reading.gpu_utilization_percent) : null,
+    vramUsed: reading ? reading.memory_used_bytes ?? null : null,
+    vramTotal: reading ? reading.memory_total_bytes ?? null : null,
+    vramPct: reading && reading.memory_percent_used !== null
+      ? Math.round(reading.memory_percent_used) : null,
+    tempC: reading ? reading.temperature_c ?? null : null,
+    watts: reading ? reading.power_usage_watts ?? null : null,
+    /* Said on every cell that shows a reading, because a number with no time on it is a
+       claim about now that may be an hour old. */
+    asOf: worker.telemetry ? sinceText(worker.telemetry.as_of) : 'not sampled',
     used: (worker.attempts || []).length,
     haystack: `${worker.name} ${worker.worker_id} ${caps.gpu || ''} ${worker.worker_version || ''}`.toLowerCase(),
   };
@@ -5567,9 +5666,9 @@ function workerRows(view) {
     + `<td class="jstatus" data-sort="${WORKERS_SORT_KEYS.wstate(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
     + `<td class="wver">${worker.worker_version || NOT_REPORTED}</td>`
     + `<td class="wgpu"><span class="two"><span class="a">${view.gpu}</span><span class="b">${view.vram}</span></span></td>`
-    + `<td class="wcpu" data-sort="-1">${NOT_REPORTED}</td>`
-    + `<td class="wmem" data-sort="-1">${NOT_REPORTED}</td>`
-    + `<td class="wmodel">${NOT_REPORTED}</td>`
+    + `<td class="wcpu" data-sort="${view.load ?? -1}">${gpuLoadCell(view)}</td>`
+    + `<td class="wmem" data-sort="${view.vramUsed ?? -1}">${vramLoadCell(view)}</td>`
+    + `<td class="wmodel">${thermalCell(view)}</td>`
     + `<td class="num" data-sort="${view.used}">${view.used} / ${worker.slot_count}</td>`
     + `<td class="wup">${NOT_REPORTED}</td>`
     + `<td class="whb" data-updated data-sort="${WORKERS_SORT_KEYS.whb(view)}">${sinceText(workerLastSeen(worker))}</td>`
@@ -5604,12 +5703,22 @@ function workerRows(view) {
     + `<dt>Worker version</dt><dd>${worker.worker_version || NOT_REPORTED}</dd>`
     + `<dt>Slots</dt><dd>${view.used} of ${worker.slot_count} in use</dd>`
     + `<dt>Enrolled</dt><dd>${new Date(worker.enrolled_at).toISOString().slice(0, 10)}</dd>`
-    + `<dt>Last heard</dt><dd>${sinceText(worker.last_seen_at)}</dd>`
+    + `<dt>Last heard</dt><dd>${sinceText(workerLastSeen(worker))}</dd>`
+    /* **The paragraph that used to be here was wrong in every clause**, and it is the
+       reason the columns stayed empty for weeks: it said live load, temperature, power,
+       CPU, system RAM and disk are not reported and that a worker sends its capabilities
+       once at enrolment. The worker sends all of it on every poll, and `gpu_worker_samples`
+       has been storing the GPU half every minute since `d60fd0fe`. Isaac, finding it:
+       *"this was all stuff we were supposed to implement, instead the former agent just
+       didn't do it and put a note."*
+
+       So the system reading goes here, from `capabilities.resources`, and the columns
+       above carry the GPU one. Nothing explains an absence; where a machine really has
+       not reported something, the cell is a dash. */
+    + `<dt>CPU</dt><dd>${resourceCpu(caps)}</dd>`
+    + `<dt>System RAM</dt><dd>${resourceMemory(caps)}</dd>`
+    + `<dt>Disk</dt><dd>${resourceDisk(caps)}</dd>`
     + '</dl>'
-    /* Said once, here, rather than left to be inferred from a column of dashes:
-       this machine is not instrumented and MARP is not asking it to be. */
-    + '<p class="muted">Live load, temperature, power, clocks, CPU, system RAM and disk are not reported. '
-    + 'A worker sends its capabilities once at enrolment and its attempt progress on heartbeat (gap 27).</p>'
     + '</div>'
     + live
     + '</div></div></td></tr>';
@@ -5710,7 +5819,7 @@ function renderWorkersSummary(workers, jobs) {
   const queued = jobs.filter((j) => j.state === 'queued');
   const oldestQueued = queued.reduce((oldest, j) => Math.min(oldest, Date.parse(j.created_at)), Infinity);
   const waitingMinutes = Number.isFinite(oldestQueued)
-    ? Math.round((window.MarpApi._meta.NOW - oldestQueued) / 60000) : 0;
+    ? Math.round((window.MarpApi.now() - oldestQueued) / 60000) : 0;
 
   const cards = $$('.workers-stats .stat');
   const set = (card, num, parts) => {

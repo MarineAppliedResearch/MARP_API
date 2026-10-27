@@ -1647,6 +1647,22 @@ class GpuService {
                     capabilities: row.capabilities,
                     enrolled_at: row.enrolled_at,
                     last_seen_at: row.last_seen_at,
+
+                    // The machine's own latest reading, which exists whether or not it is
+                    // working. `gpu_worker_samples` is written every minute from the
+                    // poll, not only on a job's heartbeat, and the LATERAL above keys on
+                    // `worker_id` alone -- so this row has always carried it and only the
+                    // attempt branch below ever looked.
+                    //
+                    // That left an idle machine with no GPU load, no VRAM, no temperature
+                    // and no power, which is what Isaac found: a worker that is plainly
+                    // on, reporting every minute, and showing nothing. A reading does
+                    // belong to a moment rather than to a job, so `as_of` travels with it
+                    // and the screen says how old it is.
+                    telemetry: row.sample_devices
+                        ? { gpus: reduceDevices(row.sample_devices), as_of: row.sample_at, live: true }
+                        : null,
+
                     attempts: [],
                 });
             }

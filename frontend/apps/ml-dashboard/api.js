@@ -41,6 +41,22 @@
   /** The corpus's present. Fixed, so two people see the same relative times. */
   const NOW = Date.parse('2026-10-14T12:00:00Z');
 
+  /**
+   * The present, for anything working out how long ago something was.
+   *
+   * **Fixed for the corpus and the real clock for MARP.** `NOW` is the generated
+   * corpus's present, which is what keeps the screenshots from moving — and it was being
+   * used against live rows too. Everything the API returns is newer than 2026-10-14, so
+   * every *"how long ago"* came out negative, was clamped at zero, and the Workers page
+   * said **"0s ago"** about every machine for ever. Present, plausible, and wrong, which
+   * is why nobody saw it until Isaac noticed it never moved.
+   *
+   * @returns {number} Milliseconds since the epoch.
+   */
+  function now() {
+    return SWITCH.fixture ? NOW : Date.now();
+  }
+
   /** One seed for the whole corpus. Changing it changes every generated value. */
   const SEED = 0x4d415250; // "MARP"
 
@@ -1817,6 +1833,7 @@
     ApiError,
     /* Exposed for the checks, not for the screens. A screen reading these is a
        screen that has learned something the real API will not tell it. */
+    now,
     _meta: { NOW, SEED, SWITCH, JOB_STATES, JOB_KINDS, WORKER_STATES },
   };
 })();

@@ -254,3 +254,68 @@ test('a worker mid-job does not read as quieter than an idle one', async (t) => 
   assert.equal(cell.dataset.sort, String(-Date.parse(beat)),
     'the running attempt is what it was last heard from');
 });
+
+test('a machine that is on and sampling shows what it reported, not a note', async (t) => {
+  /* **Every clause of the note this replaces was false.** It said live load, temperature,
+     power, CPU, system RAM and disk are not reported and that a worker sends its
+     capabilities once at enrolment. The worker sends all of it on every poll, and
+     `gpu_worker_samples` has been storing the GPU half every minute. The columns were
+     empty because the service attached the reading to a running attempt only, and because
+     the GPU name was read from `caps.gpu` — a key no worker version has ever sent.
+
+     The shapes here are the ones ABYSS-fba6be1a really reports. */
+  const screen = await drawScreen('workers.html', {
+    listWorkers: async () => [worker(7, 'ABYSS-fba6be1a', 2, {
+      worker_version: '0.1.9',
+      capabilities: {
+        slots: 1,
+        cuda_devices: [{ name: 'NVIDIA GeForce RTX 4080 SUPER', index: 0, total_memory_bytes: 17170956288 }],
+        resources: {
+          cpu: { cpu_percent: 25.16, physical_cpu_count: 20, logical_cpu_count: 28 },
+          memory: { used_bytes: 40750141440, total_bytes: 68470374400, percent_used: 59.5 },
+          disk: { free_bytes: 219119099904, total_bytes: 1999210803200, percent_used: 89.04 },
+        },
+      },
+      telemetry: {
+        live: true,
+        as_of: new Date(Date.now() - 30000).toISOString(),
+        gpus: [{
+          device_index: 0,
+          name: 'NVIDIA GeForce RTX 4080 SUPER',
+          gpu_utilization_percent: 29,
+          memory_used_bytes: 1319424000,
+          memory_total_bytes: 17171480576,
+          memory_percent_used: 7.68,
+          temperature_c: 35,
+          power_usage_watts: 7.81,
+        }],
+      },
+    })],
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    listSessions: async () => [],
+  });
+
+  t.after(screen.close);
+
+  const row = screen.document.querySelector('table#workers tbody tr[data-worker="7"]');
+
+  assert.match(row.querySelector('.wgpu').textContent, /RTX 4080 SUPER/, 'the GPU it has');
+  assert.match(row.querySelector('.wgpu').textContent, /16 GB/, 'and its VRAM');
+  assert.match(row.querySelector('.wcpu').textContent, /29%/, 'GPU load');
+  assert.match(row.querySelector('.wmem').textContent, /8%/, 'VRAM load');
+  assert.match(row.querySelector('.wmodel').textContent, /35/, 'temperature');
+  assert.match(row.querySelector('.wmodel').textContent, /8 W/, 'and power');
+
+  /* Last heard must move with the clock. It read "0s ago" for every machine for ever,
+     because the elapsed time was measured against the corpus's fixed 2026-10-14. */
+  assert.match(row.querySelector('.whb').textContent, /2m ago/,
+    'measured against the real clock, not the corpus present');
+
+  const detail = row.nextElementSibling;
+
+  assert.match(detail.textContent, /25%/, 'CPU in the expansion');
+  assert.match(detail.textContent, /of 64 GB/, 'system RAM');
+  assert.match(detail.textContent, /GB free/, 'and disk');
+  assert.doesNotMatch(detail.textContent, /are not reported|gap 27/,
+    'and no paragraph explaining away what the machine is plainly sending');
+});

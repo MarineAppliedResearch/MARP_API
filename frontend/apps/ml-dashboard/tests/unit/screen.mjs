@@ -86,7 +86,16 @@ export async function drawScreen(page, answers, options = {}) {
        left to every test to stub. It is read by the top bar on every screen and it is
        synchronous, so the usual "throw an async 404" fallback would both throw at the
        wrong moment and make a test about a table fail for a reason about a clock. */
-    const chrome = { freshness: () => ({ at: Date.now(), failed: null, inFlight: 0 }) };
+    const chrome = {
+      freshness: () => ({ at: Date.now(), failed: null, inFlight: 0 }),
+      /* **The real clock, because the fixture one was the defect.** `now()` is the
+         present anything measuring "how long ago" reads. It used to be the corpus's
+         fixed 2026-10-14, which is older than everything the API returns, so every
+         elapsed time came out negative, clamped at zero, and the Workers page said
+         "0s ago" about every machine for ever. A stub that froze it would hide exactly
+         that class of bug from this tier. */
+      now: () => Date.now(),
+    };
 
     window.MarpApi = new Proxy(answers, {
       get(target, name) {
