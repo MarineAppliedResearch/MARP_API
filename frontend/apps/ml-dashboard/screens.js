@@ -1196,6 +1196,10 @@ const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hpro
 /** The window the whole screen is drawn from, refetched only when the API query changes. */
 let jobsWindow = null;
 
+/* Every job the filters leave, in sort order -- more than the page shows. Export is
+   about the window rather than whichever page somebody happens to be looking at. */
+let jobsWindowViews = [];
+
 /**
  * Narrows, sorts and pages what came back, then draws it.
  *
@@ -1235,6 +1239,8 @@ function applyJobsQuery() {
     return b.job.id - a.job.id;  /* the same id tie-breaker the route uses */
   });
 
+  jobsWindowViews = views;
+
   const total = views.length;
   const pages = Math.max(1, Math.ceil(total / jobsQuery.perPage));
   if (jobsQuery.page > pages) jobsQuery.page = pages;
@@ -1250,6 +1256,38 @@ function applyJobsQuery() {
   wireSelection();
   applyTips();
 }
+
+/**
+ * How a job's scope reads outside a table cell.
+ *
+ * `rowFor` builds the same thing as markup; this is the plain-text twin, kept beside the
+ * columns that use it rather than factored out of a row that also draws a tag and a link.
+ *
+ * @param {Object} view - From `jobView`.
+ * @returns {string}
+ */
+function jobScopeText(view) {
+  const { session, spec } = view;
+
+  if (session.dive) return `Dive ${session.dive}${session.line ? ` · Line ${session.line}` : ''}`;
+  return spec.session && spec.session.session_id !== undefined ? `Session ${spec.session.session_id}` : '';
+}
+
+/** The columns an exported queue carries, in the order the table draws them. */
+const JOBS_CSV_COLUMNS = [
+  ['Job id', (v) => v.job.id],
+  ['Job', (v) => v.title],
+  ['Type', (v) => v.kindLabel],
+  ['Status', (v) => v.label],
+  ['Scope', jobScopeText],
+  ['Model', (v) => v.model],
+  /* -1 is `jobView`'s "never measured", and a blank says that better than a number
+     would -- writing 0 here would be a gap reading as a measurement. */
+  ['Progress %', (v) => (v.pct < 0 ? '' : v.pct)],
+  ['Created', (v) => v.job.created_at],
+  ['Updated', (v) => v.job.updated_at],
+  ['Worker', (v) => v.job.worker_name || ''],
+];
 
 /* ========================================================== training */
 
@@ -1639,17 +1677,27 @@ const TRAINING_TASKS = {
   classification: {
     label: 'Classification',
     charts: [],
-    /* **Not "nobody has described it".** It is described -- one training loss, one
-       validation loss, top-1 and top-5 per epoch -- and it cannot be stored. `epochs`
-       has no accuracy columns at all, and its three loss pairs are named for a
-       detector's components, so writing classify's single total into `cls_loss` would
-       make that column mean two different quantities on two rows with nothing to say
-       which. Both are schema questions, raised rather than guessed; a chart pointed at a
-       column name invented here would look built and render nothing. */
-    chartsWaiting: 'A classification run reports one training and one validation loss each '
-      + 'epoch, with top-1 and top-5 accuracy. <code>epochs</code> has no accuracy columns, '
-      + 'and its loss columns are named for a detector&rsquo;s components &mdash; so none of '
-      + 'it can be recorded yet. The final accuracy is below.',
+    /* **Not "nobody has described it".** It is described, from a real one-epoch run the
+       worker session probed rather than from documentation, and it cannot be stored.
+       Every per-epoch key a classify run produces is `train/loss`,
+       `metrics/accuracy_top1` and `metrics/accuracy_top5`.
+
+       **There is no validation loss, and that is a measured fact rather than an
+       omission.** Ultralytics seeds val-prefixed loss keys on the first batch and then
+       `self.metrics = self.validate()` replaces the whole dict with the classify
+       validator's stats, which are the two accuracies -- so nothing val-prefixed reaches
+       the epoch callback. A `val_` column for classify would be permanently null with
+       nothing to explain why, which is the trap this panel keeps finding in new places.
+
+       So: `epochs` has no accuracy columns, and `train/loss` is its own quantity needing
+       its own column -- not `cls_loss`, which is the classification *component* of a
+       detector's loss and shares only a word. Both are schema questions, raised with the
+       sessions that own them rather than guessed; a chart pointed at a column name
+       invented here would look built and render nothing. */
+    chartsWaiting: 'A classification run reports one training loss and no validation loss '
+      + 'at all, with top-1 and top-5 accuracy every epoch. <code>epochs</code> has no '
+      + 'accuracy columns, and none of its loss columns is the one a classifier reports '
+      + '&mdash; so none of it can be recorded yet. The final accuracy is below.',
     /* **No `classes` and no `curves`, rather than empty ones.** `ClassifyMetrics` has no
        per-class array and no thresholds at all, so a section saying "this run recorded
        none" would read as a run that failed to measure something instead of a task with
@@ -5098,22 +5146,27 @@ function downloadText(name, text) {
 }
 
 /**
- * Write the finished work out as CSV.
+ * Write a screen's rows out as CSV.
  *
+ * **The rows handed in, not the rows on screen.** Every table here pages, and an export
+ * built from the table reads correctly until the window has a second page -- at which
+ * point it is quietly wrong rather than visibly broken.
+ *
+ * @param {Array[]} columns - `[header, read]` pairs, in the order the table draws them.
  * @param {Object[]} views - The rows to write, already filtered and sorted.
- * @param {string} scope - Names the file, so two exports do not collide.
+ * @param {string} name - Names the file, so two exports do not collide.
  * @returns {void}
  */
-function exportHistory(views, scope) {
+function exportRows(columns, views, name) {
   if (!views.length) return;
 
-  const lines = [HISTORY_CSV_COLUMNS.map(([name]) => csvField(name)).join(',')];
+  const lines = [columns.map(([header]) => csvField(header)).join(',')];
   for (const view of views) {
-    lines.push(HISTORY_CSV_COLUMNS.map(([, read]) => csvField(read(view))).join(','));
+    lines.push(columns.map(([, read]) => csvField(read(view))).join(','));
   }
 
   const day = new Date().toISOString().slice(0, 10);
-  downloadText(`marp-history-${scope}-${day}.csv`, lines.join('\r\n'));
+  downloadText(`marp-${name}-${day}.csv`, lines.join('\r\n'));
 }
 
 /** The History filters, sort headers and pager. Bound once. */
@@ -5181,7 +5234,7 @@ function wireHistoryControls() {
   for (const button of $$('[data-history-export]', panel)) {
     button.addEventListener('click', () => {
       if (button.dataset.historyExport !== 'selection') {
-        exportHistory(historyWindow, 'window');
+        exportRows(HISTORY_CSV_COLUMNS, historyWindow, 'history-window');
         return;
       }
 
@@ -5191,7 +5244,7 @@ function wireHistoryControls() {
         .map((box) => box.closest('tr')?.dataset.job)
         .filter(Boolean));
 
-      exportHistory(historyWindow.filter((v) => picked.has(String(v.job.id))), 'selection');
+      exportRows(HISTORY_CSV_COLUMNS, historyWindow.filter((v) => picked.has(String(v.job.id))), 'history-selection');
     });
   }
 }
@@ -5921,9 +5974,16 @@ function wireJobsControls() {
 
   if (windowSel) {
     windowSel.addEventListener('change', () => {
-      jobsQuery.windowDays = { 'Last 24 hours': 1, 'Last 7 days': 7, 'Last 30 days': 30 }[windowSel.value] || 7;
+      jobsQuery.windowDays = {
+        'Last 24 hours': 1, 'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'This year': 365,
+      }[windowSel.value] || 7;
       renarrow();
     });
+  }
+
+  const exportJobs = $('[data-jobs-export]', panel);
+  if (exportJobs) {
+    exportJobs.addEventListener('click', () => exportRows(JOBS_CSV_COLUMNS, jobsWindowViews, 'jobs'));
   }
 
   /* Sorting: the header and the phone strip drive the same query. */
