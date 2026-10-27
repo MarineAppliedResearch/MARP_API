@@ -89,8 +89,9 @@ Where MARP has nothing, the screen shows a gap rather than a number.
   are reported once measured rather than estimated — if it is far worse than ~20k rows
   the work stops and it becomes Isaac's call. Cheap on the worker's side: one property
   access, no computation.
-- [ ] **A8 · scientific / data-meaning · non-blocking** — a classification run writes one
-  aggregate row with every metric column null and its top-1/top-5 in `details`.
+- [x] **A8 · scientific / data-meaning · non-blocking** — answered 2026-10-27: **columns,
+  not `details`.** A classification run writes one aggregate row with detection's metric
+  columns null and its accuracies in `accuracy_top1` / `accuracy_top5`.
   `ClassifyMetrics` has no per-class array and no precision, recall or AP at all, so it
   cannot fill these columns; the rule is recorded and **nothing is built for it**, since
   this engine declares detection. Confirm the shape when classification is actually the
@@ -300,6 +301,22 @@ Where MARP has nothing, the screen shows a gap rather than a number.
   **What the old code would have done is worth recording**: the length check refused the
   matrix outright rather than mislabelling it, because the vocabulary no longer accounted
   for every index. A silent gap rather than a silent lie — better, and still wrong.
+
+- **2026-10-27 · top-1 and top-5 are columns, and they are floats.** `details` jsonb
+  would have been right for something incidental; for a classification model these two
+  *are* the headline, the way mAP is for detection. The dashboard exists so models can be
+  compared, and a number that cannot be sorted on, filtered by or charted across runs is
+  not available for comparison — only for reading one run at a time.
+
+  **They are `double precision`, not integers.** They are accuracies — fractions in
+  [0, 1] — not counts. `support` and `image_count` are this table's integers; storing
+  0.873 in an integer column would round it to 1 and report a perfect classifier.
+
+  **A second migration rather than an edit to the first.** `20261026160000` has been
+  applied — only to a disposable workspace database, but applied — and Sequelize records
+  a migration by name once it has run. Amending it would leave any database that already
+  holds it silently without these columns, which surfaces later as a column that exists
+  on one machine and not another with nothing to explain it.
 
 ## Plan
 

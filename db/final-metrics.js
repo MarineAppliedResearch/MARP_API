@@ -165,6 +165,13 @@ const OVERALL_FIELDS = {
     map5095: 'map5095',
     f1_score: 'f1',
     fitness: 'fitness',
+    /* **Classification's headline, and the only task that reports them.** They are
+       accuracies -- fractions in [0, 1] -- not counts, so they share nothing with
+       `support` and `image_count` but the table. Null on every box and seg row, where
+       they do not apply rather than being missing, which is what `metric_family` is for.
+       Nothing emits them yet: no classification model has been trained. */
+    accuracy_top1: 'accuracy_top1',
+    accuracy_top5: 'accuracy_top5',
 };
 
 /**

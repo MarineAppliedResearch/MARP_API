@@ -343,18 +343,46 @@ describe('what the trainer does not report', () => {
             schema: 1,
             task: 'classify',
             split: 'val',
-            classes: ['Lingcod', 'Rockfish'],
-            metrics: [{ family: METRIC_FAMILIES.CLASSIFY, overall: {} }],
+            metrics: [{
+                family: METRIC_FAMILIES.CLASSIFY,
+                overall: { accuracy_top1: 0.873, accuracy_top5: 0.961 },
+            }],
         });
 
         expect(classify.rows).toHaveLength(1);
         expect(classify.rows[0].class_name).toBeNull();
         expect(classify.rows[0].metric_family).toBe('classify');
 
+        // Detection's columns are null, and `metric_family` is what says that means
+        // "does not apply" rather than "was not measured".
         for (const column of ['precision', 'recall', 'map50', 'map5095', 'f1_score']) {
-            expect(classify.rows[column]).toBeUndefined();
             expect(classify.rows[0][column]).toBeNull();
         }
+    });
+
+    it('stores classification accuracy as the fraction it is', () => {
+        // Accuracies, not counts. An integer column would round 0.873 to 1 and report
+        // a perfect classifier, which is why these are double precision and `support`
+        // and `image_count` beside them are not.
+        const classify = finalMetrics({
+            schema: 1,
+            task: 'classify',
+            split: 'val',
+            metrics: [{
+                family: METRIC_FAMILIES.CLASSIFY,
+                overall: { accuracy_top1: 0.873, accuracy_top5: 0.961 },
+            }],
+        });
+
+        expect(classify.rows[0].accuracy_top1).toBeCloseTo(0.873);
+        expect(classify.rows[0].accuracy_top5).toBeCloseTo(0.961);
+    });
+
+    it('leaves the accuracies null on a detection run', () => {
+        const box = finalMetrics(report()).rows.find((row) => row.class_name === null);
+
+        expect(box.accuracy_top1).toBeNull();
+        expect(box.accuracy_top5).toBeNull();
     });
 
     it('names the segmentation family seg, matching the library rather than the suffix', () => {

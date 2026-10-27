@@ -28,6 +28,7 @@ const db = require('../model');
  */
 const METRIC_COLUMNS = [
     'precision', 'recall', 'map50', 'map5095', 'f1_score', 'fitness',
+    'accuracy_top1', 'accuracy_top5',
 ];
 
 class TrainingMetricsRepository {
@@ -93,12 +94,12 @@ class TrainingMetricsRepository {
                 `INSERT INTO metrics_summary
                      (training_run_id, species_id, dataset_split, metric_family, class_name,
                       "precision", recall, map50, map5095, f1_score, fitness,
-                      support, image_count,
+                      accuracy_top1, accuracy_top5, support, image_count,
                       "timestamp", created_at, updated_at)
                  VALUES
                      (:trainingRunId, :speciesId, :split, :family, :className,
                       :precision, :recall, :map50, :map5095, :f1Score, :fitness,
-                      :support, :imageCount,
+                      :accuracyTop1, :accuracyTop5, :support, :imageCount,
                       :now, :now, :now)`,
                 {
                     replacements: {
@@ -112,7 +113,8 @@ class TrainingMetricsRepository {
                            table's default, and "not measured" has to stay null rather
                            than becoming a number nobody measured. */
                         ...Object.fromEntries(METRIC_COLUMNS.map((column) => [
-                            column === 'f1_score' ? 'f1Score' : column,
+                            { f1_score: 'f1Score', accuracy_top1: 'accuracyTop1',
+                                accuracy_top5: 'accuracyTop5' }[column] || column,
                             row[column] === undefined ? null : row[column],
                         ])),
                         support: row.support === undefined ? null : row.support,
@@ -301,7 +303,8 @@ class TrainingMetricsRepository {
         return this.db.sequelize.query(
             `SELECT m.id, m.metric_family, m.class_name, m.species_id, s.comname AS species_name,
                     m.dataset_split, m."precision", m.recall, m.map50, m.map5095,
-                    m.f1_score, m.fitness, m.support, m.image_count
+                    m.f1_score, m.fitness, m.accuracy_top1, m.accuracy_top5,
+                    m.support, m.image_count
                FROM metrics_summary m
                LEFT JOIN species s ON s.id = m.species_id
               WHERE m.training_run_id = :trainingRunId

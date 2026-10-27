@@ -78,6 +78,24 @@ const { Model } = require('sequelize');
  *             Set with a null species_id means a class MARP could not resolve to a
  *             species; the row is kept, because the model is actively predicting that
  *             class and dropping it would hide it.
+ *         accuracy_top1:
+ *           type: number
+ *           format: double
+ *           nullable: true
+ *           example: 0.873
+ *           description: >
+ *             Classification's headline: the share of images whose single highest-scoring
+ *             class was correct. A fraction in [0, 1], not a count. Null on every box and
+ *             seg row, where it does not apply rather than being missing - which is what
+ *             metric_family exists to make tellable.
+ *         accuracy_top5:
+ *           type: number
+ *           format: double
+ *           nullable: true
+ *           example: 0.961
+ *           description: >
+ *             The share whose correct class was among the five highest-scoring. Always at
+ *             least accuracy_top1, and the gap between them is the useful part.
  *         support:
  *           type: integer
  *           nullable: true
@@ -281,6 +299,20 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'The class as the model named it. Null means the all-classes aggregate; set with a null species_id means a class MARP could not resolve to a species, which is kept rather than dropped.',
+      },
+
+      accuracy_top1: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        comment:
+          'Share of images whose single highest-scoring class was correct. A fraction in [0, 1], not a count. Null on any row whose metric_family is not classify, where it does not apply rather than being missing.',
+      },
+
+      accuracy_top5: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        comment:
+          'Share of images whose correct class was among the five highest-scoring. Always at least accuracy_top1; the gap between them is the useful part, because a model that is nearly right about everything is a different thing from one that is confidently wrong.',
       },
 
       support: {
