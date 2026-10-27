@@ -4088,6 +4088,30 @@
             "items": {
               "$ref": "#/components/schemas/GpuJob"
             }
+          },
+          "session": {
+            "type": "object",
+            "nullable": true,
+            "description": "The session created for this run, present only when `spec.session.per_run` asked for one. Reported because MARP worked it out on the submitter’s behalf -- including the type, when that was derived from the model -- and a derivation nobody can look at is how a wrong one survives.",
+            "properties": {
+              "session_id": {
+                "type": "integer",
+                "example": 1402
+              },
+              "type": {
+                "type": "string",
+                "example": "Invert",
+                "description": "Derived from the model’s species list unless the spec named one."
+              },
+              "dive": {
+                "type": "string",
+                "example": "Dive 895"
+              },
+              "line": {
+                "type": "string",
+                "example": "4"
+              }
+            }
           }
         }
       },
@@ -6261,6 +6285,18 @@
             "description": "Identifier of the user who recorded or owns this session.",
             "example": 8
           },
+          "created_by": {
+            "type": "integer",
+            "nullable": true,
+            "description": "The person who asked for this session, carried from the job that created it. Null on a session nobody requested through a job.",
+            "example": 8
+          },
+          "is_automated": {
+            "type": "boolean",
+            "default": false,
+            "description": "True when a machine produced this session. False means it was not recorded as automated rather than that a person made it: sessions created before this existed all read false, including machine-produced ones.",
+            "example": true
+          },
           "dive": {
             "type": "string",
             "maxLength": 255,
@@ -6301,6 +6337,7 @@
         "additionalProperties": false,
         "required": [
           "session_id",
+          "is_automated",
           "dive",
           "line",
           "lineId",
@@ -16649,7 +16686,7 @@
       },
       "post": {
         "summary": "Queue GPU work, splitting a long video if asked",
-        "description": "Creates one job, or -- given `piece_frames` -- a batch of jobs sharing a `batch_id`, each covering its own piece of the frame range. N independent jobs rather than one job with children, so each piece leases, retries and fails on its own, which is what lets ten machines share a ten-hour video without any of them knowing about the others. The range is half-open -- `start_frame` is included, `end_frame` is one past the last frame -- so the pieces tile it exactly: the `end_frame` of one piece is the `start_frame` of the next, the frames covered are `end_frame - start_frame` with no off-by-one, and no frame is processed twice or missed. The last piece is short rather than over-long. An empty range is refused rather than queued. A range is required even for a whole video, so nothing downstream has to special-case the undivided case. The whole batch is inserted in one transaction: half a batch is worse than none, because somebody would have to work out which pieces were missing before resubmitting.\n\n`spec.video` carries **exactly one** of `jellyfin_item_id` or `url`; both together is refused rather than one silently winning. An item id is resolved to a playable URL when a worker leases the job, not here. A bare `url` is any other reachable source and needs `source_name` with it, because that is what appears as `video_source` on every observation and cannot be guessed from a URL. Requires the `jobs:write` permission.",
+        "description": "Creates one job, or -- given `piece_frames` -- a batch of jobs sharing a `batch_id`, each covering its own piece of the frame range. N independent jobs rather than one job with children, so each piece leases, retries and fails on its own, which is what lets ten machines share a ten-hour video without any of them knowing about the others. The range is half-open -- `start_frame` is included, `end_frame` is one past the last frame -- so the pieces tile it exactly: the `end_frame` of one piece is the `start_frame` of the next, the frames covered are `end_frame - start_frame` with no off-by-one, and no frame is processed twice or missed. The last piece is short rather than over-long. An empty range is refused rather than queued. A range is required even for a whole video, so nothing downstream has to special-case the undivided case. The whole batch is inserted in one transaction: half a batch is worse than none, because somebody would have to work out which pieces were missing before resubmitting.\n\n`spec.video` carries **exactly one** of `jellyfin_item_id` or `url`; both together is refused rather than one silently winning. An item id is resolved to a playable URL when a worker leases the job, not here. A bare `url` is any other reachable source and needs `source_name` with it, because that is what appears as `video_source` on every observation and cannot be guessed from a URL.\n\n`spec.session` says where observations go, and takes one of three forms. `{session_id}` names a session that exists. `{project_id, dive, line, type}` describes one, and the ingest finds an existing session for that dive and line before creating one -- deliberately, because a job is one piece of a video and the same dive is submitted many times over. `{project_id, dive, line, per_run: true}` makes a **new session for this run**, which is the form the dashboard submits: who ran it differs between runs, so each run is its own session under the dive, recorded with `is_automated` and the submitter in `created_by`. A piece split is still one run and its jobs share the session. With `per_run`, `type` may be left out and is derived from the model’s species list -- refused rather than guessed when a model was trained across more than one, because a session reads against a single list and half the output could not be named in whichever was picked. A `type` the spec names wins over the derived one. The session created is reported back on the response. Requires the `jobs:write` permission.",
         "tags": [
           "V2 · GpuCompute"
         ],
@@ -16852,6 +16889,98 @@
           },
           "403": {
             "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/jobs/{id}/observations": {
+      "get": {
+        "summary": "What an inference job actually produced",
+        "description": "The count of observations a job wrote, broken down by species, plus the session and model it wrote them under so a reader can open them. **This is the answer to \"did it work\", which a job state cannot give**: a job succeeds when its bytes arrive and are ingested, and ingesting an empty detections file is a success that produced nothing.\n\n**Grouped by `species_id`, with the label the model gave beside it.** Those are two different facts and they drift apart as soon as anybody reviews the output: a species correction changes `species_id` and deliberately never rewrites `comname`, which stays the label the model produced. A breakdown keyed on that label would keep counting a corrected observation under a name somebody has already rejected, so `species_name` is what it is and `reported_name` is what the model said. Where they disagree, the disagreement is the interesting part.\n\n**An unresolved species is counted, not dropped.** An observation whose `species_id` is null is still something the job produced, and a breakdown that omitted it would not add up to the total beside it.\n\n**Zero observations is a real answer, not an error.** A job can run every frame, hand over an empty detections file, be ingested correctly and have found nothing -- which is what happened on job 21789. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the job."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the job produced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job_id": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "session_id": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "From the job spec. Null for a job whose spec names no session, which can never produce observations."
+                    },
+                    "ml_model_id": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "observations": {
+                      "type": "integer"
+                    },
+                    "species": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "species_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "species_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "What it is, after any correction. Null when the species was never resolved."
+                          },
+                          "reported_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "What the model called it, which a correction never rewrites."
+                          },
+                          "observations": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

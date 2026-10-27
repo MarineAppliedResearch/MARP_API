@@ -1202,6 +1202,65 @@
   }
 
   /**
+   * `GET /api/v2/ml_models?runnable=inference` -- the models inference may actually run.
+   *
+   * **A narrower list than the registry, and deliberately a separate call.** A
+   * pretrained base model is a real registered model and the registry screen should
+   * keep showing it; it is only *inference* that must never be handed one, because its
+   * classes are the upstream vocabulary rather than MARP species, so whatever it emits
+   * would be resolved against `species.comname` and written into the scientific record.
+   * Submission refuses one outright -- so a picker offering them was offering something
+   * the API would reject, which is how this was found.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listRunnableModels() {
+    return serve('models', () => request('/ml_models?runnable=inference'),
+      () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.models).filter((m) => !m.is_base)));
+  }
+
+  /**
+   * `GET /api/v2/gpu/jobs/:id/observations` -- what one run actually produced.
+   *
+   * **A job's state does not answer this.** A job succeeds when its bytes arrive and are
+   * ingested, and ingesting an empty detections file is a success that produced nothing:
+   * job 21789 ran all of its frames, succeeded, and wrote zero observations, correctly.
+   * So `0` here is a measurement and renders as 0, where a job nobody has asked about
+   * yet renders as a dash.
+   *
+   * The breakdown is keyed on `species_id` rather than the label the model emitted,
+   * because a species correction changes the first and deliberately never rewrites the
+   * second -- counting by the label keeps a corrected observation under a name somebody
+   * has already rejected.
+   *
+   * @param {number|string} jobId - The job.
+   * @returns {Promise<Object>} `{job_id, state, session_id, observations, species}`.
+   */
+  function jobObservations(jobId) {
+    return serve('jobs', () => request(`/gpu/jobs/${jobId}/observations`), () => {
+      const r = rng(Number(jobId) || 1);
+      const names = ['Blue rockfish', 'Lingcod', 'Red urchin', 'Sunflower star'];
+      /* Built from the parts so the breakdown sums to the total, which is what the real
+         route guarantees and what the screen puts side by side. */
+      const species = names
+        .map((name, index) => ({
+          species_id: 700 + index,
+          species_name: name,
+          reported_name: name,
+          observations: int(r, 0, 60),
+        }))
+        .filter((row) => row.observations > 0);
+
+      return {
+        job_id: Number(jobId),
+        session_id: 1400 + (Number(jobId) % 7),
+        observations: species.reduce((sum, row) => sum + row.observations, 0),
+        species,
+      };
+    });
+  }
+
+  /**
    * `POST /api/v2/dataset/build` -- build a dataset out of the matching observations.
    *
    * **Answers immediately with the dataset and the job, not with a dataset.** A real
@@ -1822,7 +1881,9 @@
     workerSeries,
     listJobs,
     getJob,
+    jobObservations,
     listModels,
+    listRunnableModels,
     listModelVersions,
     listModelSpecies,
     listDatasets,

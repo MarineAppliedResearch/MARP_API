@@ -922,6 +922,20 @@ describe('A job that describes its session rather than naming one', () => {
         // GUI's opening screen can reach it (inference-processor-account R3).
         expect(session.user_id).toBe(await ingestRepository.inferenceProcessorId());
 
+        // **Two facts, and `user_id` can hold only one of them.** Who produced the
+        // observations is the service user above, the same on every automated
+        // session; who asked for this one is the submitter, different every time.
+        const [jobRow] = await query('SELECT created_by FROM gpu_jobs WHERE id = :id', { id: job.id });
+
+        // Asserted non-null first, or the comparison below passes vacuously the day
+        // submission stops recording a requester.
+        expect(jobRow.created_by).not.toBeNull();
+        expect(session.created_by).toBe(jobRow.created_by);
+
+        // Stated, not inferred from `user_id` pointing at an account whose name
+        // looks like a service account. Reaching that INSERT means a machine made it.
+        expect(session.is_automated).toBe(true);
+
         const [stored] = await observationsForJob(job.id);
 
         expect(stored.session_id).toBe(session.session_id);
@@ -942,16 +956,31 @@ describe('A job that describes its session rather than naming one', () => {
             },
         });
 
+        // Blanked first, so that finding it unchanged afterwards is evidence rather
+        // than a coincidence of the same fixture user submitting twice. Stamping
+        // provenance on reuse would overwrite this and the assertion below fails.
+        await db.sequelize.query(
+            `UPDATE sessions SET created_by = NULL
+              WHERE project_id = :projectId AND dive = :dive AND line = :line`,
+            { replacements: { projectId: seeded.projectId, dive: `jest-dive-${runId}`, line: '2000' }, logging: false }
+        );
+
         const { reported } = await runJob([REAL_RESULT[1]], spec);
 
         expect(reported.body.ingest).toMatchObject({ ingested: true, session_created: false });
 
         const sessions = await query(
-            'SELECT session_id FROM sessions WHERE project_id = :projectId AND dive = :dive AND line = :line',
+            'SELECT session_id, created_by FROM sessions WHERE project_id = :projectId AND dive = :dive AND line = :line',
             { projectId: seeded.projectId, dive: `jest-dive-${runId}`, line: '2000' }
         );
 
         expect(sessions).toHaveLength(1);
+
+        // **Provenance is written on creation and never on reuse.** A second run over
+        // the same dive does not make the first requester untrue, and overwriting them
+        // would throw away the only record of who asked for the session to exist. The
+        // per-run requester lives on each observation, which is where it is per-run.
+        expect(sessions[0].created_by).toBeNull();
     });
 });
 

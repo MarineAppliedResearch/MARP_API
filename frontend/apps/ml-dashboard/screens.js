@@ -4379,19 +4379,210 @@ function renderInferenceRecent(views) {
       + `<td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">${view.title}</span></span></td>`
       + `<td class="jscope"><span class="two"><span class="a">Dive ${session.dive || '?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
       + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
-      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
-      /* Detections is gap 11: the ingest writes observations and nothing counts
-         them back onto the job. A dash, not a zero. */
-      + `<td class="jdet">${NOT_COUNTED}</td>`
+      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}">${statusWithProgress(view)}</td>`
+      /* **A dash until asked, then whatever the answer is -- including zero.** Nothing
+         rolls detections onto the job row itself, so this used to be a permanent dash
+         (gap 11). `GET /gpu/jobs/:id/observations` answers it now, and is asked for the
+         jobs on this page once they are finished; until that lands there is no
+         measurement, and a 0 would claim one. */
+      + '<td class="jdet">' + NOT_COUNTED + '</td>'
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
       + `<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
       + '</tr>';
   }).join('');
+
+  fillInferenceOutcomes(body, shown);
+  watchInference();
 }
 
-/** Nothing counts these. Distinct from zero of them. */
-const NOT_COUNTED = '<span class="dash" title="Nothing rolls detections up to a job: the ingest writes observations and the count is not recorded anywhere (gap 11)">&mdash;</span>';
+/**
+ * The status cell, carrying progress while a job is running.
+ *
+ * **`progressCell` rather than a second formatter**, because it already holds the one
+ * decision that matters here: a job with no heartbeat yet has no measurement, and a 0%
+ * bar would claim one.
+ *
+ * @param {Object} view - A job view.
+ * @returns {string} The cell's inner HTML.
+ */
+function statusWithProgress(view) {
+  const pill = `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`;
+
+  if (view.state !== 'running') return pill;
+
+  return pill + progressCell(view.job, view.state).html;
+}
+
+/** Jobs whose outcome has already been asked for, so a poll does not ask again. */
+const inferenceOutcomes = new Map();
+
+/**
+ * Fill in what each finished run on the page produced.
+ *
+ * **Only the rows that are drawn, and only once each.** Six rows is six reads, which is
+ * fine; the whole table would not be, and nothing rolls these counts onto the job list
+ * for MARP to send in one answer.
+ *
+ * **Only finished jobs.** A running job's count is still moving, and a number that is
+ * true for a moment reads as a total.
+ *
+ * @param {Element} body - The table body.
+ * @param {Array<Object>} views - The views drawn into it.
+ * @returns {Promise<void>}
+ */
+async function fillInferenceOutcomes(body, views) {
+  if (!window.MarpApi || !window.MarpApi.jobObservations) return;
+
+  const terminal = views.filter((view) => ['done', 'issues'].includes(view.state));
+
+  await Promise.all(terminal.map(async (view) => {
+    const id = view.job.id;
+
+    if (!inferenceOutcomes.has(id)) {
+      try {
+        inferenceOutcomes.set(id, await window.MarpApi.jobObservations(id));
+      } catch {
+        /* Left unanswered rather than recorded as none: the dash stays, which says
+           nobody knows, where a 0 would say the run found nothing. */
+        return;
+      }
+    }
+
+    paintOutcome(body, id, inferenceOutcomes.get(id));
+  }));
+}
+
+/**
+ * Write one run's outcome onto its row.
+ *
+ * @param {Element} body - The table body.
+ * @param {number} jobId - The job.
+ * @param {Object} outcome - What `jobObservations` answered.
+ * @returns {void}
+ */
+function paintOutcome(body, jobId, outcome) {
+  const row = $(`tr[data-job="${CSS.escape(String(jobId))}"]`, body);
+
+  if (!row || !outcome) return;
+
+  const cell = $('.jdet', row);
+
+  if (cell) {
+    const total = Number(outcome.observations) || 0;
+    /* The species it found, on the cell's title rather than in it: the column is one
+       number wide and the breakdown is what somebody asks for second. */
+    const breakdown = (outcome.species || [])
+      .map((row2) => `${row2.species_name || row2.reported_name || 'unresolved'}: ${row2.observations}`)
+      .join(', ');
+
+    cell.dataset.sort = String(total);
+    cell.innerHTML = total === 0
+      /* **Zero is an answer, and says so.** A run that completed every frame and detected
+         nothing is not the same as a run nobody has asked about, and the dash beside it
+         means the second. */
+      ? '<span class="num" title="This run completed and detected nothing">0</span>'
+      : `<span class="num"${breakdown ? ` title="${escapeHtml(breakdown)}"` : ''}>${total.toLocaleString()}</span>`;
+  }
+
+  /* **Into the mosaic, filtered to this run.** Exact because of the session rule: a run
+     makes its own session, so `?session=N` is this run's observations and nothing else.
+     Offered only when there is something to look at. */
+  const acts = $('.jacts', row);
+
+  if (acts && outcome.session_id && Number(outcome.observations) > 0 && !$('[data-mosaic]', acts)) {
+    acts.insertAdjacentHTML('afterbegin',
+      `<a class="btn sm" data-mosaic href="/apps/marp-mosaic-review/?session=${outcome.session_id}" `
+      + `title="Review this run's observations in the mosaic">Review</a>`);
+  }
+}
+
+/**
+ * Write the cells that move, on the rows already drawn.
+ *
+ * **Patched, not redrawn**, for the reason `patchTrainingRows` is: rebuilding the table
+ * under somebody reading it is the defect the Datasets table was fixed for.
+ *
+ * @param {Element} body - The table body.
+ * @param {Map<number, Object>} views - The latest view per job id.
+ * @returns {void}
+ */
+function patchInferenceRows(body, views) {
+  for (const row of $$(':scope > tr[data-job]', body)) {
+    const view = views.get(Number(row.dataset.job));
+
+    if (!view) continue;
+
+    const status = $('.jstatus', row);
+    /* The progress bar moves while the state does not, so the state rank alone is the
+       wrong thing to compare -- a running job would freeze at its first percentage. */
+    const stamp = `${JOB_STATE_RANK[view.state]}:${view.job.progress_done}/${view.job.progress_total}`;
+
+    if (status && status.dataset.stamp !== stamp) {
+      status.innerHTML = statusWithProgress(view);
+      status.dataset.sort = String(JOB_STATE_RANK[view.state]);
+      status.dataset.stamp = stamp;
+    }
+  }
+}
+
+/** The inference table's poll, or null when nothing on it is moving. */
+let inferenceWatch = null;
+
+/**
+ * Keep the table current while anything on it is still running.
+ *
+ * Stops when nothing is live, rather than polling an idle screen for ever.
+ *
+ * @returns {void}
+ */
+function watchInference() {
+  if (inferenceWatch || !window.MarpApi) return;
+
+  const body = $('.inference-table tbody');
+
+  if (!body) return;
+
+  inferenceWatch = setTimeout(async function again() {
+    inferenceWatch = null;
+
+    let live = false;
+
+    try {
+      const jobs = await window.MarpApi.listJobs({ limit: 500, kind: 'inference' });
+      const issues = batchesWithIssues(jobs.jobs);
+      const views = new Map(jobs.jobs.map((job) => [job.id, jobView(job, issues)]));
+
+      patchInferenceRows(body, views);
+
+      const drawn = $$(':scope > tr[data-job]', body)
+        .map((row) => views.get(Number(row.dataset.job)))
+        .filter(Boolean);
+
+      /* A job that has just finished is the one whose count is now worth asking for. */
+      await fillInferenceOutcomes(body, drawn);
+
+      live = drawn.some((view) => ['running', 'queued'].includes(view.state));
+    } catch {
+      /* A poll that fails is a blip; the last good answer stays on screen. Keep
+         watching, because the thing that failed is the thing being watched. */
+      live = true;
+    }
+
+    if (live) watchInference();
+  }, TRAINING_EPOCH_POLL_MS);
+}
+
+/**
+ * Nobody has asked yet. Distinct from zero of them.
+ *
+ * **This used to be permanent** -- gap 11 was that nothing counted observations back
+ * onto a job, so the column could only ever draw a dash. `GET /gpu/jobs/:id/observations`
+ * answers it, and the dash now means the narrower thing it says: the question has not
+ * been put for this row yet, or it could not be answered. A finished run that detected
+ * nothing draws 0, because that is a measurement somebody made.
+ */
+const NOT_COUNTED = '<span class="dash" title="Not counted yet for this row. A finished run that found nothing shows 0.">&mdash;</span>';
 
 /**
  * Fills the Inference screen from the data layer.
@@ -7969,13 +8160,20 @@ let registryAsked = null;
 const MODEL_SPECIES = new Map();
 
 /**
- * MARP's models, once.
+ * The models inference may actually run, once.
  *
- * @returns {Promise<Object[]>} Active models, by name. Empty if MARP would not say.
+ * **Not the whole registry.** A pretrained base model is registered and the registry
+ * screen should show it, but inference must never be handed one: its classes are the
+ * upstream vocabulary rather than MARP species, so what it emits would be resolved
+ * against the species catalogue and written into the record. Submission refuses one,
+ * so this picker was offering a choice the API would reject -- found by driving the
+ * tab rather than by reading it.
+ *
+ * @returns {Promise<Object[]>} Active, runnable models by name. Empty if MARP would not say.
  */
-function loadModels() {
+function loadRunnableModels() {
   if (!registryAsked) {
-    registryAsked = (window.MarpApi?.listModels?.() || Promise.resolve([]))
+    registryAsked = (window.MarpApi?.listRunnableModels?.() || Promise.resolve([]))
       /* **Active only.** `status` is what says a model is released to run; a draft
          has no weights worth sending and an archived one is retired. The thirteen
          real models here are active, and the two that are not are leftovers from a
@@ -8035,15 +8233,24 @@ function modelConfigMarkup() {
     + '<details class="fold model-settings">'
     + '<summary>Inference &amp; ByteTrack settings <span class="now" data-settings-now></span></summary>'
     + '<div class="fbody settings-grid">'
-    + '<label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.25" data-setting="conf"></label>'
+    /* **Named for the keys the worker reads, and opened at the values it would use.**
+       Every one of these was a name the worker does not honour, so a run reported
+       them as ignored and used its own number instead. Detection confidence showed
+       0.25 while an unset confidence runs at 0.15 -- the screen stating one
+       measurement and the GPU applying another. `tracking_engine.py` is the source:
+       `params.get("confidence", params.get("conf", 0.15))`, `_INFERENCE_OPTIONS` for
+       the predict() settings, and ByteTrack's own four. */
+    + '<label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.15" data-setting="confidence"></label>'
     + '<label>NMS IoU<input class="inp" type="number" min="0" max="1" step="0.01" value="0.45" data-setting="iou"></label>'
-    + '<label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30" data-setting="track"></label>'
-    + '<label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70" data-setting="match"></label>'
-    + '<label>Track buffer (frames)<input class="inp" type="number" min="1" value="240" data-setting="buffer"></label>'
-    + '<label>Range size (frames)<input class="inp" type="number" min="1" value="900" data-setting="range"></label>'
+    + '<label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30" data-setting="track_thresh"></label>'
+    + '<label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70" data-setting="match_thresh"></label>'
+    + '<label>Track buffer (frames)<input class="inp" type="number" min="1" value="240" data-setting="track_buffer"></label>'
+    + '<label>Piece size (frames)<input class="inp" type="number" min="1" value="900" data-setting="piece_frames"></label>'
     + '<label class="check"><input type="checkbox" data-setting="mot20"><span>MOT20 mode</span></label>'
-    + '<label>Reduction<select class="sel" data-setting="reduction">'
-    + '<option>Best frame of each track</option><option>Every detection</option></select></label>'
+    /* Stated rather than chosen. `reduction/keyframes.py` registers exactly one --
+       `("v3_dirpad", "1")` -- and the two options here were "Best frame of each
+       track" and "Every detection", neither of which a worker could have run. */
+    + '<label>Reduction<input class="inp" type="text" value="v3_dirpad v1" readonly disabled></label>'
     + '</div></details>'
     + '<button class="text-action danger" type="button" data-remove-model>Remove model</button>'
     + '</div></details>';
@@ -8064,7 +8271,7 @@ const MODEL_MARK_TONES = ['gorg', 'star', ''];
  */
 async function refreshModelConfig(config) {
   const pick = $('[data-model-pick]', config);
-  const models = await loadModels();
+  const models = await loadRunnableModels();
 
   if (!pick) return;
 
@@ -8168,14 +8375,14 @@ function refreshConfigSummary(config, known = {}) {
         ? `${checked} of ${total} ${total === 1 ? 'species' : 'species'}`
         : (total === 1 ? 'its one species' : `all ${total} species`))
       : 'no classes mapped';
-    note.textContent = `${chosen}${classes} · conf ${get('conf') ?? ''}`;
+    note.textContent = `${chosen}${classes} · conf ${get('confidence') ?? ''}`;
   }
 
   /* The leading zero goes, because the fold's own line is tight and ".18" reads
      as a confidence to anybody who has used one. */
   const trim = (value) => String(value ?? '').replace(/^0(?=\.)/, '');
 
-  if (now) now.textContent = `conf ${trim(get('conf'))} · match ${trim(get('match'))} · buffer ${get('buffer') ?? ''}`;
+  if (now) now.textContent = `conf ${trim(get('confidence'))} · match ${trim(get('match_thresh'))} · buffer ${get('track_buffer') ?? ''}`;
 }
 
 /**
@@ -8196,6 +8403,226 @@ function defaultJobName() {
   const scope = dives.slice(0, 3).join('_').replace(/[^A-Za-z0-9_-]+/g, '-');
 
   return scope ? `${scope}_${day}` : `inference_${day}`;
+}
+
+/**
+ * The engine a "Detection + ByteTrack" run is.
+ *
+ * **Read off the worker's own registry, not chosen.** `engines/engine_registry.py`
+ * registers `mock`, `ultralytics`, `marp_tracking` and `marp_training`, and
+ * `get_job_engine` refuses anything that is not a `BaseEngine` -- `UltralyticsEngine` is
+ * `FrameInferenceCapable`, the single-frame engine behind the frame routes, so a video
+ * job must be `marp_tracking`. There is no `marp_inference`, whatever MARP's older notes
+ * say.
+ *
+ * @constant {string}
+ */
+const INFERENCE_ENGINE = 'marp_tracking';
+
+/**
+ * The keyframe rule applied to finished tracks.
+ *
+ * `reduction/keyframes.py` registers exactly one, keyed `("v3_dirpad", "1")`. The version
+ * is sent as a string because that tuple key is a string; the worker stringifies anyway,
+ * but relying on that is relying on a coincidence.
+ *
+ * @constant {{name: string, version: string}}
+ */
+const INFERENCE_REDUCTION = Object.freeze({ name: 'v3_dirpad', version: '1' });
+
+/**
+ * Say how a submission went, where somebody about to click again will see it.
+ *
+ * @param {string} text - What happened.
+ * @param {string} [kind] - `ok` or `warning`, for the styling.
+ * @returns {void}
+ */
+function sayRunStatus(text, kind) {
+  const status = $('[data-fills="run-status"]');
+
+  if (!status) return;
+
+  status.textContent = text;
+  status.dataset.state = kind || '';
+}
+
+/**
+ * Fill every run group's MARP project picker.
+ *
+ * **MARP projects, not the Jellyfin folders above.** The video query panel browses
+ * Jellyfin's own hierarchy, whose "project" is a directory name; a session belongs to a
+ * row in `projects`, and the two are not the same thing. Submitting the Jellyfin name
+ * would be submitting a string MARP cannot resolve.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function fillProjectPickers() {
+  const pickers = $$('[data-marp-project]');
+
+  if (!pickers.length || !window.MarpApi) return;
+
+  const projects = await (window.MarpApi.listProjects
+    ? window.MarpApi.listProjects().catch(() => [])
+    : Promise.resolve([]));
+
+  /* **Nothing selected to begin with.** A select takes its first option by default, so a
+     picker that opened on a project nobody chose would file a dive's observations under
+     whichever project sorted first -- silently, and in a record people query later. The
+     empty option makes the refusal below fire instead. */
+  const options = (projects || []).length
+    ? '<option value="">Choose a project</option>' + projects.map((project) => {
+      const id = project.project_id === undefined ? project.id : project.project_id;
+
+      return '<option value="' + id + '">' + escapeHtml(project.name || ('Project ' + id)) + '</option>';
+    }).join('')
+    : '<option value="">No projects</option>';
+
+  pickers.forEach((picker) => {
+    /* Only an empty one, so refilling does not throw away a choice somebody made. */
+    if (!picker.options.length) picker.innerHTML = options;
+  });
+}
+
+/**
+ * The settings a model config asks for, under the names the worker reads.
+ *
+ * **Only what was changed is sent.** The worker records each setting with a `source` of
+ * `job` or `default`, so a value sent because it happened to be sitting in the box
+ * reports as a choice somebody made. Confidence is the one that matters: the field opens
+ * at the worker's own 0.15, and sending that back would claim a decision nobody took.
+ *
+ * @param {Element} config - The `[data-model-config]` element.
+ * @returns {Object} `spec.params`, which may be empty.
+ */
+function inferenceParams(config) {
+  const params = {};
+
+  $$('[data-setting]', config).forEach((input) => {
+    const key = input.dataset.setting;
+
+    // Not a worker setting: it splits the submission into jobs, which is MARP's business.
+    if (key === 'piece_frames' || input.disabled) return;
+
+    if (input.type === 'checkbox') {
+      if (input.checked) params[key] = true;
+
+      return;
+    }
+
+    const raw = String(input.value === undefined || input.value === null ? '' : input.value).trim();
+
+    if (raw === '' || Number(raw) === Number(input.defaultValue)) return;
+
+    params[key] = Number(raw);
+  });
+
+  return params;
+}
+
+/**
+ * Every job the plan on screen describes, or why none of them can be submitted.
+ *
+ * One body per target per model configuration, which is what the plan's own arithmetic
+ * already says: *N model runs across M selected video ranges*.
+ *
+ * **Refusals rather than a partial submission.** Each is something a person can act on,
+ * and all of them are collected rather than the first -- a plan missing a line on four
+ * cards should say so once, not four times over four clicks.
+ *
+ * @async
+ * @returns {Promise<{bodies: Object[]}|{refusals: string[]}>}
+ */
+async function inferenceSubmissions() {
+  const models = await loadRunnableModels();
+  const bodies = [];
+  const refusals = [];
+  const name = ($('#jobname') ? $('#jobname').value : '').trim() || defaultJobName();
+
+  $$('[data-run-group]').forEach((group, index) => {
+    const where = 'Run group ' + (index + 1);
+    const picker = $('[data-marp-project]', group);
+    const projectId = Number(picker ? picker.value : NaN);
+    const targets = $$('[data-target]', group);
+    const configs = $$('[data-model-config]', group);
+
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      refusals.push(where + ': choose the MARP project its observations belong to.');
+    }
+
+    if (!targets.length) refusals.push(where + ': add at least one video range.');
+    if (!configs.length) refusals.push(where + ': add at least one model.');
+
+    targets.forEach((target) => {
+      const dive = (target.dataset.videoDive || '').trim();
+      const line = (target.dataset.videoLine || '').trim();
+      const named = $('b', target);
+      const label = (named ? named.textContent.trim() : '') || target.dataset.videoId;
+
+      /* Both identify the session and neither can be guessed. A line is typed onto the
+         card and saved; a dive comes from the Jellyfin hierarchy. */
+      if (!dive) refusals.push(where + ': ' + label + ' has no dive, so its session cannot be placed.');
+      if (!line) refusals.push(where + ': ' + label + ' has no line. Enter one on the card and save it.');
+
+      configs.forEach((config) => {
+        const pick = $('[data-model-pick]', config);
+        const model = models.find((row) => row.id === Number(pick ? pick.value : NaN));
+
+        if (!model) {
+          refusals.push(where + ': choose a model.');
+
+          return;
+        }
+
+        /* **The worker hashes what it fetched and refuses a mismatch**, and MARP refuses
+           a spec without a hash. A model registered before `artifact_sha256` existed has
+           none, and reaches the API as a 400 that reads like a defect in this screen. */
+        if (!model.artifact_sha256) {
+          refusals.push(where + ': ' + model.name + ' has no recorded checksum, so a worker would '
+            + 'have nothing to verify its weights against. Run '
+            + 'scripts/backfill-model-artifact-sha256.js where the model store lives.');
+
+          return;
+        }
+
+        const piece = $('[data-setting="piece_frames"]', config);
+        const pieceFrames = Number(piece ? piece.value : NaN);
+        const params = inferenceParams(config);
+        const body = {
+          kind: 'inference',
+          name,
+          spec: {
+            engine: INFERENCE_ENGINE,
+            /* An item id, never a URL: MARP resolves it to something playable when the
+               job is leased, and the Jellyfin item supplies `source_name`. */
+            video: { jellyfin_item_id: target.dataset.videoId },
+            model: {
+              ml_model_id: model.id,
+              name: model.name,
+              // Coordinator-relative, so a worker resolves it against whichever MARP it
+              // is enrolled with rather than a path on somebody's disk.
+              url: '/api/v2/model/' + model.id + '/artifact',
+              sha256: String(model.artifact_sha256).toLowerCase(),
+            },
+            reduction: Object.assign({}, INFERENCE_REDUCTION),
+            /* **A session per run, under the dive**, and `type` left out so MARP derives
+               it from the model's species list -- the screen has no business restating
+               something the registry already knows. No `range`: MARP works the frame
+               count out from the Jellyfin item and reports back what it decided, which
+               beats this screen guessing at a video's length. */
+            session: { project_id: projectId, dive, line, per_run: true },
+          },
+        };
+
+        if (Number.isInteger(pieceFrames) && pieceFrames > 0) body.piece_frames = pieceFrames;
+        if (Object.keys(params).length) body.spec.params = params;
+
+        bodies.push(body);
+      });
+    });
+  });
+
+  return refusals.length ? { refusals } : { bodies };
 }
 
 function wireInferenceForm() {
@@ -8252,7 +8679,10 @@ function wireInferenceForm() {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[character]));
   const targetMarkup = (parts) => '<article class="plan-target" data-target data-video-id="'
-    + safe(parts.id) + '" data-video-dive="' + safe(parts.dive || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
+    + safe(parts.id) + '" data-video-dive="' + safe(parts.dive || '')
+    /* The line was in the card's prose and nowhere a submission could read it, so a
+       plan that displayed "Line 4" submitted nothing of the sort. */
+    + '" data-video-line="' + safe(parts.line || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
     + (parts.line ? 'L' + safe(parts.line) : '—') + '</span><span><b class="mono">' + safe(parts.title)
     + '</b><small>' + (parts.dive ? safe(parts.dive) + ' · ' : '')
     + (parts.line ? 'Line ' + safe(parts.line) : 'Line not assigned') + ' · ' + safe(parts.range)
@@ -8354,32 +8784,56 @@ function wireInferenceForm() {
     }
   });
 
-  run.addEventListener('click', () => {
-    const groups = $$('[data-run-group]').map((group, index) => ({
-      order: index + 1,
-      targets: $$('[data-target]', group).map((target) => ({
-        jellyfin_item_id: target.dataset.videoId,
-        label: $('b', target)?.textContent.trim(),
-        selection: $('small', target)?.textContent.trim(),
-      })),
-      models: $$('[data-model-config]', group).map((model) => ({
-        model: $('summary b', model)?.textContent.trim(),
-        summary: $('summary small', model)?.textContent.trim(),
-      })),
-    }));
-    const spec = { kind: 'inference_plan', pipeline: 'detection_bytetrack',
-      /* Blank means "name it after the plan", which is what the placeholder says.
-         The box used to open pre-filled with `CAMPA_2024_Dives_0103_0125`, so every
-         plan anybody submitted without noticing carried that name. */
-      name: $('#jobname')?.value.trim() || defaultJobName(), groups,
-      output: 'unreviewed_observations', worker_selection: $('table#workers')?.value };
-    $('#specText').textContent = JSON.stringify(spec, null, 2);
+  run.addEventListener('click', async () => {
+    const asked = await inferenceSubmissions();
+
+    /* The spec panel still opens, because somebody about to spend GPU hours should be
+       able to read what is going. It shows what was actually sent, not a sketch of it:
+       it used to print a `kind: 'inference_plan'` object that no MARP route accepts,
+       naming models by their display text and carrying no session, no hash and no
+       frames. Nothing was ever submitted. */
+    $('#specText').textContent = JSON.stringify(asked.bodies || asked.refusals, null, 2);
     $('#specOut').hidden = false;
-    $('#specOut').scrollIntoView({ block: 'nearest' });
+
+    if (asked.refusals) {
+      sayRunStatus(asked.refusals[0], 'warning');
+      return;
+    }
+
+    run.disabled = true;
+    sayRunStatus(`Queueing ${asked.bodies.length} run${asked.bodies.length === 1 ? '' : 's'}…`);
+
+    const queued = [];
+
+    try {
+      /* One at a time, deliberately. Each submission creates its own session, and a
+         burst of parallel posts would interleave those writes for no gain -- there are
+         a handful of runs here, not hundreds. */
+      for (const body of asked.bodies) {
+        const answer = await window.MarpApi.submitJob(body);
+
+        queued.push(...(answer.jobs || []).map((job) => job.id));
+      }
+
+      sayRunStatus(`Queued ${queued.length} job${queued.length === 1 ? '' : 's'}: `
+        + `${queued.join(', ')}. They appear below, and on the Jobs screen.`, 'ok');
+      renderInferenceScreen();
+    } catch (error) {
+      /* MARP's own message, which names the field that was wrong. Replacing it with
+         "Could not queue" is how somebody ends up guessing. Says what already went, so
+         a failure halfway through a plan is not read as nothing having happened. */
+      const sent = queued.length ? ` ${queued.length} already queued (${queued.join(', ')}).` : '';
+
+      sayRunStatus(`Could not queue it (${error.status || 'no answer'}). ${error.message || ''}${sent}`.trim(),
+        'warning');
+    } finally {
+      run.disabled = false;
+    }
   });
 
   refreshSelected();
   refreshPlan();
+  fillProjectPickers();
 
   /* One configuration to start with, so the panel shows the control rather than an
      empty box somebody has to guess at. The markup used to carry two, named after

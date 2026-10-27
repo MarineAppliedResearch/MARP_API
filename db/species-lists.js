@@ -84,7 +84,55 @@ function speciesListForSessionType(sessionType) {
     return SESSION_TYPE_TO_SPECIES_LIST[sessionType.trim()] || null;
 }
 
+/**
+ * Maps a species list back onto the session type that reads it.
+ *
+ * **The forward map is not one-to-one, so this one has to choose.** `Invert` and
+ * `Inverts` are both session types reading the `Inverts` list, and an inverse
+ * derived mechanically would have no grounds to pick. `Invert` is named here
+ * because it is the one the corpus and the ingest tests use; the other remains a
+ * type MARP accepts, it is simply not the one MARP produces.
+ *
+ * Only lists whose name differs from their type need an entry, for the same
+ * reason the forward map is short: everything else resolves by being called the
+ * same thing. See `sessionTypeForSpeciesList`.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const SPECIES_LIST_TO_SESSION_TYPE = Object.freeze({
+    Inverts: 'Invert',
+    Substrate_60Seconds: 'Substrate60Second',
+    MBARI_Benthic_Supercategory: 'MBARI_Benthic',
+});
+
+/**
+ * The session type whose observations read against a given species list.
+ *
+ * **Falls back to the list's own name rather than to null**, which is the mirror
+ * of `speciesListNamed` on the ingest repository and the same decision as #223: a
+ * list seeded after this file was written names a type called the same thing, so
+ * a new model needs a seeder run and nothing else. A list this map has never
+ * heard of is therefore answered, not refused -- and if the answer is wrong, the
+ * ingest refuses it at `checkSessionTypeAgainstModel`, which is the check that
+ * can actually see the model.
+ *
+ * @param {string} speciesList - A `species.species_list` value.
+ * @returns {string|null} The `sessions.type` to use, or null for a non-string.
+ */
+function sessionTypeForSpeciesList(speciesList) {
+    if (typeof speciesList !== 'string' || speciesList.trim() === '') {
+        return null;
+    }
+
+    const list = speciesList.trim();
+
+    return SPECIES_LIST_TO_SESSION_TYPE[list] || list;
+}
+
 module.exports = {
     SESSION_TYPE_TO_SPECIES_LIST,
+    SPECIES_LIST_TO_SESSION_TYPE,
     speciesListForSessionType,
+    sessionTypeForSpeciesList,
 };
