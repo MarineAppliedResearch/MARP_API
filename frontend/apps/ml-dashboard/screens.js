@@ -4208,6 +4208,22 @@ async function wireVideoPicker() {
           + `<div class="video-thumb"><img loading="lazy" src="/api/v2/jellyfin/items/${encodeURIComponent(file.id)}/images/Primary" alt="${escape(file.name)}"></div>`
           + `<div class="video-meta"><b>${escape(file.name)}</b>`
           + `<span class="faint">${escape(file.path || '')}${when ? ` &middot; ${when}` : ''}</span></div>`
+          /* **The line and the frame range, which nothing else can supply.** The picker
+             was rewritten to read the real Jellyfin library and these went with the old
+             markup, while `choiceParts` kept reading selectors for them -- so every
+             target it produced had no line, and a line is half of what places a session.
+             The range went the same way, leaving no way to run part of a video at all.
+
+             Blank frames mean the whole video, and MARP says what it worked that out to
+             be rather than this screen guessing at a length it cannot know. */
+          + '<div class="video-scope">'
+          + '<label class="line-entry">Line<input class="inp" type="text" inputmode="numeric"'
+          + ` aria-label="Line for ${escape(file.name)}" placeholder="e.g. 4"></label>`
+          + '<label>From frame<input class="inp" type="number" min="0" step="1" data-start-frame'
+          + ` aria-label="First frame of ${escape(file.name)}" placeholder="start"></label>`
+          + '<label>To frame<input class="inp" type="number" min="1" step="1" data-end-frame'
+          + ` aria-label="Last frame of ${escape(file.name)}" placeholder="whole video"></label>`
+          + '</div>'
           + '</article>';
       }).join('') : '<p class="nodata">That dive holds no video files.</p>';
     } catch (error) {
@@ -8076,6 +8092,20 @@ async function inferenceSubmissions() {
           },
         };
 
+        /* **Sent only when somebody scoped the run.** Left out, MARP derives the end
+           from the Jellyfin item and reports back what it decided -- which is the one
+           thing this screen could not work out for itself. A half-open range, so
+           `to` is one past the last frame, exactly as the API documents it. */
+        const from = (target.dataset.startFrame || '').trim();
+        const to = (target.dataset.endFrame || '').trim();
+
+        if (from !== '' || to !== '') {
+          body.spec.range = {};
+
+          if (from !== '') body.spec.range.start_frame = Number(from);
+          if (to !== '') body.spec.range.end_frame = Number(to);
+        }
+
         if (Number.isInteger(pieceFrames) && pieceFrames > 0) body.piece_frames = pieceFrames;
         if (Object.keys(params).length) body.spec.params = params;
 
@@ -8099,10 +8129,20 @@ function wireInferenceForm() {
     const title = $('.video-meta b', choice)?.textContent.trim() || 'video';
     const dive = (choice.dataset.videoDive || '').trim();
     const line = $('.line-entry .inp', choice)?.value.trim();
-    const mode = $('[data-video-range]', choice)?.value || 'all';
-    const times = $$('.time-range .inp', choice).map((input) => input.value);
-    return { id: choice.dataset.videoId, title, dive, line,
-      range: mode === 'time' ? times.join('–') : 'Entire video' };
+    /* Read as text and kept as text: an empty box is "not set", and `Number('')` is 0,
+       which would silently submit frame 0 as a deliberate start. */
+    const from = $('[data-start-frame]', choice)?.value.trim() || '';
+    const to = $('[data-end-frame]', choice)?.value.trim() || '';
+
+    return {
+      id: choice.dataset.videoId,
+      title,
+      dive,
+      line,
+      from,
+      to,
+      range: from || to ? `Frames ${from || '0'}\u2013${to || 'end'}` : 'Entire video',
+    };
   };
 
   const refreshSelected = () => {
@@ -8144,7 +8184,9 @@ function wireInferenceForm() {
     + safe(parts.id) + '" data-video-dive="' + safe(parts.dive || '')
     /* The line was in the card's prose and nowhere a submission could read it, so a
        plan that displayed "Line 4" submitted nothing of the sort. */
-    + '" data-video-line="' + safe(parts.line || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
+    + '" data-video-line="' + safe(parts.line || '')
+    + '" data-start-frame="' + safe(parts.from || '')
+    + '" data-end-frame="' + safe(parts.to || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
     + (parts.line ? 'L' + safe(parts.line) : '—') + '</span><span><b class="mono">' + safe(parts.title)
     + '</b><small>' + (parts.dive ? safe(parts.dive) + ' · ' : '')
     + (parts.line ? 'Line ' + safe(parts.line) : 'Line not assigned') + ' · ' + safe(parts.range)
