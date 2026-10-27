@@ -440,9 +440,15 @@
                 <input class="inp" type="search" placeholder="Search runs&hellip;"
                        aria-label="Search runs" title="Filter by run, dataset or model name">
               </span>
+              <!-- Every state a run can be in, not the three this used to offer: run 203
+                   is cancelled, and a filter that cannot select a row somebody is looking
+                   at is its own defect. Values are the design states renderTrainingRuns
+                   filters on. -->
               <select class="sel" aria-label="Status" title="Show only runs in one state">
-                <option>All statuses</option><option>Running</option>
-                <option>Completed</option><option>Failed</option>
+                <option value="all">All statuses</option><option value="running">Running</option>
+                <option value="queued">Queued</option><option value="done">Done</option>
+                <option value="issues">Issues</option><option value="failed">Failed</option>
+                <option value="cancelled">Cancelled</option><option value="expired">Expired</option>
               </select>
               <button class="btn" title="Open every run's curves at once">
                 <svg class="ico"><use href="#i-split"/></svg>Expand all</button>
@@ -470,11 +476,11 @@
             </div>
           </div>
           <footer class="panel-ft">
-            <span>Showing <b class="strong">1&ndash;6</b> of 28 runs</span>
-            <div class="pager">
-              <button aria-label="Previous page" disabled title="Previous page"><svg class="ico sm"><use href="#i-left"/></svg></button>
-              <button aria-current="page">1</button><button>2</button><button>3</button>
-              <button aria-label="Next page" title="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+            <span>Counting runs&hellip;</span>
+            <div class="pager" data-rendered>
+              <!-- Built by renderTrainingRunsHeader(). This held "Showing 1-6 of 28 runs"
+                   over an empty table and a fixed run of three page buttons, which was
+                   wrong about a list of six and about every other list. -->
             </div>
           </footer>
         </section>

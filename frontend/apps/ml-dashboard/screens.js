@@ -2358,6 +2358,19 @@ function patchTrainingRows(body, views) {
       epochs.innerHTML = `${done} / ${total}`;
     }
 
+    /* Only the Training runs table has this column, so this is a no-op on the recent
+       table above -- one patch path for both, rather than a second one that would drift. */
+    const prog = $('.jprog', head);
+
+    if (prog) {
+      const next = progressCell(view.job, view.state);
+
+      if (prog.dataset.sort !== String(next.sort)) {
+        prog.innerHTML = next.html;
+        prog.dataset.sort = String(next.sort);
+      }
+    }
+
     const detail = head.nextElementSibling;
 
     if (detail && typeof detail.redraw === 'function') detail.redraw();
@@ -2562,7 +2575,12 @@ function renderTrainingRecent(views) {
       + '</tr>';
   }).join('');
 
-  trainingViewsByJob = new Map(shown.map((view) => [view.job.id, view]));
+  /* **Every view, not the three drawn here.** The Training runs panel below shows every
+     run, and both tables' expansions are the same `wireTrainingJobDetail`, which looks a
+     job up in this map -- so a run outside the recent three would have opened to nothing.
+     It also fixes the watcher by the same stroke: it keeps polling while any training job
+     is live, rather than only while one of the top three is. */
+  trainingViewsByJob = new Map(views.map((view) => [view.job.id, view]));
 
   for (const head of $$(':scope > tr[data-job]', body)) {
     head.classList.add('runrow-head');
@@ -3164,7 +3182,8 @@ async function renderTrainingScreen() {
 
     renderTraining(jobs.jobs);
     fillTrainingChoices(models, datasets);
-    markTrainingRunsUnbacked();
+    /* After `renderTraining`, which is what fills `trainingViewsByJob`. */
+    fillTrainingRuns(runs, trainingViewsByJob);
     watchTrainingJobs();
     wireTrainingResult();
   } catch (error) {
@@ -3226,6 +3245,12 @@ function watchTrainingJobs() {
       }
 
       patchTrainingRows(body, trainingViewsByJob);
+
+      /* The runs panel is the same rows seen a second way, so it is patched rather than
+         redrawn for the same reason: a rebuild closes the expansion somebody is reading. */
+      const runsBody = $('#runs tbody');
+
+      if (runsBody) patchTrainingRows(runsBody, trainingViewsByJob);
     } catch {
       /* A poll that fails is a blip. The last good answer stays on screen, which is
          better than replacing a table somebody is reading with an error. */
@@ -3237,26 +3262,283 @@ function watchTrainingJobs() {
   }, TRAINING_EPOCH_POLL_MS);
 }
 
-/**
- * Says, on the Training runs panel itself, that nothing serves it.
- *
- * The table is left as it is -- it is the designed contract for a run record,
- * and deleting it would lose that -- but a reader has to be able to tell it
- * apart from the tables above it, which are real.
- */
-function markTrainingRunsUnbacked() {
-  const heading = $$('.panel-hd h2').find((h) => /^Training runs/.test(h.textContent.trim()));
-  const header = heading && heading.closest('.panel-hd');
-  if (!header || $('.unbacked-note', header)) return;
+/* ---------------------------------------------------- the Training runs panel */
 
-  const note = document.createElement('p');
-  note.className = 'unbacked-note muted';
-  /* **Narrowed to what is still true.** Runs can be listed since #260 and their epochs
-     since f951fdda -- this table simply has not been filled from them yet, which is a
-     different and much smaller statement than the one that used to be here. */
-  note.textContent = 'Design data. This table is not filled from MARP yet; the recent '
-    + 'training jobs above expand to show a real run and its curves.';
-  header.appendChild(note);
+/**
+ * What the Training runs panel is showing.
+ *
+ * Client-side, because everything it filters over is already on the screen: the runs
+ * came from `GET /training_run` and the jobs from the one `kind=training` read the
+ * table above also uses. A server-side filter would be a second round trip for a list
+ * of six.
+ */
+const runsQuery = { search: '', status: 'all', page: 1, perPage: 10 };
+
+/** Every run, newest first, as the panel sorts and filters it. */
+let trainingRunRows = [];
+
+/**
+ * One run, reduced to what the panel shows, sorts and searches on.
+ *
+ * **Every column comes from data the screen already has.** This panel was a fixture --
+ * an empty `<tbody>` under a footer hardcoded to *"Showing 1-6 of 28 runs"* and three
+ * dead pager buttons -- and the reason given for it was that `/v2/training_run` had
+ * only a `POST`. #260 added the collection read and the job list carries the rest, so
+ * the only thing still missing was this function.
+ *
+ * **Epochs come from the attempt, not from `total_epochs`.** `progress_done` persists
+ * after a job ends and equals the epoch rows exactly, including where a run was
+ * stopped early -- run 203 is 8 of 10. `total_epochs` is what was *configured*, so a
+ * finished run reading 10 of 10 from it would be a guess that happens to be right most
+ * of the time and silently wrong on every cancellation.
+ *
+ * @param {Object} run - A `training_runs` row.
+ * @param {Object|null} view - The job view for `run.job_id`, when the job is in the list.
+ * @returns {Object} The row model.
+ */
+function trainingRunView(run, view) {
+  const job = view ? view.job : null;
+  const spec = (job && job.spec) || {};
+  const started = Date.parse(run.start_time || (job && job.created_at) || '') || 0;
+
+  /* The run's own clock where it has one. A cancelled run has a start and no end, so
+     the job's wall clock stands in and the cell says which it is. */
+  const ownMs = run.end_time && run.start_time
+    ? Date.parse(run.end_time) - Date.parse(run.start_time)
+    : null;
+  const jobMs = job && job.updated_at && job.created_at
+    ? Date.parse(job.updated_at) - Date.parse(job.created_at)
+    : null;
+
+  const counted = /epoch/i.test((job && job.progress_unit) || '');
+  const done = counted ? Number(job.progress_done) : NaN;
+  const total = counted ? Number(job.progress_total) : Number(run.total_epochs);
+
+  return {
+    run,
+    view,
+    job,
+    spec,
+    started,
+    ownMs,
+    jobMs,
+    done: Number.isFinite(done) ? done : null,
+    total: Number.isFinite(total) && total > 0 ? total : null,
+    state: view ? view.state : 'queued',
+    label: view ? view.label : 'No job',
+    /* One lower-cased haystack per row, built once. The search box filters the model
+       rather than the rendered cells, because a filter that reads the DOM can only
+       filter the page it can see -- the same reason `jobView` exists. */
+    find: [
+      view && view.title,
+      spec.dataset && spec.dataset.name,
+      spec.model && spec.model.name,
+      `run ${run.id}`,
+      job && `job ${job.id}`,
+      run.optimizer,
+      run.compute_device,
+    ].filter(Boolean).join(' ').toLowerCase(),
+  };
+}
+
+/**
+ * Draw the Training runs panel from the runs and jobs already loaded.
+ *
+ * @returns {void}
+ */
+function renderTrainingRuns() {
+  const table = $('#runs');
+  const body = table && $('tbody', table);
+
+  if (!body) return;
+
+  const panel = table.closest('.panel');
+  const search = runsQuery.search.trim().toLowerCase();
+  const matching = trainingRunRows.filter((row) => (runsQuery.status === 'all'
+    || row.state === runsQuery.status)
+    && (!search || row.find.includes(search)));
+
+  const pages = Math.max(1, Math.ceil(matching.length / runsQuery.perPage));
+
+  if (runsQuery.page > pages) runsQuery.page = pages;
+
+  const from = (runsQuery.page - 1) * runsQuery.perPage;
+  const shown = matching.slice(from, from + runsQuery.perPage);
+
+  body.innerHTML = shown.length
+    ? shown.map((row) => {
+      const { run, job, spec } = row;
+      const progress = job ? progressCell(job, row.state) : { html: NO_RUN_RECORDED, sort: -1 };
+      const map = job ? bestMap(job, run) : { html: NO_RUN_RECORDED, sort: -1 };
+      const took = row.ownMs !== null
+        ? `<span title="From this run's own start and end times">${tookText(row.ownMs)}</span>`
+        : (row.jobMs !== null
+          ? `<span class="faint" title="This run recorded no end time, so this is its job's wall clock">${tookText(row.jobMs)}</span>`
+          : '<span class="dash" title="Nothing recorded an end">&mdash;</span>');
+
+      return `<tr data-job="${job ? job.id : ''}" data-run="${run.id}">`
+        + '<td class="ex"><button class="exbtn" type="button" aria-label="Show this run"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
+        + `<td class="jname" title="${escapeHtml(row.view ? row.view.title : `Run ${run.id}`)}">`
+        + `<span class="name"><svg class="ico training"><use href="#i-training"/></svg>`
+        + `<span class="t">${row.view ? row.view.title : `Run ${run.id}`}</span></span></td>`
+        + `<td class="jdset">${namedById('Dataset', spec.dataset, run.dataset_id,
+          run.dataset_id ? `./datasets.html?dataset=${encodeURIComponent(run.dataset_id)}` : '')}</td>`
+        /* Same rule as the table above: a run registers a version only once it has
+           succeeded, so an unfinished one has nothing to name here. */
+        + `<td class="jmakes">${['done', 'issues'].includes(row.state)
+          ? namedById('Model', spec.model, run.model_id, '')
+          : '<span class="dash" title="The version a run registers does not exist until it succeeds">&mdash;</span>'}</td>`
+        + `<td class="jstatus" data-sort="${JOB_STATE_RANK[row.state]}">`
+        + `<span class="st" data-state="${row.state}"><span class="dot"></span>${row.label}</span></td>`
+        + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
+        + `<td class="jepochs num" data-sort="${row.done ?? -1}">${row.done === null
+          ? '<span class="dash" title="This run&apos;s job did not report its progress in epochs">&mdash;</span>'
+          : `<span title="${row.total ? `of ${row.total} configured` : 'configured epochs not recorded'}">${row.done}${row.total ? ` / ${row.total}` : ''}</span>`}</td>`
+        + `<td class="jmap num" data-sort="${map.sort}">${map.html}</td>`
+        + `<td class="jtime" data-sort="${row.started}">${row.started
+          ? `<span class="two"><span class="a">${new Date(row.started).toTimeString().slice(0, 5)}</span>`
+            + `<span class="b">${new Date(row.started).toISOString().slice(0, 10)}</span></span>`
+          : '<span class="dash" title="This run recorded no start time">&mdash;</span>'}</td>`
+        + `<td class="jtook num" data-sort="${row.ownMs ?? row.jobMs ?? -1}">${took}</td>`
+        + '</tr>';
+    }).join('')
+    : '<tr class="tblmsg"><td class="empty" colspan="10">No training runs match these filters.</td></tr>';
+
+  /* The same two rows per run the table above builds, so one expansion serves both:
+     `wireTrainingJobDetail` reads `data-job` and knows nothing about which table it
+     was called from. */
+  for (const head of $$(':scope > tr[data-job]', body)) {
+    head.classList.add('runrow-head');
+    head.setAttribute('aria-expanded', 'false');
+
+    const detail = document.createElement('tr');
+
+    detail.className = 'runrow-body';
+    detail.hidden = true;
+    detail.innerHTML = '<td colspan="10"><div class="rundetail jobdetail"><p class="hint">Reading this run&hellip;</p></div></td>';
+    head.after(detail);
+
+    wireTrainingJobDetail(head, detail);
+  }
+
+  wireAccordions();
+  renderTrainingRunsHeader(panel, matching.length, from, shown.length, pages);
+}
+
+/**
+ * The run panel's count, its footer and its pager, from what was drawn.
+ *
+ * @param {Element} panel - The runs panel.
+ * @param {number} total - Rows matching the filters.
+ * @param {number} from - Index of the first row shown.
+ * @param {number} shown - How many were drawn.
+ * @param {number} pages - How many pages the filtered list has.
+ * @returns {void}
+ */
+function renderTrainingRunsHeader(panel, total, from, shown, pages) {
+  if (!panel) return;
+
+  const count = $('.panel-hd .count', panel);
+
+  if (count) count.textContent = `(${total.toLocaleString()})`;
+
+  const showing = $('.panel-ft > span', panel);
+
+  if (showing) {
+    showing.innerHTML = shown
+      ? `Showing <b class="strong">${(from + 1).toLocaleString()}&ndash;${(from + shown).toLocaleString()}</b> of ${total.toLocaleString()} run${total === 1 ? '' : 's'}`
+      : 'No training runs match these filters';
+  }
+
+  const pager = $('.panel-ft .pager', panel);
+
+  if (pager) {
+    /* Rebuilt rather than patched, for the reason the Jobs pager is: the markup held a
+       fixed 1/2/3 under a hardcoded "of 28 runs", which is a lie about any list that is
+       not exactly three pages long -- and this one is one page of six. */
+    const buttons = [`<button aria-label="Previous page" data-runs-page="${runsQuery.page - 1}"${runsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
+    const first = Math.max(1, Math.min(runsQuery.page - 2, pages - 4));
+
+    for (let page = first; page <= Math.min(pages, first + 4); page += 1) {
+      buttons.push(`<button data-runs-page="${page}"${page === runsQuery.page ? ' aria-current="page"' : ''}>${page}</button>`);
+    }
+
+    buttons.push(`<button aria-label="Next page" data-runs-page="${runsQuery.page + 1}"${runsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
+    pager.innerHTML = buttons.join('');
+  }
+}
+
+/**
+ * Build the panel's row models and wire its controls. Called once per screen load.
+ *
+ * @param {Object[]} runs - Every `training_runs` row, newest first.
+ * @param {Map<number, Object>} views - Job views by job id.
+ * @returns {void}
+ */
+function fillTrainingRuns(runs, views) {
+  trainingRunRows = runs
+    .map((run) => trainingRunView(run, views.get(run.job_id) || null))
+    .sort((a, b) => b.started - a.started || b.run.id - a.run.id);
+
+  const table = $('#runs');
+  const panel = table && table.closest('.panel');
+
+  if (!panel) return;
+
+  /* The options are declared in the markup and cover every state, the way the Jobs
+     screen's do. Filling them from the states present would make the filter's own
+     contents move with the data -- Running would be absent until something ran. */
+  const select = $('.sel', panel);
+
+  if (select && !select.dataset.wired) {
+    select.dataset.wired = 'yes';
+    select.addEventListener('change', () => {
+      runsQuery.status = select.value;
+      runsQuery.page = 1;
+      renderTrainingRuns();
+    });
+  }
+
+  const box = $('.search input', panel);
+
+  if (box && !box.dataset.wired) {
+    box.dataset.wired = 'yes';
+    box.addEventListener('input', () => {
+      runsQuery.search = box.value;
+      runsQuery.page = 1;
+      renderTrainingRuns();
+    });
+  }
+
+  const expand = $('.panel-tools .btn', panel);
+
+  if (expand && !expand.dataset.wired) {
+    expand.dataset.wired = 'yes';
+    /* Only the rows on this page, which is what is in the DOM -- "all" across a
+       filtered list of hundreds would be a request per run for curves nobody asked
+       for. */
+    expand.addEventListener('click', () => {
+      for (const head of $$('#runs tbody > tr.runrow-head')) {
+        if (head.getAttribute('aria-expanded') !== 'true') $('.exbtn', head)?.click();
+      }
+    });
+  }
+
+  const footer = $('.panel-ft', panel);
+
+  if (footer && !footer.dataset.wired) {
+    footer.dataset.wired = 'yes';
+    footer.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-runs-page]');
+
+      if (!button || button.disabled) return;
+
+      runsQuery.page = Number(button.dataset.runsPage);
+      renderTrainingRuns();
+    });
+  }
+
+  renderTrainingRuns();
 }
 
 

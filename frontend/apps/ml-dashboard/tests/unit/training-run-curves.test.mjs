@@ -1664,3 +1664,155 @@ test('the Training screen asks for training jobs, on the first read and on every
     `every table read is filtered, so the rows are filled from one response shape (${
       forTheTable().map((query) => query.kind || 'unfiltered').join(', ')})`);
 });
+
+/* ------------------------------------------------- the Training runs panel */
+
+/** The runs panel's rows, excluding the expansion rows between them. */
+const runRows = (screen) => [...screen.document.querySelectorAll('#runs tbody > tr.runrow-head')];
+
+/** A screen with a set of jobs and the runs they produced. */
+const withRuns = (jobs, runs) => ({
+  ...answers([], runs),
+  listJobs: async () => ({ jobs, total: jobs.length, limit: 500, offset: 0 }),
+});
+
+/** A job carrying the progress its attempt reported. */
+const ran = (id, state, done, total) => ({
+  ...job(id, state),
+  progress_done: done,
+  progress_total: total,
+  progress_unit: 'epochs',
+});
+
+test('the Training runs panel draws a row per run, newest first', async (t) => {
+  /* It was a fixture: an empty tbody under a footer hardcoded to "Showing 1-6 of 28
+     runs" and three dead pager buttons. Isaac asked twice about things on screen that
+     were not real, and this was one of them. */
+  const screen = await drawScreen('training.html', withRuns(
+    [ran(21782, 'succeeded', 10, 10), ran(21785, 'succeeded', 10, 10)],
+    [
+      run(204, 21782, { start_time: '2026-10-26T21:28:49.093Z', end_time: '2026-10-26T22:10:47.017Z', total_epochs: 10 }),
+      run(205, 21785, { start_time: '2026-10-26T22:44:14.986Z', end_time: '2026-10-26T23:06:08.498Z', total_epochs: 10 }),
+    ],
+  ));
+
+  t.after(screen.close);
+
+  const rows = runRows(screen);
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].dataset.run, '205', 'newest first');
+  assert.equal(rows[1].dataset.run, '204');
+
+  const footer = screen.document.querySelector('#runs').closest('.panel').querySelector('.panel-ft > span');
+
+  assert.match(footer.textContent, /Showing 1.2 of 2 runs/,
+    'the footer counts what was drawn, rather than claiming 28');
+  assert.doesNotMatch(footer.textContent, /28/);
+});
+
+test('Epochs come from what the run reported, not from what it was configured for', async (t) => {
+  /* **A cancelled run is where the two part company.** `total_epochs` is the
+     configuration -- run 203 was set up for 10 and stopped at 8 -- and `progress_done`
+     persists after the job ends and matches the epoch rows exactly. Reading
+     total_epochs would print "10" for a run that did eight, which is a guess that is
+     right most of the time and silently wrong on every cancellation. */
+  const screen = await drawScreen('training.html', withRuns(
+    [ran(21780, 'cancelled', 8, 10)],
+    [run(203, 21780, { total_epochs: 10, end_time: null })],
+  ));
+
+  t.after(screen.close);
+
+  const cell = runRows(screen)[0].querySelector('.jepochs');
+
+  assert.equal(cell.textContent.trim(), '8 / 10');
+  assert.equal(cell.dataset.sort, '8', 'and sorts on what was done');
+});
+
+test('a run with no end time borrows its job wall clock and says it did', async (t) => {
+  /* Run 203 again: cancelled, so it has a start and never recorded an end. A dash would
+     lose a duration MARP does know; printing it unmarked would claim the run timed
+     itself. */
+  const screen = await drawScreen('training.html', withRuns(
+    [{ ...ran(21780, 'cancelled', 8, 10), created_at: '2026-10-23T19:52:20.446Z', updated_at: '2026-10-23T20:30:20.446Z' }],
+    [run(203, 21780, { start_time: '2026-10-23T19:52:20.446Z', end_time: null })],
+  ));
+
+  t.after(screen.close);
+
+  const took = runRows(screen)[0].querySelector('.jtook span');
+
+  assert.match(took.getAttribute('title'), /no end time/i, 'the cell says whose clock it is');
+  assert.ok(took.textContent.trim(), 'and still shows the duration rather than a dash');
+});
+
+test('the search box and the status filter narrow the runs, and the count follows', async (t) => {
+  const screen = await drawScreen('training.html', withRuns(
+    [ran(21782, 'succeeded', 10, 10), ran(21780, 'cancelled', 8, 10)],
+    [run(204, 21782), run(203, 21780)],
+  ));
+
+  t.after(screen.close);
+
+  assert.equal(runRows(screen).length, 2);
+
+  const panel = screen.document.querySelector('#runs').closest('.panel');
+  const select = panel.querySelector('.sel');
+
+  /* **Cancelled is selectable at all**, which it was not: the markup offered
+     All / Running / Completed / Failed, so a cancelled run could be seen and not
+     filtered to. */
+  select.value = 'cancelled';
+  select.dispatchEvent(new screen.window.Event('change'));
+
+  assert.equal(runRows(screen).length, 1, 'only the cancelled run');
+  assert.equal(runRows(screen)[0].dataset.run, '203');
+  assert.match(panel.querySelector('.panel-hd .count').textContent, /\(1\)/,
+    'the heading counts the filtered list');
+
+  select.value = 'all';
+  select.dispatchEvent(new screen.window.Event('change'));
+
+  const box = panel.querySelector('.search input');
+
+  box.value = 'run 204';
+  box.dispatchEvent(new screen.window.Event('input'));
+
+  assert.equal(runRows(screen).length, 1, 'the search narrows too');
+  assert.equal(runRows(screen)[0].dataset.run, '204');
+});
+
+test('a run outside the recent three still opens', async (t) => {
+  /* **The map used to hold only the three rows drawn above.** Both tables' expansions
+     are the same `wireTrainingJobDetail`, which looks a job up in it -- so the fourth
+     run down this panel would have expanded to nothing at all. */
+  const jobs = [21779, 21780, 21782, 21785].map((id, index) => ({
+    ...ran(id, 'succeeded', 1, 1),
+    created_at: `2026-10-2${index + 1}T09:00:00.000Z`,
+  }));
+
+  const screen = await drawScreen('training.html', {
+    ...withRuns(jobs, jobs.map((one, index) => run(200 + index, one.id))),
+    trainingRunEpochs: async () => [epoch(1, { box_loss: 1.4 })],
+  });
+
+  t.after(screen.close);
+
+  assert.equal(runRows(screen).length, 4);
+  assert.equal(screen.document.querySelectorAll('.training-table tbody tr[data-job]').length, 3,
+    'the panel above still shows three');
+
+  /* The oldest, which is the one the recent table cuts. */
+  const oldest = runRows(screen).at(-1);
+
+  oldest.querySelector('.exbtn').click();
+
+  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const detail = oldest.nextElementSibling;
+
+  assert.doesNotMatch(detail.textContent, /Reading this run/,
+    'it resolved rather than sitting on its placeholder');
+  assert.ok(detail.querySelector('.result-line'), 'and drew the run&rsquo;s curves');
+});
