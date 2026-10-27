@@ -170,6 +170,61 @@ same trap *Documentation that states an environment fact* names in `AGENTS.md`.
    explanation; anything that genuinely needs attention gets a one-line
    `.warn`, and if it will not fit on one line it is documentation.
 
+## What every screen does without being asked
+
+Isaac, on the Models tab: *"this page doesn't tell me how long since the last update or
+anything, why do i have to keep defining all this shit for every single tab?"*
+
+He is right, and the reason is visible in the git history: freshness, live updating and
+expandable rows were each built **one screen at a time, as he found each gap**. Datasets
+got polling when a build looked frozen. Training got an Updated column when a running job
+looked stale. Every one of those was a fix to the screen he happened to be looking at, and
+every other screen kept the defect until he looked there too.
+
+**So this is the floor, not a feature list.** A screen that cannot do one of these says
+what is missing; it does not quietly omit it. A new screen starts with all of them.
+
+1. **Freshness is always visible.** When the data was last read, ticking — *updated 4s
+   ago* — in the shared top bar, so it is in the same place on every screen and no screen
+   has to invent it. When a read fails or polling has stopped, it says so there rather
+   than leaving a stale number looking live. **A number with no time on it is a claim
+   about now that may be an hour old.**
+2. **Anything that changes while you watch updates itself.** Live rows are **patched in
+   place, never rebuilt** — a rebuild closes the row somebody is reading, which was a real
+   defect on Datasets and would be the same defect anywhere else. An expanded row survives
+   a poll.
+3. **A row with more behind it expands**, the same way on every table: one delegated
+   expander, `aria-expanded` on the head row, the detail in a sibling row.
+4. **A table whose rows change carries an Updated column**, with the semantics Datasets
+   and Training settled: the later of the row's own timestamp and its latest heartbeat,
+   because `updated_at` alone sits frozen while a job reports progress.
+5. **No explanatory filler.** Rule 7 above, applied to empty states: a section with
+   nothing to show on a finished thing renders **nothing at all**; one that is still
+   working keeps its space with a single short line. Never a paragraph about how the
+   trainer, the worker or the ingest works — that belongs here, in this file.
+6. **Real data or nothing.** No fixture rows, no hard-coded counts, no footer that says
+   *"Showing 1–6 of 28"* over an empty table. A value nothing fills is a lie with a
+   number on it, and `markup-check` fails on it.
+
+### Where each screen stood when this was written
+
+Audited after Isaac asked, rather than screen by screen as he finds them:
+
+| Screen | Freshness | Live updates | Expandable rows | Updated column |
+| --- | --- | --- | --- | --- |
+| Dashboard | missing | missing | n/a | n/a |
+| Datasets | missing | **yes** | **yes** | **yes** |
+| Inference | missing | missing | missing | missing |
+| Jobs | missing | missing | **yes** | missing |
+| Models | missing | missing | **yes** | **yes** |
+| Training | missing | **yes** | **yes** | **yes** |
+| Workers | missing | missing | **yes** | missing |
+
+**No screen had freshness** — the one thing Isaac asked for by name, and the one that
+belongs in the shared chrome rather than in any screen. Only Datasets and Training update
+themselves at all; the other five are a snapshot of whenever the tab was opened, with
+nothing on screen admitting it.
+
 ## Layout
 
 ```
