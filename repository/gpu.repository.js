@@ -39,7 +39,7 @@
 'use strict';
 
 const { QueryTypes } = require('sequelize');
-const { epochMetrics } = require('../db/epoch-metrics');
+const { epochMetrics, readPhase } = require('../db/epoch-metrics');
 
 /**
  * Shared database registry containing the configured Sequelize connection,
@@ -2268,10 +2268,35 @@ class GpuRepository {
         const payload = event.payload || {};
         const metrics = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : null;
 
-        // An epoch needs a number to be an epoch. A metric event without one is
-        // a progress sample, which the event stream already holds.
+        // An epoch needs a number to be an epoch.
         const epochNumber = Number(payload.step);
         if (!metrics || !Number.isInteger(epochNumber)) return;
+
+        /* **And a number is no longer enough to tell an epoch from a sample.** This
+           used to read "a metric event without a step is a progress sample", which was
+           true while epochs were the only thing reported with one. The worker now
+           sends per-batch samples through the same call with a global batch counter
+           as the step, so the two series overlap numerically -- and because the insert
+           below is first-write-wins on `epoch_number`, a sample arriving as step 1
+           would take epoch 1 and the real one would never be written.
+
+           So the routing is on the word. `db/epoch-metrics.js` owns the vocabulary,
+           the same way it owns the metric names, so the ingest and anything
+           backfilling from the events cannot disagree about what a phase meant. */
+        const phase = readPhase(payload.phase);
+
+        if (!phase.known) {
+            /* **Said out loud rather than dropped.** A phase MARP has not been taught
+               is a worker and a coordinator disagreeing about the contract; the event
+               keeps the reading either way, so this is recoverable -- but only if
+               somebody knows to go and look. */
+            logger.info(
+                `attempt ${attemptId} reported metrics under an unrecognised phase `
+                + `"${payload.phase}"; kept on the event stream and written to no table`
+            );
+        }
+
+        if (!phase.epoch) return;
 
         const [job] = await this.db.sequelize.query(
             `SELECT j.id, j.kind, j.spec

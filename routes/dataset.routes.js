@@ -21,7 +21,7 @@ const datasetController = require('../controller/dataset.controller');
 const trainingMetricsController = require('../controller/training-metrics.controller');
 const modelArtifactService = require('../service/model-artifact.service');
 const datasetBuildRepository = require('../repository/dataset-build.repository');
-const { imageSettings, concurrency } = require('../service/dataset-build.service');
+const { imageSettings, concurrency, BUILD_TASKS } = require('../service/dataset-build.service');
 const datasetRepository = require('../repository/dataset.repository');
 const datasetPreviewService = require('../service/dataset-preview.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
@@ -192,6 +192,26 @@ function registerDatasetRoutes(app) {
                                     quality: { type: 'integer', minimum: 1, maximum: 100, example: 95 },
                                 },
                             },
+                            task: {
+                                type: 'string',
+                                enum: ['detection', 'classification'],
+                                example: 'detection',
+                                description:
+                                    'Which kind of model this dataset is for. Omitted means `detection`, which is what every '
+                                    + 'dataset built before this existed is. The two produce different archives and are not '
+                                    + 'interchangeable: a detection archive holds whole frames with YOLO label files and a '
+                                    + '`data.yaml`; a classification archive holds one picture per annotated box in a folder named '
+                                    + 'for its class, with no `data.yaml` at all, because Ultralytics classify reads the class '
+                                    + 'vocabulary from the folder names. **The pictures are the mosaic tiles a reviewer sees** -- '
+                                    + 'the box plus 10% padding, squared, 320x320 -- and the dataset row records `crop_source` so '
+                                    + 'nothing downstream has to assume which pixels were taken. Folder names are `<species_id>_<slug>` '
+                                    + 'rather than species names, because 37 names in the catalogue contain a path separator and '
+                                    + 'case alone does not distinguish two directories on Windows; `classes.json` beside the splits '
+                                    + 'maps every folder back to its species and its exact common name. A classification build with '
+                                    + 'no train split is refused, because Ultralytics would otherwise split what it finds 80/20 at '
+                                    + 'random and report an accuracy that means nothing.',
+                            },
+
                             splits: {
                                 type: 'object',
                                 description:
@@ -225,7 +245,7 @@ function registerDatasetRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            const { name, description, filters, splits, subsets, image } = req.body || {};
+            const { name, description, filters, splits, subsets, image, task } = req.body || {};
 
             if (!name || !String(name).trim()) {
                 throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A dataset name is required.');
@@ -251,6 +271,36 @@ function registerDatasetRoutes(app) {
                 }
             }
 
+            /* **Settled here for the same reason the image format is.** An unknown task
+               would otherwise answer 201, leave a row saying `building`, and fail in a
+               job the asker has to go and find. Two values, because MARP trains two
+               kinds of model; omitted means detection, which is what every build before
+               this one was. */
+            if (task !== undefined && task !== null && !BUILD_TASKS.includes(task)) {
+                throw new ApiError(
+                    400,
+                    ERROR_CODES.VALIDATION_ERROR,
+                    `task must be one of: ${BUILD_TASKS.join(', ')}.`
+                );
+            }
+
+            /* **The one no-train case that can be proven without running the build.**
+               Ultralytics classify splits what it finds 80/20 at random when `train/`
+               is absent, which reports an accuracy that means nothing -- so the runner
+               refuses it too, and definitively, because the split a *subsets* build
+               produces is only known once the selection has run. Declared ratios are
+               not: `{validation: 1}` can be answered now. */
+            if (task === 'classification' && splits && typeof splits === 'object'
+                && !(Number(splits.train) > 0)) {
+                throw new ApiError(
+                    400,
+                    ERROR_CODES.VALIDATION_ERROR,
+                    'A classification dataset must have a train split. Ultralytics splits what '
+                    + 'it finds 80/20 at random when train/ is missing, which puts crops of the '
+                    + 'same scene on both sides and reports an accuracy that means nothing.'
+                );
+            }
+
             /* A service client can queue a build; only a person is recorded as having
                asked for it, the same way every other `created_by` here works. */
             const createdBy = req.principal && req.principal.type === 'user' ? req.principal.id : null;
@@ -263,6 +313,7 @@ function registerDatasetRoutes(app) {
                 image: image || null,
                 splits,
                 createdBy,
+                task: task || 'detection',
             });
 
             res.status(201).json(queued);

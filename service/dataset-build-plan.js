@@ -465,11 +465,232 @@ function boxAt(boxes, frame) {
     };
 }
 
+/**
+ * Where a split's pictures go in a CLASSIFICATION archive.
+ *
+ * **Not the same mapping as a detection archive, and the difference is the whole
+ * reason this exists.** A detection archive names its directories in `data.yaml`, so
+ * it can call the held-out split `eval` and tell Ultralytics where to look. A
+ * classification archive has no `data.yaml` at all -- **the directory names are the
+ * contract** -- and Ultralytics classify looks for `train`, `val` and `test`.
+ *
+ * So an archive built through the detection mapping would ship `train/` and `eval/`,
+ * and classify would find no validation split whatever. `eval` and `validation` both
+ * land in `val` here, which is what they have always meant.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const CLASSIFICATION_DIRECTORIES = {
+    train: 'train',
+    eval: 'val',
+    validation: 'val',
+    test: 'test',
+};
+
+/**
+ * The directory one split writes into inside a classification archive.
+ *
+ * Refuses an unknown name rather than inventing one, for the reason the detection
+ * side does: an unrecognised split is a request that cannot be honoured, and the
+ * failure anybody wants is the build saying so rather than an archive quietly missing
+ * a third of itself.
+ *
+ * @param {string} split - The split's name, as the builder sent it.
+ * @returns {string} The directory inside the archive.
+ * @throws {Error} When the name is not one a classification archive has a place for.
+ */
+function classificationDirectoryFor(split) {
+    const directory = CLASSIFICATION_DIRECTORIES[split];
+
+    if (!directory) {
+        throw new Error(
+            `"${split}" is not a split a classification archive has a place for; `
+            + `it holds ${Object.keys(CLASSIFICATION_DIRECTORIES).join(', ')}`
+        );
+    }
+
+    return directory;
+}
+
+/**
+ * How many characters of the readable half a folder name keeps.
+ *
+ * The species id in front already makes the name unique, so this is purely about a
+ * person reading a directory listing. 48 holds every name in the catalogue but the
+ * longest few -- `Lost/ abandoned/ or irretrievable instrument/marker` is 51 -- and
+ * the exact name is in `classes.json` either way.
+ *
+ * @constant
+ * @type {number}
+ */
+const CLASS_SLUG_LENGTH = 48;
+
+/**
+ * The directory name one class gets inside a classification archive.
+ *
+ * **`<species_id>_<slug>`, because `species.comname` cannot be a directory name.**
+ * Measured against the real catalogue rather than assumed, three things in that
+ * column break a folder, and each produces an archive that looks correct:
+ *
+ * - **A slash is a path separator.** 37 of 1,404 names carry one, and the worst is
+ *   not obscure: `Blue/Deacon Rockfish` has over five thousand observations. Written
+ *   literally, `train/Blue/Deacon Rockfish/` is a folder `Blue` holding a folder
+ *   `Deacon Rockfish`, and Ultralytics reads the class as **`Blue`**.
+ * - **Case alone does not distinguish two directories** on Windows or macOS. `Fish`
+ *   and `fish` are two species rows holding 194 and 124 observations, and they would
+ *   train as one class with nothing in the archive to say so.
+ * - **A trailing dot or space is silently stripped by Windows.** `UI Cancer sp.`
+ *   becomes `UI Cancer sp`, which is no longer the name it is supposed to be.
+ *
+ * **The id leads, and that is what does the work.** It is unique by construction, so
+ * the case collision and the stripped dot stop being special cases rather than being
+ * handled as two more rules. The slug after it is for a person browsing the archive
+ * and carries no meaning the build relies on.
+ *
+ * **The exact name is not lost; it moves.** `classes.json` beside the splits maps
+ * every folder to its `species_id` and its untouched `comname`, so the archive still
+ * states its vocabulary in MARP's own words -- as data a reader and a check can both
+ * see, rather than as a convention encoded in directory names. Refusing these species
+ * instead was the alternative, and it would have locked `Blue/Deacon Rockfish` out of
+ * every classification dataset over a path separator.
+ *
+ * **The consequence travels with the model.** Ultralytics keeps no names list for a
+ * classify dataset -- the folder names are the entire vocabulary -- so a model trained
+ * on this archive reports `145_blue-deacon-rockfish`, and something on MARP's side has
+ * to read it back through `classes.json` or through the id in front of it.
+ *
+ * @param {{species_id: number, comname: string}} entry - One class from
+ * {@link vocabulary}.
+ * @returns {string} A directory name that is safe on every filesystem MARP runs on,
+ * and unique within the archive.
+ */
+function classFolderName(entry) {
+    const slug = String(entry.comname == null ? '' : entry.comname)
+        .toLowerCase()
+        /* Everything outside a-z0-9 becomes a separator, which covers the slash, the
+           colon, the quote and every accented letter in one rule rather than a list
+           that would have to grow. */
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, CLASS_SLUG_LENGTH)
+        /* Again after the cut: truncating mid-word can leave the separator at the end,
+           and a trailing dash is the trailing-character problem this is avoiding. */
+        .replace(/-+$/, '');
+
+    /* A name with no letters or digits in it at all leaves the id alone, which is
+       still a valid, unique directory. */
+    return slug ? `${entry.species_id}_${slug}` : String(entry.species_id);
+}
+
+/**
+ * The archive's `classes.json`: what each folder name actually means.
+ *
+ * **A classification archive has no `data.yaml`, so without this it states its own
+ * vocabulary only in directory names** -- and those are encoded handles. This is the
+ * file that makes the encoding reversible, and it is the archive's answer to "which
+ * species is class `145_blue-deacon-rockfish`".
+ *
+ * **`task` and `crop_source` ride along so the archive is self-describing.** They are
+ * on the `datasets` row as well, which is where MARP reads them; this copy is for
+ * whoever is holding the tar without the database -- a second machine, an agent, a
+ * year from now. The crop method especially: two classification datasets cut by
+ * different rules are identical in every other respect, and a model is only traceable
+ * to the pixels it learned from if something says which rule made them.
+ *
+ * @param {Array<Object>} classes - From {@link vocabulary}.
+ * @param {string} cropSource - How the pictures were cut.
+ * @returns {string} The file's contents, newline-terminated.
+ */
+function classesJson(classes, cropSource) {
+    return `${JSON.stringify({
+        task: 'classification',
+        crop_source: cropSource,
+        /* In class-index order, which is vocabulary order, so the file reads the same
+           way twice for the same selection and a diff between two builds is about the
+           species rather than about ordering. */
+        classes: classes.map((entry) => ({
+            folder: classFolderName(entry),
+            species_id: entry.species_id,
+            comname: entry.comname,
+            class_index: entry.class_index,
+        })),
+    }, null, 2)}\n`;
+}
+/**
+ * Every picture a classification build has to write, in one flat list.
+ *
+ * **One picture per annotated box, which is one per observation**, because that is
+ * what a classification example is: a crop of a thing, labelled with what it is. The
+ * detection side plans per video, since the cost there is opening the video; here
+ * every picture already exists on disk as the mosaic tile a reviewer saw, so there is
+ * nothing to batch and the flat list is the honest shape.
+ *
+ * **The split comes from `assignSplits`, unchanged and deliberately so.** A crop lands
+ * in the split its frame landed in, so a detection model and a classification model
+ * built from one selection are evaluated on the same held-out video. Splitting the
+ * crops independently would put two crops of one frame on both sides, which is the
+ * same leak the frame-based stratification exists to prevent -- and it would also mean
+ * two models described as trained "on the same data" could not be compared at all.
+ *
+ * @param {Map<string, Array<Object>>} splits - From {@link assignSplits}.
+ * @param {Array<Object>} classes - From {@link vocabulary}.
+ * @returns {Array<{observation_id: number, split: string, directory: string,
+ * folder: string, species_id: number, comname: string, class_index: number}>} In
+ * split order, then observation order, so a build is deterministic and a test can
+ * assert a list. `folder` is the encoded directory name and `comname` is the species
+ * as MARP records it; the two differ on purpose and only `folder` reaches the disk.
+ */
+function classificationPlan(splits, classes) {
+    const indexOf = new Map(classes.map((entry) => [entry.species_id, entry]));
+    const wanted = [];
+
+    for (const [split, rows] of splits) {
+        const directory = classificationDirectoryFor(split);
+
+        /* Sorted, so the same selection produces the same archive: `packageArchive`
+           hashes the tar, and an archive whose file order wandered would get a new
+           SHA-256 for a build that changed nothing. */
+        const ordered = [...rows].sort((a, b) => a.observation_id - b.observation_id);
+
+        for (const row of ordered) {
+            const entry = indexOf.get(Number(row.species_id));
+
+            /* The vocabulary is built from these same rows, so a row with no class is
+               a selection that disagrees with itself rather than a case to skip. */
+            if (!entry) {
+                throw new Error(
+                    `Observation ${row.observation_id} names species ${row.species_id}, `
+                    + 'which is not in this build\'s vocabulary.'
+                );
+            }
+
+            wanted.push({
+                observation_id: Number(row.observation_id),
+                split,
+                directory,
+                folder: classFolderName(entry),
+                species_id: entry.species_id,
+                comname: entry.comname,
+                class_index: entry.class_index,
+            });
+        }
+    }
+
+    return wanted;
+}
+
 module.exports = {
     NEAR_MISS_FRAMES,
+    CLASSIFICATION_DIRECTORIES,
+    CLASS_SLUG_LENGTH,
     assignFromSubsets,
     assignSplits,
     boxAt,
+    classFolderName,
+    classesJson,
+    classificationDirectoryFor,
+    classificationPlan,
     connectedGroups,
     extractionPlan,
     vocabulary,

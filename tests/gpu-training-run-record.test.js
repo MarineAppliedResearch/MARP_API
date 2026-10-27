@@ -502,6 +502,146 @@ describe('a training job writes training_runs and epochs', () => {
         expect(run.train_script_commit).toBeNull();
     });
 
+    /**
+     * A per-batch sample is not an epoch, and must not be able to take one's place.
+     *
+     * **The two series share a call and a number.** The worker reports finished epochs
+     * and live batch samples through the same `report_metrics`, and a batch sample's
+     * step is a global batch counter -- so on a short run both series produce step 1.
+     * Routing on the magnitude of the step would work on every long run and corrupt the
+     * short ones.
+     *
+     * **And the corruption is loss, not noise.** The epoch insert is first-write-wins on
+     * `(training_run_id, epoch_number)`: a sample arriving as step 1 mid-epoch takes
+     * `epoch_number = 1`, and the real epoch 1 -- which arrives seconds later, carrying
+     * the measurements -- is then silently never written. So the assertion that matters
+     * is not that the sample was ignored; it is that the real epoch afterwards still
+     * landed, with its own values.
+     */
+    describe('a per-batch sample arriving before the epoch it is inside', () => {
+        let job;
+        let attempt;
+
+        beforeAll(async () => {
+            [job] = await db.sequelize.query(
+                `INSERT INTO gpu_jobs (kind, spec, state, attempts_made, max_attempts)
+                 VALUES ('training', :spec, 'leased', 1, 1)
+                 RETURNING id`,
+                {
+                    replacements: {
+                        spec: JSON.stringify({
+                            engine: 'marp_training',
+                            model: { ml_model_id: modelId, name: 'jest', sha256: 'a'.repeat(64) },
+                            dataset: { dataset_id: datasetId },
+                            params: { epochs: 2, batch: 8 },
+                        }),
+                    },
+                    type: db.Sequelize.QueryTypes.SELECT,
+                    logging: false,
+                }
+            );
+
+            [attempt] = await db.sequelize.query(
+                `INSERT INTO gpu_job_attempts (job_id, worker_id, slot_index, lease_epoch, state, lease_expires_at)
+                 VALUES (:jobId, :workerId, 3, 1, 'running', NOW() + INTERVAL '1 hour')
+                 RETURNING id`,
+                { replacements: { jobId: job.id, workerId }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+        });
+
+        afterAll(async () => {
+            await db.sequelize.query(
+                'DELETE FROM epochs WHERE training_run_id IN (SELECT id FROM training_runs WHERE job_id = :jobId)',
+                { replacements: { jobId: job.id }, logging: false }
+            );
+            await db.sequelize.query('DELETE FROM training_runs WHERE job_id = :jobId', {
+                replacements: { jobId: job.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_job_events WHERE attempt_id = :attemptId', {
+                replacements: { attemptId: attempt.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE id = :attemptId', {
+                replacements: { attemptId: attempt.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_jobs WHERE id = :jobId', {
+                replacements: { jobId: job.id }, logging: false,
+            });
+        });
+
+        it('does not become an epoch, and does not stop the real one landing', async () => {
+            const post = (events) => global.api
+                .post(`/api/v2/gpu/attempts/${attempt.id}/events`)
+                .send({ worker_id: workerId, lease_epoch: 1, events });
+
+            /* The sample, shaped as the worker sends it: a global batch counter as the
+               step, and a running mean loss rather than a measured one. Its step is 1,
+               which is also the number the first real epoch will carry. */
+            const sample = await post([{
+                seq: 0,
+                kind: 'metric',
+                payload: {
+                    step: 1,
+                    phase: 'training_batch',
+                    metrics: {
+                        epoch: 1,
+                        batch: 1,
+                        batches_total: 3,
+                        'train/box_loss': 9.99,
+                        iterations_per_second: 6.81,
+                    },
+                },
+            }]);
+
+            expect(sample.status).toBe(200);
+
+            /* Nothing yet: a sample does not open a run and does not write a row. */
+            const [opened] = await db.sequelize.query(
+                'SELECT id FROM training_runs WHERE job_id = :jobId',
+                { replacements: { jobId: job.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            expect(opened).toBeUndefined();
+
+            /* Now the epoch the sample was inside, with its own measurements. */
+            const epoch = await post([epochEvent(1, 1, 0.44)]);
+
+            expect(epoch.status).toBe(200);
+
+            const rows = await db.sequelize.query(
+                `SELECT e.* FROM epochs e
+                   JOIN training_runs r ON r.id = e.training_run_id
+                  WHERE r.job_id = :jobId
+                  ORDER BY e.epoch_number`,
+                { replacements: { jobId: job.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            /* **One row, and it is the epoch.** Two rows would mean the sample became
+               one; one row carrying 9.99 would mean the sample took epoch 1 and the
+               real measurements were refused by the first-write-wins guard. */
+            expect(rows).toHaveLength(1);
+            expect(rows[0].epoch_number).toBe(1);
+            expect(Number(rows[0].precision)).toBeCloseTo(0.44);
+            expect(Number(rows[0].box_loss)).toBeCloseTo(1.49);
+        });
+
+        /**
+         * **Kept, not lost.** The sample is written to no table yet, and the event stream
+         * still holds every number in it -- which is what made the five mis-mapped metric
+         * columns recoverable by backfill rather than gone.
+         */
+        it('is still on the event stream, with its numbers', async () => {
+            const [event] = await db.sequelize.query(
+                'SELECT payload FROM gpu_job_events WHERE attempt_id = :attemptId AND seq = 0',
+                { replacements: { attemptId: attempt.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            expect(event).toBeTruthy();
+            expect(event.payload.phase).toBe('training_batch');
+            expect(event.payload.metrics['train/box_loss']).toBeCloseTo(9.99);
+            expect(event.payload.metrics.iterations_per_second).toBeCloseTo(6.81);
+        });
+    });
+
     test('each epoch becomes a row, with the metrics mapped to their columns', async () => {
         await global.api
             .post(`/api/v2/gpu/attempts/${attemptId}/events`)
