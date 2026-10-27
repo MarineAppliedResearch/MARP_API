@@ -642,6 +642,177 @@ describe('a training job writes training_runs and epochs', () => {
         });
     });
 
+    /**
+     * A classification epoch, in the columns a classifier has rather than a detector's.
+     *
+     * **The keys are copied from a real two-epoch classify run**, captured through the
+     * worker's own `_epoch_metrics` and cross-checked against Ultralytics' `results.csv`
+     * header. They are not what anybody would guess: the loss is `loss`, not `cls_loss`,
+     * and there is no `(B)` suffix anywhere because that marks box versus mask and
+     * classification is neither.
+     *
+     * **This fixture is the one that has to disagree with the code to be worth having.**
+     * Five columns on this table were null on every row MARP held for months because the
+     * ingest looked for `train/box_loss` where the worker sends `val/box_loss` -- and the
+     * test fixture sent what the code expected, so it passed throughout.
+     */
+    describe('an epoch of a classification run', () => {
+        let job;
+        let attempt;
+
+        beforeAll(async () => {
+            [job] = await db.sequelize.query(
+                `INSERT INTO gpu_jobs (kind, spec, state, attempts_made, max_attempts)
+                 VALUES ('training', :spec, 'leased', 1, 1)
+                 RETURNING id`,
+                {
+                    replacements: {
+                        spec: JSON.stringify({
+                            engine: 'marp_training',
+                            model: { ml_model_id: modelId, name: 'jest', sha256: 'a'.repeat(64) },
+                            dataset: { dataset_id: datasetId },
+                            params: { epochs: 2, batch: 8 },
+                        }),
+                    },
+                    type: db.Sequelize.QueryTypes.SELECT,
+                    logging: false,
+                }
+            );
+
+            [attempt] = await db.sequelize.query(
+                `INSERT INTO gpu_job_attempts (job_id, worker_id, slot_index, lease_epoch, state, lease_expires_at)
+                 VALUES (:jobId, :workerId, 3, 1, 'running', NOW() + INTERVAL '1 hour')
+                 RETURNING id`,
+                { replacements: { jobId: job.id, workerId }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            await global.api
+                .post(`/api/v2/gpu/attempts/${attempt.id}/events`)
+                .send({
+                    worker_id: workerId,
+                    lease_epoch: 1,
+                    events: [{
+                        seq: 0,
+                        kind: 'metric',
+                        at: new Date().toISOString(),
+                        payload: {
+                            step: 1,
+                            phase: 'training',
+                            metrics: {
+                                'metrics/accuracy_top1': 0.5,
+                                'metrics/accuracy_top5': 1.0,
+                                'train/loss': 0.61144,
+                                'val/loss': 0.6933,
+                                duration_seconds: 0.408,
+                                start_offset_s: 0.0,
+                                end_offset_s: 0.408,
+                            },
+                        },
+                    }],
+                });
+        });
+
+        afterAll(async () => {
+            await db.sequelize.query(
+                'DELETE FROM epochs WHERE training_run_id IN (SELECT id FROM training_runs WHERE job_id = :jobId)',
+                { replacements: { jobId: job.id }, logging: false }
+            );
+            await db.sequelize.query('DELETE FROM training_runs WHERE job_id = :jobId', {
+                replacements: { jobId: job.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_job_events WHERE attempt_id = :attemptId', {
+                replacements: { attemptId: attempt.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE id = :attemptId', {
+                replacements: { attemptId: attempt.id }, logging: false,
+            });
+            await db.sequelize.query('DELETE FROM gpu_jobs WHERE id = :jobId', {
+                replacements: { jobId: job.id }, logging: false,
+            });
+        });
+
+        it('records both losses and both accuracies', async () => {
+            const [row] = await db.sequelize.query(
+                `SELECT e.* FROM epochs e
+                   JOIN training_runs r ON r.id = e.training_run_id
+                  WHERE r.job_id = :jobId`,
+                { replacements: { jobId: job.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            expect(row).toBeTruthy();
+
+            /* **Unprefixed is validation**, as everywhere else on this table: loss is
+               val/loss and train_loss is train/loss. Deliberately different values, so a
+               mapping that swapped them fails loudly rather than plausibly. */
+            expect(Number(row.loss)).toBeCloseTo(0.6933);
+            expect(Number(row.train_loss)).toBeCloseTo(0.61144);
+
+            expect(Number(row.accuracy_top1)).toBeCloseTo(0.5);
+            expect(Number(row.accuracy_top5)).toBeCloseTo(1.0);
+        });
+
+        /**
+         * **A classifier measures none of a detector's quantities, so they stay null.**
+         * Null here means "this task does not report that", consistently with the rest
+         * of the table -- not a measurement of zero, which on a loss curve would read as
+         * a model collapsing.
+         */
+        it('leaves the detector columns null rather than zero', async () => {
+            const [row] = await db.sequelize.query(
+                `SELECT e.* FROM epochs e
+                   JOIN training_runs r ON r.id = e.training_run_id
+                  WHERE r.job_id = :jobId`,
+                { replacements: { jobId: job.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            for (const column of ['box_loss', 'cls_loss', 'dfl_loss', 'map50', 'map5095']) {
+                expect(row[column]).toBeNull();
+            }
+        });
+
+        /**
+         * **The worker's own three come through identically**, which is worth asserting
+         * because they are the worker's rather than Ultralytics' and could have been
+         * task-specific without anybody noticing.
+         */
+        it('still carries the duration and the offsets', async () => {
+            const [row] = await db.sequelize.query(
+                `SELECT e.* FROM epochs e
+                   JOIN training_runs r ON r.id = e.training_run_id
+                  WHERE r.job_id = :jobId`,
+                { replacements: { jobId: job.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            expect(Number(row.duration_seconds)).toBeCloseTo(0.408);
+            expect(Number(row.start_offset_s)).toBeCloseTo(0);
+            expect(Number(row.end_offset_s)).toBeCloseTo(0.408);
+        });
+
+        /**
+         * **Present, not merely non-null.** An absent key reads as "this MARP does not
+         * have the column" rather than "this epoch has no value", and a chart cannot
+         * tell a gap in the data from a gap in the API. This is the assertion that would
+         * have caught the model never declaring the training-loss columns.
+         */
+        it('names all four columns on the endpoint that serves them', async () => {
+            const [run] = await db.sequelize.query(
+                'SELECT id FROM training_runs WHERE job_id = :jobId',
+                { replacements: { jobId: job.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            const res = await global.api.get(`/api/v2/training_run/${run.id}/epochs`);
+
+            expect(res.status).toBe(200);
+            expect(res.body).toHaveLength(1);
+
+            for (const column of ['loss', 'train_loss', 'accuracy_top1', 'accuracy_top5']) {
+                expect(res.body[0]).toHaveProperty(column);
+            }
+
+            expect(res.body[0].accuracy_top1).toBeCloseTo(0.5);
+        });
+    });
+
     test('each epoch becomes a row, with the metrics mapped to their columns', async () => {
         await global.api
             .post(`/api/v2/gpu/attempts/${attemptId}/events`)
