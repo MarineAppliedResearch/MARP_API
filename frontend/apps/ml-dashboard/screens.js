@@ -3052,8 +3052,14 @@ function renderTrainingRecent(views) {
       /* **What it produces, which does not exist yet.** This cell means the model version
          the run registers, and a run that has not finished has not registered one. The
          base it trains *from* is a different fact and is in the expansion. */
+      /* **It named the base model it trained FROM.** Both candidates are the starting
+         checkpoint -- `spec.model.ml_model_id` is what `gpu.service.js` requires on
+         submission, and `training_runs.model_id` is what that run is recorded against --
+         so a finished run claimed to have produced the model it fine-tuned from, and the
+         expansion named the same model again as the base. A run that trained from itself.
+         Nothing records which model a run registered; until something does, this says so. */
       + `<td class="jmakes">${['done', 'issues'].includes(view.state)
-        ? namedById('Model', spec.model, modelId, '')
+        ? NO_REGISTERED_MODEL
         : '<span class="dash" title="The version a run registers does not exist until it succeeds">&mdash;</span>'}</td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
       + `<td class="jepochs num">${run && run.total_epochs
@@ -3879,7 +3885,7 @@ function renderTrainingRuns() {
         /* Same rule as the table above: a run registers a version only once it has
            succeeded, so an unfinished one has nothing to name here. */
         + `<td class="jmakes">${['done', 'issues'].includes(row.state)
-          ? namedById('Model', spec.model, run.model_id, '')
+          ? NO_REGISTERED_MODEL
           : '<span class="dash" title="The version a run registers does not exist until it succeeds">&mdash;</span>'}</td>`
         + `<td class="jstatus" data-sort="${JOB_STATE_RANK[row.state]}">`
         + `<span class="st" data-state="${row.state}"><span class="dot"></span>${row.label}</span></td>`
@@ -4390,6 +4396,8 @@ const NOT_IN_REGISTRY = '<span class="dash" title="Nothing serves this yet: metr
  * a "None" would all read as a different sort of fact. Only the tooltip differs, because
  * the reason differs and a reader who asks deserves the real one.
  */
+const NO_REGISTERED_MODEL = '<span class="dash" title="MARP records no link from a run to the model it registered: training_runs.model_id and spec.model.ml_model_id are both the base model the run started FROM">&mdash;</span>';
+
 const NO_TRAINING_RUN = '<span class="dash" title="MARP records no link from a model to the run that produced it: training_runs.model_id is the base model a run started FROM, not the model it produced">&mdash;</span>';
 
 /** MARP's `ml_models.status`, in the design's own state words. @type {Object} */

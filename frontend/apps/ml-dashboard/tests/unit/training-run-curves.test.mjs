@@ -148,9 +148,15 @@ test('every training job expands, and the run half appears where there is a run'
   assert.match(withRun.querySelector('.jdset').textContent, /CookieStarTest/);
   assert.match(withRun.querySelector('.jdset').textContent, /41/, 'and the id stays reachable');
 
-  /* Produces is the version the run registers, which a finished run has and a running one
-     does not. This fixture is succeeded. */
-  assert.match(withRun.querySelector('.jmakes').textContent, /rockfish5-2026-10-20/);
+  /* **Produces is the version the run registers, and MARP does not record it.** This
+     assertion pinned the base model, which is what the cell used to show: both fill paths
+     read the checkpoint the run trained FROM. A succeeded run therefore claimed to have
+     produced what it fine-tuned from, while the expansion below named the same model as
+     its base -- a run that trained from itself. The cell is empty until `ml_models` or
+     `training_runs` records which run registered which model. */
+  assert.equal(withRun.querySelector('.jmakes').textContent.trim(), '—');
+  assert.ok(!withRun.querySelector('.jmakes').textContent.includes('rockfish5'),
+    'the base model belongs in the expansion, not in the column for what the run produced');
 
   /* The task comes off the base model rather than from which columns are null. */
   assert.equal(withRun.querySelector('.jtask').textContent.trim(), 'Detection');
