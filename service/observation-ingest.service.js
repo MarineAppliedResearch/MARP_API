@@ -577,13 +577,17 @@ class ObservationIngestService {
 
         // A session inference creates belongs to the inference processor, not to
         // whoever submitted the job -- that is what puts it on the GUI's opening
-        // screen. The submitter is still recorded on each observation.
+        // screen. The submitter is still recorded on each observation, and now on
+        // `created_by` too: two different facts that `user_id` alone cannot hold,
+        // because every automated session has the same producer and a different
+        // requester.
         const { session: row, created } = await ingestRepository.findOrCreateSession({
             projectId: session.project_id,
             dive: session.dive,
             line: session.line,
             type: session.type,
             userId: await ingestRepository.inferenceProcessorId(),
+            createdBy: job.created_by === undefined ? null : job.created_by,
         });
 
         return { ...row, created };

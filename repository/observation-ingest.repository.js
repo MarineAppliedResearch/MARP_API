@@ -132,6 +132,13 @@ class ObservationIngestRepository {
      * and a dive-and-line will be submitted many times over. `lineId` is written
      * as `dive_line`, which is the shape every existing session uses.
      *
+     * **Provenance is written on creation only, never on reuse.** A session found
+     * here already records who asked for the run that created it, and a second run
+     * over the same dive does not make that untrue -- overwriting it would throw
+     * away the only record of the first. So `created_by` is the first requester
+     * rather than the latest, and the per-run requester stays on each observation,
+     * which is where it is actually per-run.
+     *
      * @async
      * @param {Object} params - Session identity.
      * @param {number} params.projectId - Project the session belongs to.
@@ -139,10 +146,11 @@ class ObservationIngestRepository {
      * @param {string} params.line - Line name.
      * @param {string} params.type - Session type, e.g. `Invert`.
      * @param {number|null} params.userId - User to record as the session's owner.
+     * @param {number|null} [params.createdBy] - Who asked for the run, when known.
      * @param {Object} [transaction] - Transaction to work inside.
      * @returns {Promise<{session: Object, created: boolean}>} The session row.
      */
-    async findOrCreateSession({ projectId, dive, line, type, userId }, transaction) {
+    async findOrCreateSession({ projectId, dive, line, type, userId, createdBy = null }, transaction) {
         const [existing] = await this.db.sequelize.query(
             `SELECT * FROM sessions
               WHERE project_id = :projectId AND dive = :dive AND line = :line AND type = :type
@@ -160,13 +168,17 @@ class ObservationIngestRepository {
         }
 
         const [rows] = await this.db.sequelize.query(
-            `INSERT INTO sessions (project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
-             VALUES (:projectId, :userId, :dive, :line, :lineId, :type, NOW(), NOW())
+            /* `is_automated` is true rather than derived from `user_id` pointing at a
+               service account: that is a convention nothing enforces and the schema
+               does not show. Reaching this line at all means a machine produced it. */
+            `INSERT INTO sessions (project_id, user_id, created_by, is_automated, dive, line, "lineId", type, "createdAt", "updatedAt")
+             VALUES (:projectId, :userId, :createdBy, true, :dive, :line, :lineId, :type, NOW(), NOW())
              RETURNING *`,
             {
                 replacements: {
                     projectId,
                     userId,
+                    createdBy,
                     dive,
                     line,
                     lineId: `${dive}_${line}`,
