@@ -803,7 +803,62 @@
     window.location.replace('/?login=1');
   }
 
+  /**
+   * When MARP last answered, and what went wrong if it did not.
+   *
+   * One record for the whole page rather than one per screen: a dashboard tab is reading
+   * one API, and "when was this last true" is a question about that connection, not about
+   * whichever table happens to be on screen.
+   */
+  const heard = { at: null, failed: null, inFlight: 0 };
+
+  /**
+   * What the chrome paints: `{at, failed, inFlight}`.
+   *
+   * `at` is null until the first answer, `failed` carries the last error while it is
+   * still the most recent thing that happened, and `inFlight` is how many reads are
+   * outstanding — enough for the top bar to say *reading* without every screen reporting
+   * its own state.
+   *
+   * @returns {{at: ?number, failed: ?Object, inFlight: number}}
+   */
+  function freshness() {
+    return { at: heard.at, failed: heard.failed, inFlight: heard.inFlight };
+  }
+
+  /**
+   * Every read, with the clock around it.
+   *
+   * **Here because here cannot be forgotten.** Freshness used to be a per-screen job, so
+   * a screen nobody had got to yet simply did not have it -- which is what Isaac found on
+   * Models. Every call on every screen passes through this, so the record is kept once and
+   * the chrome only has to paint it.
+   *
+   * @param {string} path - Route under `/api/v2`.
+   * @param {Object} [options] - `{method, query, body}`.
+   * @returns {Promise<*>}
+   */
   async function request(path, options) {
+    heard.inFlight += 1;
+
+    try {
+      const answer = await send(path, options);
+
+      heard.at = Date.now();
+      heard.failed = null;
+
+      return answer;
+    } catch (error) {
+      /* Kept rather than counted: the top bar says what went wrong, and a failure that
+         only incremented a number would be indistinguishable from a slow page. */
+      heard.failed = error;
+      throw error;
+    } finally {
+      heard.inFlight -= 1;
+    }
+  }
+
+  async function send(path, options) {
     const { method = 'GET', query, body } = options || {};
     const url = new URL(`/api/v2${path}`, location.origin);
 
@@ -1736,6 +1791,7 @@
     listModelSpecies,
     listDatasets,
     listTrainingRuns,
+    freshness,
     trainingRunEpochs,
     trainingRunPace,
     trainingRunMetrics,

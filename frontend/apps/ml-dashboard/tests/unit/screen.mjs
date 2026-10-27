@@ -82,9 +82,16 @@ export async function drawScreen(page, answers, options = {}) {
 
   if (realApi) run('api.js');
   else {
+    /* **`freshness` is chrome, not a route**, so it is answered by default rather than
+       left to every test to stub. It is read by the top bar on every screen and it is
+       synchronous, so the usual "throw an async 404" fallback would both throw at the
+       wrong moment and make a test about a table fail for a reason about a clock. */
+    const chrome = { freshness: () => ({ at: Date.now(), failed: null, inFlight: 0 }) };
+
     window.MarpApi = new Proxy(answers, {
       get(target, name) {
         if (name in target) return target[name];
+        if (name in chrome) return chrome[name];
         if (typeof name !== 'string') return undefined;
         return async () => { throw Object.assign(new Error(`no stub for ${name}`), { status: 404 }); };
       },

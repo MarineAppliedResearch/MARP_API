@@ -185,6 +185,10 @@ async function openDatasetsScreen(answers) {
   }, {
     get(target, name) {
       if (name in target) return target[name];
+      /* **Chrome, not a route.** The top bar reads this every second on every screen and
+         it answers synchronously, so the async not-found below would be both the wrong
+         shape and the wrong moment. */
+      if (name === 'freshness') return () => ({ at: Date.now(), failed: null, inFlight: 0 });
       if (typeof name !== 'string') return undefined;
       /* Anything else: the ordinary not-found the screen is already written to survive. */
       return async () => { throw Object.assign(new Error(`no stub for ${name}`), { status: 404 }); };

@@ -758,6 +758,15 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
    the spread, and the mean is the reading. */
 .curve-class { stroke-width: 1.2; opacity: .42; }
 .curve-mean { --key: var(--cyan-300); stroke-width: 3.2; opacity: 1; }
+/* **The one thing on every screen that says whether any of it is still true.** Quiet while
+   it is fine and loud only when it is not: a stale page looks exactly like a current one,
+   so the failure states are the ones worth seeing from across the room. */
+.topbar .fresh {
+  color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums;
+  white-space: nowrap; padding: 0 2px;
+}
+.topbar .fresh[data-state="reading"] { opacity: .65; }
+.topbar .fresh[data-state="failed"] { color: var(--red-400); font-weight: 700; }
 /* The one way to reach what MARP read, for the one reader who wants it. Quiet on purpose:
    it is a footnote to the matrix, not a feature of it. */
 .raw-metrics { display: flex; gap: 12px; padding: 0 12px 10px; }
