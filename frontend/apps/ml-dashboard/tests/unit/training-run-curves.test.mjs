@@ -2186,3 +2186,36 @@ test('the weights file is captioned and counted as a file, not as a plot', async
   assert.ok(card.querySelector('.result-plot.is-file'),
     'offered as a download rather than drawn as a broken image');
 });
+
+test('the ingest inputs are shown as files and captioned, not left as stray plots', async (t) => {
+  /* **Roles are the verbatim filename stem, capitals included, with two exceptions.**
+     `final_metrics` and `metrics_curves` are fixed lowercase names MARP's own ingest
+     keys on, and they are artifacts like any other -- so they appear in this gallery.
+     They are shown rather than filtered out, because the open set is the point and
+     somebody checking a rendered number against what the trainer actually sent should
+     not have to go round the API to do it. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    files: [
+      { name: 'PR_curve', url: '/a/pr.png', content_type: 'image/png' },
+      { name: 'final_metrics', url: '/a/fm.json', content_type: 'application/json' },
+      { name: 'metrics_curves', url: '/a/mc.json', content_type: 'application/json' },
+    ],
+  }));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const captions = [...detail.querySelectorAll('figcaption')].map((c) => c.textContent);
+
+  assert.ok(captions.some((text) => /source for the matrix and the per-class table/.test(text)),
+    'final_metrics says what it is');
+  assert.ok(captions.some((text) => /source for the curve charts/.test(text)),
+    'and so does metrics_curves');
+
+  /* JSON, so offered as a download rather than drawn as a broken image. */
+  assert.equal(detail.querySelectorAll('.result-plot.is-file').length, 2);
+  assert.equal(detail.querySelectorAll('.result-plot img').length, 1, 'only the PNG is an image');
+
+  /* An entity in a caption would render literally: these are escaped on the way out. */
+  assert.ok(!captions.some((text) => /&[a-z]+;/.test(text)), 'no raw entities in a caption');
+});

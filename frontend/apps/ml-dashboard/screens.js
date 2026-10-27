@@ -2226,6 +2226,15 @@ function trainingPlots(plots) {
        runs 205 and 206 each return exactly one file and it is this. Found by asking the
        service rather than by waiting for the first run that uploads plots. */
     weights: 'The trained model itself',
+    /* **The two the ingest reads, which are also files the run produced.** Every other
+       role is the verbatim filename stem; these two are fixed lowercase names MARP's own
+       ingest keys on -- `final_metrics` becomes the per-class table and the matrix above,
+       `metrics_curves` becomes the threshold charts. They are shown rather than filtered
+       out, because the open set is the point and somebody checking a number against what
+       the trainer actually sent should not have to go round the API to do it. Captioned
+       so they do not read as a stray plot. */
+    final_metrics: 'What the run measured, as the worker sent it: the source for the matrix and the per-class table',
+    metrics_curves: 'Precision, recall and F1 at every threshold, as sent: the source for the curve charts',
   };
 
   if (!plots.length) {
