@@ -587,6 +587,17 @@ Not yet written. This is the gap in the plan and it is the biggest one.
 
 ## Status
 
+**Confirmed against reality on 2026-10-27, which the statement below could not do.**
+Job 21787 produced both artifacts. Every field fitted, and all four endpoints were
+exercised on the live server rather than off disk: `/metrics` returns the aggregate and
+one class with `f1_score` null and `fitness` equal to `map5095` to the last digit;
+`/curves` returns 1,000 points in 28,893 bytes; `/artifacts` lists 20 files and
+`/artifacts/<sha256>` serves a genuine 3000x2250 PNG. **The matrix is the right way
+round**, proved by its first row summing to the recorded support.
+
+Not proved: no classification run has happened, and this one was single-class, so the
+`classify` family and the unresolved-class path have still only met fixtures.
+
 **Verified at G4, 2026-10-26.** Migration applied, reversed and re-applied; 30 unit
 assertions and 19 endpoint assertions green; `test:ml` 320 and `test:gpu` 323 green; the
 transpose proved red inside Jest at both tiers before being restored. The curves

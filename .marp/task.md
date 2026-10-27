@@ -553,30 +553,39 @@ Filled at G3.
 
 ## Status
 
-- **Gate:** verifying — **verified**, and the limit of that stated below.
-- **Notes:** The migration applies, reverses and re-applies cleanly with the integrity
-  guard reporting nothing lost. `tests/final-metrics.test.js` is 30 of 30 and
-  `tests/training-run-yolo-output.test.js` 19 of 19; `npm run test:ml` is 320 green
-  across 18 suites and `npm run test:gpu` 323 across 19. The transpose was proved red
-  inside Jest at both tiers before being restored. `.marp/verification.md` has every
-  result.
+- **Gate:** done — merged, and confirmed against a real run on the live server.
+- **Notes:** Merged into `104-dashboard-reads-marp`; the server has run on it since
+  2026-10-27 11:30. **Job 21787 is the first real artifact run and the whole chain
+  worked**: 20 artifacts handed over, 2 `metrics_summary` rows, 1 confusion matrix,
+  1,000 curve rows, the one class resolved to a species with none unresolved.
 
-  **The endpoint suite failed 19 of 19 on its first execution**, and all three causes
-  were in the fixture rather than in the code: `species.taxserial` is NOT NULL with no
-  default and has no `is_active` column beside it, `model_species` needs explicit
-  timestamps, and a PNG stub recorded as JSON made the byte-serving test parse it, which
-  was the route correctly serving what the hand-off had recorded.
+  **The orientation is proved by arithmetic rather than by reading the source.** The
+  served matrix's first row sums to 710, exactly the `support` on the per-class row
+  beside it; transposed it would sum to 922 and contradict its own response. That is the
+  one thing no fixture could ever have settled.
 
-  **A4 is resolved and was never Isaac's to resolve.** The obstacle was a database name,
-  not a permission: a database of this worktree's own on port 5447 is a different
-  database rather than a rephrasing of the refused command, and the gate was right both
-  times.
+  **The open set earned its keep on the first run.** Four plot stems are `Box`-prefixed
+  (`BoxPR_curve`, `BoxF1_curve`, `BoxP_curve`, `BoxR_curve`) and four more arrived that
+  nobody had named — 20 files, not the 12 documented. A closed allow-list would have
+  dropped eight of them silently.
 
-  **The curves cost, measured rather than estimated:** 20 classes x 1,000 points is
-  20,000 rows, 1,719 kB on disk, 0.46 MB on the wire and 0.60 MB served, inserting in
-  441 ms and reading in 748 ms. At or below the estimate on every axis.
+  **Measured on real output:** ~1,000 curve rows, ~91 kB stored and ~0.029 MB served per
+  class. The row count matched the synthetic estimate exactly; the wire size did not, and
+  the served form is smaller than either.
 
-  **What none of it proves: no training run has ever produced either artifact.** The
-  worker half is agreed and unbuilt. Every fixture is built from what the worker read out
-  of the library rather than from traffic, so the two halves are tested against each
-  other's stated contract and not against reality.
+  **Getting there cost two mistakes worth keeping.** The endpoint suite failed 19 of 19
+  on its first execution and all three causes were fixture faults, not code — a test
+  nobody has run is a draft. And resolving a rebase with `git add -A` staged the whole
+  working tree at every step, reverting 645 lines of another session's work and deleting
+  a test file; it would have read as a deliberate revert with no conflict to warn anyone.
+  The check that now runs after every rebase is any file where this branch *deletes*
+  stream lines.
+
+  **Left undone deliberately, and not ours:** every artifact is served
+  `application/octet-stream`, including a file whose first bytes are a PNG signature. The
+  upload route records what the uploader declares and documents that it does, so the
+  `Content-Type` is the worker's to set. Reported, not worked around.
+
+  **Still unproved:** no classification run has happened, so `classify`, `accuracy_top1`
+  and `accuracy_top5` are exercised only against fixtures; and this run was single-class,
+  so the unresolved-class path and a second metric family have not met real data.
