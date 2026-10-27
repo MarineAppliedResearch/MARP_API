@@ -1921,7 +1921,16 @@ function confusionMatrix(matrix, image, raw = []) {
     const split = matrix.dataset_split ? ` &middot; ${escapeHtml(matrix.dataset_split)} split` : '';
 
     return '<article class="evaluation-card matrix-card" data-matrix><header><div><h5>Confusion matrix</h5>'
-      + `<p>Rows are the true class; columns are what the model predicted${split}</p></div>`
+      /* **The note is here because the comparison is made here.** Run 207's matrix gives
+         571 of 710 found, a recall of 0.804, where the per-class table beside it reports
+         0.735 for the same class. Neither is wrong: the trainer builds its matrix at a
+         fixed confidence and takes the table's recall at the confidence where mean F1
+         peaks. A reader who checks one against the other finds a seven-point gap and
+         reasonably concludes something is broken, which is the only reason this sentence
+         is on a screen at all -- it is the per-class table's shared-threshold caveat,
+         where the other half of the comparison is. */
+      + `<p>Rows are the true class; columns are what the model predicted${split}`
+      + ' &middot; counted at a fixed confidence, so recall here and in the table below differ</p></div>'
       + '<div class="seg matrix-modes" aria-label="Confusion matrix values">'
       + '<button type="button" class="on" data-matrix-mode="norm" aria-pressed="true" '
       + 'title="Each cell as a share of its true class">Normalised</button>'
@@ -2799,6 +2808,12 @@ function wireTrainingJobDetail(head, detail) {
 /**
  * Write the cells that move, on the rows that are already there.
  *
+ * **Every table of jobs, not only the training ones.** Jobs, Training and the Training
+ * runs panel all draw `tr[data-job]` with the same cell classes, so one patcher serves
+ * them: each cell it writes is guarded by being there, and a table without a Best mAP or
+ * an Epochs column simply has nothing for those lines to find. A second patcher per
+ * screen is how two tables start disagreeing about what a state looks like.
+ *
  * **Patched, not redrawn.** Rebuilding the table every five seconds would close the row
  * being read, which is exactly the defect the Datasets table was fixed for; the same rule
  * applies here for the same reason, and the DOM tier pins both.
@@ -2810,7 +2825,7 @@ function wireTrainingJobDetail(head, detail) {
  * @param {Map<number, Object>} views - The latest view per job id.
  * @returns {void}
  */
-function patchTrainingRows(body, views) {
+function patchJobRows(body, views) {
   for (const head of $$(':scope > tr[data-job]', body)) {
     const view = views.get(Number(head.dataset.job));
 
@@ -3768,13 +3783,13 @@ function watchTrainingJobs() {
         if (trainingViewsByJob.has(id)) trainingViewsByJob.set(id, view);
       }
 
-      patchTrainingRows(body, trainingViewsByJob);
+      patchJobRows(body, trainingViewsByJob);
 
       /* The runs panel is the same rows seen a second way, so it is patched rather than
          redrawn for the same reason: a rebuild closes the expansion somebody is reading. */
       const runsBody = $('#runs tbody');
 
-      if (runsBody) patchTrainingRows(runsBody, trainingViewsByJob);
+      if (runsBody) patchJobRows(runsBody, trainingViewsByJob);
     } catch {
       /* A poll that fails is a blip. The last good answer stays on screen, which is
          better than replacing a table somebody is reading with an error. */
@@ -4808,6 +4823,36 @@ async function renderModelsScreen() {
     modelsTrainedOn = datasetByModel(registry, runs, datasets);
     fillModelsFilterOptions();
     applyModelsQuery();
+
+    /* **The registry is nearly static, and the exception is the one worth watching.** A
+       model being trained becomes a trained model while somebody has this open, and that
+       row is the reason they have it open. So it watches while anything is `training`
+       and stops otherwise, which on a settled registry means it never asks twice.
+
+       `applyModelsQuery` redraws rather than patching, which is allowed here only because
+       the thing it redraws is a table whose rows do not expand into anything a reader is
+       part-way through -- and it is gated behind a status actually changing, so a quiet
+       poll writes nothing at all. */
+    const training = (list) => list.some((model) => model.status === 'training');
+
+    if (training(registry)) {
+      watchScreen({
+        read: () => window.MarpApi.listModels(),
+        live: training,
+        patch: (next) => {
+          const moved = next.some((model) => {
+            const before = modelsRegistry.find((one) => one.id === model.id);
+
+            return !before || before.status !== model.status;
+          });
+
+          if (!moved) return;
+
+          modelsRegistry = next;
+          applyModelsQuery();
+        },
+      });
+    }
   } catch (error) {
     body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="${columns}">Could not load the registry (${error.status || 'no answer'}). `
       + '<button class="btn sm" type="button" id="modelsRetry">Try again</button></td></tr>';
@@ -5306,6 +5351,26 @@ async function renderDashboardScreen() {
     ]);
 
     renderDashboard({ jobs: jobs.jobs, workers, models, datasets });
+
+    /* **The one screen where redrawing is the honest patch.** Everything here is cards
+       and charts -- there is no row to close and nothing expanded to lose -- so the
+       rule's purpose is served by drawing it again. Four reads at the builder's cadence
+       is more than the other screens make, so it stops as soon as nothing is moving,
+       which on a quiet morning is immediately. */
+    watchScreen({
+      read: async () => {
+        const [next, pool, registry, sets] = await Promise.all([
+          window.MarpApi.listJobs({ limit: 500 }),
+          window.MarpApi.listWorkers(),
+          window.MarpApi.listModels(),
+          window.MarpApi.listDatasets(),
+        ]);
+
+        return { jobs: next.jobs, workers: pool, models: registry, datasets: sets };
+      },
+      live: (data) => anyJobLive(data.jobs),
+      patch: (data) => renderDashboard(data),
+    });
   } catch (error) {
     /* **Say what actually went wrong, in the console.** This banner reports a
        status, and a rendering bug has no status -- so a `TypeError` thrown
@@ -5358,6 +5423,48 @@ const workersQuery = {
   sort: { key: 'whb', dir: 'ascending' },
   page: 1, perPage: 5,
 };
+
+/**
+ * Write what moves on a worker row, leaving the row itself alone.
+ *
+ * The two cells that change while somebody watches: the status pill, and how long since
+ * the machine was last heard from. Everything else on the row -- its name, its GPU, its
+ * version -- changes when a worker is reconfigured, which is not something that happens
+ * under a reader's eyes, and redrawing it would close an expansion for nothing.
+ *
+ * @param {Object[]} pool - The workers, as `listWorkers` returned them.
+ * @returns {void}
+ */
+function patchWorkerRows(pool) {
+  const body = $('table#workers tbody');
+
+  if (!body) return;
+
+  const byId = new Map(pool.map((worker) => [String(worker.worker_id), worker]));
+
+  for (const row of $$(':scope > tr[data-worker]', body)) {
+    const worker = byId.get(row.dataset.worker);
+
+    if (!worker) continue;
+
+    const view = workerView(worker);
+    const status = $('.jstatus', row);
+    const rank = String(WORKERS_SORT_KEYS.wstate(view));
+
+    if (status && status.dataset.sort !== rank) {
+      status.innerHTML = `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`;
+      status.dataset.sort = rank;
+    }
+
+    const heartbeat = $('.whb', row);
+    const since = String(WORKERS_SORT_KEYS.whb(view));
+
+    if (heartbeat && heartbeat.dataset.sort !== since) {
+      heartbeat.textContent = sinceText(worker.last_seen_at);
+      heartbeat.dataset.sort = since;
+    }
+  }
+}
 
 /** How each sortable column orders. Keyed by the header's class. */
 const WORKERS_SORT_KEYS = {
@@ -5652,6 +5759,29 @@ async function renderWorkersTable() {
     workersPool = pool;
     renderWorkersSummary(pool, jobs.jobs);
     applyWorkersQuery();
+
+    /* **A pool screen that does not move is the one that misleads most**: a worker going
+       offline looks exactly like a worker that was offline when the tab was opened. The
+       status pill and the heartbeat are written into the rows that are there, so an
+       expanded worker stays expanded.
+
+       It keeps asking while any machine is reachable, rather than while any job is live:
+       the thing being watched here is the pool itself, and a worker dropping out is
+       precisely the event worth seeing. A pool that is entirely offline has nothing left
+       to report and stops. */
+    const reachable = (list) => list.some((one) => one.last_seen_at
+      && Date.now() - Date.parse(one.last_seen_at) < 10 * 60 * 1000);
+
+    if (reachable(pool)) {
+      watchScreen({
+        read: () => window.MarpApi.listWorkers(),
+        live: reachable,
+        patch: (next) => {
+          workersPool = next;
+          patchWorkerRows(next);
+        },
+      });
+    }
   } catch (error) {
     body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load the pool (${error.status || 'no answer'}). `
       + '<button class="btn sm" type="button" id="workersRetry">Try again</button></td></tr>';
@@ -6179,6 +6309,24 @@ async function renderJobsTable() {
        about what happens to be on screen. */
     renderJobsSummary(jobsWindow.jobs);
     applyJobsQuery();
+
+    /* **Jobs is the screen somebody leaves open while work runs**, and until now it was
+       a snapshot of whenever the tab was opened. The rows are `tr[data-job]` with the
+       same cell classes the Training tables use, so the patcher is the same one. */
+    if (anyJobLive(jobsWindow.jobs)) {
+      watchScreen({
+        read: () => window.MarpApi.listJobs(ask),
+        live: (window_) => anyJobLive(window_.jobs),
+        patch: (window_) => {
+          jobsWindow = window_;
+
+          const issues = batchesWithIssues(window_.jobs);
+
+          renderJobsSummary(window_.jobs);
+          patchJobRows(body, new Map(window_.jobs.map((job) => [job.id, jobView(job, issues)])));
+        },
+      });
+    }
   } catch (error) {
     /* A real state, and the reason the layer can be made to fail on purpose.
        `?mock=fail:jobs` is how to see it. */
@@ -12361,6 +12509,92 @@ function wireFreshness() {
      refresh of its own. */
   if (reload) reload.addEventListener('click', () => location.reload());
 }
+
+/** The cadence every live screen keeps. The dataset builder's, which Isaac set. */
+const SCREEN_POLL_MS = 5000;
+
+/** Every live screen's tick, so the DOM tier can run one without waiting five seconds. */
+const screenPolls = [];
+
+/**
+ * Run every pending screen poll once. For the DOM tier; the application never calls it.
+ *
+ * @returns {Promise<void>}
+ */
+async function pollScreenNow() {
+  for (const tick of screenPolls) await tick();
+}
+
+/**
+ * Keep a screen current without rebuilding it.
+ *
+ * **One of these rather than five.** Freshness, live updating and expandable rows were
+ * each built a screen at a time as Isaac found them missing, so Datasets polled and
+ * Models did not, and the only thing deciding which was where he had last looked. This is
+ * the shared half: a screen says what it reads, what to write into the rows it already
+ * has, and when there is nothing left worth watching.
+ *
+ * **Patched, never rebuilt.** A rebuild closes the row somebody is reading -- the defect
+ * the Datasets table was fixed for -- so `patch` writes into cells and the table it was
+ * given keeps its identity, its scroll and its open expansions.
+ *
+ * **It stops.** A screen of finished work makes no requests at all, which is what keeps
+ * seven tabs open from being seven pollers.
+ *
+ * @param {Object} spec - `{read, patch, live}`.
+ * @returns {void}
+ */
+function watchScreen({ read, patch, live }) {
+  let timer = null;
+
+  /* **A seam for the DOM tier, the way `detail.redraw` is one on a row.** A watcher
+     schedules its first tick while the screen is still rendering, so a test has no moment
+     in which to intercept the timer -- and waiting five real seconds per assertion would
+     make the tier slow enough that nobody runs it. `pollScreenNow` runs what is pending,
+     once, on demand. It is not used by the application. */
+  screenPolls.push(() => again());
+
+  const again = async () => {
+    timer = null;
+
+    let data;
+
+    try {
+      data = await read();
+    } catch {
+      /* A failed poll is not a reason to stop: the top bar already says MARP is not
+         answering, and a screen that gave up would stay stale and silent after the
+         connection came back. */
+      timer = setTimeout(again, SCREEN_POLL_MS);
+      return;
+    }
+
+    patch(data);
+
+    if (live(data)) timer = setTimeout(again, SCREEN_POLL_MS);
+  };
+
+  timer = setTimeout(again, SCREEN_POLL_MS);
+
+  /* A timer with no end keeps a jsdom window alive, so the DOM tier hangs rather than
+     failing -- and a suite that never finishes is harder to diagnose than one that is
+     red. The same reason the freshness ticker is stopped. */
+  const stop = () => { if (timer) clearTimeout(timer); timer = null; };
+
+  window.addEventListener('pagehide', stop);
+  window.addEventListener('unload', stop);
+}
+
+/** The states worth watching: a screen holding any of these keeps asking. */
+const LIVE_STATES = new Set(['queued', 'running', 'leased', 'cancelling']);
+
+/**
+ * Is anything here still moving?
+ *
+ * @param {Object[]} jobs - Raw job rows.
+ * @returns {boolean}
+ */
+const anyJobLive = (jobs) => jobs.some((job) => LIVE_STATES.has(job.state));
 
 function boot(name, wire) {
   try {
