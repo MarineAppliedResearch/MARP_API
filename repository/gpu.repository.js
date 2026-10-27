@@ -39,6 +39,7 @@
 'use strict';
 
 const { QueryTypes } = require('sequelize');
+const { epochMetrics } = require('../db/epoch-metrics');
 
 /**
  * Shared database registry containing the configured Sequelize connection,
@@ -744,6 +745,62 @@ class GpuRepository {
     }
 
     /**
+     * Keep the GPU reading a polling worker sent, whether or not it got work.
+     *
+     * **The readings were already arriving and being thrown away.** Every poll carries
+     * `capabilities`, and until now MARP used them only when a lease was granted, as the
+     * attempt's `capabilities_snapshot`. A poll that got nothing -- which is most polls,
+     * most of the time -- discarded a perfectly good reading of an idle machine. So both
+     * activity charts could only ever show the minutes a worker happened to be holding a
+     * lease, and a pool sitting idle looked like a pool that was not there.
+     *
+     * Nothing new is plumbed from the worker for this: the same field, written down
+     * instead of dropped.
+     *
+     * **One row per machine per minute, which the schema enforces rather than the
+     * caller.** `date_trunc` plus the unique index on `(worker_id, at)` means a worker
+     * polling every few seconds leaves one row, so the sample interval is a property of
+     * the table and not a timer somebody has to remember. `dropExpiredWorkerSamples`
+     * already bounds the other end at `SAMPLE_RETENTION_DAYS`, which is the longest
+     * window the charts offer.
+     *
+     * **An idle sample never overwrites a working one.** A machine that heartbeats mid-job
+     * and polls for its next one inside the same minute would otherwise have its reading
+     * replaced by one that does not know what was running -- turning attributed training
+     * compute into unattributed idle. The conflict clause only updates a row that has no
+     * attempt against it, so the reading that knows what it was doing always wins.
+     *
+     * `job_kind` and `attempt_id` are null here on purpose: this is a machine that is not
+     * working, and the charts filter on exactly that to tell training compute from
+     * inference compute from neither.
+     *
+     * @async
+     * @param {Object} sample
+     * @param {number} sample.workerId - The worker that polled.
+     * @param {Array<Object>} sample.devices - Its GPU readings, as the snapshot holds them.
+     * @returns {Promise<void>} Resolves when the reading is kept, or skipped.
+     */
+    async sampleIdleWorker({ workerId, devices }) {
+        if (!Array.isArray(devices) || !devices.length) return;
+
+        try {
+            await this.db.sequelize.query(
+                `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, job_kind)
+                 VALUES (:workerId, NULL, date_trunc('minute', NOW()), :devices, NULL)
+                 ON CONFLICT (worker_id, at)
+                 DO UPDATE SET devices = EXCLUDED.devices
+                 WHERE gpu_worker_samples.attempt_id IS NULL`,
+                { replacements: { workerId, devices: JSON.stringify(devices) } }
+            );
+        } catch (error) {
+            /* **Never fails the poll.** A worker asking for work must not be turned away
+               because bookkeeping failed; the chart missing a minute is the smaller loss
+               by a long way. Logged so it is not silent. */
+            logger.error('Error::' + error);
+        }
+    }
+
+    /**
      * Throw away GPU readings older than the retention window.
      *
      * One row per machine per minute is cheap and unbounded, which is the shape
@@ -1006,6 +1063,41 @@ class GpuRepository {
             // tied rows in the order they were already in.
             const order = `ORDER BY ${column} ${direction} NULLS LAST, j.id ${direction}`;
 
+            /* **The best mAP a training run reached, and only when the caller asked for
+               training jobs.** The Training screen shows it; the Jobs screen does not,
+               and 9,566 of 9,574 jobs on this database are inference.
+
+               Measured rather than reasoned, over a page of 50:
+
+                 unfiltered   1.4ms -> 23.4ms   (+22ms, paid by rows that cannot use it)
+                 kind=training 0.6ms ->  0.8ms   (+0.2ms)
+
+               So it is scoped to the filter rather than always on. A lateral cannot
+               fire conditionally per row, but it can be left out of the statement
+               entirely when nothing will read it.
+
+               **Derived rather than stored, which is the opposite of the call made for
+               dataset image counts and model checksums, and deliberately so.** Those
+               are expensive and immutable -- counting an archive or hashing a file,
+               for a value that cannot change. This is neither: it is an aggregate over
+               tens of indexed rows, and epochs *do* change. Ten of them were rewritten
+               this afternoon repairing a mis-mapped run, and a stored best would have
+               gone stale at that moment with nothing to say so.
+
+               **Absent on an unfiltered page, rather than null.** The two say different
+               things and the difference is load-bearing here: null means this training
+               job reached no epoch, absent means this response shape does not carry the
+               field at all. Selecting NULL for it when unfiltered would collapse those
+               into one value and quietly answer "no mAP" for every inference job. */
+            const bestMap = filters.kind === 'training'
+                ? `LEFT JOIN LATERAL (
+                        SELECT max(e.map50) AS best_map50
+                          FROM training_runs r
+                          JOIN epochs e ON e.training_run_id = r.id
+                         WHERE r.job_id = j.id
+                   ) best ON TRUE`
+                : '';
+
             const jobs = await this.db.sequelize.query(
                 `SELECT j.*,
                         a.progress_done,
@@ -1013,7 +1105,19 @@ class GpuRepository {
                         a.progress_unit,
                         a.progress_phase,
                         a.progress_elapsed_s,
+                        /* **The Updated column is otherwise faithfully stale.** Nothing on
+                           the heartbeat path touches the job row, so gpu_jobs.updated_at
+                           stops moving the moment a job is created while its attempt keeps
+                           reporting every minute.
+
+                           Added to the read rather than making the write churn. An UPDATE
+                           per running job per minute writes a new tuple at the end of the
+                           heap, and that is exactly what reshuffled rows and closed expanded
+                           panels on the Datasets screen -- see c49990fd. A stale cell is the
+                           smaller problem, and this is the smaller fix. */
+                        a.last_heartbeat_at,
                         a.worker_id,
+                        ${filters.kind === 'training' ? 'best.best_map50,' : ''}
                         w.name AS worker_name,
                         (SELECT count(DISTINCT worker_id)::int
                            FROM gpu_job_attempts
@@ -1021,13 +1125,15 @@ class GpuRepository {
                    FROM gpu_jobs j
                    LEFT JOIN LATERAL (
                         SELECT progress_done, progress_total, progress_unit,
-                               progress_phase, progress_elapsed_s, worker_id
+                               progress_phase, progress_elapsed_s, last_heartbeat_at,
+                               worker_id
                           FROM gpu_job_attempts
                          WHERE job_id = j.id
                          ORDER BY id DESC
                          LIMIT 1
                    ) a ON TRUE
                    LEFT JOIN gpu_workers w ON w.id = a.worker_id
+                   ${bestMap}
                    ${where}
                    ${order}
                   LIMIT :limit OFFSET :offset`,
@@ -1237,6 +1343,246 @@ class GpuRepository {
     }
 
     // -----------------------------------------------------------------
+    /**
+     * What deleting every job in one state would actually take with it.
+     *
+     * **A confirmation has to carry real numbers or it carries none.** The counts
+     * measured while this was written -- 1,189 failed jobs, 3,570 attempts, 12,088
+     * events -- are the right shape for the sentence and the wrong thing to write into
+     * one: they were true on 2026-10-22 and nothing on the page can tell when they stop
+     * being true. So the page asks, at the moment the button is pressed, and the
+     * sentence is built from the answer.
+     *
+     * Same query as the delete, minus the delete: the blocked set is excluded by the
+     * same `NOT EXISTS`, so what this counts and what would go are the same rows by
+     * construction rather than by two expressions agreeing.
+     *
+     * **The dataset builds come back named.** A failed `inference` job is a row; a
+     * failed `dataset_build` is the record of a build somebody ran, and its dataset
+     * outlives it. Deleting those is still right -- the dataset is a `datasets` row and
+     * is not touched -- but it deserves its own clause rather than being folded into a
+     * four-figure total nobody reads.
+     *
+     * @async
+     * @param {string} state - The `gpu_jobs.state` to count. Validated by the caller.
+     * @returns {Promise<Object>} Jobs, attempts, events, blocked, and the builds by name.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async previewDeleteJobsInState(state) {
+        const [totals] = await this.db.sequelize.query(
+            `WITH mine AS (
+                 SELECT j.id,
+                        EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id) AS held
+                   FROM gpu_jobs j
+                  WHERE j.state = :state
+             ),
+             going AS (SELECT id FROM mine WHERE NOT held)
+             SELECT (SELECT COUNT(*) FROM going)                     AS jobs,
+                    (SELECT COUNT(*) FROM mine WHERE held)           AS blocked,
+                    (SELECT COUNT(*) FROM gpu_job_attempts t
+                      WHERE t.job_id IN (SELECT id FROM going))      AS attempts,
+                    (SELECT COUNT(*) FROM gpu_job_events e
+                       JOIN gpu_job_attempts t ON t.id = e.attempt_id
+                      WHERE t.job_id IN (SELECT id FROM going))      AS events,
+                    (SELECT COUNT(*) FROM observations o
+                      WHERE o.gpu_job_id IN (SELECT id FROM going))  AS observations`,
+            { replacements: { state }, type: QueryTypes.SELECT }
+        );
+
+        /* Named rather than counted, because there are two of them and a name is what
+           makes somebody recognise the build they ran this morning. */
+        const builds = await this.db.sequelize.query(
+            `SELECT j.id, j.spec->>'dataset_id' AS dataset_id
+               FROM gpu_jobs j
+              WHERE j.state = :state
+                AND j.kind = 'dataset_build'
+                AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id)
+              ORDER BY j.id`,
+            { replacements: { state }, type: QueryTypes.SELECT }
+        );
+
+        return {
+            jobs: Number(totals.jobs),
+            attempts: Number(totals.attempts),
+            events: Number(totals.events),
+            blocked: Number(totals.blocked),
+            observations: Number(totals.observations),
+            builds: builds.map((row) => ({
+                id: Number(row.id),
+                dataset_id: row.dataset_id === null ? null : Number(row.dataset_id),
+            })),
+        };
+    }
+
+    /**
+     * Delete every job in one state, and say which ones could not go.
+     *
+     * **The blocked rows are excluded by the query rather than attempted and caught.**
+     * `artifacts.job_id` is `ON DELETE RESTRICT`, so a job an artifact points at cannot
+     * be deleted at all; a bulk delete that tried them anyway would either abort the
+     * whole statement or need per-row error handling, and both turn "19 of these are
+     * held by artifacts" into an error path. Excluded here, the RESTRICT can never fire
+     * and the caller gets a fact instead of a failure.
+     *
+     * **The artifacts themselves are never touched.** Deleting them to make a job
+     * deletable would be destroying the output to tidy the record of the work.
+     *
+     * What goes with the job, by the foreign keys as they stand:
+     *
+     * - `gpu_job_attempts` CASCADE, and `gpu_job_events` CASCADE through them -- this
+     *   is where `failure_reason` and the per-attempt log live, and it is much the
+     *   larger half: 3,570 attempts carried 12,088 events when this was written;
+     * - `observations.gpu_job_id` and `training_runs.job_id` are SET NULL, so a job
+     *   that produced observations would leave them in place and unlinked. That is
+     *   provenance quietly going missing, which is why the caller's allow-list of
+     *   states is deliberately short.
+     *
+     * @async
+     * @param {string} state - The `gpu_jobs.state` to clear. Validated by the caller.
+     * @returns {Promise<{deleted: number[], blocked: number[]}>} Ids removed, and ids
+     * an artifact still references.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async deleteJobsInState(state) {
+        const blockedRows = await this.db.sequelize.query(
+            `SELECT DISTINCT j.id
+               FROM gpu_jobs j
+               JOIN artifacts a ON a.job_id = j.id
+              WHERE j.state = :state
+              ORDER BY j.id`,
+            { replacements: { state }, type: QueryTypes.SELECT }
+        );
+
+        const deletedRows = await this.db.sequelize.query(
+            `DELETE FROM gpu_jobs j
+              WHERE j.state = :state
+                AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id)
+              RETURNING j.id`,
+            { replacements: { state }, type: QueryTypes.SELECT }
+        );
+
+        return {
+            deleted: deletedRows.map((row) => Number(row.id)),
+            blocked: blockedRows.map((row) => Number(row.id)),
+        };
+    }
+
+    /**
+     * What deleting one job would cost, before anything is deleted.
+     *
+     * Two of the three numbers are the reason this exists. An artifact makes the job
+     * undeletable outright -- `artifacts.job_id` is RESTRICT. Observations do **not**:
+     * `observations.gpu_job_id` is `ON DELETE SET NULL`, so the delete succeeds and the
+     * link from every observation back to the run that produced it is quietly removed.
+     * On this corpus that is 114,866 rows across the succeeded jobs and nothing at all
+     * on the other states, which is why a per-row delete needs to ask and a bulk delete
+     * of failed jobs did not.
+     *
+     * @async
+     * @param {number} jobId - The job.
+     * @returns {Promise<?{id: number, state: string, observations: number, artifacts: number, attempts: number}>}
+     * Null when there is no such job.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async jobDeletionImpact(jobId) {
+        const [row] = await this.db.sequelize.query(
+            `SELECT j.id, j.state,
+                    (SELECT count(*)::int FROM observations o WHERE o.gpu_job_id = j.id) AS observations,
+                    (SELECT count(*)::int FROM artifacts a WHERE a.job_id = j.id) AS artifacts,
+                    (SELECT count(*)::int FROM gpu_job_attempts t WHERE t.job_id = j.id) AS attempts
+               FROM gpu_jobs j
+              WHERE j.id = :jobId`,
+            { replacements: { jobId }, type: QueryTypes.SELECT }
+        );
+
+        return row || null;
+    }
+
+    /**
+     * Delete the jobs in a selection that are safe to delete, and say why the rest were
+     * not.
+     *
+     * **There is deliberately no way to force this.** A job holding observations is
+     * blocked here and can only be deleted one at a time, where the single-job route
+     * puts its own count in front of the person pressing. An acknowledgement on a
+     * selection would be one checkbox standing between somebody and 114,866 unlinked
+     * observations, which is the guard diluted rather than applied.
+     *
+     * @async
+     * @param {number[]} ids - The selection.
+     * @returns {Promise<{deleted: number[], blocked: Array<{id: number, reason: string}>}>}
+     * @throws {Error} Re-throws any database failure.
+     */
+    async deleteJobsByIds(ids) {
+        const impact = await this.db.sequelize.query(
+            `SELECT j.id,
+                    (SELECT count(*)::int FROM observations o WHERE o.gpu_job_id = j.id) AS observations,
+                    (SELECT count(*)::int FROM artifacts a WHERE a.job_id = j.id) AS artifacts
+               FROM gpu_jobs j
+              WHERE j.id IN (:ids)`,
+            { replacements: { ids }, type: QueryTypes.SELECT }
+        );
+
+        const found = new Set(impact.map((row) => Number(row.id)));
+        const blocked = [];
+        const safe = [];
+
+        for (const row of impact) {
+            const id = Number(row.id);
+
+            if (row.artifacts > 0) {
+                blocked.push({ id, reason: `${row.artifacts} artifact(s) reference it` });
+            } else if (row.observations > 0) {
+                blocked.push({ id, reason: `produced ${row.observations} observations` });
+            } else {
+                safe.push(id);
+            }
+        }
+
+        /* An id nobody can find is reported rather than silently dropped: a selection
+           that quietly deletes fewer than it names is the thing this shape exists to
+           avoid. */
+        for (const id of ids) {
+            if (!found.has(Number(id))) blocked.push({ id: Number(id), reason: 'no such job' });
+        }
+
+        const deleted = safe.length
+            ? await this.db.sequelize.query(
+                `DELETE FROM gpu_jobs j
+                  WHERE j.id IN (:safe)
+                    AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id)
+                  RETURNING j.id`,
+                { replacements: { safe }, type: QueryTypes.SELECT }
+            )
+            : [];
+
+        return { deleted: deleted.map((row) => Number(row.id)), blocked };
+    }
+
+    /**
+     * Delete one job, unless an artifact still references it.
+     *
+     * The artifact check is in the statement as well as in the caller's decision, so
+     * the RESTRICT cannot fire between the two -- the same reason the bulk delete
+     * excludes rather than attempts.
+     *
+     * @async
+     * @param {number} jobId - The job.
+     * @returns {Promise<boolean>} True when the row went.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async deleteJobById(jobId) {
+        const rows = await this.db.sequelize.query(
+            `DELETE FROM gpu_jobs j
+              WHERE j.id = :jobId
+                AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE a.job_id = j.id)
+              RETURNING j.id`,
+            { replacements: { jobId }, type: QueryTypes.SELECT }
+        );
+
+        return rows.length > 0;
+    }
+
     // Leasing
     // -----------------------------------------------------------------
 
@@ -1719,10 +2065,23 @@ class GpuRepository {
     /**
      * Record the inference settings an attempt ran with (#232).
      *
-     * **The first report is the record.** An attempt resolves its settings once,
-     * before its first frame, so a second report for the same attempt is kept as
-     * an event but written nowhere else -- the same rule as
+     * **The first report is the record, except for what the engine resolved.** An
+     * inference attempt settles its settings once, before its first frame, so a
+     * second report is kept as an event and written nowhere else -- the same rule as
      * `published_attempt_id`, which is set once and never overwritten.
+     *
+     * **Training does not fit that, and the exception is narrow.** The first report
+     * goes out *before the model is loaded*, which is what lets an attempt that dies
+     * during setup still say what it was trying to run. Ultralytics resolves
+     * `optimizer: auto` into an optimizer, a learning rate and a momentum after that,
+     * inside `build_optimizer`, and never writes them back -- so a second report from
+     * `on_train_start` carries them, read off the live optimizer. Entries marked
+     * `source: 'resolved'` replace the stored value for their name; everything else,
+     * including the ignored list, keeps first-wins.
+     *
+     * **Requested is not lost.** `gpu_jobs.spec` still holds what was asked for, so a
+     * run that asked for `auto` and got `AdamW` has both, and the disagreement is the
+     * interesting part rather than a conflict to resolve.
      *
      * **A setting the catalogue does not know is registered, not refused.** A
      * newer worker reporting a setting this database has not seen would otherwise
@@ -1745,12 +2104,21 @@ class GpuRepository {
             { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
         );
 
-        if (already) {
+        const resolved = report.settings.filter((setting) => setting.source === 'resolved');
+
+        /* A repeat report with nothing resolved in it changes nothing, which is what
+           this has always done and what the log line has always said. */
+        if (already && !resolved.length) {
             logger.info(`attempt ${attemptId} reported its settings again; the first report stands`);
             return;
         }
 
-        for (const setting of report.settings) {
+        /* **Only the resolved entries, once something is stored.** A second report
+           carrying job-sourced values as well must not reopen them -- first-wins is
+           the rule for everything that is not the engine telling us what it chose. */
+        const settings = already ? resolved : report.settings;
+
+        for (const setting of settings) {
             const entry = await this.catalogueEntry(report.engine, setting, transaction);
 
             // The catalogue's type decides the column. A worker reporting a
@@ -1767,10 +2135,17 @@ class GpuRepository {
 
             const column = SETTING_VALUE_COLUMN[entry.value_type];
 
+            /* **`resolved` replaces; everything else defers.** The two conflict
+               clauses are the whole merge rule, and they are here rather than in a
+               branch above so that a report mixing both kinds behaves per entry. */
+            const onConflict = setting.source === 'resolved'
+                ? `DO UPDATE SET ${column} = EXCLUDED.${column}, source = EXCLUDED.source, recorded_at = NOW()`
+                : 'DO NOTHING';
+
             await this.db.sequelize.query(
                 `INSERT INTO gpu_attempt_settings (attempt_id, setting_id, ${column}, source)
                  VALUES (:attemptId, :settingId, :value, :source)
-                 ON CONFLICT (attempt_id, setting_id) DO NOTHING`,
+                 ON CONFLICT (attempt_id, setting_id) ${onConflict}`,
                 {
                     replacements: {
                         attemptId,
@@ -1783,7 +2158,10 @@ class GpuRepository {
             );
         }
 
-        for (const item of report.ignored) {
+        /* The first report owns the ignored list, and the second is documented to
+           send an empty one. Skipped rather than looped over nothing, so a worker
+           that did send some cannot quietly add to a settled record. */
+        for (const item of already ? [] : report.ignored) {
             await this.db.sequelize.query(
                 `INSERT INTO gpu_attempt_ignored_params (attempt_id, key, requested_value)
                  VALUES (:attemptId, :key, :requestedValue)
@@ -1927,12 +2305,76 @@ class GpuRepository {
         let trainingRunId = existing && existing.id;
 
         if (!trainingRunId) {
+            /* **What the run actually used, not what the job asked for.** These two
+               columns were filled from `spec.params`, which is the request -- and
+               Ultralytics discards it: `optimizer: auto` picks its own optimizer, its
+               own learning rate and its own momentum, and says so in its log while
+               leaving `trainer.args` reading the values it ignored. A run that asked
+               for `lr0: 0.01` and got 0.002 had 0.01 recorded against it.
+
+               So the engine reports what it resolved, and that is what a training run
+               -- a record of what happened -- carries. The request is not lost: it is
+               in `gpu_jobs.spec`, where it always was, and the two disagreeing is the
+               fact worth having.
+
+               **Null when nothing resolved them**, which is a run that failed before
+               `on_train_start`, or an older worker. Falling back to the request would
+               put a number in the column that the run may well not have used, and a
+               column that is sometimes the request and sometimes the truth cannot be
+               read at all. The attempt is scoped rather than the job, because a retry
+               resolves its own. */
+            /* **Two rules in one statement, because the two halves answer different
+               questions.**
+
+               `lr0` and `optimizer` are scoped to `resolved` because a *requested*
+               value for them exists and is wrong: the paragraph above is about
+               exactly that. Anything else in the column would be the ask rather than
+               the outcome.
+
+               `compute_device` and `train_script_commit` have no requested form.
+               Nobody submits a graphics card. A job may name a device, but what it
+               gets is whatever the worker resolves that to against the hardware it
+               has, so the only value that ever reaches this table is already the
+               fact -- and the merge rule in `recordAttemptSettings` means the stored
+               row IS the answer: `resolved` replaced, everything else first-wins.
+               Filtering by source here would re-decide a precedence that has already
+               been applied, and would drop these two, whose source is `worker`. */
+            const settled = await this.db.sequelize.query(
+                `SELECT s.name, a.value_real, a.value_text
+                   FROM gpu_attempt_settings a
+                   JOIN inference_settings s ON s.id = a.setting_id
+                  WHERE a.attempt_id = :attemptId
+                    AND (
+                         (a.source = 'resolved' AND s.name IN ('lr0', 'optimizer'))
+                      OR s.name IN ('compute_device', 'train_script_commit')
+                    )`,
+                { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
+            );
+
+            const byName = new Map(settled.map((row) => [row.name, row]));
+            const resolvedLr = byName.get('lr0');
+            const resolvedOptimizer = byName.get('optimizer');
+
+            /* **The card, not the slot.** The column asks for hardware -- its comment
+               says 'e.g. "RTX 6000 Ada"' -- and the worker sent `cuda:0` until
+               2026-10-27, which answers a different question: two runs on two
+               different cards both reported `cuda:0`, so the column could not have
+               told them apart even once something read it. The slot is still
+               reported, as `compute_device_index`, and is deliberately left in
+               `gpu_attempt_settings` -- it is diagnostic for a multi-GPU machine
+               with one bad card, and it is not comparable between machines, which is
+               what a column on `training_runs` is for. */
+            const card = byName.get('compute_device');
+            const scriptCommit = byName.get('train_script_commit');
+
             const [opened] = await this.db.sequelize.query(
                 `INSERT INTO training_runs (job_id, model_id, dataset_id, start_time,
                                             total_epochs, batch_size, learning_rate, optimizer,
+                                            compute_device, train_script_commit,
                                             notes, created_at, updated_at)
                  VALUES (:jobId, :modelId, :datasetId, NOW(),
                          :totalEpochs, :batchSize, :learningRate, :optimizer,
+                         :computeDevice, :trainScriptCommit,
                          :notes, NOW(), NOW())
                  RETURNING id`,
                 {
@@ -1946,8 +2388,16 @@ class GpuRepository {
                         datasetId: (spec.dataset && spec.dataset.dataset_id) || null,
                         totalEpochs: Number.isFinite(Number(params.epochs)) ? Number(params.epochs) : null,
                         batchSize: Number.isFinite(Number(params.batch)) ? Number(params.batch) : null,
-                        learningRate: Number.isFinite(Number(params.lr0)) ? Number(params.lr0) : null,
-                        optimizer: params.optimizer ? String(params.optimizer) : null,
+                        learningRate: resolvedLr && Number.isFinite(Number(resolvedLr.value_real))
+                            ? Number(resolvedLr.value_real) : null,
+                        optimizer: resolvedOptimizer && resolvedOptimizer.value_text
+                            ? String(resolvedOptimizer.value_text) : null,
+                        /* Null when no worker reported one -- an older worker, or a run
+                           that died before its settings report. Never a guess at the
+                           machine from the job spec. */
+                        computeDevice: card && card.value_text ? String(card.value_text) : null,
+                        trainScriptCommit: scriptCommit && scriptCommit.value_text
+                            ? String(scriptCommit.value_text) : null,
                         notes: `Opened by GPU job ${job.id}.`,
                     },
                     type: QueryTypes.SELECT,
@@ -1957,21 +2407,29 @@ class GpuRepository {
             trainingRunId = opened.id;
         }
 
-        /* Ultralytics names its metrics by task and version, which is why the
-           event payload is free-form. These five are the ones `epochs` has
-           columns for; everything else stays in the event, which is the record
-           that does not lose what it was not expecting. */
-        const value = (name) => {
-            const raw = metrics[name];
-            const asNumber = Number(raw);
-            return Number.isFinite(asNumber) ? asNumber : null;
-        };
+        /* Ultralytics names its metrics by task and version, which is why the event
+           payload is free-form, and anything not named in `db/epoch-metrics.js` stays
+           in the event -- the record that does not lose what it was not expecting.
+
+           **This mapped five names and the table has seven columns.** `map50` and
+           `map5095` were never written at all, and the three losses were looked up as
+           `train/box_loss` and friends while the worker sends `val/`. So five of seven
+           metric columns were null on every row MARP had written, with the values
+           sitting in the events the whole time. `scripts/backfill-epoch-metrics.js`
+           recovers them; the mapping is shared with it so the two cannot disagree. */
+        const columns = epochMetrics(metrics);
 
         await this.db.sequelize.query(
             `INSERT INTO epochs (training_run_id, epoch_number, precision, recall,
-                                 box_loss, cls_loss, dfl_loss, timestamp, created_at, updated_at)
+                                 map50, map5095, box_loss, cls_loss, dfl_loss,
+                                 train_box_loss, train_cls_loss, train_dfl_loss,
+                                 duration_seconds, start_offset_s, end_offset_s,
+                                 timestamp, created_at, updated_at)
              SELECT :runId, :epochNumber, :precision, :recall,
-                    :boxLoss, :clsLoss, :dflLoss, NOW(), NOW(), NOW()
+                    :map50, :map5095, :box_loss, :cls_loss, :dfl_loss,
+                    :train_box_loss, :train_cls_loss, :train_dfl_loss,
+                    :duration_seconds, :start_offset_s, :end_offset_s,
+                    NOW(), NOW(), NOW()
               WHERE NOT EXISTS (
                   SELECT 1 FROM epochs WHERE training_run_id = :runId AND epoch_number = :epochNumber
               )`,
@@ -1979,11 +2437,7 @@ class GpuRepository {
                 replacements: {
                     runId: trainingRunId,
                     epochNumber,
-                    precision: value('metrics/precision(B)'),
-                    recall: value('metrics/recall(B)'),
-                    boxLoss: value('train/box_loss'),
-                    clsLoss: value('train/cls_loss'),
-                    dflLoss: value('train/dfl_loss'),
+                    ...columns,
                 },
                 transaction,
             }

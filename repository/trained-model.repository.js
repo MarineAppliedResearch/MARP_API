@@ -194,10 +194,23 @@ async function registerTrainedModel({ db, job, transaction }) {
 
     const parent = spec.model && spec.model.ml_model_id ? Number(spec.model.ml_model_id) : null;
     const [registered] = await db.sequelize.query(
+        /* **`artifact.hash` is already the sha256 of these bytes**, because the
+           artifact store is content-addressed -- the file this just copied was read from
+           `ARTIFACT_DIRECTORY/<hash>`. So recording the checksum here costs nothing
+           and hashes nothing; it stops being a sentence in `notes` that only a person
+           can read and becomes the field a job spec is composed from. */
+        /* **`training_run_id` is set here, where the answer is known.** The sentence
+           appended to `training_runs.notes` below recorded the same link in prose, which
+           no query can join on -- the registry read `training_runs.model_id` instead and
+           named every model after the checkpoint it trained from. The subquery is the
+           same run that sentence is written to. */
         `INSERT INTO ml_models (name, parent_model_id, model_type, architecture_version,
-                                storage_path, status, preferred, notes, created_at, updated_at)
-         VALUES (:name, :parent, 'detection', :architecture, :storagePath, 'active', false,
-                 :notes, now(), now())
+                                storage_path, artifact_sha256, status, preferred, notes,
+                                training_run_id, created_at, updated_at)
+         VALUES (:name, :parent, 'detection', :architecture, :storagePath, :sha256, 'active',
+                 false, :notes,
+                 (SELECT id FROM training_runs WHERE job_id = :jobId ORDER BY id DESC LIMIT 1),
+                 now(), now())
          RETURNING id`,
         {
             replacements: {
@@ -205,7 +218,12 @@ async function registerTrainedModel({ db, job, transaction }) {
                 parent,
                 architecture: (spec.model && spec.model.name) || null,
                 storagePath: relative,
+                sha256: String(artifact.hash).toLowerCase(),
+                /* The sentence stays. It is the human-readable provenance, and the
+                   guard at the top of this function reads it to refuse registering the
+                   same job twice. */
                 notes: `Weights ${artifact.hash} trained by GPU job ${job.id}.`,
+                jobId: job.id,
             },
             type: db.Sequelize.QueryTypes.INSERT,
             transaction,

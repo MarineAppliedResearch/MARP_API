@@ -159,7 +159,7 @@ for (const view of views) {
         };
       });
       const expected = ['./jobs.html', './inference.html', './training.html', './datasets.html',
-        './models.html', './history.html'];
+        './models.html'];
       if (overview.destinations.join('|') !== expected.join('|')) {
         problems.push(`dashboard/${view}: overview destinations are ${overview.destinations.join(', ')}`);
       }

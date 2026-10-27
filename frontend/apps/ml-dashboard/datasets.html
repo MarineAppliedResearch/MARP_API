@@ -7,7 +7,7 @@
 <link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
 <link rel="stylesheet" href="../../shared/assets/css/tokens.css">
 <link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
-<link rel="stylesheet" href="./mock.css">
+<link rel="stylesheet" href="./screens.css">
 <script src="../../shared/assets/js/account-menu.js" defer></script>
 </head>
 <body data-screen="datasets">
@@ -57,7 +57,7 @@
           </article>
 
           <article class="panel inference-flow dataset-activity" data-dataset-activity>
-            <header class="panel-hd inference-flow-hd"><div><h2>Build activity</h2><p>All dataset work &middot; frames extracted, builds waiting and builds completed</p></div><div class="seg" aria-label="Dataset build activity range"><button type="button" class="on" data-dataset-range="24h" aria-pressed="true">24h</button><button type="button" data-dataset-range="7d">7d</button><button type="button" data-dataset-range="30d">30d</button></div></header>
+            <header class="panel-hd inference-flow-hd"><div><h2>Build activity</h2><p>All dataset work &middot; frames extracted, builds waiting and builds completed</p></div><div class="seg" aria-label="Dataset build activity range"><button type="button" class="on" data-dataset-range="24h" aria-pressed="true">24h</button><button type="button" data-dataset-range="7d">7d</button><button type="button" data-dataset-range="30d">30d</button><button type="button" data-dataset-range="1y">1y</button></div></header>
             <div class="panel-bd inference-flow-bd">
               <div class="inference-chart dataset-chart" data-result-graph role="img" data-rendered aria-label>
                 <svg viewBox="0 0 780 248" aria-hidden="true">
@@ -72,15 +72,25 @@
               </div>
               <div class="inference-flow-foot">
                 <div class="inference-chart-key result-legend">
-                  <button type="button" class="throughput" data-dataset-highlight="rate">Frames extracted</button>
-                  <button type="button" class="backlog" data-dataset-highlight="waiting">Builds waiting</button>
-                  <button type="button" class="done" data-dataset-highlight="finished">Builds completed</button>
+                  <!-- Which axis each series is read against. The two scales differ by
+                       orders of magnitude - frames come in thousands, builds in single
+                       figures - so a reader comparing the heights of two lines would be
+                       comparing nothing. The titles say so rather than the labels,
+                       because the labels are what the chart calls the series. -->
+                  <button type="button" class="throughput" data-dataset-highlight="rate" title="Frames extracted, read against the left axis">Frames extracted</button>
+                  <button type="button" class="backlog" data-dataset-highlight="waiting" title="Builds waiting, read against the right axis">Builds waiting</button>
+                  <button type="button" class="done" data-dataset-highlight="finished" title="Builds completed, read against the right axis">Builds completed</button>
                 </div>
                 <div class="inference-current" aria-label="Current dataset build activity">
-                  <span><b data-dataset-current="rate"></b> frames</span>
-                  <span><b data-dataset-current="waiting"></b> waiting</span>
-                  <span><b data-dataset-current="finished"></b> completed</span>
-                  <span class="clearing" data-rendered data-dataset-current="building" hidden></span>
+                  <!-- The unit is filled by the chart, not written here: these three
+                       are read over windows that differ from each other and change with
+                       the range buttons, so a fixed word beside them would be wrong on
+                       two of the three ranges. A fourth figure said "N in flight" and was
+                       the waiting count a second time under a word that means something
+                       else; it is gone. -->
+                  <span><b data-dataset-current="rate"></b> <span data-dataset-unit="rate" data-rendered></span></span>
+                  <span><b data-dataset-current="waiting"></b> <span data-dataset-unit="waiting" data-rendered></span></span>
+                  <span><b data-dataset-current="finished"></b> <span data-dataset-unit="finished" data-rendered></span></span>
                 </div>
               </div>
             </div>
@@ -186,10 +196,6 @@
               </details>
 
               <div class="btnrow">
-                <button class="btn" title="Reuse a saved set of filters">
-                  <svg class="ico"><use href="#i-copy"/></svg>Load query</button>
-                <button class="btn" title="Keep these filters for next time">
-                  <svg class="ico"><use href="#i-datasets"/></svg>Save query</button>
                 <button class="btn primary" data-run-dataset-query title="Count what these filters match">
                   <svg class="ico"><use href="#i-search"/></svg>Run query</button>
               </div>
@@ -253,9 +259,6 @@
                   <button type="button" data-dataset-destination="test" aria-pressed="false">Test</button>
                 </div>
 
-                <span class="hint">Observations whose frames overlap stay together, so a near-duplicate
-                  picture can never land in two splits. Shares are measured in frames, and each species
-                  is divided separately so a rare one reaches every split.</span>
               </div>
 
               <button class="btn primary big block" id="addQuery"
@@ -302,20 +305,16 @@
 
               <div class="field" style="margin-top:14px">
                 <label>Dataset composition
+                  <span class="faint" title="Observations, not images: nothing has been cut yet, so the image count does not exist. The shading is the split each subset asked for -- a divided subset is spread by its shares here, while the build stratifies it by species across frames, so a rare species comes out better represented than this shows.">observations</span>
                   <span class="faint" data-dataset-composition-summary data-rendered></span></label>
-                <div class="dist pct" data-dataset-composition data-rendered></div>
+                <div class="dist split" data-dataset-composition data-rendered></div>
               </div>
 
               <div class="btnrow" style="margin-top:14px">
-                <button class="btn" title="Keep the filters and membership without freezing a split">
-                  <svg class="ico"><use href="#i-copy"/></svg>Save draft</button>
                 <button class="btn accent" type="button" data-queue-build
                         title="Cut the frames these observations point at, label them, and package one archive a worker can train on">
                   <svg class="ico"><use href="#i-queue"/></svg>Queue dataset build</button>
-                <button class="btn" title="Download the images and labels for this membership, as a YOLO archive">
-                  <svg class="ico"><use href="#i-download"/></svg>Download</button>
               </div>
-              <span class="hint">Queued, running and failed builds appear immediately in the list below and link to their full entry in Jobs. Successful builds become expandable datasets here.</span>
 
             </div>
           </section>
@@ -329,7 +328,7 @@
               <span class="sub">Set when each query is added</span></h2>
             <div class="panel-tools">
               <span class="pill" data-state="idle"
-                    title="An observation or connected frame group keeps its first split assignment">No cross-split overlap</span>
+                    title="Overlapping frames of the same animal all go to one split, so the model is never tested on a near-copy of something it trained on">No near-duplicates across splits</span>
             </div>
           </header>
           <div class="panel-bd">
@@ -346,7 +345,7 @@
             </div>
             <div class="splitkey">
               <span class="tr">Train</span><span class="va">Validation</span><span class="te">Test</span>
-              <span class="faint" id="splitNote">First assignment wins; later overlaps never cross splits</span>
+              <span class="faint" id="splitNote">An observation matched twice stays in the split that took it first, and overlapping frames go with it</span>
             </div>
           </div>
         </section>
@@ -450,6 +449,10 @@
               <button class="btn" type="button" data-expand-datasets title="Expand every visible ready dataset"><svg class="ico"><use href="#i-split"/></svg>Expand all ready</button>
             </div>
           </header>
+          <!-- The waiting builds, in the order they will be taken. Drawn only when more
+               than one is waiting: with one there is no order to change, and an empty
+               strip above the table is a control that does nothing. -->
+          <div class="buildqueue" data-build-queue hidden data-rendered></div>
           <div class="panel-bd flush">
             <div class="tblwrap">
               <table class="tbl fixed stack expandable dataset-table" id="saved-datasets">
@@ -485,6 +488,6 @@
 </div>
 
 <script src="./api.js"></script>
-<script src="./mock.js"></script>
+<script src="./screens.js"></script>
 </body>
 </html>

@@ -1,0 +1,278 @@
+'use strict';
+
+/**
+ * What YOLO measured about a finished run: per-class quality, and the confusion matrix.
+ *
+ * `metrics_summary` and `metrics_curves` have existed since the legacy desktop script and
+ * hold **zero rows**. Nothing in the GPU pipeline has ever written them. So the first
+ * question was not "what tables" but "do these do it", and the answer is: the numbers
+ * yes, the pictures no.
+ *
+ * **The numbers fit, because the catch is narrower than it looks.** `map50`, `map5095`
+ * and the `box_*` names are detection's vocabulary, and classification and segmentation
+ * are the next two tasks — but `precision`, `recall` and `f1_score` are shared by
+ * detection and segmentation, and Ultralytics hands over its own discriminator: the same
+ * four metric names, suffixed `(B)` for box and `(M)` for mask. **So a segmentation run
+ * needs no new metric columns at all. It needs a second row.** Hence `metric_family`
+ * rather than a table per task.
+ *
+ * **Classification is the exception and it is deliberately not built.** `ClassifyMetrics`
+ * has no per-class array and no precision, recall or AP -- only top-1 and top-5 accuracy
+ * -- so it cannot fill these columns and must not be given a nullable detection row
+ * pretending otherwise. When it arrives it writes one aggregate row, `classify`, with
+ * the metric columns null and its accuracies in `details`. Its confusion matrix needs
+ * nothing new.
+ *
+ * **Two columns here will always hold the same number, and that is not a mistake.**
+ * on a DETECTION run `fitness` is a weighted sum over `[P, R, mAP50, mAP50-95]` whose
+ * weights are `[0, 0, 0, 1]` in 8.4.145, so it *is* `map5095`. The identity is
+ * detection's alone: classification has no mAP and reports its own fitness. Both are kept because fitness is a
+ * different concept -- what checkpoints are ranked by -- and those weights are
+ * Ultralytics' to change; a history holding only one of them could not be read after
+ * they diverged.
+ *
+ * Rejected: a table per task (speculative, for tasks nobody has trained); a
+ * metric-name/value row shape (survives anything, but discards columns that already
+ * exist and are already right for the only task being trained, and turns every read
+ * into a pivot).
+ *
+ * **The pictures do not fit, and that is structural rather than a preference.**
+ * `metrics_summary` has eight `*_path` columns that look like an exact match for what
+ * Ultralytics writes. They are not: it writes **three** `val_batch*_pred.jpg` files and
+ * there is no column for any of them, and a closed set of eight columns can only drop a
+ * plot type that arrives in a later version. The plots go to `artifacts`,
+ * content-addressed, which is where the model weights already go and what that table's
+ * own comment already claims. The eight columns are left where they are — empty,
+ * unwritten, and commented as superseded. Dropping a published column on a scientific
+ * record is the human's call, and they cost nothing where they sit.
+ *
+ * **Why the confusion matrix gets its own table.** It is an N-by-N measurement per run
+ * per split, not a scalar per class, so a column on `metrics_summary` would be
+ * meaningful on one row in N and null on the rest. Putting it in `details` would make a
+ * documented structure undocumented. Serving the stored JSON artifact directly and
+ * keeping no column was tempting at zero schema cost and rejected: it would make the
+ * worker's wire format MARP's public contract, and nothing could be queried across runs.
+ *
+ * **It is stored in the trainer's own orientation, with that orientation named.**
+ * Ultralytics' `metrics.py:400` is `self.matrix[p][t] += 1`, so its row is the
+ * *predicted* class and its column the *true* one — the transpose of how a person reads
+ * a confusion matrix. `db/final-metrics.js` transposes once on the way out. Rotating on
+ * the way in would bake today's convention into the record, and every stored matrix
+ * would become silently wrong the day a worker changed it.
+ *
+ * Additive and reversible throughout: two nullable columns and one new table.
+ *
+ * @fileoverview Migration adding final-metrics columns and the confusion matrix table.
+ * @module migrations/a-training-run-keeps-what-yolo-measured
+ */
+
+const { guardDataIntegrity } = require('../db/data-integrity');
+
+/**
+ * The two columns `metrics_summary` gains.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const SUMMARY_COLUMNS = {
+    metric_family: 'Which vocabulary this row\'s numbers are in: box, seg or classify. '
+        + 'Ultralytics reports the same four metric names for boxes and for masks, so a '
+        + 'segmentation run writes a box row and a seg row per class rather than needing '
+        + 'new columns. "seg" rather than "mask" because that is the library\'s own '
+        + 'attribute name; (M) is only the metric-key suffix. Without this column a '
+        + 'classification row is indistinguishable from a detection row that failed to '
+        + 'measure its mAP. A classify run writes ONE aggregate row with the five metric '
+        + 'columns null and its top-1 and top-5 in details, because ClassifyMetrics has '
+        + 'no per-class array and no precision, recall or AP at all.',
+    class_name: 'The class as the model named it. Null means this is the all-classes '
+        + 'aggregate. Set with a null species_id means a class MARP could not resolve to '
+        + 'a species, which is kept rather than dropped -- species_id alone could not '
+        + 'tell those two apart, and the model is actively predicting that class.',
+};
+
+/**
+ * The two counts a per-class row carries, which say how much its metrics rest on.
+ *
+ * A precision of 1.0 over three instances and over three thousand are not the same
+ * claim, and without these a reader cannot tell them apart -- which on a species list
+ * whose rare classes are the whole point is the difference between a useful number and
+ * a misleading one.
+ *
+ * **Resolved by the worker, never joined here, and that is the interesting part.**
+ * Ultralytics indexes `nt_per_class` by *class id* while the per-class metrics beside it
+ * are indexed by *evaluated position*, and its own validator reads both in one loop. The
+ * two agree only while every class was evaluated, so taking a raw array and zipping it
+ * against the metrics would silently attribute one species' instance count to another
+ * exactly when the evaluated set is smaller than the vocabulary -- the rare-species
+ * case. It would not throw. So these arrive already attached to their class by name, and
+ * nothing on this side ever touches that dual index.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+const COUNT_COLUMNS = {
+    support: 'Labelled instances of this class in the evaluated split, as the trainer '
+        + 'counted them. Null on the aggregate row and wherever the trainer reported '
+        + 'none. Resolved against its class by name before it arrives: the source array '
+        + 'is indexed by class id while the metrics beside it are indexed by evaluated '
+        + 'position, and joining those two here would misattribute counts whenever a '
+        + 'class went unevaluated.',
+    image_count: 'Images in the evaluated split containing this class. Different from '
+        + 'support and useful beside it: 142 instances across 37 frames is a different '
+        + 'survey from 142 across 140, which on transect video is the distinction '
+        + 'between a shoal and a scatter. NEVER SUM THIS COLUMN, and that is why the '
+        + 'aggregate row leaves it null rather than carrying a total: a frame holding '
+        + 'three species is counted once for each of them, so a sum counts that frame '
+        + 'three times and answers no question anybody asked. The same caution does not '
+        + 'apply to support, where instances really are disjoint -- but the aggregate '
+        + 'stays null there too, because the trainer reports neither count for the whole '
+        + 'split and a figure computed here would not be a measurement.',
+};
+
+module.exports = {
+    async up(queryInterface, Sequelize) {
+        const transaction = await queryInterface.sequelize.transaction();
+
+        try {
+            await guardDataIntegrity({
+                sequelize: queryInterface.sequelize,
+                transaction,
+                label: 'yolo training output',
+                /* `training_runs` is the only pre-existing table the new one
+                   references; `metrics_summary` is the one being altered. The foreign
+                   keys in and out of both are discovered from the database. */
+                tables: ['training_runs', 'metrics_summary'],
+                work: async () => {
+
+            for (const [name, comment] of Object.entries(SUMMARY_COLUMNS)) {
+                await queryInterface.addColumn('metrics_summary', name, {
+                    type: Sequelize.STRING,
+                    allowNull: true,
+                    comment,
+                }, { transaction });
+            }
+
+            for (const [name, comment] of Object.entries(COUNT_COLUMNS)) {
+                await queryInterface.addColumn('metrics_summary', name, {
+                    type: Sequelize.INTEGER,
+                    allowNull: true,
+                    comment,
+                }, { transaction });
+            }
+
+            /* An index on the lookup every read does: one run's rows, in one family.
+               `metrics_summary` is empty today and a training run produces a row per
+               class, so this matters the first time somebody opens a 90-class run. */
+            await queryInterface.addIndex('metrics_summary', {
+                fields: ['training_run_id', 'metric_family'],
+                name: 'metrics_summary_training_run_id_metric_family',
+                transaction,
+            });
+
+            await queryInterface.createTable('training_run_confusion_matrices', {
+                id: {
+                    type: Sequelize.INTEGER,
+                    allowNull: false,
+                    primaryKey: true,
+                    autoIncrement: true,
+                    comment: 'Unique identifier for this stored confusion matrix.',
+                },
+                training_run_id: {
+                    type: Sequelize.INTEGER,
+                    allowNull: false,
+                    references: { model: 'training_runs', key: 'id' },
+                    onDelete: 'CASCADE',
+                    onUpdate: 'CASCADE',
+                    comment: 'The run this matrix measures. Cascades, because a '
+                        + 'matrix is not a fact about anything but its run.',
+                },
+                dataset_split: {
+                    type: Sequelize.STRING,
+                    allowNull: false,
+                    comment: 'Which split was evaluated, as the worker stated it. '
+                        + 'Never inferred: final_eval happening to use the '
+                        + 'validation split is a fact about today\'s Ultralytics, '
+                        + 'not something MARP may assert on its behalf.',
+                },
+                orientation: {
+                    type: Sequelize.STRING,
+                    allowNull: false,
+                    comment: 'How the stored matrix is indexed, as the producer '
+                        + 'named it. rows_predicted_cols_true is Ultralytics\' own '
+                        + '(metrics.py:400, matrix[p][t] += 1) and is the transpose '
+                        + 'of how a reader reads one. Stored rather than normalised '
+                        + 'so that a producer changing convention says so, instead '
+                        + 'of every earlier row quietly becoming wrong.',
+                },
+                class_names: {
+                    type: Sequelize.JSONB,
+                    allowNull: false,
+                    comment: 'The class vocabulary in index order. A matrix without '
+                        + 'it cannot be read at all -- a class index is meaningless '
+                        + 'on its own, which is the same reason a dataset records '
+                        + 'its class order.',
+                },
+                background_index: {
+                    type: Sequelize.INTEGER,
+                    allowNull: true,
+                    comment: 'Index of the background row and column, which is nc '
+                        + 'for detect, segment and obb. Null for classify and '
+                        + 'semantic, which have no background class. Kept rather '
+                        + 'than trimmed: it holds the false negatives and false '
+                        + 'positives, and the row sums mean nothing without it.',
+                },
+                matrix: {
+                    type: Sequelize.JSONB,
+                    allowNull: false,
+                    comment: 'The counts, square, exactly as the trainer produced '
+                        + 'them. Never derived: a matrix assembled from per-class '
+                        + 'precision and recall is arithmetic dressed as a '
+                        + 'measurement, and the off-diagonal -- the only part '
+                        + 'anybody looks at -- is what a derivation cannot know.',
+                },
+                created_at: { type: Sequelize.DATE, allowNull: false },
+                updated_at: { type: Sequelize.DATE, allowNull: false },
+            }, { transaction });
+
+            /* One matrix per run per split. A re-reported result for the same
+               attempt must update rather than accumulate, the way the artifact
+               hand-off is idempotent on its hash. */
+            await queryInterface.addIndex('training_run_confusion_matrices', {
+                fields: ['training_run_id', 'dataset_split'],
+                name: 'training_run_confusion_matrices_run_split',
+                unique: true,
+                transaction,
+            });
+                },
+            });
+
+            await transaction.commit();
+        } catch (error) {
+            await transaction.rollback();
+            throw error;
+        }
+    },
+
+    async down(queryInterface) {
+        const transaction = await queryInterface.sequelize.transaction();
+
+        try {
+            await queryInterface.dropTable('training_run_confusion_matrices', { transaction });
+
+            await queryInterface.removeIndex(
+                'metrics_summary',
+                'metrics_summary_training_run_id_metric_family',
+                { transaction }
+            );
+
+            for (const name of [...Object.keys(SUMMARY_COLUMNS), ...Object.keys(COUNT_COLUMNS)]) {
+                await queryInterface.removeColumn('metrics_summary', name, { transaction });
+            }
+
+            await transaction.commit();
+        } catch (error) {
+            await transaction.rollback();
+            throw error;
+        }
+    },
+};

@@ -259,6 +259,55 @@ class GpuController {
         return gpuService.cancelJob(jobId);
     }
 
+    /**
+     * What clearing a state would take with it. Counts; deletes nothing.
+     *
+     * @async
+     * @param {Object} query - `{state}`.
+     * @returns {Promise<Object>} Jobs, attempts, events, blocked, observations, builds.
+     */
+    async deletableJobs(query) {
+        logger.info('Controller: deletableJobs');
+        return gpuService.deletableJobs(query);
+    }
+
+    /**
+     * Delete every job in one state.
+     *
+     * @async
+     * @param {Object} query - `{state}`.
+     * @returns {Promise<Object>} What went and what was held back.
+     */
+    async deleteJobsInState(query) {
+        logger.info('Controller: deleteJobsInState');
+        return gpuService.deleteJobsInState(query);
+    }
+
+    /**
+     * Delete a selection of jobs.
+     *
+     * @async
+     * @param {Object} query - `{ids}`.
+     * @returns {Promise<Object>} What went, and why the rest did not.
+     */
+    async deleteJobsByIds(query) {
+        logger.info('Controller: deleteJobsByIds');
+        return gpuService.deleteJobsByIds(query);
+    }
+
+    /**
+     * Delete one job.
+     *
+     * @async
+     * @param {string|number} jobId - From the path.
+     * @param {Object} query - `{acknowledgeObservations}`.
+     * @returns {Promise<Object>} What went with it.
+     */
+    async deleteJob(jobId, query) {
+        logger.info('Controller: deleteJob');
+        return gpuService.deleteJob(jobId, query);
+    }
+
 
     /**
      * Where a dataset's archive is, for streaming to a worker.

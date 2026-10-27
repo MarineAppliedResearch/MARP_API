@@ -14,9 +14,11 @@
     "check:contract": "node tools/api-contract-check.mjs",
     "check:markup": "node tools/markup-check.mjs",
     "check:layer": "node tools/data-layer-check.mjs",
-    "check:screens": "node tools/screens-check.mjs"
+    "check:screens": "node tools/screens-check.mjs",
+    "test:unit": "node --test \"tests/unit/*.test.mjs\""
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1"
+    "@playwright/test": "1.62.1",
+    "jsdom": "^29.1.1"
   }
 }

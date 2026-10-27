@@ -395,9 +395,15 @@ describe('a build that fails (#268 R8)', () => {
            tell you the cleanup works. By the time this one throws, one video's frames
            and labels are written into the staging directory -- which is what the
            assertions at the end are actually about. */
+        /* **Fails from the second call onward, not on the second call alone.** A pass is
+           retried now -- `cutPass` tries it three times, because a build at 85% should not
+           die because one read faltered -- so a single thrown error is rescued and this
+           build finished, which is the retry working rather than this test's subject
+           regressing. What it is about is what a *genuine* failure leaves behind, so the
+           failure has to be genuine: persistent for that video. */
         stub = fixture.stubExtraction({ jellyfin, extraction }, {
             onExtract: async (nth) => {
-                if (nth === 2) throw new Error('ffmpeg exited 1: jest made it so');
+                if (nth >= 2) throw new Error('ffmpeg exited 1: jest made it so');
             },
         });
 
@@ -406,8 +412,10 @@ describe('a build that fails (#268 R8)', () => {
         expect(result.failed).toBe(true);
         expect(result.reason).toContain('jest made it so');
 
-        // It really did get past the first video, so there were frames to clean up.
-        expect(stub.calls.extractions).toHaveLength(2);
+        /* It really did get past the first video, so there were frames to clean up. More
+           than two calls now, because the second pass is attempted three times before the
+           build gives up on it. */
+        expect(stub.calls.extractions.length).toBeGreaterThanOrEqual(2);
 
         const [dataset] = await q('SELECT * FROM datasets WHERE id = :id', { id: queued.dataset.id });
 

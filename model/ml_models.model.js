@@ -154,6 +154,23 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      artifact_sha256: {
+        /* **Recorded when the weights are staged, not computed when a job is
+           submitted.** A training spec has to carry this -- the worker hashes what it
+           fetched and refuses a mismatch -- and it used to exist only inside a sentence
+           in `notes`, or nowhere at all. Null is "not known", which is why a job
+           cannot be submitted against a model that has none. */
+        type: DataTypes.STRING(64),
+        allowNull: true,
+        comment:
+          'Lowercase sha256 of the weights at storage_path. Null means not known.',
+        jsonSchema: {
+            description: 'Lowercase sha256 of the weights at storage_path, for the job spec '
+                + 'that fetches them. Null when the artifact is not on this machine.',
+            examples: ['5e5aaa5a6ee6023734f154766b000c85805924178b865e3569d61592fcca0b89'],
+        },
+      },
+
       status: {
         type: DataTypes.STRING,
         allowNull: false,
@@ -164,6 +181,38 @@ module.exports = (sequelize, DataTypes) => {
             schema: { type: 'string', enum: ['draft', 'training', 'trained', 'archived'] },
             description: 'Lifecycle state of the model ("draft", "training", "trained", or "archived").',
             examples: ['draft'],
+        },
+      },
+
+      is_base: {
+        /* A pretrained starting point rather than a model MARP trained. Stated, never
+           inferred from having no species: a trained model whose species nobody seeded
+           yet also has none, and that one is merely unhelpful while this one must never
+           reach inference. */
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment:
+          'True when this is a pretrained starting point for training rather than a model MARP trained. It has no species, so it must never be selectable for inference, where its class names would be resolved against the species catalogue and written into observations.',
+        jsonSchema: {
+            description: 'True when this is a pretrained starting point for training rather than a model MARP trained. Never selectable for inference.',
+        },
+      },
+
+      training_run_id: {
+        /* **The run that produced this model, not the one it started from.** Those are
+           different facts and reading one as the other made three cells on two screens
+           wrong: `training_runs.model_id` is the base checkpoint a run fine-tunes from,
+           so every finished run appeared to have produced what it trained from. Written
+           by `registerTrainedModel` at the moment it knows, rather than derived later
+           from the weights digest -- `artifacts.hash` carries no uniqueness constraint
+           and a retry reproducing identical bytes would put two rows behind one hash. */
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'The training run that produced this model, when one did. NULL for a model registered outside the pool, which is not an error. Not training_runs.model_id, which is the base model a run started FROM.',
+        jsonSchema: {
+            description: 'The training run that produced this model. Null when no run did.',
         },
       },
 

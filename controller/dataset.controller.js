@@ -184,9 +184,9 @@ class DatasetController {
      * empty array; the `/api/ml_models` route catches that rejection and
      * responds with HTTP 500.
      */
-    async getMl_models() {
+    async getMl_models(options) {
         logger.info('Controller: getMl_models')
-        return await datasetService.getMl_models();
+        return await datasetService.getMl_models(options);
     }
 
     /**
@@ -223,6 +223,18 @@ class DatasetController {
     async getTrainingRuns(filters) {
         logger.info('Controller: getTrainingRuns')
         return await datasetService.getTrainingRuns(filters);
+    }
+
+    /**
+     * Every epoch of one training run, earliest first.
+     *
+     * @async
+     * @param {number|string} runId - The training run.
+     * @returns {Promise<Array<Object>>}
+     */
+    async getEpochsForRun(runId) {
+        logger.info('Controller: getEpochsForRun')
+        return await datasetService.getEpochsForRun(runId);
     }
 
     /**

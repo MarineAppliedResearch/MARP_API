@@ -7,10 +7,17 @@
  * the part that talks to ffmpeg, Jellyfin and the disk.
  *
  * **A second consumer of the thumbnail extractor, not a second extractor.** It already
- * cuts a set of frames from one video in a single ffmpeg pass, already resolves a video
- * through Jellyfin, and already has a concurrency ceiling that exists to protect the
- * media server. #268 predicted a dataset build would want the same capability; it does,
- * and the way to not drift from it is to call it.
+ * cuts a set of frames from one video in a single ffmpeg pass and already resolves a
+ * video through Jellyfin. #268 predicted a dataset build would want the same capability;
+ * it does, and the way to not drift from it is to call it.
+ *
+ * **What it does not inherit is a concurrency ceiling**, and this said it did until
+ * 2026-10-22. `MAX_CONCURRENT_STREAMS` is applied by the thumbnail *sweep*, which fans
+ * out that many workers of its own; `extractFrames` and `probeStream` are plain functions
+ * with no limiter in them. So builds and thumbnail extraction are not dividing a budget,
+ * they are two independent loads on one media server, and the streams add. Worth knowing
+ * before turning {@link concurrency} up: two builds beside a running sweep is five
+ * streams, not three.
  *
  * **The archive is the shape `scripts/package-dataset.js` produces**, because that is
  * what the worker already fetches, verifies and trains on
@@ -28,7 +35,6 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const sharp = require('sharp');
 
 const logger = require('../logger/api.logger');
 const jellyfinRepository = require('../repository/jellyfin.repository');
@@ -169,7 +175,65 @@ function imageSettings(asked) {
  * extraction. Every build run by hand until then had been a few hundred frames, which is
  * why it had never shown.
  */
-const FRAMES_PER_PASS = 100;
+const FRAMES_PER_PASS = 400;
+
+/**
+ * The most a pass may be set to, and the reason is the command line rather than taste.
+ *
+ * `extractFrames` builds a `select` expression with a term per frame, measured at **33
+ * characters** each for a high frame number: 400 frames is 13 KB, 600 is 19 KB, and 940
+ * is 30 KB against an operating-system limit near 32 KB on Windows. 600 keeps a third of
+ * the budget spare. Well below the extractor's other ceiling too -- it names its output
+ * `frame-%04d`, so a pass over 9,999 frames would begin overwriting its own.
+ */
+const MAX_FRAMES_PER_PASS = 600;
+
+/**
+ * How far through the video one pass may reach, in frames.
+ *
+ * **A pass costs what it decodes, not what it keeps**, and the gap rule alone does not
+ * bound that -- it caps each individual gap at {@link SEEK_RATHER_THAN_DECODE}, so the
+ * span of a pass is up to `(frames - 1) x 250` and grows with the count. At 100 that is
+ * already 24,750 frames of video, and a pass covering four and a half minutes is what
+ * the extractor's 120-second timeout killed once before. Raising the count to 400 would
+ * have taken the worst case to 66 minutes of video in one pass.
+ *
+ * So a pass breaks on how far it reaches as well as on how many it takes and how wide a
+ * gap it crosses. 3,000 frames is two minutes at the 25 fps this footage runs at, which
+ * is less than half what has been seen to time out. A dense pass never reaches it -- 400
+ * contiguous frames span 400 -- so this only ever splits the sparse ones, which are
+ * exactly the passes that were at risk.
+ */
+const MAX_PASS_SPAN = 3000;
+
+/**
+ * How many frames one ffmpeg pass asks for, which can be changed without a deploy.
+ *
+ * **400 because a pass got ten times shorter, not because bigger is better.** The 100
+ * this replaced was chosen deliberately for the person watching rather than for ffmpeg:
+ * at the speeds before `0adff93e` a hundred frames took about twenty seconds, and 400
+ * took ninety, so a four-hour build showed a number that sat still for a minute and a
+ * half at a time. Writing the frames directly made extraction six to nine times faster,
+ * so a hundred now takes about two seconds and four hundred about eight -- a better
+ * cadence than the original, from a larger number.
+ *
+ * **And the reason it matters is connections rather than comfort.** Every pass spawns a
+ * fresh ffmpeg against a media server across the public internet. At two seconds a pass
+ * the build was opening roughly ten times as many connections per minute as the design
+ * assumed, and two builds died on transient connection failures the same day the speed
+ * changed -- one in `ffmpeg`, one in `ffprobe`, neither reproducible, neither with any
+ * other consumer of that server running. Four hundred frames a pass is four times fewer
+ * rolls of that dice.
+ *
+ * @returns {number} Frames per pass, at least one and at most {@link MAX_FRAMES_PER_PASS}.
+ */
+function framesPerPass() {
+    const asked = Number(process.env.DATASET_FRAMES_PER_PASS);
+
+    if (!Number.isFinite(asked) || asked < 1) return FRAMES_PER_PASS;
+
+    return Math.min(MAX_FRAMES_PER_PASS, Math.floor(asked));
+}
 
 /**
  * The gap past which a pass ends and the next one seeks instead.
@@ -237,12 +301,17 @@ function dataYaml(classes, directories = ['train', 'eval']) {
  */
 function passes(wanted) {
     const out = [];
+    const limit = framesPerPass();
     let current = [];
 
     for (const frame of wanted) {
         const gap = current.length ? frame - current[current.length - 1] : 0;
+        /* How far this pass would reach if it took this frame. The gap rule caps each
+           step; this caps the total, which the gap rule does not -- see MAX_PASS_SPAN. */
+        const span = current.length ? frame - current[0] : 0;
 
-        if (current.length && (current.length >= FRAMES_PER_PASS || gap > SEEK_RATHER_THAN_DECODE)) {
+        if (current.length
+            && (current.length >= limit || gap > SEEK_RATHER_THAN_DECODE || span > MAX_PASS_SPAN)) {
             out.push(current);
             current = [];
         }
@@ -275,14 +344,156 @@ function passes(wanted) {
  * is finished. Returning exactly `false` stops the cut after that pass.
  * @returns {Promise<{written: number, missing: number}>} What it managed.
  */
-async function cutVideo(entry, staging, image = imageSettings(), onBatch = null) {
-    const resolved = await jellyfinRepository.resolveVideoSource(entry.video, 1, MEDIA_CLIENT_IDENTITY);
-    const streamUrl = await jellyfinRepository.buildDirectStreamUrl(resolved.item.id, MEDIA_CLIENT_IDENTITY);
-    const probe = await extraction.probeStream(streamUrl);
+/**
+ * How many times a video's setup is attempted.
+ *
+ * More than a pass gets, because these are three small requests rather than a minute of
+ * decoding -- five tries with the backoff below is about fifteen seconds in the worst
+ * case, against losing an eight-minute build.
+ */
+const SETUP_ATTEMPTS = 5;
 
-    if (!probe.fps) {
-        throw new Error(`${entry.video} reported no frame rate, so its frames cannot be addressed.`);
+/**
+ * Resolve a video, authenticate, and read its frame rate, retrying the network parts.
+ *
+ * **Three network calls that were outside the retry.** `CookieStarTest2` failed a second
+ * time at `ffprobe exited 1: Connection to tcp://... failed: Error number -138` -- a
+ * connection timeout, from `probeStream`, which runs before the extraction loop the pass
+ * retry protects. `resolveVideoSource` and `buildDirectStreamUrl` are the same shape:
+ * both reach the media server, and `buildDirectStreamUrl` authenticates on the way.
+ * Protecting only the one that failed today is how the third variant is met tomorrow.
+ *
+ * **The media server is across the internet, not on this machine**, so a timeout is a
+ * routine event rather than an exotic one -- and the build now pulls six to nine times
+ * harder than it did, so it meets them far more often.
+ *
+ * **A missing frame rate is not retried.** It is a permanent property of the video, and
+ * trying five times would spend fifteen seconds to produce a confusing message about
+ * attempts when the answer would have been the same the first time.
+ *
+ * @async
+ * @param {string} video - The video's source name.
+ * @returns {Promise<{streamUrl: string, probe: Object}>}
+ * @throws {Error} When the frame rate is unreadable, or every attempt failed.
+ */
+async function openVideo(video) {
+    let last;
+
+    for (let attempt = 1; attempt <= SETUP_ATTEMPTS; attempt++) {
+        try {
+            const resolved = await jellyfinRepository.resolveVideoSource(video, 1, MEDIA_CLIENT_IDENTITY);
+            const streamUrl = await jellyfinRepository.buildDirectStreamUrl(resolved.item.id, MEDIA_CLIENT_IDENTITY);
+            const probe = await extraction.probeStream(streamUrl);
+
+            if (attempt > 1) logger.info(`Dataset build: ${video} opened on attempt ${attempt}.`);
+
+            /* Outside the retry: a video that reports no frame rate will report none on
+               the fifth attempt too, and its frames cannot be addressed at any speed. */
+            if (!probe.fps) {
+                throw Object.assign(
+                    new Error(`${video} reported no frame rate, so its frames cannot be addressed.`),
+                    { permanent: true }
+                );
+            }
+
+            return { streamUrl, probe };
+        } catch (error) {
+            if (error && error.permanent) throw error;
+
+            last = error;
+
+            if (attempt < SETUP_ATTEMPTS) {
+                logger.info(`Dataset build: ${video} could not be opened on attempt ${attempt}, `
+                    + `retrying. ${error && error.message}`);
+
+                await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+            }
+        }
     }
+
+    throw new Error(
+        `${video}: could not be opened after ${SETUP_ATTEMPTS} attempts. ${last && last.message}`
+    );
+}
+
+/** How many times one pass is attempted before the build gives up on it. */
+const PASS_ATTEMPTS = 3;
+
+/**
+ * One ffmpeg pass, retried when the read falters, and naming the video when it does not.
+ *
+ * **A build at 85% should not die because one read faltered.** `CookieStarTest2` failed on
+ * 2026-10-22 at 26,853 of 31,529 frames, on video 91 of 131, with the filter thread
+ * returning -22 and then `Could not open encoder before EOF` -- which says no frame ever
+ * reached the encoder, not that the encoder could not handle the input. The video was not
+ * the problem: its pixel format is identical to the ones that worked (`yuv420p`, h264
+ * Main, 1920x1080), its frames are inside its duration, and replaying its entire plan
+ * through the same path afterwards produced every frame. It did not reproduce.
+ *
+ * **It is most likely a consequence of the speed rather than of JPEG.** Writing the frames
+ * directly made extraction six to nine times faster, so a build pulls from the media
+ * server that much harder and reaches the same number of passes in a fraction of the time
+ * -- a transient read failure that was always possible is simply met far more often. That
+ * is a guess about the cause; what is measured is that it happened once and would not
+ * happen again on the same input.
+ *
+ * **So the pass is retried rather than the format changed.** Not a fallback to PNG: a
+ * build that quietly takes the slow road for some videos and tells nobody is how the real
+ * throughput stops being knowable, and PNG was not the difference anyway.
+ *
+ * @async
+ * @param {string} streamUrl - The playable URL.
+ * @param {number[]} batch - Absolute frame numbers.
+ * @param {number} fps - The source's frame rate.
+ * @param {string} batchDir - Where this pass writes.
+ * @param {Object} image - From {@link imageSettings}.
+ * @param {string} video - The video being cut, for the message if it finally fails.
+ * @returns {Promise<void>}
+ * @throws {Error} When every attempt failed, saying which video and which frames.
+ */
+async function cutPass(streamUrl, batch, fps, batchDir, image, video) {
+    let last;
+
+    for (let attempt = 1; attempt <= PASS_ATTEMPTS; attempt++) {
+        try {
+            await extraction.extractFrames(streamUrl, batch, fps, batchDir, image);
+
+            if (attempt > 1) {
+                logger.info(`Dataset build: ${video} frames ${batch[0]}-${batch[batch.length - 1]} `
+                    + `succeeded on attempt ${attempt}.`);
+            }
+
+            return;
+        } catch (error) {
+            last = error;
+
+            /* Anything already written by the attempt that failed, so a retry is not
+               counted against files from the one before it -- the builder addresses
+               frames by position in the directory. */
+            fs.rmSync(batchDir, { recursive: true, force: true });
+            fs.mkdirSync(batchDir, { recursive: true });
+
+            if (attempt < PASS_ATTEMPTS) {
+                logger.info(`Dataset build: ${video} frames ${batch[0]}-${batch[batch.length - 1]} `
+                    + `failed on attempt ${attempt}, retrying. ${error && error.message}`);
+
+                // A moment, in case whatever faltered is still faltering.
+                await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+            }
+        }
+    }
+
+    /* **Named.** `ffmpeg exited 4294967274` and a wall of encoder noise said nothing about
+       where, and working out that it was video 91 of 131 took a query against the
+       attempt's last reported phase. */
+    throw new Error(
+        `${video}: frames ${batch[0]}-${batch[batch.length - 1]} could not be cut after `
+        + `${PASS_ATTEMPTS} attempts. ${last && last.message}`
+    );
+}
+
+async function cutVideo(entry, staging, image = imageSettings(), onBatch = null) {
+    const { streamUrl, probe } = await openVideo(entry.video);
 
     const wanted = [...entry.frames.keys()].sort((a, b) => a - b);
     const directory = directoryFor(entry.split);
@@ -297,6 +508,9 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
     try {
         let written = 0;
         let missing = 0;
+
+        /** Images holding each class, for this video's split. Keyed by class index. */
+        const perClass = new Map();
 
         /* **One pass per batch, not one pass per video.** `extractFrames` builds a
            `select` expression with a term per frame, so a video wanting 8,408 frames
@@ -317,11 +531,20 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
             const batchDir = path.join(cut, String(batch[0]));
 
             fs.mkdirSync(batchDir, { recursive: true });
-            await extraction.extractFrames(streamUrl, batch, probe.fps, batchDir);
+
+            /* **ffmpeg writes the final format, rather than PNG for sharp to re-encode.**
+               That re-encode was 96% of a build: 18.7 s per hundred frames against 0.7 s
+               to cut them, so a 50,000-frame build spent about two and a half hours
+               converting pictures it had already decoded. Asking ffmpeg for JPEG costs
+               416 ms per hundred and produces *smaller* files -- 349 KB a frame against
+               430 KB, and the legacy datasets are 364 KB, so the old path was the outlier
+               rather than the new one. `png` still produces PNGs and always skipped the
+               re-encode anyway. */
+            await cutPass(streamUrl, batch, probe.fps, batchDir, image, entry.video);
 
             for (let i = 0; i < batch.length; i++) {
                 const frame = batch[i];
-                const produced = path.join(batchDir, `frame-${String(i + 1).padStart(4, '0')}.png`);
+                const produced = path.join(batchDir, `frame-${String(i + 1).padStart(4, '0')}.${image.extension}`);
 
                 if (!fs.existsSync(produced)) {
                     missing += 1;
@@ -334,19 +557,30 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
                    the other. */
                 const stem = `${path.parse(entry.video).name}_${String(frame).padStart(8, '0')}`;
 
-                /* The extractor writes PNG, because a thumbnail is cropped and
-                   re-processed afterwards. A training frame is not, so it is re-encoded
-                   here -- see `DEFAULT_IMAGE` for why that is JPEG. */
+                /* **Moved, never re-encoded.** The extractor has already written the
+                   format this build asked for, so both paths are a rename now -- which is
+                   also why there is no `sharp` in this file any more. */
                 const destination = path.join(images, `${stem}.${image.extension}`);
 
-                if (image.format === 'png') fs.renameSync(produced, destination);
-                else {
-                    await sharp(produced).jpeg({ quality: image.quality, mozjpeg: true }).toFile(destination);
-                    fs.rmSync(produced, { force: true });
-                }
+                fs.renameSync(produced, destination);
 
-                fs.writeFileSync(path.join(labels, `${stem}.txt`), `${entry.frames.get(frame).join('\n')}\n`, 'utf8');
+                const lines = entry.frames.get(frame);
+
+                fs.writeFileSync(path.join(labels, `${stem}.txt`), `${lines.join('\n')}\n`, 'utf8');
                 written += 1;
+
+                /* **Which species this picture holds, counted as it is written.** The
+                   label lines already carry the class index as their first token, so this
+                   is a counter rather than a second pass over anything.
+
+                   **Distinct classes, not boxes.** Three urchins in one frame are three
+                   lines and one picture of an urchin; counting lines would make a bar
+                   longer than the number of images it claims to measure. */
+                for (const klass of new Set(lines.map((line) => Number(line.split(' ')[0])))) {
+                    if (!Number.isInteger(klass)) continue;
+
+                    perClass.set(klass, (perClass.get(klass) || 0) + 1);
+                }
             }
 
             // Converted or moved; nothing in here is wanted again, and a long video's
@@ -363,11 +597,11 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
                cut -- so adding a second `onBatch` for logging cannot silently cancel
                somebody's four-hour build. Stopping is a thing a caller has to say. */
             if (onBatch && await onBatch(written) === false) {
-                return { written, missing, stopped: true };
+                return { written, missing, perClass, stopped: true };
             }
         }
 
-        return { written, missing };
+        return { written, missing, perClass };
     } finally {
         fs.rmSync(cut, { recursive: true, force: true });
     }
@@ -509,6 +743,22 @@ async function runOne() {
         const videos = plan.extractionPlan(splits, classes);
         const total = [...videos.values()].reduce((sum, entry) => sum + entry.frames.size, 0);
 
+        /* **Counted off `splits`, the same way the membership rows are built at the end.**
+           Not `rows.length`: in the subsets branch those are the same number, but taking
+           it from the thing `recordBuild` also walks means the figure written here and
+           the one written when the build finishes cannot drift apart -- they are one
+           count made twice rather than two counts that ought to agree. */
+        const included = [...splits.values()].reduce((sum, rowsIn) => sum + rowsIn.length, 0);
+
+        /* Selection is done, so these two are final. They used to be written only by
+           `recordBuild`, which meant Observations and Classes stayed blank for the hours a
+           build spends cutting frames -- beside a frame count that was visibly climbing. */
+        await buildRepository.recordSelection({
+            datasetId,
+            observations: included,
+            classes: classes.length,
+        });
+
         await buildRepository.reportProgress(attempt.id, {
             phase: 'extracting', done: 0, total, unit: 'frames',
         });
@@ -516,6 +766,12 @@ async function runOne() {
         let done = 0;
         let missing = 0;
         let at = 0;
+
+        /** Images written, per split, so the Composition panel need not count them later. */
+        const perSplit = new Map();
+
+        /** And per class within each split, which is what the per-species bars measure. */
+        const perSplitClass = new Map();
 
         const total_videos = videos.size;
 
@@ -570,6 +826,24 @@ async function runOne() {
             done += cut.written;
             missing += cut.missing;
 
+            /* **Per split, from what was actually written.** `cut.written` counts files
+               the extractor produced and this pass then wrote, so frames lost to a
+               truncated video are already excluded -- which is the number the panel
+               should show, not what the plan intended. Attributed by the entry's own
+               split rather than by the archive directory, because `validation` and `eval`
+               share a directory and the two are different splits. */
+            perSplit.set(entry.split, (perSplit.get(entry.split) || 0) + cut.written);
+
+            /* Per split and per class, so a species that appears in three videos of the
+               same split adds up rather than overwriting. */
+            if (!perSplitClass.has(entry.split)) perSplitClass.set(entry.split, new Map());
+
+            const into = perSplitClass.get(entry.split);
+
+            for (const [klass, count] of cut.perClass || []) {
+                into.set(klass, (into.get(klass) || 0) + count);
+            }
+
             if (cut.stopped) {
                 await buildRepository.failBuild({
                     jobId: job.id,
@@ -620,6 +894,10 @@ async function runOne() {
                count is the genuinely new fact and gets the new column. */
             frames: done,
             observations: members.length,
+            splitImages: perSplit,
+            /* Class indices here; `recordBuild` turns them into species using the same
+               vocabulary it is writing, so the two cannot disagree about what class 2 is. */
+            splitClassImages: perSplitClass,
         });
 
         logger.info(`Dataset ${datasetId} built: ${done} images, ${classes.length} classes, `
@@ -643,20 +921,75 @@ async function runOne() {
     }
 }
 
-/** The poller's own state. One build at a time, by construction. */
-const live = { started: false, timer: null, running: false };
+/** The poller's own state. `inFlight` is how many builds are running right now. */
+const live = { started: false, timer: null, inFlight: 0 };
 
 /** How long to wait before looking for another build when there was none. */
 const IDLE_MS = 15000;
 
+/** How many builds run at once when nothing says otherwise. */
+const DEFAULT_CONCURRENCY = 2;
+
 /**
- * Take builds as they are queued, one at a time.
+ * How many builds may run at once.
  *
- * **One at a time deliberately.** A build is a second consumer of the same media server
- * the thumbnail extractor protects with a concurrency ceiling (`task-118`, R20), and two
- * builds would double the load on Jellyfin without anybody having chosen that. It is also
- * disk-bound: two builds staging tens of gigabytes at once is a full disk rather than
- * twice the throughput.
+ * **Read per tick rather than captured at startup**, which is the point of it being an
+ * environment variable at all: Isaac asked for two or three *"and see how Jellyfin
+ * copes"*, and a judgement formed by watching is worth nothing if changing it means
+ * editing code. Restarting the API picks up a new value; nothing here caches it.
+ *
+ * **Two by default, and the reason is a media server rather than this process.** A build
+ * holds one Jellyfin stream at a time -- `cutVideo` walks its videos in order and each
+ * pass awaits the one before it -- so the ceiling here is very nearly a count of streams
+ * MARP adds to whatever the thumbnail extractor is already pulling. That extractor runs
+ * its own fan-out up to `MAX_CONCURRENT_STREAMS`, and the two numbers are not connected:
+ * there is no shared limiter, so they add rather than divide a budget.
+ *
+ * A value below one would stop builds silently, which `DATASET_BUILDS=off` already says
+ * out loud and means on purpose, so anything unparseable or less than one falls back to
+ * the default instead.
+ *
+ * @returns {number} The ceiling, at least one.
+ */
+function concurrency() {
+    const asked = Number(process.env.DATASET_BUILD_CONCURRENCY);
+
+    return Number.isFinite(asked) && asked >= 1 ? Math.floor(asked) : DEFAULT_CONCURRENCY;
+}
+
+/**
+ * Put the next tick on the clock, replacing whatever was pending.
+ *
+ * One timer, so a build finishing can bring the next tick forward without leaving the
+ * idle one behind to fire as well.
+ *
+ * @param {number} delay - Milliseconds.
+ * @returns {void}
+ */
+function schedule(delay) {
+    if (!live.started) return;
+
+    if (live.timer) clearTimeout(live.timer);
+
+    live.timer = setTimeout(loop, delay);
+
+    /* Does not hold the process open. A fifteen-second timer that did would make every
+       `node` script that loaded this module hang on exit. */
+    if (live.timer.unref) live.timer.unref();
+}
+
+/**
+ * Take builds as they are queued, up to {@link concurrency} at once.
+ *
+ * **It used to be one at a time, and that was a decision rather than a limitation**: a
+ * build is a second consumer of the media server the thumbnail extractor already loads,
+ * and it stages tens of gigabytes. Isaac asked for two or three so he can watch what
+ * Jellyfin does with it, which is the only way that number gets settled.
+ *
+ * **The runs are not awaited here.** A build is hours; a tick that waited for one could
+ * not start a second. Each is tracked only by the count it increments, and a run
+ * finishing brings the next tick forward so a queue drains without waiting out an idle
+ * interval.
  *
  * Never throws out of the loop. `runOne` already turns a failed build into a failed row,
  * so anything reaching here is a bug in the loop itself and stopping the poller over it
@@ -668,30 +1001,55 @@ const IDLE_MS = 15000;
 async function loop() {
     if (!live.started) return;
 
-    let worked = false;
-
     try {
-        live.running = true;
-
         /* Before taking new work, return anything a dead process left behind. A build
            abandoned by a restart sits `running` with nobody running it, and the dataset
            sits `building` for ever -- which is what the first fifty-minute build did,
-           three times, while `npm run dev` restarted on file changes. */
+           three times, while `npm run dev` restarted on file changes.
+
+           **Safe with several builds live**, and that was checked rather than assumed:
+           it reclaims on `lease_expires_at < NOW()`, and `reportProgress` pushes that an
+           hour out on every report. A slow build is still a reporting build. */
         await buildRepository.reclaimAbandonedBuilds();
 
-        worked = Boolean(await runOne());
+        /* And settle anything cancelled that no runner is going to notice. A build
+           cancelled while still queued has nobody to tell -- `claimBuild` only looks at
+           `queued` jobs, so it is never picked up and never reaches `failBuild` -- and
+           its dataset would say `building` for ever. Here rather than at the moment of
+           cancelling, because this also catches a cancel made from the Jobs screen or a
+           script, which know nothing about datasets. */
+        await buildRepository.settleCancelledBuilds();
     } catch (error) {
         logger.error(`Dataset build loop: ${error && error.message}`);
-    } finally {
-        live.running = false;
     }
 
-    if (!live.started) return;
+    /* Fill the remaining slots. `runOne` claims with `FOR UPDATE SKIP LOCKED`, so two
+       starts in the same tick take two different jobs or the second takes none -- they
+       cannot both claim the same one. Starting them in one tick rather than one per tick
+       is what lets a queue of three reach the ceiling immediately. */
+    while (live.started && live.inFlight < concurrency()) {
+        live.inFlight += 1;
 
-    // Straight on to the next when one was just built; a queue is usually more than one.
-    live.timer = setTimeout(loop, worked ? 0 : IDLE_MS);
+        runOne()
+            .catch((error) => {
+                logger.error(`Dataset build: ${error && error.message}`);
 
-    if (live.timer.unref) live.timer.unref();
+                return null;
+            })
+            .then((result) => {
+                live.inFlight -= 1;
+
+                /* **Only when it actually built something.** A run that claimed nothing
+                   has just told us the queue is empty, and bringing the next tick
+                   forward on that would spin: an empty queue would start runs, find
+                   nothing, reschedule at zero and do it again as fast as the database
+                   could answer. When one really did finish, a slot is free and the next
+                   build should not wait out the idle interval for it. */
+                if (result) schedule(0);
+            });
+    }
+
+    schedule(IDLE_MS);
 }
 
 /**
@@ -732,7 +1090,8 @@ function start() {
  * Does not interrupt one in flight: a build part-way through has gigabytes staged and the
  * tidy place to stop is where `runOne` already checks for cancellation.
  *
- * @returns {{stopped: boolean, running: boolean}} Whether one is still finishing.
+ * @returns {{stopped: boolean, running: number}} How many are still finishing. A count
+ * rather than a flag now that more than one can be.
  */
 function stop() {
     live.started = false;
@@ -741,16 +1100,21 @@ function stop() {
 
     live.timer = null;
 
-    return { stopped: true, running: live.running };
+    return { stopped: true, running: live.inFlight };
 }
 
 module.exports = {
     ARCHIVE_DIRECTORY,
+    DEFAULT_CONCURRENCY,
     DEFAULT_IMAGE,
     FRAMES_PER_PASS,
+    MAX_FRAMES_PER_PASS,
+    MAX_PASS_SPAN,
+    framesPerPass,
     IMAGE_FORMATS,
     SEEK_RATHER_THAN_DECODE,
     SPLIT_DIRECTORIES,
+    concurrency,
     cutVideo,
     directoryFor,
     imageSettings,

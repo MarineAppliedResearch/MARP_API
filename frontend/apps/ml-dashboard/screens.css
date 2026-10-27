@@ -1,15 +1,26 @@
 /* ==========================================================================
-   MARP Machine Learning Dashboard — static mockups
+   MARP Machine Learning Dashboard — the screens
    --------------------------------------------------------------------------
-   Look and feel first. These are hand-written HTML screens, polished one at a
-   time against the reference mockups on MARP_API#104, and this stylesheet is
-   shared by all of them so the family stays one family.
+   One stylesheet shared by all eight screens, so the family stays one family.
+   The screens were hand-written against the reference mockups on MARP_API#104
+   and are no longer mockups themselves: they draw the real API. This file was
+   called mock.css and said "static mockups" for the same stale reason.
 
    The palette comes from ../../../shared/assets/css/tokens.css and is never
    restated here.
    ========================================================================== */
 
 :root {
+  /* ---- the three split tones, written once ---------------------------- */
+  /* Four things draw train, validation and test now: the split bar, its legend, its key
+     and the per-species bars under all three. Two colour schemes for the same three
+     splits in one panel would be its own bug, and restating a colour is what broke the
+     chart legend three times. Only the alpha varies by context -- a 26px band wants less
+     of the colour than an 8px swatch, and amber reads brighter at the same value. */
+  --tone-train: 34, 215, 220;
+  --tone-validation: 155, 124, 240;
+  --tone-test: 246, 196, 83;
+
   /* ---- state, decided once ------------------------------------------- */
   --st-running: var(--cyan-400);
   --st-queued: var(--blue-400);
@@ -184,7 +195,7 @@ svg { display: block; }
    margin would come back to 0, and the row would open again: a flap at 60fps rather than
    a hidden bar. Started, its height stays its content's.
 
-   `--topbar-h` is written by `mock.js`, which measures the bar; the fallback of 0 means a
+   `--topbar-h` is written by `screens.js`, which measures the bar; the fallback of 0 means a
    page whose script has not run yet simply keeps its bar. */
 .topbar { align-self: start; transition: margin-top 180ms ease; }
 body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px)); }
@@ -416,28 +427,31 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .inference-axis.right .axis-title { text-anchor: end; }
 .inference-area { fill: rgba(61, 214, 208, .09); stroke: none; transition: opacity 150ms ease; }
 .inference-line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; transition: opacity 150ms ease, stroke-width 150ms ease; }
-.inference-line.throughput { stroke: var(--cyan-300); }
-.inference-line.backlog { stroke: var(--violet-300); stroke-dasharray: 7 5; }
-/* A third series, for the Datasets screen's Build activity: frames extracted and builds
-   waiting share this chart with builds completed, and three lines need three strokes.
-   Dotted rather than dashed so it reads apart from `backlog` without colour alone. */
-.inference-line.done { stroke: var(--mint-400); stroke-dasharray: 2 6; }
+/* **Each series says its colour and its dash once, and both the line and the legend
+   swatch read them.** They were written twice -- the stroke here, the swatch colour in
+   the legend block below -- which is how the legend came to show a colour the chart did
+   not use, and then no colour at all. A third series was added for the Datasets screen's
+   Build activity; it is dotted rather than dashed so it reads apart from `backlog`
+   without relying on colour. */
+.inference-flow .throughput { --key: var(--cyan-300); --dash-on: 12px; --dash-off: 0px; }
+.inference-flow .backlog { --key: var(--violet-300); --dash-on: 7px; --dash-off: 5px; }
+.inference-flow .done { --key: var(--mint-400); --dash-on: 2px; --dash-off: 6px; }
+.inference-line.throughput, .inference-line.backlog, .inference-line.done {
+  stroke: var(--key); stroke-dasharray: var(--dash-on) var(--dash-off);
+}
 .inference-flow.is-highlighted .inference-line, .inference-flow.is-highlighted .inference-area { opacity: .12; }
 .inference-flow.is-highlighted .inference-line.highlighted { opacity: 1; stroke-width: 4.5; }
 .inference-flow.is-highlighted .inference-area.highlighted { opacity: .7; }
 .inference-flow-foot { display: grid; gap: 9px; }
 .inference-chart-key { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+/* No `position: relative` and no left padding reserved for a swatch: this element always
+   also carries `result-legend`, whose later rule lays the swatch out as a flex item. The
+   two disagreed -- an absolutely positioned mark at `left: 0` inside a button padded only
+   5px -- so the swatch sat on top of the first letter of every label. */
 .inference-chart-key button {
-  position: relative; padding: 3px 0 3px 18px; border: 0; background: none;
+  border: 0; background: none;
   color: var(--text); font: 650 10.5px var(--body-font); cursor: pointer;
 }
-.inference-chart-key button::before {
-  content: ""; position: absolute; left: 0; top: 50%; width: 12px; height: 3px;
-  border-radius: 2px; background: var(--key); transform: translateY(-50%);
-}
-.inference-chart-key .throughput { --key: var(--cyan-300); }
-.inference-chart-key .backlog { --key: var(--violet-300); }
-.inference-chart-key .done { --key: var(--mint-400); }
 .inference-chart-key button[aria-pressed="true"] { color: var(--white); text-decoration: underline; text-underline-offset: 3px; }
 .inference-chart-key button:focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 2px; border-radius: 2px; }
 .inference-current {
@@ -462,7 +476,14 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 }
 .ops-activity .ops-area { fill: rgba(61, 214, 208, .09); transition: opacity 150ms ease; }
 .ops-activity .registered, .ops-activity .inference, .ops-activity .completed { --key: var(--cyan-300); }
-.ops-activity .preferred, .ops-activity .training, .ops-activity .issues { --key: var(--amber-300); }
+/* `in_use` with them, because the Models legend names that series "Models in use" while
+   the line it points at is classed `preferred` -- so it had no colour of its own and fell
+   back to the text colour, which is a swatch claiming a grey the chart never draws. The
+   pairing is not a guess: that chart has three lines and three buttons, and the other two
+   match by name and by colour. Renaming one to match the other is the better fix and is
+   somebody's call, not this stylesheet's. */
+.ops-activity .preferred, .ops-activity .in_use,
+.ops-activity .training, .ops-activity .issues { --key: var(--amber-300); }
 .ops-activity .coverage { --key: var(--mint-400); }
 .ops-activity .vram { --key: var(--violet-300); }
 .ops-activity .queued { --key: var(--red-400); }
@@ -486,15 +507,26 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   transition: opacity 150ms ease, stroke-width 150ms ease;
 }
 .training-health .training-area { fill: rgba(61, 214, 208, .09); transition: opacity 150ms ease; }
-.training-line.compute { stroke: var(--cyan-300); }
-.training-line.running { stroke: var(--mint-400); }
-.training-line.queued { stroke: var(--violet-300); stroke-dasharray: 7 5; }
-.training-bars.completed { fill: rgba(255, 190, 72, .45); stroke: var(--amber-300); stroke-width: 1;
+/* **One declaration per series, reaching the path and the swatch together**, the way
+   `.inference-flow` does it. These lived twice -- `.training-line.queued` was dashed 7/5
+   and `.training-chart-key .queued` set only a colour, so the chart drew a dashed line
+   and the legend drew a solid bar for it. Queued is the one series the dash was chosen to
+   tell apart, so the legend was wrong about exactly the line it was there to identify.
+
+   `.training-health` is on the article that encloses both the svg and the legend, so a
+   token set here is in scope for both. A solid line is `12 0`, which is what
+   `.inference-flow .throughput` says and what `stroke-dasharray` treats as solid. */
+.training-health .compute { --key: var(--cyan-300); --dash-on: 12px; --dash-off: 0px; }
+.training-health .running { --key: var(--mint-400); --dash-on: 12px; --dash-off: 0px; }
+.training-health .queued { --key: var(--violet-300); --dash-on: 7px; --dash-off: 5px; }
+/* Drawn as bars rather than a line, so it carries a fill as well. */
+.training-health .completed { --key: var(--amber-300); --fill: rgba(255, 190, 72, .45); }
+
+.training-line.compute, .training-line.running, .training-line.queued {
+  stroke: var(--key); stroke-dasharray: var(--dash-on) var(--dash-off);
+}
+.training-bars.completed { fill: var(--fill); stroke: var(--key); stroke-width: 1;
   transition: opacity 150ms ease; }
-.training-chart-key .compute { --key: var(--cyan-300); }
-.training-chart-key .running { --key: var(--mint-400); }
-.training-chart-key .queued { --key: var(--violet-300); }
-.training-chart-key .completed { --key: var(--amber-300); }
 .training-health.is-highlighted .training-line,
 .training-health.is-highlighted .training-area,
 .training-health.is-highlighted .training-bars { opacity: .12; }
@@ -564,12 +596,40 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .jobresults.empty { padding: 13px; border: 1px dashed var(--hairline-2); border-radius: var(--r-sm); background: var(--card-flat); }
 .result-legend { display: flex; justify-content: flex-end; gap: 6px 12px; flex-wrap: wrap; color: var(--text); font-size: 9.5px; font-weight: 600; }
 .result-legend button {
-  display: inline-flex; align-items: center; gap: 5px; padding: 3px 5px;
+  display: inline-flex; align-items: center; gap: 7px; padding: 3px 5px;
   border: 1px solid transparent; border-radius: 4px; background: none;
   color: inherit; font: inherit; cursor: pointer;
 }
-.result-legend button::before { content: ""; width: 11px; height: 2px; flex: none; background: var(--line); }
-.ops-activity .result-legend button::before { background: var(--key); }
+/* **The only swatch rule, after two of them spent a day disagreeing.** The other lived on
+   `.inference-chart-key`, which sits on this same element, and set
+   `background: var(--key)` -- the chart *grid* colour, inherited, cyan at ten per cent --
+   so every legend painted an invisible bar. It also positioned the mark absolutely while
+   this rule lays it out as a flex item, which put it on top of the first letter once it
+   became visible.
+
+   **24px, because a dash has to repeat to read as one.** At 12px a 7-on-5-off pattern
+   shows one segment and a sliver, which looks like a short solid line; at 24 it shows two
+   full repeats, and the 2-on-6-off series shows three. That is the difference between
+   "dotted" and "shorter than the others".
+
+   Colour and dash both come from the tokens the line itself is stroked with, so neither
+   is written down twice. */
+.result-legend button::before {
+  content: ""; width: 24px; height: 3px; flex: none; border-radius: 2px;
+  background-image: repeating-linear-gradient(to right,
+    var(--key, currentColor) 0 var(--dash-on, 100%),
+    transparent var(--dash-on, 100%) calc(var(--dash-on, 100%) + var(--dash-off, 0px)));
+}
+/* **A series drawn as bars gets a swatch shaped like a bar.** The 3px line above is right
+   for a line and wrong for `.training-bars`, which is a translucent fill with a 1px
+   stroke -- the legend drew a solid 3px amber line for a column chart. A modifier rather
+   than a second component: the colour still comes from `--key`, so the rule above this one
+   still holds and nothing is written down twice. */
+.result-legend button.is-filled::before {
+  height: 10px; background-image: none;
+  background-color: var(--fill, var(--key));
+  border: 1px solid var(--key);
+}
 .result-legend button:hover { color: var(--white); background: rgba(9, 30, 51, .8); }
 .result-legend button:focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 1px; }
 .result-legend button[aria-pressed="true"] { color: var(--white); border-color: var(--hairline-2); background: rgba(9, 30, 51, .95); }
@@ -578,37 +638,73 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .result-grid line { stroke: rgba(100, 246, 242, .18); stroke-width: 1.2; }
 .result-axis text { fill: var(--text); font: 600 10px var(--body-font); text-anchor: end; }
 .result-axis text:nth-last-child(2) { text-anchor: start; }
-.result-line { fill: none; stroke: var(--line); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* **One token, so the swatch and the line cannot disagree.** This family declared
+   `--line` for the stroke while `.result-legend button::before` paints from `--key` -- so
+   `--key` was unset on all twenty-nine series and every swatch fell back to
+   `currentColor`, painting the muted text grey beside a coloured line. `recall` and
+   `val-loss` are dashed on the chart and were solid in the legend for the same reason.
+   Renamed rather than doubled up: writing both is what the rule above exists to stop. */
+.result-line {
+  fill: none; stroke: var(--key); stroke-width: 2.2; stroke-linecap: round;
+  stroke-linejoin: round; vector-effect: non-scaling-stroke;
+  stroke-dasharray: var(--dash-on) var(--dash-off);
+}
+/* **Where a series left the top of the chart.** The stub shows the line coming down from
+   above without claiming a measurement at the ceiling -- thin and faint, so it cannot be
+   read as data -- and the mark beside it is the broken-axis zigzag, which is what stops a
+   clipped point looking like a plateau at the top. Both take the series' own `--key`, so
+   it is obvious which line went off. */
+.result-stub {
+  fill: none; stroke: var(--key); stroke-width: 1.4; opacity: .45;
+  stroke-dasharray: 3 3; vector-effect: non-scaling-stroke;
+}
+.result-break .break-mark {
+  fill: none; stroke: var(--key); stroke-width: 2; stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.result-break text { fill: var(--key); font: 700 10px var(--body-font); text-anchor: start; }
 [data-result-graph].is-highlighted .result-line { opacity: .12; transition: opacity 140ms ease; }
-[data-result-graph].is-highlighted .result-line.highlighted { opacity: 1; stroke-width: 3.2; filter: drop-shadow(0 0 3px var(--line)); }
-.result-line.val-loss, .result-line.recall { stroke-dasharray: 6 4; }
-.train-loss { --line: var(--cyan-300); }
-.val-loss { --line: var(--red-400); }
-.precision { --line: var(--blue-400); }
-.recall { --line: var(--amber-300); }
-.map { --line: var(--mint-400); }
-.class-1 { --line: var(--blue-400); }
-.class-2 { --line: var(--amber-300); }
-.class-3 { --line: var(--violet-300); }
-.class-4 { --line: var(--mint-400); }
-.box-loss { --line: var(--cyan-300); }
-.cls-loss { --line: var(--amber-300); }
-.dfl-loss { --line: var(--violet-300); }
-.map95 { --line: var(--red-400); }
-.pr-rockfish { --line: var(--blue-400); }
-.pr-flatfish { --line: var(--amber-300); }
-.pr-sculpin { --line: var(--violet-300); }
-.pr-other { --line: var(--mint-400); }
-.f1-score { --line: var(--cyan-300); }
-.eval-c1 { --line: var(--blue-400); }
-.eval-c2 { --line: var(--amber-300); }
-.eval-c3 { --line: var(--violet-300); }
-.eval-c4 { --line: var(--mint-400); }
-.eval-c5 { --line: var(--cyan-300); }
-.eval-c6 { --line: var(--red-400); }
-.eval-c7 { --line: var(--blue-400); }
-.eval-c8 { --line: var(--amber-300); }
-.result-line.eval-c5, .result-line.eval-c6 { stroke-dasharray: 8 4; }
+[data-result-graph].is-highlighted .result-line.highlighted { opacity: 1; stroke-width: 3.2; filter: drop-shadow(0 0 3px var(--key)); }
+[data-result-graph].is-highlighted .result-stub,
+[data-result-graph].is-highlighted .result-break { opacity: .12; transition: opacity 140ms ease; }
+[data-result-graph].is-highlighted .result-stub.highlighted { opacity: .8; }
+[data-result-graph].is-highlighted .result-break.highlighted { opacity: 1; }
+.train-loss { --key: var(--cyan-300); }
+.val-loss { --key: var(--red-400); --dash-on: 6px; --dash-off: 4px; }
+.precision { --key: var(--blue-400); }
+.recall { --key: var(--amber-300); --dash-on: 6px; --dash-off: 4px; }
+.map { --key: var(--mint-400); }
+.class-1 { --key: var(--blue-400); }
+.class-2 { --key: var(--amber-300); }
+.class-3 { --key: var(--violet-300); }
+.class-4 { --key: var(--mint-400); }
+/* **A pair per loss component: same colour, train solid and validation dashed.** The
+   question an ML reader asks of a loss chart is whether the two are diverging, and that
+   is only readable if the pair shares a colour -- six unrelated colours would make it a
+   puzzle. Dashed for validation follows `.val-loss`, which already did it that way.
+
+   Until `ea964f18` only the validation three existed, so they were solid. They are the
+   dashed half of a pair now, which is also what makes the train lines legible. */
+.box-loss-train { --key: var(--cyan-300); }
+.cls-loss-train { --key: var(--amber-300); }
+.dfl-loss-train { --key: var(--violet-300); }
+.box-loss { --key: var(--cyan-300); --dash-on: 6px; --dash-off: 4px; }
+.cls-loss { --key: var(--amber-300); --dash-on: 6px; --dash-off: 4px; }
+.dfl-loss { --key: var(--violet-300); --dash-on: 6px; --dash-off: 4px; }
+.map95 { --key: var(--red-400); }
+.pr-rockfish { --key: var(--blue-400); }
+.pr-flatfish { --key: var(--amber-300); }
+.pr-sculpin { --key: var(--violet-300); }
+.pr-other { --key: var(--mint-400); }
+.f1-score { --key: var(--cyan-300); }
+.eval-c1 { --key: var(--blue-400); }
+.eval-c2 { --key: var(--amber-300); }
+.eval-c3 { --key: var(--violet-300); }
+.eval-c4 { --key: var(--mint-400); }
+.eval-c5 { --key: var(--cyan-300); --dash-on: 8px; --dash-off: 4px; }
+.eval-c6 { --key: var(--red-400); --dash-on: 8px; --dash-off: 4px; }
+.eval-c7 { --key: var(--blue-400); }
+.eval-c8 { --key: var(--amber-300); }
 .result-line.eval-c7, .result-line.eval-c8 { stroke-dasharray: 2 4; }
 .inference-result-grid { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(0, 1.2fr); gap: 12px; align-items: stretch; }
 .finding-list { display: grid; align-content: start; border: 1px solid var(--hairline); border-radius: var(--r-sm); overflow: hidden; background: var(--card-flat); }
@@ -646,8 +742,75 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .eight-class { max-width: 620px; }
 .threshold-mark { stroke: var(--white); stroke-width: 1.2; stroke-dasharray: 3 3; opacity: .65; }
 .threshold-label { fill: var(--white); font: 600 9px var(--body-font); }
-.confusion { width: min(620px, 100%); margin: 2px auto 0; display: grid; grid-template-columns: minmax(64px, 1.15fr) repeat(4, minmax(52px, 1fr)); gap: 3px; align-items: stretch; }
+/* `--cols` comes from the data: a matrix MARP carries as numbers has as many classes as
+   the run had, and four was the mockup's. The fallback keeps that one unchanged. */
+.confusion { width: min(620px, 100%); margin: 2px auto 0; display: grid; grid-template-columns: minmax(64px, 1.15fr) repeat(var(--cols, 4), minmax(52px, 1fr)); gap: 3px; align-items: stretch; }
+/* The run panel's lower half: the things that describe a finished run rather than its
+   progress. One column, because a matrix and a gallery both want the width. */
+.training-evaluation-grid { display: grid; gap: var(--gap); margin-top: var(--gap); }
+/* **Ultralytics' own layout, in MARP's palette.** The four threshold charts go two up
+   where there is room, because they are read against each other: precision and recall
+   against confidence are the two halves of one trade, and a reader comparing them should
+   not have to scroll between them. */
+.curve-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--gap); }
+/* Thin per-class lines under one thick mean, which is the shape of the plot everybody
+   who has trained a model already knows. The classes are deliberately quiet: they are
+   the spread, and the mean is the reading. */
+.curve-class { stroke-width: 1.2; opacity: .42; }
+.curve-mean { --key: var(--cyan-300); stroke-width: 3.2; opacity: 1; }
+/* **The one thing on every screen that says whether any of it is still true.** Quiet while
+   it is fine and loud only when it is not: a stale page looks exactly like a current one,
+   so the failure states are the ones worth seeing from across the room. */
+.topbar .fresh {
+  color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums;
+  white-space: nowrap; padding: 0 2px;
+}
+.topbar .fresh[data-fresh="reading"] { opacity: .65; }
+.topbar .fresh[data-fresh="failed"] { color: var(--red-400); font-weight: 700; }
+/* The one way to reach what MARP read, for the one reader who wants it. Quiet on purpose:
+   it is a footnote to the matrix, not a feature of it. */
+.raw-metrics { display: flex; gap: 12px; padding: 0 12px 10px; }
+.raw-metrics a { color: var(--muted); font-size: 10.5px; text-decoration: underline; text-underline-offset: 2px; }
+.raw-metrics a:hover { color: var(--text); }
+.curve-key { display: flex; align-items: center; gap: 6px; padding: 0 12px 10px; color: var(--muted); font-size: 10.5px; }
+.curve-key .mean { width: 16px; height: 3px; border-radius: 2px; background: var(--cyan-300); }
+/* The AP column reads as a ranking rather than as five decimals to compare by eye. The
+   bar sits behind the number rather than beside it, so the column keeps its width. */
+.apcell { position: relative; isolation: isolate; }
+.apbar {
+  position: absolute; z-index: -1; inset: 2px auto 2px 0; width: calc(var(--v, 0) * 100%);
+  border-radius: 2px; background: rgba(45, 156, 255, .28);
+}
+.apnum { position: relative; }
+
+/* The trainer's own plots. They are white-background renders, so each sits on its own
+   light card rather than bleeding into the page -- showing them as what they are reads
+   better than trying to make them look native. */
+.plot-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; padding: 10px; }
+.result-plot { margin: 0; border: 1px solid var(--hairline-2); border-radius: var(--r-sm); background: var(--white); overflow: hidden; }
+.result-plot img { display: block; width: 100%; height: auto; }
+/* A member of the gallery that is a file rather than a picture: no white plate, because
+   there is no render to sit on. */
+.result-plot.is-file { background: var(--sunk); }
+.result-plot.is-file figcaption { border-top: 0; display: grid; gap: 2px; }
+.result-plot figcaption { padding: 6px 8px; border-top: 1px solid var(--hairline-2); background: var(--sunk); color: var(--muted); font-size: 10px; }
+
 .confusion.eight { width: 820px; grid-template-columns: 92px repeat(8, 88px); margin: 0; padding: 10px; }
+/* **The axes say True and Predicted in words, beside the grid.** A confusion matrix read
+   the wrong way round is completely plausible and asserts the reverse of what happened,
+   and a sentence in the card header is not where somebody checks. The y label is rotated
+   up the left edge, which is where every matrix in the field puts it. */
+.matrix-frame { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px; align-items: center; }
+.matrix-frame .axis-y {
+  grid-row: 1; writing-mode: vertical-rl; transform: rotate(180deg);
+  justify-self: center; color: var(--muted); font-size: 9.5px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+.matrix-frame .confusion { grid-column: 2; }
+.matrix-frame .axis-x {
+  grid-column: 2; text-align: center; padding-top: 4px; color: var(--muted);
+  font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
 .confusion > b { display: grid; place-items: center; min-width: 0; padding: 5px 3px; color: var(--muted); font-size: 8.5px; font-weight: 700; overflow-wrap: anywhere; text-align: center; }
 .confusion > i { position: relative; isolation: isolate; display: grid; place-items: center; min-height: 48px; border-radius: 3px; color: var(--white); font-size: 10.5px; font-style: normal; font-weight: 700; background: var(--sunk); }
 .confusion > i::before { content: ""; position: absolute; z-index: -1; inset: 0; border-radius: inherit; background: rgba(45, 156, 255, var(--heat)); }
@@ -1002,13 +1165,26 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 
    The widths live on the header classes rather than in a <colgroup> because a
    narrower screen drops a column, and a <col> cannot be hidden reliably. */
+/* **Every sortable column needs a width here, including Worker.** `table-layout:
+   fixed` hands out exactly what is declared, so a column added to the markup and not
+   added to this list gets nothing: Worker collapsed to zero and its heading spilled
+   across Submitted, which is the two overlaid words somebody reported reading. The
+   widths are still deliberately generous of each other -- they sum above 100% and the
+   browser scales them -- so this changes the shares rather than the approach. */
 .tbl.fixed { table-layout: fixed; }
-.tbl.fixed .hjob    { width: 24%; }
+
+/* A heading too long for its column ends in an ellipsis instead of painting across the
+   next one. Without this a narrow window puts two labels on top of each other and the
+   reader sees one word over another rather than a column that got smaller. */
+.tbl.fixed th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tbl.fixed .hjob    { width: 19%; }
 .tbl.fixed .hscope  { width: 15%; }
-.tbl.fixed .hmodel  { width: 17%; }
+.tbl.fixed .hmodel  { width: 15%; }
 .tbl.fixed .hstatus { width: 12%; }
-.tbl.fixed .hprog   { width: 15%; }
-.tbl.fixed .hupd    { width: 8%; }
+.tbl.fixed .hprog   { width: 13%; }
+.tbl.fixed .hworker { width: 8%; }
+.tbl.fixed .hupd    { width: 9%; }
 .tbl.fixed .hacts   { width: 9%; }
 .two .a, .two .b, .name .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .name { max-width: 100%; }
@@ -1745,18 +1921,18 @@ details.fold .fbody { padding: 4px 12px 14px; }
             border: 1px solid var(--hairline); }
 .splitbar i { display: grid; place-items: center; font-style: normal;
               font-size: 10.5px; font-weight: 600; white-space: nowrap; overflow: hidden; }
-.splitbar .tr { background: rgba(34, 215, 220, 0.30); color: var(--cyan-300); }
-.splitbar .va { background: rgba(155, 124, 240, 0.30); color: var(--violet-300); }
-.splitbar .te { background: rgba(246, 196, 83, 0.26); color: var(--amber-300); }
+.splitbar .tr { background: rgba(var(--tone-train), 0.30); color: var(--cyan-300); }
+.splitbar .va { background: rgba(var(--tone-validation), 0.30); color: var(--violet-300); }
+.splitbar .te { background: rgba(var(--tone-test), 0.26); color: var(--amber-300); }
 /* The counts live under the bar. Inside it, the ten per cent segment could not
    hold "Test 1,285" and clipped it mid-number. */
 .splitkey { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 7px; font-size: 11px; }
 .splitkey span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .splitkey span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; }
 .splitkey b { color: var(--white); font-weight: 600; }
-.splitkey .tr::before { background: rgba(34, 215, 220, 0.55); }
-.splitkey .va::before { background: rgba(155, 124, 240, 0.55); }
-.splitkey .te::before { background: rgba(246, 196, 83, 0.5); }
+.splitkey .tr::before { background: rgba(var(--tone-train), 0.55); }
+.splitkey .va::before { background: rgba(var(--tone-validation), 0.55); }
+.splitkey .te::before { background: rgba(var(--tone-test), 0.5); }
 
 /* A class breakdown: label, bar, count -- a grid, so the counts line up. */
 .dist { display: grid; grid-template-columns: auto minmax(40px, 1fr) auto;
@@ -1908,9 +2084,84 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .dataset-facts span { display: grid; gap: 2px; padding: 8px; border-radius: 4px; background: var(--sunk); color: var(--faint); font-size: 8.5px; text-transform: uppercase; }
 .dataset-facts b { color: var(--white); font-size: 11px; text-transform: none; overflow-wrap: anywhere; }
 .dataset-class-summary { margin: 10px 0 3px; color: var(--text); font-size: 10px; }
-.dataset-samples { grid-column: 1 / -1; }
-.dataset-samples .thumbs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* Where each species went. The Class breakdown's own component -- `.dist`, label, bar,
+   count -- with the single fill replaced by one segment per split. The grid, the track
+   and the sizing all come from `.dist`; only the segmenting is here. */
+.speciessplit { margin: 11px 0 2px; }
+.speciessplit h5 { display: flex; align-items: baseline; gap: 7px; margin: 0 0 6px; color: var(--white); font-size: 11px; font-weight: 600; }
+.speciessplit h5 .faint { font-weight: 500; font-size: 10px; cursor: help; }
+.speciessplit h5 .more { margin-left: auto; }
+
+/* Three segments in the track instead of one fill. The track keeps `.dist`'s rounded
+   ends and its own `overflow: hidden`, so the segments square off and the bar as a whole
+   still reads as one bar. */
+.dist.split .b { display: flex; }
+.dist.split .b i { border-radius: 0; background: none; }
+.dist.split .b .tr { background: rgba(var(--tone-train), 0.65); }
+.dist.split .b .va { background: rgba(var(--tone-validation), 0.65); }
+.dist.split .b .te { background: rgba(var(--tone-test), 0.6); }
+.linkish { padding: 3px 0; border: 0; background: none; color: var(--cyan-300); font: inherit; font-size: 9.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+/* The three numbers per split, under the bar. A row each rather than packed into the
+   band, because the bands are sized by share and the smallest one has no room for a
+   number -- which is how the percentage ended up being the only thing shown. */
+/* The waiting builds, above the table that cannot show their order. */
+.buildqueue { margin: 0 0 12px; padding: 11px 12px; border: 1px solid var(--hairline-2); border-radius: var(--r-sm); background: rgba(20, 126, 232, .06); }
+.buildqueue[hidden] { display: none; }
+.buildqueue-hd h3 { margin: 0; color: var(--white); font-size: 11.5px; }
+.buildqueue-hd p { margin: 2px 0 9px; color: var(--muted); font-size: 10px; }
+.buildqueue-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; counter-reset: none; }
+.buildqueue-list li { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border-radius: 4px; background: var(--sunk); font-size: 10.5px; }
+.buildqueue-list li[data-starting] { background: rgba(34, 215, 220, .10); }
+.qpos { min-width: 16px; color: var(--faint); font-size: 9px; text-align: right; }
+.qname { flex: 1; min-width: 0; color: var(--text); overflow-wrap: anywhere; }
+.qnext { color: var(--cyan-300); font-size: 8.5px; letter-spacing: .05em; text-transform: uppercase; }
+.qmove { display: flex; gap: 3px; }
+.btn.xs { padding: 2px 5px; min-height: 0; }
+.btn.xs:disabled { opacity: .35; cursor: default; }
+
+.splitlegend { display: grid; gap: 4px; margin: 9px 0 0; padding: 0; list-style: none; }
+.splitlegend li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 9px; font-size: 9.5px; color: var(--faint); }
+.splitlegend i { width: 8px; height: 8px; border-radius: 2px; }
+.splitlegend .tr { background: rgba(var(--tone-train), 0.55); }
+.splitlegend .va { background: rgba(var(--tone-validation), 0.55); }
+.splitlegend .te { background: rgba(var(--tone-test), 0.5); }
+.splitname { min-width: 66px; color: var(--white); text-transform: uppercase; letter-spacing: .05em; font-size: 8.5px; }
+.splitshare { min-width: 34px; color: var(--text); font-size: 10.5px; }
+.splitof b { color: var(--text); font-weight: 600; }
+/* The sample of frames a build cut. Full width under the grid: a frame is only useful at
+   a size somebody can see the label box in. */
+.dataset-sample { margin-top: 16px; padding: 13px; border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--card-flat); }
+.pvstrip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 9px; }
+.pvframe { min-width: 0; margin: 0; }
+/* The positioning context the boxes are a percentage of, so it must wrap the image and
+   nothing else -- any padding here moves every box off the animal. */
+.pvshot { position: relative; display: block; overflow: hidden; border-radius: 4px; background: var(--sunk); }
+.pvshot img { display: block; width: 100%; height: auto; }
+.pvbox { position: absolute; border: 1.5px solid var(--amber-300); border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); pointer-events: none; }
+.pvframe figcaption { display: grid; gap: 1px; margin-top: 5px; color: var(--faint); font-size: 8.5px; overflow-wrap: anywhere; }
+.pvframe figcaption b { color: var(--cyan-300); font-size: 8px; letter-spacing: .05em; text-transform: uppercase; }
+.pvframe figcaption em { color: var(--text); font-size: 9px; font-style: normal; }
+.pvframe figcaption em.none { color: var(--faint); font-style: italic; }
 .dataset-detail > footer { display: flex; flex-wrap: wrap; gap: 7px; }
+.dataset-detail > footer .hint { align-self: center; }
+/* Destructive, and the only control on this screen that is. Bordered rather than filled:
+   it sits beside a progress bar somebody is watching, and a solid red block there reads
+   as an alarm about the build rather than as a button. */
+.btn.danger { border-color: var(--red-500); color: var(--red-400); }
+.btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red-500) 16%, transparent); }
+.btn.danger:disabled { opacity: .55; cursor: default; }
+/* The icon form, on a job row. Red only on hover: eighteen red glyphs down the
+   right of a table reads as eighteen things being wrong, which is what the status
+   column is for. */
+.btn.sm.icon.danger { color: var(--muted); border-color: var(--hairline-2); }
+.btn.sm.icon.danger:hover:not(:disabled) { color: var(--red-400); border-color: var(--red-500); }
+/* Two controls in the actions cell since the delete landed, and they must not touch. */
+#jobs td.jacts > span { display: inline-flex; gap: 4px; justify-content: flex-end; align-items: center; }
+/* What the last delete did, between the table and the pager. A partial result is the
+   normal result, so the reasons need somewhere that is not an alert box. */
+.deletesaid { margin: 0; padding: 9px 14px; border-top: 1px solid var(--hairline-2); font-size: 11px; color: var(--muted); }
+.deletesaid[data-tone="bad"] { color: var(--red-400); }
 .dataset-build-progress { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .8fr) auto; gap: 6px 14px; align-items: center; padding: 11px 12px; border: 1px solid var(--hairline-2); border-radius: var(--r-sm); background: rgba(20, 126, 232, .06); }
 .dataset-build-progress > div { display: flex; justify-content: space-between; gap: 10px; }
 .dataset-build-progress b { color: var(--white); font-size: 11px; }
@@ -2461,7 +2712,7 @@ td.whb.quiet { color: var(--amber-300); }
   /* Three rows: the search, then the scope controls and the account, then the
      two job buttons. Flex wrapping could not be made to do this -- the first
      job button kept fitting on the row above and the second wrapped alone -- so
-     the rows are placed. mock.js builds these children in one place and in this
+     the rows are placed. screens.js builds these children in one place and in this
      order, which is what makes placing them by position safe. */
   .topbar .tools {
     width: 100%; margin-left: 0;
@@ -2816,7 +3067,7 @@ td.whb.quiet { color: var(--amber-300); }
   #saved-datasets tbody tr.runrow-body { display: block; padding: 0; }
   #saved-datasets tbody tr.runrow-body > td { display: block; }
   .dataset-detail-grid { grid-template-columns: minmax(0, 1fr); }
-  .dataset-samples { grid-column: auto; }
+  .pvstrip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dataset-build-progress { grid-template-columns: minmax(0, 1fr); }
 }
 

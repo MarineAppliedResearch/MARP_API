@@ -59,6 +59,60 @@ class DatasetRepository {
 
 
     /**
+     * How fast a training run has been getting through its epochs.
+     *
+     * **The clock, where `GET /training_run/:id/epochs` is the science.** An epoch row is
+     * written when the worker reports its metrics, so that array has one entry per
+     * finished epoch and nothing at all before the first one lands.
+     * `gpu_attempt_progress` is the heartbeat's once-a-minute sample of how many epochs
+     * are done, and it exists from the moment the attempt is leased -- including the
+     * minutes spent fetching the dataset, which is exactly the stretch where a reader
+     * most wants to know the run is alive and `epochs` is still empty.
+     *
+     * **Every attempt of the job, not only the latest.** A training job that was retried
+     * has a second attempt counting from zero again, and a series that silently dropped
+     * the first one would show a gap nothing explains. Each sample says which attempt it
+     * came from, so a reader can draw the retry as a retry.
+     *
+     * **Nothing is derived.** Epochs per minute and a remaining estimate both come out of
+     * these samples, and computing them here would mean choosing a window and a rounding
+     * on the reader's behalf -- which is how a figure nobody can check gets onto a screen.
+     *
+     * @async
+     * @param {number|string} runId - `training_runs.id`.
+     * @returns {Promise<?Array<Object>>} The samples oldest first, or null when there is
+     * no such run -- which is a different answer from a run that has reported nothing.
+     */
+    async getTrainingRunPace(runId) {
+        const [run] = await this.db.sequelize.query(
+            'SELECT id, job_id FROM training_runs WHERE id = :runId',
+            { replacements: { runId }, type: QueryTypes.SELECT }
+        );
+
+        if (!run) return null;
+
+        const samples = await this.db.sequelize.query(
+            `SELECT p.at, p.progress_done AS done, p.progress_total AS total,
+                    p.progress_unit AS unit, p.attempt_id
+               FROM gpu_attempt_progress p
+               JOIN gpu_job_attempts a ON a.id = p.attempt_id
+              WHERE a.job_id = :jobId
+              ORDER BY p.at`,
+            { replacements: { jobId: run.job_id }, type: QueryTypes.SELECT }
+        );
+
+        /* `progress_done` and `progress_total` are BIGINT, which the driver hands back as
+           strings -- a chart plotting those gets a lexical axis, where 10 sorts before 2. */
+        return samples.map((sample) => ({
+            at: sample.at,
+            done: Number(sample.done),
+            total: Number(sample.total),
+            unit: sample.unit,
+            attempt_id: sample.attempt_id,
+        }));
+    }
+
+    /**
      * What one dataset is actually made of: its splits, and its class vocabulary.
      *
      * **Both are recorded and neither was served.** `dataset_observations` has held a row
@@ -81,12 +135,70 @@ class DatasetRepository {
      * @throws {Error} Re-throws any database failure.
      */
     async getDatasetComposition(datasetId) {
+        /* **Observations counted live, images read from what the build recorded**, and
+           the two are deliberately different sources. `dataset_observations` is the
+           record of membership and counting it is the truth about what is in the dataset
+           now -- its cascade removes a row when an observation is deleted, and seeing
+           that happen is worth more than a frozen number. The image count cannot be
+           derived from anything here at all: one observation is a span between keyframes
+           and becomes many frames, so `dataset_splits.images` is what the build wrote,
+           and null there means not known rather than none.
+
+           A `LEFT JOIN` so a split with membership and no recorded count still appears,
+           which is every dataset built before `dataset_splits` existed. */
         const splits = await this.db.sequelize.query(
-            `SELECT inclusion_type AS split, count(*)::int AS observations
-               FROM dataset_observations
-              WHERE dataset_id = :datasetId
-              GROUP BY inclusion_type
-              ORDER BY inclusion_type`,
+            `SELECT o.inclusion_type AS split,
+                    count(*)::int    AS observations,
+                    max(s.images)    AS images
+               FROM dataset_observations o
+               LEFT JOIN dataset_splits s
+                      ON s.dataset_id = o.dataset_id
+                     AND s.split = o.inclusion_type
+              WHERE o.dataset_id = :datasetId
+              GROUP BY o.inclusion_type
+              ORDER BY o.inclusion_type`,
+            { replacements: { datasetId }, type: QueryTypes.SELECT }
+        );
+
+        /* **Per species, per split, in both units.** Isaac asked for this in the words
+           *"kinda like we do above when we build the dataset"* -- the build flow's class
+           breakdown, but for what was actually built rather than what a query matched --
+           and then for a bar per species whose length is its **image** count.
+
+           The two numbers come from different places for the same reason the split totals
+           above do. Observations are counted live from `dataset_observations`, which is
+           the record of membership and shrinks when an observation is deleted. Images
+           cannot be derived from anything here at all -- an observation is a span between
+           keyframes and becomes many frames, some of which the build could not cut -- so
+           they are read from what the build counted as it wrote each label file.
+
+           A `LEFT JOIN`, so a dataset built before `dataset_split_species` existed still
+           lists its species with a null image count, which the screen draws as *not
+           recorded* rather than as zero. `scripts/backfill-split-species-images.js` fills
+           those in from the archives.
+
+           **These image counts do not sum to the split's.** A frame holding two animals
+           counts for both species. The screen has to say so; the arithmetic is a property
+           of the data rather than a defect, and it has already confused this panel once.
+
+           A zero is kept rather than dropped: a rare species landing only in train is
+           exactly what the stratification exists to prevent, so the reader has to be able
+           to see it. The rows come back as they are and the screen fills the gaps. */
+        const speciesSplits = await this.db.sequelize.query(
+            `SELECT o.species_id,
+                    o.comname,
+                    m.inclusion_type AS split,
+                    count(*)::int    AS observations,
+                    max(i.images)    AS images
+               FROM dataset_observations m
+               JOIN observations o ON o.observation_id = m.observation_id
+               LEFT JOIN dataset_split_species i
+                      ON i.dataset_id = m.dataset_id
+                     AND i.split = m.inclusion_type
+                     AND i.species_id = o.species_id
+              WHERE m.dataset_id = :datasetId
+              GROUP BY o.species_id, o.comname, m.inclusion_type
+              ORDER BY o.comname, m.inclusion_type`,
             { replacements: { datasetId }, type: QueryTypes.SELECT }
         );
 
@@ -99,7 +211,7 @@ class DatasetRepository {
             { replacements: { datasetId }, type: QueryTypes.SELECT }
         );
 
-        return { splits, classes };
+        return { splits, classes, speciesSplits };
     }
 
 
@@ -150,6 +262,9 @@ class DatasetRepository {
                     j.state,
                     j.attempts_made,
                     j.max_attempts,
+                    -- What claimBuild orders by, so the screen can show the queue in the
+                    -- order it will be taken rather than the order the table draws.
+                    j.priority,
                     j.created_at                 AS queued_at,
                     a.id                         AS attempt_id,
                     a.progress_done,
@@ -167,6 +282,11 @@ class DatasetRepository {
                      ORDER BY lease_epoch DESC, id DESC
                      LIMIT 1
                ) a ON TRUE
+               -- The dataset must still exist. Nothing links gpu_jobs to datasets by a
+               -- foreign key -- the association is spec->>'dataset_id' -- so deleting a
+               -- dataset leaves its build job behind, and this went on serving it. The
+               -- row that produced was for a dataset nobody could open, expand or delete.
+               JOIN datasets d ON d.id = (j.spec->>'dataset_id')::int
               WHERE j.kind = 'dataset_build'
                 /* cancelled belongs here with failed: the runner cancels by failing the
                    build, the dataset ends up failed either way, and a reader asking why a
@@ -499,9 +619,16 @@ class DatasetRepository {
     // ------------------------------------------------------------
     // Fetches all models from the database.
     // ------------------------------------------------------------
-    async getMl_models() {
+    async getMl_models(options = {}) {
         try {
-            const models = await this.db.ml_models.findAll();
+            /* **`runnable` asks a capability question, not a column question.** A picker
+               wants "models I can run inference with"; today the only thing that
+               disqualifies one is being a pretrained base model, but a retired status or
+               missing bytes would disqualify one too. Asking by capability means the
+               caller does not have to change when the reason does -- `is_base=false`
+               would hard-code today's single reason into every picker in the app. */
+            const where = options.runnable === 'inference' ? { is_base: false } : undefined;
+            const models = await this.db.ml_models.findAll(where ? { where } : undefined);
             console.log(`[INFO] Retrieved ${models.length} models`);
             return models;
         } catch (err) {
@@ -979,6 +1106,40 @@ class DatasetRepository {
      * not found. A database failure is logged and re-thrown, so the
      * returned promise rejects rather than resolving to a fallback value.
      */
+    /**
+     * Every epoch of one training run, in the order they happened.
+     *
+     * **The curves are the whole point, so the order is the contract.** `epochs` could be
+     * fetched one at a time and never as a series -- `/v2/epoch` had a POST and a by-id
+     * GET and nothing else -- so the losses and the mAP were in the database and no screen
+     * could draw them. This is that read.
+     *
+     * Ordered by `epoch_number` rather than by insert order or by time: a worker that
+     * reports an epoch late would otherwise put a kink in the line, and the number is the
+     * thing the x-axis actually is.
+     *
+     * **Nulls come back as nulls.** Most of these columns are nullable and most are null
+     * today, because the worker does not report them all yet; a run with no validation
+     * split will never have them. Coalescing to zero here would turn "not measured" into
+     * "measured as nothing", which on a loss curve reads as a model that collapsed.
+     *
+     * @async
+     * @param {number|string} runId - The training run.
+     * @returns {Promise<Array<Object>>} Its epochs, earliest first.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getEpochsForRun(runId) {
+        try {
+            return await this.db.epochs.findAll({
+                where: { training_run_id: runId },
+                order: [['epoch_number', 'ASC'], ['id', 'ASC']],
+            });
+        } catch (err) {
+            console.error('Error in getEpochsForRun():', err);
+            throw err;
+        }
+    }
+
     async getEpochById(epochID) {
         try {
             const epoch = await this.db.epochs.findByPk(epochID);

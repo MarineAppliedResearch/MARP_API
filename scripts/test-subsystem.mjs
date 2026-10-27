@@ -53,8 +53,20 @@ const SUBSYSTEMS = {
             'gpu-dataset-archive',
             'gpu-training-submit',
             'gpu-training-run-record',
+            /* #268: the name a training job gets when nobody typed one. */
+            'gpu-training-job-name',
             'gpu-trained-model-registration',
+            /* #268: what the training panel reads back -- the per-epoch metric names the
+               ingest was getting wrong, and the pace series nothing served. */
+            'training-run-pace',
+            /* #268: bulk deletion of failed jobs. Builds and drops its own database,
+               because the route deletes every failed job in whatever one it is pointed
+               at -- no seeding scopes that. */
+            'gpu-job-delete',
             'worker-provisioning',
+            /* #268: the GPU reading a polling worker sends, which used to be dropped
+               unless it was given work -- so the activity charts saw only leased minutes. */
+            'gpu-idle-telemetry',
         ],
     },
     mosaic: {
@@ -121,7 +133,18 @@ const SUBSYSTEMS = {
             'epochs',
             'metrics_curves',
             'metrics_summary',
+            // #268: reading YOLO's end-of-run report -- the per-class rows, and the
+            // confusion matrix, which the trainer indexes as the transpose of how a
+            // person reads one. Pure functions, so it costs a second.
+            'final-metrics',
+            // #268: the ingest and the three reads, end to end against a database.
+            'training-run-yolo-output',
             'ml_models',
+            // #268: a pretrained base model must never reach inference, where its
+            // upstream class names would be resolved against the species catalogue.
+            'base-model-guard',
+            // #268: which models a picker may offer for inference.
+            'ml-models-runnable',
             // #104: preferred models, version chains, dataset status and the
             // training-run listing the registry had no route for.
             'ml-registry',

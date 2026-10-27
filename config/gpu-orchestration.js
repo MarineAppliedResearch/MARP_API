@@ -415,13 +415,33 @@ const WORKER_EVENT_KINDS = ['metric', 'log', 'settings'];
 const SETTING_VALUE_TYPES = ['real', 'int', 'bool', 'text'];
 
 /**
- * Where a recorded setting's value came from: the job spec, a default, or an
- * engine constant no job can set. Matches the table's check constraint.
+ * Where a recorded setting's value came from: the job spec, a default, an engine
+ * constant no job can set, or the engine resolving it at startup. Matches the
+ * table's check constraint.
+ *
+ * **`resolved` is the one that arrives late and wins.** Ultralytics turns
+ * `optimizer: auto` into an optimizer, a learning rate and a momentum inside
+ * `build_optimizer` and never writes them back, so the only honest reading is off the
+ * live optimizer once it exists -- which is after the settings report that goes out
+ * before the model is loaded. A second report carries them, and `recordAttemptSettings`
+ * merges entries marked this way over what is already stored.
+ *
+ * **`worker` is the one nobody chose.** The card a run got, the slot it sat in and
+ * the revision of the training script are facts about the machine, not settings with
+ * a requested value to disagree with -- a job may ask for a device, but what it gets
+ * is whatever the worker resolves that to against the hardware it actually has. It is
+ * first-wins like the rest: the card does not change mid-run, so nothing later revises
+ * it, and only `resolved` replaces.
+ *
+ * **This list is a gate, not a label.** A source not named here fails validation and
+ * the request is refused -- and a settings report travels in an event batch beside
+ * metrics and logs, so an unrecognised source costs the epochs that shared the POST
+ * rather than just the setting. Widening it is a migration as well as a line here.
  *
  * @constant
  * @type {Array<string>}
  */
-const SETTING_SOURCES = ['job', 'default', 'engine'];
+const SETTING_SOURCES = ['job', 'default', 'engine', 'resolved', 'worker'];
 
 /**
  * What a worker may report as the outcome of an attempt.

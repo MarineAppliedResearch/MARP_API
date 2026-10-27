@@ -7,7 +7,7 @@
 <link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
 <link rel="stylesheet" href="../../shared/assets/css/tokens.css">
 <link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
-<link rel="stylesheet" href="./mock.css">
+<link rel="stylesheet" href="./screens.css">
 <script src="../../shared/assets/js/account-menu.js" defer></script>
 </head>
 <body data-screen="training">
@@ -42,7 +42,7 @@
             <span class="stat-sub"></span>
             <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
           </a>
-          <a class="stat stat-link" data-state="done" href="./history.html?type=training&amp;window=week"
+          <a class="stat stat-link" data-state="done" href="./jobs.html?type=training&amp;window=week"
              title="Open training runs completed this week in History">
             <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
             <span class="stat-lab">Completed</span>
@@ -82,9 +82,10 @@
             <header class="panel-hd inference-flow-hd">
               <div><h2>Training activity</h2><p>All training work &middot; load, concurrency, queue pressure and completed runs</p></div>
               <div class="seg" aria-label="Training activity range">
-                <button type="button" class="on" data-training-range="24h" aria-pressed="true">24h</button>
-                <button type="button" data-training-range="7d">7d</button>
-                <button type="button" data-training-range="30d">30d</button>
+                <button type="button" class="on" data-training-range="1h" aria-pressed="true">1h</button>
+                <button type="button" data-training-range="24h" aria-pressed="false">24h</button>
+                <button type="button" data-training-range="7d" aria-pressed="false">7d</button>
+                <button type="button" data-training-range="30d" aria-pressed="false">30d</button>
               </div>
             </header>
             <div class="panel-bd inference-flow-bd">
@@ -105,14 +106,14 @@
                   <button type="button" class="compute" data-training-highlight="compute">Training GPU compute</button>
                   <button type="button" class="running" data-training-highlight="running">Running jobs</button>
                   <button type="button" class="queued" data-training-highlight="queued">Queued jobs</button>
-                  <button type="button" class="completed" data-training-highlight="completed">Completed runs</button>
+                  <button type="button" class="completed is-filled" data-training-highlight="completed">Completed runs</button>
                 </div>
                 <div class="inference-current" aria-label="Current system-wide training metrics">
-                  <span><b data-training-current="compute">61%</b> training compute</span>
-                  <span><b data-training-current="running">2</b> running</span>
-                  <span><b data-training-current="queued">3</b> queued</span>
-                  <span class="clearing"><b data-training-current="completed">2</b> completed in range</span>
-                  <span class="live"><i class="dot"></i>Design preview</span>
+                  <span data-rendered><b data-training-current="compute"></b> training compute</span>
+                  <span data-rendered><b data-training-current="running"></b> running</span>
+                  <span data-rendered><b data-training-current="queued"></b> queued</span>
+                  <span class="clearing" data-rendered><b data-training-current="completed"></b> completed in range</span>
+                  <span class="live"><i class="dot"></i>Live</span>
                 </div>
               </div>
             </div>
@@ -213,6 +214,41 @@
                 </div>
               </details>
 
+              <!-- Everything else the training engine accepts. It reports an unknown
+                   parameter as ignored rather than dropping it silently, so these fields
+                   are its allow-list rather than a guess at one; the fold above holds the
+                   rest. Blank sends nothing, which is not the same as sending a default:
+                   the engine's own default is the thing nobody here has to restate. -->
+              <details class="fold">
+                <summary>Advanced
+                  <span class="now">Engine defaults unless changed</span></summary>
+                <div class="fbody">
+                  <div class="fieldrow">
+                    <div class="field">
+                      <label for="lrf" title="Final learning rate as a fraction of the initial one, reached at the last epoch">Final LR factor</label>
+                      <input class="inp wide" type="number" min="0" max="1" step="0.001" id="lrf" placeholder="engine default">
+                    </div>
+                    <div class="field">
+                      <label for="momentum" title="SGD momentum, or the first-moment term when the optimiser is Adam or AdamW">Momentum</label>
+                      <input class="inp wide" type="number" min="0" max="1" step="0.001" id="momentum" placeholder="engine default">
+                    </div>
+                  </div>
+                  <div class="fieldrow">
+                    <div class="field">
+                      <label for="freeze" title="How many layers to hold fixed from the input end of the network">Frozen layers</label>
+                      <input class="inp wide" type="number" min="0" step="1" id="freeze" placeholder="engine default">
+                      <span class="hint">For fine-tuning a close base model on few images.</span>
+                    </div>
+                    <div class="field">
+                      <label for="workers" title="Dataloader processes per GPU; lower it when the machine runs short of memory">Loader workers</label>
+                      <input class="inp wide" type="number" min="0" step="1" id="workers" placeholder="engine default">
+                    </div>
+                  </div>
+                  <label class="check" title="Anneal the learning rate along a cosine curve rather than linearly"><input type="checkbox" id="cos-lr"><span>Cosine learning-rate schedule</span></label>
+                  <label class="check" title="Letterbox each batch to its own aspect ratio instead of to a square; faster, and it changes what the model sees"><input type="checkbox" id="rect"><span>Rectangular batches</span></label>
+                </div>
+              </details>
+
             </div>
           </section>
 
@@ -238,11 +274,13 @@
               </div>
               <span class="hint dataset-owned-note">Dataset variants and preprocessing are fixed when it is saved; this run does not change them.</span>
 
-              <div class="quad">
-                <span><b>12,846</b>observations</span>
-                <span><b>24</b>classes</span>
-                <span><b>142</b>videos</span>
-                <span><b>36</b>dives</span>
+              <!-- Also the selected dataset's, and also four literals before this. Two of
+                   the four are columns on a Dataset; videos and dives are not recorded. -->
+              <div class="quad" data-rendered data-fills="dataset-quad">
+                <span><b></b>observations</span>
+                <span><b></b>classes</span>
+                <span><b></b>videos</span>
+                <span><b></b>dives</span>
               </div>
 
               <div class="field" style="margin-top:15px">
@@ -281,37 +319,19 @@
 
               <div class="field">
                 <label>On success</label>
-                <div class="ro" data-viewof="task" data-view="det">
-                  <span class="a">Registers MARP-Multiclass-Det-XL &nbsp;1.0.3</span>
-                  <span class="b">A new detection version with box and class metrics</span>
-                  <span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>
-                </div>
-                <div class="ro" data-viewof="task" data-view="cls" hidden>
-                  <span class="a">Registers MARP-Habitat-Cls &nbsp;1.2.1</span>
-                  <span class="b">A new classification version with top-1 and per-class metrics</span>
-                  <span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>
-                </div>
-                <div class="ro" data-viewof="task" data-view="seg" hidden>
-                  <span class="a">Registers MARP-Benthic-Seg &nbsp;0.9.1</span>
-                  <span class="b">A new segmentation version with box and mask metrics</span>
-                  <span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>
-                </div>
-              </div>
-
-              <div class="field">
-                <label for="newname">Version name <span class="faint">(optional)</span></label>
-                <input class="inp wide" type="text" id="newname" value="1.0.3">
-                <span class="hint">Blank takes the next patch version.</span>
+                <!-- Filled by renderTrainingResult() from the base model the form has
+                     selected. It said "Registers MARP-Multiclass-Det-XL 1.0.3" whatever
+                     was chosen, and MARP has no version column to produce that from. -->
+                <div class="ro" data-viewof="task" data-view="det" data-rendered data-fills="result-det"></div>
+                <div class="ro" data-viewof="task" data-view="cls" data-rendered data-fills="result-cls" hidden></div>
+                <div class="ro" data-viewof="task" data-view="seg" data-rendered data-fills="result-seg" hidden></div>
               </div>
 
               <div class="field">
                 <label>Traceability</label>
-                <dl class="kv">
-                  <dt>Base</dt><dd>MARP-Multiclass-Det-XL 1.0.2</dd>
-                  <dt>Dataset</dt><dd>ALL_Projects_Inverts_v5</dd>
-                  <dt>Observations</dt><dd>12,846, by membership</dd>
-                  <dt>Run by</dt><dd>itravers</dd>
-                </dl>
+                <!-- Also filled: every one of these was a literal, and all four
+                     contradicted the selections above them. -->
+                <dl class="kv" data-rendered data-fills="trace"></dl>
               </div>
 
 
@@ -323,31 +343,20 @@
         <section class="panel">
           <header class="panel-hd">
             <h2><span class="stepnum"><b>4.</b>Start</span>
-              <span class="sub">Worker and name</span></h2>
+              <span class="sub">Name and start</span></h2>
           </header>
           <div class="panel-bd">
             <div class="runrow">
               <div class="field">
-                <label for="trworkers">Worker selection</label>
-                <select data-rendered data-fills="trworkers" class="sel wide" id="trworkers"><option value="">Loading…</option></select>
-                <span class="hint">One worker, start to finish. No resume.</span>
-              </div>
-              <div class="field">
                 <label for="trname">Run name</label>
-                <input class="inp wide" type="text" id="trname" value="2026-CAMPA-Group2">
-              </div>
-              <div class="field">
-                <label>Estimated</label>
-                <div class="facts2">
-                  <span class="k">Duration</span><span class="v">~4h 10m</span>
-                  <span class="k">VRAM</span><span class="v">~18 GB</span>
-                </div>
+                <input class="inp wide" type="text" id="trname" placeholder="Optional. Blank is left to MARP.">
+                <span class="hint">One worker, start to finish. No resume. The coordinator chooses which.</span>
               </div>
               <div class="field">
                 <label>&nbsp;</label>
                 <button class="btn accent big block" id="trainBtn">
                   <svg class="ico"><use href="#i-play"/></svg>Start training</button>
-                <span class="hint">Mockup &mdash; submits nothing.</span>
+                <span class="hint" data-rendered data-fills="train-status">Queues one training job.</span>
               </div>
             </div>
           </div>
@@ -359,18 +368,21 @@
             <a class="more" href="./jobs.html?type=training">All jobs <svg class="ico sm"><use href="#i-arrow"/></svg></a>
             <div class="jobs-sort-mobile" aria-label="Sort recent training jobs">
               <span>Sort</span>
-              <button type="button" data-sort-column="0">Job</button><button type="button" data-sort-column="1">Dataset</button>
-              <button type="button" data-sort-column="2">Produces</button><button type="button" data-sort-column="3">Status</button>
-              <button type="button" data-sort-column="4">Epochs</button><button type="button" data-sort-column="5">Best mAP</button>
-              <button type="button" data-sort-column="6">Started</button><button type="button" data-sort-column="7">Took</button>
+              <button type="button" data-sort-column="0">Job</button><button type="button" data-sort-column="1">Task</button><button type="button" data-sort-column="2">Dataset</button>
+              <button type="button" data-sort-column="3">Produces</button><button type="button" data-sort-column="4">Status</button>
+              <button type="button" data-sort-column="5">Epochs</button><button type="button" data-sort-column="6">Best mAP</button>
+              <button type="button" data-sort-column="7">Started</button><button type="button" data-sort-column="8">Took</button>
+              <button type="button" data-sort-column="9">Updated</button>
             </div>
           </header>
           <div class="panel-bd flush">
             <div class="tblwrap">
-              <table class="tbl fixed stack training-table">
+              <table class="tbl fixed stack expandable training-table">
                 <thead>
                   <tr>
+                    <th class="ex"><span class="vh">Expand</span></th>
                     <th class="hjob sortable" title="Sort by training job name">Job</th>
+                    <th class="jtask sortable" title="Detection, classification or segmentation — the task the base model decides">Task</th>
                     <th class="hscope sortable" title="Sort by the immutable saved dataset">Dataset</th>
                     <th class="hmodel sortable" title="Sort by the model version this run will register">Produces</th>
                     <th class="hstatus sortable" title="Sort by current training state">Status</th>
@@ -378,6 +390,7 @@
                     <th class="hupd sortable" title="Sort by the best validation mAP recorded so far">Best mAP</th>
                     <th class="hupd sortable" aria-sort="descending" title="Sort by start time">Started</th>
                     <th class="htype sortable" title="Sort by elapsed or completed duration">Took</th>
+                    <th class="hupd sortable" title="Sort by when this job last reported">Updated</th>
                   </tr>
                 </thead>
                 <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>
@@ -427,9 +440,15 @@
                 <input class="inp" type="search" placeholder="Search runs&hellip;"
                        aria-label="Search runs" title="Filter by run, dataset or model name">
               </span>
+              <!-- Every state a run can be in, not the three this used to offer: run 203
+                   is cancelled, and a filter that cannot select a row somebody is looking
+                   at is its own defect. Values are the design states renderTrainingRuns
+                   filters on. -->
               <select class="sel" aria-label="Status" title="Show only runs in one state">
-                <option>All statuses</option><option>Running</option>
-                <option>Completed</option><option>Failed</option>
+                <option value="all">All statuses</option><option value="running">Running</option>
+                <option value="queued">Queued</option><option value="done">Done</option>
+                <option value="issues">Issues</option><option value="failed">Failed</option>
+                <option value="cancelled">Cancelled</option><option value="expired">Expired</option>
               </select>
               <button class="btn" title="Open every run's curves at once">
                 <svg class="ico"><use href="#i-split"/></svg>Expand all</button>
@@ -457,11 +476,11 @@
             </div>
           </div>
           <footer class="panel-ft">
-            <span>Showing <b class="strong">1&ndash;6</b> of 28 runs</span>
-            <div class="pager">
-              <button aria-label="Previous page" disabled title="Previous page"><svg class="ico sm"><use href="#i-left"/></svg></button>
-              <button aria-current="page">1</button><button>2</button><button>3</button>
-              <button aria-label="Next page" title="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+            <span>Counting runs&hellip;</span>
+            <div class="pager" data-rendered>
+              <!-- Built by renderTrainingRunsHeader(). This held "Showing 1-6 of 28 runs"
+                   over an empty table and a fixed run of three page buttons, which was
+                   wrong about a list of six and about every other list. -->
             </div>
           </footer>
         </section>
@@ -473,6 +492,6 @@
 </div>
 
 <script src="./api.js"></script>
-<script src="./mock.js"></script>
+<script src="./screens.js"></script>
 </body>
 </html>

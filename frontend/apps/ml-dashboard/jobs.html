@@ -7,7 +7,7 @@
 <link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
 <link rel="stylesheet" href="../../shared/assets/css/tokens.css">
 <link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
-<link rel="stylesheet" href="./mock.css">
+<link rel="stylesheet" href="./screens.css">
 <script src="../../shared/assets/js/account-menu.js" defer></script>
 </head>
 <body data-screen="jobs">
@@ -76,9 +76,10 @@
           <header class="panel-hd jobs-history-hd">
             <div><h2>Job activity</h2><p>Starts, completions and queue pressure</p></div>
             <div class="seg" aria-label="Activity range">
-              <button type="button" data-jobs-range="24h">24h</button>
-              <button type="button" class="on" data-jobs-range="5h">5h</button>
               <button type="button" data-jobs-range="1h">1h</button>
+              <button type="button" class="on" data-jobs-range="24h">24h</button>
+              <button type="button" data-jobs-range="7d">7d</button>
+              <button type="button" data-jobs-range="30d">30d</button>
             </div>
           </header>
           <div class="panel-bd jobs-history-bd">
@@ -89,7 +90,7 @@
                 <path class="jobs-line started" data-jobs-line="started"/><path class="jobs-line completed" data-jobs-line="completed"/><path class="jobs-line queued" data-jobs-line="queued"/>
               </svg>
             </div>
-            <div class="jobs-chart-key"><span class="started">Started</span><span class="completed">Completed</span><span class="queued">Queued</span><span class="live"><i class="dot"></i>Design preview</span></div>
+            <div class="jobs-chart-key"><span class="started">Started</span><span class="completed">Completed</span><span class="queued">Queued</span></div>
           </div>
         </article>
       </section>
@@ -104,21 +105,27 @@
             </span>
             <select class="sel" aria-label="Job type"><option>All job types</option><option>Inference</option><option>Tracking</option><option>Training</option><option>Diagnostic</option></select>
             <select class="sel" aria-label="Status"><option>All statuses</option><option>Running</option><option>Queued</option><option>Done</option><option>Issues</option><option>Failed</option><option>Cancelled</option><option>Expired</option></select>
-            <select data-choices class="sel" aria-label="Window"><option>Last 7 days</option><option>Last 24 hours</option><option>Last 30 days</option></select>
+            <select data-choices class="sel" aria-label="Window" title="Jobs is the job history; this is how far back it reaches"><option>Last 7 days</option><option>Last 24 hours</option><option>Last 30 days</option><option>Last 90 days</option><option>This year</option></select>
+            <button class="btn" type="button" data-jobs-export title="Download every job in this window as CSV"><svg class="ico"><use href="#i-download"/></svg>Export</button>
             <button class="btn" type="button" id="expandAll"><svg class="ico"><use href="#i-right"/></svg>Expand all</button>
+            <!-- Clearing the whole pile is only offered once the list IS the pile. Drawn
+                 by wireJobsDelete() when Status is Failed and absent otherwise, because a
+                 button that deletes 1,189 rows should not sit beside a filter all day. -->
+            <button class="btn danger" type="button" id="clearFailed" hidden><svg class="ico"><use href="#i-trash"/></svg>Delete all failed</button>
           </div>
           <div class="jobs-sort-mobile" aria-label="Sort jobs">
             <span>Sort</span>
             <button type="button" data-sort-column="0">Job</button><button type="button" data-sort-column="1">Type</button>
             <button type="button" data-sort-column="2">Scope</button><button type="button" data-sort-column="3">Model / output</button>
             <button type="button" data-sort-column="4">Status</button><button type="button" data-sort-column="5">Progress</button>
-            <button type="button" data-sort-column="6">Submitted</button>
+            <button type="button" data-sort-column="6">Worker</button><button type="button" data-sort-column="7">Submitted</button>
           </div>
           <div class="bulk" id="bulk" hidden>
             <span><span class="n" id="bulkN"></span> selected</span>
             <button class="btn sm">Reprioritize</button>
             <button class="btn sm">Retry failed</button>
             <button class="btn sm">Cancel</button>
+            <button class="btn sm danger" type="button" id="bulkDelete"><svg class="ico sm"><use href="#i-trash"/></svg>Delete</button>
             <button class="btn sm ghost sp" id="bulkClear">Clear selection</button>
           </div>
         </header>
@@ -139,6 +146,9 @@
             </table>
           </div>
         </div>
+        <!-- Whatever the last delete said: how many went, and the reason beside each one
+             that stayed. Empty until something has been deleted. -->
+        <p class="deletesaid" id="jobsDeleteSaid" hidden></p>
         <footer class="panel-ft">
           <span>Counting jobs&hellip;</span>
           <div class="pager" data-rendered>
@@ -159,7 +169,7 @@
 
 
 <script src="./api.js"></script>
-<script src="./mock.js"></script>
+<script src="./screens.js"></script>
 
 </body>
 </html>

@@ -504,9 +504,10 @@
    * dashboard reads `GET /api/v2/ml_models` and `GET /api/v2/dataset`, outside
    * the `/gpu/` group entirely. Both are plain arrays and neither pages.
    *
-   * `training_run` is *not* here, and that is a fact rather than an omission:
-   * `/v2/training_run` has only a `POST`. A run can be created and never
-   * listed, so no screen can show training history from the API.
+   * `training_run` **is** listable, since #260 added the collection read. The corpus
+   * does not build runs because nothing drawn from it needs one; `listTrainingRuns`
+   * asks MARP and has no fixture, which is the honest shape for a route whose answer
+   * this layer cannot invent.
    *
    * @returns {{models: Object[], datasets: Object[]}}
    */
@@ -721,10 +722,18 @@
 
   /** An error carrying a status, so a screen can tell 500 from 404. */
   class ApiError extends Error {
-    constructor(status, message) {
+    /**
+     * @param {number} status - HTTP status, or 0 when the request never arrived.
+     * @param {string} message - The API's own sentence where it sent one.
+     * @param {Array<Object>} [details] - What the error contract put in `error.details`.
+     * A 409 that asks the caller to confirm something carries the number here as well as
+     * in the sentence, so a screen can show it without parsing English.
+     */
+    constructor(status, message, details) {
       super(message);
       this.name = 'ApiError';
       this.status = status;
+      this.details = Array.isArray(details) ? details : [];
     }
   }
 
@@ -757,7 +766,99 @@
    * @returns {Promise<*>} The parsed body, or null for a 204.
    * @throws {ApiError} With the status, and the API's own message where it sent one.
    */
+  /**
+   * Whether the sign-in redirect has already been started.
+   *
+   * **One redirect, however many calls fail.** A screen makes a dozen requests at once and
+   * an expired session fails all of them -- the Training screen produced twenty-nine 401s
+   * in one load. Without this each one would navigate, which is a race at best and a
+   * stampede at worst.
+   */
+  let leaving = false;
+
+  /**
+   * Leave for the sign-in page, once.
+   *
+   * **A 401 is not a kind of data, it is the end of the session.** Signed out, the
+   * dashboard used to sit there looking populated: the renderers bail, and the mockup
+   * numbers still in the markup -- "31 training jobs" against a database holding one --
+   * stay on screen with nothing saying the page is unauthenticated. The fix is to stop
+   * rather than to draw.
+   *
+   * `/?login=1` rather than `/` because that is what the account menu's own Sign in link
+   * uses, so this arrives with the dialog open rather than on a page to hunt around.
+   *
+   * `replace` rather than `assign`: the page being left is not one to come back to with
+   * the Back button.
+   *
+   * **Never in fixture mode.** `?mock=all` is a deliberate choice to draw without a
+   * database, and a handful of routes have no corpus answer and ask MARP anyway -- so a
+   * design review reading the corpus would otherwise be thrown off it by one of them.
+   *
+   * @returns {void}
+   */
+  function leaveForSignIn() {
+    if (leaving || SWITCH.fixture) return;
+    leaving = true;
+    window.location.replace('/?login=1');
+  }
+
+  /**
+   * When MARP last answered, and what went wrong if it did not.
+   *
+   * One record for the whole page rather than one per screen: a dashboard tab is reading
+   * one API, and "when was this last true" is a question about that connection, not about
+   * whichever table happens to be on screen.
+   */
+  const heard = { at: null, failed: null, inFlight: 0 };
+
+  /**
+   * What the chrome paints: `{at, failed, inFlight}`.
+   *
+   * `at` is null until the first answer, `failed` carries the last error while it is
+   * still the most recent thing that happened, and `inFlight` is how many reads are
+   * outstanding — enough for the top bar to say *reading* without every screen reporting
+   * its own state.
+   *
+   * @returns {{at: ?number, failed: ?Object, inFlight: number}}
+   */
+  function freshness() {
+    return { at: heard.at, failed: heard.failed, inFlight: heard.inFlight };
+  }
+
+  /**
+   * Every read, with the clock around it.
+   *
+   * **Here because here cannot be forgotten.** Freshness used to be a per-screen job, so
+   * a screen nobody had got to yet simply did not have it -- which is what Isaac found on
+   * Models. Every call on every screen passes through this, so the record is kept once and
+   * the chrome only has to paint it.
+   *
+   * @param {string} path - Route under `/api/v2`.
+   * @param {Object} [options] - `{method, query, body}`.
+   * @returns {Promise<*>}
+   */
   async function request(path, options) {
+    heard.inFlight += 1;
+
+    try {
+      const answer = await send(path, options);
+
+      heard.at = Date.now();
+      heard.failed = null;
+
+      return answer;
+    } catch (error) {
+      /* Kept rather than counted: the top bar says what went wrong, and a failure that
+         only incremented a number would be indistinguishable from a slow page. */
+      heard.failed = error;
+      throw error;
+    } finally {
+      heard.inFlight -= 1;
+    }
+  }
+
+  async function send(path, options) {
     const { method = 'GET', query, body } = options || {};
     const url = new URL(`/api/v2${path}`, location.origin);
 
@@ -796,18 +897,26 @@
       throw new ApiError(0, `Could not reach MARP: ${error.message}`);
     }
 
+    if (response.status === 401) {
+      /* Started before the throw, so every caller still gets its rejection and no screen
+         has to learn about this; the navigation is already under way. */
+      leaveForSignIn();
+    }
+
     if (!response.ok) {
       /* `error-contract.middleware.js` answers {error:{code,message,status}}.
          Read defensively: a proxy in front of the API can answer with HTML, and
          a client that throws while working out what went wrong says nothing. */
       let message = `${response.status} ${response.statusText || ''}`.trim();
+      let details;
 
       try {
         const problem = await response.json();
         if (problem && problem.error && problem.error.message) message = problem.error.message;
+        if (problem && problem.error) details = problem.error.details;
       } catch { /* not JSON, or empty */ }
 
-      throw new ApiError(response.status, message);
+      throw new ApiError(response.status, message, details);
     }
 
     return response.status === 204 ? null : response.json();
@@ -948,6 +1057,75 @@
    * @param {number} id - Job id.
    * @returns {Promise<Object>}
    */
+  /**
+   * `DELETE /api/v2/gpu/jobs/:id` -- one job and everything recorded against it.
+   *
+   * Its attempts cascade and the per-attempt event log cascades with them. Two things
+   * do not: an artifact referencing the job refuses the delete outright, and
+   * observations are unlinked rather than removed -- `observations.gpu_job_id` is
+   * `ON DELETE SET NULL`, so the detections stay and lose what produced them. That is
+   * why the route answers 409 with its own count instead of doing it quietly, and why
+   * `acknowledgeObservations` has to be asked for by the caller that saw the number.
+   *
+   * **No corpus fallback**, the same rule `deleteDataset` keeps: a delete that succeeds
+   * against a fixture teaches the control works when nothing was removed.
+   *
+   * @param {number|string} id - Job id.
+   * @param {boolean} [acknowledgeObservations] - Delete it although observations lose
+   * their provenance. Only ever true because somebody was shown the count and agreed.
+   * @returns {Promise<{deleted: number, observationsUnlinked: number, attemptsRemoved: number}>}
+   */
+  function deleteJob(id, acknowledgeObservations) {
+    const query = acknowledgeObservations ? { acknowledgeObservations: 'true' } : {};
+    return request(`/gpu/jobs/${encodeURIComponent(id)}`, { method: 'DELETE', query });
+  }
+
+  /**
+   * `DELETE /api/v2/gpu/jobs?ids=...` -- a named selection, at most 200.
+   *
+   * What is safe to delete goes; the rest come back in `blocked` with the reason beside
+   * each id. **There is no acknowledgement on this path and that is deliberate** -- a
+   * job holding observations can only be deleted on its own, where its own count is in
+   * front of whoever presses.
+   *
+   * @param {Array<number|string>} ids - The jobs to delete.
+   * @returns {Promise<{deleted: number, blocked: Array<{id: number, reason: string}>}>}
+   */
+  function deleteJobs(ids) {
+    return request('/gpu/jobs', { method: 'DELETE', query: { ids: ids.join(',') } });
+  }
+
+  /**
+   * `GET /api/v2/gpu/jobs/deletable` -- what clearing a state would take, deleting nothing.
+   *
+   * Answers jobs, attempts, events, the blocked count, the observations that would be
+   * left unlinked, and any dataset builds among them by id. It exists so a confirmation
+   * can name real numbers instead of numbers somebody measured once.
+   *
+   * **A GET rather than a flag on the delete.** An unknown query parameter is ignored,
+   * not refused, so a `dryRun=true` on the DELETE would be an ordinary delete against any
+   * MARP that predates the flag -- a preview that destroys 1,189 jobs. A server without
+   * this route answers 404 instead.
+   *
+   * @param {string} state - Only `failed` is accepted.
+   * @returns {Promise<Object>}
+   */
+  function deletableJobs(state) {
+    return request('/gpu/jobs/deletable', { query: { state } });
+  }
+
+  /**
+   * `DELETE /api/v2/gpu/jobs?state=failed` -- clear a state.
+   *
+   * `deletableJobs` is how to find out what this would take before calling it.
+   *
+   * @param {string} state - Only `failed` is accepted.
+   * @returns {Promise<{state: string, deleted: number, blocked: number[]}>}
+   */
+  function deleteJobsInState(state) {
+    return request('/gpu/jobs', { method: 'DELETE', query: { state } });
+  }
+
   function cancelJob(id) {
     return serve('jobs', () => request(`/gpu/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' }), () => {
       const job = CORPUS.jobs.find((j) => j.id === Number(id));
@@ -1053,6 +1231,136 @@
   }
 
   /**
+   * `GET /api/v2/training_run` -- every run, newest first, or one model's.
+   *
+   * **This is where a model's dataset lives.** `ml_models` carries no dataset link and
+   * never did; `training_runs.dataset_id` records what a run learned from, which is the
+   * provenance question somebody looking at the registry is actually asking. The
+   * registry reads it without a `model_id`, once, and takes the newest run per model
+   * from the order the route already answers in -- the alternative being one request per
+   * row.
+   *
+   * It is unpaged, as `findAll` with no limit always is. That is fine while runs are few
+   * and would not be if training became routine: the narrowing parameter exists, so the
+   * answer then is one call per visible row rather than a change here.
+   *
+   * **No corpus fallback**, deliberately: the generated registry has no training runs,
+   * and inventing one would draw a dataset link for a model that never trained.
+   *
+   * @param {number} [modelId] - Only runs that produced this model.
+   * @returns {Promise<Object[]>}
+   */
+  function listTrainingRuns(modelId) {
+    return request('/training_run', { query: modelId ? { model_id: modelId } : {} });
+  }
+
+  /**
+   * `GET /api/v2/training_run/:id/epochs` -- the curves, in the order they happened.
+   *
+   * **The read that did not exist.** `/v2/epoch` had a POST and a GET by id, so the
+   * losses and the mAP were written and nothing could ask for them as a series.
+   *
+   * Nulls come back as nulls: most of these columns are null today because the worker
+   * does not report them all yet, and a run with no validation split will never have
+   * them. A caller draws a gap rather than a zero.
+   *
+   * An empty array is the honest answer for a run that has not reported an epoch yet,
+   * which is the normal state of a run somebody is watching.
+   *
+   * @param {number|string} runId - The training run.
+   * @returns {Promise<Object[]>}
+   */
+  function trainingRunEpochs(runId) {
+    return request(`/training_run/${encodeURIComponent(runId)}/epochs`);
+  }
+
+  /**
+   * `GET /api/v2/training_run/:id/pace` -- how fast the epochs are going.
+   *
+   * `gpu_attempt_progress`, sampled about once a minute while the attempt runs: one
+   * `{at, done, total}` per sample, oldest first. **Separate from the epochs** because it
+   * is a different grain and covers the stretch before epoch 1, where `epochs` is empty.
+   *
+   * It is also the only honest source for a remaining estimate. The one this screen used
+   * to show -- "~4h 10m" for a run that took 27 seconds -- was two literals in the markup;
+   * this is the run's own reports, differenced.
+   *
+   * @param {number|string} runId - The training run.
+   * @returns {Promise<Object[]>}
+   */
+  function trainingRunPace(runId) {
+    return request(`/training_run/${encodeURIComponent(runId)}/pace`);
+  }
+
+  /**
+   * `GET /api/v2/training_run/:id/metrics` -- what the run measured when it finished.
+   *
+   * `{metrics, confusion_matrices}`. `metrics` is one `metrics_summary` row per split,
+   * per metric family and per class, carrying `metric_family` (`box`, `mask` or
+   * `classify`), `class_name`, `species_id`, `species_name`, `precision`, `recall`,
+   * `map50`, `map5095`, `f1_score`, `fitness`, `accuracy_top1`, `accuracy_top5`,
+   * `support` and `image_count`.
+   *
+   * **Three row kinds, and the nulls distinguish them.** `class_name` null is the
+   * all-classes aggregate; `class_name` set with `species_id` null is a class MARP could
+   * not resolve to a species; both set is a resolved class. A class the validator never
+   * evaluated -- one with no instances in the validation split -- has **no row at all**,
+   * which means *never measured* rather than *measured as zero*.
+   *
+   * **`confusion_matrices` arrive rows=true, columns=predicted**, which is how a person
+   * reads one and the transpose of how Ultralytics indexes it; the API turns it once on
+   * the way out. `labels[background_index]` is the string `background`, and
+   * `background_index` equals the number of classes. A null cell is a gap, not a zero.
+   *
+   * @param {number|string} runId - The training run.
+   * @returns {Promise<Object>}
+   */
+  function trainingRunMetrics(runId) {
+    return request(`/training_run/${encodeURIComponent(runId)}/metrics`);
+  }
+
+  /**
+   * `GET /api/v2/training_run/:id/curves` -- precision, recall and F1 at every threshold.
+   *
+   * One entry per split, family and class, each carrying parallel `confidence`,
+   * `precision`, `recall` and `f1_score` arrays in axis order. That is what draws a PR
+   * curve and the three confidence curves from numbers rather than from a
+   * white-background PNG.
+   *
+   * **Its own read because it is big** -- about a thousand points per class, where
+   * `/metrics` is a handful of rows. A panel showing headline numbers must not fetch it
+   * to ignore it, and nothing should fetch it twice for one run.
+   *
+   * @param {number|string} runId - The training run.
+   * @returns {Promise<Object[]>}
+   */
+  function trainingRunCurves(runId) {
+    return request(`/training_run/${encodeURIComponent(runId)}/curves`);
+  }
+
+  /**
+   * `GET /api/v2/training_run/:id/artifacts` -- every file the run produced.
+   *
+   * `{name, url, sha256, bytes, content_type, created_at}` per file, where `name` is the
+   * filename stem the worker filed it under -- `PR_curve`, `confusion_matrix`,
+   * `val_batch0_pred`, `results`.
+   *
+   * **An open set on purpose.** There is no allow-list: a plot a later Ultralytics adds
+   * appears under its own name instead of being dropped for being unfamiliar, which is
+   * the one thing a fixed list of columns cannot do. So a caller captions what it
+   * recognises and still shows what it does not.
+   *
+   * `content_type` is carried because the run directory holds a CSV among the images,
+   * and a gallery that assumes every file is an image draws a broken icon for it.
+   *
+   * @param {number|string} runId - The training run.
+   * @returns {Promise<Object[]>}
+   */
+  function trainingRunArtifacts(runId) {
+    return request(`/training_run/${encodeURIComponent(runId)}/artifacts`);
+  }
+
+  /**
    * `GET /api/v2/dataset/builds` -- how far every build still running has got.
    *
    * **The progress is on the attempt, which is why this is not on the dataset.** A
@@ -1092,6 +1400,110 @@
     return serve('datasets',
       () => request(`/dataset/${encodeURIComponent(id)}/composition`),
       () => ({ splits: [], classes: [] }));
+  }
+
+  /**
+   * `GET /api/v2/dataset/:id/preview` -- a sample of the frames the build cut.
+   *
+   * The actual training images, read out of the archive, each with the boxes its YOLO
+   * label file records. What sat here before was four hardcoded Jellyfin item ids, the
+   * same four pictures on every dataset.
+   *
+   * **The corpus answers with nothing, on purpose.** A preview is the one thing on this
+   * screen that cannot be stood in for: a plausible picture of an animal is exactly the
+   * failure that was just taken out, and a design review looking at invented frames would
+   * be reviewing the fixture again. The panel says it has no preview instead.
+   *
+   * @param {number|string} id - The dataset.
+   * @param {number} [limit] - How many frames.
+   * @returns {Promise<{sha256: string, total: number, frames: Object[]}>}
+   */
+  /**
+   * `DELETE /api/v2/dataset/:id` -- remove a dataset, its membership and its archive.
+   *
+   * Refuses with 409 when a model was trained from it, which is the schema's own rule:
+   * `training_runs.dataset_id` is `NO ACTION`, so a dataset stays as long as it is the
+   * record of what a model saw. Also 409 while it is still building, which asks for the
+   * build to be cancelled first. Both carry the sentence to show.
+   *
+   * **No corpus fallback.** A delete that silently succeeds against a fixture would teach
+   * the control works when nothing was removed; in corpus mode the request is made and
+   * its answer is whatever the API says.
+   *
+   * @param {number|string} id - The dataset.
+   * @returns {Promise<{deleted: boolean, archive_removed: boolean}>}
+   */
+  /**
+   * `GET /api/v2/dataset/:id/build-setup` -- the queries a dataset was built from.
+   *
+   * What *Duplicate setup* fills the build flow with. Reads only; nothing is created
+   * until the ordinary Queue button is pressed.
+   *
+   * 404 means there is nothing worth copying -- a legacy import with no job, or a build
+   * whose queries were not recorded -- and the control says so rather than opening an
+   * empty form that looks like it worked.
+   *
+   * @param {number|string} id - The dataset to copy.
+   * @returns {Promise<Object>}
+   */
+  /**
+   * `GET /api/v2/dataset/build-queue` -- the builds waiting, in the order they will run.
+   *
+   * The order was always real -- `claimBuild` selects by priority then age -- and was
+   * nowhere on screen, so nothing could be reordered meaningfully.
+   *
+   * @returns {Promise<{concurrency: number, running: number, queue: Object[]}>}
+   */
+  function datasetBuildQueue() {
+    return serve('datasets',
+      () => request('/dataset/build-queue'),
+      () => ({ concurrency: 2, running: 0, queue: [] }));
+  }
+
+  /**
+   * `POST /api/v2/dataset/build-queue/:jobId/move` -- one place sooner or later.
+   *
+   * @param {number|string} jobId - The queued build.
+   * @param {string} direction - `up` or `down`.
+   * @returns {Promise<{moved: boolean, queue: Object[]}>}
+   */
+  function moveQueuedBuild(jobId, direction) {
+    return request(`/dataset/build-queue/${encodeURIComponent(jobId)}/move`, {
+      method: 'POST',
+      body: { direction },
+    });
+  }
+
+  function datasetBuildSetup(id) {
+    return request(`/dataset/${encodeURIComponent(id)}/build-setup`);
+  }
+
+  /**
+   * `GET /api/v2/dataset/:id` -- one dataset, or 404.
+   *
+   * **Used to find out whether one still exists**, which is a question the Jobs screen
+   * has to ask before it tells somebody a dataset will be spared. A `dataset_build` job
+   * keeps its dataset id in `spec` and nothing clears it when the dataset goes, so the
+   * id on the row is a claim about the past rather than about now.
+   *
+   * It answers 404 when there is none. The route's own description still says it returns
+   * null; it throws.
+   *
+   * @param {number|string} id - The dataset.
+   * @returns {Promise<Object>}
+   */
+  function getDataset(id) {
+    return request(`/dataset/${encodeURIComponent(id)}`);
+  }
+
+  function deleteDataset(id) {
+    return request(`/dataset/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  function datasetPreview(id, limit) {
+    return serve('datasets',
+      () => request(`/dataset/${encodeURIComponent(id)}/preview${limit ? `?limit=${encodeURIComponent(limit)}` : ''}`),
+      () => ({ sha256: '', total: 0, frames: [] }));
   }
 
   function listDatasetBuilds() {
@@ -1378,12 +1790,29 @@
     listModelVersions,
     listModelSpecies,
     listDatasets,
+    listTrainingRuns,
+    freshness,
+    trainingRunEpochs,
+    trainingRunPace,
+    trainingRunMetrics,
+    trainingRunCurves,
+    trainingRunArtifacts,
     listDatasetBuilds,
     datasetComposition,
+    datasetBuildQueue,
+    datasetBuildSetup,
+    datasetPreview,
+    getDataset,
+    deleteDataset,
+    moveQueuedBuild,
     listProjects,
     listUsers,
     submitJob,
     cancelJob,
+    deleteJob,
+    deleteJobs,
+    deletableJobs,
+    deleteJobsInState,
     renameWorker,
     ApiError,
     /* Exposed for the checks, not for the screens. A screen reading these is a

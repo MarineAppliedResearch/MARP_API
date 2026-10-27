@@ -79,6 +79,13 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
       });
 
+      // One training run can have one confusion matrix per evaluated split
+      this.hasMany(models.training_run_confusion_matrices, {
+        as: 'confusion_matrices',
+        foreignKey: 'training_run_id',
+        onDelete: 'CASCADE',
+      });
+
       // One training run can have one hyperparameter record
       this.hasOne(models.hyperparameters, {
         as: 'hyperparameters',
@@ -117,6 +124,20 @@ module.exports = (sequelize, DataTypes) => {
         jsonSchema: {
             description: 'Foreign key referencing the parent ML model (ml_models.id).',
             examples: [7],
+        },
+      },
+
+      job_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'The GPU job that produced this run, when one did. Added to the table by '
+          + '20261020120000-a-training-run-knows-its-job and missing from this model until now, '
+          + 'so the column existed and nothing could read it: Sequelize never selected it and no '
+          + 'route returned it. A run created outside the pool has none.',
+        jsonSchema: {
+            description: 'Foreign key referencing the GPU job that produced this run (gpu_jobs.id).',
+            examples: [21779],
         },
       },
 

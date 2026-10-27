@@ -7,7 +7,7 @@
 <link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
 <link rel="stylesheet" href="../../shared/assets/css/tokens.css">
 <link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
-<link rel="stylesheet" href="./mock.css">
+<link rel="stylesheet" href="./screens.css">
 <script src="../../shared/assets/js/account-menu.js" defer></script>
 </head>
 <body data-screen="inference">
@@ -44,7 +44,7 @@
             <span class="stat-sub"></span>
             <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
           </a>
-          <a class="stat stat-link" data-state="done" href="./history.html?type=inference&amp;window=today"
+          <a class="stat stat-link" data-state="done" href="./jobs.html?type=inference&amp;window=today"
              title="Open today's completed inference work in History">
             <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
             <span class="stat-lab">Completed today</span>
@@ -84,9 +84,10 @@
             <header class="panel-hd inference-flow-hd">
               <div><h2>Throughput &amp; backlog</h2><p>Is inference processing keeping pace with queued frames?</p></div>
               <div class="seg" aria-label="Inference activity range">
-                <button type="button" data-inference-range="24h">24h</button>
-                <button type="button" class="on" data-inference-range="5h" aria-pressed="true">5h</button>
                 <button type="button" data-inference-range="1h">1h</button>
+                <button type="button" class="on" data-inference-range="24h" aria-pressed="true">24h</button>
+                <button type="button" data-inference-range="7d">7d</button>
+                <button type="button" data-inference-range="30d">30d</button>
               </div>
             </header>
             <div class="panel-bd inference-flow-bd">
@@ -312,6 +313,6 @@
 </div>
 
 <script src="./api.js"></script>
-<script src="./mock.js"></script>
+<script src="./screens.js"></script>
 </body>
 </html>

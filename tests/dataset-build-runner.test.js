@@ -550,7 +550,7 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
         const image = archive.entries.find((name) => name.startsWith('train/images/'));
         const bytes = fs.readFileSync(path.join(archive.root, image));
 
-        // SOI marker. The extractor writes PNG; a training frame is re-encoded.
+        // SOI marker. ffmpeg writes the JPEG itself now; nothing re-encodes it.
         expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xff, 0xd8, 0xff]);
     });
 
@@ -651,6 +651,201 @@ describe('what a build does with what it could not cut (#268)', () => {
             fs.rmSync(unpacked.root, { recursive: true, force: true });
         }
     }, 120000);
+});
+
+describe('a pass that falters is retried, not fatal (#268)', () => {
+
+    /** This group's own stub, so the failure does not reach any other group. */
+    let faltering;
+
+    afterAll(() => {
+        if (faltering) faltering.restore();
+    });
+
+    /**
+     * **An eight-minute build should not die because one read faltered.**
+     *
+     * `CookieStarTest2` failed at 26,853 of 31,529 frames, on video 91 of 131, with the
+     * filter thread returning -22 and then `Could not open encoder before EOF` -- no
+     * frame ever reached the encoder. It was not the video: its pixel format matched the
+     * ones that worked, its frames were inside its duration, and replaying its whole plan
+     * afterwards produced every frame. It did not reproduce.
+     *
+     * **So this pins the behaviour rather than the trigger.** A test that claimed to
+     * reproduce a fault nobody could provoke would be the worse artefact. What is asserted
+     * is what the build does when a pass fails once: it tries again, and the dataset comes
+     * out whole.
+     */
+    test('a pass that fails once still produces every frame', async () => {
+        let failures = 0;
+
+        faltering = fixture.stubExtraction({ jellyfin, extraction }, {
+            /* The first pass of the run fails the way the real one did, and only once --
+               a second attempt at the same frames succeeds, which is what was observed
+               when the failing video was replayed. */
+            onExtract: () => {
+                if (failures === 0) {
+                    failures += 1;
+
+                    throw new Error('ffmpeg exited 4294967274: [enc:mjpeg] Could not open encoder before EOF');
+                }
+            },
+        });
+
+        const queued = await queueBuild({
+            name: `Jest Build Faltering ${runId}`,
+            filters: { session: [seeded.sessionId], species: [seeded.speciesIds[1]] },
+            splits: { train: 1 },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(failures).toBe(1);
+        /* Not failed, and not short: the retry produced the frames the first attempt did
+           not, so the build is indistinguishable from one that never faltered. */
+        expect(result.reason).toBeUndefined();
+        expect(result.images).toBe(6);
+
+        const [dataset] = await q(
+            'SELECT status, num_samples FROM datasets WHERE id = :id',
+            { id: queued.dataset.id }
+        );
+
+        expect(dataset.status).toBe('ready');
+        expect(Number(dataset.num_samples)).toBe(6);
+    });
+
+    /**
+     * And when it is not transient, the build still fails -- but says which video, which
+     * `ffmpeg exited 4294967274` did not. Working out that it was video 91 of 131 took a
+     * query against the attempt's last reported phase.
+     */
+    test('a pass that keeps failing names the video it was cutting', async () => {
+        if (faltering) faltering.restore();
+
+        faltering = fixture.stubExtraction({ jellyfin, extraction }, {
+            onExtract: () => {
+                throw new Error('ffmpeg exited 4294967274: [enc:mjpeg] Could not open encoder before EOF');
+            },
+        });
+
+        const queued = await queueBuild({
+            name: `Jest Build Doomed ${runId}`,
+            filters: { session: [seeded.sessionId], species: [seeded.speciesIds[1]] },
+            splits: { train: 1 },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(result.failed).toBe(true);
+        expect(result.reason).toContain(path.parse(seeded.videos.one).name);
+        expect(result.reason).toMatch(/frames \d+-\d+/);
+        expect(result.reason).toMatch(/attempts/i);
+    }, 60000);
+});
+
+describe('opening a video survives a timeout (#268)', () => {
+
+    /** This group's own stub. */
+    let opening;
+
+    afterAll(() => {
+        if (opening) opening.restore();
+    });
+
+    /**
+     * **The second failure, in the gap the first fix did not cover.** `CookieStarTest2`
+     * failed again at `ffprobe exited 1: Connection to tcp://... failed: Error number
+     * -138` -- a connection timeout, from `probeStream`, which runs *before* the
+     * extraction loop that the pass retry protects. The media server is across the
+     * internet rather than on this machine, so a timeout is routine, and a build that now
+     * pulls six to nine times harder meets them far more often.
+     */
+    test('a probe that times out once does not lose the build', async () => {
+        let failures = 0;
+
+        opening = fixture.stubExtraction({ jellyfin, extraction }, {
+            onProbe: () => {
+                if (failures === 0) {
+                    failures += 1;
+
+                    throw new Error('ffprobe exited 1: Connection to tcp://jest.invalid:8096 failed: Error number -138');
+                }
+            },
+        });
+
+        const queued = await queueBuild({
+            name: `Jest Build Probe Timeout ${runId}`,
+            filters: { session: [seeded.sessionId], species: [seeded.speciesIds[1]] },
+            splits: { train: 1 },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(failures).toBe(1);
+        expect(result.reason).toBeUndefined();
+        expect(result.images).toBe(6);
+    }, 60000);
+
+    /**
+     * And when the server really is unreachable, the build fails saying which video it
+     * could not open -- not `ffprobe exited 1` and a URL with the API key elided.
+     */
+    test('a video that never opens fails the build, naming it', async () => {
+        if (opening) opening.restore();
+
+        opening = fixture.stubExtraction({ jellyfin, extraction }, {
+            onProbe: () => {
+                throw new Error('ffprobe exited 1: Connection to tcp://jest.invalid:8096 failed: Error number -138');
+            },
+        });
+
+        const queued = await queueBuild({
+            name: `Jest Build Probe Dead ${runId}`,
+            filters: { session: [seeded.sessionId], species: [seeded.speciesIds[1]] },
+            splits: { train: 1 },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(result.failed).toBe(true);
+        expect(result.reason).toContain(path.parse(seeded.videos.one).name);
+        expect(result.reason).toMatch(/attempts/i);
+    }, 60000);
+
+    /**
+     * **A video with no frame rate is not retried.** That is a permanent property of the
+     * file, not a network blip: five attempts would spend fifteen seconds to produce a
+     * message about attempts when the answer was the same the first time. It fails at
+     * once, and says what is actually wrong.
+     */
+    test('a video reporting no frame rate fails at once rather than being retried', async () => {
+        if (opening) opening.restore();
+
+        let probes = 0;
+
+        opening = fixture.stubExtraction({ jellyfin, extraction }, {
+            onProbe: () => {
+                probes += 1;
+
+                return { width: 8, height: 8, codec: 'h264', fps: null, duration: 60 };
+            },
+        });
+
+        const queued = await queueBuild({
+            name: `Jest Build No Rate ${runId}`,
+            filters: { session: [seeded.sessionId], species: [seeded.speciesIds[1]] },
+            splits: { train: 1 },
+        });
+
+        const result = await runBuild(queued.job.id);
+
+        expect(result.failed).toBe(true);
+        expect(result.reason).toMatch(/frame rate/i);
+        expect(result.reason).not.toMatch(/attempts/i);
+        /* Once, not five times. */
+        expect(probes).toBe(1);
+    }, 60000);
 });
 
 describe('labels at the edge of the frame (#268)', () => {
@@ -878,6 +1073,45 @@ describe('where one ffmpeg pass ends (#268)', () => {
         expect(split[1]).toEqual([1000 + FRAMES_PER_PASS]);
     });
 
+    /**
+     * **The gap rule caps each step; it does not cap the total.** A pass breaks on a gap
+     * wider than 250, so its span can be `(frames - 1) x 250` and grows with the count --
+     * 24,750 frames at the old 100, and 99,750 had 400 been raised without this. A pass
+     * covering four and a half minutes of video is what the 120-second timeout killed
+     * once already, and 99,750 frames is sixty-six minutes.
+     *
+     * This is the rule that makes the larger count safe, so it is the one that would let
+     * that defect back if it went quietly.
+     */
+    test('breaks on how far a pass reaches, which the gap rule does not bound', () => {
+        const { MAX_PASS_SPAN } = buildService;
+        const step = SEEK_RATHER_THAN_DECODE;
+
+        /* Gaps of exactly 250 -- every one allowed by the gap rule, and few enough to be
+           well under the count, so only the span rule can split these. */
+        const wanted = Array.from({ length: 40 }, (unused, at) => 1000 + at * step);
+
+        expect(wanted.length).toBeLessThan(FRAMES_PER_PASS);
+
+        const split = passes(wanted);
+
+        expect(split.length).toBeGreaterThan(1);
+
+        for (const pass of split) {
+            expect(pass[pass.length - 1] - pass[0]).toBeLessThanOrEqual(MAX_PASS_SPAN);
+        }
+
+        // And nothing was lost to the splitting.
+        expect(asked(wanted)).toEqual(wanted);
+    });
+
+    /** A dense run is untouched by the span rule: 400 contiguous frames span 400. */
+    test('does not split a dense run that is nowhere near the span', () => {
+        const wanted = Array.from({ length: FRAMES_PER_PASS }, (unused, at) => 1000 + at);
+
+        expect(passes(wanted)).toHaveLength(1);
+    });
+
     test('breaks on a gap, well short of the count', () => {
         /* The defect. Two frames an hour apart were one pass, so ffmpeg decoded the
            hour to produce two pictures and was killed at 120 seconds -- having already
@@ -1015,6 +1249,17 @@ describe('a video with more frames than one ffmpeg pass can ask for (#268)', () 
         expect(asked[0]).toBe(SPAN.first);
         expect(asked[asked.length - 1]).toBe(SPAN.last);
         expect(asked.every((frame, i) => i === 0 || frame === asked[i - 1] + 1)).toBe(true);
+    });
+
+    test('the build asks the extractor for its final format, not for PNG', () => {
+        /* **The whole of the speed change, stated as a requirement.** ffmpeg writing JPEG
+           costs 416 ms per hundred frames; writing PNG and re-encoding with sharp cost
+           19,394 ms for the same hundred, which was 96% of a build. If this regresses to
+           PNG the archive still comes out correct and a 50,000-frame build takes two and
+           a half hours longer, which no other assertion here would notice. */
+        for (const call of stub.calls.extractions) {
+            expect(call.output).toMatchObject({ format: 'jpeg' });
+        }
     });
 
     test('every pass writes into its own directory, so position stays the addressing', () => {

@@ -7,7 +7,7 @@
 <link rel="icon" href="../../shared/assets/images/marp-mark-favicon.png">
 <link rel="stylesheet" href="../../shared/assets/css/tokens.css">
 <link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
-<link rel="stylesheet" href="./mock.css">
+<link rel="stylesheet" href="./screens.css">
 <script src="../../shared/assets/js/account-menu.js" defer></script>
 </head>
 <body data-screen="models">
@@ -46,7 +46,7 @@
           <span class="stat-sub"></span>
           <span class="stat-go" aria-hidden="true"><svg class="ico sm"><use href="#i-arrow"/></svg></span>
         </a>
-        <a class="stat stat-link" data-state="running" href="./history.html?type=training&amp;window=week" title="Open recent training work that registered versions">
+        <a class="stat stat-link" data-state="running" href="./jobs.html?type=training&amp;window=week" title="Open recent training work that registered versions">
           <span class="stat-ico"><svg class="ico"><use href="#i-clock"/></svg></span>
           <span class="stat-lab">Recently trained</span>
           <b class="stat-num"></b>
@@ -73,7 +73,7 @@
         </article>
 
         <article class="panel inference-flow ops-activity" data-ops-activity="models">
-          <header class="panel-hd inference-flow-hd"><div><h2>Registry activity</h2><p>New versions, promoted preferences and worker cache coverage</p></div><div class="seg" aria-label="Model activity range"><button type="button" data-ops-range="30d">30d</button><button type="button" class="on" data-ops-range="90d" aria-pressed="true">90d</button><button type="button" data-ops-range="1y">1y</button></div></header>
+          <header class="panel-hd inference-flow-hd"><div><h2>Registry activity</h2><p>New versions, promoted preferences and worker cache coverage</p></div><div class="seg" aria-label="Model activity range"><button type="button" data-ops-range="24h">24h</button><button type="button" data-ops-range="7d">7d</button><button type="button" data-ops-range="30d">30d</button><button type="button" class="on" data-ops-range="1y" aria-pressed="true">1y</button></div></header>
           <div class="panel-bd inference-flow-bd">
             <div class="inference-chart ops-chart" role="img" aria-label="Model registry activity over 90 days"><svg viewBox="0 0 780 248" aria-hidden="true"><g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="84" x2="726" y2="84"/><line x1="54" y1="140" x2="726" y2="140"/><line x1="54" y1="196" x2="726" y2="196"/></g><g class="inference-axis left"><text x="46" y="32"></text><text x="46" y="88"></text><text x="46" y="144"></text><text x="46" y="200"></text><text x="54" y="225" data-ops-time></text><text x="390" y="225" data-ops-time></text><text x="726" y="225" data-ops-time></text><text class="axis-title" x="54" y="15">MODEL VERSIONS</text></g><g class="inference-axis right"><text x="734" y="32"></text><text x="734" y="88"></text><text x="734" y="144"></text><text x="734" y="200"></text><text class="axis-title" x="726" y="15">CACHE COVERAGE</text></g><path class="ops-area registered" data-ops-area="registered"/><path class="ops-line registered" data-ops-line="registered"/><path class="ops-line preferred" data-ops-line="in_use"/><path class="ops-line coverage" data-ops-line="coverage"/></svg></div>
             <div class="inference-flow-foot"><div class="inference-chart-key result-legend"><button class="registered" data-ops-highlight="registered">Registered versions</button><button class="in_use" data-ops-highlight="in_use">Models in use</button><button class="coverage" data-ops-highlight="coverage">Worker cache coverage</button></div><div class="inference-current"><span><b data-ops-current="registered"></b> registered</span><span><b data-ops-current="in_use"></b> in use</span><span><b data-ops-current="coverage"></b> cached somewhere</span><span class="live"><i class="dot"></i>Live</span></div></div>
@@ -102,10 +102,6 @@
               <option>All statuses</option><option>Trained</option>
               <option>Training</option><option>Draft</option><option>Archived</option>
             </select>
-            <select class="sel" aria-label="Dataset" title="Show models trained on one dataset">
-              <option>All datasets</option><option>ALL_Projects_Inverts_v5</option>
-              <option>SALT_2024_Habitat_v2</option>
-            </select>
             <select class="sel" aria-label="Base model" title="Show models fine-tuned from one base">
               <option>All base models</option><option>YOLOv8l</option><option>YOLOv8m</option>
             </select>
@@ -122,9 +118,7 @@
                   <th class="hver sortable" title="The version this row describes">Version</th>
                   <th class="hstatus sortable" title="Whether the artifact is usable">Status</th>
                   <th class="hbase sortable" title="What it was fine-tuned from">Base model</th>
-                  <th class="hdset sortable" title="The saved dataset it trained on">Training dataset</th>
-                  <th class="hmodel sortable" title="The headline score for its task">Key metrics</th>
-                  <th class="hcache sortable num" title="Workers holding a copy">Cached</th>
+                  <th class="hdset" title="What a model trained on: MARP records no link from a model to the run that produced it, so this is empty for every model">Training dataset</th>
                   <th class="hupd sortable" aria-sort="descending" title="When it was registered">Updated</th>
                   <th class="hacts"><span class="vh">Actions</span></th>
                 </tr>
@@ -156,6 +150,6 @@
 </aside>
 
 <script src="./api.js"></script>
-<script src="./mock.js"></script>
+<script src="./screens.js"></script>
 </body>
 </html>

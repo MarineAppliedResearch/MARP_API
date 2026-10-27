@@ -14,14 +14,22 @@
  */
 
 const path = require('path');
+const fs = require('fs');
+
+const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
 const datasetController = require('../controller/dataset.controller');
+const trainingMetricsController = require('../controller/training-metrics.controller');
 const modelArtifactService = require('../service/model-artifact.service');
 const datasetBuildRepository = require('../repository/dataset-build.repository');
-const { imageSettings } = require('../service/dataset-build.service');
+const { imageSettings, concurrency } = require('../service/dataset-build.service');
 const datasetRepository = require('../repository/dataset.repository');
+const datasetPreviewService = require('../service/dataset-preview.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
+
+/** A blank line between paragraphs of a route description. */
+const BREAK = '\n\n';
 
 /**
  * Register every ML-pipeline route and its OpenAPI operation on `app`.
@@ -40,8 +48,23 @@ function registerDatasetRoutes(app) {
         path: '/api/ml_models',
         summary: 'Fetch all ML models',
         description:
-            "Returns every ML model record. A database failure rejects rather than resolving to an empty array; the route's .catch() handles this and responds with HTTP 500.",
+            "Returns every ML model record. A database failure rejects rather than resolving to an empty array; the route's .catch() handles this and responds with HTTP 500."
+            + BREAK
+            + '**`runnable=inference` narrows it to the models inference may actually use**, which is what a model picker wants. Today the only thing that disqualifies one is being a pretrained base model: a base model carries the upstream vocabulary rather than MARP species, so running it over video would resolve ImageNet class names against `species.comname` and write invented records into the scientific record. Job submission refuses one outright, so a picker that offers one is offering something the API will reject.'
+            + BREAK
+            + '**It asks a capability question rather than naming a column** — not `is_base=false` — because the reason a model is unusable can grow. A retired status or missing bytes would disqualify one too, and a caller asking "what can I run?" should not have to be rewritten when the answer gains a second reason.'
+            + BREAK
+            + '**Unfiltered is still the default**, deliberately. A base model is a real registered model and the registry screen should show it; hiding rows by default would be a change to what this route has always returned.',
         tags: ['V1 · MachineLearning'],
+        parameters: [
+            {
+                in: 'query',
+                name: 'runnable',
+                required: false,
+                schema: { type: 'string', enum: ['inference'] },
+                description: 'Narrow to the models this kind of job may use. Only `inference` is defined; anything else is ignored and the full list is returned.',
+            },
+        ],
         responses: {
             200: {
                 description: 'MlModel list returned successfully.',
@@ -54,7 +77,10 @@ function registerDatasetRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            const data = await datasetController.getMl_models();
+            /* An unrecognised value is ignored rather than refused: a caller asking for
+               a narrowing MARP does not have is better served the whole list than a 400
+               it has no way to act on. */
+            const data = await datasetController.getMl_models({ runnable: req.query.runnable });
             res.json(data);
         }),
     });
@@ -487,7 +513,372 @@ function registerDatasetRoutes(app) {
                 throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `Dataset ${req.params.id} was not found.`);
             }
 
-            res.json(await datasetRepository.getDatasetComposition(req.params.id));
+            /* Images per split come off `dataset_splits`, which the build writes.
+               They were counted out of the archive here until Isaac pointed out the
+               obvious: the archive is immutable, so the count cannot change after the
+               build, and walking a 2.4 GB tar on every panel open is paying repeatedly to
+               re-derive a constant. Null for a dataset built before that was recorded,
+               which the screen says rather than showing a zero. */
+            const composition = await datasetRepository.getDatasetComposition(req.params.id);
+
+            res.json(composition);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/build-queue',
+        summary: 'The builds waiting, in the order they will run',
+        description:
+            'The builds waiting to be taken, in the order they will be taken, and how many of them start together.'
+            + '\n\n'
+            + '**The order was already real and was nowhere on screen.** `claimBuild` selects '
+            + 'ORDER BY priority DESC, created_at ASC, id ASC, so the queue has always been a priority queue -- '
+            + 'but nothing served the priority and the Datasets table sorts newest-first, which is the reverse of '
+            + 'claim order within a priority. Reorder buttons without this would have moved something invisible.'
+            + '\n\n'
+            + '**`starts_next` is a set, not a single row.** Builds run `DATASET_BUILD_CONCURRENCY` at a time, so '
+            + 'the first few in the queue all begin on the next tick and there is no one next job. This marks '
+            + 'exactly those that would start now -- the ceiling less whatever is already running -- so the screen '
+            + 'can say so rather than implying a single front of the queue.'
+            + '\n\n'
+            + '**Only `dataset_build`.** `priority` is a `gpu_jobs` column and the worker pool orders its own '
+            + 'queue by it, but `LEASABLE_JOB_KINDS` excludes dataset builds, so the two queues are disjoint and '
+            + 'nothing here can reorder inference work.',
+        tags: ['V1 \u00b7 MachineLearning'],
+        responses: {
+            200: {
+                description: 'The queue, first to run first.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                concurrency: { type: 'integer', description: 'How many builds run at once.' },
+                                running: { type: 'integer', description: 'How many are running right now.' },
+                                queue: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            job_id: { type: 'integer' },
+                                            dataset_id: { type: 'integer' },
+                                            name: { type: 'string', nullable: true },
+                                            priority: { type: 'integer' },
+                                            position: { type: 'integer', description: '1 is next.' },
+                                            starts_next: {
+                                                type: 'boolean',
+                                                description: 'It would begin on the next tick, as a free slot allows.',
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const [queue, inFlight] = await Promise.all([
+                datasetBuildRepository.getQueuedBuilds(),
+                datasetBuildRepository.countRunningBuilds(),
+            ]);
+
+            const ceiling = concurrency();
+            /* Slots a build could start into right now. When builds are already running
+               the front of the queue is shorter than the ceiling, and saying otherwise
+               would promise several starts that cannot happen yet. */
+            const free = Math.max(0, ceiling - inFlight);
+
+            res.json({
+                concurrency: ceiling,
+                running: inFlight,
+                queue: queue.map((row, index) => ({
+                    ...row,
+                    position: index + 1,
+                    starts_next: index < free,
+                })),
+            });
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
+        path: '/api/dataset/build-queue/:jobId/move',
+        summary: 'Move a queued build sooner or later',
+        description:
+            'Moves one queued build one place sooner or later.'
+            + '\n\n'
+            + '**The whole queue is renumbered, which is what keeps the numbers sane.** Swapping priorities with a '
+            + 'neighbour does nothing: every build is priority 0 until something changes it, so the swap is 0 for 0 '
+            + 'and `created_at` still decides. Giving the moved job max + 1 works once and then climbs for ever. '
+            + 'Writing positions N..1 across the queued set on each move leaves no ties, bounds the largest value '
+            + 'by the length of the queue, and needs no compaction later.'
+            + '\n\n'
+            + '**Moving past either end is not an error.** Pressing up on the first row is a reasonable thing to '
+            + 'do; the answer is `moved: false` and the queue unchanged.'
+            + '\n\n'
+            + '**Only a queued build can move**, because a leased one is already running and reordering it means '
+            + 'nothing. Gated on `jobs:write`, the human job-management permission that `POST /gpu/jobs/:id/cancel` '
+            + 'uses, rather than the `jobs:execute` a worker holds.',
+        tags: ['V1 \u00b7 MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'jobId', required: true, schema: { type: 'integer' }, description: 'The queued build.' },
+        ],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['direction'],
+                        properties: { direction: { type: 'string', enum: ['up', 'down'] } },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: 'The queue after the move.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                moved: { type: 'boolean', description: 'False when it was already at that end.' },
+                                queue: { type: 'array', items: { type: 'object' } },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/ValidationError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await datasetBuildRepository.moveQueuedBuild(
+                req.params.jobId,
+                req.body && req.body.direction
+            ));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/:id/build-setup',
+        summary: 'The queries a dataset was built from, for setting up another like it',
+        description:
+            'What *Duplicate setup* needs: the subsets, filters and split shares a dataset was built from, so the '
+            + 'build flow can be filled in with them and edited before anything is queued.\n\n'
+            + '**It creates nothing.** No dataset, no draft, no job -- this reads, the screen fills its form, and '
+            + 'the ordinary Queue button is what starts a build.\n\n'
+            + '**The spec lives on the job, not the dataset**, which is why this route exists at all. `queueBuild` '
+            + 'writes the filters into `gpu_jobs.spec` on purpose: a saved query can be edited afterwards and a '
+            + "build has to stay a record of what it actually ran. The job is found by `spec->>'dataset_id'`.\n\n"
+            + '**The succeeded job wins when a dataset has several**, which is normal -- a retry opens a second, and '
+            + 'a cancelled attempt followed by a successful one leaves two. The succeeded one is the only spec known '
+            + 'to have produced this dataset. Failing that, the newest, so a dataset still building can be copied.\n\n'
+            + '**404 when there is nothing worth copying.** A dataset imported by the legacy packager has no job at '
+            + 'all, and a dashboard build can carry `filters: {}` with everything in `subsets`. A Duplicate that '
+            + 'opened an empty build flow would look like it had worked, so the screen is told there is nothing and '
+            + 'leaves the control disabled with the reason on it.',
+        tags: ['V1 \u00b7 MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset to copy.' },
+        ],
+        responses: {
+            200: {
+                description: 'Its setup.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                jobId: { type: 'integer', description: 'Which build this came from.' },
+                                name: { type: 'string' },
+                                description: { type: 'string', nullable: true },
+                                subsets: {
+                                    type: 'array',
+                                    description: 'Each a query and where it goes: `filters` plus either `shares` or `split`.',
+                                    items: { type: 'object' },
+                                },
+                                filters: {
+                                    type: 'object',
+                                    nullable: true,
+                                    description: 'A build that named filters without subsets. Null when it used subsets.',
+                                },
+                                splits: { type: 'object', nullable: true },
+                                image: { type: 'object', nullable: true },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const setup = await datasetBuildRepository.getBuildSetup(req.params.id);
+
+            if (!setup) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Dataset ${req.params.id} has no recorded queries to copy. It was imported rather than built here, `
+                    + 'or its build predates the queries being kept.');
+            }
+
+            res.json(setup);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/:id/preview',
+        summary: 'A sample of the frames a build cut, with their label boxes',
+        description:
+            'A handful of the actual training images in a dataset, read straight out of the archive the build '
+            + 'wrote. The Datasets screen showed four sample pictures per dataset and they were four hardcoded '
+            + 'Jellyfin item ids -- the same four on every row, of video unrelated to the dataset under them.\n\n'
+            + '**The boxes come back with the frames**, as the YOLO label file records them: `class_index` into '
+            + "the vocabulary `GET /dataset/:id/composition` returns, and `cx`/`cy`/`w`/`h` normalised to the "
+            + 'image with **x and y at the box centre**. Drawing them is the point -- a frame on its own says a '
+            + 'picture was cut, and a frame with its box says the label landed on the animal.\n\n'
+            + '**Read rather than stored.** The archive is an uncompressed tar, so a sample costs a walk of its '
+            + 'headers -- one 512-byte read per member, about 140 ms over a 2.4 GB archive -- plus one read per '
+            + 'frame shown. Nothing is written at build time to make this work, so it answers for datasets that '
+            + 'were built before it existed.\n\n'
+            + '**The frames are spread across the archive, not taken from the front.** A build interpolates '
+            + 'between keyframes, so the first dozen images are one animal a fortieth of a second apart; an even '
+            + 'stride covers the videos and splits the build actually touched, for the same walk.\n\n'
+            + 'Gated on `datasets:read` rather than the `jobs:execute` that guards the whole archive: this is '
+            + 'somebody browsing the catalogue, which is the case that permission exists for, and it serves a '
+            + 'sample rather than the dataset.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset.' },
+            {
+                in: 'query',
+                name: 'limit',
+                required: false,
+                schema: { type: 'integer', default: datasetPreviewService.DEFAULT_LIMIT, maximum: datasetPreviewService.MAX_LIMIT },
+                description: 'How many frames to sample. Clamped, because each one is served at full size.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'The sample.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                sha256: { type: 'string', description: "The archive's hash, which is also its address." },
+                                total: {
+                                    type: 'integer',
+                                    example: 10361,
+                                    description: 'Every image in the archive, not how many are shown, so a reader knows what the sample is a sample of.',
+                                },
+                                frames: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            index: { type: 'integer', description: 'Its address for `GET /dataset/:id/preview/:index`.' },
+                                            split: { type: 'string', example: 'train' },
+                                            stem: {
+                                                type: 'string',
+                                                example: '20240727_163021_Fwd_00029982',
+                                                description: 'The video it came from and the absolute frame number in it.',
+                                            },
+                                            bytes: { type: 'integer' },
+                                            boxes: {
+                                                type: 'array',
+                                                description: 'Empty when the archive carries no label beside the frame, which is a fact about the build rather than an error.',
+                                                items: {
+                                                    type: 'object',
+                                                    properties: {
+                                                        class_index: { type: 'integer', example: 2 },
+                                                        cx: { type: 'number', example: 0.234120 },
+                                                        cy: { type: 'number', example: 0.095045 },
+                                                        w: { type: 'number', example: 0.052060 },
+                                                        h: { type: 'number', example: 0.094724 },
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await datasetPreviewService.preview(req.params.id, req.query.limit));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/:id/preview/:index',
+        summary: 'One frame of a dataset preview',
+        description:
+            'The image bytes for one entry of `GET /dataset/:id/preview`, cut out of the archive at the offset '
+            + 'its tar header records.\n\n'
+            + '**Addressed by position in the sample, not by filename.** The archive is named for its own hash '
+            + 'and never changes, so a walk of it returns the same order every time and a position is a stable '
+            + 'address. A filename from the caller would be a caller-supplied path reaching a file read, which '
+            + 'is a shape worth not having.\n\n'
+            + '`limit` must match the one the sample was taken with, because it is what the positions are '
+            + 'relative to.\n\n'
+            + '**Cached hard and deliberately.** The response carries a strong ETag of the archive hash and the '
+            + "position, and `immutable`, because those bytes cannot change: a re-packaged dataset is a "
+            + 'different hash. A reader fetches each preview frame once.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset.' },
+            { in: 'path', name: 'index', required: true, schema: { type: 'integer' }, description: 'Which frame of the sample.' },
+            {
+                in: 'query',
+                name: 'limit',
+                required: false,
+                schema: { type: 'integer', default: datasetPreviewService.DEFAULT_LIMIT },
+                description: 'The sample size the index was taken against.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'The frame.',
+                content: { 'image/jpeg': { schema: { type: 'string', format: 'binary' } } },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const frame = await datasetPreviewService.frame(req.params.id, req.params.index, req.query.limit);
+            const etag = `"dataset-preview-${frame.sha256}-${req.params.index}"`;
+
+            if (req.headers['if-none-match'] === etag) {
+                res.status(304).end();
+
+                return;
+            }
+
+            res.setHeader('ETag', etag);
+            res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+            res.setHeader('Content-Type', frame.contentType);
+            res.setHeader('Content-Length', frame.buffer.length);
+            res.send(frame.buffer);
         }),
     });
 
@@ -557,20 +948,109 @@ function registerDatasetRoutes(app) {
         method: 'delete',
         permission: 'datasets:write',
         path: '/api/dataset/:id',
-        summary: 'Delete a dataset',
+        summary: 'Delete a dataset, its membership and its archive',
         description:
-            "Deletes a dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
+            'Deletes everything the dataset is -- the row, its membership and its class vocabulary -- and removes '
+            + 'the archive from storage.\n\n'
+            + "**It refuses if a model was trained from it.** That is the schema's own rule rather than one added "
+            + 'here: `dataset_observations` and `dataset_classes` are `ON DELETE CASCADE`, while '
+            + '`training_runs.dataset_id` is `NO ACTION` and PostgreSQL blocks the delete while a run points at the '
+            + 'row. A dataset is the answer to *what was this model trained on*, so that is the guard working. The '
+            + 'runs are looked up first so the refusal is a 409 naming the model that was trained, rather than a '
+            + 'foreign-key violation arriving as a 500 -- which is what this route did until #268.\n\n'
+            + '**A dataset that is still building is refused too**, and asks for the build to be cancelled first. '
+            + 'There is a runner holding a staging directory and about to write that row; deleting underneath it '
+            + 'turns its own completion into the error. Cancelling is one press and takes effect within a pass.\n\n'
+            + '**The row goes first and the file only once that succeeded.** A refused delete must leave the archive '
+            + 'where it was, and a dataset whose archive is gone but whose row survives is worse than either '
+            + 'outcome. Removing the file was not done at all before, so a deleted dataset left gigabytes behind. A '
+            + 'file that is already missing is not an error -- the row is what is being deleted.\n\n'
+            + '**The build job goes too, with its attempts, their events and their progress samples.** It used to '
+            + 'survive, as the record that the work happened, and Isaac objected twice: a build job for a dataset '
+            + 'nobody can see is not a record anyone can use, and he met it again on the Jobs screen after deleting '
+            + 'the dataset here. There is no foreign key -- the job names its dataset in its spec -- so '
+            + 'this is a deliberate lookup. The attempts cascade from the job and the events and progress samples '
+            + 'cascade from the attempt.' + BREAK
+            + '**A job holding an artifact refuses, and the dataset still goes.** `artifacts.job_id` is `RESTRICT`. '
+            + 'Failing the whole delete over a job row the caller cannot see would be the same complaint again, so '
+            + 'the refusal is reported in `jobs_kept` instead.' + BREAK
+            + 'Older text, kept because the reasoning is still worth reading: a job is the record that work happened -- its attempt, its '
+            + 'failure reason, its timings, and the spec that is the only record of what was asked for -- and '
+            + 'nothing references the dataset by a foreign key, so nothing cascades. **They are excluded from '
+            + '`GET /dataset/builds` by a join rather than by hope:** this description previously claimed they '
+            + '"simply stop appearing", and they did not. Three such rows were being served on the development '
+            + 'database, '
+            + 'and a build row for a dataset nobody can open, expand or delete is a row for nothing. They remain '
+            + 'visible on the Jobs screen, which is where a record of work belongs.',
         tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the dataset to delete.' },
         ],
         responses: {
-            200: { description: 'The number of rows destroyed (as returned by Sequelize).' },
+            200: {
+                description: 'It is gone.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                deleted: { type: 'boolean' },
+                                archive_removed: {
+                                    type: 'boolean',
+                                    description: 'False when the row named no archive, or the file was already absent.',
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            409: {
+                description: 'A model was trained from it, or it is still building. The message says which.',
+            },
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            const data = await datasetController.deleteDataset(req.params.id);
-            res.json(data);
+            const { deleted, archivePath, jobsDeleted, jobsKept } = await datasetBuildRepository.deleteDataset(req.params.id);
+
+            /* **Only now.** Everything that could refuse has refused and the row is gone,
+               so removing the file can no longer orphan a dataset that still exists. */
+            let archiveRemoved = false;
+
+            if (deleted && archivePath) {
+                const storageRoot = path.resolve(DATASET_DIRECTORY, '..');
+                const absolute = path.resolve(storageRoot, archivePath);
+
+                /* `archive_path` is our own value, but it is a database value becoming a
+                   filesystem path, which is the shape of a traversal bug -- and this one
+                   unlinks rather than reads. Checked the way the archive route checks it. */
+                if (absolute.startsWith(storageRoot + path.sep) && fs.existsSync(absolute)) {
+                    /* **The row is already gone, so this must not throw.** An archive
+                       held open -- by a worker still streaming it, or by anything else on
+                       Windows -- would otherwise answer 500 for a delete that had
+                       succeeded, and the caller would retry and get a 404. The file
+                       staying behind is reported rather than hidden: `archive_removed`
+                       false means there is something left on disk, which is a different
+                       outcome from the row having named no archive at all. */
+                    try {
+                        fs.rmSync(absolute, { force: true });
+                        archiveRemoved = true;
+                    } catch (error) {
+                        archiveRemoved = false;
+                    }
+                }
+            }
+
+            res.json({
+                deleted,
+                archive_removed: archiveRemoved,
+                /* Which build jobs went with it, and which would not. A job holding an
+                   artifact refuses, and the dataset still goes -- the caller asked to
+                   remove a dataset, and failing that over a job row they cannot see is
+                   the complaint this change exists to answer, in a new form. */
+                jobs_deleted: jobsDeleted,
+                jobs_kept: jobsKept,
+            });
         }),
     });
 
@@ -1117,6 +1597,323 @@ function registerDatasetRoutes(app) {
     // ---------------------------------------------------------------
     // epochs
     // ---------------------------------------------------------------
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/pace',
+        summary: 'How fast one training run has been getting through its epochs',
+        description:
+            'The heartbeat\'s record of how many epochs were done, sampled once a minute for as '
+            + 'long as the run\'s attempt held its lease.'
+            + BREAK
+            + '**This is the clock; `/training_run/:id/epochs` is the science.** An epoch row is '
+            + 'written when the worker reports its metrics, so that array has one entry per '
+            + 'finished epoch and nothing at all before the first one lands. These samples start '
+            + 'when the attempt is leased, which covers the stretch where the dataset is being '
+            + 'fetched and nothing has trained yet -- exactly when a reader most wants to see '
+            + 'that the run is alive. Neither answers for the other, so they are two reads.'
+            + BREAK
+            + '**Every attempt of the job, each sample saying which.** A run that was retried has '
+            + 'a second attempt counting from zero again, and dropping it would leave a step down '
+            + 'in the series that nothing explains.'
+            + BREAK
+            + '**Nothing is derived.** Epochs per minute and a remaining estimate both come out of '
+            + 'these samples; computing them here would mean choosing a window and a rounding on '
+            + 'the reader\'s behalf.'
+            + BREAK
+            + '**An empty array is the honest answer** for a run whose attempt has not reported a '
+            + 'heartbeat yet. A run that does not exist is a 404, because a mistyped id and a run '
+            + 'that has reported nothing are different answers and a chart cannot tell them apart.'
+            + BREAK
+            + 'Requires the `models:read` permission.',
+        tags: ['V2 · MachineLearning'],
+        parameters: [
+            {
+                in: 'path', name: 'id', required: true, schema: { type: 'integer' },
+                description: 'The training run whose pace to read.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'Its progress samples, oldest first.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    at: { type: 'string', format: 'date-time', description: 'When the sample was taken.' },
+                                    done: { type: 'integer', description: 'Epochs finished at that moment.' },
+                                    total: { type: 'integer', description: 'Epochs the run is doing in all.' },
+                                    unit: { type: 'string', description: 'What is being counted; `epochs` for a training job.' },
+                                    attempt_id: { type: 'integer', description: 'Which attempt reported it.' },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const pace = await datasetRepository.getTrainingRunPace(req.params.id);
+
+            if (!pace) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(pace);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/epochs',
+        summary: 'Every epoch of one training run',
+        description:
+            'The per-epoch record a training run leaves behind: losses, precision, recall and mAP, in the order they happened. **This is the read that did not exist.** `/v2/epoch` had a POST and a GET by id, so an epoch could be written and fetched only by somebody who already knew its id -- the curves were in the database and no screen could draw them. A sub-resource on the run rather than a filter on a collection, the same shape `GET /dataset/:id/composition` uses.\n\n'
+            + 'Ordered by `epoch_number`, which is what an x-axis of a training curve actually is. Insert order would put a kink in the line the first time a worker reported an epoch late.\n\n'
+            + '**Nulls are returned as nulls.** Most of these columns are nullable, most are null today because the worker does not yet report them all, and a run with no validation split will never have them. Coalescing to zero would turn "not measured" into "measured as nothing" -- on a loss curve that reads as a model collapsing, which is a lie about the training rather than a gap in it. A reader draws a gap.\n\n'
+            + 'An empty array is the honest answer for a run that has not reported an epoch yet, and for one that never will. It is not a 404: the run exists either way, and a screen watching a run in progress would otherwise have to treat "nothing yet" as an error.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            {
+                in: 'path', name: 'id', required: true, schema: { type: 'integer' },
+                description: 'The training run whose epochs to read.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'Its epochs, earliest first.',
+                content: {
+                    'application/json': {
+                        schema: { type: 'array', items: { $ref: '#/components/schemas/Epoch' } },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            /* The run is checked rather than assumed, so a mistyped id is a 404 and not an
+               empty chart that looks like a run which reported nothing. */
+            const run = await datasetController.getTrainingRunById(req.params.id);
+
+            if (!run) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(await datasetController.getEpochsForRun(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/metrics',
+        summary: 'What one training run measured when it finished',
+        description:
+            'The end-of-run record: per-class precision, recall, F1 and AP, the all-classes aggregate, and the confusion matrix as numbers. All of it is carried from the trainer -- **MARP computes none of it**, and an endpoint with nothing to serve serves nothing.\n\n'
+            + '**The confusion matrix is served rows-as-TRUE, columns-as-PREDICTED**, which is how a person reads one. Note that this is the transpose of how Ultralytics indexes it internally (`matrix[predicted][true]`); the stored row keeps the producer\'s own orientation and names it, and the rotation happens once, here, on the way out. A matrix is never derived from the per-class numbers -- one assembled from precision and recall is arithmetic dressed as a measurement, and the off-diagonal, which is the only part anybody looks at, is exactly what a derivation cannot know.\n\n'
+            + '**The background row is kept and labelled rather than trimmed.** It holds the misses and the false positives, and the row sums do not mean anything without it. It is absent for classification, which has no background class.\n\n'
+            + '**Three kinds of metrics row, and they are different quantities.** `class_name` null is the all-classes aggregate. `class_name` set with `species_id` null is a class MARP could not resolve to a species -- kept, because the model is actively predicting it and dropping it would hide it. Everything else is a resolved class. `metric_family` says which vocabulary the numbers are in (`box`, `seg`, `classify`), so a segmentation run\'s box and seg rows for one class do not silently replace each other, and a classification run -- which reports only top-1 and top-5, with no per-class array at all -- is not read as a detection run that failed to measure its mAP.\n\n'
+            + '**`support` and `image_count` say how much a per-class row rests on**, and without them the metrics beside them cannot be judged: a precision of 1.0 over three instances and over three thousand are not the same claim, which on a species list whose rare classes are the point is the difference between a useful number and a misleading one. `support` counts labelled instances, `image_count` the frames containing the class -- 142 instances across 37 frames is a different survey from 142 across 140. Both are null where the trainer reported none, which is a different fact from a count of zero, and both are null on the aggregate row -- the trainer reports no whole-split figure, and `image_count` could not be summed into one even in principle, because a frame holding three species is counted once for each of them.\n\n'
+            + '**Four things about these numbers that a reader will otherwise get wrong.** *"Overall" means over the classes that were evaluated*, not over the whole species list: the aggregate precision and recall are means over the classes that appeared in validation, so a vocabulary with rare classes absent from the split has an aggregate that does not describe it. *Every class is reported at one shared confidence threshold*, chosen to maximise F1 averaged across classes rather than per class, so a class whose own optimum lies elsewhere is reported off its peak and two classes here are compared at one operating point rather than at their best. *`fitness` and `map5095` will always be equal on a detection run* -- fitness is a weighted sum whose weights are `[0, 0, 0, 1]`, so there it is mAP50-95 exactly, and that identity belongs to detection alone: a classification row has no mAP, so its fitness is a number of its own rather than a duplicate; both are kept because those weights are the trainer\'s to change and a history holding one of them could not be read afterwards. *There is no overall F1* -- the trainer does not compute one, and `2PR/(P+R)` of the aggregate P and R is a third quantity rather than the missing number, so the aggregate row\'s `f1_score` is null.\n\n'
+            + '**A class the validator never evaluated has no row at all.** The trainer reports only classes that appeared in the validation set, so absence means *never evaluated* rather than *scored zero* -- and on a species list where the rare classes are the point, those are not the same fact. Nulls are returned as nulls for the same reason; a reader draws a dash.\n\n'
+            + 'Empty is the honest answer for a run still training, for a run that was stopped before its final validation, and for every run that finished before this was recorded. It is not a 404: the run exists either way.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run.' },
+        ],
+        responses: {
+            200: {
+                description: 'What the run measured. Empty arrays when it measured nothing.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                metrics: {
+                                    type: 'array',
+                                    items: { $ref: '#/components/schemas/MetricsSummary' },
+                                },
+                                confusion_matrices: {
+                                    type: 'array',
+                                    items: { $ref: '#/components/schemas/TrainingRunConfusionMatrix' },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            /* The run is checked rather than assumed, so a mistyped id is a 404 and not
+               an empty panel that looks like a run which measured nothing. */
+            const run = await datasetController.getTrainingRunById(req.params.id);
+
+            if (!run) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(await trainingMetricsController.getMetricsForRun(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/curves',
+        summary: 'A training run\'s precision, recall and F1 across every confidence threshold',
+        description:
+            'The per-threshold curves as numbers: one series per class per metric family, over the 1,000 confidence points the trainer evaluated at. **This is the PR curve the run rendered as a PNG, readable** -- re-scalable, comparable between runs, and legible on a dark page, which a white-background image is not.\n\n'
+            + '**Its own read, not part of `/metrics`.** A thousand points per class is around a megabyte for a twenty-species model, and a screen showing headline numbers should not fetch that to ignore it.\n\n'
+            + '**Returned as parallel arrays** -- `confidence`, `precision`, `recall`, `f1_score`, all the same length and index-aligned -- rather than as a thousand four-key objects per class. The same numbers at a fraction of the JSON, and the shape every plotting library takes.\n\n'
+            + '**To draw a precision-recall curve, plot the stored `precision` against the stored `recall`.** That is two measurements plotted against each other, not a derivation. MARP deliberately does not store the trainer\'s own PR curve, which interpolates precision onto a fixed *recall* grid: its x axis is recall, and the column that would have to hold it means confidence. A column meaning two things depending on which curve a row came from is unreadable, and the trainer\'s rendering is kept as an image regardless.\n\n'
+            + '**Only classes that were evaluated appear**, structurally: a curve hangs off the class\'s metrics row, and a class with no validation instances has no row. Empty is the honest answer for a run whose worker sent no curves.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run.' },
+        ],
+        responses: {
+            200: {
+                description: 'One series per class, or an empty array.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    dataset_split: { type: 'string' },
+                                    metric_family: { type: 'string', enum: ['box', 'seg', 'classify'] },
+                                    class_name: { type: 'string' },
+                                    species_id: { type: 'integer', nullable: true },
+                                    confidence: { type: 'array', items: { type: 'number' } },
+                                    precision: { type: 'array', items: { type: 'number', nullable: true } },
+                                    recall: { type: 'array', items: { type: 'number', nullable: true } },
+                                    f1_score: { type: 'array', items: { type: 'number', nullable: true } },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const run = await datasetController.getTrainingRunById(req.params.id);
+
+            if (!run) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(await trainingMetricsController.getCurvesForRun(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/artifacts',
+        summary: 'Every file one training run produced',
+        description:
+            'The run directory\'s output: the confusion matrix images, the PR, F1, P and R curves, the label distribution and correlogram, the validation prediction samples, `results.csv`, and the weights. Each entry carries the URL that serves its bytes.\n\n'
+            + '**An open set, deliberately.** `name` is the real filename stem the worker filed the artifact under and there is no allow-list of recognised ones, so a plot type a later trainer version adds appears here under its own name rather than being dropped for being unfamiliar. A reader should caption what it recognises and show anything else under a tidied version of its own name.\n\n'
+            + '**`content_type` matters and is not decoration.** A run directory holds a CSV among the images, so a gallery that assumes every entry is an image draws a broken icon for it.\n\n'
+            + '**There is no backfill and there never will be.** A job workspace is removed once MARP holds the result, so anything a run did not publish during its attempt is gone permanently -- every training run that finished before this existed has no plots, and a run that was stopped produced none, because the trainer unwinds out of its loop before the final evaluation and the end-of-run callback. Empty is the honest answer in all three cases.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run.' },
+        ],
+        responses: {
+            200: {
+                description: 'The files, or an empty array when the run produced none.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    name: { type: 'string', example: 'confusion_matrix_normalized' },
+                                    url: { type: 'string', example: '/api/v2/training_run/202/artifacts/3464930b…' },
+                                    sha256: { type: 'string' },
+                                    bytes: { type: 'integer', nullable: true },
+                                    content_type: { type: 'string', nullable: true, example: 'image/png' },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const run = await datasetController.getTrainingRunById(req.params.id);
+
+            if (!run) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} was not found.`);
+            }
+
+            res.json(await trainingMetricsController.getArtifactsForRun(req.params.id));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'models:read',
+        path: '/api/training_run/:id/artifacts/:hash',
+        summary: 'The bytes of one of a training run\'s files',
+        description:
+            'Serves one file a training run produced, addressed by the sha256 that identifies it. The same content-addressing the model weights use, so the bytes served are provably the bytes the trainer wrote.\n\n'
+            + '**Scoped to the run rather than looked up by hash alone.** A digest copied from an unrelated record cannot be used to read an artifact through this route, which is why the run id is in the path and not merely decorative.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run.' },
+            { in: 'path', name: 'hash', required: true, schema: { type: 'string' }, description: 'The sha256 addressing the file.' },
+        ],
+        responses: {
+            200: {
+                description: 'The file.',
+                content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const located = await trainingMetricsController.locateArtifact(
+                req.params.id, req.params.hash
+            );
+
+            /* One 404 for "no such run", "no such artifact" and "recorded but its bytes
+               are not on disk". They are the same answer to a reader -- the file is not
+               here -- and distinguishing them would tell a caller which hashes exist. */
+            if (!located) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Training run ${req.params.id} has no artifact ${req.params.hash}.`);
+            }
+
+            if (located.content_type) {
+                res.type(located.content_type);
+            }
+
+            res.sendFile(located.file);
+        }),
+    });
 
     registerVersionedRoute(app, {
         method: 'post',

@@ -30,6 +30,7 @@ const ingestRepository = require('../repository/observation-ingest.repository');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const gpuPlaybackService = require('./gpu-playback.service');
 const observationIngestService = require('./observation-ingest.service');
+const trainingMetricsService = require('./training-metrics.service');
 const logger = require('../logger/api.logger');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const {
@@ -66,6 +67,20 @@ const {
  * are recorded at.
  */
 const { ASSUMED_FPS } = require('../db/timecode');
+
+/**
+ * Which job states can be cleared wholesale.
+ *
+ * **One entry, and that is a decision rather than a stub.** `failed` is what was
+ * asked for: a list cluttered with work that did not finish. `cancelled` is a bigger
+ * pile nobody has asked about, and the two are not interchangeable --
+ * `observations.gpu_job_id` is SET NULL, so clearing a state takes the provenance of
+ * everything those jobs produced. Shared by the delete and by the count in front of
+ * it, so a state cannot be countable and undeletable.
+ *
+ * @type {string[]}
+ */
+const DELETABLE_STATES = ['failed'];
 
 /**
  * Jellyfin reports durations in 100-nanosecond ticks.
@@ -443,6 +458,84 @@ function sleep(milliseconds) {
  *
  * @class GpuService
  */
+/**
+ * How much of a dataset or model name a generated job name keeps.
+ *
+ * The Jobs table gives this column perhaps forty characters before it ellipsizes, and two
+ * full names plus a time is more than that. Twenty-four keeps the distinctive part of
+ * every name MARP currently holds -- the longest is `MBARI-Benthic-Supercategory-2025` at
+ * thirty-two -- while leaving the result readable. The full names are in the spec either
+ * way, so nothing is lost, only shortened.
+ *
+ * @constant
+ * @type {number}
+ */
+const GENERATED_NAME_PART = 24;
+
+/**
+ * A name for a training job nobody named, from what it is actually training.
+ *
+ * **`Job 21782` is not a name**, and the submit form has been promising this all along --
+ * its Run name field reads *"Optional. Blank is left to MARP."* So the UI said MARP names
+ * it and MARP did not; `gpu_jobs.name` is null on every training job ever queued.
+ *
+ * **Dataset, model, and the time of day.** Isaac asked for the first two. The third is
+ * there because he has run the same model over the same dataset three times in a day, and
+ * a name that is identical across those stops being useful at exactly the moment there is
+ * most to tell apart. The job id would disambiguate too, and is excluded deliberately --
+ * not showing an id is the point of the exercise.
+ *
+ * **It collides when the same dataset and model are submitted inside the same minute**,
+ * which is a double submission rather than two runs worth distinguishing. Uniqueness is
+ * not enforced: that would mean a round trip per submit to ask what exists, and
+ * `gpu_jobs.name` has never been unique -- two people may legitimately type the same
+ * thing. A name is a label here, not a key.
+ *
+ * **Nothing parses this**, which is why it can be prose. The dashboard reads
+ * `job.name || source || "Job <id>"` and the search box matches it as text; no code
+ * anywhere splits it, and the job id remains the identifier. If that ever changes, this
+ * is the comment that should stop it.
+ *
+ * **The time is the coordinator's local time**, which is the clock the person reading the
+ * dashboard is on. Deliberately not UTC: this is a label for a human, and the Created
+ * column already carries the date.
+ *
+ * **It leads, because the column truncates at about thirty-two characters.** The Job
+ * column is 188px at a 1600px viewport, so every name here is cut: with the time last it
+ * was the part that disappeared, which is the one part that cannot be spared -- three runs
+ * of one model over one dataset are told apart by exactly those five characters.
+ *
+ * Putting the dataset first instead was tried and is worse: a long dataset name eats the
+ * budget on its own and the time vanishes again. Leading with it is the only order where
+ * the disambiguator survives whatever the names are, and it spends the ellipsis on the
+ * model, which is the part least likely to differ between the runs somebody is comparing.
+ * The full name is a hover away -- the cell carries it as a title.
+ *
+ * @param {Object} spec - The job spec, after the dataset has been composed.
+ * @param {Date} [when] - When it was submitted; now by default.
+ * @returns {?string} The name, or null when there is not enough to make one.
+ */
+function composeTrainingJobName(spec, when = new Date()) {
+    const shorten = (value) => {
+        const text = String(value === undefined || value === null ? '' : value).trim();
+
+        return text.length > GENERATED_NAME_PART ? `${text.slice(0, GENERATED_NAME_PART - 1)}…` : text;
+    };
+
+    const dataset = shorten(spec && spec.dataset && spec.dataset.name);
+    const model = shorten(spec && spec.model && spec.model.name);
+
+    /* **Null rather than a name with a hole in it.** A spec missing one of the two is
+       already refused by the time this runs, so this is the belt rather than the braces --
+       but "undefined · rockfish5" reaching the screen would be worse than `Job 21782`,
+       which at least resolves to something. */
+    if (!dataset || !model) return null;
+
+    const clock = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
+
+    return `${clock} · ${dataset} · ${model}`;
+}
+
 class GpuService {
 
     /**
@@ -594,6 +687,19 @@ class GpuService {
         // nothing is still demonstrably alive -- and `last_seen_at` is the only
         // thing a pool view has to tell an idle machine from a dead one.
         await gpuRepository.markWorkerSeen(workerId);
+
+        /* **And the GPU reading it sent, which used to be discarded unless it got
+           work.** `capabilities` arrives on every poll and was read only when a lease
+           was granted, as the attempt snapshot -- so the activity charts could show only
+           the minutes a machine happened to be holding one, and an idle pool looked like
+           no pool. Same field, written down instead of dropped. */
+        await gpuRepository.sampleIdleWorker({
+            workerId,
+            devices: body.capabilities
+                && body.capabilities.resources
+                && body.capabilities.resources.nvidia
+                && body.capabilities.resources.nvidia.devices,
+        });
 
         // And while something is happening, retire whatever has stopped
         // happening (#202). One poll from any machine keeps the whole pool
@@ -1247,6 +1353,15 @@ class GpuService {
 
         const ingest = await this.ingestPublishedJob(published);
 
+        // **What YOLO measured, which is not an ingest and must not behave like one.**
+        // A training job is not in `INGESTIBLE_JOB_KINDS`, so the branch below never
+        // fires for one, and this deliberately cannot withdraw a success: the
+        // deliverable of a training run is the weights, which are already stored and
+        // verified by hash. Costing a volunteer hours of GPU time because a plot's JSON
+        // was malformed would be the wrong trade, so a failure here is reported and the
+        // run stays succeeded.
+        const trainingMetrics = await trainingMetricsService.ingestForPublishedAttempt(published);
+
         // **A success that did not reach the database is withdrawn** (#225).
         // `publishResult` marked the attempt succeeded because the bytes arrived;
         // that is only half of finishing, and an ingest that refused them means
@@ -1277,7 +1392,15 @@ class GpuService {
             };
         }
 
-        return ingest === null ? published : { ...published, ingest };
+        const answer = ingest === null ? { ...published } : { ...published, ingest };
+
+        // Only when there was something to say. A `skipped` on every inference result
+        // would be noise in an answer the worker reads.
+        if (!trainingMetrics.skipped) {
+            answer.training_metrics = trainingMetrics;
+        }
+
+        return answer;
     }
 
     /**
@@ -1861,6 +1984,7 @@ class GpuService {
 
         this.validateSubmittedVideo(spec.video);
         this.validateSubmittedModel(spec.model);
+        await this.refuseBaseModelForInference(spec.model);
         this.validateSubmittedReduction(spec.reduction);
         await this.validateSubmittedObservationTarget(kind, spec);
 
@@ -2045,6 +2169,15 @@ class GpuService {
             }
         }
 
+        /* **An explicit name always wins, and blank counts as absent.** The form treats a
+           cleared field as not answering rather than as answering with nothing, so the
+           condition above is what decides -- a name is generated only where a person left
+           it alone, and nothing here can overwrite what somebody typed.
+
+           Training only. The same block in submitJob above is untouched: an inference job
+           names a video, which the screens already fall back to, so there is nothing a
+           generated name would add there. */
+
         /* Composed here rather than taken from the submitter. The locator is
            coordinator-relative, exactly as a model artifact's is, so a worker
            resolves it against whichever MARP it is enrolled with and a spec
@@ -2058,6 +2191,11 @@ class GpuService {
                 sha256: String(archive.archive_sha256).toLowerCase(),
             },
         };
+
+        /* Composed from `jobSpec` rather than from `spec`, because the dataset name is
+           filled in up there from the archive row -- the submitter sends a dataset id and
+           nothing else, so naming off the raw spec would produce a name with a hole in it. */
+        if (name === null) name = composeTrainingJobName(jobSpec);
 
         const createdBy = principal && principal.type === 'user' ? principal.id : null;
         const jobs = await gpuRepository.createJobs([{
@@ -2094,6 +2232,164 @@ class GpuService {
         }
 
         return result;
+    }
+
+
+    /**
+     * What clearing a state would take with it, counted and deleting nothing.
+     *
+     * **A GET, not a flag on the DELETE, and that is the whole point of it.** An unknown
+     * query parameter is ignored rather than refused, so `DELETE ?state=failed&dryRun=true`
+     * sent to a MARP that predates the flag is simply a delete -- 1,189 jobs gone, and the
+     * caller holding an answer it thinks is a preview. A separate verb cannot be
+     * misunderstood that way: a server without this route answers 404 and destroys nothing.
+     *
+     * The allow-list is checked first and identically, because answering for a state the
+     * delete refuses would teach a caller the state is deletable.
+     *
+     * @async
+     * @param {Object} [query] - `{state}`; defaults to `failed`.
+     * @returns {Promise<Object>} `{state, jobs, attempts, events, blocked, observations, builds}`.
+     * @throws {ApiError} 400 when the state is not one that can be cleared.
+     */
+    async deletableJobs(query = {}) {
+        const state = query.state === undefined ? 'failed' : String(query.state);
+
+        if (!DELETABLE_STATES.includes(state)) {
+            invalid(`state must be ${DELETABLE_STATES.join(' or ')}, and was ${JSON.stringify(query.state)}.`);
+        }
+
+        return { state, ...await gpuRepository.previewDeleteJobsInState(state) };
+    }
+
+    /**
+     * Delete every job in one state.
+     *
+     * **The allow-list has one entry and that is a decision, not a stub.** `failed` is
+     * what was asked for: a list cluttered with work that did not finish. `cancelled`
+     * is a bigger pile and nobody has asked, and the two are not interchangeable --
+     * `observations.gpu_job_id` is SET NULL, so deleting a job that produced
+     * observations leaves them in place with nothing to say where they came from. That
+     * is provenance going quietly, and it should be somebody's decision rather than a
+     * parameter a caller discovers it can pass.
+     *
+     * Jobs an artifact still references are not deleted and not treated as a failure:
+     * the repository excludes them and names them, and the caller reports a partial
+     * result as a partial result.
+     *
+     * @async
+     * What this would take is answered by `deletableJobs`, which is a GET and therefore
+     * cannot be mistaken for this.
+     *
+     * @param {Object} [query] - `{state}`; defaults to `failed`.
+     * @returns {Promise<{state: string, deleted: number, blocked: number[]}>}
+     * @throws {ApiError} 400 when the state is not one this will delete.
+     */
+    async deleteJobsInState(query = {}) {
+        const state = query.state === undefined ? 'failed' : String(query.state);
+
+        if (!DELETABLE_STATES.includes(state)) {
+            invalid(`state must be ${DELETABLE_STATES.join(' or ')}, and was ${JSON.stringify(query.state)}.`);
+        }
+
+        const { deleted, blocked } = await gpuRepository.deleteJobsInState(state);
+
+        return { state, deleted: deleted.length, blocked };
+    }
+
+
+    /**
+     * Delete a selection of jobs, skipping the ones that are not safe.
+     *
+     * **No acknowledgement, deliberately.** A job holding observations comes back in
+     * `blocked` and has to be deleted on its own, where its own count is shown. The
+     * moment a selection could override that, one checkbox stands between somebody and
+     * every observation's provenance.
+     *
+     * @async
+     * @param {Object} [query] - `{ids}`, comma-separated or an array.
+     * @returns {Promise<{deleted: number, blocked: Array<{id: number, reason: string}>}>}
+     * @throws {ApiError} 400 when the selection is empty, malformed or too large.
+     */
+    async deleteJobsByIds(query = {}) {
+        const MAX_SELECTION = 200;
+        const raw = Array.isArray(query.ids) ? query.ids : String(query.ids ?? '').split(',');
+        const ids = raw.map((value) => String(value).trim()).filter(Boolean).map(Number);
+
+        if (!ids.length) invalid('ids must name at least one job.');
+
+        if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+            invalid('ids must all be positive integers.');
+        }
+
+        if (ids.length > MAX_SELECTION) {
+            invalid(`ids names ${ids.length} jobs; ${MAX_SELECTION} is the most one request will delete.`);
+        }
+
+        const { deleted, blocked } = await gpuRepository.deleteJobsByIds([...new Set(ids)]);
+
+        return { deleted: deleted.length, blocked };
+    }
+
+
+    /**
+     * Delete one job, whatever state it is in.
+     *
+     * **The guard is about observations, not about state.** `observations.gpu_job_id`
+     * is `ON DELETE SET NULL`, so deleting a job that produced observations does not
+     * refuse and does not cascade -- it removes the link from each observation back to
+     * the run that made it, silently. Measured on this corpus: the succeeded jobs hold
+     * 114,866 observations between them and every other state holds none. So a delete
+     * that would unlink anything requires `acknowledgeObservations`, and the refusal
+     * carries the real number for that job rather than a general warning.
+     *
+     * An artifact is a different matter and is a refusal outright: the foreign key is
+     * RESTRICT, and deleting the artifact to make the job deletable would be destroying
+     * the output to tidy the record of the work.
+     *
+     * @async
+     * @param {string|number} jobId - From the path.
+     * @param {Object} [options] - `{acknowledgeObservations}`.
+     * @returns {Promise<{deleted: number, observationsUnlinked: number, attemptsRemoved: number}>}
+     * @throws {ApiError} 404 when there is no such job, 409 when an artifact holds it or
+     * when it would unlink observations and nobody has said so.
+     */
+    async deleteJob(jobId, options = {}) {
+        const id = this.jobIdFromPath(jobId);
+        const impact = await gpuRepository.jobDeletionImpact(id);
+
+        if (!impact) {
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `GPU job ${jobId} was not found.`);
+        }
+
+        if (impact.artifacts > 0) {
+            throw new ApiError(409, ERROR_CODES.CONFLICT,
+                `GPU job ${id} cannot be deleted: ${impact.artifacts} artifact(s) reference it.`,
+                [{ job_id: id, artifacts: impact.artifacts }]);
+        }
+
+        const acknowledged = options.acknowledgeObservations === true
+            || String(options.acknowledgeObservations).toLowerCase() === 'true';
+
+        if (impact.observations > 0 && !acknowledged) {
+            throw new ApiError(409, ERROR_CODES.CONFLICT,
+                `GPU job ${id} produced ${impact.observations} observations. Deleting it leaves them in `
+                + 'place with no record of what produced them. Resend with acknowledgeObservations=true '
+                + 'to delete it anyway.',
+                /* **The number machine-readably, as well as in the sentence.** A client
+                   that has to show "this unlinks 412 observations" before it can ask for
+                   the flag would otherwise have to read the count back out of English,
+                   and a reworded sentence would silently break it. */
+                [{ job_id: id, observations: impact.observations, attempts: impact.attempts }]);
+        }
+
+        await gpuRepository.deleteJobById(id);
+
+        return {
+            deleted: id,
+            observationsUnlinked: impact.observations,
+            attemptsRemoved: impact.attempts,
+        };
     }
 
 
@@ -2343,6 +2639,50 @@ class GpuService {
      * @returns {void}
      * @throws {ApiError} 400 when the locator is not one a worker could fetch.
      */
+    /**
+     * Refuse a pretrained base model for inference.
+     *
+     * **Its classes are not MARP's.** A base model carries the upstream vocabulary --
+     * ImageNet's thousand labels for a classifier -- and the ingest resolves whatever a
+     * run reports against `species.comname`. Run one over video and the names it emits
+     * are resolved against the species catalogue and written into observations, which
+     * puts invented records into the scientific record.
+     *
+     * **Refused here rather than at ingest, because here it costs one response.** At
+     * ingest it costs the GPU hours first, and the one check that would have caught it --
+     * `checkSessionTypeAgainstModel` -- returns early for a model with no species, by a
+     * deliberate decision that was correct while every registered model was a trained
+     * detector. There is a backstop there too, but this is the gate that should fire.
+     *
+     * Only when the spec names a registered model: `ml_model_id` is optional on an
+     * inference spec, and a spec that names no model by id cannot be checked against the
+     * registry at all. Training is untouched -- starting from a base model is the whole
+     * reason one is registered.
+     *
+     * @async
+     * @param {Object} [model] - `spec.model` as supplied.
+     * @returns {Promise<void>} Resolves when the model is one inference may use.
+     * @throws {ApiError} 400 when it names a base model.
+     */
+    async refuseBaseModelForInference(model) {
+        const modelId = model && model.ml_model_id;
+
+        if (!modelId) {
+            return;
+        }
+
+        const row = await ingestRepository.getModel(modelId);
+
+        if (row && row.is_base) {
+            invalid(
+                `Model ${modelId} (${row.name}) is a pretrained base model and cannot be used for `
+                + 'inference: its classes are the upstream vocabulary rather than MARP species, so its '
+                + 'output would be resolved against the species catalogue and written into observations. '
+                + 'Train from it first, and run inference with the model that comes out.'
+            );
+        }
+    }
+
     validateSubmittedModel(model) {
         if (model === undefined || model === null) {
             invalid(

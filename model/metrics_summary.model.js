@@ -56,6 +56,63 @@ const { Model } = require('sequelize');
  *           type: string
  *           enum: [train, val, test]
  *           description: Specifies which dataset split these metrics apply to - "train", "val", or "test".
+ *         metric_family:
+ *           type: string
+ *           enum: [box, seg, classify]
+ *           nullable: true
+ *           description: >
+ *             Which vocabulary this row's numbers are in. A segmentation run reports the
+ *             same four metric names for boxes and for masks, so it writes a "box" row
+ *             and a "seg" row per class - "seg" because that is the library's own
+ *             attribute name, while "(M)" is only the metric-key suffix. A "classify"
+ *             run writes ONE aggregate row with every metric column null and its top-1
+ *             and top-5 in details, because classification reports no per-class array
+ *             and no precision, recall or AP at all. That is a different fact from a
+ *             detection row which failed to measure them, and telling those two apart
+ *             is what this column exists for.
+ *         class_name:
+ *           type: string
+ *           nullable: true
+ *           description: >
+ *             The class as the model named it. Null means the all-classes aggregate.
+ *             Set with a null species_id means a class MARP could not resolve to a
+ *             species; the row is kept, because the model is actively predicting that
+ *             class and dropping it would hide it.
+ *         accuracy_top1:
+ *           type: number
+ *           format: double
+ *           nullable: true
+ *           example: 0.873
+ *           description: >
+ *             Classification's headline: the share of images whose single highest-scoring
+ *             class was correct. A fraction in [0, 1], not a count. Null on every box and
+ *             seg row, where it does not apply rather than being missing - which is what
+ *             metric_family exists to make tellable.
+ *         accuracy_top5:
+ *           type: number
+ *           format: double
+ *           nullable: true
+ *           example: 0.961
+ *           description: >
+ *             The share whose correct class was among the five highest-scoring. Always at
+ *             least accuracy_top1, and the gap between them is the useful part.
+ *         support:
+ *           type: integer
+ *           nullable: true
+ *           example: 142
+ *           description: >
+ *             Labelled instances of this class in the evaluated split. Null on the
+ *             aggregate row. A precision of 1.0 over three instances and over three
+ *             thousand are not the same claim; this is what tells them apart, and on a
+ *             species list whose rare classes are the point it is the difference
+ *             between a useful number and a misleading one.
+ *         image_count:
+ *           type: integer
+ *           nullable: true
+ *           example: 37
+ *           description: >
+ *             Images in the evaluated split containing this class. 142 instances across
+ *             37 frames is a different survey from 142 across 140.
  *         precision:
  *           type: number
  *           format: float
@@ -228,6 +285,48 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         comment:
           'Specifies which dataset split these metrics apply to: "train", "val", or "test".',
+      },
+
+      metric_family: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment:
+          'Which vocabulary this row\'s numbers are in: "box", "seg" or "classify". A segmentation run reports the same four metric names twice, once per family, so it writes two rows per class rather than needing extra columns. "seg" matches the library\'s own attribute; "(M)" is only the metric-key suffix. Null on rows written before this column existed.',
+      },
+
+      class_name: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment:
+          'The class as the model named it. Null means the all-classes aggregate; set with a null species_id means a class MARP could not resolve to a species, which is kept rather than dropped.',
+      },
+
+      accuracy_top1: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        comment:
+          'Share of images whose single highest-scoring class was correct. A fraction in [0, 1], not a count. Null on any row whose metric_family is not classify, where it does not apply rather than being missing.',
+      },
+
+      accuracy_top5: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        comment:
+          'Share of images whose correct class was among the five highest-scoring. Always at least accuracy_top1; the gap between them is the useful part, because a model that is nearly right about everything is a different thing from one that is confidently wrong.',
+      },
+
+      support: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'Labelled instances of this class in the evaluated split. Null on the aggregate row. A precision of 1.0 over three instances and over three thousand are not the same claim, and this is what tells them apart. Resolved against its class by name by the producer, never joined here: the source array is indexed by class id while the metrics beside it are indexed by evaluated position, and joining those would misattribute counts whenever a class went unevaluated.',
+      },
+
+      image_count: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'Images in the evaluated split containing this class. 142 instances across 37 frames is a different survey from 142 across 140, which on transect video is the distinction between a shoal and a scatter. Never sum this column: a frame holding three species is counted once for each, so a total counts that frame three times. Null on the aggregate row for that reason and because the trainer reports no whole-split count.',
       },
 
       precision: {

@@ -113,12 +113,12 @@ for (const { name, theirs, from } of PAIRS) {
     }
 }
 
-/* **Every screen has to load the data layer, and load it before `mock.js`.**
+/* **Every screen has to load the data layer, and load it before `screens.js`.**
    A page that forgets leaves `window.MarpApi` undefined, and the renderers all
    begin `if (!window.MarpApi) return` -- so the screen draws nothing and says
    nothing, which is the worst of both. That happened on Datasets: the wiring
    was written, the page never loaded the module, and the only symptom was an
-   empty table. The order matters too, because `mock.js` reads the global while
+   empty table. The order matters too, because `screens.js` reads the global while
    it runs rather than on an event. */
 /* `index.html` is the app's own landing page: it links to the eight screens and draws
    nothing from the data layer, so requiring it to load `api.js` would be requiring it to
@@ -127,10 +127,10 @@ for (const { name, theirs, from } of PAIRS) {
 for (const page of readdirSync(app).filter((f) => f.endsWith('.html') && f !== 'index.html')) {
     const html = readFileSync(join(app, page), 'utf8');
     const api = html.indexOf('api.js');
-    const mock = html.indexOf('mock.js');
+    const mock = html.indexOf('screens.js');
 
     if (api === -1) problems.push(`${page} never loads api.js, so window.MarpApi is undefined and every renderer silently returns.`);
-    else if (mock !== -1 && api > mock) problems.push(`${page} loads api.js after mock.js; the global has to exist before mock.js runs.`);
+    else if (mock !== -1 && api > mock) problems.push(`${page} loads api.js after screens.js; the global has to exist before screens.js runs.`);
 }
 
 /* The live attempt states are a subset rather than a copy: the pool view only

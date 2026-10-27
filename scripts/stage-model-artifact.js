@@ -62,7 +62,15 @@ async function main() {
     if (apply) {
         await fsp.mkdir(path.dirname(destination), { recursive: true });
         if (sourcePath !== destination) await fsp.copyFile(sourcePath, destination);
-        console.log('Staged.');
+
+        /* **The digest is recorded, not only printed.** It was printed for a person to
+           paste into a job spec by hand, which is how the one successful training run
+           got its spec -- and it meant the Training screen could not compose one at
+           all. Same computation, written down. */
+        model.artifact_sha256 = digest;
+        await model.save();
+
+        console.log('Staged, and its checksum recorded.');
     } else {
         console.log('Dry run only. Pass --apply to copy.');
     }

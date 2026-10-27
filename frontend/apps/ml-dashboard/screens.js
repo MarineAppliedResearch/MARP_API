@@ -1,10 +1,17 @@
 /**
- * The shared chrome and the shared behaviour for every mockup screen.
+ * The shared chrome and the shared behaviour for every screen of the dashboard.
+ *
+ * **This file was called `mock.js` and nothing in it has been a mock for months.**
+ * It draws the real application from the real API: `api.js` is the only seam, every
+ * renderer here reads what MARP returned, and the polling is live. The name was left
+ * over from the weeks in 2026 when these were hand-written screens with no backend, and
+ * it kept inviting the obvious question from everyone who arrived at it -- Isaac's
+ * included: *"who is writing mock.js, we aren't supposed to be mocking anything up?"*
  *
  * The icon sprite, the rail and the top bar's controls are built here rather
  * than copied into each screen's HTML. They were copied, and the point of
  * catching that early is that eight hand-written pages drift: a nav item gets
- * renamed on one screen, an icon is added on another, and the mockups stop
+ * renamed on one screen, an icon is added on another, and the screens stop
  * agreeing about what the application is. One definition cannot drift.
  *
  * A screen therefore declares only what it *is*:
@@ -17,7 +24,7 @@
  *         <main class="content"> ... the screen ... </main>
  *       </div>
  *     </div>
- *     <script src="./mock.js"></script>
+ *     <script src="./screens.js"></script>
  *
  * Behaviour is opt-in by markup: a screen with no drawer gets no drawer code,
  * a table with no sortable header is left alone.
@@ -80,6 +87,10 @@ const ICONS = {
   menu: '<path d="M2.4 4.4h11.2M2.4 8h11.2M2.4 11.6h11.2"/>',
   video: '<rect x="1.6" y="4" width="9" height="8" rx="1.2"/><path d="M10.6 7.4 14.4 5.2v5.6l-3.8-2.2z"/>',
   pencil: '<path d="M11 2.6l2.4 2.4-8 8H3v-2.4z"/>',
+  /* **Not the cross.** `x` closes and cancels everywhere on these screens, and a
+     permanent delete sharing that glyph is how somebody destroys a job meaning to
+     dismiss a row. */
+  trash: '<path d="M3.2 4.6h9.6"/><path d="M6.4 4.6V3.2a.8.8 0 0 1 .8-.8h1.6a.8.8 0 0 1 .8.8v1.4"/><path d="M4.6 4.6l.5 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.5-8"/>',
   split: '<path d="M2.4 8h3.2M2.4 8V4.4h3.2M2.4 8v3.6h3.2M8.8 4.4h4.8M8.8 8h4.8M8.8 11.6h4.8"/>',
   star: '<path d="M8 2.2l1.8 3.7 4 .6-2.9 2.9.7 4.1L8 11.6l-3.6 1.9.7-4.1L2.2 6.5l4-.6z"/>',
 };
@@ -120,7 +131,6 @@ const NAV = [
   { id: 'models', label: 'Models',
     tip: 'The model registry, its versions and what each is preferred for' },
   { id: 'workers', label: 'Workers', tip: 'The GPU pool that runs the work' },
-  { id: 'history', label: 'History', tip: 'Finished work, searchable' },
 ];
 
 const IMG = '../../../shared/assets/images/';
@@ -144,13 +154,19 @@ const IMG = '../../../shared/assets/images/';
 async function fillRailBadges() {
   if (!window.MarpApi) return;
 
-  const set = (id, count) => {
+  const set = (id, count, label) => {
     const badge = $('[data-nav-badge="' + id + '"]');
 
     if (!badge) return;
 
     badge.textContent = String(count);
     badge.hidden = !count;
+
+    /* **What the number is, not just the number.** The Jobs badge is a count of failed
+       jobs and read as a bare 1,189 with nothing saying so; Isaac asked what it meant
+       twice, once when it said 8. The count was always right -- the silence was the
+       defect. */
+    if (label) badge.title = `${Number(count).toLocaleString()} ${label}`;
   };
 
   try {
@@ -162,9 +178,9 @@ async function fillRailBadges() {
       window.MarpApi.listJobs({ state: 'leased', kind: 'training', limit: 1 }),
     ]);
 
-    set('jobs', failed.total || 0);
-    set('inference', inference.total || 0);
-    set('training', training.total || 0);
+    set('jobs', failed.total || 0, 'failed jobs');
+    set('inference', inference.total || 0, 'inference jobs running');
+    set('training', training.total || 0, 'training jobs running');
   } catch {
     /* Nothing: a rail that could not count is a rail without badges. */
   }
@@ -239,7 +255,6 @@ const TOPBAR = {
     search: 'Search models by name, task, dataset or description\u2026' },
   workers: { project: false, wide: true, actions: ['tokens'], kebab: true,
     search: 'Search workers by name, GPU or job\u2026' },
-  history: { project: true, actions: [] },
 };
 
 function mountTopbar() {
@@ -271,7 +286,11 @@ function mountTopbar() {
     + '<input class="inp" type="search" placeholder="'
     + (cfg.search || 'Search jobs, models, datasets\u2026') + '"'
     + ' aria-label="Search"></span>'
-    + '<button class="btn icon" aria-label="Reload" title="Reload">' + ico('refresh') + '</button>'
+    /* **On every screen, because it is the same question on every screen.** Isaac asked
+       for it on Models and it was absent everywhere; building it into the shared chrome
+       is the difference between answering him once and answering him seven times. */
+    + '<span class="fresh" data-freshness aria-live="polite" title="When MARP last answered"></span>'
+    + '<button class="btn icon" data-reload aria-label="Reload" title="Reload">' + ico('refresh') + '</button>'
     + (cfg.actions || []).map(btn).join('')
     + (cfg.kebab
       ? '<button class="btn icon" aria-label="More" title="Export, columns and settings">'
@@ -508,10 +527,20 @@ async function wirePoolUtilization() {
   const root = $('[data-pool-history]');
   if (!root) return;
 
+  /* **One ladder across the dashboard**: 1h, 24h, 7d, 30d, 1y. Every chart takes a
+     contiguous four of it, so the vocabulary is shared without every chart carrying every
+     rung. Eight charts had four different vocabularies between them and no reason for any
+     of it; `5h` was the only rung that was not a round unit and `90d` sat between 30d and
+     1y on one chart alone, so both went.
+
+     **This chart stops at 30 days because its data does.** `SAMPLE_RETENTION_DAYS` is 30
+     and the pool read sweeps anything older, so a year here would be empty by
+     construction -- which is the complaint this is answering, not a way to answer it. */
   const RANGES = {
     '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
-    '5h': { hours: 5, bucket: 'minute', label: 'the last 5 hours' },
     '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+    '7d': { hours: 168, bucket: 'hour', label: 'the last 7 days' },
+    '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
   };
 
   const lines = Object.fromEntries($$('[data-pool-line]', root).map((l) => [l.dataset.poolLine, l]));
@@ -548,7 +577,7 @@ async function wirePoolUtilization() {
       b.setAttribute('aria-pressed', String(on));
     });
 
-    const { hours, bucket, label } = RANGES[next] || RANGES['5h'];
+    const { hours, bucket, label } = RANGES[next] || RANGES['24h'];
     const until = new Date();
     const span = {
       since: new Date(until.getTime() - hours * 3600e3).toISOString(),
@@ -625,7 +654,7 @@ async function wirePoolUtilization() {
   }
 
   buttons.forEach((b) => b.addEventListener('click', () => choose(b.dataset.poolRange)));
-  await choose('5h');
+  await choose('24h');
 }
 
 function batchesWithIssues(jobs) {
@@ -874,9 +903,27 @@ function rowFor(view) {
   const date = when.toISOString().slice(0, 10);
 
   const live = job.state === 'queued' || job.state === 'leased';
-  const actions = live
+
+  /* **Absent on a running job, not disabled.** A leased job has a worker holding it,
+     and deleting it cascades the attempt that worker is heartbeating against -- so the
+     next heartbeat 404s and the machine is reporting into nothing. Cancel first, then
+     delete; the row already carries Cancel while it is live. A greyed button with a
+     tooltip was the other option and Isaac has rejected that shape three times: a
+     control that cannot act should not be drawn.
+
+     Queued is deletable. Nothing is running it, and removing it from the queue is a
+     thing somebody legitimately wants rather than a cancellation. */
+  const removable = job.state !== 'leased';
+  const remove = removable
+    ? `<button class="btn sm icon danger" type="button" data-delete-job="${job.id}"`
+      + ` aria-label="Delete job ${job.id}" title="Delete this job and everything recorded against it">`
+      + '<svg class="ico sm"><use href="#i-trash"/></svg></button>'
+    : '';
+
+  const actions = (live
     ? '<button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
-    : '<button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button>';
+    : '<button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button>')
+    + remove;
 
   /**
    * Which machine ran this job.
@@ -925,7 +972,7 @@ function rowFor(view) {
        the job object. */
     + ` data-dataset="${job.kind === 'dataset_build' && job.spec && job.spec.dataset_id != null ? job.spec.dataset_id : ''}">`
     + `<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job ${job.id}"></td>`
-    + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+    + `<td class="jname" title="${escapeHtml(view.title)}"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
     + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
     + `<td class="jscope"><span class="two"><span class="a">${scope}</span><span class="b">${frames}</span></span></td>`
     + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
@@ -1127,14 +1174,33 @@ const JOBS_SORT_KEYS = {
   hmodel: (view) => ((view.job.spec.model && view.job.spec.model.name) || '').toLowerCase(),
   hstatus: (view) => JOB_STATE_RANK[view.state],
   hprog: (view) => view.pct,
+  /* **Worker was marked `sortable` in the markup and had no key here**, so the loop that
+     wires the headers skipped it -- `if (!key) continue` -- and clicking it did nothing
+     on desktop while the phone had no button for it at all. A header that says it sorts
+     and does not is worse than one that never claimed to. Blank for a job never leased to
+     a machine, which sorts those together rather than scattering them. */
+  hworker: (view) => (view.job.worker_name || '').toLowerCase(),
   hupd: (view) => view.job.created_at,
 };
 
-/** The column order the phone's sort strip uses. @type {string[]} */
-const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hprog', 'hupd'];
+/**
+ * The column order the phone's sort strip uses.
+ *
+ * **Index for index with the table's headers**, which is why `hworker` goes before
+ * `hupd` rather than on the end: the strip is the only sort control below 1050px and a
+ * reader comparing it with the table above would otherwise find the two in different
+ * orders. Appending it would have been a smaller diff and a worse answer.
+ *
+ * @type {string[]}
+ */
+const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hprog', 'hworker', 'hupd'];
 
 /** The window the whole screen is drawn from, refetched only when the API query changes. */
 let jobsWindow = null;
+
+/* Every job the filters leave, in sort order -- more than the page shows. Export is
+   about the window rather than whichever page somebody happens to be looking at. */
+let jobsWindowViews = [];
 
 /**
  * Narrows, sorts and pages what came back, then draws it.
@@ -1175,6 +1241,8 @@ function applyJobsQuery() {
     return b.job.id - a.job.id;  /* the same id tie-breaker the route uses */
   });
 
+  jobsWindowViews = views;
+
   const total = views.length;
   const pages = Math.max(1, Math.ceil(total / jobsQuery.perPage));
   if (jobsQuery.page > pages) jobsQuery.page = pages;
@@ -1191,6 +1259,38 @@ function applyJobsQuery() {
   applyTips();
 }
 
+/**
+ * How a job's scope reads outside a table cell.
+ *
+ * `rowFor` builds the same thing as markup; this is the plain-text twin, kept beside the
+ * columns that use it rather than factored out of a row that also draws a tag and a link.
+ *
+ * @param {Object} view - From `jobView`.
+ * @returns {string}
+ */
+function jobScopeText(view) {
+  const { session, spec } = view;
+
+  if (session.dive) return `Dive ${session.dive}${session.line ? ` · Line ${session.line}` : ''}`;
+  return spec.session && spec.session.session_id !== undefined ? `Session ${spec.session.session_id}` : '';
+}
+
+/** The columns an exported queue carries, in the order the table draws them. */
+const JOBS_CSV_COLUMNS = [
+  ['Job id', (v) => v.job.id],
+  ['Job', (v) => v.title],
+  ['Type', (v) => v.kindLabel],
+  ['Status', (v) => v.label],
+  ['Scope', jobScopeText],
+  ['Model', (v) => v.model],
+  /* -1 is `jobView`'s "never measured", and a blank says that better than a number
+     would -- writing 0 here would be a gap reading as a measurement. */
+  ['Progress %', (v) => (v.pct < 0 ? '' : v.pct)],
+  ['Created', (v) => v.job.created_at],
+  ['Updated', (v) => v.job.updated_at],
+  ['Worker', (v) => v.job.worker_name || ''],
+];
+
 /* ========================================================== training */
 
 /* Training is two different things on one page, and only one of them has an
@@ -1206,8 +1306,1589 @@ function applyJobsQuery() {
    So the overview, the recent-jobs table and the setup form's choices are real;
    the runs table stays fixture and says so. */
 
-/** Nothing lists these. Distinct from a run that has no epochs yet. */
-const NOT_LISTABLE = '<span class="dash" title="Training runs cannot be listed: /v2/training_run has only a POST, so epochs, losses and mAP exist in MARP but no route returns them (gap 28)">&mdash;</span>';
+/**
+ * No run was recorded for this job, so there is nothing to say about one.
+ *
+ * **This used to say runs could not be listed, and it stopped being true twice.** #260
+ * added the collection read and f951fdda added `GET /training_run/:id/epochs`, so the
+ * page went on explaining why it could not do a thing it was doing. That is the same
+ * defect as a *Design preview* marker on a live chart, and it was in twelve places.
+ */
+const NO_RUN_RECORDED = '<span class="dash" title="No training run was recorded for this job">&mdash;</span>';
+
+/**
+ * Answerable, but only by reading the run's epochs.
+ *
+ * Epochs are fetched per run when a row is opened rather than for every row on the page:
+ * a screen of twenty would be twenty requests for curves nobody asked to see. So this is
+ * a dash that points at where the number is, not one that says it does not exist.
+ */
+const IN_THE_EXPANSION = '<span class="dash" title="Computed from the run&apos;s epochs. Open the row to see it.">&mdash;</span>';
+
+/**
+ * The best validation mAP@50 a training job reached, for the table's own column.
+ *
+ * **Absent and null are different answers, and this is the fourth place today where
+ * collapsing them would have been wrong.** `GET /gpu/jobs?kind=training` derives
+ * `best_map50` over the run's epochs. The same endpoint unfiltered does not carry the
+ * field at all, deliberately: the aggregate costs about 22ms a page, paid almost entirely
+ * by the thousands of inference jobs that have no epochs and no such column. So there are
+ * three states and only two of them are about this job:
+ *
+ * - **a number** — the best epoch of the run, not its last;
+ * - **null** — this training job reached no epoch. That is an answer, and the dash is it;
+ * - **absent** — this response was never asked for the field. Not a statement about the
+ *   job, so the cell says what it said before the field existed rather than inventing
+ *   *no mAP* — which is what an older API, or the unfiltered Jobs screen, would get.
+ *
+ * `job.best_map50 || dash` would collapse all three, and would read a genuine 0.000 —
+ * a model that found nothing — as nothing recorded.
+ *
+ * @param {Object} job - The job as the list returned it.
+ * @param {Object|null} run - Its training run, when one was recorded.
+ * @returns {{html: string, sort: number}} The cell, and its sort key.
+ */
+function bestMap(job, run) {
+  /* Unmeasured sorts below every real mAP, which cannot be negative. */
+  const NOT_A_NUMBER = -1;
+
+  if (!('best_map50' in job)) {
+    return { html: run ? IN_THE_EXPANSION : NO_RUN_RECORDED, sort: NOT_A_NUMBER };
+  }
+
+  /* **A fourth state, and the only one that is about the task rather than the data.**
+     `best_map50` is `max(map50)` over the run's epochs, and a classification run has no
+     mAP at all -- so it comes back present and null, exactly like a detection run that
+     reached no epoch. Without the task those two are indistinguishable, and this cell
+     would tell a reader that a finished classifier "has reported no epoch yet", which is
+     false and confidently so. Null means *not this task* here, and only the task says
+     which null it is. */
+  const task = trainingTaskOf(job);
+  const headline = task ? TRAINING_TASKS[task].headline : null;
+
+  if (headline && headline.from !== 'map50') {
+    return {
+      html: `<span class="dash" title="A ${TRAINING_TASKS[task].label.toLowerCase()} run has no mAP. `
+        + `It reports ${escapeHtml(headline.label.toLowerCase())}, which is in the expansion.">&mdash;</span>`,
+      sort: NOT_A_NUMBER,
+    };
+  }
+
+  if (job.best_map50 === null || job.best_map50 === undefined) {
+    return {
+      html: run
+        ? '<span class="dash" title="This run has reported no epoch yet, so there is no mAP to be best">&mdash;</span>'
+        : NO_RUN_RECORDED,
+      sort: NOT_A_NUMBER,
+    };
+  }
+
+  const best = Number(job.best_map50);
+
+  return {
+    html: `<span title="The best epoch of this run, not its last">${best.toFixed(3)}</span>`,
+    sort: best,
+  };
+}
+
+/** The registry by id, so a row can read its base model's task. */
+let trainingModelsById = new Map();
+
+/** The latest view per training job id, so an open panel redraws from current data. */
+let trainingViewsByJob = new Map();
+
+/** What each training run was, by the job that produced it. Empty until the screen loads. */
+let trainingRunsByJob = new Map();
+
+/* The model each run produced, keyed by run id. `ml_models.training_run_id` is written at
+   registration and is the only record of this: `training_runs.model_id` is the base the
+   run started from, and reading that as the produced model is what made this column
+   name every run after the checkpoint it fine-tuned from. */
+let modelByTrainingRun = new Map();
+
+/**
+ * The model a run registered, as a link to it, or the dash saying none is recorded.
+ *
+ * @param {?Object} run - The run, when the job has one.
+ * @returns {string} A table cell's contents.
+ */
+function producedModelCell(run) {
+  const made = run && modelByTrainingRun.get(run.id);
+
+  return made
+    ? `<a href="./models.html?model=${encodeURIComponent(made.id)}" title="The model version this run registered">${escapeHtml(made.name)}</a>`
+    : NO_REGISTERED_MODEL;
+}
+
+/** How often an open expansion re-reads a run that is still going. */
+const TRAINING_EPOCH_POLL_MS = 5000;
+
+/**
+ * Per-threshold curves by run id, once each.
+ *
+ * `/curves` is about a thousand points per class where `/metrics` is a handful of rows,
+ * which is why the API serves it separately. Re-reading it on every five-second poll of
+ * an open panel would be a megabyte a minute for numbers that cannot change: a run that
+ * has finished evaluating does not evaluate again.
+ */
+const trainingCurvesByRun = new Map();
+
+/**
+ * A path through a series that may have holes in it.
+ *
+ * **Null is not zero, and this is where that is decided.** Most epoch metrics are null
+ * today because the worker does not report them all yet, and a run with no validation
+ * split will never have them. Plotting a null at zero draws a loss falling off a cliff or
+ * an mAP collapsing — a picture of a model failing, invented out of a column nobody
+ * filled. So a gap is a gap: the line stops and starts again after it.
+ *
+ * @param {Array<number|null>} values - One per epoch, in order.
+ * @param {number} max - The top of the scale.
+ * @param {Object} box - `{left, right, top, bottom}` in viewBox units.
+ * @returns {string} An SVG path, empty when nothing was measured.
+ */
+function gappyPath(values, max, box) {
+  const span = Math.max(1, values.length - 1);
+  const x = (i) => box.left + (box.right - box.left) * i / span;
+  const y = (v) => box.bottom - (box.bottom - box.top) * Math.max(0, Math.min(max, v)) / (max || 1);
+
+  let path = '';
+  let open = false;
+
+  values.forEach((value, index) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      /* The break. Anything after this starts a new subpath. */
+      open = false;
+      return;
+    }
+
+    path += `${open ? 'L' : 'M'}${x(index).toFixed(1)},${y(Number(value)).toFixed(1)} `;
+    open = true;
+  });
+
+  return path.trim();
+}
+
+/**
+ * How far above the settled losses the first epoch has to sit before it stops setting the
+ * scale. Twice the highest value every later epoch reached.
+ *
+ * **Not a tuned number: it is the gap between a decay and a warm-up.** A loss that simply
+ * starts high and falls -- which is every healthy curve -- has its first point within a
+ * factor of two of what the rest of the run reaches, so nothing is clipped and the chart
+ * is as it was. A first epoch several times above everything after it is the optimizer
+ * before the model has learned anything, and it is not comparable to the run.
+ */
+const WARMUP_RATIO = 2;
+
+/**
+ * The ceiling for an auto-scaled chart, and which series it had to cut.
+ *
+ * **One warm-up point was setting the scale for sixty.** Run 205 recorded
+ * `train_cls_loss` at 12.10 for epoch 1 and 0.65 for epoch 2; every other value in that
+ * chart lives between 0.35 and 2.27. Scaled to 12.2, validation box loss travelled 3.4px
+ * over ten epochs and DFL loss travelled 0.5px -- six flat lines and a spike, on the chart
+ * whose whole purpose is the gap between each train/validation pair.
+ *
+ * **So the scale follows epoch 2 onward, and what that leaves out is said rather than
+ * hidden.** The alternative was to let `gappyPath` clamp quietly, and a flat line that is
+ * really a clamp cannot be told from a plateau -- which is a finding somebody would act
+ * on. `clipped` is what the caller marks on the chart.
+ *
+ * @param {Object[]} drawn - `{key, label, values}` per series, values one per epoch.
+ * @param {number} count - How many epochs there are.
+ * @returns {{max: number, clipped: Object[]}} The ceiling, and the series above it at epoch 1.
+ */
+function autoCeiling(drawn, count) {
+  const round = (value) => Math.max(1, Math.ceil(value * 10) / 10);
+  const real = (list) => list.filter((value) => value !== null && value !== undefined);
+  const everything = round(Math.max(...real(drawn.flatMap((one) => one.values)), 0));
+
+  /* Two epochs cannot say which of them is the outlier, and dropping one of two leaves
+     nothing to scale by. */
+  if (count < 3) return { max: everything, clipped: [] };
+
+  const settled = real(drawn.flatMap((one) => one.values.slice(1)));
+  const firstMax = Math.max(...real(drawn.map((one) => one.values[0])), 0);
+  const settledMax = Math.max(...settled, 0);
+
+  if (!settled.length || !settledMax || firstMax <= settledMax * WARMUP_RATIO) {
+    return { max: everything, clipped: [] };
+  }
+
+  const max = round(settledMax);
+
+  return {
+    max,
+    clipped: drawn
+      .filter((one) => one.values[0] !== null && one.values[0] !== undefined && one.values[0] > max)
+      .map((one) => ({ key: one.key, label: one.label, value: one.values[0] })),
+  };
+}
+
+/**
+ * One chart of several series over the epochs.
+ *
+ * Built out of the same `result-chart` / `result-line` vocabulary the Jobs detail already
+ * uses, so nothing new was added to draw it and no library came with it.
+ *
+ * @param {Object} spec - `{title, note, max, top, mid, series}`.
+ * @param {Object[]} epochs - The run's epochs, earliest first.
+ * @returns {string} An `<article>`, or an empty state when nothing was measured.
+ */
+function epochChart(spec, epochs) {
+  const box = { left: 46, right: 700, top: 24, bottom: 174 };
+  const drawn = spec.series
+    .map(([key, label, column]) => {
+      const values = epochs.map((epoch) => (epoch[column] === null || epoch[column] === undefined
+        ? null : Number(epoch[column])));
+      const measured = values.filter((v) => v !== null).length;
+
+      return { key, label, column, values, measured };
+    });
+
+  /* A chart whose every series is empty is a frame around nothing. The panel says which
+     columns are missing instead, because *that* is the useful fact while the worker is
+     still being taught to report them. */
+  if (!drawn.some((one) => one.measured)) {
+    /* The note goes on the empty card too. It says what these series *are* -- validation
+       rather than train, say -- and that is as worth knowing when the chart is waiting as
+       when it is drawn. */
+    return `<article class="evaluation-card history-card"><header><div><h5>${spec.title}</h5>`
+      + `<p>Not reported for this run: ${drawn.map((one) => one.label.toLowerCase()).join(', ')}`
+      + `${spec.note ? ` &middot; ${spec.note}` : ''}</p>`
+      + '</div></header></article>';
+  }
+
+  /* **An axis that fits the data, where the data has no ceiling of its own.** `gappyPath`
+     clamps to `max`, so a fixed 2 draws every loss above 2 flat along the top -- and a
+     YOLO class loss routinely starts above 2 with many classes. A flat line that is
+     really a clamp is indistinguishable from a plateau, which is the worst way to be
+     wrong about a loss curve.
+
+     Quality keeps its fixed 1: precision, recall and mAP are 0 to 1 by definition, and a
+     fixed axis is what lets two runs be compared by eye. */
+  const ceiling = spec.max === 'auto'
+    ? autoCeiling(drawn, epochs.length)
+    : { max: spec.max, clipped: [] };
+  const { max } = ceiling;
+  const labels = spec.max === 'auto'
+    ? { top: max.toFixed(1), mid: (max / 2).toFixed(1) }
+    : { top: spec.top, mid: spec.mid };
+
+  const legend = drawn.map((one) => `<button type="button" class="${one.key}" data-result-highlight="${one.key}"`
+    + `${one.measured ? '' : ' disabled title="Not reported for this run"'}>${one.label}</button>`).join('');
+
+  /* The same geometry `gappyPath` works in, needed here to put the break where the line
+     would have left the chart. */
+  const span = Math.max(1, epochs.length - 1);
+  const at = (index) => box.left + (box.right - box.left) * index / span;
+  const height = (value) => box.bottom - (box.bottom - box.top)
+    * Math.max(0, Math.min(max, value)) / (max || 1);
+
+  const cut = new Set(ceiling.clipped.map((one) => one.key));
+
+  /* **A clipped first epoch is dropped from its line rather than pinned to the ceiling.**
+     Clamping it would draw a vertex at the top of the axis that is indistinguishable from
+     a measurement taken there, which is the whole failure this is avoiding. The line
+     starts at epoch 2; a stub shows it coming down from above; the mark and the number
+     say what it was. */
+  const lines = drawn.map((one) => {
+    const values = cut.has(one.key) ? [null, ...one.values.slice(1)] : one.values;
+
+    return `<path class="result-line ${one.key}" d="${gappyPath(values, max, box)}"/>`;
+  }).join('');
+
+  const stubs = ceiling.clipped.map((one) => {
+    const next = drawn.find((series) => series.key === one.key).values[1];
+
+    /* Nothing to come down to when epoch 2 was not measured. The mark still stands. */
+    if (next === null || next === undefined) return '';
+
+    return `<path class="result-stub ${one.key}" `
+      + `d="M${at(0).toFixed(1)},${box.top} L${at(1).toFixed(1)},${height(next).toFixed(1)}"/>`;
+  }).join('');
+
+  /* The number at the break, because it is a real measurement and the most dramatic one
+     in the series -- recoverable by someone looking at the chart, not only from a note
+     somewhere else. */
+  const breaks = ceiling.clipped.map((one, index) => `<g class="result-break ${one.key}" `
+    + `transform="translate(${(at(0) + index * 15).toFixed(1)},${box.top})">`
+    + '<path class="break-mark" d="M-7,7 L-1,-4 M1,7 L7,-4"/>'
+    + `<title>${escapeHtml(one.label)} reached ${one.value.toFixed(2)} at epoch `
+    + `${epochs[0].epoch_number}, above this axis</title>`
+    + `<text x="10" y="4">${one.value.toFixed(2)}</text></g>`).join('');
+
+  const grid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
+    + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
+
+  const first = epochs.length ? epochs[0].epoch_number : 0;
+  const last = epochs.length ? epochs[epochs.length - 1].epoch_number : 0;
+
+  /* The note carries the scale decision; the marks on the chart carry the numbers. Both,
+     because one says why the axis is where it is and the other says what was left out. */
+  const said = ceiling.clipped.length
+    ? ceiling.clipped.map((one) => `${one.label.toLowerCase()} ${one.value.toFixed(2)}`).join(', ')
+    : '';
+  const note = said
+    ? `${spec.note} &middot; scaled to epoch ${epochs[1] ? epochs[1].epoch_number : 2} onward, `
+      + `because epoch ${first} starts above the axis (${escapeHtml(said)})`
+    : spec.note;
+  const label = said
+    ? `${spec.title} by epoch, scaled past epoch ${first}, which reached ${said}`
+    : `${spec.title} by epoch`;
+
+  return `<article class="evaluation-card history-card" data-result-graph><header><div><h5>${spec.title}</h5>`
+    + `<p>${note}</p></div><div class="result-legend">${legend}</div></header>`
+    + `<div class="result-chart" role="img" aria-label="${escapeHtml(label)}">`
+    + `<svg viewBox="0 0 740 205" aria-hidden="true">${grid}`
+    + `<g class="result-axis"><text x="38" y="28">${labels.top}</text><text x="38" y="103">${labels.mid}</text>`
+    + `<text x="38" y="178">0</text><text x="46" y="196">Epoch ${first}</text>`
+    + `<text x="700" y="196">Epoch ${last}</text></g>${lines}${stubs}${breaks}</svg></div></article>`;
+}
+
+/**
+ * What a training job is training, and what that task's panel shows.
+ *
+ * **Keyed by task so a second one is a list of series rather than a component.** Every run
+ * today is detection, which makes it tempting to hard-code box/class/DFL loss and mAP@50 --
+ * and then classification arrives with top-1 and top-5 and no boxes, and segmentation with
+ * mask metrics beside box metrics, and the panel has to be taken apart. Adding either is an
+ * entry here.
+ *
+ * **Not built, and saying so rather than drawing nothing.** `classification` and
+ * `segmentation` are named with no charts because nobody has described what their panels
+ * show. A run of either renders the sections it shares and one sentence about the rest,
+ * which is a gap a reader can see instead of a blank.
+ *
+ * @type {Object}
+ */
+const TRAINING_TASKS = {
+  detection: {
+    label: 'Detection',
+    charts: [
+      {
+        /* **Both splits now, which is the question this chart is actually asked.** Until
+           `ea964f18` the worker sent only `val/*` and this said so; the train trio exists
+           beside it now, so the gap between the pairs -- the overfitting signal -- is
+           readable here instead of being a thing the panel admitted it could not show. */
+        title: 'Loss',
+        note: 'Lower is better &middot; solid is train, dashed is validation &middot; the gap between a pair is the overfitting signal',
+        max: 'auto',
+        series: [
+          ['box-loss-train', 'Box (train)', 'train_box_loss'],
+          ['box-loss', 'Box (val)', 'box_loss'],
+          ['cls-loss-train', 'Class (train)', 'train_cls_loss'],
+          ['cls-loss', 'Class (val)', 'cls_loss'],
+          ['dfl-loss-train', 'DFL (train)', 'train_dfl_loss'],
+          ['dfl-loss', 'DFL (val)', 'dfl_loss'],
+        ],
+      },
+      {
+        title: 'Validation quality',
+        note: 'Higher is better &middot; held-out split',
+        max: 1,
+        top: '1.0',
+        mid: '.5',
+        series: [['precision', 'Precision', 'precision'], ['recall', 'Recall', 'recall'], ['map', 'mAP@50', 'map50'], ['map95', 'mAP@50&ndash;95', 'map5095']],
+      },
+    ],
+    sections: ['matrix', 'classes', 'curves', 'files'],
+    headline: { label: 'Best mAP@50', from: 'map50', note: 'across reported epochs' },
+  },
+  classification: {
+    label: 'Classification',
+    charts: [],
+    /* **Not "nobody has described it".** It is described, off a real two-epoch run the
+       worker session captured, and it cannot be stored. Every per-epoch key a classify
+       run produces is `train/loss`, `val/loss`, `metrics/accuracy_top1` and
+       `metrics/accuracy_top5`, plus the three the worker adds for every task.
+
+       **This said "no validation loss at all" for a few hours, and that was wrong.** The
+       first probe ran one epoch and kept the last callback; at `epochs=1` the callback
+       fires twice, and the second comes after `final_eval()`, which runs the validator
+       without a trainer and so has no loss accumulator to report a validation loss
+       against. Absent from the call that was kept became absent from the task. The extra
+       call never reaches MARP -- the engine's epoch guard drops it rather than counting
+       it as an epoch.
+
+       Worth keeping because it is the lesson one level up from the one this file already
+       carries: reading the literal keys off the trainer rather than off a description is
+       necessary and **not sufficient**. A capture that keeps the wrong call produces a
+       confident falsehood with evidence attached, which is harder to doubt than a guess.
+
+       So: a loss **pair**, the same shape as detection with one pair instead of three,
+       and the real train/validation gap to draw once there are columns. `epochs` has no
+       accuracy columns, and `train/loss` is its own quantity -- not `cls_loss`, which is
+       the classification *component* of a detector's loss and shares only a word. Both
+       are schema questions, raised with the sessions that own them rather than guessed;
+       a chart pointed at a column name invented here would look built and render
+       nothing. */
+    chartsWaiting: 'A classification run reports a training and a validation loss each '
+      + 'epoch, with top-1 and top-5 accuracy. <code>epochs</code> has no accuracy columns, '
+      + 'and none of its loss columns is the one a classifier reports &mdash; so none of it '
+      + 'can be recorded yet. The final accuracy is below.',
+    /* **No `classes` and no `curves`, rather than empty ones.** `ClassifyMetrics` has no
+       per-class array and no thresholds at all, so a section saying "this run recorded
+       none" would read as a run that failed to measure something instead of a task with
+       no such measurement. A section that does not apply does not appear. */
+    sections: ['matrix', 'files'],
+    headline: { label: 'Top-1 accuracy', from: 'accuracy_top1', note: 'at the end of the run' },
+  },
+  segmentation: {
+    label: 'Segmentation',
+    charts: [],
+    sections: ['matrix', 'classes', 'curves', 'files'],
+    headline: { label: 'Best mAP@50', from: 'map50', note: 'across reported epochs' },
+  },
+};
+
+/**
+ * When a job last showed a sign of life.
+ *
+ * **`gpu_jobs.updated_at` is not it while a job runs.** For job 21782 it sat at the
+ * instant the job was created while the worker heartbeated every sixty seconds and
+ * progress advanced -- nothing on the heartbeat path touches the job row. So an Updated
+ * column reading `updated_at` alone is faithfully showing a stale timestamp, which is
+ * the opposite of the Datasets defect: there the value moved and the patch ignored it.
+ *
+ * **The fix is not to write `updated_at` on every heartbeat.** That is a write per
+ * running job per minute, and `updated_at` moving is exactly what reshuffled rows in
+ * heap order and closed expanded rows on Datasets. Taking the later of the two costs
+ * nothing and reshuffles nothing.
+ *
+ * `last_heartbeat_at` is not in the job list payload yet -- `listJobs` joins the latest
+ * attempt for its progress columns and does not select it. This reads it defensively so
+ * the column is right the moment it is added, and unchanged until then.
+ *
+ * @param {Object} job - From `GET /gpu/jobs`.
+ * @returns {string|null} An ISO instant, or null if the job carries neither.
+ */
+function jobLastSeen(job) {
+  const candidates = [job.updated_at, job.last_heartbeat_at]
+    .filter(Boolean)
+    .map((iso) => [iso, Date.parse(iso)])
+    .filter(([, ms]) => Number.isFinite(ms));
+
+  if (!candidates.length) return null;
+
+  return candidates.reduce((latest, one) => (one[1] > latest[1] ? one : latest))[0];
+}
+
+/**
+ * Which task a training job is for.
+ *
+ * **From the base model, because the checkpoint decides the task.** A detection `.pt`
+ * selected for a segmentation run trains a detector; the engine is never told which task
+ * was asked for, which is why `trainingSubmission` refuses a mismatch rather than trusting
+ * the form. So the model's own `model_type` is the answer, and it is read rather than
+ * inferred from which metric columns happen to be null.
+ *
+ * **Not the Task column the Datasets screen lost.** That one was a dataset's task, a field
+ * `Dataset` has never had -- Isaac: *"it'll never have a value"*. This is `ml_models.model_type`,
+ * which exists, is required, and genuinely varies. Same word, different column.
+ *
+ * @param {Object} job - The training job.
+ * @returns {string|null} A key into `TRAINING_TASKS`, or null when the model is unknown.
+ */
+function trainingTaskOf(job) {
+  const id = job && job.spec && job.spec.model && job.spec.model.ml_model_id;
+  const model = trainingModelsById.get(Number(id));
+  const task = String((model && model.model_type) || '').trim().toLowerCase();
+
+  return TRAINING_TASKS[task] ? task : null;
+}
+
+/**
+ * A name with its id kept reachable.
+ *
+ * **Both, because both are used.** The row printed `Dataset 384` where the spec was
+ * carrying `CookieStarTest` all along -- it reached past the name to the id. But the ids
+ * are what Isaac works in and what gets quoted between sessions, so the name is the label
+ * and the id is beside it, small, rather than one replacing the other.
+ *
+ * An older job whose spec has no name falls back to the id alone, which is honest; a blank
+ * cell would not be.
+ *
+ * @param {string} noun - What the id names, for the fallback.
+ * @param {Object} from - `spec.dataset` or `spec.model`.
+ * @param {number|string} id - The id.
+ * @param {string} [href] - Where the name should link, if anywhere.
+ * @returns {string}
+ */
+function namedById(noun, from, id, href) {
+  if (id === null || id === undefined || id === '') return NO_RUN_RECORDED;
+
+  const name = from && typeof from.name === 'string' ? from.name.trim() : '';
+  const small = `<span class="b mono" title="${noun} id">${id}</span>`;
+
+  if (!name) {
+    /* No name in the spec -- older jobs predate it being carried. The id alone says what
+       it can, which is more than an empty cell. */
+    return `<span class="two"><span class="a">${noun} ${id}</span></span>`;
+  }
+
+  const label = href
+    ? `<a href="${href}" title="${escapeHtml(name)}">${escapeHtml(name)}</a>`
+    : escapeHtml(name);
+
+  return `<span class="two"><span class="a">${label}</span>${small}</span>`;
+}
+
+/**
+ * Whether the run being drawn has finished. Set once per panel, read by the sections.
+ *
+ * A module-level flag rather than a parameter threaded through five renderers: they are
+ * called in one place, one at a time, and the alternative was five signatures changed to
+ * carry one boolean.
+ */
+let runHasFinished = false;
+
+/**
+ * A section of the run panel with nothing to draw.
+ *
+ * **Nothing, when the run has finished.** Each of these used to be a paragraph explaining
+ * how the trainer and the worker work -- and on an older run, which will never have
+ * artifacts, that was four paragraphs of mechanism stacked under each other saying only
+ * that there was nothing to see. Isaac, reading it: *"that just seems to be a bunch of
+ * messy filler for no reason"*. He is right: a section with no data on a finished run is
+ * not news, and the honest rendering of nothing is nothing.
+ *
+ * **One short line while a run is still going**, because there the absence is temporary
+ * and a reader is waiting for it. No mechanism, no internals, no naming of who publishes
+ * what -- that belonged in the comments here all along, not on the screen.
+ *
+ * @param {string} title - What the section would show.
+ * @returns {string} The card, or an empty string.
+ */
+function runSectionWaiting(title) {
+  if (runHasFinished) return '';
+
+  return `<article class="evaluation-card history-card"><header><div><h5>${title}</h5>`
+    + '<p>Available when training finishes.</p></div></header></article>';
+}
+
+/**
+ * The confusion matrix, drawn from numbers if MARP has them.
+ *
+ * **Numbers rather than the Ultralytics PNG, where there is a choice.** That render is a
+ * white-background image: it would sit wrong on this page, could not be hovered for a
+ * count, and could not be read at the size this panel gives it. A matrix MARP carries as
+ * numbers is one this can make legible. The image is the fallback, not the target.
+ *
+ * @param {Object|null} matrix - `{labels, rows}` when MARP has one, else null.
+ * @param {string|null} image - A URL to the rendered matrix, when that is all there is.
+ * @returns {string}
+ */
+function confusionMatrix(matrix, image, raw = []) {
+  /* One small link rather than two download tiles in the gallery. It sits here because
+     this is where somebody doubting a number is looking when they want to check it
+     against what the worker actually sent. */
+  const source = raw.length
+    ? `<p class="raw-metrics">${raw.map((file) => `<a href="${escapeHtml(file.url)}" download>`
+      + `${file.name === 'metrics_curves' ? 'Raw curves' : 'Raw metrics'}</a>`).join('')}</p>`
+    : '';
+
+  if (matrix && Array.isArray(matrix.labels) && Array.isArray(matrix.rows)) {
+    const total = (row) => row.reduce((sum, n) => sum + (Number(n) || 0), 0);
+
+    /* **One fallback for both axes.** A label can come back null where the stored
+       vocabulary was shorter than the matrix, and the rows named those `Class 3` while
+       the columns left the header blank -- the same axis, labelled two ways, which reads
+       as the column having no name rather than as MARP not knowing it. */
+    const name = (index) => escapeHtml(matrix.labels[index] ?? `Class ${index}`);
+
+    const cells = matrix.rows.map((row, r) => {
+      const sum = total(row);
+
+      return `<b>${name(r)}</b>`
+        + row.map((value, c) => {
+          const count = Number(value) || 0;
+          const share = sum ? count / sum : 0;
+
+          return `<i style="--heat:${Math.max(.04, share).toFixed(2)}" `
+            + `data-norm="${Math.round(share * 100)}%" data-count="${count.toLocaleString('en-US')}" `
+            + `title="${name(r)} predicted as ${name(c)}: `
+            + `${count.toLocaleString('en-US')}">${Math.round(share * 100)}%</i>`;
+        }).join('');
+    }).join('');
+
+    /* **The axes are named in words on the chart, not only in the caption.** True and
+       Predicted is the one thing a reader has to have right, and a confusion matrix read
+       the wrong way round is completely plausible while asserting the reverse of what
+       happened. The API transposes Ultralytics' own `matrix[predicted][true]` once on
+       the way out so that rows are true here, and this says so where it is being read. */
+    const split = matrix.dataset_split ? ` &middot; ${escapeHtml(matrix.dataset_split)} split` : '';
+
+    return '<article class="evaluation-card matrix-card" data-matrix><header><div><h5>Confusion matrix</h5>'
+      + `<p>Rows are the true class; columns are what the model predicted${split}</p></div>`
+      + '<div class="seg matrix-modes" aria-label="Confusion matrix values">'
+      + '<button type="button" class="on" data-matrix-mode="norm" aria-pressed="true" '
+      + 'title="Each cell as a share of its true class">Normalised</button>'
+      + '<button type="button" data-matrix-mode="count" aria-pressed="false" '
+      + 'title="The instance counts the trainer recorded">Counts</button></div></header>'
+      + '<div class="matrix-scroll"><div class="matrix-frame">'
+      + '<span class="axis-y">True class</span>'
+      + `<div class="confusion" style="--cols:${matrix.labels.length}" role="img" aria-label="Confusion matrix over ${matrix.labels.length} classes, rows true and columns predicted">`
+      + `<span></span>${matrix.labels.map((label, index) => `<b>${name(index)}</b>`).join('')}${cells}`
+      + `</div><span class="axis-x">Predicted class</span></div></div>${source}</article>`;
+  }
+
+  if (image) {
+    /* **Shown as what it is: a render, not a reading.** It cannot be hovered for a count
+       and it carries its own white background, so it is labelled rather than dressed up
+       as part of the page. */
+    return '<article class="evaluation-card"><header><div><h5>Confusion matrix</h5>'
+      + '<p>As the trainer rendered it &mdash; MARP does not carry the counts</p></div></header>'
+      + `<div class="result-plot"><img src="${escapeHtml(image)}" alt="Confusion matrix rendered by the trainer" loading="lazy"></div>${source}</article>`;
+  }
+
+  return runSectionWaiting('Confusion matrix');
+}
+
+/**
+ * Per-class quality, one table per metric family.
+ *
+ * **A family, not a split, is what makes a row unique.** A segmentation run reports `box`
+ * and `mask` for the same class — the same four metric names twice — so a table keyed on
+ * class alone would silently show one and drop the other, or interleave them. Grouping
+ * here means segmentation arrives as a second table rather than a rewrite. Today every
+ * row is `box`, so there is one table and no heading noise.
+ *
+ * **Three kinds of row, and they are not interchangeable:**
+ *
+ * - a class MARP resolved to a species: `species_id` and `class_name` both set;
+ * - a class it could not resolve: `species_id` null, `class_name` set. Shown under the
+ *   name the model used, because dropping it would hide a class the model is predicting;
+ * - the all-classes aggregate: `class_name` null. Pulled out and shown apart, because
+ *   listing it among the classes makes it look like one of them.
+ *
+ * @param {Object[]} classes - `metrics_summary` rows for this run, or empty.
+ * @returns {string}
+ */
+function perClassTable(classes) {
+  if (!classes.length) {
+    /* **"Recorded none" rather than "not yet", because an empty answer is an answer.**
+       The API session settled that a final-metrics report with no `metrics` block is
+       empty-but-valid -- a run that scored nothing -- so for a finished run this section
+       is not waiting for anything. Saying *they reach here when the worker publishes*
+       about a settled result is the stale-text defect this screen keeps producing: true
+       while a run is going, and a small lie the moment it has stopped. */
+    return runSectionWaiting('Per-class quality');
+  }
+
+  const cell = (value) => (value === null || value === undefined
+    ? '<span class="dash" title="Not reported">&mdash;</span>'
+    : Number(value).toFixed(3));
+
+  const count = (value) => (value === null || value === undefined
+    ? '<span class="dash" title="The trainer reported no count. Not the same as counting none.">&mdash;</span>'
+    : Number(value).toLocaleString('en-US'));
+
+  /* **Support and images come before the scores, because they qualify them.** A precision
+     of 1.000 over three instances and one over three thousand render identically without
+     them, and on a survey whose point is the rare species that is the difference between
+     a number somebody acts on and a number that misleads them. Reading left to right, the
+     size of the sample arrives before the claim about it.
+
+     `support` is labelled instances; `image_count` is how many frames held them. 142
+     instances across 37 frames is a shoal, across 140 a scatter, and the scores cannot
+     tell those apart. */
+  const columns = [['Precision', 'precision'], ['Recall', 'recall'], ['F1', 'f1_score'],
+    ['AP@50', 'map50'], ['AP@50&ndash;95', 'map5095']];
+  const counts = [
+    ['Support', 'support', 'Labelled instances of this class in the evaluated split'],
+    ['Images', 'image_count', 'How many frames contained it'],
+  ];
+
+  /**
+   * What a family is called where a reader sees it.
+   *
+   * **`seg`, not `mask`.** `SegmentMetrics.seg` is Ultralytics' own name for it; `(M)`
+   * is only the suffix on the metric keys. An unlisted family falls through to its own
+   * key below, so a wrong guess here would have shown up as a heading reading "seg"
+   * rather than as a dropped table -- but it would have shown up on the first
+   * segmentation run and nowhere before it.
+   *
+   * Classification is deliberately absent: it reports top-1 and top-5 and no per-class
+   * array at all, so it never arrives as rows of this shape.
+   */
+  const FAMILY = { box: 'Box', seg: 'Segmentation' };
+
+  const families = new Map();
+
+  for (const row of classes) {
+    const family = row.metric_family || 'box';
+
+    if (!families.has(family)) families.set(family, []);
+    families.get(family).push(row);
+  }
+
+  const tableFor = (family, rows) => {
+    /* The aggregate is the row with no class name. It is a different quantity from the
+       classes above it and reads as one of them if it is left in the list. */
+    const overall = rows.find((row) => !row.class_name);
+    /* **Worst AP first, which is the question this table is actually asked.** Nobody
+       scans a species list alphabetically to find what the model is bad at, and the
+       sorted bar is the form the field uses for exactly that. A class with no AP sorts
+       last rather than first: not measured is not the same as measured badly, and
+       putting it at the top would answer the question wrongly. */
+    const score = (row) => (row.map50 === null || row.map50 === undefined
+      ? Number.POSITIVE_INFINITY : Number(row.map50));
+    const named = rows.filter((row) => row.class_name)
+      .sort((a, b) => score(a) - score(b) || String(a.class_name).localeCompare(String(b.class_name)));
+
+    const body = named.map((row) => {
+      const label = escapeHtml(row.class_name);
+      /* A class the model predicted and MARP could not place. Worth seeing, and worth
+         marking: it means the species lookup found nothing, not that the class is odd. */
+      const unresolved = row.species_id === null || row.species_id === undefined
+        ? ' <span class="faint" title="MARP could not resolve this class to a species">unmatched</span>'
+        : '';
+
+      /* **Attribution, not a warning.** Flagging "low support" would need a cutoff, and
+         any cutoff here would be mine rather than MARP's -- on a survey whose point is
+         the rare species, an invented threshold is the kind of confident fiction this
+         screen keeps having removed. So every score says what it rests on instead: a
+         precision of 1.000 over 3 instances reads as exactly that when you ask it, and
+         the reader draws their own line. */
+      const over = row.support === null || row.support === undefined
+        ? ''
+        : ` title="over ${Number(row.support).toLocaleString('en-US')} labelled instance${Number(row.support) === 1 ? '' : 's'}"`;
+
+      return `<tr><th scope="row">${label}${unresolved}</th>`
+        + counts.map(([, key]) => `<td class="num">${count(row[key])}</td>`).join('')
+        /* The AP@50 cell carries its own bar, so the column reads as a ranking at a
+           glance rather than as five decimals to compare by eye. */
+        + columns.map(([, key]) => (key === 'map50' && row[key] !== null && row[key] !== undefined
+          ? `<td class="apcell"${over}><span class="apbar" style="--v:${Math.max(0, Math.min(1, Number(row[key]))).toFixed(3)}"></span>`
+            + `<span class="apnum">${cell(row[key])}</span></td>`
+          : `<td${over}>${cell(row[key])}</td>`)).join('') + '</tr>';
+    }).join('');
+
+    /* **"Classes seen", not "all classes".** The aggregate is a mean over the classes that
+       actually appeared in validation, not over the vocabulary -- a species the run never
+       saw is not a zero in it, it is absent from it. Labelling it "all" invites exactly
+       the reading it cannot support, which is the VRAM problem again: the number is fine
+       and the word was wrong. */
+    const foot = overall
+      ? `<tfoot><tr><th scope="row" title="Mean over the classes that appeared in validation, `
+        + `not over the whole species vocabulary">Classes seen (${named.length})</th>`
+        /* **Not a sum, and the two columns have different reasons for it** -- recorded
+           together so neither gets "corrected" on the strength of the other, which is the
+           same guard the API session put in the column comments.
+
+           `image_count` is not summable at all: a frame holding three species is counted
+           once for each, so a total counts that frame three times and answers no question
+           anybody asked. `support` would be summable in principle, since instances really
+           are disjoint -- but the trainer reports no whole-split count, so a figure
+           computed here would be arithmetic of mine rather than a measurement. Same
+           answer, different reasons, and the weaker one is not a licence for the other. */
+        + counts.map(() => '<td class="num"><span class="dash" title="Reported per class only">&mdash;</span></td>').join('')
+        + `${columns.map(([, key]) => `<td>${cell(overall[key])}</td>`).join('')}</tr></tfoot>`
+      : '';
+
+    const heading = families.size > 1
+      ? `<h6>${FAMILY[family] || escapeHtml(family)}</h6>`
+      : '';
+
+    return `${heading}<div class="class-metrics-wrap"><table class="class-metrics"><thead><tr><th>Class</th>`
+      + `${counts.map(([label, , said]) => `<th class="num" title="${said}">${label}</th>`).join('')}`
+      + `${columns.map(([label]) => `<th>${label}</th>`).join('')}</tr></thead>`
+      + `<tbody>${body}</tbody>${foot}</table></div>`;
+  };
+
+  return '<article class="evaluation-card"><header><div><h5>Per-class quality</h5>'
+    /* **The caveat goes where the comparison is made.** Every class here is scored at one
+       shared confidence threshold, picked from the mean F1 across classes -- so a class
+       whose own best threshold sits elsewhere is reported off its peak, and two classes
+       read against each other are not each at their best. Buried in a tooltip this would
+       be true and useless. */
+    + `<p>${families.size > 1 ? 'One table per metric family. ' : ''}`
+    + 'All classes are scored at one shared confidence threshold, chosen from the mean F1 '
+    + '&mdash; so a class whose own best threshold is elsewhere reads below its peak.'
+    + '</p></div></header>'
+    + [...families].map(([family, rows]) => tableFor(family, rows)).join('')
+    + '</article>';
+}
+
+/**
+ * The plots the trainer draws for itself.
+ *
+ * **A gallery, captioned by what each one is rather than by its filename.** `PR_curve.png`
+ * means nothing to a reader who has not run YOLO; "Precision against recall, per class"
+ * does. The filenames are kept as the lookup key and never as the label.
+ *
+ * @param {Object[]} plots - `{name, url}` for each artifact the run produced.
+ * @returns {string}
+ */
+/**
+ * One curve chart: every class as a thin line, their mean as a thick one.
+ *
+ * **This is Ultralytics' own layout, deliberately.** Anybody who has trained a YOLO
+ * model has read `PR_curve.png` a hundred times -- faint per-class lines with one bold
+ * mean over them -- so the shape is borrowed and only the styling is MARP's. A cleverer
+ * encoding would be a worse chart here, because recognising it at a glance is the whole
+ * requirement.
+ *
+ * Both axes are 0 to 1 by definition, so the scale is fixed rather than fitted: two runs
+ * can be compared by eye, which an axis that moved with the data would prevent.
+ *
+ * @param {Object} spec - `{title, note, x, y, xLabel, yLabel}`; `x` and `y` name arrays.
+ * @param {Object[]} series - One entry per class, with parallel arrays.
+ * @returns {string}
+ */
+function curveChart(spec, series) {
+  const box = { left: 46, right: 700, top: 24, bottom: 174 };
+  const at = (value) => box.left + (box.right - box.left) * Math.max(0, Math.min(1, value));
+  const up = (value) => box.bottom - (box.bottom - box.top) * Math.max(0, Math.min(1, value));
+
+  const pathOf = (xs, ys) => xs.map((x, index) => {
+    const y = ys[index];
+
+    if (x === null || x === undefined || y === null || y === undefined) return '';
+
+    return `${index ? 'L' : 'M'}${at(Number(x)).toFixed(1)},${up(Number(y)).toFixed(1)}`;
+  }).filter(Boolean).join(' ');
+
+  const lines = series.map((one, index) => `<path class="result-line curve-class class-${(index % 4) + 1}" `
+    + `data-class="${escapeHtml(one.class_name || '')}" d="${pathOf(one[spec.x], one[spec.y])}"/>`).join('');
+
+  /* **The mean across classes, which is the line a reader looks at first.** Index-wise
+     rather than interpolated: the API refuses a family whose arrays disagree in length,
+     so every class shares one x axis and the columns line up by construction. */
+  const width = series.reduce((most, one) => Math.max(most, (one[spec.y] || []).length), 0);
+  const mean = [];
+  const meanX = [];
+
+  for (let index = 0; index < width; index += 1) {
+    const values = series.map((one) => one[spec.y][index])
+      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+      .map(Number);
+    const across = series.map((one) => one[spec.x][index])
+      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+      .map(Number);
+
+    mean.push(values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
+    meanX.push(across.length ? across.reduce((sum, value) => sum + value, 0) / across.length : null);
+  }
+
+  const grid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
+    + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
+
+  return '<article class="evaluation-card history-card curve-card">'
+    + `<header><div><h5>${spec.title}</h5><p>${spec.note}</p></div></header>`
+    + `<div class="result-chart" role="img" aria-label="${escapeHtml(spec.title)} over ${series.length} classes">`
+    + `<svg viewBox="0 0 740 205" aria-hidden="true">${grid}`
+    + '<g class="result-axis"><text x="38" y="28">1.0</text><text x="38" y="103">.5</text>'
+    + `<text x="38" y="178">0</text><text x="46" y="196">${spec.xLabel} 0</text>`
+    + `<text x="700" y="196">${spec.xLabel} 1</text></g>${lines}`
+    + `<path class="result-line curve-mean" d="${pathOf(meanX, mean)}"/></svg></div>`
+    + `<p class="curve-key"><span class="mean"></span>Mean of ${series.length} class${series.length === 1 ? '' : 'es'}`
+    + ` &middot; ${escapeHtml(spec.yLabel)} against ${escapeHtml(spec.xLabel.toLowerCase())}</p></article>`;
+}
+
+/**
+ * The four threshold charts YOLO draws for every run, from numbers.
+ *
+ * **Read on asking, because this is the big one.** `/curves` is about a thousand points
+ * per class where `/metrics` is a handful of rows; the API serves it separately for that
+ * reason and a panel that pulled it on every expansion would be spending a megabyte on a
+ * section most readers scroll past.
+ *
+ * @param {Object[]} curves - One entry per split, family and class.
+ * @param {string} state - `read` once the request has been made, else `unread`.
+ * @returns {string}
+ */
+function thresholdCurves(curves, state, published) {
+  /* **An offer, not an explanation.** This card used to carry two paragraphs: what the
+     four charts would show, and why they are fetched on asking. The first described
+     something the reader can see the moment they press the button; the second is a fact
+     about the API that only mattered to whoever wrote this. The button is the whole
+     message. */
+  if (state !== 'read') {
+    /* **The offer is only made where there is something behind it.** Curves exist when
+       the run published a `metrics_curves` artifact, and `/artifacts` has already been
+       read -- so a finished run without one draws nothing at all rather than a button
+       that fetches an empty answer. A run still going gets the short waiting line, since
+       the curves are written at the end. */
+    if (!runHasFinished) return runSectionWaiting('Threshold curves');
+    if (!published) return '';
+
+    return '<article class="evaluation-card history-card"><header><div><h5>Threshold curves</h5>'
+      + '<p>Precision and recall against each other and against the threshold</p></div>'
+      + '<button class="btn sm" type="button" data-read-curves>Show</button></header></article>';
+  }
+
+  /* One family and one split at a time. Today every run is detection on the validation
+     split, so this picks the only one there is; a segmentation run will carry `box` and
+     `seg` and the first is as good a default as any until somebody asks for a switch. */
+  const named = curves.filter((one) => one.class_name);
+
+  if (!named.length) {
+    return runSectionWaiting('Threshold curves');
+  }
+
+  const family = named[0].metric_family;
+  const split = named[0].dataset_split;
+  const series = named.filter((one) => one.metric_family === family && one.dataset_split === split);
+
+  const charts = [
+    {
+      title: 'Precision–recall',
+      note: 'The curve mAP@50 is the area under &middot; higher and further right is better',
+      x: 'recall', y: 'precision', xLabel: 'Recall', yLabel: 'Precision',
+    },
+    {
+      title: 'F1 against confidence',
+      note: 'Where the mean peaks is the confidence this model is best operated at',
+      x: 'confidence', y: 'f1_score', xLabel: 'Confidence', yLabel: 'F1',
+    },
+    {
+      title: 'Precision against confidence',
+      note: 'Rises towards 1 as the threshold admits only what the model is sure of',
+      x: 'confidence', y: 'precision', xLabel: 'Confidence', yLabel: 'Precision',
+    },
+    {
+      title: 'Recall against confidence',
+      note: 'Falls as the threshold rises &middot; the trade against precision above',
+      x: 'confidence', y: 'recall', xLabel: 'Confidence', yLabel: 'Recall',
+    },
+  ];
+
+  return `<div class="curve-grid" data-family="${escapeHtml(family)}" data-split="${escapeHtml(split)}">`
+    + charts.map((spec) => curveChart(spec, series)).join('') + '</div>';
+}
+
+/**
+ * The two artifacts MARP reads rather than shows.
+ *
+ * Their contents are already on screen as the matrix, the per-class table and the curves,
+ * so a JSON download tile among the plot images is the same clutter as an explanatory
+ * paragraph: it is there because it exists, not because anybody wants it. They are
+ * reachable from one small link beside the matrix instead, which is enough for the one
+ * person who ever wants them -- somebody checking a drawn number against what the trainer
+ * actually sent.
+ *
+ * @type {string[]}
+ */
+const INGEST_ARTIFACTS = ['final_metrics', 'metrics_curves'];
+
+function trainingPlots(plots) {
+  /* What each of YOLO's own outputs is, in words. Anything not named here is still shown,
+     under its own filename -- a plot nobody has described is better seen than hidden. */
+  const SAID = {
+    PR_curve: 'Precision against recall, per class',
+    F1_curve: 'F1 against confidence threshold',
+    P_curve: 'Precision against confidence threshold',
+    R_curve: 'Recall against confidence threshold',
+    labels: 'How many instances of each class the dataset held',
+    labels_correlogram: 'Where boxes sit and how their sizes relate',
+    results: 'Every metric the run recorded, as a spreadsheet',
+    confusion_matrix: 'Confusion matrix, as the trainer rendered it',
+    confusion_matrix_normalized: 'Confusion matrix, normalised by true class',
+    /* **Already here, on every run that predates the artifact work.** `/artifacts` lists
+       everything the attempt handed over, and the weights have always been handed over --
+       runs 205 and 206 each return exactly one file and it is this. Found by asking the
+       service rather than by waiting for the first run that uploads plots. */
+    weights: 'The trained model itself',
+  };
+
+  if (!plots.length) {
+    return runSectionWaiting('Training output');
+  }
+
+  /* **The stems MARP serves carry no extension and no reliable type**, so the two that
+     are not pictures are named. Everything else in a run directory is. Run 207 arrived
+     as twenty artifacts: sixteen images, this CSV, these weights, and the two the ingest
+     reads, which never reach here. */
+  const NOT_PICTURES = new Set(['weights', 'results']);
+
+  const tiles = plots.map((plot) => {
+    const stem = String(plot.name || '').replace(/\.[a-z]+$/i, '');
+    /* **`Box`-prefixed for detection**, which is Ultralytics' own naming and not
+       something anybody told us until the files arrived: `BoxPR_curve`, not `PR_curve`.
+       Segmentation will bring `Mask` ones beside them, so the prefix is stripped for the
+       lookup rather than four more entries being added above. */
+    const curve = stem.replace(/^(Box|Mask|Seg)(?=[A-Z])/, '');
+    const said = SAID[stem] || SAID[curve]
+      || (/^val_batch\d+_pred$/.test(stem) ? 'Sample predictions on held-out images' : '')
+      || (/^val_batch\d+_labels$/.test(stem) ? 'The labels those predictions were scored against' : '')
+      || (/^train_batch\d+$/.test(stem) ? 'A batch as the model saw it, augmentations included' : '')
+      || stem.replace(/[_-]+/g, ' ');
+
+    /* **Not everything in this array is a picture, and the type often does not say.**
+       Run 207's twenty artifacts are every one `application/octet-stream`, including a
+       verified 3000x2250 PNG -- worker 0.1.8 declared nothing on upload. That is fixed
+       for later runs and 21787 keeps its wrong types for ever, so a declared *specific*
+       type wins and the generic one falls back on what the file is known to be. The
+       broken-image fallback below catches anything this gets wrong. */
+    const declared = String(plot.content_type || '');
+    const vague = !declared || declared === 'application/octet-stream';
+    const isImage = /^image\//.test(declared)
+      || (vague && !NOT_PICTURES.has(stem)
+        && !/\.(csv|txt|ya?ml|json|pt|pth|zip)$/i.test(plot.name || ''));
+
+    if (!isImage) {
+      const size = Number(plot.bytes) > 0 ? ` <span class="faint">${Math.round(Number(plot.bytes) / 1024)} KB</span>` : '';
+
+      return `<figure class="result-plot is-file"><figcaption><a href="${escapeHtml(plot.url)}" download>`
+        + `${escapeHtml(said)}</a>${size}<span class="b mono">${escapeHtml(plot.name)}</span></figcaption></figure>`;
+    }
+
+    /* `data-file` carries what the fallback needs, so a tile that turns out not to be an
+       image can become the file form without the panel being redrawn. */
+    return `<figure class="result-plot" data-file="${escapeHtml(plot.url)}" data-said="${escapeHtml(said)}">`
+      + `<img src="${escapeHtml(plot.url)}" alt="${escapeHtml(said)}" loading="lazy">`
+      + `<figcaption>${escapeHtml(said)}</figcaption></figure>`;
+  }).join('');
+
+  return '<article class="evaluation-card"><header><div><h5>Training output</h5>'
+    /* **Files, not plots.** `/artifacts` is an open set of everything the attempt handed
+       over, and on every run that predates the plot work that is exactly one file: the
+       weights. "1 plot the trainer produced" over a 50MB `.pt` is a small confident
+       falsehood of the kind this panel keeps being corrected for. */
+    + `<p>${plots.length} file${plots.length === 1 ? '' : 's'} this run produced</p></div></header>`
+    + `<div class="plot-gallery">${tiles}</div></article>`;
+}
+
+/**
+ * What a run looks like inside its row.
+ *
+ * @param {Object} run - The training run.
+ * @param {Object[]} epochs - Its epochs, earliest first.
+ * @returns {string} The run's part of the panel, without the wrapper.
+ */
+function trainingRunDetail(run, epochs, task, spec, evidence) {
+  /* **Not `NOT_REPORTED`.** That one's tooltip is about worker telemetry, which is not
+     what a null batch size on a training run means -- the run simply did not record one. */
+  const NONE = '<span class="dash" title="Not recorded on this training run">&mdash;</span>';
+  const metric = (label, value, note = '') =>
+    `<div class="jobmetric"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`;
+
+  /* **The headline metric is the task's, not detection's.** A classification run has no
+     mAP and reports top-1 instead, so this block named a quantity the run does not
+     measure and would have shown a permanent dash under it. `from` says where it comes
+     from as well as what it is called: `map50` is the best over the epochs as they
+     arrive, top-1 is a single end-of-run figure on the aggregate row. */
+  const plan = TRAINING_TASKS[task] || null;
+  const headline = (plan && plan.headline) || TRAINING_TASKS.detection.headline;
+
+  const best = headline.from === 'map50'
+    ? epochs.reduce((top, epoch) => {
+      const value = epoch.map50 === null || epoch.map50 === undefined ? null : Number(epoch.map50);
+
+      return value !== null && (top === null || value > top) ? value : top;
+    }, null)
+    /* The aggregate row -- the one with no class name -- is where an end-of-run figure
+       lives. Absent until the run has finished and published its metrics. */
+    : (() => {
+      const rows = (evidence && Array.isArray(evidence.metrics)) ? evidence.metrics : [];
+      const overall = rows.find((row) => !row.class_name);
+      const value = overall ? overall[headline.from] : null;
+
+      return value === null || value === undefined ? null : Number(value);
+    })();
+
+  const done = epochs.length;
+  const total = Number(run.total_epochs) || null;
+
+  /* **Reported, not configured.** `total_epochs` is what the run was asked for and
+     `epochs.length` is what has actually arrived, so a run in progress reads honestly as
+     it fills. */
+  const progress = total ? `${done} / ${total}` : String(done);
+
+  /* **Epoch time, from the epochs themselves.** `duration_seconds` has been a column
+     nothing wrote; worker 0.1.6 writes it. Averaged over the epochs that reported one and
+     absent when none did, so it fills in as a run goes rather than appearing at the end.
+
+     It is also a second opinion on the pace above it, measured a different way: the pace
+     differences the attempt's progress samples, this reads what each epoch said it took.
+     Two sources disagreeing is worth seeing, which is why both are shown rather than one
+     derived from the other. */
+  const timed = epochs
+    .map((one) => Number(one.duration_seconds))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const meanEpoch = timed.length
+    ? timed.reduce((sum, value) => sum + value, 0) / timed.length
+    : null;
+
+  const settings = [
+    metric('Epochs reported', progress, total ? 'of the configured total' : 'no total recorded'),
+    /* **Not `tookText`**, which rounds to whole minutes: a 40-second epoch would read
+       "1m" and a 20-second one "0m". Isaac's last run finished in 27 seconds in total, so
+       seconds are the ordinary case here rather than the edge. */
+    metric('Epoch time', meanEpoch === null ? NONE : shortDuration(meanEpoch),
+      meanEpoch === null ? 'not reported' : `mean of ${timed.length} reported`),
+    metric(headline.label, best === null ? NONE : best.toFixed(3), headline.note),
+    metric('Batch size', run.batch_size ?? NONE),
+    metric('Learning rate', run.learning_rate ?? NONE),
+    metric('Optimizer', run.optimizer || NONE),
+    metric('Device', run.compute_device || NONE),
+  ].join('');
+
+  /* **The charts come from the task, not from this function.** Every run today is
+     detection, which is exactly when hard-coding box/class/DFL and mAP@50 looks harmless.
+     Classification reports top-1 and top-5 and no boxes; segmentation reports mask
+     metrics beside box ones. `TRAINING_TASKS` is where a second task gets added, and
+     adding it is a list of series rather than a rewrite of this.
+
+     A task nobody has described yet says so, which is a gap a reader can see. */
+  const charts = !plan || !plan.charts.length
+    ? `<p class="hint">${plan
+      ? (plan.chartsWaiting
+        || `The charts a ${plan.label.toLowerCase()} run should show are not described yet.`)
+      : 'This run&rsquo;s task is unknown, so there is no set of charts to draw for it.'}</p>`
+    : (epochs.length
+      ? plan.charts.map((chart) => epochChart(chart, epochs)).join('')
+      : '<p class="hint">No epoch has been reported yet. This fills in as the run reports them.</p>');
+
+  /* **No range control on these.** Their x-axis is the epoch number, not a clock, so
+     "the last hour" names nothing -- a run is however many epochs long and all of them
+     belong on the chart. The range controls stay on the charts that are over time. */
+  /* **Everything below comes from the three end-of-run reads, not from the run row.**
+     It used to read `run.confusion_matrix`, `run.class_metrics` and `run.plots`, which
+     `GET /training_run/:id` has never carried and never will -- so all three sections
+     drew their empty state for ever, over a gap that looked like missing data and was a
+     missing request. `/metrics`, `/curves` and `/artifacts` are where they live. */
+  const found = evidence || {};
+  const everyFile = Array.isArray(found.files) ? found.files : [];
+  /* The gallery shows what the trainer drew. The two MARP reads instead are reachable
+     from the matrix card, where somebody checking a number would look for them. */
+  const files = everyFile.filter((file) => !INGEST_ARTIFACTS.includes(file.name));
+  const raw = everyFile.filter((file) => INGEST_ARTIFACTS.includes(file.name));
+  /* The split a confusion matrix is for is its own; the first is the validation one in
+     every run so far, and the card names whichever it drew rather than assuming. */
+  const matrices = Array.isArray(found.matrices) ? found.matrices : [];
+  const rendered = files.find((file) => /^confusion_matrix$/.test(file.name || ''));
+
+  /* **Which sections exist is the task's to say, and this is the part that was a
+     rewrite rather than a list.** These four were concatenated unconditionally, so a
+     classification run drew "this run recorded no per-class precision, recall or AP" and
+     a control offering to read threshold curves -- both reading as a run that failed to
+     measure something, when `ClassifyMetrics` has no per-class array and no thresholds at
+     all. A section that does not apply to the task does not appear.
+
+     A task MARP does not recognise keeps all four: it is the only honest default, since
+     nothing here knows what such a run does or does not report. */
+  const drawn = {
+    matrix: () => confusionMatrix(matrices[0] || null, rendered ? rendered.url : null, raw),
+    classes: () => perClassTable(Array.isArray(found.metrics) ? found.metrics : []),
+    curves: () => thresholdCurves(Array.isArray(found.curves) ? found.curves : [], found.curvesState,
+      raw.some((file) => file.name === 'metrics_curves')),
+    files: () => trainingPlots(files),
+  };
+  const wanted = (plan && plan.sections) || Object.keys(drawn);
+  const evaluation = wanted.map((section) => (drawn[section] ? drawn[section]() : '')).join('');
+
+  /* The inner content only; `trainingJobDetail` owns the wrapper, because it puts the
+     live attempt block above this and the two have to sit in one panel. */
+  /* The same names the row shows, for the same reason: the spec has been carrying them
+     all along and this header was printing the ids beside them. */
+  const named = (noun, from, id) => {
+    const name = from && typeof from.name === 'string' ? from.name.trim() : '';
+
+    return name ? `${escapeHtml(name)} (${noun.toLowerCase()} ${id})` : `${noun} ${id}`;
+  };
+  const about = [
+    run.dataset_id ? named('Dataset', spec && spec.dataset, run.dataset_id) : 'No dataset recorded',
+    run.model_id ? named('Model', spec && spec.model, run.model_id) : null,
+    task ? TRAINING_TASKS[task].label : null,
+  ].filter(Boolean).join(' &middot; ');
+
+  return `<div class="jobdetail-head"><div><b>Training run ${run.id}</b>`
+    + `<span>${about}</span></div></div>`
+    + `<div class="jobmetrics">${settings}</div>`
+    + `<div class="training-history-grid">${charts}</div>`
+    + `<div class="training-evaluation-grid">${evaluation}</div>`;
+}
+
+/**
+ * A duration that is usually short, in words.
+ *
+ * `tookText` rounds to whole minutes, which is right for a job and wrong for an epoch:
+ * it turns 40 seconds into "1m" and 20 into "0m". Below a minute and a half this counts
+ * seconds; above it, it hands over to the one the rest of the screen uses.
+ *
+ * @param {number} seconds - How long.
+ * @returns {string}
+ */
+function shortDuration(seconds) {
+  return seconds < 90 ? `${Math.round(seconds)}s` : tookText(seconds * 1000);
+}
+
+/**
+ * How fast a run is getting through its epochs, from its own progress samples.
+ *
+ * **Differenced over the whole window rather than the last pair.** Samples are about a
+ * minute apart and an epoch can straddle several, so consecutive samples are often
+ * identical -- a last-pair rate would read zero, then spike, then zero again. First to
+ * last is the rate the run has actually held.
+ *
+ * **Two samples is the floor, and below it this says so.** A single sample has no
+ * elapsed time to divide by, and a rate invented from one reading is the "~4h 10m" this
+ * replaces: a number that looks measured and is not.
+ *
+ * @param {Object[]} pace - From `GET /training_run/:id/pace`, oldest first.
+ * @returns {Object|null} `{perMinute, remainingMs, done, total}`, or null when unknowable.
+ */
+function trainingPace(pace) {
+  if (!Array.isArray(pace) || pace.length < 2) return null;
+
+  const first = pace[0];
+  const last = pace[pace.length - 1];
+  const minutes = (Date.parse(last.at) - Date.parse(first.at)) / 60000;
+  const gained = Number(last.done) - Number(first.done);
+
+  if (!(minutes > 0) || !(gained > 0)) return null;
+
+  const perMinute = gained / minutes;
+  const total = Number(last.total) || 0;
+  const done = Number(last.done) || 0;
+  const left = Math.max(0, total - done);
+
+  return {
+    perMinute,
+    done,
+    total,
+    /* Only when there is a total to count down to. A run whose total is unknown has a
+       rate and no end, and saying "0 left" would be a claim rather than a gap. */
+    remainingMs: total > 0 ? (left / perMinute) * 60000 : null,
+  };
+}
+
+/**
+ * What a job's own attempt says it is doing, right now.
+ *
+ * **The live half, and it needs no training run.** `gpu_job_attempts` carries
+ * `progress_done`, `progress_total`, `progress_unit` and `progress_phase`, and the job
+ * list serves them — for 21779 that read `0 / 1 epochs, phase training` while it ran. A
+ * run row and its epochs arrive later and sometimes never, so a panel that waited for one
+ * showed nothing during the only period anybody is watching.
+ *
+ * @param {Object} job - From `GET /gpu/jobs`.
+ * @param {string} state - The view's state word.
+ * @returns {string} The progress block.
+ */
+function trainingAttemptProgress(job, state, pace) {
+  const done = Number(job.progress_done);
+  const total = Number(job.progress_total);
+  const unit = job.progress_unit || 'epochs';
+  const measured = Number.isFinite(done) && Number.isFinite(total) && total > 0;
+  const pct = measured ? Math.round((done / total) * 100) : -1;
+
+  const phase = (job.progress_phase || '').trim();
+  /* Seconds matter here too: a run that finishes in 27 seconds spends its whole life
+     reading "0m" under a minute-rounded formatter. */
+  const elapsed = shortDuration(Math.max(0, Date.now() - Date.parse(job.created_at)) / 1000);
+
+  const metric = (label, value, note = '') =>
+    `<div class="jobmetric"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`;
+
+  if (state === 'queued') {
+    return '<section class="jobstate" data-job-state="queued"><div class="jobstate-title"><div>'
+      + '<h4>Waiting for a worker</h4><p>Nothing has leased this job yet, so it has reported nothing.</p>'
+      + `</div></div><div class="jobmetrics">${metric('Waiting', elapsed, 'since it was queued')}`
+      + `${metric('Epochs', measured ? `0 / ${total}` : '&mdash;', 'none started')}</div></section>`;
+  }
+
+  /* The bar is drawn only when the attempt gave numbers to draw it from. A bar at zero
+     and a bar for "not reported" look identical, and one of them is a lie. */
+  const bar = pct >= 0
+    ? `<span class="bar wide"><i style="width:${pct}%"></i></span>`
+    : '';
+
+  return `<section class="jobstate" data-job-state="active"><div class="jobstate-title"><div>`
+    + `<h4>${phase ? escapeHtml(phase.charAt(0).toUpperCase() + phase.slice(1)) : 'Training'}</h4>`
+    + `<p>${measured ? `${done} of ${total} ${escapeHtml(unit)}` : 'The attempt has not reported progress yet'}</p>`
+    + `</div>${bar}</div><div class="jobmetrics">`
+    + metric('Epochs', measured ? `${done} / ${total}` : '&mdash;', measured ? escapeHtml(unit) : 'not reported')
+    + metric('Elapsed', elapsed, 'since it was queued')
+    + metric('Phase', phase ? escapeHtml(phase) : '&mdash;', phase ? 'as the worker reports it' : 'not reported')
+    /* **Measured, or absent.** This is where the screen used to say "~4h 10m" from two
+       literals in the markup, for a run that took 27 seconds. */
+    + (pace
+      ? metric('Pace', `${pace.perMinute.toFixed(pace.perMinute < 1 ? 2 : 1)} / min`, escapeHtml(unit))
+        + metric('Remaining', pace.remainingMs === null ? '&mdash;' : `~${shortDuration(pace.remainingMs / 1000)}`,
+          pace.remainingMs === null ? 'no total to count down to' : 'at the rate it has held')
+      : metric('Pace', '&mdash;', 'not enough progress samples yet'))
+    + '</div></section>';
+}
+
+/**
+ * A training job inside its row: what it is doing now, and its run when it has one.
+ *
+ * @param {Object} view - The job view.
+ * @param {Object|null} run - Its training run, when one has been recorded.
+ * @param {Object[]} epochs - That run's epochs, or empty.
+ * @param {Object[]} pace - Its progress samples, or empty.
+ * @param {Object} [evidence] - `{metrics, matrices, curves, files}` from the three
+ *   end-of-run reads. Empty when the run has not produced them.
+ * @returns {string}
+ */
+function trainingJobDetail(view, run, epochs, pace, evidence) {
+  const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
+  const live = terminal ? '' : trainingAttemptProgress(view.job, view.state, trainingPace(pace));
+
+  /* Set before anything below draws: the sections read it to decide between a short
+     waiting line and nothing at all. */
+  runHasFinished = terminal;
+
+  if (!run) {
+    /* **Expanding is not conditional on a run existing**, which is what broke watching:
+       the gate used to be `data-run`, so the one job anybody wanted to watch -- the one
+       still going -- had no expander at all. */
+    return `<div class="rundetail jobdetail">${live}`
+      + '<p class="hint">No training run has been recorded for this job yet. Its epochs, losses '
+      + 'and mAP appear here as soon as one is.</p></div>';
+  }
+
+  return `<div class="rundetail jobdetail">${live}`
+    + `${trainingRunDetail(run, epochs, trainingTaskOf(view.job), view.job.spec, evidence)}</div>`;
+}
+
+/**
+ * Expand a training job, and keep what is inside it current.
+ *
+ * **Every training job, not only one with a run.** The gate used to be `data-run`, so a
+ * job that was queued or still leased had no expander — and that is the one somebody
+ * watches. Isaac, on the run he had just started: *"it's not expandable, it should be
+ * expandable, and updated every few seconds as we go through it"*.
+ *
+ * The detail is redrawn in place, never rebuilt around: the row and its detail element
+ * stay, and only the contents of the cell change. That is the same rule the Datasets
+ * table learned the hard way, where a redraw closed whatever somebody was reading.
+ *
+ * Epochs are asked for only when a run exists, and only while the row is open.
+ *
+ * @param {Element} head - The job row.
+ * @param {Element} detail - Its detail row.
+ * @returns {void}
+ */
+function wireTrainingJobDetail(head, detail) {
+  const cell = $('td', detail);
+  const jobId = Number(head.dataset.job);
+
+  /* Exposed on the element the way `loadComposition` is on a dataset row, so the screen's
+     poller can refresh an open panel without knowing anything about how it is built. */
+  detail.redraw = async () => {
+    if (head.getAttribute('aria-expanded') !== 'true') return;
+
+    const view = trainingViewsByJob.get(jobId);
+
+    if (!view) return;
+
+    const run = trainingRunsByJob.get(jobId) || null;
+    let epochs = [];
+    let pace = [];
+    let evidence = null;
+
+    if (run) {
+      try {
+        /* **Settled, not awaited together.** The epochs are the charts and the pace is
+           two figures beside them; a pace route that is slow or missing on an older MARP
+           should cost those two figures, not the panel. */
+        const [gotEpochs, gotPace, gotMetrics, gotFiles] = await Promise.allSettled([
+          window.MarpApi.trainingRunEpochs(run.id),
+          window.MarpApi.trainingRunPace(run.id),
+          window.MarpApi.trainingRunMetrics(run.id),
+          window.MarpApi.trainingRunArtifacts(run.id),
+        ]);
+
+        if (gotEpochs.status === 'rejected') throw gotEpochs.reason;
+
+        epochs = gotEpochs.value;
+        pace = gotPace.status === 'fulfilled' ? gotPace.value : [];
+
+        /* **Settled, not awaited together, and the same rule the pace follows.** These
+           three are what a finished run produced; a MARP that does not serve them yet,
+           or a run that produced none, costs those sections and not the panel. A 404
+           from an older API lands here as a rejection and reads as "nothing recorded",
+           which is the honest rendering of both. */
+        const measured = gotMetrics.status === 'fulfilled' ? gotMetrics.value : {};
+
+        evidence = {
+          metrics: Array.isArray(measured.metrics) ? measured.metrics : [],
+          matrices: Array.isArray(measured.confusion_matrices) ? measured.confusion_matrices : [],
+          files: gotFiles.status === 'fulfilled' ? gotFiles.value : [],
+          curves: trainingCurvesByRun.get(run.id) || [],
+          curvesState: trainingCurvesByRun.has(run.id) ? 'read' : 'unread',
+        };
+      } catch (error) {
+        cell.innerHTML = '<div class="rundetail jobdetail"><p class="hint">Could not read this '
+          + `run's epochs (${error.status || 'no answer'}).</p></div>`;
+        return;
+      }
+    }
+
+    cell.innerHTML = trainingJobDetail(view, run, epochs, pace, evidence);
+
+    /* **The curves are fetched on asking, once per run.** A thousand points per class is
+       a megabyte a panel should not pull on every expansion, still less on every
+       five-second poll of an open one -- so the card draws its own control, and what it
+       reads is kept for as long as the page lives. The numbers cannot change: a run that
+       has finished evaluating does not re-evaluate. */
+    /* **Both readings of the same matrix, because they answer different questions.**
+       The share says how a true class was split across predictions; the count says how
+       much evidence that share rests on, and a convincing 100% over two instances is the
+       thing a normalised matrix alone will not tell you. Both are already on the cell,
+       so the swap is text rather than a redraw. */
+    /* **The browser decides what a file really is, where the type did not say.** A tile
+       drawn as an image whose bytes are not one leaves a broken icon with a caption
+       under it -- so the figure becomes the download form instead. Captured rather than
+       bubbled, because `error` on an element does not bubble. One listener for the
+       panel; a tile that loads never reaches it. */
+    cell.addEventListener('error', (event) => {
+      const img = event.target;
+
+      if (!img || img.tagName !== 'IMG') return;
+
+      const figure = img.closest('.result-plot[data-file]');
+
+      if (!figure) return;
+
+      figure.classList.add('is-file');
+      figure.innerHTML = `<figcaption><a href="${escapeHtml(figure.dataset.file)}" download>`
+        + `${escapeHtml(figure.dataset.said || 'Download')}</a>`
+        + '<span class="b mono">not an image</span></figcaption>';
+    }, true);
+
+    const modes = $$('[data-matrix-mode]', cell);
+
+    modes.forEach((button) => button.addEventListener('click', () => {
+      modes.forEach((other) => {
+        const on = other === button;
+
+        other.classList.toggle('on', on);
+        other.setAttribute('aria-pressed', String(on));
+      });
+
+      for (const tile of $$('.confusion i[data-norm]', cell)) {
+        tile.textContent = tile.dataset[button.dataset.matrixMode];
+      }
+    }));
+
+    const asking = $('[data-read-curves]', cell);
+
+    if (asking && run) {
+      asking.addEventListener('click', async () => {
+        asking.disabled = true;
+        asking.textContent = 'Reading…';
+
+        try {
+          trainingCurvesByRun.set(run.id, await window.MarpApi.trainingRunCurves(run.id));
+        } catch (error) {
+          trainingCurvesByRun.set(run.id, []);
+          asking.textContent = `Could not read them (${error.status || 'no answer'})`;
+          return;
+        }
+
+        detail.redraw();
+      });
+    }
+  };
+
+  /* **Watched rather than clicked.** The expander is one delegated listener on the
+     document, so a click handler on the row runs while bubbling -- before that listener
+     has flipped `aria-expanded`, which made an earlier version read the old value every
+     time and never fetch. Watching the attribute is also what makes *Expand all* work. */
+  new MutationObserver(() => { detail.redraw(); })
+    .observe(head, { attributes: true, attributeFilter: ['aria-expanded'] });
+}
+
+/**
+ * Write the cells that move, on the rows that are already there.
+ *
+ * **Patched, not redrawn.** Rebuilding the table every five seconds would close the row
+ * being read, which is exactly the defect the Datasets table was fixed for; the same rule
+ * applies here for the same reason, and the DOM tier pins both.
+ *
+ * A job that has finished is skipped: its cells are settled, and writing the last figures
+ * it reached over them reads as a job still going.
+ *
+ * @param {Element} body - The table body.
+ * @param {Map<number, Object>} views - The latest view per job id.
+ * @returns {void}
+ */
+function patchTrainingRows(body, views) {
+  for (const head of $$(':scope > tr[data-job]', body)) {
+    const view = views.get(Number(head.dataset.job));
+
+    if (!view) continue;
+
+    /* **Patched before the terminal check, because it moves for its own reason.** On
+       Datasets this cell sat frozen for as long as a build ran: the patch wrote frames
+       and the pill and nothing else, and the column had only ever been refreshed by
+       accident, when the whole table was still being thrown away every poll. A job's
+       `updated_at` moves on every report, including the one that finishes it. */
+    const seen = jobLastSeen(view.job);
+
+    if (seen) {
+      const updated = $('[data-updated]', head);
+
+      if (updated && updated.dataset.sort !== String(seen)) {
+        updated.innerHTML = datasetStamp(seen);
+        /* The sort key too, or sorting by Updated orders the table by what the
+           timestamps were when the page was drawn. */
+        updated.dataset.sort = String(seen);
+      }
+    }
+
+    const status = $('.jstatus', head);
+
+    if (status && status.dataset.sort !== String(JOB_STATE_RANK[view.state])) {
+      status.innerHTML = `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`;
+      status.dataset.sort = String(JOB_STATE_RANK[view.state]);
+    }
+
+    /* **Before the terminal check, for the same reason Updated is.** Best mAP climbs as
+       epochs land, and the poll that marks a job done is the one carrying its final
+       value -- patching after the check would leave every finished run showing the
+       second-to-last number it had. */
+    const map = $('.jmap', head);
+    const best = bestMap(view.job, trainingRunsByJob.get(view.job.id) || null);
+
+    if (map && map.dataset.sort !== String(best.sort)) {
+      map.innerHTML = best.html;
+      map.dataset.sort = String(best.sort);
+    }
+
+    if (['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state)) continue;
+
+    /* Epochs, from the attempt rather than from a run: it is what moves while the job
+       runs and it needs no `training_runs` row to exist.
+
+       **Only when the attempt says the unit is epochs.** `progress_done` counts whatever
+       the worker is counting, and a job reporting frames put `11131 / 45861` under a
+       column headed Epochs -- a real number under the wrong label, which is worse than a
+       dash because it looks like an answer. */
+    const epochs = $('.jepochs', head);
+    const done = Number(view.job.progress_done);
+    const total = Number(view.job.progress_total);
+    const counted = /epoch/i.test(view.job.progress_unit || '');
+
+    if (epochs && counted && Number.isFinite(done) && Number.isFinite(total) && total > 0) {
+      epochs.innerHTML = `${done} / ${total}`;
+    }
+
+    /* Only the Training runs table has this column, so this is a no-op on the recent
+       table above -- one patch path for both, rather than a second one that would drift. */
+    const prog = $('.jprog', head);
+
+    if (prog) {
+      const next = progressCell(view.job, view.state);
+
+      if (prog.dataset.sort !== String(next.sort)) {
+        prog.innerHTML = next.html;
+        prog.dataset.sort = String(next.sort);
+      }
+    }
+
+    const detail = head.nextElementSibling;
+
+    if (detail && typeof detail.redraw === 'function') detail.redraw();
+  }
+}
 
 /**
  * Draws the Training overview and its recent jobs.
@@ -1247,7 +2928,7 @@ function renderTraining(jobs) {
 
   setCard(cards[0], running.length, [`${running.length} on GPUs`, 'in flight']);
   setCard(cards[1], queued.length, ['waiting for a worker', `${queued.length} to start`]);
-  setCard(cards[2], done.length, [`${doneThisWeek} this week`, NOT_LISTABLE + ' versions']);
+  setCard(cards[2], done.length, [`${doneThisWeek} this week`, IN_THE_EXPANSION + ' versions']);
   setCard(cards[3], attention.length, [
     `${attention.filter((v) => v.state === 'failed').length} failed`,
     `${attention.filter((v) => v.state === 'expired').length} expired`,
@@ -1260,9 +2941,9 @@ function renderTraining(jobs) {
   setCard(cards[6], views.filter((v) => v.state === 'failed').length, ['in the window']);
   if (cards[7]) {
     const n = $('.stat-num', cards[7]);
-    if (n) n.innerHTML = NOT_LISTABLE;
+    if (n) n.innerHTML = IN_THE_EXPANSION;
     const sub = $('.stat-sub', cards[7]);
-    if (sub) sub.innerHTML = '<span>no route returns run metrics</span>';
+    if (sub) sub.innerHTML = '<span>open a run to see its best</span>';
   }
 
   const parts = [
@@ -1317,15 +2998,32 @@ function renderTrainingRecent(views) {
   if (!table) return;
 
   const body = $('tbody', table);
-  const rank = { running: 0, issues: 1, failed: 2, expired: 3, queued: 4, cancelled: 5, done: 6 };
+
+  /* **Newest first, because the panel is called Recent.** It ranked by state instead --
+     running, then issues, then failed, then everything that worked -- and then took three.
+     With eight jobs and three failures that meant the three failures, every time: the
+     table showed nothing but red while five jobs including the newest success sat
+     underneath the cut. Isaac saw "Recent training jobs (8)" over three failed rows.
+
+     Severity belongs in the cards above, which already count *Needs attention*. A list
+     headed Recent that hides the most recent run is answering a question nobody asked. */
+  const LIMIT = 3;
   const shown = views
     .slice()
-    .sort((a, b) => (rank[a.state] - rank[b.state])
-      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
-    .slice(0, 3);
+    .sort((a, b) => Date.parse(b.job.created_at) - Date.parse(a.job.created_at))
+    .slice(0, LIMIT);
 
+  /* **The heading counts what is drawn, and says what it is out of.** `(8)` over three
+     rows is the panel misreporting itself, and a table that renders fewer rows than it
+     claims reads as missing data rather than as a summary. The full list is one click
+     away through the All jobs link beside this. */
   const heading = $('.training-recent .panel-hd h2') || $$('.panel-hd h2').find((h) => /Recent training/.test(h.textContent));
-  if (heading) heading.textContent = `Recent training jobs (${views.length.toLocaleString()})`;
+
+  if (heading) {
+    heading.textContent = views.length > shown.length
+      ? `Recent training jobs (${shown.length} of ${views.length.toLocaleString()})`
+      : `Recent training jobs (${views.length.toLocaleString()})`;
+  }
 
   body.innerHTML = shown.map((view) => {
     const { job } = view;
@@ -1333,97 +3031,630 @@ function renderTrainingRecent(views) {
     const tookMs = Math.max(0, Date.parse(job.updated_at) - Date.parse(job.created_at));
     const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
 
-    return `<tr data-job="${job.id}">`
-      + `<td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
-      + `<td class="jdset">${NOT_LISTABLE}</td>`
-      + `<td class="jmakes">${NOT_LISTABLE}</td>`
+    /* The run this job produced, if it produced one. `training_runs.job_id` has existed
+       since 20261020120000 and was missing from the model, so nothing could make this
+       join until now. */
+    const run = trainingRunsByJob.get(job.id) || null;
+
+    /* **The names are in the spec and the row was reaching past them to the ids.**
+       `spec.dataset` and `spec.model` each carry `{name, url, sha256}` beside the id, so
+       "Dataset 384" was never the only thing available -- `CookieStarTest` was sitting in
+       the same object. */
+    const spec = job.spec || {};
+    const datasetId = (spec.dataset && spec.dataset.dataset_id) ?? (run && run.dataset_id);
+    const modelId = (spec.model && spec.model.ml_model_id) ?? (run && run.model_id);
+    const task = trainingTaskOf(job);
+    const lastSeen = jobLastSeen(job) || job.created_at;
+    const map = bestMap(job, run);
+
+    return `<tr data-job="${job.id}"${run ? ` data-run="${run.id}"` : ''}${task ? ` data-task="${task}"` : ''}>`
+      /* **Every job, not only one with a run.** The expander used to be conditional on
+         `run`, so a queued or leased job -- the only kind anybody watches -- had none. */
+      + '<td class="ex"><button class="exbtn" type="button" aria-label="Show this job"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
+        /* **Titled, because the column is 188px and these names are longer than that.**
+         A generated training name runs to the forties and about thirty-two characters
+         fit, so every one of them truncates -- including names a person typed.
+
+         The time of day leads, which is deliberate and was measured: it is what tells
+         three runs of one model over one dataset apart, and at the tail a long dataset
+         name ate the budget and lost it. So what falls off now is the model name, which
+         is the part least likely to differ between the runs somebody is comparing. The
+         full string is one hover away regardless. */
+    + `<td class="jname" title="${escapeHtml(view.title)}"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">${view.title}</span></span></td>`
+      /* **What the model's task is**, from the base model rather than guessed from which
+         metric columns are null. Once three kinds of run share this table, *Best mAP*
+         means nothing for two of them and the row has to say which it is. */
+      + `<td class="jtask" data-sort="${task || ''}">${task
+        ? `<span class="tag">${TRAINING_TASKS[task].label}</span>`
+        : '<span class="dash" title="The base model this job trains from is not in the registry">&mdash;</span>'}</td>`
+      + `<td class="jdset">${namedById('Dataset', spec.dataset, datasetId,
+        datasetId ? `./datasets.html?dataset=${encodeURIComponent(datasetId)}` : '')}</td>`
+      /* **What it produces, which does not exist yet.** This cell means the model version
+         the run registers, and a run that has not finished has not registered one. The
+         base it trains *from* is a different fact and is in the expansion. */
+      /* **It named the base model it trained FROM.** Both candidates are the starting
+         checkpoint -- `spec.model.ml_model_id` is what `gpu.service.js` requires on
+         submission, and `training_runs.model_id` is what that run is recorded against --
+         so a finished run claimed to have produced the model it fine-tuned from, and the
+         expansion named the same model again as the base. A run that trained from itself.
+         Nothing records which model a run registered; until something does, this says so. */
+      + `<td class="jmakes">${['done', 'issues'].includes(view.state)
+        ? producedModelCell(run)
+        : '<span class="dash" title="The version a run registers does not exist until it succeeds">&mdash;</span>'}</td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
-      + `<td class="jepochs num">${NOT_LISTABLE}</td>`
-      + `<td class="jmap num">${NOT_LISTABLE}</td>`
+      + `<td class="jepochs num">${run && run.total_epochs
+        ? `<span title="Configured for this run. How many have been reported is in the expansion.">${run.total_epochs}</span>`
+        : (run ? IN_THE_EXPANSION : NO_RUN_RECORDED)}</td>`
+      + `<td class="jmap num" data-sort="${map.sort}">${map.html}</td>`
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
+      /* **The same cell the Datasets table has, with the same marker.** `data-updated` is
+         what the patch path finds and what the DOM tier asserts against. */
+      + `<td class="jtime" data-updated data-sort="${lastSeen}">${datasetStamp(lastSeen)}</td>`
       + '</tr>';
   }).join('');
+
+  /* **Every view, not the three drawn here.** The Training runs panel below shows every
+     run, and both tables' expansions are the same `wireTrainingJobDetail`, which looks a
+     job up in this map -- so a run outside the recent three would have opened to nothing.
+     It also fixes the watcher by the same stroke: it keeps polling while any training job
+     is live, rather than only while one of the top three is. */
+  trainingViewsByJob = new Map(views.map((view) => [view.job.id, view]));
+
+  for (const head of $$(':scope > tr[data-job]', body)) {
+    head.classList.add('runrow-head');
+    head.setAttribute('aria-expanded', 'false');
+
+    const detail = document.createElement('tr');
+
+    detail.className = 'runrow-body';
+    detail.hidden = true;
+    detail.innerHTML = '<td colspan="11"><div class="rundetail jobdetail"><p class="hint">Reading this job&hellip;</p></div></td>';
+    head.after(detail);
+
+    wireTrainingJobDetail(head, detail);
+  }
+
+  /* The delegated expander listener keys off `table.expandable`, so the rows it has just
+     been given are wired by the sweep every other table uses. */
+  wireAccordions();
+}
+
+/**
+ * Which task each base-model select is choosing a starting point for.
+ *
+ * **The checkpoint decides the task, and the engine never learns which task was asked
+ * for.** A detection `.pt` selected for a segmentation run does not fail — it trains a
+ * detector, while the screen says segmentation and the model that comes out is recorded
+ * as whatever was requested. Of the three ways this could have gone that is the worst
+ * one, because nothing downstream can tell the result from a correct run.
+ *
+ * Isaac asked the question directly: *"we don't want to transfer train different model
+ * types from other models? like a segmentation model from a bounding box model?"* Cross-
+ * task transfer is legitimate in principle — backbones do transfer — but the worker would
+ * have to build the target task's architecture and load compatible weights into it
+ * deliberately, which is work nobody has asked for. Until then these do not mix.
+ *
+ * @constant
+ * @type {Object<string, string>}
+ */
+/** The registry and the catalogue the form is choosing from. Set when the choices fill. */
+let trainingModels = [];
+let trainingDatasets = [];
+
+/** Who is signed in, once `GET /auth/me` has said. Null until it has, or if nobody is. */
+let trainingWhoami = null;
+
+/**
+ * Which task's panel is on screen.
+ *
+ * @returns {string} `det`, `cls` or `seg`.
+ */
+function activeTrainingTask() {
+  const shown = $$('[data-viewof="task"]').find((panel) => !panel.hidden);
+
+  return (shown && shown.dataset.view) || 'det';
+}
+
+/**
+ * Section 3, from what the form actually has selected.
+ *
+ * **Every value here was a literal, and all of them contradicted the selections above.**
+ * With `base-det=91` and `dataset-det=388` chosen, it read *"Registers
+ * MARP-Multiclass-Det-XL 1.0.3"*, base *1.0.2*, dataset *ALL_Projects_Inverts_v5*,
+ * *12,846* observations and *itravers* — none of it true, and none of it moving when the
+ * selections did.
+ *
+ * **The version is the one thing that stays unsaid.** `ml_models` has no version column:
+ * what the Models screen calls *v2* is a position in a `parent_model_id` chain, derived
+ * by walking it. And the submitted spec names no output model at all — it names the base
+ * and the dataset — so the form has no say in what the result is called. Writing a "next
+ * patch version" would be inventing a number MARP cannot produce, which is the rule that
+ * took out the worker selector and the duration estimate. The *Version name* input went
+ * with it: nothing read it, and its hint promised a next patch version that does not
+ * exist.
+ *
+ * @returns {void}
+ */
+function renderTrainingResult() {
+  const byId = new Map(trainingModels.map((model) => [model.id, model]));
+  const datasets = new Map(trainingDatasets.map((set) => [set.id, set]));
+
+  const produces = {
+    det: 'box and class metrics',
+    cls: 'top-1 and per-class metrics',
+    seg: 'box and mask metrics',
+  };
+  const named = { det: 'detection', cls: 'classification', seg: 'segmentation' };
+
+  for (const task of ['det', 'cls', 'seg']) {
+    const into = $(`[data-fills="result-${task}"]`);
+
+    if (!into) continue;
+
+    const base = byId.get(Number($(`#base-${task}`)?.value));
+
+    if (!base) {
+      into.innerHTML = '<span class="a">No base model chosen</span>'
+        + `<span class="b">Pick a ${named[task]} model to fine-tune from.</span>`;
+      continue;
+    }
+
+    /* Generation, not a version: it is the depth of the `parent_model_id` chain, which is
+       the only thing MARP can say about where a model sits in a line. */
+    const generation = modelGeneration(base, byId);
+
+    into.innerHTML = `<span class="a">Registers a new ${named[task]} model from ${escapeHtml(base.name)}</span>`
+      + `<span class="b">Generation v${generation + 1}, with ${produces[task]}</span>`
+      + '<span class="b">MARP records no version number &mdash; the result is its own registry '
+      + 'entry, named by the run that produces it</span>'
+      + '<span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>';
+  }
+
+  const task = activeTrainingTask();
+  const base = byId.get(Number($(`#base-${task}`)?.value));
+  const set = datasets.get(Number($(`#dataset-${task}`)?.value));
+  const trace = $('[data-fills="trace"]');
+
+  const UNKNOWN = '<span class="dash" title="Nothing selected yet">&mdash;</span>';
+
+  if (trace) {
+    const observations = set && set.num_observations != null
+      ? `${Number(set.num_observations).toLocaleString('en-US')}, by membership`
+      : '<span class="dash" title="This dataset records no observation count">&mdash;</span>';
+
+    trace.innerHTML = `<dt>Base</dt><dd>${base ? `${escapeHtml(base.name)} <span class="faint">generation v${modelGeneration(base, byId)}</span>` : UNKNOWN}</dd>`
+      + `<dt>Dataset</dt><dd>${set ? escapeHtml(set.name) : UNKNOWN}</dd>`
+      + `<dt>Observations</dt><dd>${observations}</dd>`
+      /* The signed-in user, not a literal. `created_by` on the job is filled by the API
+         from the session, so this is a statement about who is about to press the button
+         rather than a guess at who it will be recorded as. */
+      + `<dt>Run by</dt><dd>${trainingWhoami
+        ? escapeHtml(trainingWhoami.name || trainingWhoami.username || `User ${trainingWhoami.id}`)
+        : '<span class="dash" title="Not signed in, or the session could not be read">&mdash;</span>'}</dd>`;
+  }
+
+  const quad = $('[data-fills="dataset-quad"]');
+
+  if (quad) {
+    const cells = $$('span', quad);
+    /* **Two of the four are columns on a Dataset and two are not.** Videos and dives are
+       properties of what went into a build, not of the dataset row, and nothing records
+       them -- so they take the dash rather than a plausible number. */
+    const NOT_RECORDED = '<span class="dash" title="Not recorded on a dataset">&mdash;</span>';
+    const values = [
+      set && set.num_observations != null ? Number(set.num_observations).toLocaleString('en-US') : NOT_RECORDED,
+      set && set.num_classes != null ? String(set.num_classes) : NOT_RECORDED,
+      NOT_RECORDED,
+      NOT_RECORDED,
+    ];
+
+    cells.forEach((cell, index) => {
+      const b = $('b', cell);
+
+      if (b) b.innerHTML = values[index] ?? NOT_RECORDED;
+    });
+  }
+}
+
+/**
+ * Keep section 3 following the form.
+ *
+ * @returns {void}
+ */
+function wireTrainingResult() {
+  if (!$('[data-fills="trace"]')) return;
+
+  for (const id of ['base-det', 'base-cls', 'base-seg', 'dataset-det', 'dataset-cls', 'dataset-seg']) {
+    $(`#${id}`)?.addEventListener('change', renderTrainingResult);
+  }
+
+  /* The task switcher hides and shows the panels rather than announcing itself, so the
+     visible one is watched instead -- the same reason the expander is watched. */
+  const panel = $('[data-viewof="task"]')?.parentElement;
+
+  if (panel) {
+    new MutationObserver(renderTrainingResult)
+      .observe(panel, { attributes: true, attributeFilter: ['hidden'], subtree: true });
+  }
+
+  if (window.MarpAccountMenu && typeof window.MarpAccountMenu.whoami === 'function') {
+    window.MarpAccountMenu.whoami().then((user) => {
+      trainingWhoami = user;
+      renderTrainingResult();
+    }).catch(() => { /* Not signed in reads as the dash, which is true. */ });
+  }
+}
+
+const BASE_MODEL_TASKS = {
+  'base-det': 'detection',
+  'base-cls': 'classification',
+  'base-seg': 'segmentation',
+};
+
+/**
+ * The models the base-model selects were last filled from, by id.
+ *
+ * Kept because a job spec needs more of a model than its option carries: the name, the
+ * sha256 of its weights that the worker checks its download against, and the task it was
+ * trained for. Reading those back out of the option would mean parsing the label this
+ * screen composes, which is a display string and free to change — and which is exactly
+ * how the previous version of this renderer worked, until the text it recognised was
+ * stripped out from under it.
+ *
+ * @type {Map<number, Object>}
+ */
+const registeredModels = new Map();
+
+/**
+ * Whether a registered model was trained for the task a panel is setting up.
+ *
+ * **An exact match on `model_type`, with nothing mapped onto anything.** Two rows in
+ * MARP carry `YOLOv8` here — an architecture in a task column, written by a test — and
+ * reading those as detection to make the list longer would be inventing a fact about a
+ * model in order to offer it as a starting point. They match no task and appear nowhere.
+ *
+ * @param {Object} model - A row from `GET /api/v2/ml_models`.
+ * @param {string} task - One of {@link BASE_MODEL_TASKS}'s values.
+ * @returns {boolean}
+ */
+function modelDoesTask(model, task) {
+  return String(model && model.model_type || '').trim().toLowerCase() === task;
 }
 
 /**
  * Puts the real registry and the real datasets into the setup form.
  *
- * Every one of these selectors was written out by hand: base models that are
- * not in `ml_models`, datasets that are not in `dataset`. A run configured from
- * them names things MARP cannot resolve.
+ * Every one of these selectors was written out by hand: base models that are not in
+ * `ml_models`, datasets that are not in `dataset`. A run configured from them names
+ * things MARP cannot resolve.
  *
  * @param {Object[]} models - From `GET /api/v2/ml_models`.
  * @param {Object[]} datasets - From `GET /api/v2/dataset`.
+ * @returns {void}
  */
-/**
- * The upstream checkpoints, by task.
- *
- * YOLO's own starting weights. They are not MARP models, are deliberately not in the
- * registry, and are owned here rather than left in the markup because the markup may state
- * no values -- and because losing them is exactly what happened when the options were
- * stripped out from under a renderer that read them back.
- *
- * @constant
- * @type {Object<string, string>}
- */
-const UPSTREAM_CHECKPOINTS = {
-  'base-det': 'YOLO detection — upstream checkpoint',
-  'base-cls': 'YOLO classification — upstream checkpoint',
-  'base-seg': 'YOLO segmentation — upstream checkpoint',
-};
-
 function fillTrainingChoices(models, datasets) {
-  /* **Not filtered by status, and not filtered by task, because neither column
-     means what this screen assumed.**
+  registeredModels.clear();
 
-     Measured against MARP: thirteen models carry `model_type: "detection"` with
-     `status: "active"`, and two carry `model_type: "YOLOv8"` with `status:
-     "trained"`. So `model_type` holds a task on some rows and an architecture on
-     others, and `status` holds `active`, which is not one of the four values the
-     generated contract declares. Filtering on either one hid every model MARP
-     has: the two trained ones are "YOLOv8" and matched no task, and the thirteen
-     detection ones are "active" and matched no status.
+  for (const model of models || []) registeredModels.set(Number(model.id), model);
 
-     Every model is offered, with whatever `model_type` says beside it, until
-     somebody settles what those two columns mean. Showing fifteen models and
-     letting a person choose is honest; showing none because a filter the data
-     does not support found nothing is not. */
+  /* **This used to find its targets by reading the fake data.** It decided a select was
+     a base-model picker when its options matched `/^MARP-[\w-]+ — |upstream/` — that is,
+     when they were the invented names the mockup shipped. It worked, and only while the
+     fiction was there: stripping those options, to stop the screen stating models MARP
+     does not have, turned this into a function that matched nothing and filled nothing.
 
-  /* **This used to find its targets by reading the fake data.** It decided a
-     select was a base-model picker when its options matched
-     `/^MARP-[\w-]+ — |upstream/` -- that is, when they were the invented names
-     the mockup shipped. It worked, and only while the fiction was there:
-     stripping those options, to stop the screen stating models MARP does not
-     have, turned this into a function that matched nothing and filled nothing.
-
-     The markup now says which selects a renderer owns, with `data-fills`. A mark
-     is a statement somebody can check; a pattern that recognises last year's
-     placeholder text is a guess that happens to be right. */
+     The markup now says which selects a renderer owns, with `data-fills`. A mark is a
+     statement somebody can check; a pattern that recognises last year's placeholder text
+     is a guess that happens to be right. */
   const put = (id, options, empty) => {
     const select = $(`[data-fills="${id}"]`);
     if (!select) return;
 
-    const upstream = UPSTREAM_CHECKPOINTS[id]
-      ? [`<option>${UPSTREAM_CHECKPOINTS[id]}</option>`] : [];
-
-    select.innerHTML = (options.length ? options : [`<option value="">${empty}</option>`])
-      .concat(upstream).join('');
+    select.innerHTML = (options.length ? options : [`<option value="">${empty}</option>`]).join('');
   };
 
-  /* The type is shown rather than filtered on, so a person can see that one
-     model says "detection" and another says "YOLOv8" and judge for themselves. */
-  const everyModel = models.map((m) => `<option value="${m.id}">${m.name}`
-    + `${m.model_type ? ` — ${m.model_type}` : ''}</option>`);
+  /* **Filtered by task, and the two columns still do not mean what this screen once
+     assumed.** `status` is not filtered on: every real model says `active`, which is not
+     one of the four values the generated contract declares, so a status filter hides all
+     of them. `model_type` is filtered on, now that there is a reason stronger than
+     tidiness — a model of the wrong task does not fail, it silently trains the wrong
+     thing.
 
-  put('base-det', everyModel, 'No model in the registry');
-  put('base-cls', everyModel, 'No model in the registry');
-  put('base-seg', everyModel, 'No model in the registry');
+     Measured against MARP: fourteen rows say `detection` and two say `YOLOv8`. So
+     Classification and Segmentation come back empty, and that is the honest answer rather
+     than a fault — there are no such models registered. The empty option says which,
+     because an unexplained empty select reads as a broken screen. */
+  const forTask = (task) => models
+    .filter((m) => modelDoesTask(m, task))
+    .map((m) => `<option value="${m.id}">${escapeHtml(m.name)}</option>`);
 
-  const datasetOptions = datasets.map((d) => `<option value="${d.id}">${d.name}</option>`);
+  for (const [id, task] of Object.entries(BASE_MODEL_TASKS)) {
+    put(id, forTask(task), `No ${task} model is registered`);
+  }
+
+  /* **No upstream-checkpoint option.** There was one per task, carrying a sentence as its
+     value where every other option carries a model id — so it would have reached a job
+     spec as `ml_model_id: "YOLO detection — upstream checkpoint"`. Registering a stock
+     YOLO checkpoint is a real question and a parked one; until it is answered, a control
+     that cannot do anything is not drawn. `trainingSubmission` still refuses a selection
+     with no numeric id, which is what keeps this class of thing impossible rather than
+     merely absent. */
+
+  /* **The same list in all three, because a dataset does not record a task.** The base
+     pickers filter on `model_type`; `datasets` has no equivalent column -- which is why
+     the Task column was taken off the Datasets screen, Isaac: *"it'll never have a
+     value"*. So these three are independent controls over one catalogue rather than three
+     filtered views, and a reader choosing wrongly is refused at submission by
+     `modelDoesTask`, which is where that can actually be caught. */
+  const datasetOptions = datasets.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`);
   for (const id of ['dataset-det', 'dataset-cls', 'dataset-seg']) {
     put(id, datasetOptions, 'No dataset saved in MARP');
   }
+
+  trainingModels = models;
+  trainingDatasets = datasets;
+  renderTrainingResult();
+}
+/**
+ * What the training engine accepts, and nothing else.
+ *
+ * **Taken from the worker's own allow-list** in
+ * `src/marp_inference_worker/engines/training_engine.py`, which reports anything outside
+ * it as *ignored* rather than dropping it silently. So a parameter added here that the
+ * worker does not know does not fail -- it arrives, is listed as ignored, and a reader
+ * concludes the setting did nothing. That is worse than a refusal, which is why this list
+ * is written out rather than assembled from whatever fields happen to be on the page.
+ *
+ * **`det-box`, `det-cls` and `det-dfl` are deliberately absent.** The detection loss
+ * weights are not in the allow-list yet; the worker is being widened to take them
+ * separately. Sending them now would put three ignored parameters on every run.
+ *
+ * Each entry says which element holds the value and how to read it. `number` and `flag`
+ * are the two kinds; `pick` is for the selects whose options are prose rather than
+ * values, which is most of them on this screen.
+ *
+ * @constant
+ * @type {Array<{key: string, id: string, as: string, pick: Function}>}
+ */
+const TRAINING_PARAMS = [
+  // The two that always go, from the shared row under the task panels.
+  { key: 'epochs', id: 'epochs', as: 'number' },
+  /* "Auto — 60% GPU memory" is Ultralytics' `batch: -1`. Spelling it out rather than
+     sending the words, which would reach the engine as an unparsable batch size. */
+  { key: 'batch', id: 'batch', as: 'pick', pick: (text) => (/^auto/i.test(text) ? -1 : Number(text)) },
+
+  // Detection's own two. The task panels for cls and seg are not wired yet.
+  { key: 'imgsz', id: 'det-size', as: 'number' },
+  { key: 'single_cls', id: 'det-single', as: 'pick', pick: (text) => /one class/i.test(text) },
+
+  /* Optimisation and stopping. "Auto" means the engine chooses, and the way to say that
+     is to send nothing -- a literal "Auto" would be an optimiser name it cannot resolve. */
+  { key: 'optimizer', id: 'opt', as: 'pick', pick: (text) => (/^auto/i.test(text) ? undefined : text) },
+  { key: 'lr0', id: 'lr', as: 'pick', pick: (text) => (/^auto/i.test(text) ? undefined : Number(text)) },
+  { key: 'weight_decay', id: 'decay', as: 'number' },
+  { key: 'warmup_epochs', id: 'warm', as: 'number' },
+  { key: 'patience', id: 'patience', as: 'number' },
+  { key: 'seed', id: 'seed', as: 'number' },
+
+  // The Advanced fold. All blank by default, so none of them is sent unless asked for.
+  { key: 'lrf', id: 'lrf', as: 'number' },
+  { key: 'momentum', id: 'momentum', as: 'number' },
+  { key: 'freeze', id: 'freeze', as: 'number' },
+  { key: 'workers', id: 'workers', as: 'number' },
+  { key: 'cos_lr', id: 'cos-lr', as: 'flag' },
+  { key: 'rect', id: 'rect', as: 'flag' },
+];
+
+/**
+ * Reads the training form into the `spec.params` the worker understands.
+ *
+ * **Blank sends nothing, and that is the difference between this and a form with
+ * defaults.** The engine's own defaults live in its repository; restating them here would
+ * put a number on the screen that nothing can keep true, and sending them would make
+ * every run look like somebody chose them. An omitted key is the engine deciding.
+ *
+ * A field holding something that is not a number is omitted too, rather than sent as
+ * `NaN` -- which serialises to `null` and reaches the engine as a parameter with no
+ * value.
+ *
+ * @param {Document|Element} [root] - Where to read from; the document by default.
+ * @returns {Object} The parameters, ready for `spec.params`.
+ */
+function trainingParams(root) {
+  const where = root || document;
+  const params = {};
+
+  for (const field of TRAINING_PARAMS) {
+    const element = where.querySelector(`#${field.id}`);
+
+    if (!element) continue;
+
+    if (field.as === 'flag') {
+      /* Only when ticked. An unticked box is "did not ask for it", not "asked for it
+         off" -- and the engine's default for both of these is off anyway. */
+      if (element.checked) params[field.key] = true;
+
+      continue;
+    }
+
+    const raw = field.as === 'pick'
+      ? (element.options[element.selectedIndex] || {}).text
+      : element.value;
+
+    if (raw === undefined || raw === null || String(raw).trim() === '') continue;
+
+    const value = field.pick ? field.pick(String(raw).trim()) : Number(raw);
+
+    if (value === undefined) continue;
+    if (typeof value === 'number' && !Number.isFinite(value)) continue;
+
+    params[field.key] = value;
+  }
+
+  return params;
+}
+
+/**
+ * What one training submission needs, read off the form, or why it cannot be made.
+ *
+ * **A spec names a model by id AND by checksum.** `validateSubmittedModel` requires
+ * `spec.model.sha256`, because the worker hashes what it fetched and refuses a mismatch —
+ * that check is the only thing standing between a job and training on whatever file
+ * happens to sit at a path. So a model MARP has recorded no checksum for cannot be
+ * submitted, and saying so here beats a 400 from the API that reads as a bug in this
+ * screen.
+ *
+ * **The dataset is named by id alone**, on purpose: `submitTrainingJob` composes the
+ * locator and the hash from `datasets.archive_sha256` itself. The model half is composed
+ * here because that column reached `ml_models` later. If the server ever composes both,
+ * this sends the id alone too and nothing else changes.
+ *
+ * **The upstream-checkpoint option is refused by this rather than special-cased.** Its
+ * value is a sentence where every other option carries a model id, so it fails the same
+ * check an empty selection does. Registering a stock checkpoint is a separate question
+ * and this screen must not imply it is settled.
+ *
+ * @param {Document|Element} [root] - Where to read from; the document by default.
+ * @returns {{body: Object}|{refusal: string}} One or the other, never both.
+ */
+function trainingSubmission(root) {
+  const where = root || document;
+  const value = (id) => {
+    const element = where.querySelector(`#${id}`);
+
+    return element ? element.value : null;
+  };
+
+  const modelId = Number(value('base-det'));
+
+  if (!Number.isInteger(modelId) || modelId <= 0) {
+    return {
+      refusal: 'Choose a base model that MARP has registered. The upstream checkpoint is '
+        + 'not one: nothing has registered those weights, so no worker could be told which '
+        + 'file to fetch.',
+    };
+  }
+
+  const model = registeredModels.get(modelId);
+
+  if (!model) {
+    return { refusal: `Model ${modelId} is no longer in the registry. Reload the page.` };
+  }
+
+  /* **The filter is what a person sees; this is what makes it true.** A checkpoint
+     decides the task by itself and the engine is never told which task was asked for, so
+     a detection model selected for a segmentation run trains a detector and the result is
+     recorded as a segmentation model. Refusing here means that cannot happen through a
+     stale page, a restored form or anything else that gets a selection past the filter. */
+  if (!modelDoesTask(model, BASE_MODEL_TASKS['base-det'])) {
+    return {
+      refusal: `${model.name} is ${model.model_type ? `a ${model.model_type}` : 'an untyped'} `
+        + 'model, and this is a detection run. The checkpoint decides the task on its own, '
+        + 'so training would succeed and produce the wrong kind of model.',
+    };
+  }
+
+  if (!model.artifact_sha256) {
+    /* Null means the checksum is not known, which is not the same as the model being
+       unusable — its weights are simply not on the machine that would have hashed them.
+       Naming the script is the difference between a dead end and a next step. */
+    return {
+      refusal: `${model.name} has no recorded checksum, so a worker would have nothing to `
+        + 'verify its weights against. Run scripts/backfill-model-artifact-sha256.js where '
+        + 'the model store lives.',
+    };
+  }
+
+  const datasetId = Number(value('dataset-det'));
+
+  if (!Number.isInteger(datasetId) || datasetId <= 0) {
+    return { refusal: 'Choose a saved dataset to train on.' };
+  }
+
+  const name = (value('trname') || '').trim();
+
+  return {
+    body: {
+      kind: 'training',
+      // Omitted rather than invented when blank: MARP composes no fallback name.
+      ...(name ? { name } : {}),
+      spec: {
+        engine: 'marp_training',
+        model: {
+          ml_model_id: model.id,
+          name: model.name,
+          /* Coordinator-relative, exactly as the server composes the dataset one, so a
+             worker resolves it against whichever MARP it is enrolled with. */
+          url: `/api/v2/model/${model.id}/artifact`,
+          sha256: String(model.artifact_sha256).toLowerCase(),
+        },
+        // The id alone; the server fills in the locator and the archive hash.
+        dataset: { dataset_id: datasetId },
+        params: trainingParams(where),
+      },
+    },
+  };
+}
+
+/**
+ * Queues the detection run the form describes.
+ *
+ * **Classification and segmentation are deliberately not wired.** Their panels have
+ * fields and no submission; detection goes end to end first, on a real dataset, and the
+ * other two follow once it has.
+ *
+ * The button is disabled while the request is in flight, because the one thing worse than
+ * a run that does not start is three of them that do.
+ *
+ * @returns {void}
+ */
+function wireStartTraining() {
+  const button = $('#trainBtn');
+  const status = $('[data-fills="train-status"]');
+
+  if (!button || !window.MarpApi) return;
+
+  const say = (text, kind) => {
+    if (!status) return;
+
+    status.textContent = text;
+    status.dataset.state = kind || '';
+  };
+
+  button.addEventListener('click', async () => {
+    const asked = trainingSubmission();
+
+    if (asked.refusal) {
+      say(asked.refusal, 'warning');
+
+      return;
+    }
+
+    button.disabled = true;
+    say('Queueing…');
+
+    try {
+      const queued = await window.MarpApi.submitJob(asked.body);
+      const job = (queued.jobs || [])[0];
+
+      /* The id, because it is what every other screen keys on and what somebody types
+         into the Jobs filter when they want to know what became of this. */
+      say(job && job.id
+        ? `Queued as job ${job.id}. It appears below, and on the Jobs screen.`
+        : 'Queued.', 'ok');
+
+      renderTrainingScreen();
+    } catch (error) {
+      /* The API's own message rather than a sentence of this screen's: it is the one that
+         says which field was wrong, and replacing it with "Could not queue" is how a
+         person ends up guessing. */
+      say(`Could not queue it (${error.status || 'no answer'}). ${error.message || ''}`.trim(),
+        'warning');
+    } finally {
+      button.disabled = false;
+    }
+  });
 }
 
 /**
@@ -1435,40 +3666,403 @@ async function renderTrainingScreen() {
   if (document.body.dataset.screen !== 'training' || !window.MarpApi) return;
 
   try {
-    const [jobs, models, datasets] = await Promise.all([
-      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 })),
+    const [jobs, models, datasets, runs] = await Promise.all([
+      /* **Filtered to training, which the poll has always done and this had not.** Two
+         things turned on it. `best_map50` is a lateral the API computes only for a list
+         filtered to training -- 22ms a page otherwise, spent deriving it for thousands of
+         inference jobs that have no epochs and no such column -- so an unfiltered request
+         comes back with the field absent and every Best mAP cell took that branch. And
+         `renderTraining` discards everything that is not training anyway, so this was
+         fetching 500 rows to keep eight of them.
+
+         Safe for the issues rollup, which is the one thing here that reads the other
+         kinds: it groups by `batch_id`, and no training job in the corpus has one -- no
+         batch spans two kinds at all. */
+      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500, kind: 'training' })),
       window.MarpApi.listModels(),
       window.MarpApi.listDatasets(),
+      /* Settled rather than awaited with the rest: the runs decorate the table and a
+         screen that drew nothing because one read was slow would be worse than one whose
+         rows cannot be expanded. */
+      window.MarpApi.listTrainingRuns().catch(() => []),
     ]);
+
+    /* Newest first from the route, so the first run seen for a job is its latest. */
+    trainingRunsByJob = new Map();
+    modelByTrainingRun = new Map();
+
+    for (const model of models) {
+      if (model.training_run_id != null) modelByTrainingRun.set(model.training_run_id, model);
+    }
+
+    for (const run of runs) {
+      if (run.job_id != null && !trainingRunsByJob.has(run.job_id)) trainingRunsByJob.set(run.job_id, run);
+    }
+
+    /* **Before `renderTraining`, because the rows read it.** The Task cell comes from the
+       base model's `model_type`, and this used to be filled by `fillTrainingChoices`
+       afterwards -- so every row was built against an empty map and drew a dash. */
+    trainingModelsById = new Map(models.map((model) => [model.id, model]));
 
     renderTraining(jobs.jobs);
     fillTrainingChoices(models, datasets);
-    markTrainingRunsUnbacked();
+    /* After `renderTraining`, which is what fills `trainingViewsByJob`. */
+    fillTrainingRuns(runs, trainingViewsByJob);
+    watchTrainingJobs();
+    wireTrainingResult();
   } catch (error) {
     const body = $('.training-table tbody');
     if (body) {
-      body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="8">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
+      body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load training jobs (${error.status || 'no answer'}).</td></tr>`;
     }
   }
 }
 
 /**
- * Says, on the Training runs panel itself, that nothing serves it.
+ * Keep the Training table current while anything is still going.
  *
- * The table is left as it is -- it is the designed contract for a run record,
- * and deleting it would lose that -- but a reader has to be able to tell it
- * apart from the tables above it, which are real.
+ * **The dataset builder's cadence and the dataset builder's rule.** Isaac asked for this
+ * screen to behave *"just like we do for the dataset builder"*, which means two things
+ * and the second is the one that is easy to lose: every five seconds, and **patched** --
+ * the rows are written into, never rebuilt around, because a rebuild closes the row
+ * somebody is reading. That was a real defect on Datasets and it would be the same defect
+ * here.
+ *
+ * Stops itself when nothing is queued or leased, so a screen of finished jobs makes no
+ * requests at all. A newly queued job restarts it on the next render.
+ *
+ * @returns {void}
  */
-function markTrainingRunsUnbacked() {
-  const heading = $$('.panel-hd h2').find((h) => /^Training runs/.test(h.textContent.trim()));
-  const header = heading && heading.closest('.panel-hd');
-  if (!header || $('.unbacked-note', header)) return;
+let trainingWatch = null;
 
-  const note = document.createElement('p');
-  note.className = 'unbacked-note muted';
-  note.textContent = 'Design data. /v2/training_run has only a POST, so no route returns a run, '
-    + 'its epochs or its metrics (gap 28).';
-  header.appendChild(note);
+function watchTrainingJobs() {
+  const body = $('.training-table tbody');
+
+  if (!body || !window.MarpApi) return;
+
+  const live = (view) => view.state === 'queued' || view.state === 'running' || view.state === 'leased';
+
+  if (trainingWatch) { clearTimeout(trainingWatch); trainingWatch = null; }
+
+  /* Nothing moving, nothing to ask about. */
+  if (![...trainingViewsByJob.values()].some(live)) return;
+
+  trainingWatch = setTimeout(async function again() {
+    try {
+      const [jobs, runs] = await Promise.all([
+        window.MarpApi.listJobs({ limit: 500, kind: 'training' }),
+        window.MarpApi.listTrainingRuns().catch(() => []),
+      ]);
+
+      /* A run can appear part-way through, which is the moment the panel stops saying
+         there is none and starts drawing curves. */
+      for (const run of runs) {
+        if (run.job_id != null && !trainingRunsByJob.has(run.job_id)) trainingRunsByJob.set(run.job_id, run);
+      }
+
+      const issues = batchesWithIssues(jobs.jobs);
+      const fresh = new Map(jobs.jobs.map((job) => [job.id, jobView(job, issues)]));
+
+      /* Only rows that are on the page: paging and filtering are the table's business. */
+      for (const [id, view] of fresh) {
+        if (trainingViewsByJob.has(id)) trainingViewsByJob.set(id, view);
+      }
+
+      patchTrainingRows(body, trainingViewsByJob);
+
+      /* The runs panel is the same rows seen a second way, so it is patched rather than
+         redrawn for the same reason: a rebuild closes the expansion somebody is reading. */
+      const runsBody = $('#runs tbody');
+
+      if (runsBody) patchTrainingRows(runsBody, trainingViewsByJob);
+    } catch {
+      /* A poll that fails is a blip. The last good answer stays on screen, which is
+         better than replacing a table somebody is reading with an error. */
+    }
+
+    trainingWatch = [...trainingViewsByJob.values()].some(live)
+      ? setTimeout(again, TRAINING_EPOCH_POLL_MS)
+      : null;
+  }, TRAINING_EPOCH_POLL_MS);
+}
+
+/* ---------------------------------------------------- the Training runs panel */
+
+/**
+ * What the Training runs panel is showing.
+ *
+ * Client-side, because everything it filters over is already on the screen: the runs
+ * came from `GET /training_run` and the jobs from the one `kind=training` read the
+ * table above also uses. A server-side filter would be a second round trip for a list
+ * of six.
+ */
+const runsQuery = { search: '', status: 'all', page: 1, perPage: 10 };
+
+/** Every run, newest first, as the panel sorts and filters it. */
+let trainingRunRows = [];
+
+/**
+ * One run, reduced to what the panel shows, sorts and searches on.
+ *
+ * **Every column comes from data the screen already has.** This panel was a fixture --
+ * an empty `<tbody>` under a footer hardcoded to *"Showing 1-6 of 28 runs"* and three
+ * dead pager buttons -- and the reason given for it was that `/v2/training_run` had
+ * only a `POST`. #260 added the collection read and the job list carries the rest, so
+ * the only thing still missing was this function.
+ *
+ * **Epochs come from the attempt, not from `total_epochs`.** `progress_done` persists
+ * after a job ends and equals the epoch rows exactly, including where a run was
+ * stopped early -- run 203 is 8 of 10. `total_epochs` is what was *configured*, so a
+ * finished run reading 10 of 10 from it would be a guess that happens to be right most
+ * of the time and silently wrong on every cancellation.
+ *
+ * @param {Object} run - A `training_runs` row.
+ * @param {Object|null} view - The job view for `run.job_id`, when the job is in the list.
+ * @returns {Object} The row model.
+ */
+function trainingRunView(run, view) {
+  const job = view ? view.job : null;
+  const spec = (job && job.spec) || {};
+  const started = Date.parse(run.start_time || (job && job.created_at) || '') || 0;
+
+  /* The run's own clock where it has one. A cancelled run has a start and no end, so
+     the job's wall clock stands in and the cell says which it is. */
+  const ownMs = run.end_time && run.start_time
+    ? Date.parse(run.end_time) - Date.parse(run.start_time)
+    : null;
+  const jobMs = job && job.updated_at && job.created_at
+    ? Date.parse(job.updated_at) - Date.parse(job.created_at)
+    : null;
+
+  const counted = /epoch/i.test((job && job.progress_unit) || '');
+  const done = counted ? Number(job.progress_done) : NaN;
+  const total = counted ? Number(job.progress_total) : Number(run.total_epochs);
+
+  return {
+    run,
+    view,
+    job,
+    spec,
+    started,
+    ownMs,
+    jobMs,
+    done: Number.isFinite(done) ? done : null,
+    total: Number.isFinite(total) && total > 0 ? total : null,
+    state: view ? view.state : 'queued',
+    label: view ? view.label : 'No job',
+    /* One lower-cased haystack per row, built once. The search box filters the model
+       rather than the rendered cells, because a filter that reads the DOM can only
+       filter the page it can see -- the same reason `jobView` exists. */
+    find: [
+      view && view.title,
+      spec.dataset && spec.dataset.name,
+      spec.model && spec.model.name,
+      `run ${run.id}`,
+      job && `job ${job.id}`,
+      run.optimizer,
+      run.compute_device,
+    ].filter(Boolean).join(' ').toLowerCase(),
+  };
+}
+
+/**
+ * Draw the Training runs panel from the runs and jobs already loaded.
+ *
+ * @returns {void}
+ */
+function renderTrainingRuns() {
+  const table = $('#runs');
+  const body = table && $('tbody', table);
+
+  if (!body) return;
+
+  const panel = table.closest('.panel');
+  const search = runsQuery.search.trim().toLowerCase();
+  const matching = trainingRunRows.filter((row) => (runsQuery.status === 'all'
+    || row.state === runsQuery.status)
+    && (!search || row.find.includes(search)));
+
+  const pages = Math.max(1, Math.ceil(matching.length / runsQuery.perPage));
+
+  if (runsQuery.page > pages) runsQuery.page = pages;
+
+  const from = (runsQuery.page - 1) * runsQuery.perPage;
+  const shown = matching.slice(from, from + runsQuery.perPage);
+
+  body.innerHTML = shown.length
+    ? shown.map((row) => {
+      const { run, job, spec } = row;
+      const progress = job ? progressCell(job, row.state) : { html: NO_RUN_RECORDED, sort: -1 };
+      const map = job ? bestMap(job, run) : { html: NO_RUN_RECORDED, sort: -1 };
+      const took = row.ownMs !== null
+        ? `<span title="From this run's own start and end times">${tookText(row.ownMs)}</span>`
+        : (row.jobMs !== null
+          ? `<span class="faint" title="This run recorded no end time, so this is its job's wall clock">${tookText(row.jobMs)}</span>`
+          : '<span class="dash" title="Nothing recorded an end">&mdash;</span>');
+
+      return `<tr data-job="${job ? job.id : ''}" data-run="${run.id}">`
+        + '<td class="ex"><button class="exbtn" type="button" aria-label="Show this run"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
+        + `<td class="jname" title="${escapeHtml(row.view ? row.view.title : `Run ${run.id}`)}">`
+        + `<span class="name"><svg class="ico training"><use href="#i-training"/></svg>`
+        + `<span class="t">${row.view ? row.view.title : `Run ${run.id}`}</span></span></td>`
+        + `<td class="jdset">${namedById('Dataset', spec.dataset, run.dataset_id,
+          run.dataset_id ? `./datasets.html?dataset=${encodeURIComponent(run.dataset_id)}` : '')}</td>`
+        /* Same rule as the table above: a run registers a version only once it has
+           succeeded, so an unfinished one has nothing to name here. */
+        + `<td class="jmakes">${['done', 'issues'].includes(row.state)
+          ? producedModelCell(run)
+          : '<span class="dash" title="The version a run registers does not exist until it succeeds">&mdash;</span>'}</td>`
+        + `<td class="jstatus" data-sort="${JOB_STATE_RANK[row.state]}">`
+        + `<span class="st" data-state="${row.state}"><span class="dot"></span>${row.label}</span></td>`
+        + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
+        + `<td class="jepochs num" data-sort="${row.done ?? -1}">${row.done === null
+          ? '<span class="dash" title="This run&apos;s job did not report its progress in epochs">&mdash;</span>'
+          : `<span title="${row.total ? `of ${row.total} configured` : 'configured epochs not recorded'}">${row.done}${row.total ? ` / ${row.total}` : ''}</span>`}</td>`
+        + `<td class="jmap num" data-sort="${map.sort}">${map.html}</td>`
+        + `<td class="jtime" data-sort="${row.started}">${row.started
+          ? `<span class="two"><span class="a">${new Date(row.started).toTimeString().slice(0, 5)}</span>`
+            + `<span class="b">${new Date(row.started).toISOString().slice(0, 10)}</span></span>`
+          : '<span class="dash" title="This run recorded no start time">&mdash;</span>'}</td>`
+        + `<td class="jtook num" data-sort="${row.ownMs ?? row.jobMs ?? -1}">${took}</td>`
+        + '</tr>';
+    }).join('')
+    : '<tr class="tblmsg"><td class="empty" colspan="10">No training runs match these filters.</td></tr>';
+
+  /* The same two rows per run the table above builds, so one expansion serves both:
+     `wireTrainingJobDetail` reads `data-job` and knows nothing about which table it
+     was called from. */
+  for (const head of $$(':scope > tr[data-job]', body)) {
+    head.classList.add('runrow-head');
+    head.setAttribute('aria-expanded', 'false');
+
+    const detail = document.createElement('tr');
+
+    detail.className = 'runrow-body';
+    detail.hidden = true;
+    detail.innerHTML = '<td colspan="10"><div class="rundetail jobdetail"><p class="hint">Reading this run&hellip;</p></div></td>';
+    head.after(detail);
+
+    wireTrainingJobDetail(head, detail);
+  }
+
+  wireAccordions();
+  renderTrainingRunsHeader(panel, matching.length, from, shown.length, pages);
+}
+
+/**
+ * The run panel's count, its footer and its pager, from what was drawn.
+ *
+ * @param {Element} panel - The runs panel.
+ * @param {number} total - Rows matching the filters.
+ * @param {number} from - Index of the first row shown.
+ * @param {number} shown - How many were drawn.
+ * @param {number} pages - How many pages the filtered list has.
+ * @returns {void}
+ */
+function renderTrainingRunsHeader(panel, total, from, shown, pages) {
+  if (!panel) return;
+
+  const count = $('.panel-hd .count', panel);
+
+  if (count) count.textContent = `(${total.toLocaleString()})`;
+
+  const showing = $('.panel-ft > span', panel);
+
+  if (showing) {
+    showing.innerHTML = shown
+      ? `Showing <b class="strong">${(from + 1).toLocaleString()}&ndash;${(from + shown).toLocaleString()}</b> of ${total.toLocaleString()} run${total === 1 ? '' : 's'}`
+      : 'No training runs match these filters';
+  }
+
+  const pager = $('.panel-ft .pager', panel);
+
+  if (pager) {
+    /* Rebuilt rather than patched, for the reason the Jobs pager is: the markup held a
+       fixed 1/2/3 under a hardcoded "of 28 runs", which is a lie about any list that is
+       not exactly three pages long -- and this one is one page of six. */
+    const buttons = [`<button aria-label="Previous page" data-runs-page="${runsQuery.page - 1}"${runsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
+    const first = Math.max(1, Math.min(runsQuery.page - 2, pages - 4));
+
+    for (let page = first; page <= Math.min(pages, first + 4); page += 1) {
+      buttons.push(`<button data-runs-page="${page}"${page === runsQuery.page ? ' aria-current="page"' : ''}>${page}</button>`);
+    }
+
+    buttons.push(`<button aria-label="Next page" data-runs-page="${runsQuery.page + 1}"${runsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
+    pager.innerHTML = buttons.join('');
+  }
+}
+
+/**
+ * Build the panel's row models and wire its controls. Called once per screen load.
+ *
+ * @param {Object[]} runs - Every `training_runs` row, newest first.
+ * @param {Map<number, Object>} views - Job views by job id.
+ * @returns {void}
+ */
+function fillTrainingRuns(runs, views) {
+  trainingRunRows = runs
+    .map((run) => trainingRunView(run, views.get(run.job_id) || null))
+    .sort((a, b) => b.started - a.started || b.run.id - a.run.id);
+
+  const table = $('#runs');
+  const panel = table && table.closest('.panel');
+
+  if (!panel) return;
+
+  /* The options are declared in the markup and cover every state, the way the Jobs
+     screen's do. Filling them from the states present would make the filter's own
+     contents move with the data -- Running would be absent until something ran. */
+  const select = $('.sel', panel);
+
+  if (select && !select.dataset.wired) {
+    select.dataset.wired = 'yes';
+    select.addEventListener('change', () => {
+      runsQuery.status = select.value;
+      runsQuery.page = 1;
+      renderTrainingRuns();
+    });
+  }
+
+  const box = $('.search input', panel);
+
+  if (box && !box.dataset.wired) {
+    box.dataset.wired = 'yes';
+    box.addEventListener('input', () => {
+      runsQuery.search = box.value;
+      runsQuery.page = 1;
+      renderTrainingRuns();
+    });
+  }
+
+  const expand = $('.panel-tools .btn', panel);
+
+  if (expand && !expand.dataset.wired) {
+    expand.dataset.wired = 'yes';
+    /* Only the rows on this page, which is what is in the DOM -- "all" across a
+       filtered list of hundreds would be a request per run for curves nobody asked
+       for. */
+    expand.addEventListener('click', () => {
+      for (const head of $$('#runs tbody > tr.runrow-head')) {
+        if (head.getAttribute('aria-expanded') !== 'true') $('.exbtn', head)?.click();
+      }
+    });
+  }
+
+  const footer = $('.panel-ft', panel);
+
+  if (footer && !footer.dataset.wired) {
+    footer.dataset.wired = 'yes';
+    footer.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-runs-page]');
+
+      if (!button || button.disabled) return;
+
+      runsQuery.page = Number(button.dataset.runsPage);
+      renderTrainingRuns();
+    });
+  }
+
+  renderTrainingRuns();
 }
 
 
@@ -1806,8 +4400,32 @@ async function renderInferenceScreen() {
    that -- the training dataset, key metrics and how many workers hold a model
    -- and none of the three is anywhere in MARP. Gap 28. */
 
-/** The registry does not carry this. Distinct from "not measured yet". */
-const NOT_IN_REGISTRY = '<span class="dash" title="Not carried by ml_models: the dataset link lives on a training run, which cannot be listed, and nothing records metrics, cache placement or a preferred model (gap 28)">&mdash;</span>';
+/**
+ * The registry does not carry this, and nothing else does either.
+ *
+ * **Narrowed to what is still true.** It used to say the dataset link "cannot be listed"
+ * and that nothing records metrics; #260 added the collection read for training runs, and
+ * `metrics_summary` has recorded precision, recall, mAP and fitness all along. So the
+ * dataset is drawn now and this covers the two that remain: scores nothing serves yet,
+ * and cache placement nothing records at all. Isaac asked for both columns to stay --
+ * *"later maybe we will keep those scores"* -- so they wait rather than disappear.
+ */
+const NOT_IN_REGISTRY = '<span class="dash" title="Nothing serves this yet: metrics_summary records precision, recall and mAP but no route lists them by run, and no worker reports which models it holds">&mdash;</span>';
+
+/**
+ * A model MARP has no training run for.
+ *
+ * **The same dash, and that is the requirement.** Some models predate the registry
+ * keeping runs at all, and an honest "we have no run for this" has to look identical to
+ * the columns beside it rather than becoming a third kind of empty -- a blank, a zero or
+ * a "None" would all read as a different sort of fact. Only the tooltip differs, because
+ * the reason differs and a reader who asks deserves the real one.
+ */
+const NO_REGISTERED_MODEL = '<span class="dash" title="MARP records no link from a run to the model it registered: training_runs.model_id and spec.model.ml_model_id are both the base model the run started FROM">&mdash;</span>';
+
+let modelsTrainedOn = new Map();
+
+const NO_TRAINING_RUN = '<span class="dash" title="MARP records no link from a model to the run that produced it: training_runs.model_id is the base model a run started FROM, not the model it produced">&mdash;</span>';
 
 /** MARP's `ml_models.status`, in the design's own state words. @type {Object} */
 const MODEL_STATE = {
@@ -1831,11 +4449,17 @@ const MODELS_SORT_KEYS = {
   hver: (v) => v.version,
   hstatus: (v) => ['training', 'draft', 'trained', 'archived'].indexOf(v.model.status),
   hbase: (v) => (v.model.architecture_version || '').toLowerCase(),
+  /* **No `hdset` key, deliberately.** The column has nothing to sort: every row is the
+     same dash until MARP records which run produced a model. `Key metrics` and `Cached`
+     were the other two keyless-but-sortable headers and they are gone -- Isaac asked to
+     keep them once and to remove them now; the later call wins. */
   hupd: (v) => v.model.updated_at,
 };
 
 /** The registry, as fetched. */
 let modelsRegistry = null;
+
+/** What each model trained on, by model id. Empty until the registry has loaded. */
 
 /**
  * Which generation a model is, by walking `parent_model_id`.
@@ -1865,6 +4489,44 @@ function modelGeneration(model, byId) {
   return depth;
 }
 
+
+/**
+ * Which dataset each model actually learned from, by model id.
+ *
+ * **Through `ml_models.training_run_id`, which is the run that produced the model.** The
+ * column this replaces walked `training_runs.model_id`, the base a run started FROM, so
+ * it named a model after what some *other* run trained on -- rockfish5-2026-10-20 was
+ * credited with CookieStarTest, which it never saw.
+ *
+ * A model with no recorded run, or a run with a null `dataset_id` -- one that trained on
+ * something outside MARP -- both take the dash. They are different facts and read the
+ * same in a single cell, so the tooltip carries the difference.
+ *
+ * @param {Object[]} models - The registry.
+ * @param {Object[]} runs - From `GET /training_run`.
+ * @param {Object[]} datasets - From `GET /dataset`, for the names.
+ * @returns {Map<number, Object>} `{id, name}` per model id.
+ */
+function datasetByModel(models, runs, datasets) {
+  const names = new Map(datasets.map((set) => [set.id, set.name]));
+  const runById = new Map(runs.map((run) => [run.id, run]));
+  const found = new Map();
+
+  for (const model of models) {
+    const run = model.training_run_id != null && runById.get(model.training_run_id);
+    if (!run || run.dataset_id == null) continue;
+
+    found.set(model.id, {
+      id: run.dataset_id,
+      /* A dataset the catalogue did not return -- deleted, or a read that failed -- is
+         still a real link, so it is named by its id rather than dropped. */
+      name: names.get(run.dataset_id) || `Dataset ${run.dataset_id}`,
+    });
+  }
+
+  return found;
+}
+
 /**
  * One model, reduced to what the table shows and sorts on.
  *
@@ -1874,10 +4536,16 @@ function modelGeneration(model, byId) {
  */
 function modelView(model, byId) {
   const [state, label] = MODEL_STATE[model.status] || ['queued', model.status];
+
+  const trainedOn = modelsTrainedOn.get(model.id) || null;
+
   return {
     model, state, label,
     version: modelGeneration(model, byId),
-    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status}`.toLowerCase(),
+    trainedOn,
+    /* Searchable by what it trained on, which is how somebody looks for "every model
+       that saw the inverts dataset". */
+    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status} ${trainedOn ? trainedOn.name : ''}`.toLowerCase(),
   };
 }
 
@@ -1899,18 +4567,35 @@ function modelRows(view, byId) {
     + `<td class="hver">v${view.version}</td>`
     + `<td class="hstatus" data-sort="${MODELS_SORT_KEYS.hstatus(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
     + `<td class="hbase">${model.architecture_version || NOT_REPORTED}</td>`
-    + `<td class="hdset">${NOT_IN_REGISTRY}</td>`
-    + `<td class="hmodel">${NOT_IN_REGISTRY}</td>`
-    + `<td class="hcache num">${NOT_IN_REGISTRY}</td>`
+    /* **Empty, because the link does not exist rather than because it is missing.**
+       This used to read `training_runs.model_id` as the model a run produced. It is the
+       base model the run started FROM -- `gpu.service.js` says so where it refuses a
+       submission without one -- so every row that showed a dataset was crediting a model
+       with what some *other* run trained on. rockfish5-2026-10-20 was named against
+       CookieStarTest on that basis, which it never saw. Nothing in `ml_models` or
+       `training_runs` records which run produced which model; until something does, this
+       column says so instead of guessing. */
+    + `<td class="hdset">${view.trainedOn
+      ? `<a href="./datasets.html?dataset=${encodeURIComponent(view.trainedOn.id)}" title="The dataset the run that produced this model learned from">${escapeHtml(view.trainedOn.name)}</a>`
+      : NO_TRAINING_RUN}</td>`
     + `<td class="hupd">${sinceText(model.updated_at)}</td>`
     + '<td class="hacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
     + '</tr>';
 
-  const body = '<tr class="runrow-body"><td colspan="11"><div class="rundetail">'
+  /* **`hidden`, because nothing else hides it.** An expandable row is open or shut by
+     the attribute alone -- there is no CSS rule holding `.runrow-body` closed -- so a
+     detail row built as markup without it renders open. Both tables that build their
+     detail as a string did, and both opened with every row expanded; the two that build
+     it with `createElement` set `hidden = true` and were always right.
+
+     It read worse than it sounds: `aria-expanded` on the head was `"false"` the whole
+     time, so the row said shut while the panel was open, and the first click on any row
+     set them to agree and changed nothing visible. */
+  const body = '<tr class="runrow-body" hidden><td colspan="9"><div class="rundetail">'
     + `<div class="wdhead"><span class="name"><svg class="ico models"><use href="#i-models"/></svg><span class="t">${model.name}</span></span>`
     + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
     + `<span class="wid mono" title="Model id as the registry reports it">ml_${model.id}</span></div>`
-    + '<div class="grid" data-cols="2">'
+    + '<div class="grid" data-cols="1">'
     + '<div class="sect"><h3>In the registry</h3><dl class="kv">'
     + `<dt>Task</dt><dd>${model.model_type}</dd>`
     + `<dt>Architecture</dt><dd>${model.architecture_version || NOT_REPORTED}</dd>`
@@ -1919,11 +4604,6 @@ function modelRows(view, byId) {
     + `<dt>Registered</dt><dd>${new Date(model.created_at).toISOString().slice(0, 10)}</dd>`
     + `<dt>Updated</dt><dd>${sinceText(model.updated_at)}</dd>`
     + '</dl></div>'
-    + '<div class="sect"><h3>Not in the registry</h3>'
-    + '<p class="muted">Which dataset trained this model, how it scored, and how many workers hold it '
-    + 'are absent from <code>ml_models</code>. Its training runs can be listed now, and whether it is '
-    + 'preferred for its task is recorded — both landed in #260, and this said otherwise for hours '
-    + 'afterwards. What is left of gap 28 is the metrics and the cache count.</p></div>'
     + '</div></div></td></tr>';
 
   return head + body;
@@ -1996,6 +4676,34 @@ function applyModelsQuery() {
   }
 
   wireAccordions();
+  openRequestedModel();
+}
+
+/* Once per load. The table is redrawn by every filter and sort, and reopening the
+   asked-for row each time would fight whoever is using the screen. */
+let openedRequestedModel = false;
+
+/**
+ * Expand the model a `?model=` link asked for.
+ *
+ * The Training screen's *Produces* column links here, the way a dataset build links to
+ * `datasets.html?dataset=`. Without this the link lands on the registry and leaves the
+ * reader to find the row, which for eight models is tolerable and for eighty is not.
+ *
+ * @returns {void}
+ */
+function openRequestedModel() {
+  if (openedRequestedModel) return;
+
+  const wanted = new URLSearchParams(window.location.search).get('model');
+  if (!wanted) return;
+
+  const head = $(`#models tbody tr[data-model="${CSS.escape(wanted)}"]`);
+  if (!head) return;
+
+  openedRequestedModel = true;
+  $('.exbtn', head)?.click();
+  requestAnimationFrame(() => head.scrollIntoView({ block: 'start' }));
 }
 
 /**
@@ -2083,7 +4791,21 @@ async function renderModelsScreen() {
   body.innerHTML = `<tr class="tblmsg"><td class="loading" colspan="${columns}">Loading the registry&hellip;</td></tr>`;
 
   try {
-    modelsRegistry = await window.MarpApi.listModels();
+    /* **Three reads, two of which may fail.** The registry is the screen; the runs and
+       the dataset catalogue turn `ml_models.training_run_id` into a dataset name. A
+       registry that drew nothing because the catalogue was slow would be worse than one
+       with a dash in one column, so those two are settled rather than awaited. */
+    const [registry, runs, datasets] = await Promise.all([
+      window.MarpApi.listModels(),
+      Promise.allSettled([window.MarpApi.listTrainingRuns(), window.MarpApi.listDatasets()]),
+    ]).then(([models, [runResult, setResult]]) => [
+      models,
+      runResult.status === 'fulfilled' ? runResult.value : [],
+      setResult.status === 'fulfilled' ? setResult.value : [],
+    ]);
+
+    modelsRegistry = registry;
+    modelsTrainedOn = datasetByModel(registry, runs, datasets);
     fillModelsFilterOptions();
     applyModelsQuery();
   } catch (error) {
@@ -2112,11 +4834,6 @@ function fillModelsFilterOptions() {
   if (selects['Base model']) {
     selects['Base model'].innerHTML = ['<option>All base models</option>', ...bases.map((b) => `<option>${b}</option>`)].join('');
   }
-  if (selects.Dataset) {
-    selects.Dataset.innerHTML = '<option>Not linked in the registry</option>';
-    selects.Dataset.disabled = true;
-    selects.Dataset.title = 'ml_models carries no dataset link; the connection lives on a training run, which cannot be listed (gap 28)';
-  }
 }
 
 /** The Models filters, sort headers and pager. Bound once. */
@@ -2140,6 +4857,11 @@ function wireModelsControls() {
   });
   selects['Base model']?.addEventListener('change', () => {
     modelsQuery.base = selects['Base model'].value.startsWith('All') ? '' : selects['Base model'].value;
+    renarrow();
+  });
+  /* It had options and no listener, so even enabled it would have done nothing. */
+  selects.Dataset?.addEventListener('change', () => {
+    modelsQuery.dataset = selects.Dataset.value.startsWith('All') ? '' : selects.Dataset.value;
     renarrow();
   });
 
@@ -2177,62 +4899,11 @@ function wireModelsControls() {
 }
 
 
-/* =========================================================== history */
+/* ================================================ durations and CSV */
 
-/* History is the terminal states over a window, which is the one question
-   `GET /gpu/jobs` cannot be asked (gap 24): there is no date parameter, so the
-   window is applied here over everything the route will hand back. It also
-   resolves two ids the job carries bare -- `session.project_id` and
-   `created_by` -- against `GET /api/v2/projects` and `GET /api/v2/users`. */
-
-/** What the History screen is asking for. None of it is a query parameter. */
-const historyQuery = {
-  project: '', kind: '', state: '', model: '', windowDays: 30,
-  sort: { key: 'hend', dir: 'descending' },
-  page: 1, perPage: 10,
-};
-
-/** How each sortable column orders. Keyed by the header's class. */
-const HISTORY_SORT_KEYS = {
-  hjob: (v) => v.title.toLowerCase(),
-  htype: (v) => v.job.kind,
-  hstatus: (v) => JOB_STATE_RANK[v.state],
-  hscope: (v) => v.projectName.toLowerCase(),
-  hmodel: (v) => v.model.toLowerCase(),
-  hdata: (v) => v.frames,
-  hstart: (v) => v.job.created_at,
-  hend: (v) => v.job.updated_at,
-  hdur: (v) => v.tookMs,
-  hwho: (v) => v.byName.toLowerCase(),
-};
-
-/** Everything History draws from, fetched once. */
-let historyData = null;
-
-/**
- * A finished job, reduced to what History shows.
- *
- * @param {Object} job - A terminal job.
- * @param {Set<string>} issues - Batches that finished with issues.
- * @param {Map<number,string>} projects - project_id to name.
- * @param {Map<number,string>} users - user_id to name.
- * @returns {Object}
- */
-function historyView(job, issues, projects, users) {
-  const view = jobView(job, issues);
-  const session = view.session;
-  const started = Date.parse(job.created_at);
-  const completed = Date.parse(job.updated_at);
-
-  view.projectName = projects.get(session.project_id) || 'Unknown project';
-  view.byName = users.get(job.created_by) || 'Unattributed';
-  view.frames = job.spec.range ? job.spec.range.end_frame - job.spec.range.start_frame : 0;
-  /* `updated_at` is the closest thing the list route has to a finish time: the
-     attempt's `finished_at` is real but only `GET /gpu/jobs/:id` returns it,
-     and one detail call per row is what gap 23 already rejected. */
-  view.tookMs = Math.max(0, completed - started);
-  return view;
-}
+/* What survived History folding into Jobs: the two things other screens were already
+   borrowing from it. `tookText` is read by the Jobs and Training tables, and the CSV
+   writer is what Jobs exports through. */
 
 /**
  * How long something took, in the units an operator reads.
@@ -2247,313 +4918,67 @@ function tookText(ms) {
   return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
 }
 
-/** Narrows, sorts and pages the finished work, then draws it. */
-function applyHistoryQuery() {
-  const table = $('table#history');
-  if (table) table.dataset.sortsItsOwnData = 'true';
-  if (!table || !historyData) return;
-
-  const body = $('tbody', table);
-  const { jobs, projects, users } = historyData;
-
-  const issues = batchesWithIssues(jobs);
-  const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
-  const since = newest - historyQuery.windowDays * 86400000;
-
-  const terminal = ['succeeded', 'failed', 'cancelled', 'expired'];
-  let views = jobs
-    .filter((j) => terminal.includes(j.state) && Date.parse(j.created_at) >= since)
-    .map((job) => historyView(job, issues, projects, users));
-
-  /* The window drives the cards as well as the table, so they are counted
-     before the other filters narrow anything. */
-  renderHistoryOutcomes(views, jobs, since, newest);
-
-  if (historyQuery.project) views = views.filter((v) => v.projectName === historyQuery.project);
-  if (historyQuery.kind) views = views.filter((v) => v.job.kind === historyQuery.kind);
-  if (historyQuery.model) views = views.filter((v) => v.model === historyQuery.model);
-  if (historyQuery.state) {
-    views = historyQuery.state === 'issues'
-      ? views.filter((v) => v.state === 'issues')
-      : views.filter((v) => v.state === historyQuery.state);
-  }
-
-  const key = HISTORY_SORT_KEYS[historyQuery.sort.key] || HISTORY_SORT_KEYS.hend;
-  const sign = historyQuery.sort.dir === 'ascending' ? 1 : -1;
-  views.sort((a, b) => {
-    const left = key(a);
-    const right = key(b);
-    if (left < right) return -1 * sign;
-    if (left > right) return 1 * sign;
-    return b.job.id - a.job.id;
-  });
-
-  const total = views.length;
-  const pages = Math.max(1, Math.ceil(total / historyQuery.perPage));
-  if (historyQuery.page > pages) historyQuery.page = pages;
-  const from = (historyQuery.page - 1) * historyQuery.perPage;
-  const shown = views.slice(from, from + historyQuery.perPage);
-
-  const columns = $$('thead th', table).length;
-  body.innerHTML = shown.length
-    ? shown.map(historyRow).join('')
-    : `<tr class="tblmsg"><td class="empty" colspan="${columns}">No finished work matches these filters.</td></tr>`;
-
-  const heading = $('#history-panel .panel-hd h2');
-  if (heading) heading.textContent = `Job history (${total.toLocaleString()})`;
-
-  const showing = $('#history-panel .panel-ft > span');
-  if (showing) {
-    const windowText = historyQuery.windowDays === 365 ? 'this year' : `the last ${historyQuery.windowDays} days`;
-    showing.innerHTML = shown.length
-      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} jobs in ${windowText}`
-      : `Nothing finished in ${windowText} matches these filters`;
-  }
-
-  const pager = $('#history-panel .panel-ft .pager');
-  if (pager) {
-    const buttons = [`<button aria-label="Previous page" data-history-page="${historyQuery.page - 1}"${historyQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
-    const first = Math.max(1, Math.min(historyQuery.page - 2, pages - 4));
-    for (let p = first; p <= Math.min(pages, first + 4); p++) {
-      buttons.push(`<button data-history-page="${p}"${p === historyQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
-    }
-    buttons.push(`<button aria-label="Next page" data-history-page="${historyQuery.page + 1}"${historyQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
-    pager.innerHTML = buttons.join('');
-  }
-
-  for (const th of $$('#history thead th.sortable')) {
-    const sortKey = [...th.classList].find((c) => HISTORY_SORT_KEYS[c]);
-    if (!sortKey) continue;
-    if (sortKey === historyQuery.sort.key) th.setAttribute('aria-sort', historyQuery.sort.dir);
-    else th.removeAttribute('aria-sort');
-  }
+/**
+ * One CSV field, escaped the way RFC 4180 readers expect.
+ *
+ * Job names are typed by a person, so a comma in one is ordinary rather than exotic --
+ * and an unquoted one splits a column in two in every spreadsheet that opens the file,
+ * with nothing about it looking wrong.
+ *
+ * @param {*} value - Whatever the column produced.
+ * @returns {string}
+ */
+function csvField(value) {
+  const text = value === null || value === undefined ? '' : String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 /**
- * The four outcome cards and the outcomes donut.
+ * Hand the browser a file without a route to download it from.
  *
- * @param {Object[]} views - Finished work inside the window.
- * @param {Object[]} jobs - Every job, for the previous window's comparison.
- * @param {number} since - Start of the window.
- * @param {number} newest - The corpus's latest job.
+ * @param {string} name - The filename offered.
+ * @param {string} text - The file's contents.
+ * @returns {void}
  */
-function renderHistoryOutcomes(views, jobs, since, newest) {
-  const done = views.filter((v) => v.state === 'done').length;
-  const issues = views.filter((v) => v.state === 'issues').length;
-  const bad = views.filter((v) => ['failed', 'cancelled', 'expired'].includes(v.state)).length;
-  const total = views.length || 1;
+function downloadText(name, text) {
+  /* The BOM is what makes Excel read UTF-8 rather than the local code page, which is
+     the difference between a species name and mojibake. */
+  const blob = new Blob([`﻿${text}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
 
-  /* The first card compares against the window before this one, which is a
-     real question the data can answer -- it is only the *route* that cannot. */
-  const span = newest - since;
-  const previous = jobs.filter((j) => {
-    const at = Date.parse(j.created_at);
-    return at >= since - span && at < since
-      && ['succeeded', 'failed', 'cancelled', 'expired'].includes(j.state);
-  }).length;
-  const change = previous ? Math.round(((views.length - previous) / previous) * 100) : 0;
-
-  const byLabel = {};
-  for (const card of $$('.stat')) {
-    const label = $('.stat-lab', card);
-    if (label) byLabel[label.textContent.trim()] = card;
-  }
-  const set = (label, num, sub) => {
-    const card = byLabel[label];
-    if (!card) return;
-    const n = $('.stat-num', card);
-    if (n) n.textContent = String(num);
-    const s = $('.stat-sub', card);
-    if (s) s.innerHTML = `<span>${sub}</span>`;
-  };
-  const share = (n) => `${Math.round((n / total) * 100)}% of the window`;
-
-  set('Jobs in this window', views.length, previous
-    ? `${change >= 0 ? '+' : ''}${change}% against the window before`
-    : 'no earlier window to compare');
-  set('Completed', done, share(done));
-  set('Completed with issues', issues, share(issues));
-  set('Failed or cancelled', bad, share(bad));
-
-  const legend = $('.job-mix-key');
-  if (legend) {
-    legend.innerHTML = [['done', done, 'Completed'], ['issues', issues, 'With issues'], ['failed', bad, 'Failed / cancelled']]
-      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
-      .join('');
-  }
-
-  const donut = $('.job-donut svg');
-  if (donut) {
-    const arcs = $$('.donut-part', donut);
-    const parts = [done, issues, bad];
-    let offset = 0;
-    arcs.forEach((arc, index) => {
-      const value = parts[index] || 0;
-      arc.setAttribute('pathLength', String(total));
-      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
-      arc.setAttribute('stroke-dashoffset', String(-offset));
-      offset += value;
-    });
-    const middle = $('.job-donut > span > b');
-    if (middle) middle.textContent = String(views.length);
-  }
+  link.href = url;
+  link.download = name;
+  link.hidden = true;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 /**
- * One finished job, as a table row.
+ * Write a screen's rows out as CSV.
  *
- * @param {Object} view - From `historyView`.
- * @returns {string} A `<tr>`.
- */
-function historyRow(view) {
-  const { job } = view;
-  const started = new Date(job.created_at);
-  const completed = new Date(job.updated_at);
-  const stamp = (d) => `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
-
-  return `<tr data-job="${job.id}">`
-    + '<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select ' + view.title + '"></td>'
-    + `<td class="jname"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
-    + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
-    + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
-    + `<td class="hscope"><span class="two"><span class="a">${view.projectName}</span><span class="b">Dive ${view.session.dive || '?'} &middot; Line ${view.session.line || '?'}</span></span></td>`
-    + `<td class="hmodel">${view.model}</td>`
-    + `<td class="hdata num" data-sort="${view.frames}">${view.frames.toLocaleString()}</td>`
-    + `<td class="hstart" data-sort="${job.created_at}">${stamp(started)}</td>`
-    + `<td class="hend" data-sort="${job.updated_at}">${stamp(completed)}</td>`
-    + `<td class="hdur num" data-sort="${view.tookMs}">${tookText(view.tookMs)}</td>`
-    + `<td class="hworker" data-sort="${view.job.worker_name || ''}">${view.job.worker_name || (view.job.worker_id ? `Worker ${view.job.worker_id}` : '<span class="dash" title="Never leased to a machine">&mdash;</span>')}${Number(view.job.workers_used) > 1 ? ` <span class="faint">· ${view.job.workers_used} machines</span>` : ''}</td>`
-    + `<td class="hwho">${view.byName}</td>`
-    + '<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
-    + '</tr>';
-}
-
-/**
- * Fills the History screen from the data layer.
+ * **The rows handed in, not the rows on screen.** Every table here pages, and an export
+ * built from the table reads correctly until the window has a second page -- at which
+ * point it is quietly wrong rather than visibly broken.
  *
- * @returns {Promise<void>}
+ * @param {Array[]} columns - `[header, read]` pairs, in the order the table draws them.
+ * @param {Object[]} views - The rows to write, already filtered and sorted.
+ * @param {string} name - Names the file, so two exports do not collide.
+ * @returns {void}
  */
-async function renderHistoryScreen() {
-  const table = $('table#history');
-  if (!table || !window.MarpApi) return;
+function exportRows(columns, views, name) {
+  if (!views.length) return;
 
-  const body = $('tbody', table);
-  const columns = $$('thead th', table).length;
-  body.innerHTML = `<tr class="tblmsg"><td class="loading" colspan="${columns}">Loading history&hellip;</td></tr>`;
-
-  try {
-    const [jobs, projects, users] = await Promise.all([
-      loadSessions().then(() => window.MarpApi.listJobs({ limit: 500 })),
-      window.MarpApi.listProjects(),
-      window.MarpApi.listUsers(),
-    ]);
-
-    historyData = {
-      jobs: jobs.jobs,
-      projects: new Map(projects.map((p) => [p.project_id, p.name])),
-      users: new Map(users.map((u) => [u.user_id, u.name])),
-    };
-
-    fillHistoryFilterOptions();
-    applyHistoryQuery();
-  } catch (error) {
-    /* The banner can only report a status, and a rendering bug has none — so it
-       reads "no answer" and sends whoever sees it to check the API. The detail
-       goes to the console, where it names the actual line. */
-    console.error('MarpDashboard: history failed to render —', error);
-
-    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="${columns}">Could not load history (${error.status || 'no answer'}). `
-      + '<button class="btn sm" type="button" id="historyRetry">Try again</button></td></tr>';
-    $('#historyRetry')?.addEventListener('click', renderHistoryScreen);
+  const lines = [columns.map(([header]) => csvField(header)).join(',')];
+  for (const view of views) {
+    lines.push(columns.map(([, read]) => csvField(read(view))).join(','));
   }
+
+  const day = new Date().toISOString().slice(0, 10);
+  downloadText(`marp-${name}-${day}.csv`, lines.join('\r\n'));
 }
-
-/**
- * Fills the Project and Model selectors from what is actually there.
- *
- * They were written out by hand and listed six projects and two models, none of
- * which need match the data: a filter offering a choice that matches nothing is
- * worse than no filter.
- */
-function fillHistoryFilterOptions() {
-  const selects = $$('#history-panel select, .panel-tools select');
-  const byLabel = {};
-  for (const select of selects) byLabel[select.getAttribute('aria-label')] = select;
-
-  const projects = [...new Set(historyData.jobs.map((j) => historyData.projects.get(sessionFor(j.spec).project_id)).filter(Boolean))].sort();
-  const models = [...new Set(historyData.jobs.map((j) => j.spec.model && j.spec.model.name).filter(Boolean))].sort();
-
-  if (byLabel.Project) {
-    byLabel.Project.innerHTML = ['<option>All projects</option>', ...projects.map((p) => `<option>${p}</option>`)].join('');
-  }
-  if (byLabel.Model) {
-    byLabel.Model.innerHTML = ['<option>All models</option>', ...models.map((m) => `<option>${m}</option>`)].join('');
-  }
-}
-
-/** The History filters, sort headers and pager. Bound once. */
-function wireHistoryControls() {
-  const panel = $('#history-panel') || $('table#history')?.closest('.panel');
-  if (!panel) return;
-
-  const renarrow = () => { historyQuery.page = 1; applyHistoryQuery(); };
-  const selects = {};
-  for (const select of $$('select')) selects[select.getAttribute('aria-label')] = select;
-
-  selects.Project?.addEventListener('change', () => {
-    historyQuery.project = selects.Project.value.startsWith('All') ? '' : selects.Project.value;
-    renarrow();
-  });
-  selects['Job type']?.addEventListener('change', () => {
-    historyQuery.kind = { Inference: 'inference', Training: 'training' }[selects['Job type'].value] || '';
-    renarrow();
-  });
-  selects.Status?.addEventListener('change', () => {
-    historyQuery.state = {
-      Completed: 'done', 'Completed with issues': 'issues', Failed: 'failed', Cancelled: 'cancelled',
-    }[selects.Status.value] || '';
-    renarrow();
-  });
-  selects.Window?.addEventListener('change', () => {
-    historyQuery.windowDays = {
-      'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'This year': 365,
-    }[selects.Window.value] || 30;
-    renarrow();
-  });
-  selects.Model?.addEventListener('change', () => {
-    historyQuery.model = selects.Model.value.startsWith('All') ? '' : selects.Model.value;
-    renarrow();
-  });
-  selects['Rows per page']?.addEventListener('change', () => {
-    historyQuery.perPage = Number(selects['Rows per page'].value) || 10;
-    renarrow();
-  });
-
-  for (const th of $$('#history thead th.sortable')) {
-    const key = [...th.classList].find((c) => HISTORY_SORT_KEYS[c]);
-    if (!key) continue;
-    th.addEventListener('click', () => {
-      if (historyQuery.sort.key === key) {
-        historyQuery.sort.dir = historyQuery.sort.dir === 'ascending' ? 'descending' : 'ascending';
-      } else {
-        historyQuery.sort = { key, dir: 'ascending' };
-      }
-      historyQuery.page = 1;
-      applyHistoryQuery();
-    });
-  }
-
-  const pager = $('.panel-ft .pager', panel);
-  if (pager) {
-    pager.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-history-page]');
-      if (!button || button.disabled) return;
-      historyQuery.page = Number(button.dataset.historyPage);
-      applyHistoryQuery();
-    });
-  }
-}
-
 
 /* ========================================================= dashboard */
 
@@ -2568,8 +4993,80 @@ function wireHistoryControls() {
  *
  * @param {Object} data - `{ jobs, workers, models, datasets }`.
  */
+/** A job in one of these has ended; anything else is still in flight. */
+const TERMINAL_STATES = ['succeeded', 'failed', 'cancelled', 'expired'];
+
+/** How far back the outcomes panel reports, matching the window History opened on. */
+const OUTCOME_WINDOW_DAYS = 30;
+
+/**
+ * How work ended, over the last thirty days.
+ *
+ * Moved here when History folded into Jobs: a queue screen answers *what is happening*,
+ * and this answers *how it went*, which is what the Dashboard is for. It costs no second
+ * request -- the Dashboard was already fetching the same jobs History did.
+ *
+ * **Anchored on the newest job, not on now.** A corpus that has been sitting for a month
+ * would otherwise report an empty window and read as an idle pool.
+ *
+ * @param {Object[]} jobs - Every job the screen fetched.
+ * @returns {void}
+ */
+function renderOutcomes(jobs) {
+  const donut = $('.job-donut');
+  const legend = $('.job-mix-key');
+  if (!donut && !legend) return;
+
+  const issueBatches = batchesWithIssues(jobs);
+  const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
+  const since = newest - OUTCOME_WINDOW_DAYS * 86400000;
+
+  const views = jobs
+    .filter((j) => TERMINAL_STATES.includes(j.state) && Date.parse(j.created_at) >= since)
+    .map((job) => jobView(job, issueBatches));
+
+  const done = views.filter((v) => v.state === 'done').length;
+  const issues = views.filter((v) => v.state === 'issues').length;
+  const bad = views.filter((v) => ['failed', 'cancelled', 'expired'].includes(v.state)).length;
+
+  if (legend) {
+    legend.innerHTML = [['done', done, 'Completed'], ['issues', issues, 'With issues'], ['failed', bad, 'Failed / cancelled']]
+      .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
+      .join('');
+  }
+
+  const svg = $('svg', donut);
+  if (svg) {
+    /* `pathLength` is set to the total so each arc's dash array is a count rather than a
+       length, which is why three arcs can be laid end to end without measuring anything. */
+    const total = views.length || 1;
+    const arcs = $$('.donut-part', svg);
+    let offset = 0;
+    arcs.forEach((arc, index) => {
+      const value = [done, issues, bad][index] || 0;
+      arc.setAttribute('pathLength', String(total));
+      arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
+      arc.setAttribute('stroke-dashoffset', String(-offset));
+      offset += value;
+    });
+  }
+
+  const middle = $('.job-donut > span > b', donut.parentElement || document);
+  if (middle) middle.textContent = String(views.length);
+
+  /* **The renderer says which window, rather than the markup.** A screen that states a
+     number no renderer owns is how a panel goes on claiming "the last 30 days" after the
+     window changes -- which `markup-check` fails on, for exactly that reason. */
+  const subtitle = $('[data-outcomes-window]');
+  if (subtitle) {
+    subtitle.textContent = `How work ended over the last ${OUTCOME_WINDOW_DAYS} days`;
+  }
+}
+
 function renderDashboard(data) {
   const { jobs, workers, models, datasets } = data;
+
+  renderOutcomes(jobs);
 
   const running = jobs.filter((j) => j.state === 'leased');
   const queued = jobs.filter((j) => j.state === 'queued');
@@ -2952,7 +5449,9 @@ function workerRows(view) {
       + '</dl></div>'
     : '<div class="sect"><h3>Live attempt</h3><p class="muted">No attempt on this machine right now.</p></div>';
 
-  const body = '<tr class="runrow-body"><td colspan="11"><div class="rundetail">'
+  /* `hidden` for the same reason the registry's is: see `modelRows`. Isaac reported the
+     models table; this one had it too, from the same line copied. */
+  const body = '<tr class="runrow-body" hidden><td colspan="11"><div class="rundetail">'
     + `<div class="wdhead"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">${worker.name}</span></span>`
     + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
     + `<span class="wid mono" title="Worker id as the pool reports it">wk_${worker.worker_id}</span>`
@@ -3277,9 +5776,28 @@ function wireJobsControls() {
 
   if (windowSel) {
     windowSel.addEventListener('change', () => {
-      jobsQuery.windowDays = { 'Last 24 hours': 1, 'Last 7 days': 7, 'Last 30 days': 30 }[windowSel.value] || 7;
+      jobsQuery.windowDays = {
+        'Last 24 hours': 1, 'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'This year': 365,
+      }[windowSel.value] || 7;
       renarrow();
     });
+  }
+
+  /* **`?window=` arrives from other screens, so it is read once here rather than in the
+     per-render wiring.** Inference, Training and Models each link to "recent work of this
+     kind"; those links pointed at History until it folded into Jobs, and the window they
+     asked for is the whole of what they meant. Set on the select too, so the control
+     agrees with the table instead of reading 7 days over a 1-day list. */
+  const askedWindow = { today: 'Last 24 hours', week: 'Last 7 days', month: 'Last 30 days' }[
+    new URLSearchParams(window.location.search).get('window')];
+  if (askedWindow && windowSel) {
+    windowSel.value = askedWindow;
+    windowSel.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  const exportJobs = $('[data-jobs-export]', panel);
+  if (exportJobs) {
+    exportJobs.addEventListener('click', () => exportRows(JOBS_CSV_COLUMNS, jobsWindowViews, 'jobs'));
   }
 
   /* Sorting: the header and the phone strip drive the same query. */
@@ -3320,6 +5838,309 @@ function wireJobsControls() {
     perPage.addEventListener('change', () => {
       jobsQuery.perPage = Number(perPage.value) || 18;
       renarrow();
+    });
+  }
+}
+
+/* ====================================================== deleting jobs */
+
+/**
+ * What a delete just did, under the table.
+ *
+ * **A partial result is the normal result here**, so it needs somewhere to be said. A
+ * selection of forty can come back as thirty-seven deleted and three held, each for its
+ * own reason, and an alert saying "done" would be a lie about three of them.
+ *
+ * @param {string} text - What happened, already written.
+ * @param {string} [tone] - `bad` for a refusal.
+ * @returns {void}
+ */
+function sayJobsDelete(text, tone) {
+  const said = $('#jobsDeleteSaid');
+  if (!said) return;
+  said.textContent = text;
+  said.dataset.tone = tone || 'ok';
+  said.hidden = !text;
+}
+
+/**
+ * How many of whatever, written so it reads in a sentence.
+ *
+ * @param {number} count - The number.
+ * @param {string} one - Singular noun.
+ * @param {string} [many] - Plural, when it is not the singular plus s.
+ * @returns {string}
+ */
+function countOf(count, one, many) {
+  const n = Number(count) || 0;
+  return `${n.toLocaleString()} ${n === 1 ? one : (many || `${one}s`)}`;
+}
+
+/**
+ * Redraw after something was deleted.
+ *
+ * **The rail badge is recounted, not left.** It is a count of failed jobs, and deleting
+ * failed jobs is the one act guaranteed to change it -- a badge still reading 1,189 over
+ * an empty list is the screen contradicting itself.
+ *
+ * @returns {Promise<void>}
+ */
+async function afterJobsDelete() {
+  await renderJobsTable();
+  await fillRailBadges();
+}
+
+/**
+ * What is true about a build's dataset, right now.
+ *
+ * Three answers, and they are three different facts, so none is guessed:
+ *
+ * - it is there, and deleting the job costs it the record of how it was made;
+ * - it is gone already, and this job is the last trace of that build -- which makes the
+ *   delete more obviously right rather than less, so saying so is not a warning;
+ * - the question could not be answered, which is said plainly rather than resolved
+ *   toward either of the other two.
+ *
+ * @param {string|number} id - The dataset the build names.
+ * @returns {Promise<string>} One sentence for the confirmation.
+ */
+async function datasetClause(id) {
+  try {
+    await window.MarpApi.getDataset(id);
+    return `Dataset ${id} is not deleted. It loses the record of the build that made it.`;
+  } catch (error) {
+    if (error.status === 404) {
+      return `Dataset ${id} was deleted already, so this job is the last trace of that build.`;
+    }
+
+    return `Could not check whether dataset ${id} still exists (${error.status || 'no answer'}).`;
+  }
+}
+
+/**
+ * The delete controls: one row, a selection, or every failed job.
+ *
+ * **Three verbs, and the confirmation is different for each**, because what they destroy
+ * is different. One job names that job. A selection names how many and that nothing in it
+ * can be forced. Clearing a state asks the server what it is about to destroy and reads
+ * the answer out -- the numbers measured while this was written (1,189 jobs, 3,570
+ * attempts, 12,088 events) are the right shape for that sentence and the wrong thing to
+ * write into one, because nothing on the page could tell when they stopped being true.
+ *
+ * **Observations are the thing worth stopping for.** `observations.gpu_job_id` is SET
+ * NULL, so deleting a job that produced detections leaves them in place with nothing
+ * recording where they came from. The route refuses with the count; this shows the count
+ * and asks a second time. Only the single-job path can be confirmed that way -- a
+ * selection has no second question, by design, so a job holding observations stays in it.
+ *
+ * @returns {void}
+ */
+function wireJobsDelete() {
+  const panel = $('table#jobs')?.closest('.panel');
+  if (!panel || !window.MarpApi) return;
+
+  const body = $('table#jobs tbody', panel);
+
+  /* Delegated: the rows are replaced on every filter, sort and page, so a listener
+     bound to a button is a listener bound to something about to be thrown away. */
+  if (body) {
+    body.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-delete-job]');
+      if (!button) return;
+
+      const row = button.closest('tr[data-job]');
+      const id = button.dataset.deleteJob;
+      const attempts = Number(row?.dataset.attempts) || 0;
+      const dataset = row?.dataset.dataset;
+      const name = $('.jname .t', row)?.textContent.trim() || `Job ${id}`;
+
+      /* Real, and from the row rather than invented: `attempts_made` travels on it
+         already. The event log is named without a number because nothing serves one
+         per job, and a plausible figure would be worse than an honest clause. */
+      const goes = attempts
+        ? `This removes ${countOf(attempts, 'attempt')} and the event log recorded against them.`
+        : 'It was never attempted, so there is nothing recorded against it.';
+
+      /* **Asked, not assumed.** A build keeps its dataset id in `spec` and nothing clears
+         it when the dataset goes, so the id on this row is a claim about the past. Told
+         that "dataset 385 is not deleted" about one he had deleted himself, Isaac's
+         reaction was that the screen was wrong -- and it was. A confirmation promising to
+         spare a row that is already gone is worse than one that says nothing, because it
+         is the sentence somebody reads before agreeing.
+
+         One request, on a destructive action, which is the right place to spend one. */
+      const keeps = dataset ? `\n\n${await datasetClause(dataset)}` : '';
+
+      /* eslint-disable-next-line no-alert -- the app has no dialog of its own, and a
+         permanent delete with no confirmation at all is the worse answer. */
+      if (!window.confirm(`Delete "${name}"?\n\n${goes} It cannot be undone.${keeps}`)) return;
+
+      button.disabled = true;
+
+      try {
+        await window.MarpApi.deleteJob(id);
+        sayJobsDelete(`Deleted job ${id}.`);
+        await afterJobsDelete();
+      } catch (error) {
+        /* **The one case worth a second question.** The route answers 409 and puts the
+           count in `details` as well as in its sentence, so this can ask about the
+           provenance rather than repeat an API instruction at somebody. */
+        const held = (error.details || [])[0];
+        const orphaned = held && Number(held.observations);
+
+        if (error.status === 409 && orphaned > 0) {
+          /* eslint-disable-next-line no-alert -- as above. */
+          const anyway = window.confirm(
+            `Job ${id} produced ${countOf(orphaned, 'observation')}.\n\n`
+            + 'Those detections stay in MARP and lose every record of what produced them: '
+            + 'which model, which settings, which run. That cannot be undone and cannot be '
+            + 'worked out again afterwards.\n\nDelete the job anyway?');
+
+          if (!anyway) {
+            button.disabled = false;
+            sayJobsDelete(`Job ${id} was kept. ${countOf(orphaned, 'observation')} still point at it.`);
+            return;
+          }
+
+          try {
+            await window.MarpApi.deleteJob(id, true);
+            sayJobsDelete(`Deleted job ${id}. ${countOf(orphaned, 'observation')} lost their provenance.`);
+            await afterJobsDelete();
+            return;
+          } catch (second) {
+            button.disabled = false;
+            sayJobsDelete(second.message || `Could not delete job ${id}.`, 'bad');
+            return;
+          }
+        }
+
+        button.disabled = false;
+        /* The server's own sentence: an artifact refusal names how many reference it,
+           which is the useful half of why it will not go. */
+        sayJobsDelete(error.message || `Could not delete job ${id} (${error.status || 'no answer'}).`, 'bad');
+      }
+    });
+  }
+
+  const bulkDelete = $('#bulkDelete', panel);
+
+  if (bulkDelete) {
+    bulkDelete.addEventListener('click', async () => {
+      const ids = $$('tbody .chkbox', panel)
+        .filter((box) => box.checked)
+        .map((box) => box.closest('tr[data-job]')?.dataset.job)
+        .filter(Boolean);
+
+      if (!ids.length) return;
+
+      /* eslint-disable-next-line no-alert -- as above. */
+      if (!window.confirm(
+        `Delete ${countOf(ids.length, 'job')}?\n\n`
+        + 'Every attempt and every event recorded against them goes too. It cannot be undone.\n\n'
+        + 'Anything that cannot safely go stays, and this will say which and why: a job an '
+        + 'artifact references, and a job that produced observations. Those have to be '
+        + 'deleted one at a time, where the count is shown first.')) return;
+
+      bulkDelete.disabled = true;
+
+      try {
+        const answer = await window.MarpApi.deleteJobs(ids);
+        const blocked = answer.blocked || [];
+
+        /* **Each refusal with its own reason.** "37 of 40" tells somebody a number and
+           leaves them to guess at three; the reasons are the answer they wanted. */
+        sayJobsDelete(blocked.length
+          ? `Deleted ${countOf(answer.deleted, 'job')}. `
+            + `${blocked.length} stayed: `
+            + blocked.map((entry) => `${entry.id} (${entry.reason})`).join(', ')
+          : `Deleted ${countOf(answer.deleted, 'job')}.`, blocked.length ? 'bad' : 'ok');
+
+        await afterJobsDelete();
+      } catch (error) {
+        sayJobsDelete(error.message || `Could not delete those jobs (${error.status || 'no answer'}).`, 'bad');
+      } finally {
+        bulkDelete.disabled = false;
+      }
+    });
+  }
+
+  const clearFailed = $('#clearFailed', panel);
+  const stateSel = $$('#filters select', panel)[1];
+
+  /* **Offered only when the list is the pile.** Narrowing to Failed is the gesture that
+     means "this is what I am looking at"; a button that deletes every failed job sitting
+     beside the filters the rest of the time is a button somebody eventually presses by
+     accident. Absent rather than disabled, which is the same answer the row control
+     gives on a running job. */
+  const showClear = () => {
+    if (clearFailed) clearFailed.hidden = !stateSel || stateSel.value !== 'Failed';
+  };
+
+  if (stateSel) stateSel.addEventListener('change', showClear);
+  showClear();
+
+  if (clearFailed) {
+    clearFailed.addEventListener('click', async () => {
+      clearFailed.disabled = true;
+
+      try {
+        /* **Counted by a GET, before anything is asked for.** Over exactly the rows the
+           delete would take -- the same `NOT EXISTS` -- so the sentence and the act
+           cannot disagree. It is a separate route rather than a flag on the delete
+           because an unknown query parameter is ignored rather than refused: a `dryRun`
+           an older MARP did not understand would have been the delete itself, and this
+           would then have reported "nothing to delete" over a list it had just
+           destroyed. A server without the route answers 404 and takes nothing. */
+        const plan = await window.MarpApi.deletableJobs('failed');
+
+        if (!plan.jobs) {
+          sayJobsDelete(plan.blocked
+            ? `Nothing to delete: all ${countOf(plan.blocked, 'failed job')} are referenced by artifacts.`
+            : 'There are no failed jobs to delete.');
+          return;
+        }
+
+        /* A failed dataset build is the record of a build somebody ran this morning, and
+           it deserves a clause rather than being folded into a four-figure total. */
+        const builds = plan.builds || [];
+        const buildLine = builds.length
+          ? `\n\n${builds.length} of them ${builds.length === 1 ? 'is a dataset build' : 'are dataset builds'}: `
+            + builds.map((b) => `job ${b.id}${b.dataset_id ? ` to dataset ${b.dataset_id}` : ''}`).join(', ')
+            + `. The dataset${builds.length === 1 ? '' : 's'} stay; only the build record goes.`
+          : '';
+
+        const blockedLine = plan.blocked
+          ? `\n\n${countOf(plan.blocked, 'job')} will stay: an artifact references `
+            + `${plan.blocked === 1 ? 'it' : 'them'}, and the artifacts are not touched.`
+          : '';
+
+        /* Provenance again, and at this scale it is the clause that should stop
+           somebody rather than the four-figure job count. */
+        const orphanLine = plan.observations
+          ? `\n\n${countOf(plan.observations, 'observation')} will lose every record of what produced them.`
+          : '';
+
+        /* eslint-disable-next-line no-alert -- as above. */
+        if (!window.confirm(
+          `Delete ${countOf(plan.jobs, 'failed job')}?\n\nThis removes `
+          + `${countOf(plan.attempts, 'attempt')} and ${countOf(plan.events, 'event')} recorded `
+          + `against them. It cannot be undone.${orphanLine}${buildLine}${blockedLine}`)) return;
+
+        const answer = await window.MarpApi.deleteJobsInState('failed');
+        const blocked = answer.blocked || [];
+
+        sayJobsDelete(blocked.length
+          ? `Deleted ${countOf(answer.deleted, 'failed job')}. `
+            + `${countOf(blocked.length, 'job')} stayed, held by artifacts: ${blocked.join(', ')}.`
+          : `Deleted ${countOf(answer.deleted, 'failed job')}.`);
+
+        await afterJobsDelete();
+      } catch (error) {
+        sayJobsDelete(error.message || `Could not delete the failed jobs (${error.status || 'no answer'}).`, 'bad');
+      } finally {
+        clearFailed.disabled = false;
+        showClear();
+      }
     });
   }
 }
@@ -3499,6 +6320,32 @@ function wireJobsOverview() {
       ? `<p class="jobdetail-dataset">Built <a href="./datasets.html?dataset=${encodeURIComponent(builtDataset)}">dataset ${escapeHtml(builtDataset)}</a></p>`
       : '';
 
+    /* **Duplicate with change, drawn only where there is somewhere to land.**
+       It makes a new job from this one's spec by filling the build flow in and letting it
+       be edited; nothing is created until Queue is pressed. That flow exists for a dataset
+       build and for nothing else on this dashboard yet -- the Inference screen assembles a
+       plan and prints it rather than submitting (`MarpApi.submitJob` has no callers), and
+       `#trainBtn` has no handler at all. So an inference, tracking or training job has no
+       form to arrive at, and a button that opened nothing would be the third dead control
+       on this screen rather than the first working one.
+
+       A link rather than a button because it navigates, and `?duplicate=1` is read on
+       arrival. The filling itself is the Datasets screen's -- `datasetBuildSetup` and the
+       `marp:duplicate-dataset-setup` event -- rather than a second implementation of
+       "new build from an old spec", which is how two of them drift apart.
+
+       It is a retry as well, which is why there is no Retry button beside it: a duplicate
+       nobody edits is the same build run again, and reaching it this way never resets
+       `attempts_made` or reopens a job the coordinator has closed. */
+    const duplicate = isDatasetBuild && builtDataset
+      ? `<a class="btn sm" href="./datasets.html?dataset=${encodeURIComponent(builtDataset)}&amp;duplicate=1"`
+        + ' title="Fill the build flow with the queries this ran, to edit before queueing. Creates nothing.">'
+        + '<svg class="ico"><use href="#i-copy"/></svg>Duplicate with changes</a>'
+      : '';
+
+    /* Nothing to offer is an absent strip, not an empty one. */
+    const actions = (inner) => (inner ? `<div class="jobstate-actions">${inner}</div>` : '');
+
     let operational;
 
     if (state === 'running' || state === 'paused' || state === 'cancelling') {
@@ -3528,14 +6375,14 @@ function wireJobsOverview() {
         : isTraining
         ? metric('Stopped', 'Epoch 37 / 100') + metric('Best mAP@50', '0.681') + metric('Checkpoint', 'Saved', 'last good epoch')
         : metric('Succeeded', '19 / 21 ranges') + metric('Affected', '2 ranges', '1,800 frames') + metric('Partial results', '386 obs', 'not yet ingested');
-      operational = `<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${issue}</h4><p>${state === 'failed' ? 'The job stopped and needs an operator decision.' : 'Usable work is preserved; only failed work needs to run again.'}</p></div></div><div class="jobmetrics">${measures}${metric('Attempts', state === 'failed' ? '1 / 3' : '3 / 3')}</div><div class="jobstate-actions"><button class="btn sm" type="button">${state === 'issues' ? 'Retry failed work' : 'Retry job'}</button><button class="btn sm" type="button">Duplicate with changes</button></div></section>`;
+      operational = `<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${issue}</h4><p>${state === 'failed' ? 'The job stopped and needs an operator decision.' : 'Usable work is preserved; only failed work needs to run again.'}</p></div></div><div class="jobmetrics">${measures}${metric('Attempts', state === 'failed' ? '1 / 3' : '3 / 3')}</div>${actions(duplicate)}</section>`;
     } else if (state === 'done') {
       const measures = isTraining
         ? metric('Registered', `${model} v1.0.3`) + metric('Best mAP@50', '0.781') + metric('Duration', '4h 18m') + metric('Checkpoint', '2.8 GB')
         : metric('Observations', '412', 'ready for review') + metric('Ranges', '21 / 21') + metric('Duration', '26m 11s') + metric('Throughput', '11.6 fps');
       operational = `<section class="jobstate" data-job-state="complete"><div class="jobstate-title"><div><h4>${isTraining ? 'Model version registered' : 'Results produced'}</h4><p>Completed cleanly; outputs are available to the rest of MARP.</p></div></div><div class="jobmetrics">${measures}</div><div class="jobstate-actions"><button class="btn sm" type="button">${isTraining ? 'Open model version' : 'Review observations'}</button><button class="btn sm" type="button">Run again</button></div></section>`;
     } else {
-      operational = `<section class="jobstate" data-job-state="cancelled"><div class="jobstate-title"><div><h4>Job cancelled</h4><p>Cancelled by an operator; incomplete output was not published.</p></div></div><div class="jobmetrics">${metric('Stopped at', progress)}${metric('Cancelled by', 'itravers')}${metric('Reusable work', 'Preserved', 'completed ranges cached')}</div><div class="jobstate-actions"><button class="btn sm" type="button">Run again</button><button class="btn sm" type="button">Duplicate with changes</button></div></section>`;
+      operational = `<section class="jobstate" data-job-state="cancelled"><div class="jobstate-title"><div><h4>Job cancelled</h4><p>Cancelled by an operator; incomplete output was not published.</p></div></div><div class="jobmetrics">${metric('Stopped at', progress)}${metric('Cancelled by', 'itravers')}${metric('Reusable work', 'Preserved', 'completed ranges cached')}</div>${actions(`<button class="btn sm" type="button">Run again</button>${duplicate}`)}</section>`;
     }
 
     let resultsPreview;
@@ -3609,7 +6456,10 @@ function wireJobsOverview() {
       const active = results.dataset.resultHighlight === name ? '' : name;
       results.dataset.resultHighlight = active;
       results.classList.toggle('is-highlighted', Boolean(active));
-      $$('.result-line', results).forEach((line) => line.classList.toggle('highlighted', Boolean(active) && line.classList.contains(active)));
+      /* The stub and the break mark belong to a line and carry its key class, so they
+         follow it -- a highlighted series whose off-the-top mark stayed behind at full
+         strength would attach that number to whichever line is lit. */
+      $$('.result-line, .result-stub, .result-break', results).forEach((line) => line.classList.toggle('highlighted', Boolean(active) && line.classList.contains(active)));
       buttons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.resultHighlight === active)));
     };
     buttons.forEach((button) => {
@@ -3787,17 +6637,20 @@ function wireJobsOverview() {
      `waiting` is reconstructed -- a job was waiting at an instant if it was
      created before it and had not finished by it. None of that was answerable
      until `finished_at` existed. */
+  /* The shared ladder; see `wirePoolUtilization`. Shortest first, which four of the eight
+     already did and the other four did not. */
   const RANGES = {
-    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
-    '5h': { hours: 5, bucket: 'minute', label: 'the last 5 hours' },
     '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
+    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+    '7d': { hours: 168, bucket: 'hour', label: 'the last 7 days' },
+    '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
   };
 
   const buttons = $$('[data-jobs-range]', root);
   const lines = Object.fromEntries($$('[data-jobs-line]', root).map((line) => [line.dataset.jobsLine, line]));
   const chart = $('.jobs-chart', root);
   const axis = $$('[data-jobs-axis]', root);
-  let range = '5h';
+  let range = '24h';
 
   /** Fit a run of values into the chart's box. */
   const pathOf = (values, max) => values.map((value, index) =>
@@ -3955,7 +6808,7 @@ async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read
 
     try {
       const answer = await ask(span);
-      const { series, scales, current, quiet, points } = read(answer);
+      const { series, scales, current, quiet, points } = read(answer, { ...span, label: range.label });
 
       if (quiet) {
         blank();
@@ -3990,6 +6843,17 @@ async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read
           : (range.bucket === 'day'
             ? d.toISOString().slice(5, 10)
             : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+      });
+
+      /* **The unit travels with the figure.** A number beside a chart with a one-word
+         label is the Jobs badge problem again -- `1,189` with nothing saying "failed".
+         The window these are read over changes with the range buttons, so the words
+         cannot live in the markup: `read` says what each figure is, and says it against
+         the range it was actually computed for. */
+      $$(`[data-${prefix}-unit]`, root).forEach((node) => {
+        const said = (current.units || {})[node.dataset[camel('unit')]];
+
+        if (said !== undefined) node.textContent = said;
       });
 
       $$(`[data-${prefix}-current]`, root).forEach((node) => {
@@ -4063,11 +6927,13 @@ function wireInferenceThroughput() {
   return drawSeriesChart({
     root,
     prefix: 'inference',
-    initial: '5h',
+    initial: '24h',
     ranges: {
+      /* The shared ladder; see `wirePoolUtilization`. */
       '1h': { since: (u) => new Date(u - 3600e3), bucket: 'minute', label: 'the last hour', empty: 'No frames processed' },
-      '5h': { since: (u) => new Date(u - 5 * 3600e3), bucket: 'minute', label: 'the last 5 hours', empty: 'No frames processed' },
       '24h': { since: (u) => new Date(u - 24 * 3600e3), bucket: 'hour', label: 'the last 24 hours', empty: 'No frames processed' },
+      '7d': { since: (u) => new Date(u - 7 * 86400e3), bucket: 'hour', label: 'the last 7 days', empty: 'No frames processed' },
+      '30d': { since: (u) => new Date(u - 30 * 86400e3), bucket: 'day', label: 'the last 30 days', empty: 'No frames processed' },
     },
     fetch: (span) => window.MarpApi.throughputSeries({ ...span, kind: 'inference' }),
     read: (answer) => {
@@ -4127,10 +6993,14 @@ function wireRegistryTrend() {
   return drawSeriesChart({
     root,
     prefix: 'ops',
-    initial: '90d',
+    initial: '1y',
     ranges: {
+      /* The shared ladder; see `wirePoolUtilization`. A model is registered rarely, so
+         this one opens on the widest rung rather than the narrowest: a 24-hour default
+         would be empty almost every day it was looked at. */
+      '24h': { since: (u) => new Date(u - 24 * 3600e3), bucket: 'hour', label: 'the last 24 hours', empty: 'No models registered' },
+      '7d': { since: (u) => new Date(u - 7 * 86400e3), bucket: 'day', label: 'the last 7 days', empty: 'No models registered' },
       '30d': { since: (u) => new Date(u - 30 * 86400e3), bucket: 'day', label: 'the last 30 days', empty: 'No models registered' },
-      '90d': { since: (u) => new Date(u - 90 * 86400e3), bucket: 'day', label: 'the last 90 days', empty: 'No models registered' },
       '1y': { since: (u) => new Date(u - 365 * 86400e3), bucket: 'day', label: 'the last year', empty: 'No models registered' },
     },
     fetch: (span) => window.MarpApi.registrySeries(span),
@@ -4170,80 +7040,166 @@ function wireRegistryTrend() {
 function wireTrainingActivity() {
   const root = $('[data-training-activity]');
   if (!root) return;
-  const ranges = {
-    '24h': {
-      labels: ['24h ago', '12h ago', 'Now'],
-      compute: [22, 21, 24, 28, 36, 44, 49, 53, 58, 62, 57, 51, 46, 43, 48, 55, 67, 72, 69, 64, 59, 57, 60, 61],
-      running: [1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 2, 2, 2, 2, 3, 3, 4, 4, 3, 3, 2, 2, 2],
-      queued: [0, 0, 1, 1, 1, 2, 2, 2, 3, 4, 4, 3, 3, 2, 2, 3, 4, 5, 5, 4, 4, 4, 3, 3],
-      completed: [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0]
-    },
-    '7d': {
-      labels: ['7d ago', '3.5d ago', 'Now'],
-      compute: [38, 44, 51, 47, 34, 29, 42, 55, 61, 58, 43, 36, 49, 63, 69, 65, 51, 45, 57, 72, 76, 68, 54, 48, 59, 66, 63, 61],
-      running: [2, 2, 3, 2, 1, 1, 2, 3, 3, 3, 2, 2, 2, 3, 4, 3, 2, 2, 3, 4, 4, 3, 3, 2, 3, 3, 2, 2],
-      queued: [2, 3, 4, 3, 2, 1, 2, 3, 4, 4, 3, 2, 3, 4, 5, 5, 4, 3, 4, 5, 6, 5, 4, 3, 4, 4, 3, 3],
-      completed: [0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1]
-    },
-    '30d': {
-      labels: ['30d ago', '15d ago', 'Now'],
-      compute: [31, 42, 37, 48, 54, 46, 35, 29, 44, 58, 61, 53, 47, 38, 51, 64, 70, 62, 49, 41, 56, 68, 73, 66, 52, 45, 58, 67, 64, 61],
-      running: [1, 2, 2, 2, 3, 2, 1, 1, 2, 3, 3, 2, 2, 2, 3, 3, 4, 3, 2, 2, 3, 4, 4, 3, 2, 2, 3, 3, 2, 2],
-      queued: [1, 2, 2, 3, 4, 3, 2, 1, 2, 4, 4, 3, 3, 2, 3, 5, 5, 4, 3, 3, 4, 5, 6, 5, 4, 3, 4, 4, 3, 3],
-      completed: [0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1]
-    }
-  };
   const buttons = $$('[data-training-range]', root);
   const lines = Object.fromEntries($$('[data-training-line]', root).map((line) => [line.dataset.trainingLine, line]));
   const area = $('[data-training-area="compute"]', root);
   const bars = $('[data-training-bars="completed"]', root);
   const chart = $('.training-chart', root);
-  let range = '24h';
-  let samples;
-  let tick = 0;
-  const coords = (values, scale) => values.map((value, index) => {
+  /* **Real, and the same two reads the Datasets activity chart makes.** This drew four
+     hardcoded arrays per range -- the tiles above said 1 running, 0 queued, 2 completed
+     while the footer said 2, 3 and 3, because the footer was a mockup. `GET
+     /gpu/jobs/series` takes `kind`, which is validated against `JOB_KINDS` and includes
+     `training`, so no route had to be added for this. */
+  const RANGES = {
+    '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
+    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+    '7d': { hours: 168, bucket: 'hour', label: 'the last 7 days' },
+    '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
+  };
+
+  let range = '1h';
+  let samples = null;
+  const coords = (values, scale, top) => values.map((value, index) => {
     const x = 54 + 672 * index / Math.max(1, values.length - 1);
-    const y = scale === 'compute'
-      ? 196 - 168 * Math.max(0, Math.min(100, value)) / 100
-      : 196 - 168 * Math.max(0, Math.min(8, value)) / 8;
+    const y = 196 - 168 * Math.max(0, Math.min(top, value)) / (top || 1);
+
     return [x, y];
   });
-  const pathOf = (values, scale) => coords(values, scale)
+  const pathOf = (values, scale, top) => coords(values, scale, top)
     .map(([x, y], index) => `${index ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  const barsOf = (values) => {
-    const width = Math.min(14, 480 / values.length);
-    return coords(values, 'jobs').map(([x, y], index) => values[index]
+  const barsOf = (values, top) => {
+    const width = Math.min(14, 480 / Math.max(1, values.length));
+
+    return coords(values, 'jobs', top).map(([x, y], index) => (values[index]
       ? `M${(x - width / 2).toFixed(1)},196 V${y.toFixed(1)} H${(x + width / 2).toFixed(1)} V196 Z`
-      : '').join(' ');
+      : '')).join(' ');
   };
+
+  /**
+   * A series the window recorded nothing for.
+   *
+   * **Not the same as a series of zeroes**, and the difference matters most for training
+   * compute: `avg_training_utilization_percent` comes from `gpu_worker_samples`, which is
+   * only written while a worker holds a lease and heartbeats. A flat 0% line would say the
+   * GPUs were idle; nothing sampling says nobody looked.
+   *
+   * @param {Array<number|null>} values - The series.
+   * @returns {boolean} True when not one point was measured.
+   */
+  const unmeasured = (values) => !values.some((value) => value !== null && value !== undefined);
+
+  /* Blank reads as still loading. A dash reads as nothing recorded, which is what it is. */
+  const NO_READING = '<span class="dash" title="Not recorded in this window">&mdash;</span>';
+  const set = (name, text) => {
+    const into = $(`[data-training-current="${name}"]`, root);
+
+    if (into) into.innerHTML = text;
+  };
+  const clearReadouts = () => ['compute', 'running', 'queued', 'completed']
+    .forEach((name) => set(name, NO_READING));
+
   const draw = () => {
-    const computePath = pathOf(samples.compute, 'compute');
-    lines.compute.setAttribute('d', computePath);
-    lines.running.setAttribute('d', pathOf(samples.running, 'jobs'));
-    lines.queued.setAttribute('d', pathOf(samples.queued, 'jobs'));
-    area.setAttribute('d', `${computePath} L726,196 L54,196 Z`);
-    bars.setAttribute('d', barsOf(samples.completed));
-    const completed = samples.completed.reduce((sum, value) => sum + value, 0);
-    $('[data-training-current="compute"]', root).textContent = `${Math.round(samples.compute.at(-1))}%`;
-    $('[data-training-current="running"]', root).textContent = samples.running.at(-1);
-    $('[data-training-current="queued"]', root).textContent = samples.queued.at(-1);
-    $('[data-training-current="completed"]', root).textContent = completed;
-    const label = `All training activity over ${range}: ${Math.round(samples.compute.at(-1))}% of GPU compute used by training, ${samples.running.at(-1)} running, ${samples.queued.at(-1)} queued and ${completed} runs completed`;
-    chart.setAttribute('aria-label', label);
-    chart.title = label;
+    if (!samples) return;
+
+    const { compute, running, queued, completed, label } = samples;
+
+    /* One scale for the three job counts so they can be read against each other, and a
+       fixed 0-100 for the percentage, which is not a count. */
+    const jobTop = Math.max(1, ...running, ...queued, ...completed);
+
+    const computeOff = unmeasured(compute);
+
+    lines.compute.setAttribute('d', computeOff ? '' : pathOf(compute.map((v) => v ?? 0), 'compute', 100));
+    area.setAttribute('d', computeOff ? '' : `${pathOf(compute.map((v) => v ?? 0), 'compute', 100)} L726,196 L54,196 Z`);
+    lines.running.setAttribute('d', pathOf(running, 'jobs', jobTop));
+    lines.queued.setAttribute('d', pathOf(queued, 'jobs', jobTop));
+    bars.setAttribute('d', barsOf(completed, jobTop));
+
+    /* The legend says which line is not there, rather than the chart implying a flat
+       zero. Disabled, so it cannot be highlighted to reveal nothing. */
+    const computeKey = $('[data-training-highlight="compute"]', root);
+
+    if (computeKey) {
+      computeKey.disabled = computeOff;
+      computeKey.title = computeOff
+        ? 'Not recorded in this window: a GPU reading is written only while a worker holds a lease and heartbeats'
+        : 'Highlight only training GPU compute on this graph';
+    }
+
+    const totalCompleted = completed.reduce((sum, value) => sum + value, 0);
+
+    set('compute', computeOff ? NO_READING : `${Math.round(compute.filter((v) => v != null).at(-1) ?? 0)}%`);
+    set('running', String(running.at(-1) ?? 0));
+    set('queued', String(queued.at(-1) ?? 0));
+    set('completed', String(totalCompleted));
+
+    const said = `All training activity over ${label}: `
+      + `${computeOff ? 'no GPU reading recorded' : `${Math.round(compute.filter((v) => v != null).at(-1) ?? 0)}% of GPU compute used by training`}, `
+      + `${running.at(-1) ?? 0} running, ${queued.at(-1) ?? 0} queued and ${totalCompleted} runs completed`;
+
+    chart.setAttribute('aria-label', said);
+    chart.title = said;
   };
-  const choose = (next) => {
-    range = next;
-    samples = Object.fromEntries(Object.entries(ranges[range])
-      .filter(([name]) => name !== 'labels').map(([name, values]) => [name, [...values]]));
+
+  const choose = async (next) => {
+    range = RANGES[next] ? next : '1h';
+
+    const { hours, bucket, label } = RANGES[range];
+
     buttons.forEach((button) => {
       const on = button.dataset.trainingRange === range;
+
       button.classList.toggle('on', on);
       button.setAttribute('aria-pressed', String(on));
     });
-    $$('[data-training-time]', root).forEach((label, index) => { label.textContent = ranges[range].labels[index]; });
-    draw();
+
+    const until = new Date();
+    const since = new Date(until.getTime() - hours * 3600e3);
+    const span = { since: since.toISOString(), until: until.toISOString(), bucket };
+
+    try {
+      const jobs = await window.MarpApi.jobSeries({ ...span, kind: 'training' });
+      const points = jobs.points || [];
+
+      $$('[data-training-time]', root).forEach((text, index) => {
+        const at = points[Math.round((points.length - 1) * index / 2)];
+
+        text.textContent = at
+          ? new Date(at.at).toTimeString().slice(0, 5)
+          : '';
+      });
+
+      if (!points.length) {
+        root.classList.add('is-quiet');
+        samples = null;
+        clearReadouts();
+        chart.setAttribute('aria-label', `No training activity in ${label}`);
+        return;
+      }
+
+      root.classList.remove('is-quiet');
+
+      /* **`succeeded`, not `finished`.** A training job that failed has finished, and
+         counting it under a line labelled *completed runs* would say a model came out of
+         it -- the same decision the Datasets chart makes for builds. */
+      samples = {
+        label,
+        compute: points.map((p) => (p.avg_training_utilization_percent == null
+          ? null : Number(p.avg_training_utilization_percent))),
+        running: points.map((p) => Number(p.training_machines) || 0),
+        queued: points.map((p) => Number(p.waiting) || 0),
+        completed: points.map((p) => Number(p.succeeded) || 0),
+      };
+
+      draw();
+    } catch (error) {
+      root.classList.add('is-quiet');
+      samples = null;
+      clearReadouts();
+      chart.setAttribute('aria-label', `Could not read training activity (${error.status || 'no answer'})`);
+    }
   };
+
   buttons.forEach((button) => button.addEventListener('click', () => choose(button.dataset.trainingRange)));
   const highlightButtons = $$('[data-training-highlight]', root);
   const highlight = (name = '') => {
@@ -4265,15 +7221,12 @@ function wireTrainingActivity() {
       selected?.focus();
     }
   });
+  /* **The jitter is gone with the fixture.** A three-second timer nudged the last compute
+     reading up and down so the chart looked alive. That was the mockup's liveliness and it
+     would now be editing a real measurement -- which is worse than a still chart, because
+     a number that moves reads as a number somebody is recording. The chart refreshes when
+     a range is chosen; nothing invents motion between times. */
   choose(range);
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    const movement = [1, -2, 1, 0, 2, -1];
-    window.setInterval(() => {
-      samples.compute[samples.compute.length - 1] = Math.max(20, Math.min(90, samples.compute.at(-1) + movement[tick % movement.length]));
-      tick += 1;
-      draw();
-    }, 3000);
-  }
 }
 
 /**
@@ -4321,12 +7274,17 @@ function wireDatasetActivity() {
       '24h': { since: (u) => new Date(u - 24 * 3600e3), bucket: 'hour', label: 'the last 24 hours', empty: 'No build activity' },
       '7d': { since: (u) => new Date(u - 7 * 24 * 3600e3), bucket: 'day', label: 'the last 7 days', empty: 'No build activity' },
       '30d': { since: (u) => new Date(u - 30 * 24 * 3600e3), bucket: 'day', label: 'the last 30 days', empty: 'No build activity' },
+      '1y': { since: (u) => new Date(u - 365 * 24 * 3600e3), bucket: 'day', label: 'the last year', empty: 'No build activity' },
     },
     fetch: (span) => Promise.all([
       window.MarpApi.throughputSeries({ ...span, kind: 'dataset_build' }),
       window.MarpApi.jobSeries({ ...span, kind: 'dataset_build' }),
     ]).then(([rate, jobs]) => ({ rate, jobs })),
-    read: ({ rate, jobs }) => {
+    read: ({ rate, jobs }, span) => {
+      /* The bucket the route was asked for, so the figures can name their own window
+         rather than implying they all share one. */
+      const bucketWord = span.bucket === 'hour' ? 'hour' : 'day';
+
       /* The two routes bucket the same window the same way, but only the jobs route
          generates a row per bucket -- the rate route groups what it found, so a bucket
          where nothing was extracted is simply absent. Keyed by instant and read back
@@ -4376,15 +7334,30 @@ function wireDatasetActivity() {
              separator never fires and a fractional tick would be a build and a half. */
           formatRight: (v) => String(Math.round(v)),
         },
+        /* **Each figure says what it counts and over what, and the fourth one is gone.**
+           Isaac, on `14k frames - 2 waiting - 4 completed - 2 in flight`: *"which i'm not
+           sure what is telling us."* He was right not to trust it.
+
+           `2 in flight` was `waitingNow` a second time, under a word that means something
+           else -- there was no leased build on his database at all, and "in flight" never
+           read that. One number, twice, once wrongly labelled.
+
+           The other three were bare figures over unstated windows that are not even the
+           same window as each other: frames and waiting are the **last bucket**, an hour
+           on the 24h view and a whole day on 7d and 30d, while completed is a **sum over
+           the range**. Saying so is most of the fix. */
         current: {
           rate: compactCount(frames.at(-1)),
           waiting: String(waitingNow),
           finished: String(completed),
-          aria: `Dataset build activity: ${compactCount(frames.at(-1))} frames extracted in the last bucket, `
-            + `${waitingNow} build${waitingNow === 1 ? '' : 's'} waiting, ${completed} completed`,
-          /* Said only while something is in flight, because "0 building" is what the
-             cards above already say and a second copy of it is noise. */
-          building: waitingNow ? `${waitingNow} in flight` : '',
+          units: {
+            rate: `frames in the last ${bucketWord}`,
+            waiting: waitingNow === 1 ? `build unfinished at the start of this ${bucketWord}` : `builds unfinished at the start of this ${bucketWord}`,
+            finished: `completed in ${span.label}`,
+          },
+          aria: `Dataset build activity: ${compactCount(frames.at(-1))} frames extracted in the last ${bucketWord}, `
+            + `${waitingNow} build${waitingNow === 1 ? '' : 's'} unfinished at the start of it, `
+            + `${completed} completed in ${span.label}`,
         },
       };
     },
@@ -5100,6 +8073,11 @@ const DATASET_POLL_MS = 5000;
 /** What the runner's phases are called on screen. */
 const BUILD_PHASES = { selecting: 'Selecting', extracting: 'Extracting', packaging: 'Packaging' };
 
+/* How many frames a dataset's preview shows. Eight is two rows of four at the width the
+   panel has, and enough to cover several videos once they are spread across the archive
+   rather than taken from the front. */
+const PREVIEW_FRAMES = 8;
+
 /**
  * The phase, and whatever the runner said after it.
  *
@@ -5266,11 +8244,25 @@ function buildElapsed(build) {
  * @param {Map<number, Object>} builds - In-flight builds by dataset id.
  * @returns {void}
  */
+/**
+ * A timestamp as this table draws one: time above, date below.
+ *
+ * Module-level because two paths write it now -- the draw, and the patch that keeps
+ * the Updated cell moving while a build runs. It was a closure inside the draw, so the
+ * patch would have needed a second copy, and a second copy of a format is a format
+ * that drifts.
+ *
+ * @param {string} iso - An ISO timestamp.
+ * @returns {string} The cell's inner HTML.
+ */
+function datasetStamp(iso) {
+  const d = new Date(iso);
+
+  return `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
+}
+
 function fillSavedDatasets(body, datasets, builds) {
-  const stamp = (iso) => {
-    const d = new Date(iso);
-    return `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
-  };
+  const stamp = datasetStamp;
 
   /* **Newest first, which is what the column header has always claimed.** The CREATED
      header carries `aria-sort="descending"` and nothing sorted anything: the rows arrived
@@ -5310,7 +8302,10 @@ function fillSavedDatasets(body, datasets, builds) {
       + `<td class="num" data-frames data-sort="${frames.sort}">${frames.html}</td>`
       + `<td class="num" data-sort="${set.num_classes ?? -1}">${set.num_classes ?? NOT_IN_DATASET}</td>`
       + `<td class="jtime" data-sort="${set.created_at}">${stamp(set.created_at)}</td>`
-      + `<td class="jtime" data-sort="${set.updated_at}">${stamp(set.updated_at)}</td>`
+      /* Marked, because the patch path rewrites it on every poll while a build runs.
+         `data-frames` beside it is marked for the same reason; picking it out as "the
+         second .jtime" would be a rule about column order rather than about the cell. */
+      + `<td class="jtime" data-updated data-sort="${set.updated_at}">${stamp(set.updated_at)}</td>`
       + '<td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button></span></td>'
       + '</tr>';
   }).join('');
@@ -5404,9 +8399,111 @@ function renderDatasetsSummary(datasets, builds) {
  * @param {Map<number, Object>} builds - In-flight builds by dataset id.
  * @returns {void}
  */
-function patchBuildRows(body, builds) {
+/**
+ * Readings of how far each build had got, so a rate can be worked out between them.
+ *
+ * Keyed by job id, holding `{done, at}` pairs taken when the count actually moved. A
+ * build is not in here for long and there are never many at once, so this is bounded by
+ * {@link RATE_WINDOW} per build rather than by any sweeping.
+ */
+const buildReadings = new Map();
+
+/** How many readings a rate is averaged over. */
+const RATE_WINDOW = 6;
+
+/**
+ * Frames per second, from how far the build has moved between reports.
+ *
+ * **Taken from the attempt row across polls, not from `gpu_attempt_progress`.** That
+ * table is the series the chart is drawn from and it is sampled **once a minute** -- one
+ * row per attempt per minute, upserted -- so a rate read from it can only change once a
+ * minute, which is not a live rate on a screen that polls every second. The attempt row
+ * carries `progress_done` and `last_heartbeat_at` and is rewritten on every report the
+ * runner makes, which is once a pass: about twenty seconds at the speeds before the
+ * extractor stopped re-encoding, and about two at the speeds after.
+ *
+ * **Recent, not since the start.** Averaging from the first reading hides exactly what he
+ * asked to be able to see -- a stretch where the rate drops -- because by then the
+ * average is dominated by everything before it. A short window moves when the build does.
+ *
+ * **Nothing until there are two readings**, which is a real state and lasts until the
+ * runner reports twice. A rate of zero would be a measurement, and an infinity would be
+ * arithmetic nobody asked for.
+ *
+ * **Only while frames are being cut.** `selecting` has no frames yet and `packaging` is
+ * tar and SHA-256 over a finished tree -- the count does not move, so a rate that kept
+ * being shown would fall toward zero and read as a build grinding to a halt when it is
+ * doing the last thing it has to do.
+ *
+ * @param {Object} build - The in-flight build.
+ * @returns {string} Frames per second to one decimal, or '' when there is no rate to give.
+ */
+function buildRate(build) {
+  if (!build || build.state !== 'leased') return '';
+
+  const phase = phaseOf(build).phase.toLowerCase();
+
+  if (phase !== 'extracting') return '';
+
+  const done = Number(build.progress_done);
+  const at = Date.parse(build.last_heartbeat_at);
+
+  if (!Number.isFinite(done) || !Number.isFinite(at)) return '';
+
+  const key = build.job_id;
+  const readings = buildReadings.get(key) || [];
+  const last = readings[readings.length - 1];
+
+  /* Only when the runner has actually reported again. Polling faster than it reports
+     would otherwise stack identical readings and divide a real frame count by the
+     seconds the browser spent asking, which is a rate of the polling rather than of
+     the build. */
+  if (!last || last.at !== at) {
+    readings.push({ done, at });
+
+    while (readings.length > RATE_WINDOW) readings.shift();
+
+    buildReadings.set(key, readings);
+  }
+
+  if (readings.length < 2) return '';
+
+  const first = readings[0];
+  const latest = readings[readings.length - 1];
+  const frames = latest.done - first.done;
+  const seconds = (latest.at - first.at) / 1000;
+
+  if (!(seconds > 0) || frames < 0) return '';
+
+  const rate = frames / seconds;
+
+  return rate >= 10 ? `${Math.round(rate)} f/s` : `${rate.toFixed(1)} f/s`;
+}
+
+function patchBuildRows(body, builds, byId) {
   for (const head of $$(':scope > tr[data-dataset-id]', body)) {
-    const build = builds.get(Number(head.dataset.datasetId));
+    const id = Number(head.dataset.datasetId);
+    const set = (byId && byId.get(id)) || null;
+    const build = builds.get(id);
+
+    /* **The Updated cell, patched before the build check, because it moves for a
+       reason that has nothing to do with this row having a build.** `datasets.updated_at`
+       is touched on every progress report, and this column froze for as long as a
+       build ran: it used to be refreshed by accident, because the whole table was
+       being thrown away and redrawn twenty seconds at a time. Stopping that rebuild
+       was right -- it is what stopped expanded rows closing -- and this is its cost,
+       paid here rather than by going back. */
+    if (set && set.updated_at) {
+      const updated = $('[data-updated]', head);
+
+      if (updated && updated.dataset.sort !== String(set.updated_at)) {
+        updated.innerHTML = datasetStamp(set.updated_at);
+        /* The sort key too, or sorting by Updated orders the table by what the
+           timestamps were when the page was drawn. */
+        updated.dataset.sort = String(set.updated_at);
+      }
+    }
+
     /* A failed build is in this answer for its reason, which the detail drew once and
        which cannot change. Patching its row would overwrite the dashes it ends on with
        the last figures it reached, which reads as a build still going. */
@@ -5443,6 +8540,19 @@ function patchBuildRows(body, builds) {
        disagree -- which they did, because this one used to be written once. */
     const framesFact = $('[data-build-frames]', detail);
     if (framesFact) framesFact.innerHTML = frames.html;
+
+    /* Asked once and used twice: `buildRate` records the reading it is given, so calling
+       it a second time in the same poll would compare a reading with itself. */
+    const rate = buildRate(build);
+    const rateFact = $('[data-build-rate]', detail);
+
+    if (rateFact) {
+      rateFact.textContent = rate;
+
+      const row = rateFact.closest('.jobmetric');
+
+      if (row) row.hidden = !rate;
+    }
 
     const phase = phaseOf(build);
     const phaseFact = $('[data-build-phase]', detail);
@@ -5553,23 +8663,681 @@ function splitBar(splits) {
   const rows = (splits || []).filter((s) => Number(s.observations) > 0);
   if (!rows.length) return '';
 
-  const total = rows.reduce((sum, s) => sum + Number(s.observations), 0);
+  /* **The percentage is of images when the archive could be counted, and says so.**
+     `assignSplits` balances the split on *frames* -- it measures each group as
+     `last_framenum - first_framenum + 1` and fills each share by that -- so a requested
+     70/20/10 is a ratio of images. This bar was drawn from observation counts, which is a
+     different quantity: one observation is a span, and 164 of them became 15,020 images.
+     A reader checking the bar against the ratio they asked for was comparing two
+     different things with nothing saying so.
+
+     When there is no archive to count, it falls back to observations and the label
+     changes with it, rather than the same bar quietly meaning something else. */
+  /* `Number(null)` is 0, not NaN, so a recorded-nothing split would have passed a bare
+     `Number.isFinite` check and been drawn as zero per cent -- which is a measurement,
+     and the wrong one. Null and undefined are both "not known" and are excluded first. */
+  const known = (s) => s.images !== null && s.images !== undefined && Number.isFinite(Number(s.images));
+  const byImages = rows.every(known);
+  const unit = byImages ? 'images' : 'observations';
+  const amount = (s) => Number(byImages ? s.images : s.observations);
+  const total = rows.reduce((sum, s) => sum + amount(s), 0);
+
+  if (!total) return '';
   /* The class on each band is what colours it; an unexpected split name gets the neutral
      one rather than no class at all, which would be an invisible band. */
   const tone = { train: 'tr', validation: 'va', val: 'va', eval: 'va', test: 'te' };
 
-  const label = rows.map((s) => `${s.split} ${Math.round(s.observations / total * 100)} per cent`).join(', ');
+  const label = rows.map((s) => `${s.split} ${Math.round(amount(s) / total * 100)} per cent of ${unit}`).join(', ');
   const bands = rows.map((s) => {
-    const share = Math.round(Number(s.observations) / total * 100);
+    const share = Math.round(amount(s) / total * 100);
 
     return `<i class="${tone[s.split] || 'tr'}" style="width:${share}%"><span>${share}%</span></i>`;
+  }).join('');
+
+  /* **All three numbers per split, and the unit on every one of them.** Isaac asked for
+     the percentage, the observations and the images together, and the reason they have to
+     be labelled is that they disagree by two orders of magnitude -- 164 observations are
+     15,020 images -- so a bare pair of numbers reads as a contradiction rather than as
+     two units. The percentage carries its own unit in the caption below. */
+  const legend = rows.map((s) => {
+    const share = Math.round(amount(s) / total * 100);
+    const images = known(s)
+      ? `<b>${Number(s.images).toLocaleString()}</b> images`
+      : '';
+
+    return `<li><i class="${tone[s.split] || 'tr'}"></i><span class="splitname">${escapeHtml(s.split)}</span>`
+      + `<span class="splitshare">${share}%</span>`
+      + `<span class="splitof"><b>${Number(s.observations).toLocaleString()}</b> observations</span>`
+      + (images ? `<span class="splitof">${images}</span>` : '')
+      + '</li>';
   }).join('');
 
   /* `escapeHtml` on an attribute, which is the bug this had: `NOT_IN_DATASET` is markup,
      and interpolating it into `aria-label` closed the attribute early and spilled
      `train validation test split">` onto the screen as text. Nothing that reaches an
      attribute here is markup any more, and it is escaped as well. */
-  return `<div class="splitbar" role="img" aria-label="${escapeHtml(label)}">${bands}</div>`;
+  /* **Hover text, not a paragraph.** *"i dont' know why we have this text"*, of the
+     sentence that used to sit under this bar. What it says is worth keeping -- the
+     percentages are of images, which is the quantity the builder balances on, and a
+     reader checking them against the ratio they asked for needs that -- but it belongs on
+     the bar rather than under it, which is the correction he already made once on this
+     screen. */
+  const why = byImages
+    ? `Percentages are of images, which is what the builder balances the split on. ${escapeHtml(label)}`
+    : `Percentages are of observations: the archive could not be counted, so these are not the ratio the build balanced on, which is images. ${escapeHtml(label)}`;
+
+  return `<div class="splitbar" role="img" title="${why}" aria-label="${escapeHtml(label)}">${bands}</div>`
+    + `<ul class="splitlegend">${legend}</ul>`;
+}
+
+/**
+ * The sample of frames a build cut, each with the box its label file records.
+ *
+ * **The box is the point, not decoration.** A frame on its own only says a picture was
+ * taken out of the video; the frame with its box drawn says the label landed on the
+ * animal, and the species beside it says it landed on the right one. Those are the two
+ * ways a build goes quietly wrong, and neither is visible in any number on this screen.
+ *
+ * The boxes are YOLO: normalised to the image, with **x and y at the box centre**, which
+ * is why each one is offset by half its own size here. Reading them as a top-left corner
+ * draws every box down and to the right by half its width -- close enough to be believed,
+ * which is what makes it worth a comment.
+ *
+ * @param {Object[]} frames - From `GET /dataset/:id/preview`.
+ * @param {number} total - Every image in the archive, so the strip can say what it is a
+ * sample of.
+ * @param {number|string} datasetId - For the image URLs.
+ * @param {number} limit - The sample size, which the frame positions are relative to.
+ * @param {Map<number, string>} named - Class index to species name, from the composition.
+ * @returns {string}
+ */
+function previewStrip(frames, total, datasetId, limit, named) {
+  if (!frames || !frames.length) return '';
+
+  const shots = frames.map((frame) => {
+    const boxes = (frame.boxes || []).map((box) => {
+      const style = `left:${((box.cx - box.w / 2) * 100).toFixed(3)}%;`
+        + `top:${((box.cy - box.h / 2) * 100).toFixed(3)}%;`
+        + `width:${(box.w * 100).toFixed(3)}%;height:${(box.h * 100).toFixed(3)}%`;
+
+      return `<i class="pvbox" style="${style}"></i>`;
+    }).join('');
+
+    /* **The species goes in the caption, not on the box.** A chip drawn on the box is
+       clipped by the frame's own edge for anything near it, and the real boxes here sit
+       at cx 0.93 and cy 0.92 -- so the label would be missing on exactly the frames a
+       reader most wants to check. Deduplicated, because a frame of nine urchins is one
+       species said once. */
+    const species = [...new Set((frame.boxes || [])
+      .map((box) => named.get(box.class_index) || `class ${box.class_index}`))];
+
+    /* The stem is `<video>_<frame>`, which is what identifies the picture: a reader who
+       doubts a frame opens that video at that frame number and looks. */
+    const where = escapeHtml(frame.stem).replace(/_(\d{8})$/, ' &middot; frame $1');
+
+    /* Not `loading="lazy"`: these sit in a row that is collapsed until somebody opens it,
+       and a lazy image revealed that way is never fetched -- the deferral never resolves,
+       so the strip stays blank with nothing in the console. */
+    return '<figure class="pvframe">'
+      + `<span class="pvshot"><img src="/api/v2/dataset/${encodeURIComponent(datasetId)}/preview/${frame.index}?limit=${limit}"`
+      + ` alt="Training frame ${escapeHtml(frame.stem)} with its label box drawn">${boxes}</span>`
+      + `<figcaption><b>${escapeHtml(frame.split)}</b> ${where}`
+      + (species.length ? `<em>${escapeHtml(species.join(', '))}</em>` : '<em class="none">no label</em>')
+      + '</figcaption></figure>';
+  }).join('');
+
+  /* Says it is a sample, and of how many. A strip of eight pictures with no number beside
+     it reads as the whole dataset, which is the mistake the old fixture strip invited. */
+  const of = total > frames.length
+    ? `<span class="hint">${frames.length} of ${total.toLocaleString()} images, spread across the archive.</span>`
+    : `<span class="hint">All ${total.toLocaleString()} images in the archive.</span>`;
+
+  return `<div class="pvstrip">${shots}</div>${of}`;
+}
+
+/**
+ * The Cancel build button, where one was drawn.
+ *
+ * **Cancels the job, not the dataset.** `POST /gpu/jobs/:id/cancel` already does exactly
+ * this and is kind-agnostic, so a dataset build needs no route of its own -- it writes
+ * `cancelled` on the job and the runner, which polls that state once per pass, stops and
+ * tidies its staging. A second route would have been a second way to say the same thing.
+ *
+ * **Confirmed first, because the work is the expensive part.** A build is hours of
+ * extraction and the button sits beside a progress bar somebody is watching; a misclick
+ * there costs the whole run. Cancelling is not destructive beyond that -- the dataset
+ * returns to `draft` and can be built again -- so one confirmation is enough and nothing
+ * is typed to prove intent.
+ *
+ * @param {Element} detail - The expanded build row.
+ * @param {string} name - The dataset's name, for the confirmation.
+ * @returns {void}
+ */
+function wireCancelBuild(detail, name) {
+  const button = $('[data-cancel-build]', detail);
+
+  if (!button) return;
+
+  button.addEventListener('click', async () => {
+    /* eslint-disable-next-line no-alert -- the app has no dialog of its own, and a
+       destructive control with no confirmation at all is the worse answer. */
+    if (!window.confirm(`Cancel the build of "${name}"? The frames cut so far are discarded and the dataset goes back to draft.`)) return;
+
+    /* **Disabled and relabelled before the request, not after it.** The answer comes
+       back in milliseconds but the build does not stop for another pass, so the thing
+       that has to change immediately is the button -- otherwise the only feedback for
+       twenty seconds is nothing happening. */
+    button.disabled = true;
+    button.textContent = 'Cancelling…';
+
+    try {
+      await window.MarpApi.cancelJob(button.dataset.cancelBuild);
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Cancel build';
+
+      const said = $('.hint', button.parentElement);
+
+      if (said) said.textContent = `Could not cancel it (${error.status || 'no answer'}).`;
+    }
+  });
+}
+
+/**
+ * The Delete control, wherever a dataset can be deleted from.
+ *
+ * **One definition, because it is drawn on two different panels.** A finished dataset
+ * gets it in the footer beside Download; a build that failed or was cancelled gets it in
+ * place of Cancel. It was written into the ready panel's footer alone to begin with,
+ * which is how a failed build -- the case somebody most wants to clear -- ended up being
+ * the one thing that could not be deleted.
+ *
+ * **Red, and last in its row**, so it is not the button a hand lands on next to Download.
+ * What it takes with it is named in the confirmation rather than on the label: a button
+ * cannot say "and 3.8 GB" without becoming a sentence.
+ *
+ * @param {Object} set - The dataset.
+ * @returns {string}
+ */
+function deleteButton(set) {
+  return `<button class="btn sm danger" type="button" data-delete-dataset="${set.id}">`
+    + '<svg class="ico"><use href="#i-stop"/></svg>Delete</button>'
+    + '<span class="hint" data-delete-said></span>';
+}
+
+/**
+ * The Delete button on a built dataset.
+ *
+ * **What goes is said before it goes, with the size in it.** These archives are hundreds
+ * of megabytes to several gigabytes and they are not recoverable -- there is no undo and
+ * no second copy -- so the confirmation names the dataset, its contents and how much disk
+ * it is about to free, rather than asking "are you sure?" about an unnamed thing.
+ *
+ * **A refusal is shown, not swallowed.** The route refuses a dataset a model was trained
+ * from, and that refusal is the useful answer: it names the training run. The same for a
+ * dataset still building, which asks for the build to be cancelled first. Both arrive as
+ * 409 with the sentence already written, so this prints it rather than inventing its own.
+ *
+ * @param {Element} detail - The expanded row.
+ * @param {Element} head - The row itself, removed with it.
+ * @param {Object} set - The dataset.
+ * @param {string} size - Its archive size, already formatted.
+ * @returns {void}
+ */
+function wireDeleteDataset(detail, head, set) {
+  const button = $('[data-delete-dataset]', detail);
+
+  if (!button) return;
+
+  button.addEventListener('click', async () => {
+    /* **The size is worked out here, not passed in**, because this is called from two
+       panels and only one of them had it in scope. A failed build has no archive and no
+       counts at all, so every clause below can be absent at once. */
+    const size = archiveSize(set && set.archive_bytes);
+    const holds = [
+      Number(set.num_observations) > 0 ? `${Number(set.num_observations).toLocaleString()} observations` : '',
+      Number(set.num_samples) > 0 ? `${Number(set.num_samples).toLocaleString()} images` : '',
+      size ? `a ${size} archive` : '',
+    ].filter(Boolean);
+
+    /* **Two different sentences, because they are two different acts.** Deleting a
+       finished dataset destroys work; deleting a failed build tidies up. A confirmation
+       that warned identically about both would be ignored on the one that matters -- and
+       a confirmation that silently dropped its "this removes..." clause would make the
+       dangerous case look like the harmless one. */
+    /* **The build job goes with the dataset now, so the confirmation says so.** It used
+       to survive, and Isaac met one on the Jobs screen after deleting its dataset here:
+       *"i already deleted this on the other page"*. Named only when the panel actually
+       found one -- a legacy import has no build job at all, and a dialog that listed one
+       anyway would be the same kind of untruth in reverse. */
+    const job = detail.buildJobId
+      ? ` Its build job (#${detail.buildJobId}), with that job's attempts and events, goes too.`
+      : '';
+
+    const what = holds.length
+      ? `This removes ${holds.join(', ')}.${job}\n\nIt cannot be undone, and the archive is not kept anywhere else.`
+      : 'This build recorded no images, no observations and no archive, so there is nothing'
+        + ` to lose but the row itself.${job}`;
+
+    /* eslint-disable-next-line no-alert -- the app has no dialog of its own, and a
+       permanent delete with no confirmation at all is the worse answer. */
+    if (!window.confirm(`Delete "${set.name}"?\n\n${what}`)) return;
+
+    const said = $('[data-delete-said]', detail);
+
+    button.disabled = true;
+    button.textContent = 'Deleting…';
+
+    try {
+      await window.MarpApi.deleteDataset(set.id);
+
+      /* Both rows: the dataset's own and the detail panel under it, which is a sibling
+         `<tr>` rather than a child, so removing one would leave the other behind. */
+      detail.remove();
+      head.remove();
+
+      /* Removing the rows is the instant feedback; this is what makes the numbers above
+         them true again. The table owns its own counts and its own polling, so it is told
+         rather than reached into -- the same seam a queued build uses. */
+      document.dispatchEvent(new CustomEvent('marp:dataset-deleted', { detail: { id: set.id } }));
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = 'Delete';
+
+      /* The server's sentence, which is the whole point of it having written one. */
+      if (said) said.textContent = error.message || `Could not delete it (${error.status || 'no answer'}).`;
+    }
+  });
+}
+
+/**
+ * The builds waiting, in the order they will be taken, with a way to change it.
+ *
+ * **The order was real and invisible, which is why this exists before the buttons do.**
+ * `claimBuild` has always selected `ORDER BY priority DESC, created_at ASC, id ASC`, so
+ * the queue has always been a priority queue -- but nothing served the priority, and the
+ * table sorts newest-first, which is the reverse of claim order within a priority. Move
+ * buttons on that table would have reordered something nobody could see.
+ *
+ * **"Starts next" is a group, not a row.** Builds run `DATASET_BUILD_CONCURRENCY` at a
+ * time, so the front of the queue begins together and there is no single next job. The
+ * server says which ones would start now -- the ceiling less whatever is running -- and
+ * they are marked as a set, because a numbered list alone would imply the first one goes
+ * and the second waits.
+ *
+ * **Hidden below two.** With one build waiting there is no order to change, and a strip
+ * of controls that cannot do anything is worse than no strip.
+ *
+ * @param {Object} answer - From `GET /dataset/build-queue`.
+ * @returns {void}
+ */
+function drawBuildQueue(answer) {
+  const strip = $('[data-build-queue]');
+
+  if (!strip) return;
+
+  const queue = (answer && answer.queue) || [];
+
+  strip.hidden = queue.length < 2;
+
+  if (strip.hidden) {
+    strip.innerHTML = '';
+
+    return;
+  }
+
+  const ceiling = Number(answer.concurrency) || 1;
+  const running = Number(answer.running) || 0;
+  const starting = queue.filter((row) => row.starts_next).length;
+
+  /* Said in full rather than as a bare count, because "2 of 5" invites the reading that
+     three are blocked rather than waiting their turn. */
+  const lead = starting
+    ? `${starting === 1 ? 'The first' : `The first ${starting}`} start${starting === 1 ? 's' : ''} next`
+    : `All ${queue.length} are waiting for a slot`;
+
+  const rows = queue.map((row, index) => {
+    const name = escapeHtml(row.name || `Dataset ${row.dataset_id}`);
+
+    return `<li${row.starts_next ? ' data-starting' : ''}>`
+      + `<span class="qpos">${row.position}</span>`
+      + `<span class="qname" title="Build job #${row.job_id}">${name}</span>`
+      + (row.starts_next ? '<span class="qnext">starts next</span>' : '')
+      + '<span class="qmove">'
+      + `<button class="btn xs" type="button" data-move-build="${row.job_id}" data-direction="up"`
+      + `${index === 0 ? ' disabled' : ''} aria-label="Move ${name} sooner" title="Move sooner">`
+      + '<svg class="ico sm"><use href="#i-arrow"/></svg></button>'
+      + `<button class="btn xs" type="button" data-move-build="${row.job_id}" data-direction="down"`
+      + `${index === queue.length - 1 ? ' disabled' : ''} aria-label="Move ${name} later" title="Move later">`
+      + '<svg class="ico sm"><use href="#i-down"/></svg></button>'
+      + '</span></li>';
+  }).join('');
+
+  strip.innerHTML = `<div class="buildqueue-hd"><h3>${queue.length} builds waiting</h3>`
+    + `<p>${lead}. ${ceiling} run at once${running ? `, ${running} running now` : ''}.</p></div>`
+    + `<ol class="buildqueue-list">${rows}</ol>`;
+}
+
+/**
+ * Asks for the queue and draws it.
+ *
+ * @returns {Promise<void>}
+ */
+async function refreshBuildQueue() {
+  const strip = $('[data-build-queue]');
+
+  if (!strip || !window.MarpApi) return;
+
+  try {
+    drawBuildQueue(await window.MarpApi.datasetBuildQueue());
+  } catch (error) {
+    /* A queue that could not be read is not a queue of nothing, so the strip is left
+       as it was rather than being emptied into a claim that nothing is waiting. */
+  }
+}
+
+/* **Five, because the Class breakdown folds at five.** This panel is that component
+   now, and matching the screen somebody already reads matters more than the number. */
+const SPECIES_SHOWN = 5;
+
+/**
+ * Where each species in the dataset being assembled is being sent, as a bar each.
+ *
+ * *"in this section we want the bars for every species, but we also want it shaded and
+ * displayed like this: like we do in the build jobs and ready datasets."* So this is the
+ * ready dataset's panel, built from what step 3 knows instead of from what a build wrote,
+ * and sharing `.dist` and the three split tones so the two read as one design.
+ *
+ * **Every species, with no *Other* fold, and that is the deliberate difference from the
+ * panel it copies.** A ready dataset is a record and a long tail can be folded away; step
+ * 3 is a decision, and a hidden tail is hidden evidence about what is going in.
+ *
+ * **Observations, because images do not exist yet.** Nothing has been cut, so the only
+ * exact quantity here is the observation count the facet returned. Images could be
+ * estimated from the keyframe spans, and that estimate was rejected: it would be what the
+ * build *intends* to cut rather than what it writes -- `cutVideo` reports frames it could
+ * not produce -- and an estimate sitting beside a panel elsewhere that is exact is worse
+ * than a smaller number that is true.
+ *
+ * **The split is what was asked for, not what will result, and the two differ for two
+ * separate reasons.** A subset sent wholly to one split contributes all of its species
+ * there, exactly. A subset divided by shares is spread here in those shares, but the
+ * build runs `assignSplits`, which is *iterative stratification measured in frames* -- it
+ * deliberately moves groups so a rare species is represented in every split, and one
+ * observation spanning 400 frames outweighs one spanning two. So a divided subset's
+ * per-species division is the algorithm's intent rather than its arithmetic.
+ *
+ * **One observation is one species here**, unlike the ready panel, where one image can
+ * hold two animals and the species counts sum past the split totals. `observations`
+ * carries a single `species_id`, so these sum to the headline count -- including its
+ * double counting, because two subsets that match the same observation count it twice in
+ * both and the build is what resolves that.
+ *
+ * @param {Element[]} rows - The subset `<li>` elements, carrying `data-species`,
+ * `data-split` and optionally `data-shares`.
+ * @returns {string} The `.dist` grid's inner HTML.
+ */
+function currentDatasetBars(rows) {
+  const splits = ['train', 'validation', 'test'];
+  const tone = { train: 'tr', validation: 'va', val: 'va', eval: 'va', test: 'te' };
+  const by = new Map();
+
+  for (const row of rows) {
+    let species;
+
+    try {
+      species = JSON.parse(row.dataset.species || '[]');
+    } catch (error) {
+      continue;
+    }
+
+    /* Either a share map or a single split, which is exactly what the row carries and
+       what the build obeys. A row with neither is not placed anywhere, and is counted
+       into the total without a segment rather than being guessed at. */
+    let shares = null;
+
+    try {
+      shares = row.dataset.shares ? JSON.parse(row.dataset.shares) : null;
+    } catch (error) {
+      shares = null;
+    }
+
+    const whole = shares ? null : (row.dataset.split || null);
+    const sum = shares
+      ? Object.values(shares).reduce((at, n) => at + (Number(n) || 0), 0)
+      : 0;
+
+    for (const [label, count] of species) {
+      const name = label || 'Unnamed species';
+
+      if (!by.has(name)) by.set(name, { name, total: 0, counts: {} });
+
+      const entry = by.get(name);
+      const n = Number(count) || 0;
+
+      entry.total += n;
+
+      if (shares && sum > 0) {
+        /* Fractions kept here and rounded once, below, so the segments a reader compares
+           are the real proportions rather than three numbers each rounded on its own. */
+        for (const [split, share] of Object.entries(shares)) {
+          entry.counts[split] = (entry.counts[split] || 0) + (n * (Number(share) || 0)) / sum;
+        }
+      } else if (whole) {
+        entry.counts[whole] = (entry.counts[whole] || 0) + n;
+      }
+    }
+  }
+
+  const sorted = [...by.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+  if (!sorted.length) return '<span class="nodata">Nothing has been added to this dataset yet.</span>';
+
+  const widest = Math.max(...sorted.map((entry) => entry.total), 1);
+  const count = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
+
+  /**
+   * Whole observations that still add up to the species total.
+   *
+   * A share of 70/20/10 over seven observations is 4.9/1.4/0.7, and rounding each on its
+   * own gives 5/1/1 -- seven observations reported as seven, by luck. Largest remainder
+   * makes that an arithmetic property rather than a coincidence, which matters because
+   * the number beside the bar is the one a reader checks it against.
+   *
+   * @param {Object} entry - One species.
+   * @returns {Object<string, number>} Whole counts per split.
+   */
+  const whole = (entry) => {
+    const parts = splits
+      .filter((split) => entry.counts[split])
+      .map((split) => ({ split, exact: entry.counts[split] }));
+
+    if (!parts.length) return {};
+
+    const out = {};
+    let placed = 0;
+
+    for (const part of parts) {
+      out[part.split] = Math.floor(part.exact);
+      placed += out[part.split];
+    }
+
+    let left = Math.round(parts.reduce((at, part) => at + part.exact, 0)) - placed;
+
+    for (const part of [...parts].sort((a, b) => (b.exact % 1) - (a.exact % 1))) {
+      if (left <= 0) break;
+
+      out[part.split] += 1;
+      left -= 1;
+    }
+
+    return out;
+  };
+
+  return sorted.map((entry) => {
+    const counts = whole(entry);
+    /* Every split named, zeros included: a species landing only in train is what the
+       stratification exists to prevent, and a segment that is not drawn says nothing on
+       its own. */
+    const said = splits.map((split) => `${split} ${count(counts[split])}`).join(', ');
+
+    const segments = splits.map((split) => {
+      const n = entry.counts[split] || 0;
+
+      return n ? `<i class="${tone[split] || 'tr'}" style="width:${((n / widest) * 100).toFixed(1)}%"></i>` : '';
+    }).join('');
+
+    /* A subset with no split declared and no shares contributes to the total and to no
+       segment, so the bar is shorter than the number beside it. Said rather than hidden. */
+    const placed = splits.reduce((at, split) => at + (entry.counts[split] || 0), 0);
+    const unplaced = Math.round(entry.total - placed);
+
+    return `<span class="k" title="${escapeHtml(`${entry.name}: ${said}`
+      + (unplaced > 0 ? `, ${unplaced} not yet assigned to a split` : ''))}">${escapeHtml(entry.name)}</span>`
+      + `<span class="b">${segments}</span>`
+      + `<span class="v">${count(entry.total)}</span>`;
+  }).join('');
+}
+
+/**
+ * Where each species went, split by split, as a bar each.
+ *
+ * *"kind of like these bars... but they should have different shading."* He was pointing
+ * at the **Class breakdown** in the build flow, so this is that component --
+ * `.dist`, largest first, folded into an *Other* row -- with the one difference he
+ * asked for: the single blue-to-cyan fill becomes three segments, one per split. Reusing
+ * it rather than building a second bar is the point; two bar components on one screen
+ * drift the moment either is touched.
+ *
+ * **Images, the same unit as the bar above it.** This shipped in observations because
+ * that was all that was recorded, and the two differ by about ninety to one -- 164
+ * observations were 15,020 images. A length is compared without reading a heading, so two
+ * units in one panel is worse as bars than it was as columns. The build now counts
+ * species per frame as it writes each label file and
+ * `scripts/backfill-split-species-images.js` reads them out of the archives for anything
+ * built before it did; a dataset with neither falls back to observations, and the unit in
+ * the heading changes with it.
+ *
+ * **Lengths are against the largest row, which is what `.dist` already does.** The point
+ * of a row is the shape of its own split and how it compares with its neighbours'.
+ * Scaling to the dataset's total would leave every bar but the commonest a sliver, with
+ * the three shades too small to tell apart -- which is the one thing the bar is for.
+ *
+ * **No share column, unlike `.dist.pct` in the build flow, and that is deliberate.**
+ * There the shares are of one total and add to a hundred. Here a frame holding a cucumber
+ * and an anemone is one image belonging to both species, so shares would add past a
+ * hundred -- the exact arithmetic `drawQueryComposition` treats as a defect and refuses
+ * to draw, after one breakdown reached 129 per cent. The counts are exact; a percentage
+ * would not be, so the panel shows the count and the heading explains the overlap.
+ *
+ * **A zero is drawn by its absence.** A species with nothing in test gets no test segment
+ * and says so in its tooltip, which is what makes the gap visible rather than a hairline
+ * that reads as a very small amount.
+ *
+ * @param {Object[]} rows - `{species_id, comname, split, observations, images}`.
+ * @param {boolean} all - Show every species rather than the largest {@link SPECIES_SHOWN}.
+ * @returns {string}
+ */
+function speciesSplitTable(rows, all) {
+  if (!rows || !rows.length) return '';
+
+  /* The split names `inclusion_type` holds. Deliberately not the archive's directories:
+     `validation` and `eval` share `eval/` on disk, and a panel about membership should
+     say what was asked for rather than where it landed. */
+  const splits = ['train', 'validation', 'test'];
+
+  /* `Number(null)` is 0, not NaN, so a bare `Number.isFinite` would read an unrecorded
+     count as zero images -- a measurement, and the wrong one. Same guard as `splitBar`. */
+  const known = (row) => row.images !== null && row.images !== undefined && Number.isFinite(Number(row.images));
+  const byImages = rows.every(known);
+  const unit = byImages ? 'images' : 'observations';
+  const by = new Map();
+
+  for (const row of rows) {
+    const key = row.species_id ?? row.comname;
+
+    if (!by.has(key)) {
+      by.set(key, { name: row.comname || `Species ${row.species_id}`, total: 0, counts: {} });
+    }
+
+    const entry = by.get(key);
+    const n = Number(byImages ? row.images : row.observations) || 0;
+
+    entry.counts[row.split] = (entry.counts[row.split] || 0) + n;
+    entry.total += n;
+  }
+
+  const sorted = [...by.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  const shown = all ? sorted : sorted.slice(0, SPECIES_SHOWN);
+  const rest = all ? [] : sorted.slice(SPECIES_SHOWN);
+
+  /* One row standing for the rest, with its split counts summed -- not a count of species
+     with the numbers thrown away, which would leave the panel unable to say where they
+     went. Built before the scale is taken, so folding cannot make the longest bar vanish
+     and silently rescale the rows that stayed. */
+  const folded = rest.length
+    ? [rest.reduce((sum, entry) => {
+      for (const split of splits) sum.counts[split] = (sum.counts[split] || 0) + (entry.counts[split] || 0);
+      sum.total += entry.total;
+
+      return sum;
+    }, { name: `Other (${rest.length} ${rest.length === 1 ? 'species' : 'species'})`, total: 0, counts: {} })]
+    : [];
+
+  const drawn = [...shown, ...folded];
+  const widest = Math.max(...drawn.map((entry) => entry.total), 1);
+
+  /* The class on each segment is what colours it, from the same three tokens the split
+     bar above uses; an unexpected split name takes the neutral one rather than no class,
+     which would be an invisible segment. */
+  const tone = { train: 'tr', validation: 'va', val: 'va', eval: 'va', test: 'te' };
+  const count = (n) => Number(n || 0).toLocaleString('en-US');
+
+  /* Every split named on every row, zeros included. It is the only place a reader can see
+     that a species has nothing in test, since a zero segment is not drawn. */
+  const said = (entry) => splits.map((split) => `${split} ${count(entry.counts[split])}`).join(', ');
+
+  const body = drawn.map((entry) => {
+    const segments = splits.map((split) => {
+      const n = Number(entry.counts[split]) || 0;
+
+      return n ? `<i class="${tone[split] || 'tr'}" style="width:${((n / widest) * 100).toFixed(1)}%"></i>` : '';
+    }).join('');
+
+    return `<span class="k" title="${escapeHtml(`${entry.name}: ${said(entry)}`)}">${escapeHtml(entry.name)}</span>`
+      + `<span class="b">${segments}</span>`
+      + `<span class="v">${count(entry.total)}</span>`;
+  }).join('');
+
+  const toggle = (rest.length || all)
+    ? `<button class="more" type="button" data-species-split-toggle aria-expanded="${all}"`
+      + ` title="${all
+        ? `Show the largest ${SPECIES_SHOWN} species instead of every one`
+        : 'Show every species in the dataset instead of the largest few'}">`
+      + `${all ? `Largest ${SPECIES_SHOWN}` : 'All species'} `
+      + '<svg class="ico sm"><use href="#i-arrow"/></svg></button>'
+    : '';
+
+  /* **The explanations are hover text, not body text.** *"i dont' know why we have this
+     text"* -- two paragraphs under the bars, which is the correction he had already made
+     once on this screen, when the panel's other explanations became tooltips on the
+     controls they described. The facts survive; the paragraphs do not. */
+  const why = byImages
+    ? 'Images in each split holding this species. A frame holding two species counts for '
+      + 'both, so these add up to more than the splits above.'
+    : 'Observations, not images: no archive could be counted for this dataset, so these '
+      + 'are not the unit the splits above are in.';
+
+  /* The toggle lives inside this element, because redrawing replaces the element whole
+     -- a button outside it would keep saying "All" after everything was shown. */
+  /* **No key of its own.** Drawn, it was the third legend on one panel for the same
+     three colours: the split bar's own legend sits directly above it naming train,
+     validation and test with these very swatches. The shades are already taught; each
+     row's tooltip gives its three numbers. */
+  return '<div class="speciessplit">'
+    + `<h5>By species <span class="faint" title="${escapeHtml(why)}">(largest first, ${unit})</span>${toggle}</h5>`
+    + `<div class="dist split">${body}</div>`
+    + '</div>';
 }
 
 function datasetPillContents(status, build) {
@@ -5609,6 +9377,61 @@ const NOT_STARTED_TEXT = '—';
  * @returns {void}
  */
 let openedRequestedDataset = false;
+
+/**
+ * Fill the build flow from the dataset named in `?dataset=`, when `?duplicate=1` asks.
+ *
+ * **Where Duplicate with change lands.** The Jobs screen cannot fill this form -- the form
+ * is here -- so a failed build links across with the dataset it produced and this reads
+ * the request on arrival. `openRequestedDataset` has already opened that row, which is
+ * what a reader needs to see: the thing being copied, above the form it is copied into.
+ *
+ * **The same route and the same event the button beside it uses**, rather than a second
+ * implementation of "new build from an old spec". The button is the gesture for somebody
+ * already on this screen; this is the gesture for somebody arriving from a job. They have
+ * to stay the same thing, so they share everything except how they were asked for.
+ *
+ * Creates nothing, which is the rule the whole feature turns on: the form is filled, the
+ * ordinary Queue button is what starts a build, and a reader who changes their mind simply
+ * leaves.
+ *
+ * 404 is the ordinary case for a legacy import and the route has written the sentence for
+ * it, so it is shown rather than replaced with a guess.
+ *
+ * @returns {Promise<void>}
+ */
+async function fillFromRequestedBuild() {
+  const query = new URLSearchParams(window.location.search);
+  const wanted = query.get('dataset');
+
+  if (!wanted || query.get('duplicate') !== '1') return;
+  if (!$('#dsname') || !window.MarpApi) return;
+
+  /* **Nothing is said on success, deliberately.** `applySetup` writes its own line when
+     it has finished -- it names the build, says nothing was created, and adds what it
+     could not restore, which this cannot know. A message here would be a worse one
+     racing a better one: it only lost that race because `applySetup` is async, and a
+     faster fill would have left the vaguer sentence on screen. */
+  const say = (text, kind = '') => {
+    const status = $('[data-query-add-status]');
+
+    if (status) {
+      status.textContent = text;
+      status.dataset.kind = kind;
+    }
+  };
+
+  try {
+    const setup = await window.MarpApi.datasetBuildSetup(wanted);
+
+    document.dispatchEvent(new CustomEvent('marp:duplicate-dataset-setup', { detail: setup }));
+  } catch (error) {
+    /* The one case the builder never hears about, because nothing reached it. */
+    say(error.status === 404
+      ? (error.message || `Dataset ${wanted} has no recorded queries to copy.`)
+      : `Could not read that build's queries (${error.status || 'no answer'}).`, 'warning');
+  }
+}
 
 function openRequestedDataset() {
   if (openedRequestedDataset) return;
@@ -5814,6 +9637,9 @@ async function wireDatasetPage() {
              reads as a video it could not name. */
           fact('Video', `<span data-build-video>${escapeHtml(phase.detail)}</span>`, false,
             !phase.detail),
+          /* Built always and hidden until there is one, because the detail is drawn once
+             and patched thereafter -- a row that had to be created later could not be. */
+          fact('Rate', `<span data-build-rate>${buildRate(build)}</span>`, false, !buildRate(build)),
           fact('Elapsed', `<span data-build-elapsed>${buildElapsed(build) || NOT_STARTED_TEXT}</span>`),
           fact('Reported', `<span data-build-reported>${reported || NOT_STARTED_TEXT}</span>`, !build),
           fact('Attempt', build ? `${build.attempts_made} of ${build.max_attempts}` : NOT_STARTED_TEXT),
@@ -5823,13 +9649,55 @@ async function wireDatasetPage() {
         const detail = document.createElement('tr');
         detail.className = 'runrow-body dataset-row-detail';
         detail.hidden = true;
+        /* **Only where cancelling can do anything.** `queued` and `leased` are the two
+           states a build is still in; a failed or cancelled one has already stopped, and
+           a succeeded one has an archive. A button that would answer `changed: false` is
+           a button that lies about having done something. */
+        const stoppable = build && (build.state === 'queued' || build.state === 'leased');
+
+        /* **The delay is on screen, because it is long enough to look ignored.** A
+           running build checks for cancellation once per pass of a hundred frames, which
+           is about twenty seconds, and a control that appears to do nothing for twenty
+           seconds gets pressed again. A queued build stops at once -- there is nothing
+           cutting frames to interrupt. */
+        /* **Delete belongs here more than it belongs on a finished dataset**, and it was
+           missing: the button was built into `readyActions`, so it only ever appeared on
+           a dataset that had built successfully. A failed build is the one somebody
+           actually wants rid of -- it holds nothing, it clutters the list, and it may be
+           sitting on a partial archive -- and it was the one case with no way to clear
+           it. Isaac found it the hour after delete shipped.
+
+           Not drawn while a build can still be cancelled: `queued` and `leased` both mean
+           a runner has it or is about to, and the route refuses those anyway because the
+           dataset row still says `building`. Cancel first, then delete, which is the
+           order the refusal already asks for. */
+        const stopActions = (stoppable || !build || build.state === 'failed' || build.state === 'cancelled')
+          ? '<footer>'
+            + (stoppable
+              /* **The delay is on screen, because it is long enough to look ignored.** A
+                 running build checks for cancellation once per pass of a hundred frames,
+                 which is about twenty seconds, and a control that appears to do nothing
+                 for that long gets pressed again. A queued build stops at once -- there
+                 is nothing cutting frames to interrupt. */
+              ? `<button class="btn sm danger" type="button" data-cancel-build="${build.job_id}">`
+                + '<svg class="ico"><use href="#i-stop"/></svg>Cancel build</button>'
+                + `<span class="hint">${build.state === 'leased'
+                  ? 'Stops at the end of the pass it is cutting, usually within about 20 seconds.'
+                  : 'Stops before it starts; nothing has been cut yet.'}</span>`
+              : deleteButton(set))
+            + '</footer>'
+          : '';
+
         detail.innerHTML = `<td colspan="10"><div class="dataset-detail" data-status="${status}">`
           + `<header><div><h3>${name}</h3><p>${description}</p></div><span class="pill" data-state="${stateTone}">${datasetPillContents(status, build)}</span></header>`
           + `<div class="dataset-build-progress">${bar}<span class="build-frames">${frames} frames</span></div>`
           + note
           + `<div class="jobmetrics">${metrics}</div>`
+          + stopActions
           + '</div></td>';
         head.after(detail);
+        wireCancelBuild(detail, name);
+        wireDeleteDataset(detail, head, set);
         continue;
       }
       head.setAttribute('aria-expanded', 'false');
@@ -5869,11 +9737,18 @@ async function wireDatasetPage() {
         ? `<a class="btn sm" href="/api/v2/gpu/datasets/${encodeURIComponent(set.id)}/archive" download title="Download the built images, labels and manifest${size ? ` — ${size}` : ''}"><svg class="ico"><use href="#i-download"/></svg>Download archive</a>`
         : '';
 
-      /* Duplicate setup and Use for training are still inert, and deliberately left so:
-         wiring them has not been asked for, and two more half-working buttons is worse
-         than two that are obviously not finished. They carry a `later` chip, which is
-         what this app uses for a control with nothing behind it. */
-      const readyActions = `<button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup <span class="chip">later</span></button><button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-training"/></svg>Use for training <span class="chip">later</span></button>${download}`;
+      /* **Duplicate is disabled until the queries are known to exist**, which is settled
+         when the panel opens and asks. A dataset imported by the legacy packager has no
+         recorded query at all, and a Duplicate that opened an empty build flow would look
+         exactly like one that had worked. `compose` below enables it, and writes the
+         reason onto it when it cannot.
+
+         Use for training stays inert: it is blocked on the training section existing, and
+         keeps the `later` chip this app uses for a control with nothing behind it.
+         Duplicate has lost its chip because it is no longer later. */
+      const remove = deleteButton(set);
+
+      const readyActions = `<button class="btn sm" type="button" data-duplicate-setup="${set.id}" disabled title="Looking for the queries this was built from…"><svg class="ico"><use href="#i-copy"/></svg>Duplicate setup</button><button class="btn sm" type="button" disabled title="Not wired yet"><svg class="ico"><use href="#i-training"/></svg>Use for training <span class="chip">later</span></button>${download}${remove}`;
       /* **The Build record, from the dataset row rather than from its name.** This block
          was a lookup keyed on five invented dataset names — `CAMPA_2024_Rockfish_v3` and
          friends — so anything MARP actually built fell through to a wall of em dashes
@@ -5902,7 +9777,14 @@ async function wireDatasetPage() {
 
       detail.innerHTML = `<td colspan="10"><div class="dataset-detail" data-status="${status}">`
         + `<header><div><h3>${name}</h3><p>${description}</p></div>`
-        + `<span class="pill" data-state="${stateTone}">Ready &middot; immutable</span></header>`
+        /* **Not "Ready · immutable" on everything that reaches this panel.** A cancelled
+           build lands in `draft` and is drawn here, so the one piece of prose on the
+           header was calling a dataset with no archive ready and promising it would never
+           change. It is not ready, and the only thing immutable about it is that nothing
+           was built. */
+        + `<span class="pill" data-state="${stateTone}">${status === 'draft'
+          ? 'Draft &middot; nothing built'
+          : 'Ready &middot; immutable'}</span></header>`
         + '<div class="dataset-detail-grid">'
         + `<section><h4>Build record</h4><dl class="kv">${record}</dl></section>`
         + '<section><h4>Composition and split</h4>'
@@ -5916,6 +9798,10 @@ async function wireDatasetPage() {
            every row the table draws would be a request per row to draw one page. */
         + '<div data-dataset-composition></div>'
         + '</section></div>'
+        /* Full width under the grid rather than a third column: a frame is only worth
+           showing at a size somebody can see the box in, and three of those do not fit
+           beside the build record. */
+        + '<section class="dataset-sample"><h4>Frames it cut</h4><div data-dataset-preview></div></section>'
         + `<footer>${readyActions}</footer></div></td>`;
 
       /* **Asked on first open, once.** The splits and the vocabulary cannot change for a
@@ -5929,21 +9815,110 @@ async function wireDatasetPage() {
         const into = $('[data-dataset-composition]', detail);
         if (!into) return;
 
+        /* The vocabulary is wanted twice -- once as the class breakdown, once to name the
+           box on each sample frame -- so the preview waits on this rather than running
+           beside it. A box labelled `class 2` is most of the way to useless. */
+        let named = new Map();
+
         try {
-          const { splits, classes: vocabulary } = await window.MarpApi.datasetComposition(set.id);
+          const { splits, classes: vocabulary, speciesSplits } = await window.MarpApi.datasetComposition(set.id);
           const bar = splitBar(splits);
-          const named = (vocabulary || [])
+          const names = (vocabulary || [])
             .map((entry) => escapeHtml(entry.comname || `Species ${entry.species_id}`));
+
+          named = new Map((vocabulary || [])
+            .map((entry) => [entry.class_index, entry.comname || `Species ${entry.species_id}`]));
 
           /* Nothing recorded is a real answer and a common one: every dataset built
              before #268 wrote membership has neither, and saying so beats an empty bar. */
-          into.innerHTML = (bar || named.length)
-            ? bar + (named.length
-              ? `<p class="dataset-class-summary">${named.join(' &middot; ')}</p>`
-              : '')
+          /* The per-species breakdown replaces the bare list of names it used to print:
+             the names are in the first column of it, with where each one went beside
+             them, which is what the list was standing in for. */
+          const table = speciesSplitTable(speciesSplits, false);
+
+          into.innerHTML = (bar || names.length)
+            ? bar + (table || (names.length
+              ? `<p class="dataset-class-summary">${names.join(' &middot; ')}</p>`
+              : ''))
             : '<span class="hint">No membership was recorded for this dataset.</span>';
+
+          /* Redrawn in place rather than toggling a class, so the fold can sum the rest
+             rather than hiding rows that are already on the page. */
+          const toggle = $('[data-species-split-toggle]', into);
+
+          if (toggle) {
+            let all = false;
+
+            into.addEventListener('click', (event) => {
+              if (!event.target.closest('[data-species-split-toggle]')) return;
+
+              all = !all;
+
+              const fresh = speciesSplitTable(speciesSplits, all);
+              const holder = $('.speciessplit', into);
+
+              if (holder && fresh) holder.outerHTML = fresh;
+            });
+          }
         } catch (error) {
           into.innerHTML = `<span class="hint">Could not load its composition (${error.status || 'no answer'}).</span>`;
+        }
+
+        /* **Asked once, when the row is opened**, for the same reason the composition is:
+           doing it for every row would be a request per row to draw one page. */
+        const duplicate = $('[data-duplicate-setup]', detail);
+
+        if (duplicate) {
+          try {
+            const setup = await window.MarpApi.datasetBuildSetup(set.id);
+
+            /* **Kept for the delete confirmation, which must not claim a job that is not
+               there.** This request has already happened for Duplicate setup, and its 404
+               is the honest answer that a legacy import has no build job at all. */
+            detail.buildJobId = setup.jobId;
+
+            duplicate.disabled = false;
+            duplicate.title = `Fill the build flow with the ${setup.subsets.length === 1
+              ? 'query' : `${setup.subsets.length} queries`} this was built from. Creates nothing.`;
+            duplicate.addEventListener('click', () => {
+              /* The builder owns the form; this says what is wanted and lets it do the
+                 filling. Scrolled to, because the form is above the table and a page that
+                 silently changed something off screen has not told anybody. */
+              document.dispatchEvent(new CustomEvent('marp:duplicate-dataset-setup', { detail: setup }));
+              $('#dsname')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            });
+          } catch (error) {
+            /* 404 is the ordinary case for a legacy import, and the sentence the route
+               wrote is better than anything this could invent. */
+            duplicate.title = error.status === 404
+              ? (error.message || 'No recorded queries to copy.')
+              : `Could not read its queries (${error.status || 'no answer'}).`;
+          }
+        }
+
+        const sample = $('[data-dataset-preview]', detail);
+        if (!sample) return;
+
+        /* **The whole section goes when there is nothing to show**, rather than a heading
+           over an explanation. A dataset with no archive on disk -- a build that failed at
+           packaging, or an archive moved away from the rows that name it -- has no frames,
+           and a reader does not need a paragraph about why. */
+        const drop = (why) => {
+          const section = sample.closest('.dataset-sample');
+
+          if (section) section.innerHTML = why ? `<h4>Frames it cut</h4><span class="hint">${why}</span>` : '';
+        };
+
+        try {
+          const { frames, total } = await window.MarpApi.datasetPreview(set.id, PREVIEW_FRAMES);
+          const strip = previewStrip(frames, total, set.id, PREVIEW_FRAMES, named);
+
+          if (strip) sample.innerHTML = strip;
+          else drop('');
+        } catch (error) {
+          /* 404 is the ordinary case and not worth a complaint: the dataset has no
+             archive to read. Anything else is the server failing and is said plainly. */
+          drop(error.status === 404 ? '' : `Could not read its frames (${error.status || 'no answer'}).`);
         }
       };
 
@@ -5955,6 +9930,7 @@ async function wireDatasetPage() {
          detail element so the closure stays with the row it belongs to. */
       detail.loadComposition = compose;
       head.after(detail);
+      wireDeleteDataset(detail, head, set);
       const open = $('[aria-label="Open"]', head);
       if (open) {
         open.setAttribute('aria-label', `Show details for ${name}`);
@@ -6012,6 +9988,10 @@ async function wireDatasetPage() {
         window.MarpApi.listDatasets(),
         window.MarpApi.listDatasetBuilds(),
       ]);
+
+      /* Not awaited with the other two: the queue strip is a detail above the table and
+         the table should not wait on it, nor fail because of it. */
+      refreshBuildQueue();
     } catch (error) {
       /* Only on the first draw. A poll that fails is a blip, and replacing a table
          somebody is reading with an error because one request in a hundred timed out is
@@ -6027,9 +10007,42 @@ async function wireDatasetPage() {
     /* The shape of the table: which datasets, in which state. The counts are
        deliberately left out -- they move constantly and moving them is what the patch
        below is for. */
-    const shape = datasets.map((set) => `${set.id}:${datasetScreenStatus(set, builds.get(set.id) || null)}:${set.num_samples ?? ''}:${set.num_observations ?? ''}:${set.num_classes ?? ''}`).join('|');
+    /* **Sorted by id before being joined, because this is a set and was being compared as
+       a sequence.** `GET /dataset` is `findAll()` with no ORDER BY, so rows arrive in
+       PostgreSQL's physical order -- and an UPDATE writes a new tuple at the end of the
+       heap. Since a build began touching `datasets.updated_at` on every progress report,
+       the building dataset moved in that order every twenty seconds, this string differed
+       from the last one for no real change, and the whole table was rebuilt. Every
+       expanded row closed with it, which is what Isaac was looking at.
+
+       The fix is that the comparison should not have been positional in the first place:
+       what it is asking is *are these the same datasets in the same states*, and that is
+       a question about a set. */
+    const shape = [...datasets]
+      .sort((a, b) => a.id - b.id)
+      /* **Name and description are in here, and `updated_at` deliberately is not.**
+         Everything a row draws is either in this string, so a change to it rebuilds
+         the table, or patched in place by `patchBuildRows`. `updated_at` is the one
+         that is patched, because it moves every twenty seconds and putting it here
+         would rebuild the table on every poll -- which is the thing that was wrong.
+         The two strings cannot change during a build, but nothing patches them, so
+         without them here a rename would not reach the screen until a reload. */
+      .map((set) => `${set.id}:${datasetScreenStatus(set, builds.get(set.id) || null)}:${set.num_samples ?? ''}:${set.num_observations ?? ''}:${set.num_classes ?? ''}:${set.name ?? ''}:${set.description ?? ''}`)
+      .join('|');
 
     if (first || shape !== drawn) {
+      /* **What the reader had open, so a redraw does not shut it.** The table is rebuilt
+         when the set of datasets or their states genuinely change -- a build finishing is
+         the obvious one, and it is exactly the moment somebody is watching that row. The
+         markup is replaced, so `aria-expanded` and the detail element belonged to nodes
+         that no longer exist and every open row closed.
+
+         Keyed by dataset id rather than by position: a redraw is allowed to reorder, and
+         restoring "the third row" would reopen whichever dataset had moved into third. */
+      const wasOpen = new Set($$(':scope > tr[data-dataset-id][aria-expanded="true"]', body)
+        .map((head) => head.dataset.datasetId));
+      const wasScrolled = window.scrollY;
+
       drawn = shape;
       fillSavedDatasets(body, datasets, builds);
       decorate(builds, new Map(datasets.map((set) => [set.id, set])));
@@ -6040,8 +10053,36 @@ async function wireDatasetPage() {
       wireAccordions();
       filter();
       openRequestedDataset();
+
+      /* **Reopened the way `openRequestedDataset` does it, not by clicking the expander.**
+         A click toggles, so a row the deep link had already opened would be shut again by
+         this. A dataset that has gone is simply not found and is not reopened. */
+      for (const id of wasOpen) {
+        const head = $(`:scope > tr[data-dataset-id="${CSS.escape(id)}"]`, body);
+
+        if (!head) continue;
+
+        const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
+          ? head.nextElementSibling : null;
+
+        head.setAttribute('aria-expanded', 'true');
+
+        if (detail) {
+          detail.hidden = false;
+          /* The panel is new markup, so whatever it fetches on open has to be asked for
+             again -- otherwise it reopens showing the empty state it was built with. */
+          if (typeof detail.loadComposition === 'function') detail.loadComposition();
+        }
+      }
+
+      /* Restored after the rows are back, or the page is shorter than it was and the
+         browser clamps the scroll to the bottom of a half-built table. */
+      if (wasOpen.size && window.scrollY !== wasScrolled) window.scrollTo({ top: wasScrolled });
+      /* After the row is open, so a reader sees what is being copied above the form
+         it is copied into. */
+      fillFromRequestedBuild();
     } else {
-      patchBuildRows(body, builds);
+      patchBuildRows(body, builds, new Map(datasets.map((set) => [set.id, set])));
     }
 
     renderDatasetsSummary(datasets, builds);
@@ -6115,6 +10156,48 @@ async function wireDatasetPage() {
   document.addEventListener('marp:dataset-build-queued', () => {
     if (!timer) timer = setTimeout(poll, 0);
   });
+
+  /* **A delete has to re-read, because the poller is not running.** It stops itself the
+     moment nothing is building, which is right -- but it meant the summary cards kept the
+     numbers from before the delete while the row vanished from under them. Isaac deleted a
+     failed build and went on being told there were five datasets and two needing
+     attention. A stale count after a destructive action reads as the delete having
+     failed.
+
+     `poll` rather than a bare redraw: it refreshes, and if a build happens to be in
+     flight it also restarts the clock, which a one-shot refresh would leave stopped. */
+  document.addEventListener('marp:dataset-deleted', () => {
+    if (!timer) timer = setTimeout(poll, 0);
+  });
+
+  const queueStrip = $('[data-build-queue]');
+
+  if (queueStrip) {
+    queueStrip.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-move-build]');
+
+      if (!button || button.disabled) return;
+
+      /* Every button in the strip, because a second press would land on a row that has
+         already moved and ask for something the reader did not mean. */
+      const buttons = $$('[data-move-build]', queueStrip);
+
+      buttons.forEach((one) => { one.disabled = true; });
+
+      try {
+        await window.MarpApi.moveQueuedBuild(button.dataset.moveBuild, button.dataset.direction);
+
+        /* **Redrawn from a fresh read, not from the move's own answer.** The move
+           returns the queue, but not the concurrency or how many are running, and which
+           builds now start next depends on both -- so one authoritative request beats
+           reassembling a half-shaped answer here. A failed move redraws nothing: the
+           order did not change, and redrawing would suggest it had. */
+        await refreshBuildQueue();
+      } catch (error) {
+        buttons.forEach((one) => { one.disabled = false; });
+      }
+    });
+  }
 
   /* A row opened between polls gets its clocks filled straight away rather than waiting
      up to a second for the next tick -- an expander that shows a dash and then a figure
@@ -6218,9 +10301,12 @@ const TIPS = {
   'Running training': 'Training jobs actively updating model weights now',
   'Need attention': 'Jobs that failed or completed with some work unresolved',
   'Design preview': 'Illustrative changing data used to review this design before live metrics are connected',
-  '24h': 'Show this activity graph across the last 24 hours',
-  '5h': 'Show this activity graph across the last 5 hours',
+  /* The ladder, in ladder order. `30d` had no entry at all and was on three charts. */
   '1h': 'Show this activity graph across the last hour',
+  '24h': 'Show this activity graph across the last 24 hours',
+  '7d': 'Show this activity graph across the last 7 days',
+  '30d': 'Show this activity graph across the last 30 days',
+  '1y': 'Show this activity graph across the last year',
   'Inference status': 'How current and recently completed inference jobs are distributed by state',
   'Throughput & backlog': 'Compare the rate frames are being processed with the volume still waiting',
   'Processing throughput': 'Frames processed per minute across the inference worker pool',
@@ -6395,8 +10481,6 @@ const TIPS = {
   'Start when available': 'Keep this job queued and begin automatically when eligible compute is free',
   'Change priority': 'Adjust where this queued job competes for eligible compute',
   'Cancel': 'Stop this job and prevent it from taking more work',
-  'Retry failed work': 'Run only the ranges that did not complete successfully',
-  'Retry job': 'Start this job again from its beginning',
   'Duplicate with changes': 'Create a new job prefilled from this one, then edit it before submitting',
   'Pause': 'Stop assigning new work while preserving completed progress',
   'Resume': 'Allow this paused job to begin taking work again',
@@ -6451,7 +10535,6 @@ const TIPS = {
   'Description': 'A note for whoever picks this dataset later',
   'Added subsets': 'Each query contributes its matches; duplicates are dropped',
   'Dataset composition': 'How many observations each class contributes',
-  'Save query': 'Keep these filters for next time',
   'Add all matching to dataset': 'Add every match; duplicates are ignored',
   'Reassign': 'Assign the groups again from a new seed',
   /* models */
@@ -6524,6 +10607,14 @@ const TIPS = {
   'Caching': 'Which workers already hold this model',
   'Total (deduplicated)': 'The union of the subsets, each observation counted once',
   'Query promoted observations': 'Filters that find observations to add',
+  /* Both of these were body text on the screen until somebody read the screen out
+     loud: they explain a control rather than telling you anything you act on, which
+     is what a tooltip is for. Keyed to the control each one describes. */
+  'Add matching observations to': 'Observations whose frames overlap stay together, so a '
+    + 'near-duplicate picture can never land in two splits. Shares are measured in frames, '
+    + 'and each species is divided separately so a rare one reaches every split.',
+  'Build jobs & ready datasets': 'Queued, running and failed builds appear here immediately '
+    + 'and link to their full entry in Jobs. Successful builds become expandable datasets.',
   'Query results': 'What these filters match',
   'Current dataset': 'Name, composition and what went in',
   'Dataset': 'The saved dataset',
@@ -6535,9 +10626,7 @@ const TIPS = {
   'Runs': 'Training runs that have used it',
   'Add all 12,486 to the dataset': 'Add every matching observation; duplicates are ignored',
   'Run query': 'Count what these filters match',
-  'Load query': 'Reuse a saved set of filters',
   'Reassign groups': 'Assign the groups again from a new seed',
-  'Save draft': 'Keep the filters and membership without freezing a split',
   'Create dataset': 'Freeze this membership and split',
   'Train': 'Start a training run on this dataset',
 };
@@ -6550,7 +10639,10 @@ function ownText(el) {
 }
 
 function applyTips() {
-  const sel = '.field > label, th, .stat-lab, .tabstrip button, .seg button,'
+  /* `.k` is a plain row label -- `Total (deduplicated)`, `Duration`. It was missing
+     here, so a tip written for one was never applied and the label looked like it had
+     no explanation at all. Two labels across the thirteen screens were affected. */
+  const sel = '.field > label, th, .stat-lab, .tabstrip button, .seg button, .k,'
     + ' .btn, .check span, .kv dt, .panel-hd h2, .exbtn, summary,'
     + ' .topbar .lab, .search input, .sel, .jobmetric > span, .eval-tabs button,'
     + ' .section-heading h4, .training-evaluation h4, .evaluation-card h5, .jobstate h4,'
@@ -7052,7 +11144,14 @@ function wireDatasetBuilder() {
     }
 
     const classes = [...tally].map(([label, count]) => ({ label, count }));
-    drawQueryComposition($('[data-dataset-composition]'), classes, total);
+
+    /* **Bars here, the Class breakdown in step 1.** They were one renderer and are
+       now two, because what they answer diverged: step 1 is a facet of a query and
+       folds its tail away, while this is the dataset being assembled and shows every
+       species, segmented by the split each subset asked for. */
+    const composition = $('[data-dataset-composition]');
+
+    if (composition) composition.innerHTML = currentDatasetBars(rows);
 
     const summary = $('[data-dataset-composition-summary]');
     if (summary) {
@@ -7392,6 +11491,174 @@ function wireDatasetBuilder() {
     });
     refreshAddLabel();
   }));
+  /**
+   * Put a previous build's queries back into this form.
+   *
+   * *"Sets up a new dataset with the same queries as the old one, and just makes it so
+   * the user can then queue it up, or make changes to the old query before queuing it."*
+   *
+   * **It drives the controls rather than reproducing what they do.** Each subset is
+   * applied by setting the same inputs a person would set and then running the ordinary
+   * add -- `runQuery` then `appendSubset` -- so the counts, the species breakdown and the
+   * subset labels are produced the one way they are ever produced. Writing rows into the
+   * list directly would have been shorter and would have been a second implementation of
+   * the thing most likely to drift.
+   *
+   * **Nothing is created.** No dataset row, no draft, no job: this fills a form, and the
+   * Queue button is still what starts a build. That was explicit in the request.
+   *
+   * @param {Object} setup - From `GET /dataset/:id/build-setup`.
+   * @returns {Promise<void>}
+   */
+  const applySetup = async (setup) => {
+    /* Replaced, not added to. Duplicating into a half-filled form would silently build a
+       dataset that is neither the old one nor what the reader sees. */
+    for (const row of $$('li', list)) row.remove();
+
+    const named = $('#dsname');
+
+    /* A new name, because the old one is taken and a build refusing on a unique name
+       after all this would be a poor way to find that out. */
+    if (named) named.value = `${setup.name} copy`;
+
+    const described = $('#dsdesc');
+
+    if (described) described.value = setup.description || '';
+
+    /* A build that named filters without subsets is one subset going to train, which is
+       what the builder would have done with it. */
+    const subsets = setup.subsets && setup.subsets.length
+      ? setup.subsets
+      : [{ filters: setup.filters || {}, split: 'train' }];
+
+    const missed = new Set();
+    let added = 0;
+
+    for (const subset of subsets) {
+      applyFilters(subset.filters || {}, missed);
+      applyDestination(subset);
+
+      /* The same two calls the Add button makes, in the same order and for the same
+         reason: a subset is never assembled from a count taken before the filters were
+         last touched. */
+      const result = await runQuery();
+
+      if (result) {
+        appendSubset(result);
+        added += 1;
+      }
+    }
+
+    const couldNot = missed.size
+      ? ` ${[...missed].join(' and ')} could not be restored -- that option is no longer in the list, so this query is wider than the original.`
+      : '';
+
+    setStatus(added === subsets.length
+      ? `Filled in from "${setup.name}" (build ${setup.jobId}). Nothing has been created -- change anything you like, then queue it.${couldNot}`
+      : `Filled in ${added} of ${subsets.length} queries from "${setup.name}". The rest matched nothing or could not be run.${couldNot}`,
+    added === subsets.length && !missed.size ? 'success' : 'warning');
+  };
+
+  /**
+   * Sets the query controls from one subset's filters.
+   *
+   * The inverse of {@link mosaicFilters}, and deliberately next to it: the two have to
+   * agree about which control carries which filter, and a mapping written anywhere else
+   * would drift the first time a filter was added.
+   *
+   * **A value the control no longer offers is reported, not swallowed.** A project that
+   * has been renamed, or a model retired from the picker, leaves the select on its first
+   * option -- which is usually "Any", so the copied query silently widens. That is the
+   * failure worth naming, because the count still looks like an answer.
+   *
+   * @param {Object} filters - A `MosaicQueryFilters` from a recorded build.
+   * @param {Set<string>} missed - Collects the names of filters that would not take.
+   * @returns {void}
+   */
+  const applyFilters = (filters, missed) => {
+    const one = (id, value, label) => {
+      const el = $('#' + id);
+
+      if (!el) return;
+
+      el.value = value === undefined || value === null ? '' : String(value);
+
+      if (value !== undefined && value !== null && el.value !== String(value)) missed.add(label);
+    };
+
+    one('dsproj', filters.project && filters.project[0], 'the project');
+    one('dsdive', filters.dive && filters.dive[0], 'the dive');
+    one('dsline', filters.line && filters.line[0], 'the line');
+    one('dsmodel', filters.model && filters.model[0], 'the model');
+
+    const confidence = filters.confidence || {};
+
+    if (confidence.from !== undefined) one('dsconf', confidence.from, 'the confidence floor');
+    if (confidence.to !== undefined) one('dsconfmax', confidence.to, 'the confidence ceiling');
+
+    /* **Species are ticked by id, which is also how the name gets on screen.** The menu
+       is already built from the catalogue with a label per box, so restoring `[775]` is
+       ticking that box and letting the existing label logic say what it is called -- no
+       id-to-name lookup anywhere.
+
+       No species filter means every box, because that is what "not narrowed" is in this
+       form: `mosaicFilters` only sends a species list when it is a real narrowing. */
+    const boxes = $$('[data-species-menu] input[data-species-id]');
+    const wanted = new Set((filters.species || []).map(Number));
+
+    if (wanted.size) {
+      for (const id of wanted) {
+        if (!boxes.some((box) => Number(box.dataset.speciesId) === id)) missed.add('a species');
+      }
+    }
+
+    for (const box of boxes) {
+      const on = wanted.size ? wanted.has(Number(box.dataset.speciesId)) : true;
+
+      if (box.checked !== on) {
+        box.checked = on;
+        box.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  };
+
+  /**
+   * Sets where a subset goes: divided across splits, or all to one.
+   *
+   * **Clicks the buttons rather than setting the variables they own.** `selectedSplit`
+   * and the split mode are closure state with styling and labels hanging off them, and
+   * assigning to them directly would leave the form showing one thing and meaning
+   * another.
+   *
+   * @param {Object} subset - `{shares}` or `{split}`.
+   * @returns {void}
+   */
+  const applyDestination = (subset) => {
+    if (subset.shares && Object.keys(subset.shares).length) {
+      $$('[data-split-mode]').find((b) => b.dataset.splitMode !== 'one')?.click();
+
+      for (const name of ['train', 'validation', 'test']) {
+        const field = $('#share' + name[0].toUpperCase() + name.slice(1));
+
+        if (field) field.value = subset.shares[name] === undefined ? '' : String(subset.shares[name]);
+      }
+
+      return;
+    }
+
+    $('[data-split-mode="one"]')?.click();
+    $(`[data-dataset-destination="${subset.split || 'train'}"]`)?.click();
+  };
+
+  /* The Datasets table is on this page but is not this closure, so it asks by event
+     rather than reaching in -- the same seam `marp:dataset-build-queued` uses in the
+     other direction. */
+  document.addEventListener('marp:duplicate-dataset-setup', (event) => {
+    applySetup(event.detail).catch((error) => {
+      setStatus(`Could not fill in from that dataset (${error.message || 'no answer'}).`, 'warning');
+    });
+  });
+
   $('#addQuery')?.addEventListener('click', addCurrent);
   $('[data-add-query]')?.addEventListener('click', addCurrent);
   list.addEventListener('click', (event) => {
@@ -7463,11 +11730,19 @@ function wireSplit() {
       if (subsetLabel) subsetLabel.textContent = `${subsetCount} subset${subsetCount === 1 ? '' : 's'}`;
     });
 
+    /* An estimate says nothing a reader can act on -- the numbers above already move
+       when the shares do, and the caveat about whole groups is the split rule, which
+       belongs on the control that applies it rather than under the figures.
+
+       The other state is worth keeping, because it explains a number that will not add
+       up otherwise: every subset went to one split, so these counts are exact, and a
+       subset that contributed fewer than it matched did so because something it matched
+       was already placed. Said in the words the screen uses elsewhere -- "first
+       assignment wins" named the rule without saying what it does to you. */
     if (note) {
       note.textContent = estimated
-        ? 'Estimated: whole groups of overlapping frames move together, so the build '
-          + 'lands near these shares rather than exactly on them.'
-        : 'First assignment wins; later overlaps never cross splits';
+        ? ''
+        : 'An observation matched twice stays in the split that took it first, and overlapping frames go with it';
     }
   };
 
@@ -7551,7 +11826,7 @@ function wireTopbarAutohide() {
 
   /* The bar is offset by its own height, and only it knows what that is -- it follows its
      content, and it wraps differently at the narrow widths. Measured rather than written
-     down in two places. A zero is refused: see `align-self: start` in mock.css, where a
+     down in two places. A zero is refused: see `align-self: start` in screens.css, where a
      measurement of zero is the shape the flap takes. */
   const measure = () => {
     const h = bar.offsetHeight;
@@ -7639,10 +11914,20 @@ async function wirePoolCapacity() {
   const root = $('[data-ops-activity="workers"]');
   if (!root || !$('.ops-chart', root)) return;
 
+  /* **One ladder across the dashboard**: 1h, 24h, 7d, 30d, 1y. Every chart takes a
+     contiguous four of it, so the vocabulary is shared without every chart carrying every
+     rung. Eight charts had four different vocabularies between them and no reason for any
+     of it; `5h` was the only rung that was not a round unit and `90d` sat between 30d and
+     1y on one chart alone, so both went.
+
+     **This chart stops at 30 days because its data does.** `SAMPLE_RETENTION_DAYS` is 30
+     and the pool read sweeps anything older, so a year here would be empty by
+     construction -- which is the complaint this is answering, not a way to answer it. */
   const RANGES = {
     '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
-    '5h': { hours: 5, bucket: 'minute', label: 'the last 5 hours' },
     '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+    '7d': { hours: 168, bucket: 'hour', label: 'the last 7 days' },
+    '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
   };
 
   const lines = Object.fromEntries($$('[data-ops-line]', root).map((l) => [l.dataset.opsLine, l]));
@@ -7653,10 +11938,18 @@ async function wirePoolCapacity() {
   const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
 
   const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
-  const y = (v, max) => 196 - 168 * (v / Math.max(1, max));
-  const pathOf = (values, max) => values
-    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
-  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`;
+
+  /* The geometry `gappyPath` already works in -- 54 to 726 across, 196 up to 28 -- so this
+     chart gets its break-on-null rather than a second copy of it. */
+  const BOX = { left: 54, right: 726, top: 28, bottom: 196 };
+  const pathOf = (values, max) => gappyPath(values, max, BOX);
+
+  /* **No area over a series with a hole.** Closing a path to the baseline across a gap
+     fills the gap, putting back the floor the line was just taught to avoid. The line
+     still draws; only the shading under it waits for a complete series. */
+  const areaOf = (values, max) => (values.some((v) => v === null || v === undefined)
+    ? ''
+    : `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`);
 
   const clock = (iso) => {
     const d = new Date(iso);
@@ -7670,7 +11963,7 @@ async function wirePoolCapacity() {
       b.setAttribute('aria-pressed', String(on));
     });
 
-    const { hours, bucket, label } = RANGES[next] || RANGES['5h'];
+    const { hours, bucket, label } = RANGES[next] || RANGES['24h'];
     const until = new Date();
     const since = new Date(until.getTime() - hours * 3600 * 1000);
     const span = { since: since.toISOString(), until: until.toISOString(), bucket };
@@ -7684,10 +11977,21 @@ async function wirePoolCapacity() {
       const points = gpu.points || [];
       const queuedBy = new Map((jobs.points || []).map((p) => [String(p.at), p.waiting || 0]));
 
+      /* **A bucket nobody sampled is null, and null is not nought.** These three were
+         mapped with `|| 0`, so an unsampled bucket drew 0% -- a reading saying the GPUs
+         were idle, invented from the absence of a reading. It was masked while *nothing*
+         had samples, because `anyReading` blanks the chart then; the day sampling covers
+         part of a window, a real curve would fall to the floor across the gaps and climb
+         back out. That looks like information, which is what makes it worse than an empty
+         chart.
+
+         `queued` keeps its `|| 0`: it is a reconstructed count of jobs waiting, where
+         none waiting really is zero. */
+      const percent = (value) => (value === null || value === undefined ? null : Number(value));
       const samples = {
-        inference: points.map((p) => p.avg_inference_utilization_percent || 0),
-        training: points.map((p) => p.avg_training_utilization_percent || 0),
-        vram: points.map((p) => p.avg_memory_percent_used || 0),
+        inference: points.map((p) => percent(p.avg_inference_utilization_percent)),
+        training: points.map((p) => percent(p.avg_training_utilization_percent)),
+        vram: points.map((p) => percent(p.avg_memory_percent_used)),
         queued: points.map((p) => queuedBy.get(String(p.at)) || 0),
       };
 
@@ -7698,8 +12002,12 @@ async function wirePoolCapacity() {
         leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
         if (chart) {
           chart.setAttribute('aria-label',
-            `No GPU readings in ${label}. A machine reports while it works, and a worker has to be `
-            + 'running a build that sends telemetry on its heartbeat.');
+            /* **Not "a build".** A dataset build is run by the API and is not in
+               `LEASABLE_JOB_KINDS`, so it is the one kind of work that can never produce a
+               reading -- which is exactly the work Isaac was doing when he asked why this
+               was empty. Saying "a build" here pointed at the wrong thing. */
+            `No GPU readings in ${label}. A machine reports while it works, so this stays empty `
+            + 'until a worker leases an inference, tracking, training or diagnostic job.');
         }
         root.classList.add('is-quiet');
         return;
@@ -7759,17 +12067,20 @@ async function wirePoolCapacity() {
   }
 
   buttons.forEach((b) => b.addEventListener('click', () => choose(b.dataset.opsRange)));
-  await choose('5h');
+  await choose('24h');
 }
 
 async function wireOperationalActivity() {
-  const root = $('[data-ops-activity="history"]');
+  const root = $('[data-ops-activity="outcomes"]');
   if (!root || !$('.ops-chart', root)) return;
 
+  /* The shared ladder; see `wirePoolUtilization`. This table counts in days, so the
+     24-hour rung is one day of hour buckets rather than a different shape. */
   const RANGES = {
+    '24h': { days: 1, bucket: 'hour', label: '24 hours' },
     '7d': { days: 7, bucket: 'day', label: '7 days' },
     '30d': { days: 30, bucket: 'day', label: '30 days' },
-    '90d': { days: 90, bucket: 'day', label: '90 days' },
+    '1y': { days: 365, bucket: 'day', label: 'year' },
   };
 
   const lines = Object.fromEntries($$('[data-ops-line]', root).map((l) => [l.dataset.opsLine, l]));
@@ -7943,6 +12254,114 @@ function wireModelRegistration() {
  * @param {Function} wire - The wiring.
  * @returns {void}
  */
+/**
+ * How long ago, in the fewest words that are still true.
+ *
+ * Seconds for the first minute because that is the window in which somebody is watching
+ * something happen; after that nobody cares about the seconds and a number that changes
+ * every second is noise.
+ *
+ * @param {number} ms - Milliseconds since the last answer.
+ * @returns {string}
+ */
+function agoText(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+
+  if (seconds < 5) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+
+  return `${Math.round(seconds / 3600)}h ago`;
+}
+
+/**
+ * Paint the shared freshness label from the data layer's own record.
+ *
+ * **Four states, and the two that matter are the unhappy ones.** A number with no time on
+ * it is a claim about now that may be an hour old, and the worst version of that is a
+ * screen whose polling has stopped or whose API is not answering while the figures sit
+ * there looking current. So a failure says so in place of the time rather than beside it.
+ *
+ * @returns {void}
+ */
+function paintFreshness() {
+  const into = $('[data-freshness]');
+
+  if (!into || !window.MarpApi) return;
+
+  let state;
+
+  /* **Guarded, because the chrome must not be what breaks a page.** This runs every
+     second on every screen; a data layer that is older, stubbed, or simply does not
+     answer this should cost the label and nothing else. */
+  try {
+    if (typeof window.MarpApi.freshness !== 'function') return;
+    state = window.MarpApi.freshness();
+  } catch {
+    return;
+  }
+
+  /* **A thenable is not an answer.** A data layer that does not know this member may hand
+     back a rejected promise rather than throwing, and an unhandled rejection from the
+     chrome would fail whatever test happened to be running. Swallowed deliberately: there
+     is nothing to report about a clock that is not there. */
+  if (state && typeof state.then === 'function') {
+    state.catch(() => {});
+    return;
+  }
+
+  if (!state || typeof state !== 'object') return;
+
+  const { at, failed, inFlight } = state;
+
+  if (failed) {
+    into.dataset.fresh = 'failed';
+    into.textContent = failed.status === 0 ? 'not answering' : `error ${failed.status}`;
+    into.title = failed.message || 'The last read failed';
+    return;
+  }
+
+  if (at === null) {
+    into.dataset.fresh = inFlight ? 'reading' : 'idle';
+    into.textContent = inFlight ? 'reading…' : '';
+    return;
+  }
+
+  into.dataset.fresh = inFlight ? 'reading' : 'ok';
+  into.textContent = `updated ${agoText(Date.now() - at)}`;
+  into.title = `MARP last answered at ${new Date(at).toTimeString().slice(0, 8)}`;
+}
+
+/**
+ * Keep the label honest, and wire the Reload button that was drawn and inert.
+ *
+ * One second, because the label counts seconds for its first minute. It is a text write
+ * against one element, not a render.
+ *
+ * @returns {void}
+ */
+function wireFreshness() {
+  if (!$('[data-freshness]')) return;
+
+  paintFreshness();
+
+  const tick = setInterval(paintFreshness, 1000);
+
+  /* **Stopped when the page goes**, which matters more than it looks: a timer with no
+     end keeps a jsdom window alive, so the DOM tier hangs rather than failing -- and a
+     suite that never finishes is harder to diagnose than one that goes red. */
+  window.addEventListener('pagehide', () => clearInterval(tick));
+  window.addEventListener('unload', () => clearInterval(tick));
+
+  const reload = $('[data-reload]');
+
+  /* The button has been in the chrome on every screen since the mockups and has never
+     done anything. A full reload is the honest implementation: every screen reads on
+     load, so this is exactly "read it all again" without each screen having to expose a
+     refresh of its own. */
+  if (reload) reload.addEventListener('click', () => location.reload());
+}
+
 function boot(name, wire) {
   try {
     const result = wire();
@@ -7962,6 +12381,7 @@ boot('rail', mountRail);
 boot('rail-badges', fillRailBadges);
 boot('topbar', mountTopbar);
 boot('topbar autohide', wireTopbarAutohide);
+boot('freshness', wireFreshness);
 boot('rail sheet', wireRailSheet);
 
 boot('switchers', wireSwitchers);
@@ -7989,12 +12409,12 @@ boot('row select', wireRowSelect);
 
    Off those screens each render resolves without doing anything, so this costs
    one microtask and no special case. */
-Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderHistoryScreen(), renderModelsScreen(), renderInferenceScreen(), renderTrainingScreen(), wireDatasetPage()]).then(() => {
+Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), renderModelsScreen(), renderInferenceScreen(), renderTrainingScreen(), wireDatasetPage()]).then(() => {
   /* `applyJobsQuery` and `applyWorkersQuery` rewire the rows they draw; these
      are the ones that bind once, to controls that outlive every redraw. */
   wireJobsControls();
+  wireJobsDelete();
   wireWorkersControls();
-  wireHistoryControls();
   wireModelsControls();
   wireSorting();
   /* **Not `wireJobsOverview()`.** `applyJobsQuery` calls it on every render,
@@ -8003,5 +12423,6 @@ Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), r
      button that visibly worked and highlighted nothing. The row loop guards
      itself against a repeat; the graph bindings could not. */
   wireSelection();
+  wireStartTraining();
   applyTips();
 });

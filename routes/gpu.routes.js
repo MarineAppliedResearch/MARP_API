@@ -70,6 +70,51 @@ const JOB_SORT_KEYS = Object.keys(gpuRepository.JOB_SORT_COLUMNS);
 const GPU_TAG = 'V1 · GpuCompute';
 
 /**
+ * What a downloaded dataset archive should be called on disk.
+ *
+ * The archive is named for its own SHA-256 in storage, which is right there and useless
+ * to a person: a worker resuming a fetch was the only client until somebody clicked
+ * Download on the Datasets screen and got `6b37b479….tar` in their downloads folder.
+ *
+ * **A dataset name is free text**, so it cannot go into a header as it stands. Three
+ * things are being guarded against at once, and only the first is obvious:
+ *
+ * - a newline would end the header and begin another, which is header injection;
+ * - `\\ / : * ? " < > |` are illegal in a Windows filename, and a trailing dot or space
+ *   makes a name Windows will not write at all;
+ * - a non-ASCII character in a bare `filename=` is not interoperable, which is what
+ *   RFC 5987's `filename*` exists for.
+ *
+ * So the plain `filename=` is always ASCII and always safe, and `filename*=` carries the
+ * real name when they differ. A client that understands neither still gets the hash.
+ *
+ * `.tar` because it is one: `packageArchive` shells out to `tar` and `archive_path` ends
+ * `.tar`. Calling it `.zip` would be a lie a person only discovers on opening it.
+ *
+ * @param {?string} name - `datasets.name`, as a person typed it.
+ * @param {string} sha256 - The archive's digest, used when the name leaves nothing.
+ * @returns {string} A `Content-Disposition` value.
+ */
+function archiveDisposition(name, sha256) {
+    const cleaned = String(name || '')
+        .replace(/[\u0000-\u001f\u007f]/g, '')
+        .replace(/[\\/:*?"<>|]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/[. ]+$/, '')
+        .slice(0, 120)
+        .replace(/[. ]+$/, '');
+
+    const base = cleaned || `dataset-${sha256.slice(0, 12)}`;
+    const ascii = base.replace(/[^\x20-\x7e]/g, '_');
+    const plain = `filename="${ascii}.tar"`;
+
+    return base === ascii
+        ? `attachment; ${plain}`
+        : `attachment; ${plain}; filename*=UTF-8''${encodeURIComponent(`${base}.tar`)}`;
+}
+
+/**
  * Where the whole family is mounted, in V2 terms. Used to raise the JSON body
  * limit for these routes and nothing else.
  *
@@ -519,6 +564,11 @@ function registerGpuRoutes(app) {
             res.setHeader('ETag', `"dataset-archive-${archive.sha256}"`);
             res.setHeader('Accept-Ranges', 'bytes');
 
+            /* So a person who clicks Download gets the dataset's name rather than its
+               hash. The worker does not read this and is unaffected: it asks for bytes
+               and validates them against the digest. */
+            res.setHeader('Content-Disposition', archiveDisposition(archive.name, archive.sha256));
+
             // A conditional fetch of an immutable file can always be answered from cache.
             if (req.headers['if-none-match'] === `"dataset-archive-${archive.sha256}"`) {
                 res.status(304).end();
@@ -762,6 +812,64 @@ function registerGpuRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'jobs:read',
+        path: '/api/gpu/jobs/deletable',
+        summary: 'What clearing a state would delete',
+        description:
+            'Counts what `DELETE /gpu/jobs?state=...` would take, and takes nothing. The confirmation in front of a four-figure delete is only worth reading if it names real numbers, and numbers measured once and written into a sentence go stale silently -- so the screen asks at the moment it asks the operator.\n\n'
+            + '**A GET rather than a `dryRun` flag on the DELETE, and the difference is not stylistic.** An unknown query parameter is ignored rather than refused, so a `dryRun=true` sent to a MARP that predates the flag is an ordinary delete: the jobs go, and the caller is holding what it believes is a preview. A separate verb cannot be misread that way -- a server without this route answers 404 and destroys nothing.\n\n'
+            + 'Counted over exactly the rows the delete would take, by the same `NOT EXISTS` on `artifacts`, so what this says and what that does cannot drift apart. `blocked` is how many an artifact holds; `observations` is how many detections would be left with nothing recording what produced them; `builds` names any failed dataset builds among them, because a build is the record of something somebody ran and deserves better than being folded into a total.',
+        tags: [GPU_TAG],
+        parameters: [
+            {
+                in: 'query', name: 'state', required: false,
+                schema: { type: 'string', enum: ['failed'], default: 'failed' },
+                description: 'Which state to count. Only `failed` is accepted, because only `failed` can be cleared.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'What would go, and what would stay.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                state: { type: 'string', example: 'failed' },
+                                jobs: { type: 'integer', example: 1170, description: 'Jobs that would be deleted.' },
+                                attempts: { type: 'integer', example: 3570, description: 'Attempts that would cascade with them.' },
+                                events: { type: 'integer', example: 12088, description: 'Event rows cascading through those attempts.' },
+                                blocked: { type: 'integer', example: 19, description: 'Jobs an artifact references, which would stay.' },
+                                observations: {
+                                    type: 'integer', example: 0,
+                                    description: 'Detections that would be left unlinked. `observations.gpu_job_id` is SET NULL.',
+                                },
+                                builds: {
+                                    type: 'array',
+                                    description: 'Failed dataset builds among them, with the dataset each produced. The datasets are not touched.',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            id: { type: 'integer', example: 21769 },
+                                            dataset_id: { type: 'integer', nullable: true, example: 379 },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await gpuController.deletableJobs(req.query || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
         path: '/api/gpu/jobs/:id',
         summary: 'Fetch one job with its attempts and artifacts',
         description:
@@ -864,6 +972,110 @@ function registerGpuRoutes(app) {
         handler: asyncHandler(async (req, res) => {
             const data = await gpuController.coverage(req.query || {});
             res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'delete',
+        permission: 'jobs:write',
+        path: '/api/gpu/jobs',
+        summary: 'Delete every job in one state',
+        description:
+            'Removes finished work that is only cluttering the queue. **`failed` is the only state this will delete**, and that is a decision rather than a first instalment: a `cancelled` job is one somebody changed their mind about, there are far more of them, and nobody has asked. The two are not interchangeable -- `observations.gpu_job_id` is `ON DELETE SET NULL`, so deleting a job that produced observations leaves them in place with nothing recording where they came from, which is provenance going quietly.\n\n'
+            + '**What goes with the job:** its attempts cascade, and the per-attempt event log cascades with them. That is much the larger half -- the attempts carry `failure_reason` and the events carry the log, several times as many rows. A caller should say so before asking for this.\n\n'
+            + '**What does not go:** a job an artifact still references. `artifacts.job_id` is `ON DELETE RESTRICT`, and those jobs are **excluded by the query rather than attempted**, so the constraint never fires and a partial result is reported as a partial result rather than as an error. Their ids come back in `blocked`. The artifacts themselves are never touched: deleting the output to tidy the record of the work would be the wrong trade.\n\n'
+            + '**What this would take is answered by `GET /gpu/jobs/deletable`**, over exactly these rows -- same `NOT EXISTS`, so the count and the act cannot drift apart. It is a separate verb rather than a flag here because an unknown query parameter is ignored rather than refused, and a `dryRun` an old server did not understand would be this delete.',
+        tags: [GPU_TAG],
+        parameters: [
+            {
+                in: 'query', name: 'state', required: false,
+                schema: { type: 'string', enum: ['failed'], default: 'failed' },
+                description: 'Which state to clear. Only `failed` is accepted. Ignored when `ids` is given.',
+            },
+            {
+                in: 'query', name: 'ids', required: false,
+                schema: { type: 'string', example: '11254,9071,8800' },
+                description:
+                    'A selection, comma-separated, at most 200. Jobs that are safe to delete go; the rest come '
+                    + 'back in `blocked` with the reason. **There is no way to force one through here** -- a job '
+                    + 'holding observations has to be deleted on its own, where its own count is shown.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'How many went, and which were held back.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                state: { type: 'string', example: 'failed' },
+                                deleted: { type: 'integer', example: 1170 },
+                                blocked: {
+                                    type: 'array', items: { type: 'integer' },
+                                    description: 'Jobs an artifact references, which were left alone.',
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const query = req.query || {};
+
+            /* Two verbs on one path: clear a state, or delete a selection. They share
+               the `{deleted, blocked}` shape and the rule that nothing unsafe goes, and
+               `ids` wins because naming jobs is more specific than naming a state. */
+            res.json(query.ids
+                ? await gpuController.deleteJobsByIds(query)
+                : await gpuController.deleteJobsInState(query));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'delete',
+        permission: 'jobs:write',
+        path: '/api/gpu/jobs/:id',
+        summary: 'Delete one job',
+        description:
+            'Removes a single job and its attempts, whatever state it is in.\n\n'
+            + '**A job that produced observations does not delete on the first request.** `observations.gpu_job_id` is `ON DELETE SET NULL`, so deleting such a job neither refuses nor cascades: it leaves every observation in place and silently removes the link back to the run that produced it. Measured on the development corpus, the succeeded jobs hold **114,866 observations** between them and every other state holds none -- so this is a real loss on exactly the jobs a person is most likely to tidy away, and an invisible one. The first request answers **409 with the number of observations that job produced**; resend with `acknowledgeObservations=true` to go ahead. The count is that job\'s own, queried for the occasion, not a general warning.\n\n'
+            + '**A job an artifact references is refused outright**, because `artifacts.job_id` is RESTRICT. Deleting the artifact to make the job deletable would be destroying the output to tidy the record of the work.\n\n'
+            + 'The foreign key is deliberately left as SET NULL: it is the schema\'s existing decision and other things depend on it. The guard belongs here, where it can say what it is about to cost.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The job.' },
+            {
+                in: 'query', name: 'acknowledgeObservations', required: false,
+                schema: { type: 'boolean', default: false },
+                description: 'Required when the job produced observations; confirms their provenance may be unlinked.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'The job is gone.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                deleted: { type: 'integer' },
+                                observationsUnlinked: { type: 'integer' },
+                                attemptsRemoved: { type: 'integer' },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            409: { description: 'Held by an artifact, or it would unlink observations and nobody has said so.' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await gpuController.deleteJob(req.params.id, req.query || {}));
         }),
     });
 
