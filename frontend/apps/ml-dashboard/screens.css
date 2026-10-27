@@ -758,6 +758,11 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
    the spread, and the mean is the reading. */
 .curve-class { stroke-width: 1.2; opacity: .42; }
 .curve-mean { --key: var(--cyan-300); stroke-width: 3.2; opacity: 1; }
+/* The one way to reach what MARP read, for the one reader who wants it. Quiet on purpose:
+   it is a footnote to the matrix, not a feature of it. */
+.raw-metrics { display: flex; gap: 12px; padding: 0 12px 10px; }
+.raw-metrics a { color: var(--muted); font-size: 10.5px; text-decoration: underline; text-underline-offset: 2px; }
+.raw-metrics a:hover { color: var(--text); }
 .curve-key { display: flex; align-items: center; gap: 6px; padding: 0 12px 10px; color: var(--muted); font-size: 10.5px; }
 .curve-key .mean { width: 16px; height: 3px; border-radius: 2px; background: var(--cyan-300); }
 /* The AP column reads as a ranking rather than as five decimals to compare by eye. The

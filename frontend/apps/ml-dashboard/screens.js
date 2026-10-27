@@ -1812,19 +1812,36 @@ function namedById(noun, from, id, href) {
 }
 
 /**
- * A section of the run panel that has nothing to draw yet.
+ * Whether the run being drawn has finished. Set once per panel, read by the sections.
  *
- * **It says what it is waiting for, and on whom.** An empty frame reads as broken; a
- * paragraph naming the missing piece reads as a thing in progress, and tells the next
- * person where to look rather than making them read the code to find out.
+ * A module-level flag rather than a parameter threaded through five renderers: they are
+ * called in one place, one at a time, and the alternative was five signatures changed to
+ * carry one boolean.
+ */
+let runHasFinished = false;
+
+/**
+ * A section of the run panel with nothing to draw.
+ *
+ * **Nothing, when the run has finished.** Each of these used to be a paragraph explaining
+ * how the trainer and the worker work -- and on an older run, which will never have
+ * artifacts, that was four paragraphs of mechanism stacked under each other saying only
+ * that there was nothing to see. Isaac, reading it: *"that just seems to be a bunch of
+ * messy filler for no reason"*. He is right: a section with no data on a finished run is
+ * not news, and the honest rendering of nothing is nothing.
+ *
+ * **One short line while a run is still going**, because there the absence is temporary
+ * and a reader is waiting for it. No mechanism, no internals, no naming of who publishes
+ * what -- that belonged in the comments here all along, not on the screen.
  *
  * @param {string} title - What the section would show.
- * @param {string} waiting - What has to exist before it can.
- * @returns {string}
+ * @returns {string} The card, or an empty string.
  */
-function runSectionWaiting(title, waiting) {
+function runSectionWaiting(title) {
+  if (runHasFinished) return '';
+
   return `<article class="evaluation-card history-card"><header><div><h5>${title}</h5>`
-    + `<p>${waiting}</p></div></header></article>`;
+    + '<p>Available when training finishes.</p></div></header></article>';
 }
 
 /**
@@ -1839,7 +1856,15 @@ function runSectionWaiting(title, waiting) {
  * @param {string|null} image - A URL to the rendered matrix, when that is all there is.
  * @returns {string}
  */
-function confusionMatrix(matrix, image) {
+function confusionMatrix(matrix, image, raw = []) {
+  /* One small link rather than two download tiles in the gallery. It sits here because
+     this is where somebody doubting a number is looking when they want to check it
+     against what the worker actually sent. */
+  const source = raw.length
+    ? `<p class="raw-metrics">${raw.map((file) => `<a href="${escapeHtml(file.url)}" download>`
+      + `${file.name === 'metrics_curves' ? 'Raw curves' : 'Raw metrics'}</a>`).join('')}</p>`
+    : '';
+
   if (matrix && Array.isArray(matrix.labels) && Array.isArray(matrix.rows)) {
     const total = (row) => row.reduce((sum, n) => sum + (Number(n) || 0), 0);
 
@@ -1882,7 +1907,7 @@ function confusionMatrix(matrix, image) {
       + '<span class="axis-y">True class</span>'
       + `<div class="confusion" style="--cols:${matrix.labels.length}" role="img" aria-label="Confusion matrix over ${matrix.labels.length} classes, rows true and columns predicted">`
       + `<span></span>${matrix.labels.map((label, index) => `<b>${name(index)}</b>`).join('')}${cells}`
-      + '</div><span class="axis-x">Predicted class</span></div></div></article>';
+      + `</div><span class="axis-x">Predicted class</span></div></div>${source}</article>`;
   }
 
   if (image) {
@@ -1891,12 +1916,10 @@ function confusionMatrix(matrix, image) {
        as part of the page. */
     return '<article class="evaluation-card"><header><div><h5>Confusion matrix</h5>'
       + '<p>As the trainer rendered it &mdash; MARP does not carry the counts</p></div></header>'
-      + `<div class="result-plot"><img src="${escapeHtml(image)}" alt="Confusion matrix rendered by the trainer" loading="lazy"></div></article>`;
+      + `<div class="result-plot"><img src="${escapeHtml(image)}" alt="Confusion matrix rendered by the trainer" loading="lazy"></div>${source}</article>`;
   }
 
-  return runSectionWaiting('Confusion matrix',
-    'This run recorded none. The trainer builds one at validation; it reaches here when the '
-    + 'worker publishes it with the rest of its final metrics.');
+  return runSectionWaiting('Confusion matrix');
 }
 
 /**
@@ -1927,10 +1950,7 @@ function perClassTable(classes) {
        is not waiting for anything. Saying *they reach here when the worker publishes*
        about a settled result is the stale-text defect this screen keeps producing: true
        while a run is going, and a small lie the moment it has stopped. */
-    return runSectionWaiting('Per-class quality',
-      'No per-class precision, recall or AP for this run. The trainer measures them at '
-      + 'validation, so a run still going fills this in &mdash; and one that has finished '
-      + 'scored nothing per class.');
+    return runSectionWaiting('Per-class quality');
   }
 
   const cell = (value) => (value === null || value === undefined
@@ -2156,14 +2176,24 @@ function curveChart(spec, series) {
  * @param {string} state - `read` once the request has been made, else `unread`.
  * @returns {string}
  */
-function thresholdCurves(curves, state) {
+function thresholdCurves(curves, state, published) {
+  /* **An offer, not an explanation.** This card used to carry two paragraphs: what the
+     four charts would show, and why they are fetched on asking. The first described
+     something the reader can see the moment they press the button; the second is a fact
+     about the API that only mattered to whoever wrote this. The button is the whole
+     message. */
   if (state !== 'read') {
+    /* **The offer is only made where there is something behind it.** Curves exist when
+       the run published a `metrics_curves` artifact, and `/artifacts` has already been
+       read -- so a finished run without one draws nothing at all rather than a button
+       that fetches an empty answer. A run still going gets the short waiting line, since
+       the curves are written at the end. */
+    if (!runHasFinished) return runSectionWaiting('Threshold curves');
+    if (!published) return '';
+
     return '<article class="evaluation-card history-card"><header><div><h5>Threshold curves</h5>'
-      + '<p>Precision against recall, and precision, recall and F1 against the confidence '
-      + 'threshold &mdash; one line per class with their mean, as the trainer plots them</p></div>'
-      + '<button class="btn sm" type="button" data-read-curves>Read them</button></header>'
-      + '<p class="hint">About a thousand points per class, so this is fetched when you ask '
-      + 'for it rather than with the rest of the run.</p></article>';
+      + '<p>Precision and recall against each other and against the threshold</p></div>'
+      + '<button class="btn sm" type="button" data-read-curves>Show</button></header></article>';
   }
 
   /* One family and one split at a time. Today every run is detection on the validation
@@ -2172,9 +2202,7 @@ function thresholdCurves(curves, state) {
   const named = curves.filter((one) => one.class_name);
 
   if (!named.length) {
-    return runSectionWaiting('Threshold curves',
-      'This run recorded no per-threshold precision, recall or F1. The trainer measures them '
-      + 'at validation; they reach here when the worker publishes its curves artifact.');
+    return runSectionWaiting('Threshold curves');
   }
 
   const family = named[0].metric_family;
@@ -2208,6 +2236,20 @@ function thresholdCurves(curves, state) {
     + charts.map((spec) => curveChart(spec, series)).join('') + '</div>';
 }
 
+/**
+ * The two artifacts MARP reads rather than shows.
+ *
+ * Their contents are already on screen as the matrix, the per-class table and the curves,
+ * so a JSON download tile among the plot images is the same clutter as an explanatory
+ * paragraph: it is there because it exists, not because anybody wants it. They are
+ * reachable from one small link beside the matrix instead, which is enough for the one
+ * person who ever wants them -- somebody checking a drawn number against what the trainer
+ * actually sent.
+ *
+ * @type {string[]}
+ */
+const INGEST_ARTIFACTS = ['final_metrics', 'metrics_curves'];
+
 function trainingPlots(plots) {
   /* What each of YOLO's own outputs is, in words. Anything not named here is still shown,
      under its own filename -- a plot nobody has described is better seen than hidden. */
@@ -2226,21 +2268,10 @@ function trainingPlots(plots) {
        runs 205 and 206 each return exactly one file and it is this. Found by asking the
        service rather than by waiting for the first run that uploads plots. */
     weights: 'The trained model itself',
-    /* **The two the ingest reads, which are also files the run produced.** Every other
-       role is the verbatim filename stem; these two are fixed lowercase names MARP's own
-       ingest keys on -- `final_metrics` becomes the per-class table and the matrix above,
-       `metrics_curves` becomes the threshold charts. They are shown rather than filtered
-       out, because the open set is the point and somebody checking a number against what
-       the trainer actually sent should not have to go round the API to do it. Captioned
-       so they do not read as a stray plot. */
-    final_metrics: 'What the run measured, as the worker sent it: the source for the matrix and the per-class table',
-    metrics_curves: 'Precision, recall and F1 at every threshold, as sent: the source for the curve charts',
   };
 
   if (!plots.length) {
-    return runSectionWaiting('Training output',
-      'The trainer writes PR, F1, P and R curves, a label summary and sample predictions. '
-      + 'They appear here once the worker uploads them and MARP serves them back.');
+    return runSectionWaiting('Training output');
   }
 
   const tiles = plots.map((plot) => {
@@ -2376,7 +2407,11 @@ function trainingRunDetail(run, epochs, task, spec, evidence) {
      drew their empty state for ever, over a gap that looked like missing data and was a
      missing request. `/metrics`, `/curves` and `/artifacts` are where they live. */
   const found = evidence || {};
-  const files = Array.isArray(found.files) ? found.files : [];
+  const everyFile = Array.isArray(found.files) ? found.files : [];
+  /* The gallery shows what the trainer drew. The two MARP reads instead are reachable
+     from the matrix card, where somebody checking a number would look for them. */
+  const files = everyFile.filter((file) => !INGEST_ARTIFACTS.includes(file.name));
+  const raw = everyFile.filter((file) => INGEST_ARTIFACTS.includes(file.name));
   /* The split a confusion matrix is for is its own; the first is the validation one in
      every run so far, and the card names whichever it drew rather than assuming. */
   const matrices = Array.isArray(found.matrices) ? found.matrices : [];
@@ -2392,9 +2427,10 @@ function trainingRunDetail(run, epochs, task, spec, evidence) {
      A task MARP does not recognise keeps all four: it is the only honest default, since
      nothing here knows what such a run does or does not report. */
   const drawn = {
-    matrix: () => confusionMatrix(matrices[0] || null, rendered ? rendered.url : null),
+    matrix: () => confusionMatrix(matrices[0] || null, rendered ? rendered.url : null, raw),
     classes: () => perClassTable(Array.isArray(found.metrics) ? found.metrics : []),
-    curves: () => thresholdCurves(Array.isArray(found.curves) ? found.curves : [], found.curvesState),
+    curves: () => thresholdCurves(Array.isArray(found.curves) ? found.curves : [], found.curvesState,
+      raw.some((file) => file.name === 'metrics_curves')),
     files: () => trainingPlots(files),
   };
   const wanted = (plan && plan.sections) || Object.keys(drawn);
@@ -2548,6 +2584,10 @@ function trainingAttemptProgress(job, state, pace) {
 function trainingJobDetail(view, run, epochs, pace, evidence) {
   const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
   const live = terminal ? '' : trainingAttemptProgress(view.job, view.state, trainingPace(pace));
+
+  /* Set before anything below draws: the sections read it to decide between a short
+     waiting line and nothing at all. */
+  runHasFinished = terminal;
 
   if (!run) {
     /* **Expanding is not conditional on a run existing**, which is what broke watching:

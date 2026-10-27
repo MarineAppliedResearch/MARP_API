@@ -602,7 +602,13 @@ test('the pool chart draws a hole as a hole, not a dip to the floor', async (t) 
     'and no area while the series it shades has a hole in it');
 });
 
-test('the run panel offers every section, and each empty one says what it waits for', async (t) => {
+test('a finished run with no artifacts shows nothing where they would be', async (t) => {
+  /* **Isaac, reading four paragraphs of mechanism stacked under each other:** *"why do
+     we have filler text like this? … that just seems to be a bunch of messy filler for
+     no reason?"* He is right. Every run that predates the artifact work will never have
+     these, so explaining the trainer and the worker to him four times over is noise
+     about MARP's internals dressed as information about his run. The honest rendering of
+     nothing is nothing. */
   const screen = await drawScreen('training.html', answers([epoch(1, { precision: 0.19 })]));
 
   t.after(screen.close);
@@ -610,33 +616,38 @@ test('the run panel offers every section, and each empty one says what it waits 
   const detail = await open(screen, 21779);
   const heads = [...detail.querySelectorAll('.evaluation-card h5')].map((h) => h.textContent.trim());
 
-  assert.deepEqual(heads,
-    ['Loss', 'Validation quality', 'Confusion matrix', 'Per-class quality', 'Threshold curves', 'Training output'],
-    'every section has a place, whether or not anything fills it yet');
+  assert.deepEqual(heads, ['Loss', 'Validation quality'],
+    'the charts it has, and no frames around what it does not');
 
-  /* **An empty frame reads as broken, and a stale sentence is worse.** Each of these
-     names what is missing *about this run* rather than what MARP has not built: the
-     matrix, the per-class rows and the curves are all served now, so "nothing writes
-     metrics_summary yet" would be a sentence that was true in October and is not. */
-  assert.match(detail.textContent, /This run recorded none/, 'the matrix says why it is absent');
-  /* **And it does not promise the numbers are coming.** An empty `metrics` block is a
-     valid answer — a run that scored nothing — so for a finished run this section is not
-     waiting on anybody. */
-  assert.match(detail.textContent, /No per-class precision, recall or AP for this run/,
-    'and so does per-class');
-  assert.doesNotMatch(detail.textContent, /per-class[\s\S]{0,120}when the worker publishes/,
-    'without claiming a settled empty result is still on its way');
-  assert.match(detail.textContent, /once the worker uploads them/, 'and the gallery names who it waits on');
+  for (const filler of [/trainer measures them/, /worker publishes/, /worker uploads/,
+    /reaches here when/, /appear here once/]) {
+    assert.doesNotMatch(detail.textContent, filler, `no explanation of mechanism (${filler})`);
+  }
 
-  /* The curves are the one section that is not fetched with the rest, so its empty state
-     is an offer rather than a wait. */
-  assert.ok(detail.querySelector('[data-read-curves]'),
-    'the curves are read on asking, because they are a thousand points per class');
-
-  /* This asserted the opposite until `ea964f18`: the worker sent only `val/*`, so the
-     chart said the train split was not recorded. The columns exist now and the chart
-     draws both, which is what makes the overfitting gap readable. */
+  /* The charts it does have are unaffected. This asserted the opposite until `ea964f18`:
+     the worker sent only `val/*`, so the chart said the train split was not recorded. */
   assert.match(detail.textContent, /solid is train, dashed is validation/);
+});
+
+test('a run still training says one short line where a section will be', async (t) => {
+  /* The other half: while a run is going the absence is temporary and somebody is
+     waiting for it, so the space is held with a sentence rather than a paragraph. No
+     mechanism, no internals, nothing about who publishes what. */
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)], [run(202, 21782)]),
+    listJobs: async () => ({ jobs: [job(21782, 'leased')], total: 1, limit: 500, offset: 0 }),
+  });
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21782);
+  const waiting = [...detail.querySelectorAll('.evaluation-card p')]
+    .map((p) => p.textContent.trim())
+    .filter((text) => /Available when training finishes\./.test(text));
+
+  assert.ok(waiting.length, 'the sections that have nothing yet say when they will');
+  assert.ok(waiting.every((text) => text === 'Available when training finishes.'),
+    `one line and nothing else (saw ${JSON.stringify(waiting)})`);
 });
 
 test('a matrix MARP carries as numbers is drawn, not shown as a picture', async (t) => {
@@ -739,8 +750,9 @@ test('adding a task is a list of series, not a new component', async (t) => {
   assert.equal(detail.querySelector('.result-line.box-loss'), null,
     'no box loss on a run that has no boxes');
 
-  /* The sections that are not task-specific still appear. */
-  assert.match(detail.textContent, /Confusion matrix/);
+  /* The sections it does not report are absent, and so are the ones it would report if
+     this run had produced anything — a finished run with no artifacts draws no frames. */
+  assert.doesNotMatch(detail.textContent, /Per-class quality|Threshold curves/);
 });
 
 test('a job whose base model is unknown says so rather than guessing', async (t) => {
@@ -1989,7 +2001,11 @@ test('the threshold curves are read on asking, once, and drawn per class with a 
   let reads = 0;
 
   const screen = await drawScreen('training.html', {
-    ...answers([epoch(1)], [run(202, 21779)]),
+    /* The `metrics_curves` artifact is what makes the offer appear at all: a finished run
+       that never published one draws no section rather than a button over nothing. */
+    ...answers([epoch(1)], [run(202, 21779)], {
+      files: [{ name: 'metrics_curves', url: '/a/mc.json', content_type: 'application/json' }],
+    }),
     trainingRunCurves: async () => {
       reads += 1;
       return [curve('Cookie star', [0.2, 0.4, 0.6, 0.8, 1]), curve('Urchin', [0.1, 0.2, 0.3, 0.4, 0.5])];
@@ -2079,7 +2095,22 @@ test('a classification run shows no section that does not apply to it', async (t
      curves. `ClassifyMetrics` has no per-class array and no thresholds at all, so both
      read as a run that failed to measure something rather than as a task with no such
      measurement. */
-  const screen = await drawScreen('training.html', classifyScreen());
+  /* Given data for every section, so what is missing is the task's doing rather than the
+     run having produced nothing. */
+  const screen = await drawScreen('training.html', classifyScreen({
+    matrices: [{
+      dataset_split: 'val',
+      labels: ['Kelp', 'Sand'],
+      rows: [[7, 1], [2, 6]],
+      orientation: 'rows_true_cols_predicted',
+      background_index: null,
+    }],
+    metrics: [{
+      metric_family: 'classify', class_name: null, species_id: null,
+      accuracy_top1: 0.81, accuracy_top5: 0.99,
+    }],
+    files: [{ name: 'results', url: '/a/results.csv', content_type: 'text/csv' }],
+  }));
 
   t.after(screen.close);
 
@@ -2091,7 +2122,7 @@ test('a classification run shows no section that does not apply to it', async (t
   assert.equal(detail.querySelector('[data-read-curves]'), null,
     'no offer to read curves that cannot exist');
   assert.doesNotMatch(detail.textContent, /per-class/i,
-    'and no empty per-class section to read as a failure');
+    'and no per-class section, though the run carries a metrics row');
 });
 
 test('a classification run is headlined by its own metric, not by mAP', async (t) => {
@@ -2147,7 +2178,22 @@ test('Best mAP on a classification row says it is not that task, not that no epo
 test('detection keeps every section and its own headline', async (t) => {
   /* The other half of the same change: making sections task-declared must not quietly
      drop one from the task that has them all. */
-  const screen = await drawScreen('training.html', answers([epoch(1)]));
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    matrices: [{
+      dataset_split: 'val',
+      labels: ['Cookie star', 'background'],
+      rows: [[8, 1], [2, 0]],
+      orientation: 'rows_true_cols_predicted',
+      background_index: 1,
+    }],
+    metrics: [{ species_id: 1, class_name: 'Cookie star', metric_family: 'box', map50: 0.8 }],
+    /* `metrics_curves` is what says the curves exist to be asked for — the section is not
+       offered on a finished run that never published one. */
+    files: [
+      { name: 'PR_curve', url: '/a/pr.png', content_type: 'image/png' },
+      { name: 'metrics_curves', url: '/a/mc.json', content_type: 'application/json' },
+    ],
+  }));
 
   t.after(screen.close);
 
@@ -2187,14 +2233,21 @@ test('the weights file is captioned and counted as a file, not as a plot', async
     'offered as a download rather than drawn as a broken image');
 });
 
-test('the ingest inputs are shown as files and captioned, not left as stray plots', async (t) => {
-  /* **Roles are the verbatim filename stem, capitals included, with two exceptions.**
-     `final_metrics` and `metrics_curves` are fixed lowercase names MARP's own ingest
-     keys on, and they are artifacts like any other -- so they appear in this gallery.
-     They are shown rather than filtered out, because the open set is the point and
-     somebody checking a rendered number against what the trainer actually sent should
-     not have to go round the API to do it. */
+test('the two artifacts MARP reads are a link by the matrix, not tiles in the gallery', async (t) => {
+  /* **`final_metrics` and `metrics_curves` are artifacts like any other**, so they arrive
+     in `/artifacts` and would land in the gallery — but their contents are already on
+     screen as the matrix and the curves, so two JSON download tiles among the plot
+     images are the same clutter as an explanatory paragraph: there because they exist,
+     not because anybody wants them. One quiet link by the matrix is enough for the one
+     reader who does: somebody checking a drawn number against what the trainer sent. */
   const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    matrices: [{
+      dataset_split: 'val',
+      labels: ['Cookie star', 'background'],
+      rows: [[8, 1], [2, 0]],
+      orientation: 'rows_true_cols_predicted',
+      background_index: 1,
+    }],
     files: [
       { name: 'PR_curve', url: '/a/pr.png', content_type: 'image/png' },
       { name: 'final_metrics', url: '/a/fm.json', content_type: 'application/json' },
@@ -2207,14 +2260,14 @@ test('the ingest inputs are shown as files and captioned, not left as stray plot
   const detail = await open(screen, 21779);
   const captions = [...detail.querySelectorAll('figcaption')].map((c) => c.textContent);
 
-  assert.ok(captions.some((text) => /source for the matrix and the per-class table/.test(text)),
-    'final_metrics says what it is');
-  assert.ok(captions.some((text) => /source for the curve charts/.test(text)),
-    'and so does metrics_curves');
+  assert.equal(detail.querySelectorAll('.plot-gallery figure').length, 1,
+    'the gallery is the plots the trainer drew');
+  assert.ok(!captions.some((text) => /metrics/i.test(text)), 'and not what MARP read');
 
-  /* JSON, so offered as a download rather than drawn as a broken image. */
-  assert.equal(detail.querySelectorAll('.result-plot.is-file').length, 2);
-  assert.equal(detail.querySelectorAll('.result-plot img').length, 1, 'only the PNG is an image');
+  const links = [...detail.querySelectorAll('.raw-metrics a')].map((a) => a.textContent);
+
+  assert.deepEqual(links, ['Raw metrics', 'Raw curves'], 'both reachable, by the matrix');
+  assert.equal(detail.querySelector('.raw-metrics a').getAttribute('href'), '/a/fm.json');
 
   /* An entity in a caption would render literally: these are escaped on the way out. */
   assert.ok(!captions.some((text) => /&[a-z]+;/.test(text)), 'no raw entities in a caption');
