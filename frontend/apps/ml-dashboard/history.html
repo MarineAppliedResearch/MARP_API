@@ -85,13 +85,12 @@
               <option>All models</option><option>MARP-Multiclass-Det-XL</option>
               <option>MARP-Det-v3</option>
             </select>
-            <button class="btn" title="Download this window as CSV">
+            <button class="btn" data-history-export="window" title="Download every job in this window as CSV">
               <svg class="ico"><use href="#i-download"/></svg>Export</button>
           </div>
           <div class="bulk" id="bulk" hidden>
             <span><span class="n" id="bulkN"></span> selected</span>
-            <button class="btn sm" title="Start new jobs with the same configuration">Run again</button>
-            <button class="btn sm" title="Download the selected rows as CSV">Export</button>
+            <button class="btn sm" data-history-export="selection" title="Download the selected rows as CSV">Export</button>
             <button class="btn sm ghost sp" id="bulkClear">Clear selection</button>
           </div>
         </header>
@@ -112,7 +111,6 @@
                   <th class="hend sortable" title="When it ended">Completed</th>
                   <th class="hdur sortable num" title="Wall-clock time">Took</th>
                   <th class="hworker sortable" title="The machine that made the last attempt. A job retried elsewhere says how many">Worker</th><th class="hwho sortable" title="Who submitted it. A service token records nobody">By</th>
-                  <th class="hacts"><span class="vh">Actions</span></th>
                 </tr>
               </thead>
               <tbody><!-- Filled from the data layer. A value written here is a value no filter can filter. --></tbody>

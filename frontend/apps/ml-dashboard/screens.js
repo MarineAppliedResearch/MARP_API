@@ -4655,6 +4655,11 @@ const HISTORY_SORT_KEYS = {
 /** Everything History draws from, fetched once. */
 let historyData = null;
 
+/* Every row the filters leave, in sort order, which is more than the page shows. Export
+   is about the window rather than the page somebody happens to be looking at, so it
+   reads this rather than the table. */
+let historyWindow = [];
+
 /**
  * A finished job, reduced to what History shows.
  *
@@ -4733,6 +4738,8 @@ function applyHistoryQuery() {
     if (left > right) return 1 * sign;
     return b.job.id - a.job.id;
   });
+
+  historyWindow = views;
 
   const total = views.length;
   const pages = Math.max(1, Math.ceil(total / historyQuery.perPage));
@@ -4846,6 +4853,27 @@ function renderHistoryOutcomes(views, jobs, since, newest) {
 }
 
 /**
+ * Where a finished job is read about in full.
+ *
+ * History is a window over work that is already over, so it shows no detail of its own
+ * and leads to the screen that owns the thing instead. A build is the one kind whose
+ * subject is not the job: what a reader wants is the dataset it produced, and the job
+ * row holds nothing else worth opening.
+ *
+ * @param {Object} view - From `historyView`.
+ * @returns {string} A relative URL on this app.
+ */
+function historyHref(view) {
+  const dataset = view.job.kind === 'dataset_build' && view.spec.dataset_id;
+
+  /* The spec is free-form, so a build without one is possible; `dataset=undefined`
+     would open Datasets and silently expand nothing, which is worse than the job. */
+  return dataset
+    ? `./datasets.html?dataset=${encodeURIComponent(dataset)}`
+    : `./jobs.html?job=${encodeURIComponent(view.job.id)}`;
+}
+
+/**
  * One finished job, as a table row.
  *
  * @param {Object} view - From `historyView`.
@@ -4859,7 +4887,7 @@ function historyRow(view) {
 
   return `<tr data-job="${job.id}">`
     + '<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select ' + view.title + '"></td>'
-    + `<td class="jname" title="${escapeHtml(view.title)}"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+    + `<td class="jname" title="${escapeHtml(view.title)}"><a class="name" href="${historyHref(view)}"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></a></td>`
     + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
     + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
     + `<td class="hscope"><span class="two"><span class="a">${view.projectName}</span><span class="b">Dive ${view.session.dive || '?'} &middot; Line ${view.session.line || '?'}</span></span></td>`
@@ -4870,7 +4898,6 @@ function historyRow(view) {
     + `<td class="hdur num" data-sort="${view.tookMs}">${tookText(view.tookMs)}</td>`
     + `<td class="hworker" data-sort="${view.job.worker_name || ''}">${view.job.worker_name || (view.job.worker_id ? `Worker ${view.job.worker_id}` : '<span class="dash" title="Never leased to a machine">&mdash;</span>')}${Number(view.job.workers_used) > 1 ? ` <span class="faint">· ${view.job.workers_used} machines</span>` : ''}</td>`
     + `<td class="hwho">${view.byName}</td>`
-    + '<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>'
     + '</tr>';
 }
 
@@ -4937,6 +4964,81 @@ function fillHistoryFilterOptions() {
   }
 }
 
+/** The columns an exported history carries, in the order the table draws them. */
+const HISTORY_CSV_COLUMNS = [
+  ['Job id', (v) => v.job.id],
+  ['Job', (v) => v.title],
+  ['Type', (v) => v.kindLabel],
+  ['Status', (v) => v.label],
+  ['Project', (v) => v.projectName],
+  ['Dive', (v) => v.session.dive || ''],
+  ['Line', (v) => v.session.line || ''],
+  ['Model', (v) => v.model],
+  ['Input', (v) => v.frames],
+  ['Started', (v) => v.job.created_at],
+  ['Completed', (v) => v.job.updated_at],
+  ['Took', (v) => tookText(v.tookMs)],
+  ['Worker', (v) => v.job.worker_name || ''],
+  ['By', (v) => v.byName],
+];
+
+/**
+ * One CSV field, escaped the way RFC 4180 readers expect.
+ *
+ * Job names are typed by a person, so a comma in one is ordinary rather than exotic --
+ * and an unquoted one splits a column in two in every spreadsheet that opens the file,
+ * with nothing about it looking wrong.
+ *
+ * @param {*} value - Whatever the column produced.
+ * @returns {string}
+ */
+function csvField(value) {
+  const text = value === null || value === undefined ? '' : String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+/**
+ * Hand the browser a file without a route to download it from.
+ *
+ * @param {string} name - The filename offered.
+ * @param {string} text - The file's contents.
+ * @returns {void}
+ */
+function downloadText(name, text) {
+  /* The BOM is what makes Excel read UTF-8 rather than the local code page, which is
+     the difference between a species name and mojibake. */
+  const blob = new Blob([`﻿${text}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = name;
+  link.hidden = true;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Write the finished work out as CSV.
+ *
+ * @param {Object[]} views - The rows to write, already filtered and sorted.
+ * @param {string} scope - Names the file, so two exports do not collide.
+ * @returns {void}
+ */
+function exportHistory(views, scope) {
+  if (!views.length) return;
+
+  const lines = [HISTORY_CSV_COLUMNS.map(([name]) => csvField(name)).join(',')];
+  for (const view of views) {
+    lines.push(HISTORY_CSV_COLUMNS.map(([, read]) => csvField(read(view))).join(','));
+  }
+
+  const day = new Date().toISOString().slice(0, 10);
+  downloadText(`marp-history-${scope}-${day}.csv`, lines.join('\r\n'));
+}
+
 /** The History filters, sort headers and pager. Bound once. */
 function wireHistoryControls() {
   const panel = $('#history-panel') || $('table#history')?.closest('.panel');
@@ -4996,6 +5098,23 @@ function wireHistoryControls() {
       if (!button || button.disabled) return;
       historyQuery.page = Number(button.dataset.historyPage);
       applyHistoryQuery();
+    });
+  }
+
+  for (const button of $$('[data-history-export]', panel)) {
+    button.addEventListener('click', () => {
+      if (button.dataset.historyExport !== 'selection') {
+        exportHistory(historyWindow, 'window');
+        return;
+      }
+
+      /* The selection lives in the DOM rather than in `historyQuery`, because ticking a
+         row narrows nothing -- so the ids are read back off the checked rows. */
+      const picked = new Set($$('#history tbody .chkbox:checked')
+        .map((box) => box.closest('tr')?.dataset.job)
+        .filter(Boolean));
+
+      exportHistory(historyWindow.filter((v) => picked.has(String(v.job.id))), 'selection');
     });
   }
 }
