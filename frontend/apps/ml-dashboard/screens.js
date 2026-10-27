@@ -1744,17 +1744,23 @@ function confusionMatrix(matrix, image) {
   if (matrix && Array.isArray(matrix.labels) && Array.isArray(matrix.rows)) {
     const total = (row) => row.reduce((sum, n) => sum + (Number(n) || 0), 0);
 
+    /* **One fallback for both axes.** A label can come back null where the stored
+       vocabulary was shorter than the matrix, and the rows named those `Class 3` while
+       the columns left the header blank -- the same axis, labelled two ways, which reads
+       as the column having no name rather than as MARP not knowing it. */
+    const name = (index) => escapeHtml(matrix.labels[index] ?? `Class ${index}`);
+
     const cells = matrix.rows.map((row, r) => {
       const sum = total(row);
 
-      return `<b>${escapeHtml(matrix.labels[r] ?? `Class ${r}`)}</b>`
+      return `<b>${name(r)}</b>`
         + row.map((value, c) => {
           const count = Number(value) || 0;
           const share = sum ? count / sum : 0;
 
           return `<i style="--heat:${Math.max(.04, share).toFixed(2)}" `
             + `data-norm="${Math.round(share * 100)}%" data-count="${count.toLocaleString('en-US')}" `
-            + `title="${escapeHtml(matrix.labels[r] ?? r)} predicted as ${escapeHtml(matrix.labels[c] ?? c)}: `
+            + `title="${name(r)} predicted as ${name(c)}: `
             + `${count.toLocaleString('en-US')}">${Math.round(share * 100)}%</i>`;
         }).join('');
     }).join('');
@@ -1776,7 +1782,7 @@ function confusionMatrix(matrix, image) {
       + '<div class="matrix-scroll"><div class="matrix-frame">'
       + '<span class="axis-y">True class</span>'
       + `<div class="confusion" style="--cols:${matrix.labels.length}" role="img" aria-label="Confusion matrix over ${matrix.labels.length} classes, rows true and columns predicted">`
-      + `<span></span>${matrix.labels.map((l) => `<b>${escapeHtml(l ?? '')}</b>`).join('')}${cells}`
+      + `<span></span>${matrix.labels.map((label, index) => `<b>${name(index)}</b>`).join('')}${cells}`
       + '</div><span class="axis-x">Predicted class</span></div></div></article>';
   }
 

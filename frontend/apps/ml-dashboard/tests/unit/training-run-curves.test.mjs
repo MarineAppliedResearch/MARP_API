@@ -2017,3 +2017,27 @@ test('the threshold curves are read on asking, once, and drawn per class with a 
 
   assert.equal(reads, 1, 'and kept, rather than fetched again on every poll');
 });
+
+test('a matrix label MARP does not have is named the same way on both axes', async (t) => {
+  /* `confusionForReading` serves null where the stored vocabulary was shorter than the
+     matrix. The rows called that `Class 2` and the columns left the header blank -- one
+     axis labelled two ways, which reads as the column having no name rather than as MARP
+     not knowing it. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    matrices: [{
+      dataset_split: 'val',
+      labels: ['Cookie star', null, 'background'],
+      rows: [[8, 1, 1], [0, 9, 1], [2, 0, 8]],
+      orientation: 'rows_true_cols_predicted',
+      background_index: 2,
+    }],
+  }));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const headers = [...detail.querySelectorAll('.confusion > b')].map((b) => b.textContent);
+
+  assert.equal(headers.filter((text) => text === 'Class 1').length, 2,
+    'the unnamed class is Class 1 on the row and on the column, not blank on one of them');
+});
