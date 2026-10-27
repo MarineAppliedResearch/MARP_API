@@ -7,9 +7,9 @@
  * eye and fixed in `c49990fd`, and could not be pinned: this app's checks are static —
  * syntax, style, markup, links — and none of them can see a redraw. A browser tier can,
  * but a browser tier is minutes and a server and is for finished features. So: jsdom,
- * the real `mock.js`, no server, no database, under two seconds.
+ * the real `screens.js`, no server, no database, under two seconds.
  *
- * `mock.js` runs in jsdom as it stands. Five no-op shims below are the whole of what it
+ * `screens.js` runs in jsdom as it stands. Five no-op shims below are the whole of what it
  * needed, and none of the render path was changed to make this testable.
  *
  * **Two halves, because the fix had two**, and each fails on its own:
@@ -45,9 +45,9 @@ import { JSDOM } from 'jsdom';
 
 const APP = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/** `DATASET_POLL_MS` in `mock.js`. Read from the source so the two cannot drift. */
+/** `DATASET_POLL_MS` in `screens.js`. Read from the source so the two cannot drift. */
 const DATASET_POLL_MS = Number(
-  /DATASET_POLL_MS = (\d+)/.exec(readFileSync(join(APP, 'mock.js'), 'utf8'))?.[1]);
+  /DATASET_POLL_MS = (\d+)/.exec(readFileSync(join(APP, 'screens.js'), 'utf8'))?.[1]);
 
 /** One dataset, with the columns the table reads. */
 const dataset = (id, name, status, extra = {}) => ({
@@ -192,7 +192,7 @@ async function openDatasetsScreen(answers) {
   });
 
   const script = window.document.createElement('script');
-  script.textContent = readFileSync(join(APP, 'mock.js'), 'utf8');
+  script.textContent = readFileSync(join(APP, 'screens.js'), 'utf8');
   window.document.body.appendChild(script);
 
   /* The first draw is already in flight on real promises; let it finish. */

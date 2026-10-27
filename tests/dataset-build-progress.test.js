@@ -840,7 +840,7 @@ describe('GET /api/v2/dataset/builds', () => {
 
         /** The keys `mosaicReviewUrl` writes, taken from the arrays it writes them from. */
         function keysTheLinkWrites() {
-            const source = read('frontend', 'apps', 'ml-dashboard', 'mock.js');
+            const source = read('frontend', 'apps', 'ml-dashboard', 'screens.js');
             const order = /const ORDER = \[([\s\S]*?)\];/.exec(source);
 
             expect(order).not.toBeNull();
@@ -913,7 +913,7 @@ describe('GET /api/v2/dataset/builds', () => {
             expect(defaults[1]).not.toContain('promoted');
 
             /* And the link does say it. */
-            const source = read('frontend', 'apps', 'ml-dashboard', 'mock.js');
+            const source = read('frontend', 'apps', 'ml-dashboard', 'screens.js');
 
             expect(source).toContain('trainingDisposition=${filters.trainingDisposition.map(enc).join(\',\')}');
         });

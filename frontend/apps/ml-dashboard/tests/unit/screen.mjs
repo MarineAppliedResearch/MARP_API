@@ -7,7 +7,7 @@
  * thing with modes rather than a function. If a fourth test wants the clock too, that is
  * when the clock moves here.
  *
- * Not a page object and not a framework: it boots the real `mock.js` over the real
+ * Not a page object and not a framework: it boots the real `screens.js` over the real
  * markup and hands back the window. Everything a test wants to know it asks the DOM.
  *
  * @author Isaac Travers
@@ -91,7 +91,7 @@ export async function drawScreen(page, answers, options = {}) {
     });
   }
 
-  run('mock.js');
+  run('screens.js');
 
   /* The renders are promise chains rather than timers; a few turns of the loop settles
      them, and a screen that is still loading fails its own assertions loudly. */

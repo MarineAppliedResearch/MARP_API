@@ -126,7 +126,7 @@ Branch: `claude/268-dataset-build-progress-261a94`, cut from `104-dashboard-read
 A build's progress is only on the Jobs screen. The Datasets screen — the one place somebody
 watching a four-hour build actually looks — shows `—` in FRAMES for a build in flight, and
 draws its *Building now* and *Queued builds* cards from six fixture rows typed into
-`mock.js`. Join each building dataset to its `dataset_build` job and show what it is doing.
+`screens.js`. Join each building dataset to its `dataset_build` job and show what it is doing.
 
 ## Requirements
 
@@ -141,7 +141,7 @@ draws its *Building now* and *Queued builds* cards from six fixture rows typed i
 - **P4 — Poll while anything is building, and stop when nothing is.** No timer running on a
   screen with nothing in flight.
 - **P5 — The cards and the donut count what MARP holds**, not fixtures. The six fixture
-  build rows in `mock.js` go; they would otherwise sit above the real rows showing invented
+  build rows in `screens.js` go; they would otherwise sit above the real rows showing invented
   progress, and the cards would count them.
 - **P6 — Nothing invented.** A build's elapsed time is derivable and is shown; its archive
   size so far, its fingerprint and a remaining-time estimate are not recorded anywhere and

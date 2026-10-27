@@ -150,7 +150,7 @@ same trap *Documentation that states an environment fact* names in `AGENTS.md`.
    why the token file cannot carry it. Adding another is a conversation, not an edit.
 2. **The logo is `marp-logo-compact.png`**, the treatment the Mosaic Reviewer uses. Not
    the stacked logo, not the bare mark.
-3. **The shell is authored once**, in `mockups/mock.js`: the icon sprite, the
+3. **The shell is authored once**, in `screens.js`: the icon sprite, the
    rail, and the top bar. A screen declares only what makes it that screen. They
    were copied per page once, and eight hand-written pages drift.
 4. **A tab never writes its own hex, font stack, radius or shadow.** If a component you
@@ -158,7 +158,7 @@ same trap *Documentation that states an environment fact* names in `AGENTS.md`.
    inventing a private one, because the next tab will need it too.
 5. **Numbers are `tabular-nums`** and right-aligned in a table. The base size is 12px and
    the app is dense on purpose; this is an operator console, not a marketing page.
-6. **No emoji, anywhere.** Icons are inline SVG from the sprite in `mock.js`.
+6. **No emoji, anywhere.** Icons are inline SVG from the sprite in `screens.js`.
 7. **The interface does not explain itself.** No paragraph of prose on a screen,
    ever. What appears is what changes what a person does: a label, a value, a
    computed consequence, and at most one short line where a field is genuinely
@@ -200,7 +200,7 @@ never scrolls sideways at any width — that is an acceptance criterion, not a n
 
 ## The component vocabulary
 
-Authored in `mockups/mock.css`. Use these; do not re-cut them.
+Authored in `screens.css`. Use these; do not re-cut them.
 
 ### Panels
 
@@ -591,8 +591,8 @@ remove it and do not restyle it per tab.
 ## How a screen is put together
 
 ```
-mockups/mock.css        the shell and the whole component vocabulary
-mockups/mock.js         the sprite, the rail, the top bar, and the behaviour
+screens.css        the shell and the whole component vocabulary
+screens.js         the sprite, the rail, the top bar, and the behaviour
 mockups/<screen>.html   one file per screen: dashboard, jobs, inference,
                         training, datasets, models, workers, history
 ```
@@ -608,10 +608,10 @@ A screen is only what makes it that screen:
       <main class="content"> ... </main>
     </div>
   </div>
-  <script src="./mock.js"></script>
+  <script src="./screens.js"></script>
 ```
 
-`mock.js` fills the rail from one `NAV` table and the top bar from one `TOPBAR`
+`screens.js` fills the rail from one `NAV` table and the top bar from one `TOPBAR`
 table — which is how Models can offer *Import* and *Register* with a wide search
 while Jobs offers the two job buttons, without eight pages disagreeing about what
 the application is.

@@ -1,9 +1,10 @@
 /* ==========================================================================
-   MARP Machine Learning Dashboard — static mockups
+   MARP Machine Learning Dashboard — the screens
    --------------------------------------------------------------------------
-   Look and feel first. These are hand-written HTML screens, polished one at a
-   time against the reference mockups on MARP_API#104, and this stylesheet is
-   shared by all of them so the family stays one family.
+   One stylesheet shared by all eight screens, so the family stays one family.
+   The screens were hand-written against the reference mockups on MARP_API#104
+   and are no longer mockups themselves: they draw the real API. This file was
+   called mock.css and said "static mockups" for the same stale reason.
 
    The palette comes from ../../../shared/assets/css/tokens.css and is never
    restated here.
@@ -194,7 +195,7 @@ svg { display: block; }
    margin would come back to 0, and the row would open again: a flap at 60fps rather than
    a hidden bar. Started, its height stays its content's.
 
-   `--topbar-h` is written by `mock.js`, which measures the bar; the fallback of 0 means a
+   `--topbar-h` is written by `screens.js`, which measures the bar; the fallback of 0 means a
    page whose script has not run yet simply keeps its bar. */
 .topbar { align-self: start; transition: margin-top 180ms ease; }
 body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px)); }
@@ -2662,7 +2663,7 @@ td.whb.quiet { color: var(--amber-300); }
   /* Three rows: the search, then the scope controls and the account, then the
      two job buttons. Flex wrapping could not be made to do this -- the first
      job button kept fitting on the row above and the second wrapped alone -- so
-     the rows are placed. mock.js builds these children in one place and in this
+     the rows are placed. screens.js builds these children in one place and in this
      order, which is what makes placing them by position safe. */
   .topbar .tools {
     width: 100%; margin-left: 0;

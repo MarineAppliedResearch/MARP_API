@@ -1,10 +1,17 @@
 /**
- * The shared chrome and the shared behaviour for every mockup screen.
+ * The shared chrome and the shared behaviour for every screen of the dashboard.
+ *
+ * **This file was called `mock.js` and nothing in it has been a mock for months.**
+ * It draws the real application from the real API: `api.js` is the only seam, every
+ * renderer here reads what MARP returned, and the polling is live. The name was left
+ * over from the weeks in 2026 when these were hand-written screens with no backend, and
+ * it kept inviting the obvious question from everyone who arrived at it -- Isaac's
+ * included: *"who is writing mock.js, we aren't supposed to be mocking anything up?"*
  *
  * The icon sprite, the rail and the top bar's controls are built here rather
  * than copied into each screen's HTML. They were copied, and the point of
  * catching that early is that eight hand-written pages drift: a nav item gets
- * renamed on one screen, an icon is added on another, and the mockups stop
+ * renamed on one screen, an icon is added on another, and the screens stop
  * agreeing about what the application is. One definition cannot drift.
  *
  * A screen therefore declares only what it *is*:
@@ -17,7 +24,7 @@
  *         <main class="content"> ... the screen ... </main>
  *       </div>
  *     </div>
- *     <script src="./mock.js"></script>
+ *     <script src="./screens.js"></script>
  *
  * Behaviour is opt-in by markup: a screen with no drawer gets no drawer code,
  * a table with no sortable header is left alone.
@@ -11215,7 +11222,7 @@ function wireTopbarAutohide() {
 
   /* The bar is offset by its own height, and only it knows what that is -- it follows its
      content, and it wraps differently at the narrow widths. Measured rather than written
-     down in two places. A zero is refused: see `align-self: start` in mock.css, where a
+     down in two places. A zero is refused: see `align-self: start` in screens.css, where a
      measurement of zero is the shape the flap takes. */
   const measure = () => {
     const h = bar.offsetHeight;

@@ -57,7 +57,7 @@ const SPECIES = [
  *
  * **The one piece of markup here that is reproduced rather than rendered**, because that
  * renderer lives inside the screen's own closure and the build flow has to be driven to
- * reach it. Four spans in a `.dist.pct`; if that ever stops matching `mock.js`, this
+ * reach it. Four spans in a `.dist.pct`; if that ever stops matching `screens.js`, this
  * comparison is the thing that is wrong, not the panel.
  *
  * @param {string} label - The class.
@@ -120,7 +120,7 @@ const page = `<!doctype html>
 <html lang="en" data-theme="dark"><head><meta charset="utf-8">
 <title>Species split beside the class breakdown</title>
 <link rel="stylesheet" href="../../../shared/assets/css/tokens.css">
-<link rel="stylesheet" href="../mock.css">
+<link rel="stylesheet" href="../screens.css">
 <style>
   body { margin: 0; padding: 24px; background: var(--bg); color: var(--text);
          font-family: var(--font, system-ui), sans-serif; }

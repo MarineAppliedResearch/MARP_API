@@ -53,7 +53,7 @@ const withoutComments = (source) => source
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
-for (const file of ['mock.js', ...readdirSync(APP).filter((f) => f.endsWith('.html'))]) {
+for (const file of ['screens.js', ...readdirSync(APP).filter((f) => f.endsWith('.html'))]) {
     const source = withoutComments(readFileSync(join(APP, file), 'utf8'));
     const routes = source.match(/\/api\/v2\/(?!jellyfin)[a-z_]+/g) || [];
     check(routes.length === 0,
