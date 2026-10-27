@@ -223,38 +223,18 @@ function mountRail() {
 
 /* ================================================================ the top bar */
 
-/**
- * Put MARP's own projects into the top bar's filter.
- *
- * **These were six invented names** -- CAMPA 2024, GULF 2025, PACIFIC 2023 and three more
- * -- written into the chrome when it was a mockup and never replaced, so every screen in
- * the application offered a project list MARP has never held. The same defect as the
- * Inference form's picker, in the one place it appears seven times.
- *
- * Filled after the bar is drawn rather than awaited before it: a top bar that waits on
- * the network is a page that renders late, and "All projects" is true on its own.
- *
- * @async
- * @param {Element} select - The bar's project select.
- * @returns {Promise<void>}
- */
-async function fillTopProjects(select) {
-  if (!select || !window.MarpApi || !window.MarpApi.listProjects) return;
+/* **The top bar had a Project filter and it narrowed nothing.**
+   It was six invented project names -- CAMPA 2024, GULF 2025, PACIFIC 2023 and three
+   more -- written into the chrome when this was a mockup, on five screens, with no
+   listener anywhere: choosing one changed no list. Filling it from
+   `GET /api/v2/projects` made the names true and left the lie, because by this
+   project's own rule a filter that narrows nothing is one.
 
-  try {
-    const projects = await window.MarpApi.listProjects();
-
-    select.insertAdjacentHTML('beforeend', (projects || [])
-      .map((project) => '<option>' + escapeHtml(project.name
-        || ('Project ' + (project.project_id === undefined ? project.id : project.project_id))) + '</option>')
-      .join(''));
-  } catch (error) {
-    /* Says it could not ask, rather than leaving a lone "All projects" that reads as
-       MARP having no projects -- the same distinction the dataset pickers make. */
-    select.insertAdjacentHTML('beforeend',
-      '<option disabled>Could not load (' + (error.status || 'no answer') + ')</option>');
-  }
-}
+   Removed rather than wired, as the smaller of the two. Wiring it is a real feature
+   and a bigger one: jobs carry no project, only a session, so every list would have
+   to narrow client-side through `SESSIONS`, on five screens, and Datasets and the
+   Dashboard would each need their own rule. That is worth doing deliberately rather
+   than as a side effect of making a mockup honest. */
 
 /* The actions a top bar can offer, defined once so two screens cannot describe
    the same button two ways. */
@@ -276,14 +256,14 @@ const ACTIONS = {
 /* What each screen's top bar holds. `project` is shown only where narrowing by
    project means something. */
 const TOPBAR = {
-  dashboard: { project: true, actions: ['inference', 'training'] },
-  jobs: { project: true, actions: ['inference', 'training'] },
-  inference: { project: true, actions: ['inference', 'training'] },
-  training: { project: true, actions: ['inference', 'training'] },
-  datasets: { project: true, actions: ['dataset'] },
-  models: { project: false, wide: true, actions: ['register'], kebab: true,
+  dashboard: { actions: ['inference', 'training'] },
+  jobs: { actions: ['inference', 'training'] },
+  inference: { actions: ['inference', 'training'] },
+  training: { actions: ['inference', 'training'] },
+  datasets: { actions: ['dataset'] },
+  models: { wide: true, actions: ['register'], kebab: true,
     search: 'Search models by name, task, dataset or description\u2026' },
-  workers: { project: false, wide: true, actions: ['tokens'], kebab: true,
+  workers: { wide: true, actions: ['tokens'], kebab: true,
     search: 'Search workers by name, GPU or job\u2026' },
 };
 
@@ -308,12 +288,7 @@ function mountTopbar() {
   const tools = document.createElement('div');
   tools.className = 'tools' + (cfg.wide ? ' wide' : '');
   tools.innerHTML =
-    (cfg.project
-      ? '<span class="lab">Project</span><select class="sel" data-top-project aria-label="Project">'
-        /* Only the one option that is true before MARP has answered. */
-        + '<option>All projects</option></select>'
-      : '')
-    + '<span class="search">' + ico('search', 'sm')
+    '<span class="search">' + ico('search', 'sm')
     + '<input class="inp" type="search" placeholder="'
     + (cfg.search || 'Search jobs, models, datasets\u2026') + '"'
     + ' aria-label="Search"></span>'
@@ -348,8 +323,6 @@ function mountTopbar() {
     + '<button class="account__item" type="button" role="menuitem" data-account-signout hidden>Sign out</button>'
     + '</div></div>';
   bar.appendChild(tools);
-
-  fillTopProjects($('[data-top-project]', tools));
 }
 
 /* =============================================================== behaviour */
