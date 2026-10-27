@@ -4356,19 +4356,210 @@ function renderInferenceRecent(views) {
       + `<td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">${view.title}</span></span></td>`
       + `<td class="jscope"><span class="two"><span class="a">Dive ${session.dive || '?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
       + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
-      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
-      /* Detections is gap 11: the ingest writes observations and nothing counts
-         them back onto the job. A dash, not a zero. */
-      + `<td class="jdet">${NOT_COUNTED}</td>`
+      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}">${statusWithProgress(view)}</td>`
+      /* **A dash until asked, then whatever the answer is -- including zero.** Nothing
+         rolls detections onto the job row itself, so this used to be a permanent dash
+         (gap 11). `GET /gpu/jobs/:id/observations` answers it now, and is asked for the
+         jobs on this page once they are finished; until that lands there is no
+         measurement, and a 0 would claim one. */
+      + '<td class="jdet">' + NOT_COUNTED + '</td>'
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
       + `<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
       + '</tr>';
   }).join('');
+
+  fillInferenceOutcomes(body, shown);
+  watchInference();
 }
 
-/** Nothing counts these. Distinct from zero of them. */
-const NOT_COUNTED = '<span class="dash" title="Nothing rolls detections up to a job: the ingest writes observations and the count is not recorded anywhere (gap 11)">&mdash;</span>';
+/**
+ * The status cell, carrying progress while a job is running.
+ *
+ * **`progressCell` rather than a second formatter**, because it already holds the one
+ * decision that matters here: a job with no heartbeat yet has no measurement, and a 0%
+ * bar would claim one.
+ *
+ * @param {Object} view - A job view.
+ * @returns {string} The cell's inner HTML.
+ */
+function statusWithProgress(view) {
+  const pill = `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`;
+
+  if (view.state !== 'running') return pill;
+
+  return pill + progressCell(view.job, view.state).html;
+}
+
+/** Jobs whose outcome has already been asked for, so a poll does not ask again. */
+const inferenceOutcomes = new Map();
+
+/**
+ * Fill in what each finished run on the page produced.
+ *
+ * **Only the rows that are drawn, and only once each.** Six rows is six reads, which is
+ * fine; the whole table would not be, and nothing rolls these counts onto the job list
+ * for MARP to send in one answer.
+ *
+ * **Only finished jobs.** A running job's count is still moving, and a number that is
+ * true for a moment reads as a total.
+ *
+ * @param {Element} body - The table body.
+ * @param {Array<Object>} views - The views drawn into it.
+ * @returns {Promise<void>}
+ */
+async function fillInferenceOutcomes(body, views) {
+  if (!window.MarpApi || !window.MarpApi.jobObservations) return;
+
+  const terminal = views.filter((view) => ['done', 'issues'].includes(view.state));
+
+  await Promise.all(terminal.map(async (view) => {
+    const id = view.job.id;
+
+    if (!inferenceOutcomes.has(id)) {
+      try {
+        inferenceOutcomes.set(id, await window.MarpApi.jobObservations(id));
+      } catch {
+        /* Left unanswered rather than recorded as none: the dash stays, which says
+           nobody knows, where a 0 would say the run found nothing. */
+        return;
+      }
+    }
+
+    paintOutcome(body, id, inferenceOutcomes.get(id));
+  }));
+}
+
+/**
+ * Write one run's outcome onto its row.
+ *
+ * @param {Element} body - The table body.
+ * @param {number} jobId - The job.
+ * @param {Object} outcome - What `jobObservations` answered.
+ * @returns {void}
+ */
+function paintOutcome(body, jobId, outcome) {
+  const row = $(`tr[data-job="${CSS.escape(String(jobId))}"]`, body);
+
+  if (!row || !outcome) return;
+
+  const cell = $('.jdet', row);
+
+  if (cell) {
+    const total = Number(outcome.observations) || 0;
+    /* The species it found, on the cell's title rather than in it: the column is one
+       number wide and the breakdown is what somebody asks for second. */
+    const breakdown = (outcome.species || [])
+      .map((row2) => `${row2.species_name || row2.reported_name || 'unresolved'}: ${row2.observations}`)
+      .join(', ');
+
+    cell.dataset.sort = String(total);
+    cell.innerHTML = total === 0
+      /* **Zero is an answer, and says so.** A run that completed every frame and detected
+         nothing is not the same as a run nobody has asked about, and the dash beside it
+         means the second. */
+      ? '<span class="num" title="This run completed and detected nothing">0</span>'
+      : `<span class="num"${breakdown ? ` title="${escapeHtml(breakdown)}"` : ''}>${total.toLocaleString()}</span>`;
+  }
+
+  /* **Into the mosaic, filtered to this run.** Exact because of the session rule: a run
+     makes its own session, so `?session=N` is this run's observations and nothing else.
+     Offered only when there is something to look at. */
+  const acts = $('.jacts', row);
+
+  if (acts && outcome.session_id && Number(outcome.observations) > 0 && !$('[data-mosaic]', acts)) {
+    acts.insertAdjacentHTML('afterbegin',
+      `<a class="btn sm" data-mosaic href="/apps/marp-mosaic-review/?session=${outcome.session_id}" `
+      + `title="Review this run's observations in the mosaic">Review</a>`);
+  }
+}
+
+/**
+ * Write the cells that move, on the rows already drawn.
+ *
+ * **Patched, not redrawn**, for the reason `patchTrainingRows` is: rebuilding the table
+ * under somebody reading it is the defect the Datasets table was fixed for.
+ *
+ * @param {Element} body - The table body.
+ * @param {Map<number, Object>} views - The latest view per job id.
+ * @returns {void}
+ */
+function patchInferenceRows(body, views) {
+  for (const row of $$(':scope > tr[data-job]', body)) {
+    const view = views.get(Number(row.dataset.job));
+
+    if (!view) continue;
+
+    const status = $('.jstatus', row);
+    /* The progress bar moves while the state does not, so the state rank alone is the
+       wrong thing to compare -- a running job would freeze at its first percentage. */
+    const stamp = `${JOB_STATE_RANK[view.state]}:${view.job.progress_done}/${view.job.progress_total}`;
+
+    if (status && status.dataset.stamp !== stamp) {
+      status.innerHTML = statusWithProgress(view);
+      status.dataset.sort = String(JOB_STATE_RANK[view.state]);
+      status.dataset.stamp = stamp;
+    }
+  }
+}
+
+/** The inference table's poll, or null when nothing on it is moving. */
+let inferenceWatch = null;
+
+/**
+ * Keep the table current while anything on it is still running.
+ *
+ * Stops when nothing is live, rather than polling an idle screen for ever.
+ *
+ * @returns {void}
+ */
+function watchInference() {
+  if (inferenceWatch || !window.MarpApi) return;
+
+  const body = $('.inference-table tbody');
+
+  if (!body) return;
+
+  inferenceWatch = setTimeout(async function again() {
+    inferenceWatch = null;
+
+    let live = false;
+
+    try {
+      const jobs = await window.MarpApi.listJobs({ limit: 500, kind: 'inference' });
+      const issues = batchesWithIssues(jobs.jobs);
+      const views = new Map(jobs.jobs.map((job) => [job.id, jobView(job, issues)]));
+
+      patchInferenceRows(body, views);
+
+      const drawn = $$(':scope > tr[data-job]', body)
+        .map((row) => views.get(Number(row.dataset.job)))
+        .filter(Boolean);
+
+      /* A job that has just finished is the one whose count is now worth asking for. */
+      await fillInferenceOutcomes(body, drawn);
+
+      live = drawn.some((view) => ['running', 'queued'].includes(view.state));
+    } catch {
+      /* A poll that fails is a blip; the last good answer stays on screen. Keep
+         watching, because the thing that failed is the thing being watched. */
+      live = true;
+    }
+
+    if (live) watchInference();
+  }, TRAINING_EPOCH_POLL_MS);
+}
+
+/**
+ * Nobody has asked yet. Distinct from zero of them.
+ *
+ * **This used to be permanent** -- gap 11 was that nothing counted observations back
+ * onto a job, so the column could only ever draw a dash. `GET /gpu/jobs/:id/observations`
+ * answers it, and the dash now means the narrower thing it says: the question has not
+ * been put for this row yet, or it could not be answered. A finished run that detected
+ * nothing draws 0, because that is a measurement somebody made.
+ */
+const NOT_COUNTED = '<span class="dash" title="Not counted yet for this row. A finished run that found nothing shows 0.">&mdash;</span>';
 
 /**
  * Fills the Inference screen from the data layer.
