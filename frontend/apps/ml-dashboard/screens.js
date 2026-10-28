@@ -1198,7 +1198,9 @@ const jobsQuery = {
   issuesOnly: false,
   search: '',
   windowDays: 7,
-  sort: { key: 'created_at', dir: 'descending' },
+  /* `live` is no column: running first, then queued, then the rest newest first (#285).
+     Clicking a header replaces it with that column, as it always has. */
+  sort: { key: 'live', dir: 'descending' },
   page: 1,
   perPage: 18,
 };
@@ -1268,15 +1270,26 @@ function applyJobsQuery() {
   if (jobsQuery.search) views = views.filter((v) => v.haystack.includes(jobsQuery.search));
   views = views.filter((v) => Date.parse(v.job.created_at) >= since);
 
-  const key = JOBS_SORT_KEYS[jobsQuery.sort.key] || JOBS_SORT_KEYS.hupd;
-  const sign = jobsQuery.sort.dir === 'ascending' ? 1 : -1;
-  views.sort((a, b) => {
-    const left = key(a);
-    const right = key(b);
-    if (left < right) return -1 * sign;
-    if (left > right) return 1 * sign;
-    return b.job.id - a.job.id;  /* the same id tie-breaker the route uses */
-  });
+  if (jobsQuery.sort.key === 'live') {
+    /* **What is happening now, on page 1.** Newest first buried the four running pieces
+       of an 82-piece run among hundreds of finished jobs (#285). Sorted over the whole
+       window rather than the page, so it holds across pages -- which the Running and
+       Queued cards, reordering only the rows on screen, cannot do. */
+    const rank = (view) => ({ running: 0, queued: 1 }[view.state] ?? 2);
+    views.sort((a, b) => rank(a) - rank(b)
+      || Date.parse(b.job.created_at) - Date.parse(a.job.created_at)
+      || b.job.id - a.job.id);
+  } else {
+    const key = JOBS_SORT_KEYS[jobsQuery.sort.key] || JOBS_SORT_KEYS.hupd;
+    const sign = jobsQuery.sort.dir === 'ascending' ? 1 : -1;
+    views.sort((a, b) => {
+      const left = key(a);
+      const right = key(b);
+      if (left < right) return -1 * sign;
+      if (left > right) return 1 * sign;
+      return b.job.id - a.job.id;  /* the same id tie-breaker the route uses */
+    });
+  }
 
   jobsWindowViews = views;
 
