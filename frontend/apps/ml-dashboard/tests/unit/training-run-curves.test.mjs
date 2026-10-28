@@ -2433,3 +2433,54 @@ test('a poll asks only for what is new, and keeps what it already had', async (t
 
   assert.equal((d.match(/[ML]/g) || []).length, 3, 'with all three points drawn, not just the new one');
 });
+
+test('the epoch charts sit under one Results heading', async (t) => {
+  /* From the #268 checklist: the live charts had *While it runs* over them and the epoch
+     charts had nothing, so the two read as one long column. */
+  const screen = await drawScreen('training.html', answers([epoch(1, { box_loss: 1.8 })]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const results = detail.querySelector('.run-results');
+
+  assert.ok(results, 'a Results section');
+  assert.equal(results.querySelector('h3').textContent.trim(), 'Results');
+  assert.ok(results.querySelector('.training-history-grid .result-line.box-loss'),
+    'and the epoch charts are inside it');
+});
+
+test('a trainer picture opens large, and steps through the rest of the gallery', async (t) => {
+  /* Isaac: *"i can't zoom in or see them bigger. maybe they should be clickable and it
+     should open a little scroll slide show so i can view them all?"* The weights are not
+     a picture, so they are not a slide. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    files: [
+      { name: 'PR_curve', url: '/a/pr.png', content_type: 'image/png' },
+      { name: 'weights', url: '/a/w', content_type: 'application/octet-stream' },
+      { name: 'val_batch0_pred', url: '/a/vb.jpg', content_type: 'image/jpeg' },
+    ],
+  }));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const tiles = detail.querySelectorAll('.plot-gallery .result-plot[data-file]:not(.is-file) img');
+
+  tiles[1].click();
+
+  const viewer = screen.document.getElementById('plot-viewer');
+
+  assert.ok(viewer && !viewer.hidden, 'clicking a picture opens the viewer');
+  assert.equal(viewer.querySelector('img').getAttribute('src'), '/a/vb.jpg', 'on the one clicked');
+  assert.equal(viewer.querySelector('.pv-count').textContent, '2 of 2', 'counting pictures, not files');
+
+  viewer.dispatchEvent(new screen.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  assert.equal(viewer.querySelector('img').getAttribute('src'), '/a/pr.png', 'and wraps round');
+
+  viewer.querySelector('img').click();
+  assert.ok(viewer.querySelector('.pv-stage').classList.contains('actual'), 'clicking it zooms to its own pixels');
+
+  viewer.dispatchEvent(new screen.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(viewer.hidden, 'and Escape closes it');
+});

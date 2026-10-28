@@ -793,7 +793,30 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
    there is no render to sit on. */
 .result-plot.is-file { background: var(--sunk); }
 .result-plot.is-file figcaption { border-top: 0; display: grid; gap: 2px; }
-.result-plot figcaption { padding: 6px 8px; border-top: 1px solid var(--hairline-2); background: var(--sunk); color: var(--muted); font-size: 10px; }
+/* `--rail`, not `--sunk`: the half-transparent one over a white plate came out mid-grey,
+   and muted text on mid-grey was unreadable. */
+.result-plot figcaption { padding: 6px 8px; border-top: 1px solid var(--hairline-2); background: var(--rail); color: var(--text); font-size: 10px; }
+.plot-gallery .result-plot[data-file]:not(.is-file) { cursor: zoom-in; }
+.plot-gallery .result-plot[data-file]:not(.is-file):hover { border-color: var(--cyan-400); }
+
+/* The picture viewer: one run's pictures, one at a time, as large as the window. */
+body.viewing { overflow: hidden; }
+.plot-viewer { position: fixed; inset: 0; z-index: 1000; display: grid; grid-template-columns: 56px minmax(0, 1fr) 56px; grid-template-rows: auto minmax(0, 1fr); background: var(--rail); backdrop-filter: blur(8px); }
+.plot-viewer[hidden] { display: none; }
+.plot-viewer .pv-bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--hairline-2); color: var(--white); }
+.plot-viewer .pv-said { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.plot-viewer .pv-stage { display: grid; place-items: center; overflow: hidden; padding: 12px; }
+.plot-viewer .pv-stage img { max-width: 100%; max-height: calc(100vh - 82px); background: var(--white); border-radius: var(--r-sm); cursor: zoom-in; }
+/* Its own pixels, scrolled: the zoom. */
+.plot-viewer .pv-stage.actual { overflow: auto; place-items: start; }
+.plot-viewer .pv-stage.actual img { max-width: none; max-height: none; cursor: zoom-out; }
+.plot-viewer .pv-step { align-self: center; justify-self: center; width: 44px; height: 44px; border: 1px solid var(--hairline-2); border-radius: 50%; background: var(--card-flat); color: var(--white); cursor: pointer; }
+.plot-viewer .pv-step:hover { border-color: var(--cyan-400); }
+.plot-viewer .pv-step[hidden] { visibility: hidden; display: block; }
+@media (max-width: 640px) {
+  .plot-viewer { grid-template-columns: 40px minmax(0, 1fr) 40px; }
+  .plot-viewer .pv-step { width: 34px; height: 34px; }
+}
 
 .confusion.eight { width: 820px; grid-template-columns: 92px repeat(8, 88px); margin: 0; padding: 10px; }
 /* **The axes say True and Predicted in words, beside the grid.** A confusion matrix read

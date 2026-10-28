@@ -2522,7 +2522,7 @@ function trainingPlots(plots) {
 
     /* `data-file` carries what the fallback needs, so a tile that turns out not to be an
        image can become the file form without the panel being redrawn. */
-    return `<figure class="result-plot" data-file="${escapeHtml(plot.url)}" data-said="${escapeHtml(said)}">`
+    return `<figure class="result-plot" data-file="${escapeHtml(plot.url)}" data-said="${escapeHtml(said)}" title="Open larger">`
       + `<img src="${escapeHtml(plot.url)}" alt="${escapeHtml(said)}" loading="lazy">`
       + `<figcaption>${escapeHtml(said)}</figcaption></figure>`;
   }).join('');
@@ -2534,6 +2534,90 @@ function trainingPlots(plots) {
        falsehood of the kind this panel keeps being corrected for. */
     + `<p>${plots.length} file${plots.length === 1 ? '' : 's'} this run produced</p></div></header>`
     + `<div class="plot-gallery">${tiles}</div></article>`;
+}
+
+/**
+ * The run's pictures, one at a time and as large as the window allows.
+ *
+ * Isaac, on the gallery: *"i can't zoom in or see them bigger. maybe they should be
+ * clickable and it should open a little scroll slide show so i can view them all?"* A
+ * 220px tile of a 3000px plot is a thumbnail of something nobody can read.
+ *
+ * One overlay for the page, built on first use. Arrows and the keyboard step through
+ * every picture in the gallery that was clicked; clicking the picture swaps between
+ * fitting the window and its own pixels, which scroll -- that is the zoom.
+ *
+ * @param {Element[]} figures - The gallery's image tiles, in order.
+ * @param {number} start - The one that was clicked.
+ */
+function openPlotViewer(figures, start) {
+  let viewer = $('#plot-viewer');
+
+  if (!viewer) {
+    viewer = document.createElement('div');
+    viewer.id = 'plot-viewer';
+    viewer.className = 'plot-viewer';
+    viewer.hidden = true;
+    viewer.setAttribute('role', 'dialog');
+    viewer.setAttribute('aria-modal', 'true');
+    viewer.innerHTML = '<div class="pv-bar"><span class="pv-said"></span><span class="pv-count faint"></span>'
+      + '<a class="btn sm pv-open" target="_blank" rel="noopener" title="Open the full file in a new tab"><svg class="ico sm"><use href="#i-download"/></svg>Full size</a>'
+      + '<button class="btn sm pv-close" type="button" aria-label="Close"><svg class="ico sm"><use href="#i-x"/></svg></button></div>'
+      + '<button class="pv-step pv-prev" type="button" aria-label="Previous picture"><svg class="ico"><use href="#i-left"/></svg></button>'
+      + '<div class="pv-stage"><img alt=""></div>'
+      + '<button class="pv-step pv-next" type="button" aria-label="Next picture"><svg class="ico"><use href="#i-right"/></svg></button>';
+    document.body.appendChild(viewer);
+
+    const stage = $('.pv-stage', viewer);
+
+    $('.pv-close', viewer).addEventListener('click', () => viewer.close());
+    $('.pv-prev', viewer).addEventListener('click', () => viewer.step(-1));
+    $('.pv-next', viewer).addEventListener('click', () => viewer.step(1));
+    $('img', viewer).addEventListener('click', () => stage.classList.toggle('actual'));
+    // The dark around the picture closes it; the picture itself is the zoom.
+    stage.addEventListener('click', (event) => { if (event.target === stage) viewer.close(); });
+
+    viewer.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') viewer.close();
+      else if (event.key === 'ArrowLeft') viewer.step(-1);
+      else if (event.key === 'ArrowRight') viewer.step(1);
+      else return;
+      event.preventDefault();
+    });
+
+    viewer.show = (index) => {
+      const count = viewer.figures.length;
+
+      viewer.index = (index + count) % count;
+
+      const figure = viewer.figures[viewer.index];
+      const img = $('img', viewer);
+
+      img.src = figure.dataset.file;
+      img.alt = figure.dataset.said || '';
+      $('.pv-said', viewer).textContent = figure.dataset.said || '';
+      $('.pv-count', viewer).textContent = `${viewer.index + 1} of ${count}`;
+      $('.pv-open', viewer).href = figure.dataset.file;
+      stage.classList.remove('actual');
+      stage.scrollTo?.(0, 0);
+    };
+    viewer.step = (by) => viewer.show(viewer.index + by);
+    viewer.close = () => {
+      viewer.hidden = true;
+      document.body.classList.remove('viewing');
+      if (viewer.opener) viewer.opener.focus?.();
+    };
+  }
+
+  viewer.figures = figures;
+  viewer.opener = document.activeElement;
+  // One picture has nowhere to step to.
+  $$('.pv-step', viewer).forEach((button) => { button.hidden = figures.length < 2; });
+  viewer.show(start);
+  viewer.hidden = false;
+  document.body.classList.add('viewing');
+  viewer.tabIndex = -1;
+  viewer.focus();
 }
 
 /**
@@ -2690,8 +2774,11 @@ function trainingRunDetail(run, epochs, task, spec, evidence) {
     + `<span>${about}</span></div></div>`
     + `<div class="jobmetrics">${settings}</div>`
     + steps
-    + `<div class="training-history-grid">${charts}</div>`
-    + `<div class="training-evaluation-grid">${evaluation}</div>`;
+    /* One heading over what the run concluded, matching *While it runs* above it, so the
+       live charts and the epoch charts read as two things rather than one long column. */
+    + ((charts || evaluation) ? '<div class="sect run-results"><h3>Results</h3>'
+      + `<div class="training-history-grid">${charts}</div>`
+      + `<div class="training-evaluation-grid">${evaluation}</div></div>` : '');
 }
 
 /**
@@ -2930,6 +3017,18 @@ function wireTrainingJobDetail(head, detail) {
        under it -- so the figure becomes the download form instead. Captured rather than
        bubbled, because `error` on an element does not bubble. One listener for the
        panel; a tile that loads never reaches it. */
+    /* A tile opens the viewer on the whole gallery. Delegated for the same reason the
+       error listener is: the panel is redrawn under it on every poll. */
+    cell.addEventListener('click', (event) => {
+      const figure = event.target.closest && event.target.closest('.plot-gallery .result-plot[data-file]:not(.is-file)');
+
+      if (!figure) return;
+
+      const figures = $$('.result-plot[data-file]:not(.is-file)', figure.closest('.plot-gallery'));
+
+      openPlotViewer(figures, figures.indexOf(figure));
+    });
+
     cell.addEventListener('error', (event) => {
       const img = event.target;
 

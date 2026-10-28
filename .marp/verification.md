@@ -632,7 +632,7 @@ said to carry on without stopping at the plan, so plan and results are one recor
 | `npm run test:species` | **pass** — 5 suites, 60 tests |
 | `npm run test:datasets` | **pass** — 1 suite, 7 tests |
 | `npm run test:observations` | **pass** — 5 suites, 63 tests |
-| `npm run test:app:ml-dashboard` | **pass** — 145 of 145, including the two new tests below |
+| `npm run test:app:ml-dashboard` | **pass** — 147 of 147, including the four new tests below |
 | `npm run test:app:entry` | **pass** — 63 |
 | worker `pytest` (engine, dataset, provenance, contracts, runner, status, resources, imports) | **pass** — 247, on `268-training-params-and-provenance` |
 
@@ -651,6 +651,30 @@ said to carry on without stopping at the plan, so plan and results are one recor
 | **R9** Server identity | Top bar shows "API started …" on every screen, commit on hover | met |
 | **R10** Species capitalisation | Migration applied on 5432 after dump `corpus/20261028-115619`; Equipment merged and retired; lookups case-insensitive | met |
 | **R11** No explain-away notes | Sweep of all seven screens. One left on Inference ("Other pipeline types are design placeholders…"), removed. The disabled pipeline options remain: the worker runs Detection + ByteTrack only | met |
+
+## Added after the first pass
+
+- **Results heading** over the run panel's epoch charts, from the #268 checklist. Test:
+  *the epoch charts sit under one Results heading*.
+- **Picture viewer.** Isaac: *"i can't zoom in or see them bigger. maybe they should be
+  clickable and it should open a little scroll slide show"*. A trainer picture opens
+  full-window; arrows and ←/→ step through every picture in the run (files are skipped),
+  clicking the picture zooms to its own pixels, Esc or the backdrop closes. Seen on run
+  21804: 16 pictures, "5 of 16", zoom to 3000 px, next to "6 of 16", Esc closed. Test: *a
+  trainer picture opens large, and steps through the rest of the gallery*.
+- **Gallery captions were unreadable**, muted text on a half-transparent band over a white
+  plate. Now an opaque dark band with body text.
+
+## Static checks that fail, and fail identically on `develop`
+
+The app's own `npm test` (not one of the named groups) fails. Every failure reproduces on a
+clean `origin/develop`, so none comes from this branch; left alone and reported:
+
+- `markup-check` — 108 "a screen states a value nothing fills", identical count on both.
+- `screens-check` — times out waiting for `#history thead th.hjob`; the History table was
+  folded into Jobs and the check was not updated.
+- `data-layer-check` — `ApiError: 404 Not Found` on both.
+- `scroll-check` — 19 failures on both.
 
 ## Known gaps — not delivered, and why
 
