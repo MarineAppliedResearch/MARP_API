@@ -829,6 +829,19 @@ function loadSessions() {
  * @param {Object} spec - A job's `spec`.
  * @returns {Object} The session row, the inline session, or `{}`.
  */
+/**
+ * A dive as a reader says it. Jellyfin names many of them "Dive 47" already, and every
+ * scope on these screens put "Dive" in front, so they read "Dive Dive 47".
+ *
+ * @param {string|number} dive - `session.dive`, as recorded.
+ * @returns {string}
+ */
+function diveText(dive) {
+  const text = String(dive).trim();
+
+  return /^dive(?![a-z])/i.test(text) ? text : `Dive ${text}`;
+}
+
 function sessionFor(spec) {
   const asked = (spec || {}).session;
   const named = asked && asked.session_id !== undefined
@@ -901,7 +914,7 @@ function rowFor(view) {
   const { job, spec, session, state } = view;
 
   const scope = session.dive
-    ? `Dive ${session.dive}${session.line ? ` &middot; Line ${session.line}` : ''}`
+    ? `${diveText(session.dive)}${session.line ? ` &middot; Line ${session.line}` : ''}`
     : (spec.session && spec.session.session_id !== undefined
       ? `Session ${spec.session.session_id}`
       : 'No session');
@@ -1291,7 +1304,7 @@ function applyJobsQuery() {
 function jobScopeText(view) {
   const { session, spec } = view;
 
-  if (session.dive) return `Dive ${session.dive}${session.line ? ` · Line ${session.line}` : ''}`;
+  if (session.dive) return `${diveText(session.dive)}${session.line ? ` · Line ${session.line}` : ''}`;
   return spec.session && spec.session.session_id !== undefined ? `Session ${spec.session.session_id}` : '';
 }
 
@@ -4670,7 +4683,7 @@ function renderInferenceRecent(views) {
 
     return `<tr data-job="${job.id}">`
       + `<td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">${view.title}</span></span></td>`
-      + `<td class="jscope"><span class="two"><span class="a">Dive ${session.dive || '?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
+      + `<td class="jscope"><span class="two"><span class="a">${session.dive ? diveText(session.dive) : 'Dive ?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
       + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}">${statusWithProgress(view)}</td>`
       /* **A dash until asked, then whatever the answer is -- including zero.** Nothing

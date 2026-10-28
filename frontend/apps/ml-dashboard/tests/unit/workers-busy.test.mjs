@@ -23,7 +23,18 @@ const attempt = (id, slot, done) => ({
   lease_expires_at: new Date(Date.now() + 60000).toISOString(),
   last_heartbeat_at: new Date().toISOString(),
   progress: { done, total: 7500, unit: 'frames', phase: 'inferring', elapsed_s: 278.7 },
-  job: { job_id: id - 19262 + 21892, kind: 'inference', state: 'leased', batch_id: 'b1' },
+  job: {
+    job_id: id - 19262 + 21892,
+    kind: 'inference',
+    state: 'leased',
+    batch_id: 'b1',
+    name: 'Dive-47_20261028',
+    spec: {
+      model: { name: 'CAMPA_GR1_TEST6-mixed', ml_model_id: 91 },
+      range: { start_frame: (id - 19262) * 7500, end_frame: (id - 19261) * 7500 },
+      session: { project_id: 44, dive: 'Dive 47', line: '1080', per_run: true },
+    },
+  },
 });
 
 const worker = (id, name, attempts) => ({
@@ -61,6 +72,13 @@ test('a busy worker draws every job it holds, from the fields the pool sends', a
   assert.match(detail, /19262 · job 21892/);
   assert.match(detail, /4,500 \/ 7,500 frames · inferring/);
   assert.match(detail, /19263 · job 21893/);
+
+  /* Isaac: *"the worker should also show exactly what job they are currently using, and
+     there should be a link through to that job"*. */
+  const links = [...head.nextElementSibling.querySelectorAll('a')].map((a) => [a.getAttribute('href'), a.textContent]);
+  assert.deepEqual(links, [['./jobs.html?job=21892', 'Dive-47_20261028'], ['./jobs.html?job=21893', 'Dive-47_20261028']]);
+  assert.ok(detail.includes('Dive 47 · Line 1080 · frames 0–7,500 · CAMPA_GR1_TEST6-mixed'), detail);
+  assert.ok(!detail.includes('Dive Dive'), 'a dive already named "Dive 47" is not prefixed again');
 });
 
 test('a worker that cannot be drawn says so, and the rest of the pool still draws', async (t) => {

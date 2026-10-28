@@ -1531,6 +1531,13 @@ describe('GPU pool view', () => {
             phase: 'loading_model',
             elapsed_s: 4.25,
         });
+        // What the slot is working on, so the Workers screen can name the job and link
+        // to it (#282) -- the parts of the spec that say what, and none that say where.
+        expect(running.job.spec.range).toEqual({ start_frame: 0, end_frame: 100 });
+        expect(running.job.spec.video).toEqual({ source_name: 'jest-gpu.mp4' });
+        expect(running.job.spec.model.name).toBe(job.spec.model.name);
+        expect(running.job).toHaveProperty('name');
+
 
         // Nothing in the pool view can say where a machine is, because nothing
         // in the schema can. This is the assertion that would fail if somebody

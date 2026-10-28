@@ -2442,7 +2442,7 @@ const buildOpenApiSpec = () => {
                                     state: { type: 'string', example: 'leased' },
                                     batch_id: { type: 'string', format: 'uuid', nullable: true },
                                     name: { type: 'string', nullable: true, example: 'Dive-1_Dive-2_20261028', description: 'As on the job row; null when nobody named it.' },
-                                    spec: { type: 'object', description: 'The job\'s spec, as submitted and stored.' },
+                                    spec: { type: 'object', description: 'The parts of the job\'s spec that say what it is working on: `session` (dive, line, session_id), `range`, `model.name`, `dataset` and `video.source_name`. Never a url or any other location, which this view does not carry.' },
                                 },
                             },
                             telemetry: {
