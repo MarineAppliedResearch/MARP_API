@@ -33,6 +33,7 @@
 const { QueryTypes } = require('sequelize');
 
 const db = require('../model');
+const { backfill } = require('../scripts/backfill-training-batch-samples');
 
 /** Unique per run, so a failed run's leftovers are recognisable. */
 const runId = Date.now();
@@ -253,6 +254,316 @@ describe('Taking per-batch samples onto the record', () => {
     });
 });
 
+/**
+ * Several different events at one step, which is the shape that broke this table.
+ *
+ * **The first key was `(attempt_id, step, phase)` and it threw most of the series**
+ * **away.** Job 21801 sent 14 `training_batch` metric events and MARP stored 4. The
+ * worker reports phase markers -- `validating`, `validated`, `saving` -- through the
+ * same phase as the batch samples, with no `batch`, at the same step as the *next*
+ * epoch's batch 0. `ON CONFLICT DO NOTHING` kept whichever arrived first, so the row
+ * stored at step 144 was the validating marker and the measurement behind it, the
+ * opening batch of epoch 2, was discarded. Every epoch after the first lost its first
+ * sample and kept a marker instead.
+ *
+ * **The sequence below is job 21801's, read off `gpu_job_events` rather than imagined**
+ * -- including the detail that makes the obvious fix wrong. Step 432 carries two
+ * `validating` markers and two `validated` markers, one pair for epoch 3 and one for
+ * epoch 4, so a key of `(attempt_id, step, phase, phase_entered)` still collides twice
+ * on this very job.
+ */
+/**
+ * Job 21801's events, by seq, step, phase marker, batch and epoch.
+ *
+ * **Read off `gpu_job_events` rather than imagined**, which is what makes it worth
+ * driving two different tests from. Its shape is the defect: four or five distinct
+ * events share a step, and step 432 carries two `validating` markers and two `validated`
+ * markers -- one pair for epoch 3 and one for epoch 4.
+ *
+ * @constant
+ */
+const REAL_SEQUENCE = [
+    [12, 0, null, 0, 1],
+    [61, 144, 'validating', null, 1],
+    [63, 144, 'validated', null, 1],
+    [64, 144, 'saving', null, 1],
+    [69, 144, null, 0, 2],
+    [118, 288, 'validating', null, 2],
+    [120, 288, 'validated', null, 2],
+    [121, 288, 'saving', null, 2],
+    [124, 288, null, 0, 3],
+    [173, 432, 'validating', null, 3],
+    [175, 432, 'validated', null, 3],
+    [176, 432, 'saving', null, 3],
+    [179, 432, 'validating', null, 4],
+    [181, 432, 'validated', null, 4],
+];
+
+/**
+ * That sequence as events the worker would post.
+ *
+ * @returns {Array<Object>} The events, in seq order.
+ */
+function realEvents() {
+    return REAL_SEQUENCE.map(([seq, step, entered, batch, epoch]) => ({
+        seq,
+        kind: 'metric',
+        at: new Date(Date.UTC(2026, 9, 28, 1, 0, seq % 60)).toISOString(),
+        payload: {
+            step,
+            phase: 'training_batch',
+            metrics: {
+                epoch,
+                ...(entered ? { phase_entered: entered } : {}),
+                ...(batch === null ? {} : { batch, batches_total: 144 }),
+                'train/box_loss': 1 - (seq / 1000),
+            },
+        },
+    }));
+}
+
+describe('Several events at one step', () => {
+    const REAL = REAL_SEQUENCE;
+
+    beforeAll(async () => {
+        const response = await post(made.attemptIds[1], 2, realEvents());
+
+        expect(response.status).toBe(200);
+        expect(response.body.accepted).toBe(REAL.length);
+    });
+
+    afterAll(async () => {
+        await db.sequelize.query(
+            'DELETE FROM training_batch_samples WHERE attempt_id = :id AND seq >= 12',
+            { replacements: { id: made.attemptIds[1] }, logging: false }
+        );
+        await db.sequelize.query(
+            'DELETE FROM gpu_job_events WHERE attempt_id = :id AND seq >= 12',
+            { replacements: { id: made.attemptIds[1] }, logging: false }
+        );
+    });
+
+    /**
+     * **14 in, 14 out.** The count is the assertion, because the defect was arithmetic:
+     * MARP received every event and stored a third of them.
+     */
+    it('keeps every event, not one per step', async () => {
+        const rows = await query(
+            'SELECT seq FROM training_batch_samples WHERE attempt_id = :id AND seq >= 12 ORDER BY seq',
+            { id: made.attemptIds[1] }
+        );
+
+        expect(rows).toHaveLength(REAL.length);
+        expect(rows.map((row) => row.seq)).toEqual(REAL.map(([seq]) => seq));
+    });
+
+    /**
+     * **The measurement that used to be lost.** At step 144 the marker arrived first and
+     * took the row; the opening batch of epoch 2 behind it was discarded. That sample is
+     * the one a chart needs -- a marker carries no loss at all.
+     */
+    it('keeps the next epoch\'s first batch, which the old key discarded', async () => {
+        const rows = await query(
+            `SELECT seq, epoch, batch, metrics FROM training_batch_samples
+              WHERE attempt_id = :id AND step = 144 ORDER BY seq`,
+            { id: made.attemptIds[1] }
+        );
+
+        expect(rows).toHaveLength(4);
+
+        const opening = rows.find((row) => row.seq === 69);
+
+        expect(opening).toBeTruthy();
+        expect(opening.epoch).toBe(2);
+        expect(opening.batch).toBe(0);
+        expect(opening.metrics['train/box_loss']).toBeCloseTo(0.931);
+    });
+
+    /**
+     * **The fix that would not have worked, asserted so nobody tries it later.** Step 432
+     * holds two `validating` markers and two `validated` markers -- epoch 3 and epoch 4 --
+     * so keying on `(attempt_id, step, phase, phase_entered)` would still have dropped
+     * two of these five rows.
+     */
+    it('keeps both of the two identically-labelled markers at one step', async () => {
+        const rows = await query(
+            `SELECT seq, epoch, metrics->>'phase_entered' AS entered
+               FROM training_batch_samples
+              WHERE attempt_id = :id AND step = 432 ORDER BY seq`,
+            { id: made.attemptIds[1] }
+        );
+
+        expect(rows).toHaveLength(5);
+
+        const validating = rows.filter((row) => row.entered === 'validating');
+
+        expect(validating).toHaveLength(2);
+        expect(validating.map((row) => row.epoch)).toEqual([3, 4]);
+    });
+
+    /**
+     * **And a resend still dedupes, which is what the key was for.** The event stream
+     * refuses a replayed seq before this is reached, so the index is the second line of
+     * defence rather than the first -- but it has to hold, or a retried batch would
+     * double every point on the chart and read as a stall.
+     */
+    it('still refuses the same event twice', async () => {
+        const before = await query(
+            'SELECT count(*)::int AS n FROM training_batch_samples WHERE attempt_id = :id AND seq >= 12',
+            { id: made.attemptIds[1] }
+        );
+
+        await db.sequelize.query(
+            `INSERT INTO training_batch_samples
+                 (attempt_id, seq, step, phase, epoch, batch, batches_total, at, metrics, created_at)
+             VALUES (:id, 69, 144, 'training_batch', 2, 0, 144, NOW(), '{}'::jsonb, NOW())
+             ON CONFLICT (attempt_id, seq) DO NOTHING`,
+            { replacements: { id: made.attemptIds[1] }, logging: false }
+        );
+
+        const after = await query(
+            'SELECT count(*)::int AS n FROM training_batch_samples WHERE attempt_id = :id AND seq >= 12',
+            { id: made.attemptIds[1] }
+        );
+
+        expect(after[0].n).toBe(before[0].n);
+    });
+});
+
+/**
+ * Recovering the samples the old key discarded.
+ *
+ * **Nothing was lost, only not stored.** Every discarded sample is still in
+ * `gpu_job_events`, which is why that table keeps whole payloads rather than the parts
+ * MARP knew how to read at the time -- the same property that recovered five epoch
+ * metric columns after a mapping bug.
+ *
+ * This drives `scripts/backfill-training-batch-samples.js` itself rather than a copy of
+ * its logic, because a recovery script that is tested by a reimplementation of it is
+ * tested against the wrong thing.
+ */
+describe('Recovering samples from the events', () => {
+    /** What the attempt held before anything was deleted. */
+    let before;
+
+    /**
+     * Its own copy of the sequence, on its own attempt.
+     *
+     * **Not the one the describe above posts.** That block removes its events and samples
+     * in `afterAll`, so reading them here made this depend on the order two sibling
+     * describes happen to run in -- which it did, and three of these failed finding one
+     * row where fourteen were expected. A fixture another test tidies away is not a
+     * fixture.
+     */
+    /* **Read inside `beforeAll`, not at describe time.** A describe body runs while Jest
+       is collecting tests, before any hook has fired, so `made.attemptIds` is still empty
+       there -- and a `const` taken from it is `undefined`, which posts to
+       `/attempts/undefined/events` and answers 400. */
+    let attemptId;
+
+    beforeAll(async () => {
+        attemptId = made.attemptIds[0];
+
+        const posted = await post(attemptId, 1, realEvents());
+
+        expect(posted.status).toBe(200);
+
+        before = await query(
+            'SELECT seq FROM training_batch_samples WHERE attempt_id = :id AND seq >= 12 ORDER BY seq',
+            { id: attemptId }
+        );
+
+        /* Delete exactly the ones the old key would have dropped: everything but the
+           first of each step. That leaves the table in the state job 21801 is actually
+           in on the development database -- four rows out of fourteen. */
+        await db.sequelize.query(
+            `DELETE FROM training_batch_samples s
+              WHERE s.attempt_id = :id AND s.seq >= 12
+                AND EXISTS (SELECT 1 FROM training_batch_samples o
+                             WHERE o.attempt_id = s.attempt_id AND o.step = s.step
+                               AND o.phase = s.phase AND o.seq < s.seq)`,
+            { replacements: { id: attemptId }, logging: false }
+        );
+    });
+
+    afterAll(async () => {
+        await db.sequelize.query(
+            'DELETE FROM training_batch_samples WHERE attempt_id = :id AND seq >= 12',
+            { replacements: { id: attemptId }, logging: false }
+        );
+        await db.sequelize.query(
+            'DELETE FROM gpu_job_events WHERE attempt_id = :id AND seq >= 12',
+            { replacements: { id: attemptId }, logging: false }
+        );
+    });
+
+    it('leaves the table in the state the old key produced', async () => {
+        const left = await query(
+            'SELECT seq FROM training_batch_samples WHERE attempt_id = :id AND seq >= 12 ORDER BY seq',
+            { id: attemptId }
+        );
+
+        /* The four seqs job 21801 actually has stored: the first event of each step. */
+        expect(left.map((row) => row.seq)).toEqual([12, 61, 118, 173]);
+    });
+
+    it('reports what is missing without writing anything', async () => {
+        const dry = await backfill({ apply: false, attemptId: attemptId });
+
+        expect(dry.missing).toBe(10);
+        expect(dry.written).toBe(0);
+
+        const still = await query(
+            'SELECT count(*)::int AS n FROM training_batch_samples WHERE attempt_id = :id AND seq >= 12',
+            { id: attemptId }
+        );
+
+        expect(still[0].n).toBe(4);
+    });
+
+    it('puts every one of them back, from the events', async () => {
+        const applied = await backfill({ apply: true, attemptId: attemptId });
+
+        expect(applied.written).toBe(10);
+
+        const after = await query(
+            'SELECT seq FROM training_batch_samples WHERE attempt_id = :id AND seq >= 12 ORDER BY seq',
+            { id: attemptId }
+        );
+
+        expect(after.map((row) => row.seq)).toEqual(before.map((row) => row.seq));
+    });
+
+    /**
+     * **A recovered row is the row the ingest would have written**, not an approximation
+     * of it. If it were not, a chart would show a seam at the point of recovery and
+     * nothing would say why.
+     */
+    it('recovers the columns, not just the rows', async () => {
+        const [opening] = await query(
+            `SELECT seq, step, phase, epoch, batch, batches_total, metrics
+               FROM training_batch_samples WHERE attempt_id = :id AND seq = 69`,
+            { id: attemptId }
+        );
+
+        expect(opening).toBeTruthy();
+        expect(opening.step).toBe(144);
+        expect(opening.phase).toBe('training_batch');
+        expect(opening.epoch).toBe(2);
+        expect(opening.batch).toBe(0);
+        expect(opening.batches_total).toBe(144);
+        expect(opening.metrics['train/box_loss']).toBeCloseTo(0.931);
+    });
+
+    /** Idempotent, because the table is keyed by the event the row came from. */
+    it('changes nothing on a second run', async () => {
+        const again = await backfill({ apply: true, attemptId: attemptId });
+
+        expect(again.missing).toBe(0);
+        expect(again.written).toBe(0);
+    });
+});
+
 describe('Reading the series back', () => {
 
     it('serves them oldest first, with what the worker measured', async () => {
@@ -377,12 +688,15 @@ describe('A run with more samples than a chart can draw', () => {
         for (let at = 0; at < 500; at += 1) {
             const step = 1000 + at;
 
-            values.push(`(:attemptId, ${step}, 'training_batch', 2, ${at}, 500, NOW(), '{"train/loss": ${1 - (at / 1000)}}'::jsonb, NOW())`);
+            /* **Each row carries its own seq**, because a sample is keyed by the event it
+               was projected from. Numbered from 5000 so they cannot collide with the seqs
+               the posted events above used on this attempt. */
+            values.push(`(:attemptId, ${5000 + at}, ${step}, 'training_batch', 2, ${at}, 500, NOW(), '{"train/loss": ${1 - (at / 1000)}}'::jsonb, NOW())`);
         }
 
         await db.sequelize.query(
             `INSERT INTO training_batch_samples
-                 (attempt_id, step, phase, epoch, batch, batches_total, at, metrics, created_at)
+                 (attempt_id, seq, step, phase, epoch, batch, batches_total, at, metrics, created_at)
              VALUES ${values.join(', ')}`,
             { replacements, logging: false }
         );

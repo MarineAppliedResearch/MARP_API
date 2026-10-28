@@ -2344,8 +2344,13 @@ class GpuRepository {
         const payload = event.payload || {};
         const metrics = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : null;
         const step = Number(payload.step);
+        const seq = Number(event.seq);
 
-        if (!metrics || !Number.isInteger(step)) return;
+        /* The seq is the row key now, so a sample without one cannot be stored. Nothing
+           produces that -- the events route requires a seq and this runs only for an
+           event already accepted onto the stream -- which is exactly why it is checked
+           here rather than left to a NOT NULL violation inside a shared transaction. */
+        if (!metrics || !Number.isInteger(step) || !Number.isInteger(seq)) return;
 
         const phase = readPhase(payload.phase);
 
@@ -2364,14 +2369,24 @@ class GpuRepository {
            ordered by anyway. */
         const at = event.at && !Number.isNaN(Date.parse(event.at)) ? event.at : null;
 
+        /* **Keyed by the event, not by what the sample says.** The first key here was
+           (attempt_id, step, phase), which assumed one sample per step per phase -- and
+           the worker sends validating/validated/saving markers through the same phase, at
+           the same step as the next epoch's batch 0. Job 21801 sent 14 events and MARP
+           kept 4, and the ones it kept were markers rather than measurements.
+
+           `seq` is the identity of the event this is a projection of, and gpu_job_events
+           is already unique on (attempt_id, seq) -- so a resend still dedupes and two
+           different events at one step both survive. */
         await this.db.sequelize.query(
             `INSERT INTO training_batch_samples
-                 (attempt_id, step, phase, epoch, batch, batches_total, at, metrics, created_at)
-             VALUES (:attemptId, :step, :phase, :epoch, :batch, :batchesTotal, :at, :metrics, NOW())
-             ON CONFLICT (attempt_id, step, phase) DO NOTHING`,
+                 (attempt_id, seq, step, phase, epoch, batch, batches_total, at, metrics, created_at)
+             VALUES (:attemptId, :seq, :step, :phase, :epoch, :batch, :batchesTotal, :at, :metrics, NOW())
+             ON CONFLICT (attempt_id, seq) DO NOTHING`,
             {
                 replacements: {
                     attemptId,
+                    seq,
                     step,
                     phase: String(payload.phase),
                     epoch: whole(metrics.epoch),
