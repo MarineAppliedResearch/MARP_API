@@ -614,3 +614,56 @@ The database-naming collision is unresolved as a piece of tooling: every databas
 `marp db up` creates carries production's own name, whatever port it is on. It did not
 block this work in the end -- a separate database solved it -- but the next person to
 run `marp db up` on a fresh port will meet the same gate.
+
+# Verification — the ML Dashboard made whole (#268, R1–R11 in `task.md`)
+
+Run 2026-10-28 on branch `268-every-screen-standard`, against Isaac's development database
+(5432) through the serving checkout, and the test database (5462) for the suites. Isaac
+said to carry on without stopping at the plan, so plan and results are one record.
+
+## Test groups
+
+| Ran | Result |
+| --- | --- |
+| `npm run test:core` | **pass** — 15 suites, 257 tests |
+| `npm run test:auth` | **pass** — 4 suites, 36 tests |
+| `npm run test:gpu` | **failed first, then pass** — 2 suites failed to run with `column "seq" of relation "training_batch_samples" does not exist`. The test database was two migrations behind (`20261028030000`, `20261028050000`); the code was not at fault. After `db:migrate` on 5462: 23 suites, 385 tests. |
+| `npm run test:ml` | **pass** — 21 suites, 378 tests |
+| `npm run test:species` | **pass** — 5 suites, 60 tests |
+| `npm run test:datasets` | **pass** — 1 suite, 7 tests |
+| `npm run test:observations` | **pass** — 5 suites, 63 tests |
+| `npm run test:app:ml-dashboard` | **pass** — 145 of 145, including the two new tests below |
+| `npm run test:app:entry` | **pass** — 63 |
+| worker `pytest` (engine, dataset, provenance, contracts, runner, status, resources, imports) | **pass** — 247, on `268-training-params-and-provenance` |
+
+## Requirements, against the running system
+
+| | What was seen | Verdict |
+| --- | --- | --- |
+| **R1** Inference submits | Jobs 21790–21796 submitted from the Inference tab, model 412 by id and checksum, confidence 0.15 | met |
+| **R2** One automated session per run | Session 1434 under the dive, `is_automated` true, `created_by` the submitter | met |
+| **R3** A finished job says what it found | Rows show detections (0, 1, 2) and a Review link into the mosaic on those observations. **Defect found and fixed here:** the recent table ranked every failure above every success, so six September failures filled it and today's seven runs were unreachable. Now in-flight first, then newest. `inference-recent-order.test.mjs`, red on the old code, green on the fix. | met after fix |
+| **R4** Every screen is current | All seven screens show "updated Ns ago" and update in place; Jobs carries Updated | met |
+| **R5** Workers | Version 0.1.17, GPU, VRAM, CPU, RAM, disk live; offline machines fold away. **Defect found and fixed here:** the detail panel read `caps.gpu`/`.driver`/`.cuda`, keys no worker sends, and showed "— · ? / ?" beside a row naming the card. Now "NVIDIA GeForce RTX 4080 SUPER · 610.88 / 12.8". `worker-detail-hardware.test.mjs`, red on the old code, green on the fix. | met after fix, one gap below |
+| **R6** Live training charts | Job 21804 on worker 0.1.17: 14 training and 4 validation samples stored, 11 phase markers; the label stops at epoch 3 of 3 (0.1.16 said "epoch 4 of 3") | met, one gap below |
+| **R7** Classification | Job 21800, run 209, yolo11m-cls on dataset 390 (531 crops, 11 species): 10 epochs with train and val loss, top-1 0.638, top-5 0.913; matrix in species names; model 441 registered as classification | met |
+| **R8** Every model reachable | One model store (`MODEL_STORAGE_ROOT`); a run from older model 412 fetched its weights | met |
+| **R9** Server identity | Top bar shows "API started …" on every screen, commit on hover | met |
+| **R10** Species capitalisation | Migration applied on 5432 after dump `corpus/20261028-115619`; Equipment merged and retired; lookups case-insensitive | met |
+| **R11** No explain-away notes | Sweep of all seven screens. One left on Inference ("Other pipeline types are design placeholders…"), removed. The disabled pipeline options remain: the worker runs Detection + ByteTrack only | met |
+
+## Known gaps — not delivered, and why
+
+- **No mid-epoch training samples.** Every stored training sample is the first or last
+  batch of an epoch, even with sampling at 0.5 s. Hypothesis: CUDA runs asynchronously, so
+  the batch callbacks fire in a burst at the epoch's end. The probe
+  `scripts/measure_epoch_split.py` is committed in the worker and has not been run.
+- **Workers' Uptime column** draws "not reported". The only candidate field,
+  `resources.process.uptime_s`, read 4.8 s on a machine up for hours, so it is not the
+  machine's uptime and was not wired.
+- **The top-bar project filter** was removed. With 10 projects and about 9,600 jobs it is
+  probably needed back; Isaac has not decided.
+- **MarineDebris duplicate species** (805/817, 816/832) — A6, open and non-blocking.
+- **Charts are hand-drawn SVG**, with no zoom or interaction. Deferred to
+  MarineAppliedResearch/MARP_API#275, "Draw the ML Dashboard's charts with a chart library
+  that supports zoom and interaction".
