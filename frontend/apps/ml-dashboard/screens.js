@@ -4550,10 +4550,13 @@ function renderInferenceRecent(views) {
   if (!table) return;
 
   const body = $('tbody', table);
-  const rank = { running: 0, issues: 1, failed: 2, expired: 3, queued: 4, cancelled: 5, done: 6 };
+  /* **In flight first, then newest.** Every failure used to outrank every success, so six
+     September failures filled the table and the seven runs that succeeded today could
+     not be reached from here at all. A failure keeps its place in *Needs attention*. */
+  const live = (view) => (['running', 'queued'].includes(view.state) ? 0 : 1);
   const shown = views
     .slice()
-    .sort((a, b) => (rank[a.state] - rank[b.state])
+    .sort((a, b) => (live(a) - live(b))
       || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
     .slice(0, 6);
 
@@ -6118,6 +6121,7 @@ function workerView(worker) {
 function workerRows(view) {
   const { worker, caps } = view;
   const attempt = (worker.attempts || [])[0] || null;
+  const res = caps.resources || {};
 
   const head = `<tr class="runrow-head" data-worker="${worker.worker_id}" aria-expanded="false">`
     + `<td class="ex"><button class="exbtn" type="button" aria-label="Show ${worker.name} details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
@@ -6157,9 +6161,11 @@ function workerRows(view) {
     + '<span class="wdacts"><button class="btn sm" title="Rename is the one worker mutation the API has"><svg class="ico sm"><use href="#i-pencil"/></svg>Rename</button></span></div>'
     + '<div class="grid" data-cols="2">'
     + '<div class="sect"><h3>Reported at enrolment</h3><dl class="kv">'
-    + `<dt>GPU</dt><dd>${caps.gpu || NOT_REPORTED}</dd>`
+    /* Same mistake the row had: `caps.gpu`, `caps.driver` and `caps.cuda` are keys no
+       worker sends, so this read "— / ? / ?" beside a row naming the card. */
+    + `<dt>GPU</dt><dd>${view.gpuFull || NOT_REPORTED}</dd>`
     + `<dt>VRAM</dt><dd>${view.vram || NOT_REPORTED}</dd>`
-    + `<dt>Driver / CUDA</dt><dd>${caps.driver || '?'} / ${caps.cuda || '?'}</dd>`
+    + `<dt>Driver / CUDA</dt><dd>${(res.nvidia && res.nvidia.driver_version) || NOT_REPORTED} / ${(res.torch && res.torch.cuda_version) || NOT_REPORTED}</dd>`
     + `<dt>Worker version</dt><dd>${worker.worker_version || NOT_REPORTED}</dd>`
     + `<dt>Slots</dt><dd>${view.used} of ${worker.slot_count} in use</dd>`
     + `<dt>Enrolled</dt><dd>${new Date(worker.enrolled_at).toISOString().slice(0, 10)}</dd>`
