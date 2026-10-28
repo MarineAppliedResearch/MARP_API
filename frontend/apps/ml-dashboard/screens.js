@@ -8554,7 +8554,10 @@ function modelConfigMarkup() {
     + '<label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30" data-setting="track_thresh"></label>'
     + '<label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70" data-setting="match_thresh"></label>'
     + '<label>Track buffer (frames)<input class="inp" type="number" min="1" value="240" data-setting="track_buffer"></label>'
-    + '<label>Piece size (frames)<input class="inp" type="number" min="1" value="900" data-setting="piece_frames"></label>'
+    /* **Minutes, not frames.** This was a frame count defaulting to 900 -- carried over
+       from the mockup, never chosen -- which is thirty seconds of 30 fps video and cut
+       three videos into 82 jobs. MARP converts at each video's own rate. */
+    + '<label>Piece length (minutes)<input class="inp" type="number" min="0.5" step="0.5" value="5" data-setting="piece_minutes"></label>'
     + '<label class="check"><input type="checkbox" data-setting="mot20"><span>MOT20 mode</span></label>'
     /* Stated rather than chosen. `reduction/keyframes.py` registers exactly one --
        `("v3_dirpad", "1")` -- and the two options here were "Best frame of each
@@ -8811,7 +8814,7 @@ function inferenceParams(config) {
     const key = input.dataset.setting;
 
     // Not a worker setting: it splits the submission into jobs, which is MARP's business.
-    if (key === 'piece_frames' || input.disabled) return;
+    if (key === 'piece_minutes' || input.disabled) return;
 
     if (input.type === 'checkbox') {
       if (input.checked) params[key] = true;
@@ -8871,7 +8874,7 @@ async function inferenceSubmissions() {
       /* Both identify the session and neither can be guessed. A line is typed onto the
          card and saved; a dive comes from the Jellyfin hierarchy. */
       if (!dive) refusals.push(where + ': ' + label + ' has no dive, so its session cannot be placed.');
-      if (!line) refusals.push(where + ': ' + label + ' has no line. Enter one on the card and save it.');
+      if (!line) refusals.push(where + ': ' + label + ' has no line. Type it into the Line box on its card.');
 
       configs.forEach((config) => {
         const pick = $('[data-model-pick]', config);
@@ -8894,8 +8897,8 @@ async function inferenceSubmissions() {
           return;
         }
 
-        const piece = $('[data-setting="piece_frames"]', config);
-        const pieceFrames = Number(piece ? piece.value : NaN);
+        const piece = $('[data-setting="piece_minutes"]', config);
+        const pieceMinutes = Number(piece ? piece.value : NaN);
         const params = inferenceParams(config);
         const body = {
           kind: 'inference',
@@ -8937,7 +8940,7 @@ async function inferenceSubmissions() {
           if (to !== '') body.spec.range.end_frame = Number(to);
         }
 
-        if (Number.isInteger(pieceFrames) && pieceFrames > 0) body.piece_frames = pieceFrames;
+        if (Number.isFinite(pieceMinutes) && pieceMinutes > 0) body.piece_seconds = pieceMinutes * 60;
         if (Object.keys(params).length) body.spec.params = params;
 
         bodies.push(body);
@@ -9019,10 +9022,33 @@ function wireInferenceForm() {
     + '" data-start-frame="' + safe(parts.from || '')
     + '" data-end-frame="' + safe(parts.to || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
     + (parts.line ? 'L' + safe(parts.line) : '—') + '</span><span><b class="mono">' + safe(parts.title)
-    + '</b><small>' + (parts.dive ? safe(parts.dive) + ' · ' : '')
-    + (parts.line ? 'Line ' + safe(parts.line) : 'Line not assigned') + ' · ' + safe(parts.range)
-    + '</small></span><button class="btn sm icon" type="button" data-remove-target aria-label="Remove '
+    + '</b><small>' + (parts.dive ? safe(parts.dive) + ' · ' : '') + safe(parts.range)
+    /* **The line is typed here too.** It used to be read only from the picker at the
+       moment of Add, so a video added before its line was typed -- the natural order --
+       sat at "Line not assigned" with nowhere to put one, and the only way out was to
+       remove it and add it again. Isaac: *"it doesn't allow me to type a line number in
+       for the individual video"*. */
+    + '</small></span><label class="target-line">Line<input class="inp" type="text" inputmode="numeric"'
+    + ' data-target-line value="' + safe(parts.line || '') + '" placeholder="e.g. 4"'
+    + ' aria-label="Line for ' + safe(parts.title) + '"></label>'
+    + '<button class="btn sm icon" type="button" data-remove-target aria-label="Remove '
     + safe(parts.title) + '">' + ico('x', 'sm') + '</button></article>';
+
+  /* A card's line is what its submission carries, so the box writes straight onto the
+     card's dataset and the badge follows it. */
+  document.addEventListener('input', (event) => {
+    if (!event.target.matches('[data-target-line]')) return;
+
+    const target = event.target.closest('[data-target]');
+    const line = event.target.value.trim();
+    const badge = $('.mini-thumb', target);
+
+    target.dataset.videoLine = line;
+    if (badge) {
+      badge.textContent = line ? 'L' + line : '—';
+      badge.classList.toggle('pending', !line);
+    }
+  });
 
   document.addEventListener('change', (event) => {
     const choice = event.target.closest('[data-video-choice]');
@@ -9122,16 +9148,11 @@ function wireInferenceForm() {
   run.addEventListener('click', async () => {
     const asked = await inferenceSubmissions();
 
-    /* The spec panel still opens, because somebody about to spend GPU hours should be
-       able to read what is going. It shows what was actually sent, not a sketch of it:
-       it used to print a `kind: 'inference_plan'` object that no MARP route accepts,
-       naming models by their display text and carrying no session, no hash and no
-       frames. Nothing was ever submitted. */
-    $('#specText').textContent = JSON.stringify(asked.bodies || asked.refusals, null, 2);
-    $('#specOut').hidden = false;
-
+    /* **Every refusal, in the status line.** They used to be readable in full only in a
+       panel that printed the raw request -- which Isaac pointed out nobody should be
+       shown -- while the status carried the first. */
     if (asked.refusals) {
-      sayRunStatus(asked.refusals[0], 'warning');
+      sayRunStatus(asked.refusals.join(' '), 'warning');
       return;
     }
 

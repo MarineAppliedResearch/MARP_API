@@ -2951,6 +2951,12 @@ const buildOpenApiSpec = () => {
                                 example: 9000,
                                 description: 'Split the spec\'s range into pieces of this many frames, each its own job, all sharing one batch_id. Omit for a single job. Piece k is `[start + k*piece_frames, start + (k+1)*piece_frames)`, clipped to the end of the range -- so the pieces tile the range exactly, consecutive pieces share a bound, and the last piece is short rather than over-long.',
                             },
+                            piece_seconds: {
+                                type: 'number',
+                                exclusiveMinimum: 0,
+                                example: 300,
+                                description: 'Split into pieces of this much playback time instead, converted to frames at the Jellyfin item\'s own frame rate (25 when none can be read) -- the rate the video\'s length is worked out from. Not with piece_frames, and only for a video given as a jellyfin_item_id.',
+                            },
                         },
                     },
                     GpuJobSubmitResponse: {

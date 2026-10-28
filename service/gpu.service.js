@@ -2030,7 +2030,7 @@ class GpuService {
      * about the others.
      *
      * @async
-     * @param {Object} body - `{kind, spec, priority, max_attempts, piece_frames}`.
+     * @param {Object} body - `{kind, spec, priority, max_attempts, piece_frames, piece_seconds}`.
      * @param {Object} [principal] - The authenticated caller, for `created_by`.
      * @returns {Promise<Object>} `{batch_id, jobs}`.
      * @throws {ApiError} 400 for a spec that cannot be scheduled.
@@ -2107,10 +2107,36 @@ class GpuService {
             invalid('max_attempts must be at least 1.');
         }
 
-        const pieceFrames = optionalInteger(body.piece_frames, 'piece_frames', null);
+        let pieceFrames = optionalInteger(body.piece_frames, 'piece_frames', null);
 
         if (pieceFrames !== null && pieceFrames < 1) {
             invalid('piece_frames must be at least 1.');
+        }
+
+        /* **A piece as a length of time, converted at this video's own rate.** Isaac asked
+           for five-minute pieces; a frame count cannot say that, because the footage is not
+           all one rate -- CAMPA2026 runs at 24.946, and the screen had been offering 900
+           frames, half a minute, as its default. The rate is the one the length above was
+           worked out from, so a piece and the video it cuts agree. */
+        if (body.piece_seconds !== undefined && body.piece_seconds !== null) {
+            if (pieceFrames !== null) {
+                invalid('Give piece_frames or piece_seconds, not both.');
+            }
+
+            const seconds = Number(body.piece_seconds);
+
+            if (!Number.isFinite(seconds) || seconds <= 0) {
+                invalid('piece_seconds must be a number of seconds greater than zero.');
+            }
+
+            if (!spec.video.jellyfin_item_id) {
+                invalid(
+                    'piece_seconds needs a frame rate, and MARP reads one only from a Jellyfin item. '
+                    + 'Give piece_frames for a video given as a bare url.'
+                );
+            }
+
+            pieceFrames = Math.max(1, Math.round(seconds * await this.frameRateForVideo(spec.video)));
         }
 
         // Optional, and null when absent. MARP does not compose a fallback: a
@@ -3006,26 +3032,7 @@ class GpuService {
             );
         }
 
-        // At the video's nominal rate (#231). A frame number is playback time
-        // times that rate, so the last one is the duration times it -- whatever
-        // the average says about gaps in the timestamps. 25 when no rate can be
-        // read, as before: the length is what matters here, and a rate off by a
-        // fraction only moves where the final piece ends.
-        let fps = ASSUMED_FPS;
-
-        try {
-            const rates = await jellyfinRepository.getVideoFrameRate(video.jellyfin_item_id);
-
-            if (rates && rates.realFrameRate) {
-                fps = rates.realFrameRate;
-            }
-        } catch (error) {
-            logger.info(
-                `sizing ${video.jellyfin_item_id} at the assumed ${ASSUMED_FPS} fps: its frame rate could not be read: `
-                + error.message
-            );
-        }
-
+        const fps = await this.frameRateForVideo(video);
         const frames = Math.floor((Number(item.runtimeTicks) / TICKS_PER_SECOND) * fps);
 
         if (!Number.isSafeInteger(frames) || frames < 1) {
@@ -3036,6 +3043,35 @@ class GpuService {
         }
 
         return frames;
+    }
+
+    /**
+     * A Jellyfin video's frame rate, for sizing it and for cutting it into pieces.
+     *
+     * At the video's nominal rate (#231). A frame number is playback time times that
+     * rate, so the last one is the duration times it -- whatever the average says about
+     * gaps in the timestamps. 25 when no rate can be read, as before: a rate off by a
+     * fraction only moves where a piece ends.
+     *
+     * @async
+     * @param {Object} video - `spec.video`, carrying a `jellyfin_item_id`.
+     * @returns {Promise<number>} Frames per second.
+     */
+    async frameRateForVideo(video) {
+        try {
+            const rates = await jellyfinRepository.getVideoFrameRate(video.jellyfin_item_id);
+
+            if (rates && rates.realFrameRate) {
+                return rates.realFrameRate;
+            }
+        } catch (error) {
+            logger.info(
+                `sizing ${video.jellyfin_item_id} at the assumed ${ASSUMED_FPS} fps: its frame rate could not be read: `
+                + error.message
+            );
+        }
+
+        return ASSUMED_FPS;
     }
 
     /**

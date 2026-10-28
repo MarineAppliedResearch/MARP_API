@@ -1843,6 +1843,17 @@ details.fold .fbody { padding: 4px 12px 14px; }
 .range-entry { grid-template-columns: auto minmax(0, 1fr); }
 .line-entry > span, .range-entry > span { color: var(--muted); font-size: 10px; }
 .line-entry .inp { min-width: 0; }
+/* **The picker's card as it is now drawn.** The rules above are for the markup it had
+   before it read the real Jellyfin library; the rewrite renamed its parts to
+   `.video-meta` and `.video-scope` and nothing styled them, so the Line and frame boxes
+   fell into the 24px checkbox column and lay on top of the filename and each other.
+   Isaac typed 780 into Line and nothing appeared -- it had gone into From frame. */
+.video-meta { display: grid; align-content: start; gap: 3px; min-width: 0; }
+.video-meta b { color: var(--white); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-meta .faint { font-size: 9.5px; overflow-wrap: anywhere; }
+.video-scope { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.video-scope label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+.video-scope .inp { min-width: 0; }
 .saved-line { align-self: center; display: inline-flex; align-items: center; gap: 4px; color: var(--green-300); font-size: 9.5px; }
 .saved-line[hidden] { display: none; }
 .time-range { display: grid; grid-template-columns: repeat(2, minmax(0, 150px)); gap: 8px; margin-top: 8px; }
@@ -1864,12 +1875,14 @@ details.fold .fbody { padding: 4px 12px 14px; }
 .plan-section > header b { color: var(--text); font-size: 11.5px; }
 .plan-section > header small { color: var(--faint); font-size: 9.5px; margin-top: 2px; }
 .plan-targets, .model-configs { display: grid; gap: 6px; }
-.plan-target { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px; border: 1px solid var(--hairline); border-radius: 4px; background: rgba(1, 6, 14, .34); }
+.plan-target { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 7px; border: 1px solid var(--hairline); border-radius: 4px; background: rgba(1, 6, 14, .34); }
 .mini-thumb { display: grid; place-items: center; width: 34px; height: 25px; border-radius: 3px; color: var(--cyan-300); background: rgba(42, 214, 220, .1); font-size: 9px; font-weight: 800; }
 .mini-thumb.pending { color: var(--faint); background: rgba(255, 255, 255, .04); }
 .plan-target b, .plan-target small { display: block; min-width: 0; }
 .plan-target b { color: var(--text); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
 .plan-target small { margin-top: 2px; color: var(--faint); font-size: 9px; }
+.plan-target .target-line { display: flex; align-items: center; gap: 5px; color: var(--faint); font-size: 9px; }
+.plan-target .target-line .inp { width: 52px; }
 .model-config { border: 1px solid var(--hairline-2); border-radius: 5px; background: rgba(1, 6, 14, .34); }
 .model-config > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; cursor: pointer; list-style: none; padding: 8px; }
 .model-config > summary::-webkit-details-marker { display: none; }
@@ -1909,7 +1922,7 @@ details.fold .fbody { padding: 4px 12px 14px; }
   .video-choice { grid-template-columns: 24px minmax(0, 1fr); }
   .video-results { max-height: none; overflow: visible; padding-right: 0; scrollbar-gutter: auto; }
   .video-thumb { grid-column: 2; min-height: 132px; }
-  .video-main { grid-column: 2; }
+  .video-main, .video-meta, .video-scope { grid-column: 2; }
   .video-title { display: grid; gap: 3px; }
   .video-title > span { white-space: normal; }
   .video-controls { grid-template-columns: minmax(0, 1fr); }

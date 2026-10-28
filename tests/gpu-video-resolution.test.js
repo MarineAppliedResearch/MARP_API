@@ -542,6 +542,56 @@ describe('GPU job submission: the range it works out', () => {
 
         expect(response.status).toBe(400);
     });
+
+    /**
+     * Pieces as a length of time. Isaac asked for five-minute pieces, and the screen had
+     * been sending 900 frames -- half a minute -- which cut three videos into 82 jobs. A
+     * piece is converted at the video's own rate, the same one its length comes from.
+     */
+    describe('piece_seconds', () => {
+        const video = { jellyfin_item_id: ITEM_ID, source_name: 'jest-piece-seconds.mp4' };
+        const spec = {
+            engine: 'ultralytics',
+            model: { name: 'jest-piece-seconds', sha256: 'e'.repeat(64) },
+            video,
+            reduction: { name: 'v3_dirpad', version: 1 },
+        };
+
+        it('cuts five-minute pieces at the frame rate of that video', async () => {
+            // Twice: once for the video's length and once for the piece, both at its rate.
+            jellyfinRepository.getVideoFrameRate
+                .mockResolvedValueOnce({ realFrameRate: 24.946 })
+                .mockResolvedValueOnce({ realFrameRate: 24.946 });
+
+            const response = await submit(video, { spec, piece_seconds: 300 });
+
+            const piece = Math.round(300 * 24.946);
+            const frames = Math.floor((JELLYFIN_ITEM.runtimeTicks / 10_000_000) * 24.946);
+
+            expect(response.status).toBe(200);
+            expect(response.body.jobs).toHaveLength(Math.ceil(frames / piece));
+            expect(response.body.jobs[0].spec.range).toEqual({ start_frame: 0, end_frame: piece });
+            expect(response.body.jobs.at(-1).spec.range.end_frame).toBe(frames);
+        });
+
+        it('refuses piece_seconds and piece_frames together', async () => {
+            const response = await submit(video, { spec, piece_seconds: 300, piece_frames: 900 });
+
+            expect(response.status).toBe(400);
+            expect(response.body.error.message).toMatch(/not both/);
+        });
+
+        it('refuses piece_seconds for a bare url, which has no frame rate to read', async () => {
+            const bare = { url: RESOLVED_URL, source_name: 'jest-piece-bare.mp4' };
+            const response = await submit(bare, {
+                spec: { ...spec, video: bare, range: { start_frame: 0, end_frame: 100 } },
+                piece_seconds: 300,
+            });
+
+            expect(response.status).toBe(400);
+            expect(response.body.error.message).toMatch(/Jellyfin item/);
+        });
+    });
 });
 
 /**
