@@ -1036,6 +1036,34 @@ function registerGpuRoutes(app) {
     });
 
     registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
+        path: '/api/gpu/jobs/cancel',
+        summary: 'Cancel a selection of jobs, or every piece of one run',
+        description:
+            'Cancels the jobs named by `ids`, or every job sharing one `batch_id` -- the pieces of one split video. Exactly one of the two. Each job is cancelled exactly as `POST /gpu/jobs/{id}/cancel` would cancel it, and all of them in one transaction, so a run is cancelled together or not at all.\n\n'
+            + '**A job that has already finished is skipped and named**, with its state as the reason, and so is an id with no job. Cancelling something finished does nothing, which is not an error, but a caller who asked for 82 and got 70 is owed the other 12.\n\n'
+            + 'A selection by `ids` is capped at 200, the same as a bulk delete. A run is not capped: it is a set MARP made, named rather than listed.',
+        tags: [GPU_TAG],
+        requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuJobsCancelRequest' } } },
+        },
+        responses: {
+            200: {
+                description: 'How many were cancelled, and each one that was not with why.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuJobsCancelResponse' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.cancelJobs(req.body || {});
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
         method: 'get',
         permission: 'jobs:read',
         path: '/api/gpu/coverage',

@@ -273,6 +273,18 @@ class GpuController {
     }
 
     /**
+     * Cancel a selection of jobs, or one run.
+     *
+     * @async
+     * @param {Object} body - `{ids}` or `{batch_id}`.
+     * @returns {Promise<Object>} How many were cancelled, and why the rest were not.
+     */
+    async cancelJobs(body) {
+        logger.info('Controller: cancelJobs');
+        return gpuService.cancelJobs(body);
+    }
+
+    /**
      * What clearing a state would take with it. Counts; deletes nothing.
      *
      * @async

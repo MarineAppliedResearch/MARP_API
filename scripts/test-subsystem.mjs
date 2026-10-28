@@ -45,6 +45,8 @@ const SUBSYSTEMS = {
             // #104: what the job list and the pool view can be asked, after the
             // dashboard's gaps 23 to 27 were closed.
             'gpu-finished-at',
+            // #279: cancelling a selection, or every piece of one run.
+            'gpu-job-cancel',
             'gpu-job-list',
             'gpu-pool-telemetry',
             'gpu-telemetry-series',

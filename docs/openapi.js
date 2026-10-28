@@ -3018,6 +3018,31 @@ const buildOpenApiSpec = () => {
                             },
                         },
                     },
+                    GpuJobsCancelRequest: {
+                        type: 'object',
+                        description: 'Exactly one of `ids` and `batch_id`.',
+                        properties: {
+                            ids: { type: 'array', items: { type: 'integer' }, maxItems: 200, example: [21805, 21806], description: 'The jobs to cancel.' },
+                            batch_id: { type: 'string', format: 'uuid', description: 'Cancel every job in this run.' },
+                        },
+                    },
+                    GpuJobsCancelResponse: {
+                        type: 'object',
+                        properties: {
+                            cancelled: { type: 'integer', example: 70, description: 'How many jobs this call cancelled.' },
+                            skipped: {
+                                type: 'array',
+                                description: 'Each job that was not cancelled, and why: already finished, or no such job.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        id: { type: 'integer' },
+                                        reason: { type: 'string', example: 'already succeeded' },
+                                    },
+                                },
+                            },
+                        },
+                    },
                     GpuRequeueRequest: {
                         type: 'object',
                         description: 'Which video to requeue owed frames for. Omit both fields to requeue every video with interrupted work.',

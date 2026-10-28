@@ -1404,6 +1404,70 @@ class GpuRepository {
 
     // -----------------------------------------------------------------
     /**
+     * Cancel several jobs at once: a selection by id, or every piece of one run.
+     *
+     * One transaction, so a run of 82 pieces is cancelled together or not at all,
+     * rather than 82 separate requests any of which can fail halfway. The rows are
+     * locked first, exactly as `cancelJob` locks its one, so a lease or a result
+     * arriving meanwhile waits rather than racing the update.
+     *
+     * **A finished job is skipped, and says so.** Cancelling something already
+     * succeeded does nothing, which is not an error -- but a reader who asked for
+     * 82 and got 70 is owed the other 12 and why.
+     *
+     * @async
+     * @param {Object} which - `{ids}` or `{batchId}`, exactly one.
+     * @returns {Promise<{cancelled: number[], skipped: Array<{id: number, reason: string}>}>}
+     * @throws {Error} Re-throws after rolling back if the update fails.
+     */
+    async cancelJobs({ ids = null, batchId = null }) {
+        const where = ids ? 'id IN (:ids)' : 'batch_id = :batchId';
+        const transaction = await this.db.sequelize.transaction();
+
+        try {
+            const found = await this.db.sequelize.query(
+                `SELECT id, state FROM gpu_jobs WHERE ${where} ORDER BY id FOR UPDATE`,
+                { replacements: { ids, batchId }, type: QueryTypes.SELECT, transaction }
+            );
+
+            const live = found
+                .filter((row) => !TERMINAL_JOB_STATES.includes(row.state))
+                .map((row) => Number(row.id));
+
+            const cancelled = live.length
+                ? await this.db.sequelize.query(
+                    `UPDATE gpu_jobs
+                        SET state = 'cancelled', updated_at = NOW(), finished_at = NOW()
+                      WHERE id IN (:live)
+                      RETURNING id`,
+                    { replacements: { live }, type: QueryTypes.SELECT, transaction }
+                )
+                : [];
+
+            await transaction.commit();
+
+            const skipped = found
+                .filter((row) => TERMINAL_JOB_STATES.includes(row.state))
+                .map((row) => ({ id: Number(row.id), reason: `already ${row.state}` }));
+
+            /* An id nobody can find is reported rather than dropped, the same as the
+               bulk delete: a selection that quietly does less than it names is the
+               thing this shape exists to avoid. */
+            const seen = new Set(found.map((row) => Number(row.id)));
+            for (const id of ids || []) {
+                if (!seen.has(Number(id))) skipped.push({ id: Number(id), reason: 'no such job' });
+            }
+
+            return { cancelled: cancelled.map((row) => Number(row.id)), skipped };
+        } catch (error) {
+            await transaction.rollback();
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    // -----------------------------------------------------------------
+    /**
      * What deleting every job in one state would actually take with it.
      *
      * **A confirmation has to carry real numbers or it carries none.** The counts
