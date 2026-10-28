@@ -107,6 +107,9 @@ export async function drawScreen(page, answers, options = {}) {
     });
   }
 
+  /* The chart library the pages load before `screens.js` (#275), so a chart in a test is
+     drawn by the real thing rather than left as an empty slot. */
+  window.eval(readFileSync(join(APP, '..', '..', 'shared', 'vendor', 'echarts', 'echarts.min.js'), 'utf8'));
   run('screens.js');
 
   /* The renders are promise chains rather than timers; a few turns of the loop settles

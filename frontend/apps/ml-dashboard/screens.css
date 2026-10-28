@@ -635,6 +635,9 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .result-legend button[aria-pressed="true"] { color: var(--white); border-color: var(--hairline-2); background: rgba(9, 30, 51, .95); }
 .result-chart { min-width: 0; overflow: hidden; border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--sunk); }
 .result-chart svg { display: block; width: 100%; height: auto; max-height: 230px; }
+/* An ECharts chart (#275) sizes to its slot rather than to a viewBox, so the slot has the height. */
+.marp-chart { height: 230px; }
+.marp-chart svg { max-height: none; }
 .result-grid line { stroke: rgba(100, 246, 242, .18); stroke-width: 1.2; }
 .result-axis text { fill: var(--text); font: 600 10px var(--body-font); text-anchor: end; }
 .result-axis text:nth-last-child(2) { text-anchor: start; }

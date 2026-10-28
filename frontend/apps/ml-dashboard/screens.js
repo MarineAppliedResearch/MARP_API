@@ -1731,18 +1731,185 @@ function stepCharts(samples) {
     + `<div class="curve-grid">${cards}</div></div>`;
 }
 
+/* ------------------------------------------------------------------------------------
+   Charts, drawn by Apache ECharts (docs/decisions/0001, #275).
+
+   **A chart is a slot in the markup and an option held here.** Every screen builds its
+   panels as HTML strings and inserts them later, so a chart cannot be drawn where the
+   string is built -- there is no element yet. `chartSlot` returns the slot and keeps the
+   option; one observer on the document draws any slot the moment it lands, wherever it
+   was inserted from, and disposes the chart when its slot is taken away again.
+   ------------------------------------------------------------------------------------ */
+
+/** Options waiting for their slot to be inserted, by slot id. @type {Map<string, Object>} */
+const CHART_OPTIONS = new Map();
+
+let chartSeq = 0;
+
+/**
+ * Decode an HTML-escaped label, because ECharts writes text, not markup.
+ *
+ * @param {string} html - A label as the screens write it, `mAP@50&ndash;95`.
+ * @returns {string}
+ */
+function chartText(html) {
+  const holder = document.createElement('textarea');
+  holder.innerHTML = String(html);
+  return holder.value;
+}
+
+/**
+ * A series' colour and dash, from the CSS key the hand-drawn charts used.
+ *
+ * **Read from the stylesheet rather than repeated here**, so `.box-loss` is cyan and dashed
+ * in exactly one place and a legend swatch elsewhere cannot disagree with the line.
+ *
+ * @param {string} key - A series class such as `box-loss`.
+ * @returns {{color: string, dash: number[]|null}}
+ */
+function chartKey(key) {
+  const probe = document.createElement('span');
+  probe.className = key;
+  probe.hidden = true;
+  document.body.appendChild(probe);
+  const style = getComputedStyle(probe);
+  const color = style.getPropertyValue('--key').trim();
+  const on = parseFloat(style.getPropertyValue('--dash-on'));
+  const off = parseFloat(style.getPropertyValue('--dash-off'));
+  probe.remove();
+  return { color: color || '#64f6f2', dash: on > 0 ? [on, off > 0 ? off : on] : null };
+}
+
+/**
+ * The MARP theme, as the pieces of an ECharts option.
+ *
+ * @returns {Object} `{text, axis, tooltip, legend, toolbox}`.
+ */
+function chartTheme() {
+  const root = getComputedStyle(document.documentElement);
+  const token = (name, fallback) => root.getPropertyValue(name).trim() || fallback;
+  const text = token('--text', '#c7d4dd');
+  const muted = token('--muted', '#8198a8');
+  const line = token('--hairline', 'rgba(42, 214, 220, 0.11)');
+  const font = token('--body-font', 'sans-serif');
+
+  return {
+    text: { color: text, fontFamily: font },
+    axis: {
+      axisLine: { lineStyle: { color: line } },
+      axisTick: { lineStyle: { color: line } },
+      axisLabel: { color: muted, fontSize: 10 },
+      splitLine: { lineStyle: { color: line } },
+      nameTextStyle: { color: muted, fontSize: 10 },
+    },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: token('--navy-900', '#03101f'),
+      borderColor: token('--border', 'rgba(42, 214, 220, 0.28)'),
+      textStyle: { color: text, fontSize: 12 },
+    },
+    legend: { top: 0, left: 0, textStyle: { color: text, fontSize: 10 }, itemWidth: 18, itemHeight: 8, inactiveColor: muted },
+    toolbox: {
+      right: 0, top: 0, itemSize: 13, iconStyle: { borderColor: muted },
+      feature: { dataZoom: { title: { zoom: 'Drag to zoom', back: 'Undo zoom' } }, restore: { title: 'Reset zoom' } },
+    },
+  };
+}
+
+/**
+ * A slot for a chart, to put into a panel's markup.
+ *
+ * @param {Object} option - The ECharts option, without the theme.
+ * @param {string} label - What the chart shows, for a screen reader.
+ * @returns {string} The slot's HTML.
+ */
+function chartSlot(option, label) {
+  chartSeq += 1;
+  const id = `chart-${chartSeq}`;
+  CHART_OPTIONS.set(id, option);
+  return `<div class="result-chart marp-chart" data-chart="${id}" role="img" aria-label="${escapeHtml(label)}"></div>`;
+}
+
+/**
+ * Draw every chart slot under `root` that has not been drawn.
+ *
+ * **The slot keeps its option** after drawing (`el.marpOption`), which is what a test reads
+ * to ask what a chart was given, alongside the SVG ECharts drew.
+ *
+ * @param {Element|Document} root - Where to look.
+ * @returns {void}
+ */
+function mountCharts(root) {
+  if (!window.echarts || !root.querySelectorAll) return;
+  const slots = root.matches && root.matches('[data-chart]') ? [root] : [];
+  slots.push(...root.querySelectorAll('[data-chart]'));
+
+  for (const el of slots) {
+    /* From the slot itself when it has been drawn before: a row the Jobs cards reorder is
+       taken out and put back, which releases its chart and has to draw it again. */
+    const option = el.marpOption || CHART_OPTIONS.get(el.dataset.chart);
+    if (!option || el.marpChart) continue;
+    CHART_OPTIONS.delete(el.dataset.chart);
+
+    /* **A size even when the slot has none yet.** A chart in a collapsed row has no width
+       until the row opens; drawn at a nominal size now, it is resized to the real one by
+       the observer below the moment it has one. */
+    const theme = chartTheme();
+    const chart = window.echarts.init(el, null, {
+      renderer: 'svg', width: el.clientWidth || 640, height: el.clientHeight || 220,
+    });
+    chart.setOption({ animation: false, textStyle: theme.text, tooltip: theme.tooltip, legend: theme.legend, toolbox: theme.toolbox, ...option });
+    el.marpChart = chart;
+    el.marpOption = option;
+
+    if (window.ResizeObserver) {
+      el.marpResize = new ResizeObserver(() => {
+        if (el.clientWidth) chart.resize({ width: el.clientWidth, height: el.clientHeight || 220 });
+      });
+      el.marpResize.observe(el);
+    }
+  }
+}
+
+/**
+ * Let go of the charts under a node that has left the page.
+ *
+ * @param {Node} node - What was removed.
+ * @returns {void}
+ */
+function releaseCharts(node) {
+  if (!node.querySelectorAll) return;
+  const slots = node.matches && node.matches('[data-chart]') ? [node] : [];
+  slots.push(...node.querySelectorAll('[data-chart]'));
+  for (const el of slots) {
+    if (el.marpResize) el.marpResize.disconnect();
+    if (el.marpChart) el.marpChart.dispose();
+    el.marpChart = null;
+  }
+}
+
+/* One observer for the whole document: a slot is drawn when it arrives and released when
+   it goes, whichever screen put it there. */
+if (typeof MutationObserver !== 'undefined' && document.body) {
+  new MutationObserver((records) => {
+    for (const record of records) {
+      record.removedNodes.forEach(releaseCharts);
+      record.addedNodes.forEach(mountCharts);
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+}
+
 /**
  * One chart of several series over the epochs.
  *
- * Built out of the same `result-chart` / `result-line` vocabulary the Jobs detail already
- * uses, so nothing new was added to draw it and no library came with it.
+ * Drawn by ECharts through `chartSlot`, with each series' colour and dash taken from its
+ * existing CSS key, so the vocabulary is the one the hand-drawn version used (#275).
  *
  * @param {Object} spec - `{title, note, max, top, mid, series}`.
  * @param {Object[]} epochs - The run's epochs, earliest first.
  * @returns {string} An `<article>`, or an empty state when nothing was measured.
  */
 function epochChart(spec, epochs) {
-  const box = { left: 46, right: 700, top: 24, bottom: 174 };
   const drawn = spec.series
     .map(([key, label, column]) => {
       const values = epochs.map((epoch) => (epoch[column] === null || epoch[column] === undefined
@@ -1765,91 +1932,64 @@ function epochChart(spec, epochs) {
       + '</div></header></article>';
   }
 
-  /* **An axis that fits the data, where the data has no ceiling of its own.** `gappyPath`
-     clamps to `max`, so a fixed 2 draws every loss above 2 flat along the top -- and a
-     YOLO class loss routinely starts above 2 with many classes. A flat line that is
-     really a clamp is indistinguishable from a plateau, which is the worst way to be
-     wrong about a loss curve.
+  /* **An axis that fits the data, where the data has no ceiling of its own.** A YOLO class
+     loss routinely starts far above where it settles, and an axis scaled to that first
+     epoch flattens every other line along the bottom. So the chart opens zoomed to where
+     the run settled, and the first epoch is still there: the line leaves the top of the
+     chart rather than being cut or pinned to it, and Reset zoom shows its full height.
 
      Quality keeps its fixed 1: precision, recall and mAP are 0 to 1 by definition, and a
      fixed axis is what lets two runs be compared by eye. */
   const ceiling = spec.max === 'auto'
     ? autoCeiling(drawn, epochs.length)
     : { max: spec.max, clipped: [] };
-  const { max } = ceiling;
-  const labels = spec.max === 'auto'
-    ? { top: max.toFixed(1), mid: (max / 2).toFixed(1) }
-    : { top: spec.top, mid: spec.mid };
 
-  const legend = drawn.map((one) => `<button type="button" class="${one.key}" data-result-highlight="${one.key}"`
-    + `${one.measured ? '' : ' disabled title="Not reported for this run"'}>${one.label}</button>`).join('');
-
-  /* The same geometry `gappyPath` works in, needed here to put the break where the line
-     would have left the chart. */
-  const span = Math.max(1, epochs.length - 1);
-  const at = (index) => box.left + (box.right - box.left) * index / span;
-  const height = (value) => box.bottom - (box.bottom - box.top)
-    * Math.max(0, Math.min(max, value)) / (max || 1);
-
-  const cut = new Set(ceiling.clipped.map((one) => one.key));
-
-  /* **A clipped first epoch is dropped from its line rather than pinned to the ceiling.**
-     Clamping it would draw a vertex at the top of the axis that is indistinguishable from
-     a measurement taken there, which is the whole failure this is avoiding. The line
-     starts at epoch 2; a stub shows it coming down from above; the mark and the number
-     say what it was. */
-  const lines = drawn.map((one) => {
-    const values = cut.has(one.key) ? [null, ...one.values.slice(1)] : one.values;
-
-    return `<path class="result-line ${one.key}" d="${gappyPath(values, max, box)}"/>`;
-  }).join('');
-
-  const stubs = ceiling.clipped.map((one) => {
-    const next = drawn.find((series) => series.key === one.key).values[1];
-
-    /* Nothing to come down to when epoch 2 was not measured. The mark still stands. */
-    if (next === null || next === undefined) return '';
-
-    return `<path class="result-stub ${one.key}" `
-      + `d="M${at(0).toFixed(1)},${box.top} L${at(1).toFixed(1)},${height(next).toFixed(1)}"/>`;
-  }).join('');
-
-  /* The number at the break, because it is a real measurement and the most dramatic one
-     in the series -- recoverable by someone looking at the chart, not only from a note
-     somewhere else. */
-  const breaks = ceiling.clipped.map((one, index) => `<g class="result-break ${one.key}" `
-    + `transform="translate(${(at(0) + index * 15).toFixed(1)},${box.top})">`
-    + '<path class="break-mark" d="M-7,7 L-1,-4 M1,7 L7,-4"/>'
-    + `<title>${escapeHtml(one.label)} reached ${one.value.toFixed(2)} at epoch `
-    + `${epochs[0].epoch_number}, above this axis</title>`
-    + `<text x="10" y="4">${one.value.toFixed(2)}</text></g>`).join('');
-
-  const grid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
-    + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
-
+  const shown = drawn.filter((one) => one.measured);
+  const missing = drawn.filter((one) => !one.measured);
   const first = epochs.length ? epochs[0].epoch_number : 0;
-  const last = epochs.length ? epochs[epochs.length - 1].epoch_number : 0;
+  const theme = chartTheme();
 
-  /* The note carries the scale decision; the marks on the chart carry the numbers. Both,
-     because one says why the axis is where it is and the other says what was left out. */
-  const said = ceiling.clipped.length
-    ? ceiling.clipped.map((one) => `${one.label.toLowerCase()} ${one.value.toFixed(2)}`).join(', ')
-    : '';
-  const note = said
-    ? `${spec.note} &middot; scaled to epoch ${epochs[1] ? epochs[1].epoch_number : 2} onward, `
-      + `because epoch ${first} starts above the axis (${escapeHtml(said)})`
-    : spec.note;
+  const option = {
+    grid: { left: 42, right: 18, top: 40, bottom: 36 },
+    xAxis: {
+      type: 'category', data: epochs.map((epoch) => epoch.epoch_number), boundaryGap: false,
+      name: 'Epoch', nameLocation: 'middle', nameGap: 24, ...theme.axis,
+    },
+    yAxis: { type: 'value', min: 0, max: spec.max === 'auto' ? undefined : spec.max, ...theme.axis },
+    tooltip: { ...theme.tooltip, valueFormatter: (value) => (value === null || value === undefined ? 'not reported' : Number(value).toFixed(3)) },
+    dataZoom: [
+      { type: 'inside', xAxisIndex: 0, filterMode: 'none' },
+      ...(ceiling.clipped.length
+        ? [{ type: 'inside', yAxisIndex: 0, filterMode: 'none', startValue: 0, endValue: ceiling.max, zoomOnMouseWheel: false, moveOnMouseMove: false }]
+        : []),
+    ],
+    /* A missing epoch stays null, so the line breaks there rather than dropping to zero. */
+    series: shown.map((one) => {
+      const { color, dash } = chartKey(one.key);
+      return {
+        id: one.key, name: chartText(one.label), type: 'line', data: one.values,
+        connectNulls: false, symbolSize: 5, lineStyle: { color, width: 2, type: dash || 'solid' }, itemStyle: { color },
+      };
+    }),
+  };
+
+  /* The note carries the scale decision, because the zoom it opens at is a choice made
+     here and a reader should know there is more above it. */
+  const said = ceiling.clipped.map((one) => `${one.label.toLowerCase()} ${one.value.toFixed(2)}`).join(', ');
+  const notes = [spec.note];
+  if (said) {
+    notes.push(`zoomed to epoch ${epochs[1] ? epochs[1].epoch_number : 2} onward, because epoch ${first} `
+      + `starts above it (${escapeHtml(said)}); Reset zoom shows all of it`);
+  }
+  if (missing.length) notes.push(`not reported for this run: ${missing.map((one) => one.label.toLowerCase()).join(', ')}`);
+
   const label = said
-    ? `${spec.title} by epoch, scaled past epoch ${first}, which reached ${said}`
+    ? `${spec.title} by epoch, zoomed past epoch ${first}, which reached ${said}`
     : `${spec.title} by epoch`;
 
-  return `<article class="evaluation-card history-card" data-result-graph><header><div><h5>${spec.title}</h5>`
-    + `<p>${note}</p></div><div class="result-legend">${legend}</div></header>`
-    + `<div class="result-chart" role="img" aria-label="${escapeHtml(label)}">`
-    + `<svg viewBox="0 0 740 205" aria-hidden="true">${grid}`
-    + `<g class="result-axis"><text x="38" y="28">${labels.top}</text><text x="38" y="103">${labels.mid}</text>`
-    + `<text x="38" y="178">0</text><text x="46" y="196">Epoch ${first}</text>`
-    + `<text x="700" y="196">Epoch ${last}</text></g>${lines}${stubs}${breaks}</svg></div></article>`;
+  return `<article class="evaluation-card history-card"><header><div><h5>${spec.title}</h5>`
+    + `<p>${notes.filter(Boolean).join(' &middot; ')}</p></div></header>`
+    + `${chartSlot(option, chartText(label))}</article>`;
 }
 
 /**

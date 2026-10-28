@@ -129,6 +129,43 @@ async function open(screen, jobId) {
   return head.nextElementSibling;
 }
 
+/* **The epoch charts are drawn by ECharts** (#275). A chart's slot keeps the option it was
+   drawn from (`marpOption`) and the instance (`marpChart`), so these ask both what a series
+   was given and what ECharts made of it. */
+
+/** The chart slot in a card, or null when the card drew none. */
+const chartIn = (card) => (card ? card.querySelector('[data-chart]') : null);
+
+/** One series of a card's chart by its key, or null when it was not drawn. */
+const seriesIn = (card, key) => chartIn(card)?.marpOption.series.find((one) => one.id === key) || null;
+
+/** The Validation quality card out of an opened run panel. */
+const qualityCard = (detail) => [...detail.querySelectorAll('.evaluation-card')]
+  .find((one) => /Validation quality/.test(one.querySelector('h5')?.textContent || ''));
+
+/** The `d` of every series line ECharts drew in a card. */
+const drawnLines = (card) => [...chartIn(card).querySelectorAll('path')]
+  .filter((path) => path.getAttribute('fill') === 'none' && path.getAttribute('stroke-width') === '2')
+  .map((path) => path.getAttribute('d'));
+
+/** Every piece of text ECharts drew in a card: axis labels and legend. */
+const drawnText = (card) => [...chartIn(card).querySelectorAll('text')].map((one) => one.textContent);
+
+/** The y range the chart opens showing, after any zoom it opens at. */
+/* Copied out, because the array belongs to the page's realm and deepEqual compares prototypes. */
+const yShown = (card) => [...chartIn(card).marpChart.getModel().getComponent('yAxis', 0).axis.scale.getExtent()];
+
+/** The plot area's height in pixels. */
+const plotHeight = (card) => chartIn(card).marpChart.getModel().getComponent('grid', 0).coordinateSystem.getRect().height;
+
+/** Where each measured point of a series sits on the page, as pixel y, epoch order. */
+const pixelYs = (card, key) => {
+  const { marpChart } = chartIn(card);
+  return seriesIn(card, key).data
+    .map((value, index) => (value === null ? null : marpChart.convertToPixel({ seriesId: key }, [index, value])[1]))
+    .filter((y) => y !== null);
+};
+
 test('every training job expands, and the run half appears where there is a run', async (t) => {
   const screen = await drawScreen('training.html', answers([epoch(1)]));
 
@@ -175,22 +212,20 @@ test('a null metric is a gap in the line, never a zero', async (t) => {
 
   t.after(screen.close);
 
-  const detail = await open(screen, 21779);
-  const line = detail.querySelector('.result-line.box-loss');
+  const card = lossCard(await open(screen, 21779));
+  const series = seriesIn(card, 'box-loss');
 
-  assert.ok(line, 'box loss was measured, so it should be drawn');
+  assert.ok(series, 'box loss was measured, so it should be drawn');
+  assert.deepEqual([...series.data], [1.8, null, 1.1, 0.9],
+    'the unmeasured epoch stays null -- plotted as zero it reads as a model that collapsed');
+  assert.equal(series.connectNulls, false, 'and the line is not joined across it');
 
-  const d = line.getAttribute('d');
-  const moves = (d.match(/M/g) || []).length;
+  /* What ECharts drew: the one line breaks at the gap and starts again after it. */
+  const lines = drawnLines(card);
 
-  assert.equal(moves, 2,
-    `the line should break at the unmeasured epoch and start again after it (d="${d}")`);
-
-  /* The baseline is y=174 in this viewBox. A null plotted as zero would land exactly
-     there, which on a loss chart reads as the loss having reached nothing. */
-  assert.doesNotMatch(d, /,174(\.0)?\b/,
-    'nothing should be drawn on the zero baseline: that is what a null plotted as zero '
-    + 'looks like, and on a loss curve it reads as a model that collapsed');
+  assert.equal(lines.length, 1, 'one series, one line');
+  assert.equal((lines[0].match(/M/g) || []).length, 2,
+    `the line should break at the unmeasured epoch and start again after it (d="${lines[0]}")`);
 });
 
 test('a metric nothing reported says so instead of drawing an empty frame', async (t) => {
@@ -201,22 +236,22 @@ test('a metric nothing reported says so instead of drawing an empty frame', asyn
   t.after(screen.close);
 
   const detail = await open(screen, 21779);
-  const cards = [...detail.querySelectorAll('.evaluation-card')];
-  const loss = cards.find((card) => /^Loss$/.test(card.querySelector('h5')?.textContent.trim() || ''));
+  const loss = lossCard(detail);
 
   assert.ok(loss, 'the loss chart should still have a place');
-  assert.equal(loss.querySelector('svg'), null,
+  assert.equal(chartIn(loss), null,
     'with every loss series null there is nothing to draw, and a frame around nothing is worse');
   assert.match(loss.textContent, /Not reported for this run/);
 
-  /* The quality chart has two of its four, so it draws -- with the two that were not
-     reported marked rather than silently absent from the legend. */
-  const quality = cards.find((card) => /Validation quality/.test(card.querySelector('h5')?.textContent || ''));
+  /* The quality chart has two of its four, so it draws -- and names the two that were not
+     reported rather than leaving them silently absent. */
+  const quality = qualityCard(detail);
 
-  assert.ok(quality.querySelector('svg'), 'precision and recall were recorded, so it draws');
-  assert.ok(quality.querySelector('.result-line.precision').getAttribute('d'), 'precision has a line');
-  assert.equal(quality.querySelector('.result-line.map').getAttribute('d'), '',
-    'mAP was never reported, so its line is empty rather than flat along the bottom');
+  assert.ok(chartIn(quality)?.marpChart, 'precision and recall were recorded, so it draws');
+  assert.ok(seriesIn(quality, 'precision'), 'precision has a line');
+  assert.equal(seriesIn(quality, 'map'), null,
+    'mAP was never reported, so it has no line rather than one flat along the bottom');
+  assert.match(quality.querySelector('p').textContent, /not reported for this run: .*map@50/);
 });
 
 test('the screen keeps asking while a job is live, and stops when none is', async (t) => {
@@ -870,7 +905,7 @@ test('a pace route that is not there costs two figures, not the panel', async (t
   const detail = await open(screen, 21779);
 
   assert.match(detail.textContent, /3 of 10 epochs/, 'the attempt progress still draws');
-  assert.ok(detail.querySelector('.result-line.precision'), 'and so do the charts');
+  assert.ok(seriesIn(qualityCard(detail), 'precision'), 'and so do the charts');
   assert.match(detail.textContent, /not enough progress samples yet/, 'only the pace is absent');
 });
 
@@ -939,7 +974,7 @@ test('a short run is reported in seconds, not rounded to zero minutes', async (t
 test('train and validation loss draw as a pair, so the gap between them is readable', async (t) => {
   /* The overfitting signal, and the thing this panel could not show until `ea964f18`
      added the train trio beside the validation one. A pair shares a colour and differs
-     by dash; six unrelated colours would make it a puzzle rather than a comparison. */
+     by dash, which comes from the CSS keys and is checked in a browser, not here. */
   const screen = await drawScreen('training.html', answers([
     epoch(1, { train_box_loss: 1.8, box_loss: 1.9 }),
     epoch(2, { train_box_loss: 1.1, box_loss: 1.6 }),
@@ -947,18 +982,15 @@ test('train and validation loss draw as a pair, so the gap between them is reada
 
   t.after(screen.close);
 
-  const detail = await open(screen, 21779);
-  const train = detail.querySelector('.result-line.box-loss-train');
-  const val = detail.querySelector('.result-line.box-loss');
+  const card = lossCard(await open(screen, 21779));
+  const train = seriesIn(card, 'box-loss-train');
+  const val = seriesIn(card, 'box-loss');
 
-  assert.ok(train.getAttribute('d'), 'the train split draws');
-  assert.ok(val.getAttribute('d'), 'and so does validation');
-  assert.notEqual(train.getAttribute('d'), val.getAttribute('d'),
-    'two different series, not one drawn twice');
+  assert.deepEqual([...train.data], [1.8, 1.1], 'the train split draws');
+  assert.deepEqual([...val.data], [1.9, 1.6], 'and so does validation');
+  assert.equal(drawnLines(card).length, 2, 'two different lines, not one drawn twice');
 
-  const legend = [...detail.querySelectorAll('.result-legend button')].map((b) => b.textContent);
-
-  assert.ok(legend.includes('Box (train)') && legend.includes('Box (val)'),
+  assert.ok(drawnText(card).includes('Box (train)') && drawnText(card).includes('Box (val)'),
     'the legend names which split each line is');
 });
 
@@ -972,23 +1004,20 @@ test('a run from before the train columns draws validation alone, without a hole
 
   t.after(screen.close);
 
-  const detail = await open(screen, 21779);
+  const card = lossCard(await open(screen, 21779));
 
-  assert.equal(detail.querySelector('.result-line.box-loss-train').getAttribute('d'), '',
-    'no train line, rather than one along the bottom');
-  assert.ok(detail.querySelector('.result-line.box-loss').getAttribute('d'), 'validation still draws');
-
-  const trainKey = [...detail.querySelectorAll('.result-legend button')]
-    .find((b) => b.textContent === 'Box (train)');
-
-  assert.ok(trainKey.disabled, 'and its key cannot be pressed to reveal nothing');
+  assert.equal(seriesIn(card, 'box-loss-train'), null, 'no train line, rather than one along the bottom');
+  assert.ok(seriesIn(card, 'box-loss'), 'validation still draws');
+  assert.ok(!drawnText(card).includes('Box (train)'),
+    'and the legend has no key that would reveal nothing');
+  assert.match(card.querySelector('p').textContent, /not reported for this run: box \(train\)/,
+    'the note says which were not reported');
 });
 
 test('a loss above the old ceiling is drawn, not flattened against it', async (t) => {
-  /* `gappyPath` clamps to the chart's max, so the fixed 2 this used to carry drew every
-     higher loss flat along the top -- and a YOLO class loss routinely starts above 2 when
-     there are many classes. A flat line that is really a clamp cannot be told from a
-     plateau, which is the worst way to be wrong about a loss curve. */
+  /* The fixed 2 this used to carry drew every higher loss flat along the top -- and a
+     YOLO class loss routinely starts above 2 when there are many classes. A flat line
+     that is really a clamp cannot be told from a plateau. */
   const screen = await drawScreen('training.html', answers([
     epoch(1, { cls_loss: 4.2 }),
     epoch(2, { cls_loss: 2.6 }),
@@ -997,20 +1026,11 @@ test('a loss above the old ceiling is drawn, not flattened against it', async (t
 
   t.after(screen.close);
 
-  const detail = await open(screen, 21779);
-  const card = [...detail.querySelectorAll('.evaluation-card')]
-    .find((one) => /^Loss$/.test(one.querySelector('h5')?.textContent.trim() || ''));
+  const card = lossCard(await open(screen, 21779));
+  const ys = pixelYs(card, 'cls-loss');
 
-  /* 24 is the top of the plot box. Three distinct heights, not two of them pinned there. */
-  const d = card.querySelector('.result-line.cls-loss').getAttribute('d');
-  const ys = [...d.matchAll(/,(\d+\.\d)/g)].map((m) => Number(m[1]));
-
-  assert.equal(new Set(ys).size, 3, `three different losses should draw at three heights (d="${d}")`);
-  assert.equal(ys.filter((y) => y === 24).length, 1,
-    'only the largest sits at the top of the axis');
-
-  /* And the axis says what it is scaled to, rather than a literal 2.0. */
-  assert.equal(card.querySelector('.result-axis text').textContent, '4.2');
+  assert.equal(new Set(ys.map((y) => y.toFixed(1))).size, 3, `three losses at three heights (${ys.join(', ')})`);
+  assert.ok(yShown(card)[1] >= 4.2, `the axis reaches the highest loss, not a literal 2 (${yShown(card)})`);
 });
 
 test('the quality chart keeps a fixed axis, so two runs can be compared by eye', async (t) => {
@@ -1023,19 +1043,14 @@ test('the quality chart keeps a fixed axis, so two runs can be compared by eye',
 
   t.after(screen.close);
 
-  const detail = await open(screen, 21779);
-  const card = [...detail.querySelectorAll('.evaluation-card')]
-    .find((one) => /Validation quality/.test(one.querySelector('h5')?.textContent || ''));
-
-  assert.equal(card.querySelector('.result-axis text').textContent, '1.0',
+  assert.deepEqual(yShown(qualityCard(await open(screen, 21779))), [0, 1],
     'a run topping out at 0.19 still draws against a full axis');
 });
 
 test('run 203 draws as the curve it is, dips and all', async (t) => {
   /* **Real values, not invented ones.** These are the eight mAP@50 the backfill recovered
      for run 203 from the event stream. Worth pinning with the real numbers because the
-     shape is the awkward case: it falls at epoch 3, recovers, falls again at the end. A
-     chart that only ever saw a smooth fixture could mishandle that and look fine. */
+     shape is the awkward case: it falls at epoch 3, recovers, falls again at the end. */
   const map50 = [0.479, 0.617, 0.470, 0.621, 0.541, 0.636, 0.679, 0.607];
 
   const screen = await drawScreen('training.html', answers(
@@ -1049,30 +1064,25 @@ test('run 203 draws as the curve it is, dips and all', async (t) => {
 
   t.after(screen.close);
 
-  const detail = await open(screen, 21779);
-  const quality = [...detail.querySelectorAll('.evaluation-card')]
-    .find((one) => /Validation quality/.test(one.querySelector('h5')?.textContent || ''));
+  const quality = qualityCard(await open(screen, 21779));
+  const line = drawnLines(quality);
 
-  const d = quality.querySelector('.result-line.map').getAttribute('d');
-  const ys = [...d.matchAll(/,(\d+\.\d)/g)].map((m) => Number(m[1]));
+  assert.deepEqual([...seriesIn(quality, 'map').data], map50, 'eight epochs, the eight real values');
+  assert.equal(line.length, 1, 'one line on this chart');
+  assert.equal((line[0].match(/M/g) || []).length, 1, 'unbroken: every epoch reported one');
 
-  assert.equal(ys.length, 8, 'eight epochs, eight points');
-  assert.equal((d.match(/M/g) || []).length, 1, 'one unbroken line: every epoch reported one');
+  /* y grows downward on the page, so a dip is a larger pixel y. */
+  const ys = pixelYs(quality, 'map');
 
-  /* The dip at epoch 3 has to be lower on the page than epochs 2 and 4 -- y grows
-     downward, so a dip is a larger y. This is the assertion a smooth fixture cannot make. */
   assert.ok(ys[2] > ys[1] && ys[2] > ys[3], `epoch 3 should sit below its neighbours (${ys.join(', ')})`);
   assert.ok(ys[6] < ys[7], 'and the best epoch, 7, should be the highest point');
-
-  /* The axis stays fixed, so 0.679 does not touch the top. */
-  assert.equal(quality.querySelector('.result-axis text').textContent, '1.0');
-  assert.ok(Math.min(...ys) > 24, 'nothing is pinned to the ceiling');
+  assert.deepEqual(yShown(quality), [0, 1], 'the axis stays fixed, so 0.679 does not touch the top');
 });
 
-test('run 203 draws validation loss alone, with the train keys disabled', async (t) => {
+test('run 203 draws validation loss alone, with no train keys', async (t) => {
   /* The other half of that chart, on the same real row shape: the backfill filled the
      validation three and could not fill the train three, because no existing event
-     carries them. Absent, not zero -- and the legend says which. */
+     carries them. Absent, not zero -- and the note says which. */
   const screen = await drawScreen('training.html', answers([
     epoch(1, { box_loss: 1.62, cls_loss: 2.41, dfl_loss: 1.11, duration_seconds: null }),
     epoch(2, { box_loss: 1.48, cls_loss: 2.02, dfl_loss: 1.04, duration_seconds: null }),
@@ -1081,18 +1091,17 @@ test('run 203 draws validation loss alone, with the train keys disabled', async 
   t.after(screen.close);
 
   const detail = await open(screen, 21779);
-  const key = (text) => [...detail.querySelectorAll('.result-legend button')].find((b) => b.textContent === text);
+  const card = lossCard(detail);
 
-  assert.ok(detail.querySelector('.result-line.box-loss').getAttribute('d'), 'validation box loss draws');
-  assert.equal(detail.querySelector('.result-line.box-loss-train').getAttribute('d'), '', 'train does not');
-
-  assert.ok(key('Box (train)').disabled, 'and its key cannot be pressed');
-  assert.ok(!key('Box (val)').disabled, 'while the one with data can');
+  assert.ok(seriesIn(card, 'box-loss'), 'validation box loss draws');
+  assert.equal(seriesIn(card, 'box-loss-train'), null, 'train does not');
+  assert.ok(!drawnText(card).includes('Box (train)'), 'and has no key to press');
+  assert.ok(drawnText(card).includes('Box (val)'), 'while the one with data does');
 
   /* Mean epoch time is in the same position: correct code, no data until 0.1.6. */
-  const card = [...detail.querySelectorAll('.jobmetric')].find((m) => /Epoch time/.test(m.textContent));
+  const time = [...detail.querySelectorAll('.jobmetric')].find((m) => /Epoch time/.test(m.textContent));
 
-  assert.ok(card.querySelector('.dash'), 'epoch time is a dash, not a zero');
+  assert.ok(time.querySelector('.dash'), 'epoch time is a dash, not a zero');
 });
 
 test('a class MARP could not resolve is shown under the name the model used', async (t) => {
@@ -1474,14 +1483,6 @@ function lossCard(detail) {
     .find((one) => /^Loss$/.test(one.querySelector('h5')?.textContent.trim() || ''));
 }
 
-/** Every point of a drawn line, as `{x, y}` in viewBox units. */
-function points(card, key) {
-  const d = card.querySelector(`.result-line.${key}`)?.getAttribute('d') || '';
-
-  return [...d.matchAll(/[ML](-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g)]
-    .map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
-}
-
 test('a warm-up first epoch does not set the scale for the whole run', async (t) => {
   const screen = await drawScreen('training.html', answers(RUN_205));
 
@@ -1491,28 +1492,25 @@ test('a warm-up first epoch does not set the scale for the whole run', async (t)
 
   /* 2.3 is the highest loss any epoch after the first reached. 12.2 was the old answer,
      and it is the single number this whole change is about. */
-  assert.equal(card.querySelector('.result-axis text').textContent, '2.3',
-    'the axis follows the settled losses, not the warm-up');
+  assert.deepEqual(yShown(card), [0, 2.3], 'the chart opens on the settled losses, not the warm-up');
 });
 
 test('every loss series uses the chart it is drawn in', async (t) => {
   /* **The failure stated as a measurement.** Scaled to 12.2 the six series lived in the
-     bottom 16% of a 150px box -- six flat lines, on the chart whose caption says the gap
-     between a pair is the overfitting signal. Epoch 1 is excluded here because it is the
-     point that is deliberately off the top; what is asserted is that everything else
-     spreads out. */
+     bottom 16% of the plot -- six flat lines, on the chart whose caption says the gap
+     between a pair is the overfitting signal. Epoch 1 is left out because it is the point
+     deliberately above the opening zoom. */
   const screen = await drawScreen('training.html', answers(RUN_205));
 
   t.after(screen.close);
 
   const card = lossCard(await open(screen, 21779));
   const keys = ['box-loss-train', 'box-loss', 'cls-loss-train', 'cls-loss', 'dfl-loss-train', 'dfl-loss'];
-  const settled = keys.flatMap((key) => points(card, key)).filter((p) => p.x > 46);
-  const ys = settled.map((p) => p.y);
+  const ys = keys.flatMap((key) => pixelYs(card, key).slice(1));
   const spread = Math.max(...ys) - Math.min(...ys);
 
-  assert.ok(spread > 90,
-    `the settled losses should use most of the 150px box, not ${spread.toFixed(1)}px of it`);
+  assert.ok(spread > 0.6 * plotHeight(card),
+    `the settled losses should use most of the plot, not ${spread.toFixed(1)}px of ${plotHeight(card).toFixed(1)}`);
 });
 
 test('the gap between a train and validation pair is readable', async (t) => {
@@ -1524,44 +1522,32 @@ test('the gap between a train and validation pair is readable', async (t) => {
   t.after(screen.close);
 
   const card = lossCard(await open(screen, 21779));
-  const train = points(card, 'box-loss-train').at(-1);
-  const val = points(card, 'box-loss').at(-1);
-  const gap = Math.abs(train.y - val.y);
+  const gap = Math.abs(pixelYs(card, 'box-loss-train').at(-1) - pixelYs(card, 'box-loss').at(-1));
 
-  assert.ok(gap > 20, `the final pair should be separable, not ${gap.toFixed(1)}px apart`);
+  assert.ok(gap > 0.13 * plotHeight(card), `the final pair should be separable, not ${gap.toFixed(1)}px apart`);
 });
 
-test('the clipped epoch is marked as a break and names its real value', async (t) => {
+test('the warm-up epoch is kept above the opening zoom, and named', async (t) => {
+  /* **Kept, not cut and not pinned.** The hand-drawn chart dropped epoch 1 from the line
+     and marked the break; with zoom the measurement simply stays in the series, the chart
+     opens on the settled range, and Reset zoom shows its full height. A value clamped to
+     the top would be a vertex indistinguishable from a measurement taken there. */
   const screen = await drawScreen('training.html', answers(RUN_205));
 
   t.after(screen.close);
 
   const card = lossCard(await open(screen, 21779));
-  const mark = card.querySelector('.result-break.cls-loss-train');
 
-  assert.ok(mark, 'the series that went off the top is marked where it did');
-  assert.equal(mark.querySelector('text').textContent, '12.10',
-    'and the measurement is on the chart, not only in a note');
-  assert.ok(mark.querySelector('.break-mark'),
-    'with the broken-axis mark, so it cannot read as a point at the ceiling');
-
-  /* **The part that would otherwise be a lie.** A clamped first epoch draws a vertex at
-     the top of the axis that cannot be told from a measurement taken there -- which is
-     the failure this avoids, not a smaller version of it. x=46 is epoch 1. */
-  const first = points(card, 'cls-loss-train')[0];
-
-  assert.ok(first.x > 46, 'the line starts at epoch 2, not pinned to the ceiling');
-  assert.ok(card.querySelector('.result-stub.cls-loss-train'),
-    'and a stub shows it coming down from above');
-
-  assert.match(card.querySelector('p').textContent, /12\.10/,
-    'the note says why the axis is where it is');
+  assert.equal(seriesIn(card, 'cls-loss-train').data[0], 12.10451, 'epoch 1 is the real value, in the line');
+  assert.ok(yShown(card)[1] < 12.1, 'above where the chart opens');
+  assert.match(card.querySelector('p').textContent, /12\.10/, 'the note says what is up there');
+  assert.match(card.querySelector('p').textContent, /Reset zoom/, 'and how to see it');
 });
 
 test('a loss that merely starts high keeps every point on the chart', async (t) => {
   /* The guard on the other side: a healthy curve starts at its maximum and falls, and
-     clipping that would throw away a real measurement to tidy the axis. 4.2 is within
-     twice the 2.6 the run settles at, so nothing is cut. */
+     zooming past that would hide a real measurement to tidy the axis. 4.2 is within
+     twice the 2.6 the run settles at, so the chart opens on all of it. */
   const screen = await drawScreen('training.html', answers([
     epoch(1, { cls_loss: 4.2 }),
     epoch(2, { cls_loss: 2.6 }),
@@ -1572,10 +1558,9 @@ test('a loss that merely starts high keeps every point on the chart', async (t) 
 
   const card = lossCard(await open(screen, 21779));
 
-  assert.equal(card.querySelector('.result-axis text').textContent, '4.2',
-    'the axis still fits the highest point');
-  assert.equal(card.querySelectorAll('.result-break').length, 0, 'nothing is marked as cut');
-  assert.equal(points(card, 'cls-loss')[0].x, 46, 'and epoch 1 is still drawn');
+  assert.ok(yShown(card)[1] >= 4.2, 'the axis still fits the highest point');
+  assert.doesNotMatch(card.querySelector('p').textContent, /zoomed/, 'nothing is said to be above it');
+  assert.equal(seriesIn(card, 'cls-loss').data[0], 4.2, 'and epoch 1 is drawn');
 });
 
 /** The Best mAP cell of a row. */
@@ -1890,7 +1875,7 @@ test('a run outside the recent three still opens', async (t) => {
 
   assert.doesNotMatch(detail.textContent, /Reading this run/,
     'it resolved rather than sitting on its placeholder');
-  assert.ok(detail.querySelector('.result-line'), 'and drew the run&rsquo;s curves');
+  assert.ok(seriesIn(lossCard(detail), 'box-loss'), 'and drew the run&rsquo;s curves');
 });
 
 /* ------------------------------------------- what a finished run produced */
@@ -2446,7 +2431,7 @@ test('the epoch charts sit under one Results heading', async (t) => {
 
   assert.ok(results, 'a Results section');
   assert.equal(results.querySelector('h3').textContent.trim(), 'Results');
-  assert.ok(results.querySelector('.training-history-grid .result-line.box-loss'),
+  assert.ok(seriesIn(lossCard(results.querySelector('.training-history-grid')), 'box-loss'),
     'and the epoch charts are inside it');
 });
 
