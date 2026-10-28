@@ -378,6 +378,87 @@ describe('A classification run\'s class handles', () => {
      * and wrote down what it meant at the same moment. Matching on it is a join;
      * anything else here is a search or a parse.
      */
+    /**
+     * **For a classification run the matrix is the only per-class output there is.**
+     *
+     * Run 209 is the worked example: a classify report carries one overall row --
+     * `accuracy_top1` 0.638, `accuracy_top5` 0.913, `fitness` 0.776 -- and no per-class
+     * metrics at all, so the resolution the tests above exercise reaches nothing. Its
+     * matrix arrived labelled `126_vermilion-rockfish … 26_kelp-greenling`, which left
+     * the one per-class thing MARP can show about a classifier unreadable.
+     */
+    it('the matrix axis is labelled with species, not with folder handles', async () => {
+        const recorded = `${absentSpecies}_recorded-${runId}`;
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(handleReport([recorded])));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [row] = await query(
+            `SELECT class_names, class_handles, matrix FROM training_run_confusion_matrices
+              WHERE training_run_id = :id`,
+            { id: made.trainingRunId }
+        );
+
+        expect(row).toBeTruthy();
+
+        const [species] = await query('SELECT comname FROM species WHERE id = :id',
+            { id: made.speciesId });
+
+        // The axis says what it is...
+        expect(row.class_names[0]).toBe(species.comname);
+
+        // ...and keeps what the model called it, which is the only way back to the
+        // directory in the archive and is what the .pt itself contains.
+        expect(row.class_handles[0]).toBe(recorded);
+    });
+
+    it('keeps the axis the same length as the matrix, whatever resolved', async () => {
+        /* **The labels index the axes.** A dropped or reordered entry silently relabels
+           every cell after it, which is how a count is read as the wrong species -- so
+           a handle nothing can resolve keeps the handle rather than becoming null or
+           going missing. Three classes, one resolvable and two not. */
+        const recorded = `${absentSpecies}_recorded-${runId}`;
+        const classes = [recorded, `jest-nothing-${runId}`, `${absentSpecies}_also-nothing-${runId}`];
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(handleReport(classes)));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [row] = await query(
+            `SELECT class_names, class_handles, matrix, background_index
+               FROM training_run_confusion_matrices WHERE training_run_id = :id`,
+            { id: made.trainingRunId }
+        );
+
+        expect(row.class_names).toHaveLength(classes.length);
+        expect(row.class_handles).toEqual(classes);
+        // The report's matrix carries a background row, so it is one wider than the axis.
+        expect(row.matrix).toHaveLength(classes.length + 1);
+        expect(row.background_index).toBe(classes.length);
+
+        // The two that resolved to nothing are shown as the model named them.
+        expect(row.class_names[1]).toBe(classes[1]);
+        expect(row.class_names[2]).toBe(classes[2]);
+    });
+
+    it('records no handles when the model already named species', async () => {
+        /* Every detection run is this: the class names *are* comnames, so a handles
+           column repeating them would say nothing and still have to be read. */
+        const [species] = await query('SELECT comname FROM species WHERE id = :id',
+            { id: made.speciesId });
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(handleReport([species.comname])));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [row] = await query(
+            `SELECT class_names, class_handles FROM training_run_confusion_matrices
+              WHERE training_run_id = :id`,
+            { id: made.trainingRunId }
+        );
+
+        expect(row.class_names[0]).toBe(species.comname);
+        expect(row.class_handles).toBeNull();
+    });
+
     it('resolves a handle the dataset recorded, by the mapping rather than the name', async () => {
         const folder = `${absentSpecies}_recorded-${runId}`;
 

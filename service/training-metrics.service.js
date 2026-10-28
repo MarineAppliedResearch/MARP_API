@@ -420,6 +420,65 @@ class TrainingMetricsService {
     }
 
     /**
+     * Translate a confusion matrix's axis labels into species names.
+     *
+     * **For a classification run the matrix is the only per-class output there is.** A
+     * classify report carries one overall row -- top-1, top-5, fitness -- and no per-class
+     * metrics at all, so the per-class resolution that `resolveClasses` does for detection
+     * reaches nothing here. Run 209's matrix arrived labelled
+     * `126_vermilion-rockfish … 26_kelp-greenling`: dataset folder handles, because
+     * Ultralytics takes a classify vocabulary from the subfolder names and keeps no other
+     * list. Untranslated, the only per-class thing MARP can show about a classification
+     * model is unreadable.
+     *
+     * **Positional, and the length never changes.** These labels index the matrix axes, so
+     * a dropped or reordered entry silently relabels every cell after it -- which is how a
+     * count gets read as the wrong species. A label that will not resolve keeps the handle
+     * it arrived with rather than becoming null or being removed.
+     *
+     * **The handle is kept beside the name, not thrown away.** It is the only way back to
+     * the directory in the archive the model was trained from, and it is what the `.pt`
+     * itself contains -- the same reason an observation keeps the `comname` the model
+     * reported beside the `species_id` somebody may later correct.
+     *
+     * @async
+     * @param {Array<string>} classes - The labels as reported, in axis order.
+     * @param {Object} run - The training run, for its model and its dataset.
+     * @returns {Promise<{names: Array<string>, handles: Array<string>, translated: number}>}
+     */
+    async resolveMatrixLabels(classes, run) {
+        const handles = classes.map((name) => String(name));
+
+        if (handles.length === 0) return { names: [], handles: [], translated: 0 };
+
+        const folders = await this.repository.classFoldersFor(run.dataset_id);
+        const cache = new Map();
+        const names = [];
+        let translated = 0;
+
+        for (const handle of handles) {
+            if (!cache.has(handle)) {
+                const speciesId = await this.speciesFor(handle, run, folders);
+                const species = speciesId === null || speciesId === undefined
+                    ? null
+                    : await ingestRepository.findSpeciesById(Number(speciesId));
+
+                cache.set(handle, species && species.comname ? species.comname : null);
+            }
+
+            const resolved = cache.get(handle);
+
+            // The handle itself when nothing resolved it: unreadable is better than wrong,
+            // and an empty axis label would be worse than either.
+            names.push(resolved === null ? handle : resolved);
+
+            if (resolved !== null && resolved !== handle) translated += 1;
+        }
+
+        return { names, handles, translated };
+    }
+
+    /**
      * Write the rows and the matrix, in one transaction.
      *
      * @async
@@ -446,10 +505,17 @@ class TrainingMetricsService {
                the gap -- a matrix built from per-class precision and recall is
                arithmetic dressed as a measurement. */
             if (parsed.confusion) {
+                /* Translated here rather than when it is read, because the resolution
+                   needs the dataset the run trained on -- and a dataset can be deleted
+                   while its matrix stays. Resolved once, at the moment the answer is
+                   knowable, is the same decision `resolveClasses` makes above. */
+                const labels = await this.resolveMatrixLabels(parsed.confusion.classes, run);
+
                 await this.repository.storeConfusionMatrix({
                     trainingRunId: run.id,
                     split: parsed.split,
-                    confusion: parsed.confusion,
+                    confusion: { ...parsed.confusion, classes: labels.names },
+                    handles: labels.translated > 0 ? labels.handles : null,
                     transaction,
                 });
             }

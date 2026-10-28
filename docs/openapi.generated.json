@@ -5908,7 +5908,19 @@
               "Lingcod",
               "Rockfish"
             ],
-            "description": "The class vocabulary in index order. A class index is meaningless without it."
+            "description": "The class vocabulary in index order, as the axis is shown. A class index is meaningless without it. Where the model reported something other than a species name, this is MARP's reading of it and class_handles holds what it said.\n"
+          },
+          "class_handles": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "25_lingcod",
+              "145_blue-deacon-rockfish"
+            ],
+            "description": "The axis labels exactly as the model reported them, kept only when they differ from class_names. A classification model names its classes after the dataset folders it was trained from, because a common name is not a filesystem-safe string - so the handle is the one route back to that directory in the archive, and is what the .pt itself contains. Null for every detection run, whose class names already are species names. Positional: same length and order as class_names, because both index the matrix axes.\n"
           },
           "background_index": {
             "type": "integer",
