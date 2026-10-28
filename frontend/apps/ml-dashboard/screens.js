@@ -1808,7 +1808,9 @@ function chartTheme() {
       borderColor: token('--border', 'rgba(42, 214, 220, 0.28)'),
       textStyle: { color: text, fontSize: 12 },
     },
-    legend: { top: 0, left: 0, textStyle: { color: text, fontSize: 10 }, itemWidth: 18, itemHeight: 8, inactiveColor: muted },
+    /* `right` leaves room for the toolbox, so a legend that wraps on a narrow card wraps
+       before the zoom icons rather than under them. */
+    legend: { top: 0, left: 0, right: 72, textStyle: { color: text, fontSize: 10 }, itemWidth: 18, itemHeight: 8, inactiveColor: muted },
     toolbox: {
       right: 0, top: 0, itemSize: 13, iconStyle: { borderColor: muted },
       feature: { dataZoom: { title: { zoom: 'Drag to zoom', back: 'Undo zoom' } }, restore: { title: 'Reset zoom' } },
@@ -1955,7 +1957,11 @@ function epochChart(spec, epochs) {
       type: 'category', data: epochs.map((epoch) => epoch.epoch_number), boundaryGap: false,
       name: 'Epoch', nameLocation: 'middle', nameGap: 24, ...theme.axis,
     },
-    yAxis: { type: 'value', min: 0, max: spec.max === 'auto' ? undefined : spec.max, ...theme.axis },
+    yAxis: {
+      type: 'value', min: 0, max: spec.max === 'auto' ? undefined : spec.max, ...theme.axis,
+      /* Zoomed, the window's top is an arbitrary number that crowds the tick below it. */
+      axisLabel: { ...theme.axis.axisLabel, showMaxLabel: !ceiling.clipped.length },
+    },
     tooltip: { ...theme.tooltip, valueFormatter: (value) => (value === null || value === undefined ? 'not reported' : Number(value).toFixed(3)) },
     dataZoom: [
       { type: 'inside', xAxisIndex: 0, filterMode: 'none' },
