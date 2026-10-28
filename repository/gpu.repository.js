@@ -40,6 +40,7 @@
 
 const { QueryTypes } = require('sequelize');
 const { epochMetrics, readPhase } = require('../db/epoch-metrics');
+const { systemReading } = require('../db/worker-telemetry');
 
 /**
  * Shared database registry containing the configured Sequelize connection,
@@ -778,19 +779,76 @@ class GpuRepository {
      * @param {Object} sample
      * @param {number} sample.workerId - The worker that polled.
      * @param {Array<Object>} sample.devices - Its GPU readings, as the snapshot holds them.
+     * @param {?Object} [sample.system] - Its CPU, memory and disk, where it sent them.
      * @returns {Promise<void>} Resolves when the reading is kept, or skipped.
      */
-    async sampleIdleWorker({ workerId, devices }) {
-        if (!Array.isArray(devices) || !devices.length) return;
+    /**
+     * One machine's readings over a window, oldest first.
+     *
+     * **Every sample as it was taken, not an average.** The pool charts roll the whole
+     * fleet up per bucket because that is a question about capacity; this is a question
+     * about one computer, and smoothing it would hide the spike somebody opened the row
+     * to look at.
+     *
+     * **Gaps stay gaps.** A minute with no row is a minute nobody measured — the machine
+     * was off, or between builds — and the caller draws a break rather than joining
+     * across it. Nothing is interpolated here and nothing should be.
+     *
+     * `system` is null on every sample taken before worker 0.1.10, which is most of
+     * them, so a CPU series starts where its data starts rather than at the window's edge.
+     *
+     * @async
+     * @param {Object} query
+     * @param {number} query.workerId - The machine.
+     * @param {string} query.since - ISO instant, inclusive.
+     * @param {string} query.until - ISO instant, exclusive.
+     * @returns {Promise<Array<Object>>} `{at, devices, system, job_kind}` per sample.
+     */
+    async listWorkerSamples({ workerId, since, until }) {
+        try {
+            return await this.db.sequelize.query(
+                `SELECT at, devices, system, job_kind
+                   FROM gpu_worker_samples
+                  WHERE worker_id = :workerId
+                    AND at >= :since
+                    AND at < :until
+                  ORDER BY at ASC`,
+                { replacements: { workerId, since, until }, type: QueryTypes.SELECT }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    async sampleIdleWorker({ workerId, devices, system = null }) {
+        const gpus = Array.isArray(devices) ? devices : [];
+
+        /* **A machine with no GPU is still a machine worth charting.** This used to
+           refuse any sample without devices, so a CPU-only volunteer recorded nothing
+           at all -- and the worker session has just fixed its side of the same thing.
+           Either reading alone is enough to keep the row. */
+        if (!gpus.length && !system) return;
 
         try {
             await this.db.sequelize.query(
-                `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, job_kind)
-                 VALUES (:workerId, NULL, date_trunc('minute', NOW()), :devices, NULL)
+                `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, system, job_kind)
+                 VALUES (:workerId, NULL, date_trunc('minute', NOW()), :devices, :system, NULL)
                  ON CONFLICT (worker_id, at)
-                 DO UPDATE SET devices = EXCLUDED.devices
+                 DO UPDATE SET devices = EXCLUDED.devices,
+                               system = COALESCE(EXCLUDED.system, gpu_worker_samples.system)
                  WHERE gpu_worker_samples.attempt_id IS NULL`,
-                { replacements: { workerId, devices: JSON.stringify(devices) } }
+                {
+                    replacements: {
+                        workerId,
+                        devices: JSON.stringify(gpus),
+                        /* `COALESCE` above rather than a plain overwrite: two polls can
+                           land in one minute and the second may carry no system block,
+                           and losing a reading to a later emptier one would be a gap
+                           nobody caused. */
+                        system: system ? JSON.stringify(system) : null,
+                    },
+                }
             );
         } catch (error) {
             /* **Never fails the poll.** A worker asking for work must not be turned away
@@ -1900,19 +1958,28 @@ class GpuRepository {
             // Written here rather than left to the poll's snapshot because the
             // poll happens before the machine starts work -- that is the whole
             // reason this table exists.
-            if (telemetry && Array.isArray(telemetry.devices) && telemetry.devices.length) {
+            const heartbeatGpus = telemetry && Array.isArray(telemetry.devices)
+                ? telemetry.devices : [];
+            /* Worker 0.1.10 sends `cpu`, `memory` and `disk` beside the devices, so a
+               machine with no GPU is worth a row of its own -- its fix, and this is the
+               matching half here. */
+            const heartbeatSystem = systemReading(telemetry);
+
+            if (heartbeatGpus.length || heartbeatSystem) {
                 await this.db.sequelize.query(
-                    `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, job_kind)
-                     VALUES (:workerId, :attemptId, date_trunc('minute', NOW()), :devices, :jobKind)
+                    `INSERT INTO gpu_worker_samples (worker_id, attempt_id, at, devices, system, job_kind)
+                     VALUES (:workerId, :attemptId, date_trunc('minute', NOW()), :devices, :system, :jobKind)
                      ON CONFLICT (worker_id, at)
                      DO UPDATE SET devices = EXCLUDED.devices,
+                                   system = COALESCE(EXCLUDED.system, gpu_worker_samples.system),
                                    attempt_id = EXCLUDED.attempt_id,
                                    job_kind = EXCLUDED.job_kind`,
                     {
                         replacements: {
                             workerId,
                             attemptId: attempt.id,
-                            devices: JSON.stringify(telemetry.devices),
+                            devices: JSON.stringify(heartbeatGpus),
+                            system: heartbeatSystem ? JSON.stringify(heartbeatSystem) : null,
                             /* Written onto the sample rather than joined at read
                                time: the attempt is nulled when a job is cleared,
                                and a reading is a fact about the machine that
@@ -2246,6 +2313,93 @@ class GpuRepository {
     }
 
     /**
+ * Keep one per-batch sample of a training attempt.
+ *
+ * **The other half of {@link recordTrainingEpoch}, and the two are exclusive.** Both
+ * read the same `metric` events; `db/epoch-metrics.js` decides which is which from the
+ * phase, so a finished epoch writes a row in `epochs` and a sample writes one here, and
+ * neither can write the other's. That routing is the whole reason the phase vocabulary
+ * exists -- the two series overlap numerically, since a sample's step is a global batch
+ * counter and an epoch's is the epoch number.
+ *
+ * **Every sample is kept, not just the latest.** A progress snapshot answers "where is
+ * this now" and is overwritten; this answers "what has it been doing", which is a
+ * series and cannot be. The volume is a chart rather than a flood: about 64 points per
+ * epoch at the worker's 2.5-second rate.
+ *
+ * **The measurements are stored as they arrived.** A detector reports three losses by
+ * name and a classifier one; nothing here maps, renames or drops them, so a worker that
+ * starts sending a new number records it the day it does rather than the day MARP
+ * learns about it. The four fields lifted out into columns -- epoch, batch,
+ * batches_total and the step -- are the ones a query orders and pages on.
+ *
+ * @async
+ * @param {number} attemptId - The attempt that reported it.
+ * @param {Object} event - The `metric` event, already accepted onto the stream.
+ * @param {Object} transaction - The events transaction, so the sample and its event
+ * land together or not at all.
+ * @returns {Promise<void>} Resolves once the row is written, or skipped.
+ */
+    async recordTrainingSample(attemptId, event, transaction) {
+        const payload = event.payload || {};
+        const metrics = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : null;
+        const step = Number(payload.step);
+        const seq = Number(event.seq);
+
+        /* The seq is the row key now, so a sample without one cannot be stored. Nothing
+           produces that -- the events route requires a seq and this runs only for an
+           event already accepted onto the stream -- which is exactly why it is checked
+           here rather than left to a NOT NULL violation inside a shared transaction. */
+        if (!metrics || !Number.isInteger(step) || !Number.isInteger(seq)) return;
+
+        const phase = readPhase(payload.phase);
+
+        /* An epoch, or a phase MARP does not know. `recordTrainingEpoch` has already
+           said so for the unknown one; saying it twice would double every log line. */
+        if (phase.epoch || !phase.known) return;
+
+        /* **Lifted out, not removed.** These four stay in `metrics` as well as becoming
+           columns: the column is what a query uses, and the untouched bag is what lets
+           a reader see exactly what the worker sent. */
+        const whole = (value) => (Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : null);
+
+        /* The worker's own clock, kept as it sent it. Ordering and duration only --
+           valid within a run, never compared against MARP's clock or another machine's.
+           A sample with no usable timestamp keeps its step, which is what the series is
+           ordered by anyway. */
+        const at = event.at && !Number.isNaN(Date.parse(event.at)) ? event.at : null;
+
+        /* **Keyed by the event, not by what the sample says.** The first key here was
+           (attempt_id, step, phase), which assumed one sample per step per phase -- and
+           the worker sends validating/validated/saving markers through the same phase, at
+           the same step as the next epoch's batch 0. Job 21801 sent 14 events and MARP
+           kept 4, and the ones it kept were markers rather than measurements.
+
+           `seq` is the identity of the event this is a projection of, and gpu_job_events
+           is already unique on (attempt_id, seq) -- so a resend still dedupes and two
+           different events at one step both survive. */
+        await this.db.sequelize.query(
+            `INSERT INTO training_batch_samples
+                 (attempt_id, seq, step, phase, epoch, batch, batches_total, at, metrics, created_at)
+             VALUES (:attemptId, :seq, :step, :phase, :epoch, :batch, :batchesTotal, :at, :metrics, NOW())
+             ON CONFLICT (attempt_id, seq) DO NOTHING`,
+            {
+                replacements: {
+                    attemptId,
+                    seq,
+                    step,
+                    phase: String(payload.phase),
+                    epoch: whole(metrics.epoch),
+                    batch: whole(metrics.batch),
+                    batchesTotal: whole(metrics.batches_total),
+                    at,
+                    metrics: JSON.stringify(metrics),
+                },
+                transaction,
+            }
+        );
+    }
+/**
      * Writes one epoch of a training run, opening the run if this is its first.
      *
      * **Why this exists at all.** The ML schema -- `training_runs`, `epochs`,
@@ -2448,11 +2602,13 @@ class GpuRepository {
             `INSERT INTO epochs (training_run_id, epoch_number, precision, recall,
                                  map50, map5095, box_loss, cls_loss, dfl_loss,
                                  train_box_loss, train_cls_loss, train_dfl_loss,
+                                 loss, train_loss, accuracy_top1, accuracy_top5,
                                  duration_seconds, start_offset_s, end_offset_s,
                                  timestamp, created_at, updated_at)
              SELECT :runId, :epochNumber, :precision, :recall,
                     :map50, :map5095, :box_loss, :cls_loss, :dfl_loss,
                     :train_box_loss, :train_cls_loss, :train_dfl_loss,
+                    :loss, :train_loss, :accuracy_top1, :accuracy_top5,
                     :duration_seconds, :start_offset_s, :end_offset_s,
                     NOW(), NOW(), NOW()
               WHERE NOT EXISTS (
@@ -2537,6 +2693,7 @@ class GpuRepository {
                     // so a replayed batch cannot write an epoch twice.
                     if (event.kind === 'metric') {
                         await this.recordTrainingEpoch(attemptId, event, transaction);
+                        await this.recordTrainingSample(attemptId, event, transaction);
                     }
                 }
             }

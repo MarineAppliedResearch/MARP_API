@@ -402,9 +402,26 @@
         "properties": {
           "user": {
             "$ref": "#/components/schemas/AuthUser"
+          },
+          "server": {
+            "type": "object",
+            "description": "What this MARP process is, read once at startup. Here rather than on a route of its own because every screen already makes this read before it draws.",
+            "properties": {
+              "started_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When this process loaded."
+              },
+              "commit": {
+                "type": "string",
+                "nullable": true,
+                "example": "75891cc374e9db6e9f8e161f8a080be80693e3a4",
+                "description": "The commit the checkout was on at startup, which is the code this process is serving whatever the working tree has since become. Null when git cannot answer -- a deployed copy with no .git, or no git on PATH -- because a stale or invented hash would read as a measurement."
+              }
+            }
           }
         },
-        "description": "Authenticated session response containing the current MARP user profile."
+        "description": "Authenticated session response containing the current MARP user profile, and the identity of the process serving it."
       },
       "Permission": {
         "type": "object",
@@ -4088,6 +4105,30 @@
             "items": {
               "$ref": "#/components/schemas/GpuJob"
             }
+          },
+          "session": {
+            "type": "object",
+            "nullable": true,
+            "description": "The session created for this run, present only when `spec.session.per_run` asked for one. Reported because MARP worked it out on the submitter’s behalf -- including the type, when that was derived from the model -- and a derivation nobody can look at is how a wrong one survives.",
+            "properties": {
+              "session_id": {
+                "type": "integer",
+                "example": 1402
+              },
+              "type": {
+                "type": "string",
+                "example": "Invert",
+                "description": "Derived from the model’s species list unless the spec named one."
+              },
+              "dive": {
+                "type": "string",
+                "example": "Dive 895"
+              },
+              "line": {
+                "type": "string",
+                "example": "4"
+              }
+            }
           }
         }
       },
@@ -5908,7 +5949,19 @@
               "Lingcod",
               "Rockfish"
             ],
-            "description": "The class vocabulary in index order. A class index is meaningless without it."
+            "description": "The class vocabulary in index order, as the axis is shown. A class index is meaningless without it. Where the model reported something other than a species name, this is MARP's reading of it and class_handles holds what it said.\n"
+          },
+          "class_handles": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "25_lingcod",
+              "145_blue-deacon-rockfish"
+            ],
+            "description": "The axis labels exactly as the model reported them, kept only when they differ from class_names. A classification model names its classes after the dataset folders it was trained from, because a common name is not a filesystem-safe string - so the handle is the one route back to that directory in the archive, and is what the .pt itself contains. Null for every detection run, whose class names already are species names. Positional: same length and order as class_names, because both index the matrix axes.\n"
           },
           "background_index": {
             "type": "integer",
@@ -6261,6 +6314,18 @@
             "description": "Identifier of the user who recorded or owns this session.",
             "example": 8
           },
+          "created_by": {
+            "type": "integer",
+            "nullable": true,
+            "description": "The person who asked for this session, carried from the job that created it. Null on a session nobody requested through a job.",
+            "example": 8
+          },
+          "is_automated": {
+            "type": "boolean",
+            "default": false,
+            "description": "True when a machine produced this session. False means it was not recorded as automated rather than that a person made it: sessions created before this existed all read false, including machine-produced ones.",
+            "example": true
+          },
           "dive": {
             "type": "string",
             "maxLength": 255,
@@ -6301,6 +6366,7 @@
         "additionalProperties": false,
         "required": [
           "session_id",
+          "is_automated",
           "dive",
           "line",
           "lineId",
@@ -7075,6 +7141,32 @@
             "format": "float",
             "nullable": true,
             "description": "Mean training distribution-focal loss over this epoch. A genuine 0.0 is stored as 0.0; an absent reading is null."
+          },
+          "loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean validation loss over this epoch, for a task that reports a single loss -- a classifier does. Null on a detection run, which reports box, classification and distribution-focal losses separately and no total. Not the same quantity as cls_loss, which is one component of three."
+          },
+          "train_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean training loss over this epoch. The loss column beside it is the validation loss; the gap between the two is the overfitting signal."
+          },
+          "accuracy_top1": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Share of validation images whose top prediction was correct at the end of this epoch, 0 to 1. Named as metrics_summary names the end-of-run figure, because two names for one quantity at two granularities reads as two quantities.",
+            "example": 0.87
+          },
+          "accuracy_top5": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Share of validation images whose correct class was among the top five predictions, 0 to 1. On a short class list this saturates at 1.0 early and says little; it is kept because the trainer reports it, and a run that stops reporting it should look different from one measuring zero.",
+            "example": 0.99
           },
           "start_offset_s": {
             "type": "number",
@@ -12238,6 +12330,133 @@
         }
       }
     },
+    "/v2/training_run/{id}/samples": {
+      "get": {
+        "summary": "What a training run has been doing between its epochs",
+        "description": "The per-batch samples a training attempt reports while it runs, about one every two or three seconds, oldest first.\n\n**This is the live view; `/training_run/:id/epochs` is the finished one.** An epoch row is written when an epoch ends, and a real epoch here takes minutes -- so a reader watching a run learned something every couple of minutes while the console the run is printing to moved every batch. These are that console, as a series.\n\n**Poll it with `after_step`.** It is the last step already held, and a poll carrying it returns only what is new -- a few rows every few seconds rather than the whole run again. Steps count per attempt, so the filter is applied per attempt and a retry is not hidden behind the first attempt's higher numbers.\n\n**Every attempt, each sample saying which.** A retried run restarts its step counter; dropping the earlier attempt would leave a step in the chart that nothing explains, so both are served and `attempt_id` is what draws the seam.\n\n**A wide read is strided, never truncated.** Past the cap, every nth sample is returned rather than the first or last n: truncating either end would show part of a run and claim it was the whole. The newest sample is always included, so the series never looks as though it stopped early, and `strided` says plainly whether thinning happened. A polling client never meets it, because it asks only for what is new.\n\n**`metrics` is free-form on purpose.** A detector reports `train/box_loss`, `train/cls_loss` and `train/dfl_loss`; a classifier reports one `train/loss`. Columns for those would be a migration per task and a row full of nulls meaning \"not this kind of run\". The numbers arrive under the names the trainer uses and are stored as sent, so a worker that begins reporting something new is recorded the day it does.\n\n**Two things it will never carry**, so nothing waits for them: instances per batch is unreachable from Ultralytics' callback, and image counts during caching have no callback at all.\n\n**An empty array is the honest answer** for a run that has not reported a sample yet. A run that does not exist is a 404, because a mistyped id and a silent run are different answers and a chart cannot tell them apart.\n\nRequires the `models:read` permission. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The training run whose samples to read."
+          },
+          {
+            "in": "query",
+            "name": "after_step",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Only samples past this step, which is how a poll asks for what it does not already have. Omitted means the whole series."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000
+            },
+            "description": "The most points to return, capped at 2000. A smaller value strides harder; it does not truncate."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Its samples, oldest first, by attempt then step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "matched": {
+                      "type": "integer",
+                      "description": "How many samples the query matched before any striding."
+                    },
+                    "returned": {
+                      "type": "integer",
+                      "description": "How many are in this response."
+                    },
+                    "strided": {
+                      "type": "boolean",
+                      "description": "Whether thinning happened. A caller cannot otherwise tell a complete series from a sampled one."
+                    },
+                    "samples": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "attempt_id": {
+                            "type": "integer",
+                            "description": "Which attempt reported it."
+                          },
+                          "step": {
+                            "type": "integer",
+                            "description": "The worker's global batch counter, per attempt."
+                          },
+                          "phase": {
+                            "type": "string",
+                            "enum": [
+                              "training_batch",
+                              "validating_batch"
+                            ]
+                          },
+                          "epoch": {
+                            "type": "integer",
+                            "nullable": true,
+                            "description": "Which epoch the sample is inside."
+                          },
+                          "batch": {
+                            "type": "integer",
+                            "nullable": true,
+                            "description": "Which batch within that epoch."
+                          },
+                          "batches_total": {
+                            "type": "integer",
+                            "nullable": true,
+                            "description": "Batches in the epoch."
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true,
+                            "description": "The worker's own clock. Ordering and duration only -- valid within a run, never compared across machines."
+                          },
+                          "metrics": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "description": "The numbers as the trainer named them -- the running losses, `iterations_per_second`, `epoch_eta_seconds`, `gpu_memory_bytes` and `imgsz`. Bytes rather than gigabytes: 700 MB at gigabyte precision rounds to 0.0, which reads as no memory in use."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/training_run/{id}/pace": {
       "get": {
         "summary": "How fast one training run has been getting through its epochs",
@@ -14790,7 +15009,7 @@
     "/v2/auth/me": {
       "get": {
         "summary": "Get the currently authenticated session user",
-        "description": "Returns the currently authenticated MARP user associated with the request session. Returns 401 when the request has no valid authenticated session.",
+        "description": "Returns the currently authenticated MARP user associated with the request session. Returns 401 when the request has no valid authenticated session.\n\nIt also carries `server`: what this process is, as `{started_at, commit}`, both read once at startup. It rides on this read because every screen already makes it before drawing, so nothing pays for a second round trip. A server serves the code it was started with rather than the code on your branch, and one here ran five days behind its checkout for a day -- the evidence looked like a defect in the feature somebody had just written. `commit` is null where git cannot answer, never a guess, and it reports what HEAD was rather than that the tree was clean.",
         "tags": [
           "V2 · Auth"
         ],
@@ -15972,6 +16191,67 @@
         }
       }
     },
+    "/v2/gpu/workers/{id}/series": {
+      "get": {
+        "summary": "One machine's readings over time",
+        "description": "Every per-minute sample this machine recorded in the window, oldest first, as parallel arrays against `at`. GPU utilisation, VRAM, temperature and power come from the GPU block, which has been sampled since the poll started keeping it; CPU, memory and disk come from the system block, which only exists on samples taken since the worker began sending it, so those series are null before that point rather than zero. **A minute with no sample is null in every series**, not a missing entry: the machine was off or between builds, and a chart draws a break there rather than joining across it. The first GPU only -- a mean across two cards would be a number no sensor reported. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The worker id."
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Inclusive start. Defaults to an hour before `until`."
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Exclusive end. Defaults to now."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The readings, or empty arrays where nothing was recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/gpu/workers/{id}/rename": {
       "post": {
         "summary": "Rename a GPU machine",
@@ -16522,7 +16802,7 @@
       },
       "post": {
         "summary": "Queue GPU work, splitting a long video if asked",
-        "description": "Creates one job, or -- given `piece_frames` -- a batch of jobs sharing a `batch_id`, each covering its own piece of the frame range. N independent jobs rather than one job with children, so each piece leases, retries and fails on its own, which is what lets ten machines share a ten-hour video without any of them knowing about the others. The range is half-open -- `start_frame` is included, `end_frame` is one past the last frame -- so the pieces tile it exactly: the `end_frame` of one piece is the `start_frame` of the next, the frames covered are `end_frame - start_frame` with no off-by-one, and no frame is processed twice or missed. The last piece is short rather than over-long. An empty range is refused rather than queued. A range is required even for a whole video, so nothing downstream has to special-case the undivided case. The whole batch is inserted in one transaction: half a batch is worse than none, because somebody would have to work out which pieces were missing before resubmitting.\n\n`spec.video` carries **exactly one** of `jellyfin_item_id` or `url`; both together is refused rather than one silently winning. An item id is resolved to a playable URL when a worker leases the job, not here. A bare `url` is any other reachable source and needs `source_name` with it, because that is what appears as `video_source` on every observation and cannot be guessed from a URL. Requires the `jobs:write` permission.",
+        "description": "Creates one job, or -- given `piece_frames` -- a batch of jobs sharing a `batch_id`, each covering its own piece of the frame range. N independent jobs rather than one job with children, so each piece leases, retries and fails on its own, which is what lets ten machines share a ten-hour video without any of them knowing about the others. The range is half-open -- `start_frame` is included, `end_frame` is one past the last frame -- so the pieces tile it exactly: the `end_frame` of one piece is the `start_frame` of the next, the frames covered are `end_frame - start_frame` with no off-by-one, and no frame is processed twice or missed. The last piece is short rather than over-long. An empty range is refused rather than queued. A range is required even for a whole video, so nothing downstream has to special-case the undivided case. The whole batch is inserted in one transaction: half a batch is worse than none, because somebody would have to work out which pieces were missing before resubmitting.\n\n`spec.video` carries **exactly one** of `jellyfin_item_id` or `url`; both together is refused rather than one silently winning. An item id is resolved to a playable URL when a worker leases the job, not here. A bare `url` is any other reachable source and needs `source_name` with it, because that is what appears as `video_source` on every observation and cannot be guessed from a URL.\n\n`spec.session` says where observations go, and takes one of three forms. `{session_id}` names a session that exists. `{project_id, dive, line, type}` describes one, and the ingest finds an existing session for that dive and line before creating one -- deliberately, because a job is one piece of a video and the same dive is submitted many times over. `{project_id, dive, line, per_run: true}` makes a **new session for this run**, which is the form the dashboard submits: who ran it differs between runs, so each run is its own session under the dive, recorded with `is_automated` and the submitter in `created_by`. A piece split is still one run and its jobs share the session. With `per_run`, `type` may be left out and is derived from the model’s species list -- refused rather than guessed when a model was trained across more than one, because a session reads against a single list and half the output could not be named in whichever was picked. A `type` the spec names wins over the derived one. The session created is reported back on the response. Requires the `jobs:write` permission.",
         "tags": [
           "V2 · GpuCompute"
         ],
@@ -16725,6 +17005,98 @@
           },
           "403": {
             "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/jobs/{id}/observations": {
+      "get": {
+        "summary": "What an inference job actually produced",
+        "description": "The count of observations a job wrote, broken down by species, plus the session and model it wrote them under so a reader can open them. **This is the answer to \"did it work\", which a job state cannot give**: a job succeeds when its bytes arrive and are ingested, and ingesting an empty detections file is a success that produced nothing.\n\n**Grouped by `species_id`, with the label the model gave beside it.** Those are two different facts and they drift apart as soon as anybody reviews the output: a species correction changes `species_id` and deliberately never rewrites `comname`, which stays the label the model produced. A breakdown keyed on that label would keep counting a corrected observation under a name somebody has already rejected, so `species_name` is what it is and `reported_name` is what the model said. Where they disagree, the disagreement is the interesting part.\n\n**An unresolved species is counted, not dropped.** An observation whose `species_id` is null is still something the job produced, and a breakdown that omitted it would not add up to the total beside it.\n\n**Zero observations is a real answer, not an error.** A job can run every frame, hand over an empty detections file, be ingested correctly and have found nothing -- which is what happened on job 21789. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the job."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the job produced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job_id": {
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "session_id": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "From the job spec. Null for a job whose spec names no session, which can never produce observations."
+                    },
+                    "ml_model_id": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "observations": {
+                      "type": "integer"
+                    },
+                    "species": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "species_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "species_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "What it is, after any correction. Null when the species was never resolved."
+                          },
+                          "reported_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "What the model called it, which a correction never rewrites."
+                          },
+                          "observations": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

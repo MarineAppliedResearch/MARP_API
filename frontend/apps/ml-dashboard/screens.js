@@ -223,8 +223,18 @@ function mountRail() {
 
 /* ================================================================ the top bar */
 
-const PROJECTS = ['All projects', 'CAMPA 2024', 'GULF 2025', 'PACIFIC 2023',
-  'SALT 2024', 'VENTS 2025', 'ARCTIC 2024'];
+/* **The top bar had a Project filter and it narrowed nothing.**
+   It was six invented project names -- CAMPA 2024, GULF 2025, PACIFIC 2023 and three
+   more -- written into the chrome when this was a mockup, on five screens, with no
+   listener anywhere: choosing one changed no list. Filling it from
+   `GET /api/v2/projects` made the names true and left the lie, because by this
+   project's own rule a filter that narrows nothing is one.
+
+   Removed rather than wired, as the smaller of the two. Wiring it is a real feature
+   and a bigger one: jobs carry no project, only a session, so every list would have
+   to narrow client-side through `SESSIONS`, on five screens, and Datasets and the
+   Dashboard would each need their own rule. That is worth doing deliberately rather
+   than as a side effect of making a mockup honest. */
 
 /* The actions a top bar can offer, defined once so two screens cannot describe
    the same button two ways. */
@@ -246,14 +256,14 @@ const ACTIONS = {
 /* What each screen's top bar holds. `project` is shown only where narrowing by
    project means something. */
 const TOPBAR = {
-  dashboard: { project: true, actions: ['inference', 'training'] },
-  jobs: { project: true, actions: ['inference', 'training'] },
-  inference: { project: true, actions: ['inference', 'training'] },
-  training: { project: true, actions: ['inference', 'training'] },
-  datasets: { project: true, actions: ['dataset'] },
-  models: { project: false, wide: true, actions: ['register'], kebab: true,
+  dashboard: { actions: ['inference', 'training'] },
+  jobs: { actions: ['inference', 'training'] },
+  inference: { actions: ['inference', 'training'] },
+  training: { actions: ['inference', 'training'] },
+  datasets: { actions: ['dataset'] },
+  models: { wide: true, actions: ['register'], kebab: true,
     search: 'Search models by name, task, dataset or description\u2026' },
-  workers: { project: false, wide: true, actions: ['tokens'], kebab: true,
+  workers: { wide: true, actions: ['tokens'], kebab: true,
     search: 'Search workers by name, GPU or job\u2026' },
 };
 
@@ -278,11 +288,7 @@ function mountTopbar() {
   const tools = document.createElement('div');
   tools.className = 'tools' + (cfg.wide ? ' wide' : '');
   tools.innerHTML =
-    (cfg.project
-      ? '<span class="lab">Project</span><select class="sel" aria-label="Project">'
-        + PROJECTS.map((p) => '<option>' + p + '</option>').join('') + '</select>'
-      : '')
-    + '<span class="search">' + ico('search', 'sm')
+    '<span class="search">' + ico('search', 'sm')
     + '<input class="inp" type="search" placeholder="'
     + (cfg.search || 'Search jobs, models, datasets\u2026') + '"'
     + ' aria-label="Search"></span>'
@@ -290,6 +296,12 @@ function mountTopbar() {
        for it on Models and it was absent everywhere; building it into the shared chrome
        is the difference between answering him once and answering him seven times. */
     + '<span class="fresh" data-freshness aria-live="polite" title="When MARP last answered"></span>'
+    /* **Which code is answering, beside when it last answered.** Passive and quiet: it
+       is not a control and nobody should have to look at it, but a server serves the
+       code it was started with rather than the code on your branch, and one here ran
+       five days behind its checkout for a day. The commit goes in the title, because
+       the question people actually ask is "is this current", not "which hash". */
+    + '<span class="fresh" data-server-started hidden></span>'
     + '<button class="btn icon" data-reload aria-label="Reload" title="Reload">' + ico('refresh') + '</button>'
     + (cfg.actions || []).map(btn).join('')
     + (cfg.kebab
@@ -980,6 +992,14 @@ function rowFor(view) {
     + `<td class="jprog" data-sort="${progress.sort}">${progress.html}</td>`
     + `<td class="jworker" data-sort="${job.worker_name || ''}">${workerCell(job)}</td>`
     + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${hhmm}</span><span class="b">${date}</span></span></td>`
+    /* **Submitted says when it arrived; this says whether anything has happened since.**
+       The later of the job row's own timestamp and its latest heartbeat, because
+       `gpu_jobs.updated_at` does not move while a job runs -- nothing on the heartbeat
+       path writes the job row, so for job 21782 it sat at the instant of creation while
+       the worker reported progress every sixty seconds. A column reading `updated_at`
+       alone is faithfully showing a stale timestamp, which is worse than no column. */
+    + `<td class="jseen" data-updated data-sort="${jobLastSeen(job) || job.created_at}">`
+    + `${datasetStamp(jobLastSeen(job) || job.created_at)}</td>`
     + `<td class="jacts"><span>${actions}</span></td>`
     + '</tr>';
 }
@@ -1193,7 +1213,7 @@ const JOBS_SORT_KEYS = {
  *
  * @type {string[]}
  */
-const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hprog', 'hworker', 'hupd'];
+const JOBS_SORT_COLUMNS = ['hjob', 'htype', 'hscope', 'hmodel', 'hstatus', 'hprog', 'hworker', 'hupd', 'hseen'];
 
 /** The window the whole screen is drawn from, refetched only when the API query changes. */
 let jobsWindow = null;
@@ -1424,6 +1444,39 @@ function producedModelCell(run) {
 const TRAINING_EPOCH_POLL_MS = 5000;
 
 /**
+ * What a running run's step charts draw, and from which metric key.
+ *
+ * Isaac, on watching a run: *"i don't want it as a command line, i want everything that
+ * would be showing in the command line to be graphed!"* So this is what the Ultralytics
+ * console prints per batch, as charts: the running losses, the memory, the throughput and
+ * the estimate.
+ *
+ * **Keyed on the metric name the worker sent, and a chart with no key in the samples is
+ * not drawn.** `metrics` is deliberately free-form — a detector sends `train/box_loss`,
+ * `train/cls_loss` and `train/dfl_loss`, a classifier sends one `train/loss` — so the
+ * panel asks what arrived rather than deciding in advance. A classification run draws
+ * three charts and a detection run five, from the same table, with nothing declaring
+ * which task it is.
+ *
+ * **Two things are missing on purpose.** Instances per batch is unreachable from
+ * Ultralytics' callback, and there is no callback at all while it caches images, so a
+ * count of either would be invented. Both have been asked for three times and checked
+ * twice; leaving a space for them would invite a fourth.
+ */
+const STEP_CHARTS = [
+  { key: 'train/loss', title: 'Loss', unit: '', max: 'auto' },
+  { key: 'train/box_loss', title: 'Box loss', unit: '', max: 'auto' },
+  { key: 'train/cls_loss', title: 'Class loss', unit: '', max: 'auto' },
+  { key: 'train/dfl_loss', title: 'DFL loss', unit: '', max: 'auto' },
+  { key: 'gpu_memory_bytes', title: 'GPU memory', unit: ' GB', max: 'auto', scale: 1073741824 },
+  { key: 'iterations_per_second', title: 'Throughput', unit: ' it/s', max: 'auto' },
+  { key: 'epoch_eta_seconds', title: 'Epoch ETA', unit: ' s', max: 'auto' },
+];
+
+/** Batch samples by run id, appended to rather than refetched. */
+const trainingStepsByRun = new Map();
+
+/**
  * Per-threshold curves by run id, once each.
  *
  * `/curves` is about a thousand points per class where `/metrics` is a handful of rows,
@@ -1524,6 +1577,128 @@ function autoCeiling(drawn, count) {
       .filter((one) => one.values[0] !== null && one.values[0] !== undefined && one.values[0] > max)
       .map((one) => ({ key: one.key, label: one.label, value: one.values[0] })),
   };
+}
+
+/**
+ * Read whatever batch samples are new for a run, and keep them.
+ *
+ * **Appended, never refetched.** `after_step` is the last step already held, applied per
+ * attempt, so a poll asks for the handful of rows that arrived in the last few seconds
+ * rather than the whole run every time. A run of four hundred batches would otherwise be
+ * four hundred rows down the wire every five seconds for the whole of its life.
+ *
+ * **`strided` is handled by not meeting it.** A first read of a long run comes back
+ * thinned, and after that every read is incremental, so the stride applies once and the
+ * chart fills in from there. The newest sample is always included whatever the stride, so
+ * the line never looks stalled when it is not.
+ *
+ * @param {number} runId - The run.
+ * @returns {Promise<Object[]>} Every sample held, oldest first.
+ */
+async function readTrainingSteps(runId) {
+  const held = trainingStepsByRun.get(runId) || [];
+  /* The highest step seen, which is what `after_step` is measured against. A retry
+     restarts at 1, so this is deliberately the maximum across attempts rather than per
+     attempt: the endpoint applies it per attempt itself. */
+  const after = held.reduce((top, one) => Math.max(top, Number(one.step) || 0), 0);
+
+  let answer;
+
+  try {
+    answer = await window.MarpApi.trainingRunSamples(runId, after ? { after_step: after } : {});
+  } catch {
+    /* A failed read is a blip: the top bar says MARP is not answering, and what is
+       already held stays on screen rather than the charts emptying. */
+    return held;
+  }
+
+  const fresh = Array.isArray(answer.samples) ? answer.samples : [];
+
+  if (!fresh.length) return held;
+
+  const next = held.concat(fresh);
+
+  trainingStepsByRun.set(runId, next);
+
+  return next;
+}
+
+/**
+ * The step charts for a run that is going, and the phase band under them.
+ *
+ * **Per batch, not per epoch.** The epoch charts above fill in once a minute or once an
+ * hour; this is the view somebody watches, and it moves every few seconds. The x axis is
+ * the step within the attempt rather than the clock, because `at` is the worker's own
+ * clock and is good for ordering and duration and nothing else.
+ *
+ * **Grouped by attempt, because a retry restarts the step counter at 1.** Drawn as one
+ * series, a second attempt walks backwards through the first and reads as the loss
+ * collapsing. Each attempt gets its own line.
+ *
+ * @param {Object[]} samples - Every sample held for this run, oldest first.
+ * @returns {string}
+ */
+function stepCharts(samples) {
+  if (!samples.length) return '';
+
+  const box = { left: 46, right: 700, top: 24, bottom: 174 };
+  const attempts = [...new Set(samples.map((one) => one.attempt_id))];
+  const training = samples.filter((one) => one.phase === 'training_batch');
+  const latest = samples[samples.length - 1];
+
+  /* What this run actually reports. A chart nobody sent a key for is not drawn, which is
+     how one panel serves detection and classification without being told which it is. */
+  const present = STEP_CHARTS.filter((spec) => samples
+    .some((one) => one.metrics && one.metrics[spec.key] !== undefined && one.metrics[spec.key] !== null));
+
+  if (!present.length) return '';
+
+  const cards = present.map((spec) => {
+    const lines = attempts.map((attemptId, index) => {
+      const mine = training.filter((one) => one.attempt_id === attemptId);
+      const values = mine.map((one) => {
+        const raw = one.metrics ? one.metrics[spec.key] : null;
+
+        return raw === null || raw === undefined ? null : Number(raw) / (spec.scale || 1);
+      });
+
+      return { values, index };
+    });
+
+    const every = lines.flatMap((line) => line.values).filter((value) => value !== null);
+
+    if (!every.length) return '';
+
+    const top = Math.max(0.001, Math.ceil(Math.max(...every) * 100) / 100);
+    const last = [...lines[lines.length - 1].values].reverse()
+      .find((value) => value !== null && value !== undefined);
+
+    return '<article class="evaluation-card history-card" data-result-graph>'
+      + `<header><div><h5>${spec.title}</h5><p>Per batch`
+      + `${last === undefined ? '' : ` &middot; now ${Number(last).toFixed(spec.scale ? 2 : 3)}${spec.unit}`}`
+      + `${attempts.length > 1 ? ` &middot; ${attempts.length} attempts` : ''}</p></div></header>`
+      + `<div class="result-chart" role="img" aria-label="${spec.title} per batch">`
+      + '<svg viewBox="0 0 740 205" aria-hidden="true">'
+      + '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
+      + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>'
+      + `<g class="result-axis"><text x="38" y="28">${top}</text>`
+      + `<text x="38" y="103">${(top / 2).toFixed(spec.scale ? 2 : 3)}</text><text x="38" y="178">0</text></g>`
+      + lines.map((line) => `<path class="result-line step-series class-${(line.index % 4) + 1}" `
+        + `d="${gappyPath(line.values, top, box)}"/>`).join('')
+      + '</svg></div></article>';
+  }).join('');
+
+  /* **The phase as a band rather than a number**, because caching has no count: the
+     trainer gives no callback while it reads images, so how far through it is cannot be
+     known. What it is doing can. */
+  const phase = latest.phase === 'validating_batch' ? 'Validating' : 'Training';
+  const where = latest.epoch
+    ? `epoch ${latest.epoch}${latest.batch ? `, batch ${latest.batch}${latest.batches_total ? ` of ${latest.batches_total}` : ''}` : ''}`
+    : '';
+
+  return '<div class="sect step-charts"><h3>While it runs'
+    + `<span class="st" data-state="running"><span class="dot"></span>${phase}${where ? ` &middot; ${where}` : ''}</span></h3>`
+    + `<div class="curve-grid">${cards}</div></div>`;
 }
 
 /**
@@ -1921,7 +2096,16 @@ function confusionMatrix(matrix, image, raw = []) {
     const split = matrix.dataset_split ? ` &middot; ${escapeHtml(matrix.dataset_split)} split` : '';
 
     return '<article class="evaluation-card matrix-card" data-matrix><header><div><h5>Confusion matrix</h5>'
-      + `<p>Rows are the true class; columns are what the model predicted${split}</p></div>`
+      /* **The note is here because the comparison is made here.** Run 207's matrix gives
+         571 of 710 found, a recall of 0.804, where the per-class table beside it reports
+         0.735 for the same class. Neither is wrong: the trainer builds its matrix at a
+         fixed confidence and takes the table's recall at the confidence where mean F1
+         peaks. A reader who checks one against the other finds a seven-point gap and
+         reasonably concludes something is broken, which is the only reason this sentence
+         is on a screen at all -- it is the per-class table's shared-threshold caveat,
+         where the other half of the comparison is. */
+      + `<p>Rows are the true class; columns are what the model predicted${split}`
+      + ' &middot; counted at a fixed confidence, so recall here and in the table below differ</p></div>'
       + '<div class="seg matrix-modes" aria-label="Confusion matrix values">'
       + '<button type="button" class="on" data-matrix-mode="norm" aria-pressed="true" '
       + 'title="Each cell as a share of its true class">Normalised</button>'
@@ -2338,7 +2522,7 @@ function trainingPlots(plots) {
 
     /* `data-file` carries what the fallback needs, so a tile that turns out not to be an
        image can become the file form without the panel being redrawn. */
-    return `<figure class="result-plot" data-file="${escapeHtml(plot.url)}" data-said="${escapeHtml(said)}">`
+    return `<figure class="result-plot" data-file="${escapeHtml(plot.url)}" data-said="${escapeHtml(said)}" title="Open larger">`
       + `<img src="${escapeHtml(plot.url)}" alt="${escapeHtml(said)}" loading="lazy">`
       + `<figcaption>${escapeHtml(said)}</figcaption></figure>`;
   }).join('');
@@ -2350,6 +2534,90 @@ function trainingPlots(plots) {
        falsehood of the kind this panel keeps being corrected for. */
     + `<p>${plots.length} file${plots.length === 1 ? '' : 's'} this run produced</p></div></header>`
     + `<div class="plot-gallery">${tiles}</div></article>`;
+}
+
+/**
+ * The run's pictures, one at a time and as large as the window allows.
+ *
+ * Isaac, on the gallery: *"i can't zoom in or see them bigger. maybe they should be
+ * clickable and it should open a little scroll slide show so i can view them all?"* A
+ * 220px tile of a 3000px plot is a thumbnail of something nobody can read.
+ *
+ * One overlay for the page, built on first use. Arrows and the keyboard step through
+ * every picture in the gallery that was clicked; clicking the picture swaps between
+ * fitting the window and its own pixels, which scroll -- that is the zoom.
+ *
+ * @param {Element[]} figures - The gallery's image tiles, in order.
+ * @param {number} start - The one that was clicked.
+ */
+function openPlotViewer(figures, start) {
+  let viewer = $('#plot-viewer');
+
+  if (!viewer) {
+    viewer = document.createElement('div');
+    viewer.id = 'plot-viewer';
+    viewer.className = 'plot-viewer';
+    viewer.hidden = true;
+    viewer.setAttribute('role', 'dialog');
+    viewer.setAttribute('aria-modal', 'true');
+    viewer.innerHTML = '<div class="pv-bar"><span class="pv-said"></span><span class="pv-count faint"></span>'
+      + '<a class="btn sm pv-open" target="_blank" rel="noopener" title="Open the full file in a new tab"><svg class="ico sm"><use href="#i-download"/></svg>Full size</a>'
+      + '<button class="btn sm pv-close" type="button" aria-label="Close"><svg class="ico sm"><use href="#i-x"/></svg></button></div>'
+      + '<button class="pv-step pv-prev" type="button" aria-label="Previous picture"><svg class="ico"><use href="#i-left"/></svg></button>'
+      + '<div class="pv-stage"><img alt=""></div>'
+      + '<button class="pv-step pv-next" type="button" aria-label="Next picture"><svg class="ico"><use href="#i-right"/></svg></button>';
+    document.body.appendChild(viewer);
+
+    const stage = $('.pv-stage', viewer);
+
+    $('.pv-close', viewer).addEventListener('click', () => viewer.close());
+    $('.pv-prev', viewer).addEventListener('click', () => viewer.step(-1));
+    $('.pv-next', viewer).addEventListener('click', () => viewer.step(1));
+    $('img', viewer).addEventListener('click', () => stage.classList.toggle('actual'));
+    // The dark around the picture closes it; the picture itself is the zoom.
+    stage.addEventListener('click', (event) => { if (event.target === stage) viewer.close(); });
+
+    viewer.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') viewer.close();
+      else if (event.key === 'ArrowLeft') viewer.step(-1);
+      else if (event.key === 'ArrowRight') viewer.step(1);
+      else return;
+      event.preventDefault();
+    });
+
+    viewer.show = (index) => {
+      const count = viewer.figures.length;
+
+      viewer.index = (index + count) % count;
+
+      const figure = viewer.figures[viewer.index];
+      const img = $('img', viewer);
+
+      img.src = figure.dataset.file;
+      img.alt = figure.dataset.said || '';
+      $('.pv-said', viewer).textContent = figure.dataset.said || '';
+      $('.pv-count', viewer).textContent = `${viewer.index + 1} of ${count}`;
+      $('.pv-open', viewer).href = figure.dataset.file;
+      stage.classList.remove('actual');
+      stage.scrollTo?.(0, 0);
+    };
+    viewer.step = (by) => viewer.show(viewer.index + by);
+    viewer.close = () => {
+      viewer.hidden = true;
+      document.body.classList.remove('viewing');
+      if (viewer.opener) viewer.opener.focus?.();
+    };
+  }
+
+  viewer.figures = figures;
+  viewer.opener = document.activeElement;
+  // One picture has nowhere to step to.
+  $$('.pv-step', viewer).forEach((button) => { button.hidden = figures.length < 2; });
+  viewer.show(start);
+  viewer.hidden = false;
+  document.body.classList.add('viewing');
+  viewer.tabIndex = -1;
+  viewer.focus();
 }
 
 /**
@@ -2496,11 +2764,21 @@ function trainingRunDetail(run, epochs, task, spec, evidence) {
     task ? TRAINING_TASKS[task].label : null,
   ].filter(Boolean).join(' &middot; ');
 
+  /* **Above the epoch charts, because it is the part that moves.** A run somebody is
+     watching reports a batch every few seconds and an epoch every few minutes; putting
+     the slower thing first would mean scrolling past it to see anything happen. Empty for
+     a finished run, whose batches are history its epoch charts already summarise. */
+  const steps = stepCharts(Array.isArray(found.steps) ? found.steps : []);
+
   return `<div class="jobdetail-head"><div><b>Training run ${run.id}</b>`
     + `<span>${about}</span></div></div>`
     + `<div class="jobmetrics">${settings}</div>`
-    + `<div class="training-history-grid">${charts}</div>`
-    + `<div class="training-evaluation-grid">${evaluation}</div>`;
+    + steps
+    /* One heading over what the run concluded, matching *While it runs* above it, so the
+       live charts and the epoch charts read as two things rather than one long column. */
+    + ((charts || evaluation) ? '<div class="sect run-results"><h3>Results</h3>'
+      + `<div class="training-history-grid">${charts}</div>`
+      + `<div class="training-evaluation-grid">${evaluation}</div></div>` : '');
 }
 
 /**
@@ -2713,6 +2991,7 @@ function wireTrainingJobDetail(head, detail) {
           files: gotFiles.status === 'fulfilled' ? gotFiles.value : [],
           curves: trainingCurvesByRun.get(run.id) || [],
           curvesState: trainingCurvesByRun.has(run.id) ? 'read' : 'unread',
+          steps: await readTrainingSteps(run.id),
         };
       } catch (error) {
         cell.innerHTML = '<div class="rundetail jobdetail"><p class="hint">Could not read this '
@@ -2738,6 +3017,18 @@ function wireTrainingJobDetail(head, detail) {
        under it -- so the figure becomes the download form instead. Captured rather than
        bubbled, because `error` on an element does not bubble. One listener for the
        panel; a tile that loads never reaches it. */
+    /* A tile opens the viewer on the whole gallery. Delegated for the same reason the
+       error listener is: the panel is redrawn under it on every poll. */
+    cell.addEventListener('click', (event) => {
+      const figure = event.target.closest && event.target.closest('.plot-gallery .result-plot[data-file]:not(.is-file)');
+
+      if (!figure) return;
+
+      const figures = $$('.result-plot[data-file]:not(.is-file)', figure.closest('.plot-gallery'));
+
+      openPlotViewer(figures, figures.indexOf(figure));
+    });
+
     cell.addEventListener('error', (event) => {
       const img = event.target;
 
@@ -2799,6 +3090,12 @@ function wireTrainingJobDetail(head, detail) {
 /**
  * Write the cells that move, on the rows that are already there.
  *
+ * **Every table of jobs, not only the training ones.** Jobs, Training and the Training
+ * runs panel all draw `tr[data-job]` with the same cell classes, so one patcher serves
+ * them: each cell it writes is guarded by being there, and a table without a Best mAP or
+ * an Epochs column simply has nothing for those lines to find. A second patcher per
+ * screen is how two tables start disagreeing about what a state looks like.
+ *
  * **Patched, not redrawn.** Rebuilding the table every five seconds would close the row
  * being read, which is exactly the defect the Datasets table was fixed for; the same rule
  * applies here for the same reason, and the DOM tier pins both.
@@ -2810,7 +3107,7 @@ function wireTrainingJobDetail(head, detail) {
  * @param {Map<number, Object>} views - The latest view per job id.
  * @returns {void}
  */
-function patchTrainingRows(body, views) {
+function patchJobRows(body, views) {
   for (const head of $$(':scope > tr[data-job]', body)) {
     const view = views.get(Number(head.dataset.job));
 
@@ -3768,13 +4065,13 @@ function watchTrainingJobs() {
         if (trainingViewsByJob.has(id)) trainingViewsByJob.set(id, view);
       }
 
-      patchTrainingRows(body, trainingViewsByJob);
+      patchJobRows(body, trainingViewsByJob);
 
       /* The runs panel is the same rows seen a second way, so it is patched rather than
          redrawn for the same reason: a rebuild closes the expansion somebody is reading. */
       const runsBody = $('#runs tbody');
 
-      if (runsBody) patchTrainingRows(runsBody, trainingViewsByJob);
+      if (runsBody) patchJobRows(runsBody, trainingViewsByJob);
     } catch {
       /* A poll that fails is a blip. The last good answer stays on screen, which is
          better than replacing a table somebody is reading with an error. */
@@ -4175,6 +4472,22 @@ async function wireVideoPicker() {
           + `<div class="video-thumb"><img loading="lazy" src="/api/v2/jellyfin/items/${encodeURIComponent(file.id)}/images/Primary" alt="${escape(file.name)}"></div>`
           + `<div class="video-meta"><b>${escape(file.name)}</b>`
           + `<span class="faint">${escape(file.path || '')}${when ? ` &middot; ${when}` : ''}</span></div>`
+          /* **The line and the frame range, which nothing else can supply.** The picker
+             was rewritten to read the real Jellyfin library and these went with the old
+             markup, while `choiceParts` kept reading selectors for them -- so every
+             target it produced had no line, and a line is half of what places a session.
+             The range went the same way, leaving no way to run part of a video at all.
+
+             Blank frames mean the whole video, and MARP says what it worked that out to
+             be rather than this screen guessing at a length it cannot know. */
+          + '<div class="video-scope">'
+          + '<label class="line-entry">Line<input class="inp" type="text" inputmode="numeric"'
+          + ` aria-label="Line for ${escape(file.name)}" placeholder="e.g. 4"></label>`
+          + '<label>From frame<input class="inp" type="number" min="0" step="1" data-start-frame'
+          + ` aria-label="First frame of ${escape(file.name)}" placeholder="start"></label>`
+          + '<label>To frame<input class="inp" type="number" min="1" step="1" data-end-frame'
+          + ` aria-label="Last frame of ${escape(file.name)}" placeholder="whole video"></label>`
+          + '</div>'
           + '</article>';
       }).join('') : '<p class="nodata">That dive holds no video files.</p>';
     } catch (error) {
@@ -4336,10 +4649,13 @@ function renderInferenceRecent(views) {
   if (!table) return;
 
   const body = $('tbody', table);
-  const rank = { running: 0, issues: 1, failed: 2, expired: 3, queued: 4, cancelled: 5, done: 6 };
+  /* **In flight first, then newest.** Every failure used to outrank every success, so six
+     September failures filled the table and the seven runs that succeeded today could
+     not be reached from here at all. A failure keeps its place in *Needs attention*. */
+  const live = (view) => (['running', 'queued'].includes(view.state) ? 0 : 1);
   const shown = views
     .slice()
-    .sort((a, b) => (rank[a.state] - rank[b.state])
+    .sort((a, b) => (live(a) - live(b))
       || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
     .slice(0, 6);
 
@@ -4356,19 +4672,210 @@ function renderInferenceRecent(views) {
       + `<td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">${view.title}</span></span></td>`
       + `<td class="jscope"><span class="two"><span class="a">Dive ${session.dive || '?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
       + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
-      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
-      /* Detections is gap 11: the ingest writes observations and nothing counts
-         them back onto the job. A dash, not a zero. */
-      + `<td class="jdet">${NOT_COUNTED}</td>`
+      + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}">${statusWithProgress(view)}</td>`
+      /* **A dash until asked, then whatever the answer is -- including zero.** Nothing
+         rolls detections onto the job row itself, so this used to be a permanent dash
+         (gap 11). `GET /gpu/jobs/:id/observations` answers it now, and is asked for the
+         jobs on this page once they are finished; until that lands there is no
+         measurement, and a 0 would claim one. */
+      + '<td class="jdet">' + NOT_COUNTED + '</td>'
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
       + `<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
       + '</tr>';
   }).join('');
+
+  fillInferenceOutcomes(body, shown);
+  watchInference();
 }
 
-/** Nothing counts these. Distinct from zero of them. */
-const NOT_COUNTED = '<span class="dash" title="Nothing rolls detections up to a job: the ingest writes observations and the count is not recorded anywhere (gap 11)">&mdash;</span>';
+/**
+ * The status cell, carrying progress while a job is running.
+ *
+ * **`progressCell` rather than a second formatter**, because it already holds the one
+ * decision that matters here: a job with no heartbeat yet has no measurement, and a 0%
+ * bar would claim one.
+ *
+ * @param {Object} view - A job view.
+ * @returns {string} The cell's inner HTML.
+ */
+function statusWithProgress(view) {
+  const pill = `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`;
+
+  if (view.state !== 'running') return pill;
+
+  return pill + progressCell(view.job, view.state).html;
+}
+
+/** Jobs whose outcome has already been asked for, so a poll does not ask again. */
+const inferenceOutcomes = new Map();
+
+/**
+ * Fill in what each finished run on the page produced.
+ *
+ * **Only the rows that are drawn, and only once each.** Six rows is six reads, which is
+ * fine; the whole table would not be, and nothing rolls these counts onto the job list
+ * for MARP to send in one answer.
+ *
+ * **Only finished jobs.** A running job's count is still moving, and a number that is
+ * true for a moment reads as a total.
+ *
+ * @param {Element} body - The table body.
+ * @param {Array<Object>} views - The views drawn into it.
+ * @returns {Promise<void>}
+ */
+async function fillInferenceOutcomes(body, views) {
+  if (!window.MarpApi || !window.MarpApi.jobObservations) return;
+
+  const terminal = views.filter((view) => ['done', 'issues'].includes(view.state));
+
+  await Promise.all(terminal.map(async (view) => {
+    const id = view.job.id;
+
+    if (!inferenceOutcomes.has(id)) {
+      try {
+        inferenceOutcomes.set(id, await window.MarpApi.jobObservations(id));
+      } catch {
+        /* Left unanswered rather than recorded as none: the dash stays, which says
+           nobody knows, where a 0 would say the run found nothing. */
+        return;
+      }
+    }
+
+    paintOutcome(body, id, inferenceOutcomes.get(id));
+  }));
+}
+
+/**
+ * Write one run's outcome onto its row.
+ *
+ * @param {Element} body - The table body.
+ * @param {number} jobId - The job.
+ * @param {Object} outcome - What `jobObservations` answered.
+ * @returns {void}
+ */
+function paintOutcome(body, jobId, outcome) {
+  const row = $(`tr[data-job="${CSS.escape(String(jobId))}"]`, body);
+
+  if (!row || !outcome) return;
+
+  const cell = $('.jdet', row);
+
+  if (cell) {
+    const total = Number(outcome.observations) || 0;
+    /* The species it found, on the cell's title rather than in it: the column is one
+       number wide and the breakdown is what somebody asks for second. */
+    const breakdown = (outcome.species || [])
+      .map((row2) => `${row2.species_name || row2.reported_name || 'unresolved'}: ${row2.observations}`)
+      .join(', ');
+
+    cell.dataset.sort = String(total);
+    cell.innerHTML = total === 0
+      /* **Zero is an answer, and says so.** A run that completed every frame and detected
+         nothing is not the same as a run nobody has asked about, and the dash beside it
+         means the second. */
+      ? '<span class="num" title="This run completed and detected nothing">0</span>'
+      : `<span class="num"${breakdown ? ` title="${escapeHtml(breakdown)}"` : ''}>${total.toLocaleString()}</span>`;
+  }
+
+  /* **Into the mosaic, filtered to this run.** Exact because of the session rule: a run
+     makes its own session, so `?session=N` is this run's observations and nothing else.
+     Offered only when there is something to look at. */
+  const acts = $('.jacts', row);
+
+  if (acts && outcome.session_id && Number(outcome.observations) > 0 && !$('[data-mosaic]', acts)) {
+    acts.insertAdjacentHTML('afterbegin',
+      `<a class="btn sm" data-mosaic href="/apps/marp-mosaic-review/?session=${outcome.session_id}" `
+      + `title="Review this run's observations in the mosaic">Review</a>`);
+  }
+}
+
+/**
+ * Write the cells that move, on the rows already drawn.
+ *
+ * **Patched, not redrawn**, for the reason `patchTrainingRows` is: rebuilding the table
+ * under somebody reading it is the defect the Datasets table was fixed for.
+ *
+ * @param {Element} body - The table body.
+ * @param {Map<number, Object>} views - The latest view per job id.
+ * @returns {void}
+ */
+function patchInferenceRows(body, views) {
+  for (const row of $$(':scope > tr[data-job]', body)) {
+    const view = views.get(Number(row.dataset.job));
+
+    if (!view) continue;
+
+    const status = $('.jstatus', row);
+    /* The progress bar moves while the state does not, so the state rank alone is the
+       wrong thing to compare -- a running job would freeze at its first percentage. */
+    const stamp = `${JOB_STATE_RANK[view.state]}:${view.job.progress_done}/${view.job.progress_total}`;
+
+    if (status && status.dataset.stamp !== stamp) {
+      status.innerHTML = statusWithProgress(view);
+      status.dataset.sort = String(JOB_STATE_RANK[view.state]);
+      status.dataset.stamp = stamp;
+    }
+  }
+}
+
+/** The inference table's poll, or null when nothing on it is moving. */
+let inferenceWatch = null;
+
+/**
+ * Keep the table current while anything on it is still running.
+ *
+ * Stops when nothing is live, rather than polling an idle screen for ever.
+ *
+ * @returns {void}
+ */
+function watchInference() {
+  if (inferenceWatch || !window.MarpApi) return;
+
+  const body = $('.inference-table tbody');
+
+  if (!body) return;
+
+  inferenceWatch = setTimeout(async function again() {
+    inferenceWatch = null;
+
+    let live = false;
+
+    try {
+      const jobs = await window.MarpApi.listJobs({ limit: 500, kind: 'inference' });
+      const issues = batchesWithIssues(jobs.jobs);
+      const views = new Map(jobs.jobs.map((job) => [job.id, jobView(job, issues)]));
+
+      patchInferenceRows(body, views);
+
+      const drawn = $$(':scope > tr[data-job]', body)
+        .map((row) => views.get(Number(row.dataset.job)))
+        .filter(Boolean);
+
+      /* A job that has just finished is the one whose count is now worth asking for. */
+      await fillInferenceOutcomes(body, drawn);
+
+      live = drawn.some((view) => ['running', 'queued'].includes(view.state));
+    } catch {
+      /* A poll that fails is a blip; the last good answer stays on screen. Keep
+         watching, because the thing that failed is the thing being watched. */
+      live = true;
+    }
+
+    if (live) watchInference();
+  }, TRAINING_EPOCH_POLL_MS);
+}
+
+/**
+ * Nobody has asked yet. Distinct from zero of them.
+ *
+ * **This used to be permanent** -- gap 11 was that nothing counted observations back
+ * onto a job, so the column could only ever draw a dash. `GET /gpu/jobs/:id/observations`
+ * answers it, and the dash now means the narrower thing it says: the question has not
+ * been put for this row yet, or it could not be answered. A finished run that detected
+ * nothing draws 0, because that is a measurement somebody made.
+ */
+const NOT_COUNTED = '<span class="dash" title="Not counted yet for this row. A finished run that found nothing shows 0.">&mdash;</span>';
 
 /**
  * Fills the Inference screen from the data layer.
@@ -4410,7 +4917,20 @@ async function renderInferenceScreen() {
  * and cache placement nothing records at all. Isaac asked for both columns to stay --
  * *"later maybe we will keep those scores"* -- so they wait rather than disappear.
  */
-const NOT_IN_REGISTRY = '<span class="dash" title="Nothing serves this yet: metrics_summary records precision, recall and mAP but no route lists them by run, and no worker reports which models it holds">&mdash;</span>';
+/**
+ * Something the registry has no way to know.
+ *
+ * **Half of what this used to say stopped being true.** It claimed that
+ * `metrics_summary` records precision, recall and mAP *"but no route lists them by run"*
+ * — and `GET /training_run/:id/metrics` has listed them by run since this morning. The
+ * column that half was for is gone, so the sentence survived describing nothing.
+ *
+ * What is left is true and checked: a worker's capability payload carries its engines,
+ * its reductions, its torch and CUDA versions and its hardware, and **nothing about which
+ * model weights it has on disk**. So *Cached on workers* is a question no machine is
+ * currently asked.
+ */
+const NOT_IN_REGISTRY = '<span class="dash" title="No worker reports which model weights it holds">&mdash;</span>';
 
 /**
  * A model MARP has no training run for.
@@ -4808,6 +5328,36 @@ async function renderModelsScreen() {
     modelsTrainedOn = datasetByModel(registry, runs, datasets);
     fillModelsFilterOptions();
     applyModelsQuery();
+
+    /* **The registry is nearly static, and the exception is the one worth watching.** A
+       model being trained becomes a trained model while somebody has this open, and that
+       row is the reason they have it open. So it watches while anything is `training`
+       and stops otherwise, which on a settled registry means it never asks twice.
+
+       `applyModelsQuery` redraws rather than patching, which is allowed here only because
+       the thing it redraws is a table whose rows do not expand into anything a reader is
+       part-way through -- and it is gated behind a status actually changing, so a quiet
+       poll writes nothing at all. */
+    const training = (list) => list.some((model) => model.status === 'training');
+
+    if (training(registry)) {
+      watchScreen({
+        read: () => window.MarpApi.listModels(),
+        live: training,
+        patch: (next) => {
+          const moved = next.some((model) => {
+            const before = modelsRegistry.find((one) => one.id === model.id);
+
+            return !before || before.status !== model.status;
+          });
+
+          if (!moved) return;
+
+          modelsRegistry = next;
+          applyModelsQuery();
+        },
+      });
+    }
   } catch (error) {
     body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="${columns}">Could not load the registry (${error.status || 'no answer'}). `
       + '<button class="btn sm" type="button" id="modelsRetry">Try again</button></td></tr>';
@@ -5306,6 +5856,26 @@ async function renderDashboardScreen() {
     ]);
 
     renderDashboard({ jobs: jobs.jobs, workers, models, datasets });
+
+    /* **The one screen where redrawing is the honest patch.** Everything here is cards
+       and charts -- there is no row to close and nothing expanded to lose -- so the
+       rule's purpose is served by drawing it again. Four reads at the builder's cadence
+       is more than the other screens make, so it stops as soon as nothing is moving,
+       which on a quiet morning is immediately. */
+    watchScreen({
+      read: async () => {
+        const [next, pool, registry, sets] = await Promise.all([
+          window.MarpApi.listJobs({ limit: 500 }),
+          window.MarpApi.listWorkers(),
+          window.MarpApi.listModels(),
+          window.MarpApi.listDatasets(),
+        ]);
+
+        return { jobs: next.jobs, workers: pool, models: registry, datasets: sets };
+      },
+      live: (data) => anyJobLive(data.jobs),
+      patch: (data) => renderDashboard(data),
+    });
   } catch (error) {
     /* **Say what actually went wrong, in the console.** This banner reports a
        status, and a rendering bug has no status -- so a `TypeError` thrown
@@ -5342,7 +5912,16 @@ async function renderDashboardScreen() {
    than invented. Gap 27. */
 
 /** Not measured is not zero. One dash, one explanation, used everywhere. */
-const NOT_REPORTED = '<span class="dash" title="MARP records no live machine telemetry: a worker reports its capabilities at enrolment and its attempt progress on heartbeat">&mdash;</span>';
+/**
+ * A cell this machine has not reported.
+ *
+ * **The tooltip used to say MARP records no live machine telemetry and that a worker
+ * reports its capabilities at enrolment.** Both false: the worker sends GPU utilisation,
+ * VRAM, temperature, power, CPU, system RAM and disk on every poll, and
+ * `gpu_worker_samples` has stored the GPU half every minute since `d60fd0fe`. It is a
+ * fact about *this machine* now, which is the only kind of absence worth drawing.
+ */
+const NOT_REPORTED = '<span class="dash" title="This machine has not reported it">&mdash;</span>';
 
 /** Activity to the design's state word. The API derives `activity` already. */
 const WORKER_ACTIVITY = {
@@ -5359,6 +5938,73 @@ const workersQuery = {
   page: 1, perPage: 5,
 };
 
+/**
+ * When a machine was last heard from, by either of the two things that count.
+ *
+ * **Workers already had this column, under a better name**, so the every-screen rule
+ * lands as a correction rather than a thirteenth header: *Last heard* is what Updated
+ * means for a machine, and adding a second column beside it would have been the rule
+ * being obeyed rather than understood.
+ *
+ * The correction is which timestamp it reads. `last_seen_at` is the worker's own
+ * heartbeat; an attempt's `last_heartbeat_at` is the running job's, and it can be the
+ * newer of the two. Taking the later means a machine that is mid-job never reads as
+ * quieter than one that is idle.
+ *
+ * @param {Object} worker - A row from `GET /gpu/workers`.
+ * @returns {?string} An ISO instant, or null if it has never been heard from.
+ */
+function workerLastSeen(worker) {
+  const times = [worker.last_seen_at, ...(worker.attempts || []).map((one) => one.last_heartbeat_at)]
+    .filter(Boolean)
+    .map((at) => Date.parse(at))
+    .filter((at) => Number.isFinite(at));
+
+  return times.length ? new Date(Math.max(...times)).toISOString() : null;
+}
+
+/**
+ * Write what moves on a worker row, leaving the row itself alone.
+ *
+ * The two cells that change while somebody watches: the status pill, and how long since
+ * the machine was last heard from. Everything else on the row -- its name, its GPU, its
+ * version -- changes when a worker is reconfigured, which is not something that happens
+ * under a reader's eyes, and redrawing it would close an expansion for nothing.
+ *
+ * @param {Object[]} pool - The workers, as `listWorkers` returned them.
+ * @returns {void}
+ */
+function patchWorkerRows(pool) {
+  const body = $('table#workers tbody');
+
+  if (!body) return;
+
+  const byId = new Map(pool.map((worker) => [String(worker.worker_id), worker]));
+
+  for (const row of $$(':scope > tr[data-worker]', body)) {
+    const worker = byId.get(row.dataset.worker);
+
+    if (!worker) continue;
+
+    const view = workerView(worker);
+    const status = $('.jstatus', row);
+    const rank = String(WORKERS_SORT_KEYS.wstate(view));
+
+    if (status && status.dataset.sort !== rank) {
+      status.innerHTML = `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`;
+      status.dataset.sort = rank;
+    }
+
+    const heartbeat = $('.whb', row);
+    const since = String(WORKERS_SORT_KEYS.whb(view));
+
+    if (heartbeat && heartbeat.dataset.sort !== since) {
+      heartbeat.textContent = sinceText(worker.last_seen_at);
+      heartbeat.dataset.sort = since;
+    }
+  }
+}
+
 /** How each sortable column orders. Keyed by the header's class. */
 const WORKERS_SORT_KEYS = {
   wname: (v) => v.worker.name.toLowerCase(),
@@ -5366,7 +6012,7 @@ const WORKERS_SORT_KEYS = {
   wver: (v) => v.worker.worker_version || '',
   wgpu: (v) => v.gpu.toLowerCase(),
   wjobs: (v) => v.used / Math.max(1, v.worker.slot_count),
-  whb: (v) => (v.worker.last_seen_at ? -Date.parse(v.worker.last_seen_at) : Infinity),
+  whb: (v) => (workerLastSeen(v.worker) ? -Date.parse(workerLastSeen(v.worker)) : Infinity),
 };
 
 /** The pool, as fetched. The route does not page, so this is all of it. */
@@ -5383,7 +6029,7 @@ let workersPool = null;
  */
 function sinceText(iso) {
   if (!iso) return 'never';
-  const seconds = Math.max(0, Math.round((window.MarpApi._meta.NOW - Date.parse(iso)) / 1000));
+  const seconds = Math.max(0, Math.round((window.MarpApi.now() - Date.parse(iso)) / 1000));
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
@@ -5396,16 +6042,170 @@ function sinceText(iso) {
  * @param {Object} worker - A worker from `GET /gpu/workers`.
  * @returns {Object}
  */
+/**
+ * The system side of what a worker reports, from `capabilities.resources`.
+ *
+ * It sends `cpu`, `memory`, `disk`, `host`, `torch`, `nvidia`, `python`, `network` and
+ * `job_pressure` on every poll. The screen said none of it was reported.
+ *
+ * Each of these returns a dash rather than inventing a zero: a machine that genuinely
+ * sends no memory block has not told us it is using none.
+ */
+const resourceCpu = (caps) => {
+  const cpu = (caps.resources || {}).cpu;
+
+  if (!cpu || cpu.cpu_percent === null || cpu.cpu_percent === undefined) return NOT_REPORTED;
+
+  const cores = cpu.physical_cpu_count
+    ? ` of ${cpu.physical_cpu_count} cores` : '';
+
+  return `${Math.round(cpu.cpu_percent)}%${cores}`;
+};
+
+const resourceMemory = (caps) => {
+  const memory = (caps.resources || {}).memory;
+
+  if (!memory || !memory.total_bytes) return NOT_REPORTED;
+
+  return `${gb(memory.used_bytes)} of ${gb(memory.total_bytes)} GB`
+    + `${memory.percent_used === undefined ? '' : ` &middot; ${Math.round(memory.percent_used)}%`}`;
+};
+
+const resourceDisk = (caps) => {
+  const disk = (caps.resources || {}).disk;
+
+  if (!disk || !disk.total_bytes) return NOT_REPORTED;
+
+  return `${gb(disk.free_bytes)} GB free`
+    + `${disk.percent_used === undefined ? '' : ` &middot; ${Math.round(disk.percent_used)}% used`}`;
+};
+
+/**
+ * How old a GPU sample may be and still be called a reading.
+ *
+ * The sampler writes once a minute, so five intervals is generous for a machine that is
+ * actually reporting and decisive for one that stopped days ago. The number matters less
+ * than that there is one: without it, the newest row for a switched-off machine is shown
+ * as its current state for ever.
+ */
+const SAMPLE_STALE_MS = 5 * 60 * 1000;
+
+/** How long unheard before a machine is folded away rather than listed with the pool. */
+const WORKER_GONE_MS = 2 * 24 * 60 * 60 * 1000;
+
+/** Bytes as whole gigabytes, for a column 70px wide. */
+const gb = (bytes) => (Number.isFinite(Number(bytes)) ? Math.round(Number(bytes) / 1073741824) : null);
+
+/**
+ * The cells that read a machine's live GPU reading.
+ *
+ * **These said "Not reported" under a note explaining that workers do not report them.**
+ * They do, every minute, into `gpu_worker_samples` — utilisation, VRAM used and total,
+ * temperature and power, all of it. The service only ever attached the reading to a
+ * running *attempt*, so a machine that was plainly on and sampling showed nothing, and
+ * the screen explained the absence rather than the absence being real.
+ *
+ * Each still says nothing when there is nothing: a worker with no sample yet has no
+ * reading, and a dash is the honest cell. The difference is that it is now a fact about
+ * that machine rather than a standing claim about MARP.
+ */
+/** A dash that says when the last reading was, rather than that there was never one. */
+const staleCell = (view) => `<span class="dash" title="${escapeHtml(view.stale)}">&mdash;</span>`;
+
+const gpuLoadCell = (view) => {
+  if (view.stale) return staleCell(view);
+
+  return view.load === null
+    ? NOT_REPORTED
+    : `<span class="prog" data-state="${view.state}" title="GPU utilisation, ${view.asOf}">`
+      + `<span class="bar"><i style="width:${view.load}%"></i></span><span class="pct">${view.load}%</span></span>`;
+};
+
+const vramLoadCell = (view) => {
+  if (view.stale) return staleCell(view);
+
+  return view.vramUsed === null
+    ? NOT_REPORTED
+    : `<span class="two" title="VRAM in use, ${view.asOf}"><span class="a">${view.vramPct}%</span>`
+      + `<span class="b">${gb(view.vramUsed)} of ${gb(view.vramTotal)} GB</span></span>`;
+};
+
+const thermalCell = (view) => {
+  if (view.stale) return staleCell(view);
+
+  return view.tempC === null && view.watts === null
+    ? NOT_REPORTED
+    : `<span class="two" title="As last sampled, ${view.asOf}">`
+      + `<span class="a">${view.tempC === null ? '&mdash;' : `${view.tempC}&deg;C`}</span>`
+      + `<span class="b">${view.watts === null ? '&mdash;' : `${Math.round(view.watts)} W`}</span></span>`;
+};
+
 function workerView(worker) {
   const caps = worker.capabilities || {};
   const [state, label] = WORKER_ACTIVITY[worker.activity] || WORKER_ACTIVITY.idle;
-  const vramGb = caps.vram_mb ? Math.round(caps.vram_mb / 1024) : null;
+
+  /* **`cuda_devices`, not `gpu`.** The GPU name and its VRAM were read from `caps.gpu`
+     and `caps.vram_mb`, keys no worker has ever sent -- not 0.1.1, not 0.1.9. So the
+     column has been empty since it was written, and it looked like a worker problem.
+     What arrives is `cuda_devices[]`, each with a `name` and `total_memory_bytes`. */
+  const device = (caps.cuda_devices || [])[0] || null;
+  const vramGb = device ? gb(device.total_memory_bytes) : null;
+
+  /* **The machine's own latest sample, and only while it is still a reading.**
+     `gpu_worker_samples` keeps every sample for ever, so the newest row for a machine
+     that was switched off on Wednesday is Wednesday's. Isaac found ABYSS *offline, last
+     heard 6d ago*, sitting next to **46°C and 123 W** -- presented as current, in the
+     present tense, with no indication of its age. A six-day-old temperature shown as now
+     is a confident wrong answer, which is worse than the dash that was there before I
+     filled this in.
+
+     A few sample intervals is the window: the sampler writes once a minute, so anything
+     older than five has stopped being a reading and becomes a historical fact, which
+     belongs in the chart below rather than in a column headed *GPU load*. */
+  const sample = (worker.telemetry && (worker.telemetry.gpus || [])[0]) || null;
+  const sampledAt = worker.telemetry ? Date.parse(worker.telemetry.as_of) : NaN;
+  const fresh = Number.isFinite(sampledAt)
+    && window.MarpApi.now() - sampledAt < SAMPLE_STALE_MS;
+  /* **Two gates on purpose.** The cells below check `stale` and draw the dash that says
+     when the last reading was; this one keeps the stale numbers out of the view model
+     entirely, so the next thing to read `view.load` -- a chart, a card, a tooltip --
+     cannot pick up a six-day-old value by accident. Only the first is observable today,
+     so only the first is pinned; this one is the belt. */
+  const reading = fresh ? sample : null;
 
   return {
     worker, caps, state, label,
     activity: worker.activity,
-    gpu: caps.gpu || 'Not reported',
+    /* **The model number is the part that tells two machines apart**, and it is the part
+       a 10% column was cutting off: *"NVIDIA GeForce RTX 4…"*. Every card in this pool is
+       an NVIDIA GeForce, so the two words that are the same on every row are what gets
+       dropped, and the full string stays in the title. A card from another maker keeps
+       its whole name, because only this prefix is stripped. */
+    gpu: device ? device.name.replace(/^NVIDIA\s+GeForce\s+/i, '') : 'Not reported',
+    gpuFull: device ? device.name : '',
     vram: vramGb ? `${vramGb} GB` : '',
+    load: reading && reading.gpu_utilization_percent !== null
+      ? Math.round(reading.gpu_utilization_percent) : null,
+    vramUsed: reading ? reading.memory_used_bytes ?? null : null,
+    vramTotal: reading ? reading.memory_total_bytes ?? null : null,
+    vramPct: reading && reading.memory_percent_used !== null
+      ? Math.round(reading.memory_percent_used) : null,
+    tempC: reading ? reading.temperature_c ?? null : null,
+    watts: reading ? reading.power_usage_watts ?? null : null,
+    /* Said on every cell that shows a reading, because a number with no time on it is a
+       claim about now that may be an hour old. */
+    asOf: worker.telemetry ? sinceText(worker.telemetry.as_of) : 'not sampled',
+    /* What the dash says instead, when the only reading is too old to be one. */
+    stale: !fresh && sample
+      ? `Last sampled ${sinceText(worker.telemetry.as_of)}, too old to show as current`
+      : null,
+    /* A machine nobody has heard from in days is folded away rather than filling the
+       table above the ones that are working. */
+    gone: (() => {
+      const heard = Date.parse(workerLastSeen(worker) || '');
+
+      return Number.isFinite(heard) ? window.MarpApi.now() - heard > WORKER_GONE_MS : true;
+    })(),
     used: (worker.attempts || []).length,
     haystack: `${worker.name} ${worker.worker_id} ${caps.gpu || ''} ${worker.worker_version || ''}`.toLowerCase(),
   };
@@ -5420,19 +6220,21 @@ function workerView(worker) {
 function workerRows(view) {
   const { worker, caps } = view;
   const attempt = (worker.attempts || [])[0] || null;
+  const res = caps.resources || {};
 
   const head = `<tr class="runrow-head" data-worker="${worker.worker_id}" aria-expanded="false">`
     + `<td class="ex"><button class="exbtn" type="button" aria-label="Show ${worker.name} details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
     + `<td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">${worker.name}</span></span></td>`
     + `<td class="jstatus" data-sort="${WORKERS_SORT_KEYS.wstate(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
     + `<td class="wver">${worker.worker_version || NOT_REPORTED}</td>`
-    + `<td class="wgpu"><span class="two"><span class="a">${view.gpu}</span><span class="b">${view.vram}</span></span></td>`
-    + `<td class="wcpu" data-sort="-1">${NOT_REPORTED}</td>`
-    + `<td class="wmem" data-sort="-1">${NOT_REPORTED}</td>`
-    + `<td class="wmodel">${NOT_REPORTED}</td>`
+    + `<td class="wgpu"${view.gpuFull ? ` title="${escapeHtml(view.gpuFull)}"` : ''}>`
+    + `<span class="two"><span class="a">${view.gpu}</span><span class="b">${view.vram}</span></span></td>`
+    + `<td class="wcpu" data-sort="${view.load ?? -1}">${gpuLoadCell(view)}</td>`
+    + `<td class="wmem" data-sort="${view.vramUsed ?? -1}">${vramLoadCell(view)}</td>`
+    + `<td class="wmodel">${thermalCell(view)}</td>`
     + `<td class="num" data-sort="${view.used}">${view.used} / ${worker.slot_count}</td>`
     + `<td class="wup">${NOT_REPORTED}</td>`
-    + `<td class="whb" data-sort="${WORKERS_SORT_KEYS.whb(view)}">${sinceText(worker.last_seen_at)}</td>`
+    + `<td class="whb" data-updated data-sort="${WORKERS_SORT_KEYS.whb(view)}">${sinceText(workerLastSeen(worker))}</td>`
     + '</tr>';
 
   const progress = attempt && attempt.progress_done !== null
@@ -5458,26 +6260,225 @@ function workerRows(view) {
     + '<span class="wdacts"><button class="btn sm" title="Rename is the one worker mutation the API has"><svg class="ico sm"><use href="#i-pencil"/></svg>Rename</button></span></div>'
     + '<div class="grid" data-cols="2">'
     + '<div class="sect"><h3>Reported at enrolment</h3><dl class="kv">'
-    + `<dt>GPU</dt><dd>${caps.gpu || NOT_REPORTED}</dd>`
+    /* Same mistake the row had: `caps.gpu`, `caps.driver` and `caps.cuda` are keys no
+       worker sends, so this read "— / ? / ?" beside a row naming the card. */
+    + `<dt>GPU</dt><dd>${view.gpuFull || NOT_REPORTED}</dd>`
     + `<dt>VRAM</dt><dd>${view.vram || NOT_REPORTED}</dd>`
-    + `<dt>Driver / CUDA</dt><dd>${caps.driver || '?'} / ${caps.cuda || '?'}</dd>`
+    + `<dt>Driver / CUDA</dt><dd>${(res.nvidia && res.nvidia.driver_version) || NOT_REPORTED} / ${(res.torch && res.torch.cuda_version) || NOT_REPORTED}</dd>`
     + `<dt>Worker version</dt><dd>${worker.worker_version || NOT_REPORTED}</dd>`
     + `<dt>Slots</dt><dd>${view.used} of ${worker.slot_count} in use</dd>`
     + `<dt>Enrolled</dt><dd>${new Date(worker.enrolled_at).toISOString().slice(0, 10)}</dd>`
-    + `<dt>Last heard</dt><dd>${sinceText(worker.last_seen_at)}</dd>`
+    + `<dt>Last heard</dt><dd>${sinceText(workerLastSeen(worker))}</dd>`
+    /* **The paragraph that used to be here was wrong in every clause**, and it is the
+       reason the columns stayed empty for weeks: it said live load, temperature, power,
+       CPU, system RAM and disk are not reported and that a worker sends its capabilities
+       once at enrolment. The worker sends all of it on every poll, and `gpu_worker_samples`
+       has been storing the GPU half every minute since `d60fd0fe`. Isaac, finding it:
+       *"this was all stuff we were supposed to implement, instead the former agent just
+       didn't do it and put a note."*
+
+       So the system reading goes here, from `capabilities.resources`, and the columns
+       above carry the GPU one. Nothing explains an absence; where a machine really has
+       not reported something, the cell is a dash. */
+    + `<dt>CPU</dt><dd>${resourceCpu(caps)}</dd>`
+    + `<dt>System RAM</dt><dd>${resourceMemory(caps)}</dd>`
+    + `<dt>Disk</dt><dd>${resourceDisk(caps)}</dd>`
     + '</dl>'
-    /* Said once, here, rather than left to be inferred from a column of dashes:
-       this machine is not instrumented and MARP is not asking it to be. */
-    + '<p class="muted">Live load, temperature, power, clocks, CPU, system RAM and disk are not reported. '
-    + 'A worker sends its capabilities once at enrolment and its attempt progress on heartbeat (gap 27).</p>'
     + '</div>'
     + live
-    + '</div></div></td></tr>';
+    /* Filled when the row is opened rather than with the table: a series per machine for
+       thirteen machines, most of which nobody expands, is a read for nothing. */
+    + '</div><div class="worker-readings" data-worker-readings>'
+    + '<p class="hint">Reading this machine…</p></div>'
+    + '</div></td></tr>';
 
   return head + body;
 }
 
+/**
+ * Fill a worker's expansion with its own charts, once it is opened.
+ *
+ * **Read on opening, not with the table.** A series per machine for a pool of thirteen,
+ * most of which nobody expands, is a request for nothing — the same reason the training
+ * curves are fetched when the row opens.
+ *
+ * **Kept per worker and per range**, so switching back to a window already read redraws
+ * from what is in hand rather than asking again.
+ *
+ * @param {Element} head - The worker's head row.
+ * @returns {void}
+ */
+function wireWorkerReadings(head) {
+  const detail = head.nextElementSibling;
+  const into = detail && $('[data-worker-readings]', detail);
+
+  if (!into) return;
+
+  const workerId = head.dataset.worker;
+  const held = new Map();
+  let range = '1h';
+
+  const draw = async () => {
+    if (head.getAttribute('aria-expanded') !== 'true') return;
+
+    if (!held.has(range)) {
+      const { hours } = WORKER_RANGES[range];
+      const until = new Date();
+      const since = new Date(until.getTime() - hours * 3600000);
+
+      try {
+        held.set(range, await window.MarpApi.workerSeries(workerId, {
+          since: since.toISOString(),
+          until: until.toISOString(),
+        }));
+      } catch (error) {
+        into.innerHTML = `<p class="hint">Could not read this machine (${error.status || 'no answer'}).</p>`;
+        return;
+      }
+    }
+
+    into.innerHTML = workerCharts(held.get(range), range);
+
+    for (const button of $$('[data-worker-range]', into)) {
+      button.addEventListener('click', () => {
+        range = button.dataset.workerRange;
+        draw();
+      });
+    }
+  };
+
+  /* Watched rather than clicked, for the reason the training panel is: the expander is a
+     delegated listener, so a click handler here would read `aria-expanded` before it had
+     been flipped. */
+  new MutationObserver(draw).observe(head, { attributes: true, attributeFilter: ['aria-expanded'] });
+}
+
 /** Narrows, sorts and pages the pool, then draws it. */
+/**
+ * What a machine's own charts show, and from which series.
+ *
+ * **Keyed like the training charts, for the same reason**: a reading that gets added
+ * later is an entry here rather than a component. Each is drawn on its own axis because
+ * they are different quantities — a percentage, a temperature and a wattage share no
+ * scale, and putting them on one would make the temperature line look flat beside a
+ * figure that reaches 320.
+ */
+const WORKER_CHARTS = [
+  { key: 'gpu', title: 'GPU utilisation', unit: '%', max: 100 },
+  { key: 'vram', title: 'VRAM in use', unit: '%', max: 100 },
+  { key: 'cpu', title: 'CPU', unit: '%', max: 100 },
+  { key: 'memory', title: 'System memory', unit: '%', max: 100 },
+  { key: 'disk', title: 'Disk used', unit: '%', max: 100 },
+  { key: 'temperature', title: 'Temperature', unit: '°C', max: 'auto' },
+  { key: 'power', title: 'Power', unit: 'W', max: 'auto' },
+];
+
+/** The windows a worker's charts can be read over. An hour by default, as elsewhere. */
+const WORKER_RANGES = {
+  '1h': { hours: 1, label: 'the last hour' },
+  '24h': { hours: 24, label: 'the last 24 hours' },
+  '7d': { hours: 168, label: 'the last 7 days' },
+  '30d': { hours: 720, label: 'the last 30 days' },
+};
+
+/**
+ * One machine's readings, drawn.
+ *
+ * **A chart with nothing in it says so and is not drawn as a flat line at zero.** Most of
+ * what is stored predates the worker sending CPU, memory and disk, so those three are
+ * null for every older sample — and null here means *nobody measured*, which is the one
+ * thing a line must never render as a floor.
+ *
+ * @param {Object} series - From `GET /gpu/workers/:id/series`.
+ * @param {string} range - Which window is selected.
+ * @returns {string}
+ */
+function workerCharts(series, range) {
+  const box = { left: 46, right: 700, top: 24, bottom: 174 };
+  const measured = (values) => values.some((value) => value !== null && value !== undefined);
+
+  const cards = WORKER_CHARTS.map((spec) => {
+    const values = series[spec.key] || [];
+
+    if (!measured(values)) {
+      /* Named rather than drawn empty: *this machine did not report it in this window* is
+         a different fact from *it reported zero*, and the three system series will say
+         this for every window that reaches back before the worker build that sends them. */
+      return `<article class="evaluation-card history-card"><header><div><h5>${spec.title}</h5>`
+        + `<p>Not reported in ${WORKER_RANGES[range].label}</p></div></header></article>`;
+    }
+
+    const real = values.filter((value) => value !== null && value !== undefined).map(Number);
+    const top = spec.max === 'auto'
+      ? Math.max(1, Math.ceil(Math.max(...real) * 1.1))
+      : spec.max;
+    const last = [...values].reverse().find((value) => value !== null && value !== undefined);
+
+    return '<article class="evaluation-card history-card" data-result-graph>'
+      + `<header><div><h5>${spec.title}</h5><p>${WORKER_RANGES[range].label}`
+      + ` &middot; now ${Math.round(Number(last))}${spec.unit}</p></div></header>`
+      + `<div class="result-chart" role="img" aria-label="${spec.title} over ${WORKER_RANGES[range].label}">`
+      + '<svg viewBox="0 0 740 205" aria-hidden="true">'
+      + '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
+      + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>'
+      + `<g class="result-axis"><text x="38" y="28">${top}</text>`
+      + `<text x="38" y="103">${Math.round(top / 2)}</text><text x="38" y="178">0</text></g>`
+      + `<path class="result-line worker-series" d="${gappyPath(values, top, box)}"/></svg></div></article>`;
+  }).join('');
+
+  const buttons = Object.keys(WORKER_RANGES).map((key) => `<button type="button" class="${key === range ? 'on' : ''}"`
+    + ` data-worker-range="${key}" aria-pressed="${key === range}">${key}</button>`).join('');
+
+  return `<div class="sect worker-charts"><h3>Readings<span class="seg worker-ranges">${buttons}</span></h3>`
+    + `<div class="curve-grid">${cards}</div></div>`;
+}
+
+/** Whether the long-gone machines are currently shown. Off until somebody asks. */
+let workersFoldOpen = false;
+
+/**
+ * The control that says how many machines are folded away, and opens them.
+ *
+ * **The count is the point.** Hiding rows is only safe if the screen says it is hiding
+ * them; a pool that quietly lists four of thirteen is how somebody concludes nine were
+ * de-enrolled. It sits under the table rather than above it, because it is a footnote to
+ * the pool rather than a filter on it.
+ *
+ * @param {number} count - How many rows are folded.
+ * @returns {void}
+ */
+function renderWorkersFold(count) {
+  const panel = $('#worker-pool');
+
+  if (!panel) return;
+
+  const wrap = $('.tblwrap', panel);
+  let fold = $('[data-workers-fold]', panel);
+
+  if (!count) {
+    if (fold) fold.remove();
+    return;
+  }
+
+  if (!fold) {
+    fold = document.createElement('button');
+    fold.type = 'button';
+    fold.className = 'btn sm workers-fold';
+    fold.setAttribute('data-workers-fold', '');
+    fold.addEventListener('click', () => {
+      workersFoldOpen = !workersFoldOpen;
+      applyWorkersQuery();
+    });
+    wrap.after(fold);
+  }
+
+  fold.textContent = workersFoldOpen
+    ? `Hide ${count} machine${count === 1 ? '' : 's'} not heard from in days`
+    : `Show ${count} machine${count === 1 ? '' : 's'} not heard from in days`;
+  fold.setAttribute('aria-expanded', String(workersFoldOpen));
+  panel.dataset.foldOpen = workersFoldOpen ? 'yes' : 'no';
+}
+
 function applyWorkersQuery() {
   const table = $('table#workers');
   if (table) table.dataset.sortsItsOwnData = 'true';
@@ -5506,9 +6507,38 @@ function applyWorkersQuery() {
   const from = (workersQuery.page - 1) * workersQuery.perPage;
   const shown = views.slice(from, from + workersQuery.perPage);
 
-  body.innerHTML = shown.length
-    ? shown.map(workerRows).join('')
+  /* **Machines nobody has heard from in days are folded away, not deleted.** The pool
+     holds thirteen workers and two of them have ever been near this project; the rest
+     are test enrolments and a laptop that was on once. Listing them with the ones doing
+     work makes the table about history rather than about now -- Isaac: *"maybe it should
+     be below the fold or not shown if it's not online, or hasn't been online in a day or
+     two?"*
+
+     Folded rather than filtered, and the count stays on the toggle, because a machine
+     that silently vanished from a pool list is how somebody concludes it was
+     de-enrolled. They are still searchable and still sortable: only the default view
+     leaves them out. */
+  const here = shown.filter((view) => !view.gone);
+  const gone = shown.filter((view) => view.gone);
+
+  body.innerHTML = here.length || gone.length
+    ? here.map(workerRows).join('') + (gone.length ? gone.map(workerRows).join('') : '')
     : '<tr class="tblmsg"><td class="empty" colspan="11">No workers match these filters.</td></tr>';
+
+  /* Marked after rendering rather than in the row builder: `workerRows` returns two rows
+     per worker and the detail must fold with its head. */
+  for (const view of gone) {
+    const head = $(`tr[data-worker="${view.worker.worker_id}"]`, body);
+
+    if (!head) continue;
+
+    head.dataset.gone = 'yes';
+    if (head.nextElementSibling) head.nextElementSibling.dataset.gone = 'yes';
+  }
+
+  for (const head of $$(':scope > tr[data-worker]', body)) wireWorkerReadings(head);
+
+  renderWorkersFold(gone.length);
 
   const count = $('#worker-pool .panel-hd .count');
   if (count) count.textContent = `(${total.toLocaleString()})`;
@@ -5570,7 +6600,7 @@ function renderWorkersSummary(workers, jobs) {
   const queued = jobs.filter((j) => j.state === 'queued');
   const oldestQueued = queued.reduce((oldest, j) => Math.min(oldest, Date.parse(j.created_at)), Infinity);
   const waitingMinutes = Number.isFinite(oldestQueued)
-    ? Math.round((window.MarpApi._meta.NOW - oldestQueued) / 60000) : 0;
+    ? Math.round((window.MarpApi.now() - oldestQueued) / 60000) : 0;
 
   const cards = $$('.workers-stats .stat');
   const set = (card, num, parts) => {
@@ -5652,6 +6682,29 @@ async function renderWorkersTable() {
     workersPool = pool;
     renderWorkersSummary(pool, jobs.jobs);
     applyWorkersQuery();
+
+    /* **A pool screen that does not move is the one that misleads most**: a worker going
+       offline looks exactly like a worker that was offline when the tab was opened. The
+       status pill and the heartbeat are written into the rows that are there, so an
+       expanded worker stays expanded.
+
+       It keeps asking while any machine is reachable, rather than while any job is live:
+       the thing being watched here is the pool itself, and a worker dropping out is
+       precisely the event worth seeing. A pool that is entirely offline has nothing left
+       to report and stops. */
+    const reachable = (list) => list.some((one) => one.last_seen_at
+      && Date.now() - Date.parse(one.last_seen_at) < 10 * 60 * 1000);
+
+    if (reachable(pool)) {
+      watchScreen({
+        read: () => window.MarpApi.listWorkers(),
+        live: reachable,
+        patch: (next) => {
+          workersPool = next;
+          patchWorkerRows(next);
+        },
+      });
+    }
   } catch (error) {
     body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load the pool (${error.status || 'no answer'}). `
       + '<button class="btn sm" type="button" id="workersRetry">Try again</button></td></tr>';
@@ -6179,6 +7232,24 @@ async function renderJobsTable() {
        about what happens to be on screen. */
     renderJobsSummary(jobsWindow.jobs);
     applyJobsQuery();
+
+    /* **Jobs is the screen somebody leaves open while work runs**, and until now it was
+       a snapshot of whenever the tab was opened. The rows are `tr[data-job]` with the
+       same cell classes the Training tables use, so the patcher is the same one. */
+    if (anyJobLive(jobsWindow.jobs)) {
+      watchScreen({
+        read: () => window.MarpApi.listJobs(ask),
+        live: (window_) => anyJobLive(window_.jobs),
+        patch: (window_) => {
+          jobsWindow = window_;
+
+          const issues = batchesWithIssues(window_.jobs);
+
+          renderJobsSummary(window_.jobs);
+          patchJobRows(body, new Map(window_.jobs.map((job) => [job.id, jobView(job, issues)])));
+        },
+      });
+    }
   } catch (error) {
     /* A real state, and the reason the layer can be made to fail on purpose.
        `?mock=fail:jobs` is how to see it. */
@@ -6421,7 +7492,7 @@ function wireJobsOverview() {
     const detail = document.createElement('tr');
     detail.className = 'runrow-body';
     detail.hidden = true;
-    detail.innerHTML = `<td colspan="11"><div class="rundetail jobdetail">
+    detail.innerHTML = `<td colspan="12"><div class="rundetail jobdetail">
       <div class="jobdetail-head"><div><b>${name}</b><span>Job ${id} · ${type}</span>${datasetLink}</div><span class="st" data-state="${state}"><span class="dot"></span>${status}</span></div>
       <div class="jobdetail-grid jobidentity">
         <dl class="kv"><dt>Job ID</dt><dd class="mono">${id}</dd><dt>Type</dt><dd>${type}</dd><dt>Scope</dt><dd>${scope}${scopeContext ? ` <span class="faint">· ${scopeContext}</span>` : ''}</dd><dt>${isDatasetBuild ? 'Build output' : 'Locked model'}</dt><dd>${model} <span class="faint">${modelVersion}</span><div class="locked">Immutable from submission</div></dd></dl>
@@ -7398,13 +8469,20 @@ let registryAsked = null;
 const MODEL_SPECIES = new Map();
 
 /**
- * MARP's models, once.
+ * The models inference may actually run, once.
  *
- * @returns {Promise<Object[]>} Active models, by name. Empty if MARP would not say.
+ * **Not the whole registry.** A pretrained base model is registered and the registry
+ * screen should show it, but inference must never be handed one: its classes are the
+ * upstream vocabulary rather than MARP species, so what it emits would be resolved
+ * against the species catalogue and written into the record. Submission refuses one,
+ * so this picker was offering a choice the API would reject -- found by driving the
+ * tab rather than by reading it.
+ *
+ * @returns {Promise<Object[]>} Active, runnable models by name. Empty if MARP would not say.
  */
-function loadModels() {
+function loadRunnableModels() {
   if (!registryAsked) {
-    registryAsked = (window.MarpApi?.listModels?.() || Promise.resolve([]))
+    registryAsked = (window.MarpApi?.listRunnableModels?.() || Promise.resolve([]))
       /* **Active only.** `status` is what says a model is released to run; a draft
          has no weights worth sending and an archived one is retired. The thirteen
          real models here are active, and the two that are not are leftovers from a
@@ -7464,15 +8542,24 @@ function modelConfigMarkup() {
     + '<details class="fold model-settings">'
     + '<summary>Inference &amp; ByteTrack settings <span class="now" data-settings-now></span></summary>'
     + '<div class="fbody settings-grid">'
-    + '<label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.25" data-setting="conf"></label>'
+    /* **Named for the keys the worker reads, and opened at the values it would use.**
+       Every one of these was a name the worker does not honour, so a run reported
+       them as ignored and used its own number instead. Detection confidence showed
+       0.25 while an unset confidence runs at 0.15 -- the screen stating one
+       measurement and the GPU applying another. `tracking_engine.py` is the source:
+       `params.get("confidence", params.get("conf", 0.15))`, `_INFERENCE_OPTIONS` for
+       the predict() settings, and ByteTrack's own four. */
+    + '<label>Detection confidence<input class="inp" type="number" min="0" max="1" step="0.01" value="0.15" data-setting="confidence"></label>'
     + '<label>NMS IoU<input class="inp" type="number" min="0" max="1" step="0.01" value="0.45" data-setting="iou"></label>'
-    + '<label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30" data-setting="track"></label>'
-    + '<label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70" data-setting="match"></label>'
-    + '<label>Track buffer (frames)<input class="inp" type="number" min="1" value="240" data-setting="buffer"></label>'
-    + '<label>Range size (frames)<input class="inp" type="number" min="1" value="900" data-setting="range"></label>'
+    + '<label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30" data-setting="track_thresh"></label>'
+    + '<label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70" data-setting="match_thresh"></label>'
+    + '<label>Track buffer (frames)<input class="inp" type="number" min="1" value="240" data-setting="track_buffer"></label>'
+    + '<label>Piece size (frames)<input class="inp" type="number" min="1" value="900" data-setting="piece_frames"></label>'
     + '<label class="check"><input type="checkbox" data-setting="mot20"><span>MOT20 mode</span></label>'
-    + '<label>Reduction<select class="sel" data-setting="reduction">'
-    + '<option>Best frame of each track</option><option>Every detection</option></select></label>'
+    /* Stated rather than chosen. `reduction/keyframes.py` registers exactly one --
+       `("v3_dirpad", "1")` -- and the two options here were "Best frame of each
+       track" and "Every detection", neither of which a worker could have run. */
+    + '<label>Reduction<input class="inp" type="text" value="v3_dirpad v1" readonly disabled></label>'
     + '</div></details>'
     + '<button class="text-action danger" type="button" data-remove-model>Remove model</button>'
     + '</div></details>';
@@ -7493,7 +8580,7 @@ const MODEL_MARK_TONES = ['gorg', 'star', ''];
  */
 async function refreshModelConfig(config) {
   const pick = $('[data-model-pick]', config);
-  const models = await loadModels();
+  const models = await loadRunnableModels();
 
   if (!pick) return;
 
@@ -7597,14 +8684,14 @@ function refreshConfigSummary(config, known = {}) {
         ? `${checked} of ${total} ${total === 1 ? 'species' : 'species'}`
         : (total === 1 ? 'its one species' : `all ${total} species`))
       : 'no classes mapped';
-    note.textContent = `${chosen}${classes} · conf ${get('conf') ?? ''}`;
+    note.textContent = `${chosen}${classes} · conf ${get('confidence') ?? ''}`;
   }
 
   /* The leading zero goes, because the fold's own line is tight and ".18" reads
      as a confidence to anybody who has used one. */
   const trim = (value) => String(value ?? '').replace(/^0(?=\.)/, '');
 
-  if (now) now.textContent = `conf ${trim(get('conf'))} · match ${trim(get('match'))} · buffer ${get('buffer') ?? ''}`;
+  if (now) now.textContent = `conf ${trim(get('confidence'))} · match ${trim(get('match_thresh'))} · buffer ${get('track_buffer') ?? ''}`;
 }
 
 /**
@@ -7627,6 +8714,240 @@ function defaultJobName() {
   return scope ? `${scope}_${day}` : `inference_${day}`;
 }
 
+/**
+ * The engine a "Detection + ByteTrack" run is.
+ *
+ * **Read off the worker's own registry, not chosen.** `engines/engine_registry.py`
+ * registers `mock`, `ultralytics`, `marp_tracking` and `marp_training`, and
+ * `get_job_engine` refuses anything that is not a `BaseEngine` -- `UltralyticsEngine` is
+ * `FrameInferenceCapable`, the single-frame engine behind the frame routes, so a video
+ * job must be `marp_tracking`. There is no `marp_inference`, whatever MARP's older notes
+ * say.
+ *
+ * @constant {string}
+ */
+const INFERENCE_ENGINE = 'marp_tracking';
+
+/**
+ * The keyframe rule applied to finished tracks.
+ *
+ * `reduction/keyframes.py` registers exactly one, keyed `("v3_dirpad", "1")`. The version
+ * is sent as a string because that tuple key is a string; the worker stringifies anyway,
+ * but relying on that is relying on a coincidence.
+ *
+ * @constant {{name: string, version: string}}
+ */
+const INFERENCE_REDUCTION = Object.freeze({ name: 'v3_dirpad', version: '1' });
+
+/**
+ * Say how a submission went, where somebody about to click again will see it.
+ *
+ * @param {string} text - What happened.
+ * @param {string} [kind] - `ok` or `warning`, for the styling.
+ * @returns {void}
+ */
+function sayRunStatus(text, kind) {
+  const status = $('[data-fills="run-status"]');
+
+  if (!status) return;
+
+  status.textContent = text;
+  status.dataset.state = kind || '';
+}
+
+/**
+ * Fill every run group's MARP project picker.
+ *
+ * **MARP projects, not the Jellyfin folders above.** The video query panel browses
+ * Jellyfin's own hierarchy, whose "project" is a directory name; a session belongs to a
+ * row in `projects`, and the two are not the same thing. Submitting the Jellyfin name
+ * would be submitting a string MARP cannot resolve.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function fillProjectPickers() {
+  const pickers = $$('[data-marp-project]');
+
+  if (!pickers.length || !window.MarpApi) return;
+
+  const projects = await (window.MarpApi.listProjects
+    ? window.MarpApi.listProjects().catch(() => [])
+    : Promise.resolve([]));
+
+  /* **Nothing selected to begin with.** A select takes its first option by default, so a
+     picker that opened on a project nobody chose would file a dive's observations under
+     whichever project sorted first -- silently, and in a record people query later. The
+     empty option makes the refusal below fire instead. */
+  const options = (projects || []).length
+    ? '<option value="">Choose a project</option>' + projects.map((project) => {
+      const id = project.project_id === undefined ? project.id : project.project_id;
+
+      return '<option value="' + id + '">' + escapeHtml(project.name || ('Project ' + id)) + '</option>';
+    }).join('')
+    : '<option value="">No projects</option>';
+
+  pickers.forEach((picker) => {
+    /* Only an empty one, so refilling does not throw away a choice somebody made. */
+    if (!picker.options.length) picker.innerHTML = options;
+  });
+}
+
+/**
+ * The settings a model config asks for, under the names the worker reads.
+ *
+ * **Only what was changed is sent.** The worker records each setting with a `source` of
+ * `job` or `default`, so a value sent because it happened to be sitting in the box
+ * reports as a choice somebody made. Confidence is the one that matters: the field opens
+ * at the worker's own 0.15, and sending that back would claim a decision nobody took.
+ *
+ * @param {Element} config - The `[data-model-config]` element.
+ * @returns {Object} `spec.params`, which may be empty.
+ */
+function inferenceParams(config) {
+  const params = {};
+
+  $$('[data-setting]', config).forEach((input) => {
+    const key = input.dataset.setting;
+
+    // Not a worker setting: it splits the submission into jobs, which is MARP's business.
+    if (key === 'piece_frames' || input.disabled) return;
+
+    if (input.type === 'checkbox') {
+      if (input.checked) params[key] = true;
+
+      return;
+    }
+
+    const raw = String(input.value === undefined || input.value === null ? '' : input.value).trim();
+
+    if (raw === '' || Number(raw) === Number(input.defaultValue)) return;
+
+    params[key] = Number(raw);
+  });
+
+  return params;
+}
+
+/**
+ * Every job the plan on screen describes, or why none of them can be submitted.
+ *
+ * One body per target per model configuration, which is what the plan's own arithmetic
+ * already says: *N model runs across M selected video ranges*.
+ *
+ * **Refusals rather than a partial submission.** Each is something a person can act on,
+ * and all of them are collected rather than the first -- a plan missing a line on four
+ * cards should say so once, not four times over four clicks.
+ *
+ * @async
+ * @returns {Promise<{bodies: Object[]}|{refusals: string[]}>}
+ */
+async function inferenceSubmissions() {
+  const models = await loadRunnableModels();
+  const bodies = [];
+  const refusals = [];
+  const name = ($('#jobname') ? $('#jobname').value : '').trim() || defaultJobName();
+
+  $$('[data-run-group]').forEach((group, index) => {
+    const where = 'Run group ' + (index + 1);
+    const picker = $('[data-marp-project]', group);
+    const projectId = Number(picker ? picker.value : NaN);
+    const targets = $$('[data-target]', group);
+    const configs = $$('[data-model-config]', group);
+
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      refusals.push(where + ': choose the MARP project its observations belong to.');
+    }
+
+    if (!targets.length) refusals.push(where + ': add at least one video range.');
+    if (!configs.length) refusals.push(where + ': add at least one model.');
+
+    targets.forEach((target) => {
+      const dive = (target.dataset.videoDive || '').trim();
+      const line = (target.dataset.videoLine || '').trim();
+      const named = $('b', target);
+      const label = (named ? named.textContent.trim() : '') || target.dataset.videoId;
+
+      /* Both identify the session and neither can be guessed. A line is typed onto the
+         card and saved; a dive comes from the Jellyfin hierarchy. */
+      if (!dive) refusals.push(where + ': ' + label + ' has no dive, so its session cannot be placed.');
+      if (!line) refusals.push(where + ': ' + label + ' has no line. Enter one on the card and save it.');
+
+      configs.forEach((config) => {
+        const pick = $('[data-model-pick]', config);
+        const model = models.find((row) => row.id === Number(pick ? pick.value : NaN));
+
+        if (!model) {
+          refusals.push(where + ': choose a model.');
+
+          return;
+        }
+
+        /* **The worker hashes what it fetched and refuses a mismatch**, and MARP refuses
+           a spec without a hash. A model registered before `artifact_sha256` existed has
+           none, and reaches the API as a 400 that reads like a defect in this screen. */
+        if (!model.artifact_sha256) {
+          refusals.push(where + ': ' + model.name + ' has no recorded checksum, so a worker would '
+            + 'have nothing to verify its weights against. Run '
+            + 'scripts/backfill-model-artifact-sha256.js where the model store lives.');
+
+          return;
+        }
+
+        const piece = $('[data-setting="piece_frames"]', config);
+        const pieceFrames = Number(piece ? piece.value : NaN);
+        const params = inferenceParams(config);
+        const body = {
+          kind: 'inference',
+          name,
+          spec: {
+            engine: INFERENCE_ENGINE,
+            /* An item id, never a URL: MARP resolves it to something playable when the
+               job is leased, and the Jellyfin item supplies `source_name`. */
+            video: { jellyfin_item_id: target.dataset.videoId },
+            model: {
+              ml_model_id: model.id,
+              name: model.name,
+              // Coordinator-relative, so a worker resolves it against whichever MARP it
+              // is enrolled with rather than a path on somebody's disk.
+              url: '/api/v2/model/' + model.id + '/artifact',
+              sha256: String(model.artifact_sha256).toLowerCase(),
+            },
+            reduction: Object.assign({}, INFERENCE_REDUCTION),
+            /* **A session per run, under the dive**, and `type` left out so MARP derives
+               it from the model's species list -- the screen has no business restating
+               something the registry already knows. No `range`: MARP works the frame
+               count out from the Jellyfin item and reports back what it decided, which
+               beats this screen guessing at a video's length. */
+            session: { project_id: projectId, dive, line, per_run: true },
+          },
+        };
+
+        /* **Sent only when somebody scoped the run.** Left out, MARP derives the end
+           from the Jellyfin item and reports back what it decided -- which is the one
+           thing this screen could not work out for itself. A half-open range, so
+           `to` is one past the last frame, exactly as the API documents it. */
+        const from = (target.dataset.startFrame || '').trim();
+        const to = (target.dataset.endFrame || '').trim();
+
+        if (from !== '' || to !== '') {
+          body.spec.range = {};
+
+          if (from !== '') body.spec.range.start_frame = Number(from);
+          if (to !== '') body.spec.range.end_frame = Number(to);
+        }
+
+        if (Number.isInteger(pieceFrames) && pieceFrames > 0) body.piece_frames = pieceFrames;
+        if (Object.keys(params).length) body.spec.params = params;
+
+        bodies.push(body);
+      });
+    });
+  });
+
+  return refusals.length ? { refusals } : { bodies };
+}
+
 function wireInferenceForm() {
   const run = $('#runBtn');
   if (!run) return;
@@ -7639,10 +8960,20 @@ function wireInferenceForm() {
     const title = $('.video-meta b', choice)?.textContent.trim() || 'video';
     const dive = (choice.dataset.videoDive || '').trim();
     const line = $('.line-entry .inp', choice)?.value.trim();
-    const mode = $('[data-video-range]', choice)?.value || 'all';
-    const times = $$('.time-range .inp', choice).map((input) => input.value);
-    return { id: choice.dataset.videoId, title, dive, line,
-      range: mode === 'time' ? times.join('–') : 'Entire video' };
+    /* Read as text and kept as text: an empty box is "not set", and `Number('')` is 0,
+       which would silently submit frame 0 as a deliberate start. */
+    const from = $('[data-start-frame]', choice)?.value.trim() || '';
+    const to = $('[data-end-frame]', choice)?.value.trim() || '';
+
+    return {
+      id: choice.dataset.videoId,
+      title,
+      dive,
+      line,
+      from,
+      to,
+      range: from || to ? `Frames ${from || '0'}\u2013${to || 'end'}` : 'Entire video',
+    };
   };
 
   const refreshSelected = () => {
@@ -7681,7 +9012,12 @@ function wireInferenceForm() {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[character]));
   const targetMarkup = (parts) => '<article class="plan-target" data-target data-video-id="'
-    + safe(parts.id) + '" data-video-dive="' + safe(parts.dive || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
+    + safe(parts.id) + '" data-video-dive="' + safe(parts.dive || '')
+    /* The line was in the card's prose and nowhere a submission could read it, so a
+       plan that displayed "Line 4" submitted nothing of the sort. */
+    + '" data-video-line="' + safe(parts.line || '')
+    + '" data-start-frame="' + safe(parts.from || '')
+    + '" data-end-frame="' + safe(parts.to || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
     + (parts.line ? 'L' + safe(parts.line) : '—') + '</span><span><b class="mono">' + safe(parts.title)
     + '</b><small>' + (parts.dive ? safe(parts.dive) + ' · ' : '')
     + (parts.line ? 'Line ' + safe(parts.line) : 'Line not assigned') + ' · ' + safe(parts.range)
@@ -7783,32 +9119,56 @@ function wireInferenceForm() {
     }
   });
 
-  run.addEventListener('click', () => {
-    const groups = $$('[data-run-group]').map((group, index) => ({
-      order: index + 1,
-      targets: $$('[data-target]', group).map((target) => ({
-        jellyfin_item_id: target.dataset.videoId,
-        label: $('b', target)?.textContent.trim(),
-        selection: $('small', target)?.textContent.trim(),
-      })),
-      models: $$('[data-model-config]', group).map((model) => ({
-        model: $('summary b', model)?.textContent.trim(),
-        summary: $('summary small', model)?.textContent.trim(),
-      })),
-    }));
-    const spec = { kind: 'inference_plan', pipeline: 'detection_bytetrack',
-      /* Blank means "name it after the plan", which is what the placeholder says.
-         The box used to open pre-filled with `CAMPA_2024_Dives_0103_0125`, so every
-         plan anybody submitted without noticing carried that name. */
-      name: $('#jobname')?.value.trim() || defaultJobName(), groups,
-      output: 'unreviewed_observations', worker_selection: $('table#workers')?.value };
-    $('#specText').textContent = JSON.stringify(spec, null, 2);
+  run.addEventListener('click', async () => {
+    const asked = await inferenceSubmissions();
+
+    /* The spec panel still opens, because somebody about to spend GPU hours should be
+       able to read what is going. It shows what was actually sent, not a sketch of it:
+       it used to print a `kind: 'inference_plan'` object that no MARP route accepts,
+       naming models by their display text and carrying no session, no hash and no
+       frames. Nothing was ever submitted. */
+    $('#specText').textContent = JSON.stringify(asked.bodies || asked.refusals, null, 2);
     $('#specOut').hidden = false;
-    $('#specOut').scrollIntoView({ block: 'nearest' });
+
+    if (asked.refusals) {
+      sayRunStatus(asked.refusals[0], 'warning');
+      return;
+    }
+
+    run.disabled = true;
+    sayRunStatus(`Queueing ${asked.bodies.length} run${asked.bodies.length === 1 ? '' : 's'}…`);
+
+    const queued = [];
+
+    try {
+      /* One at a time, deliberately. Each submission creates its own session, and a
+         burst of parallel posts would interleave those writes for no gain -- there are
+         a handful of runs here, not hundreds. */
+      for (const body of asked.bodies) {
+        const answer = await window.MarpApi.submitJob(body);
+
+        queued.push(...(answer.jobs || []).map((job) => job.id));
+      }
+
+      sayRunStatus(`Queued ${queued.length} job${queued.length === 1 ? '' : 's'}: `
+        + `${queued.join(', ')}. They appear below, and on the Jobs screen.`, 'ok');
+      renderInferenceScreen();
+    } catch (error) {
+      /* MARP's own message, which names the field that was wrong. Replacing it with
+         "Could not queue" is how somebody ends up guessing. Says what already went, so
+         a failure halfway through a plan is not read as nothing having happened. */
+      const sent = queued.length ? ` ${queued.length} already queued (${queued.join(', ')}).` : '';
+
+      sayRunStatus(`Could not queue it (${error.status || 'no answer'}). ${error.message || ''}${sent}`.trim(),
+        'warning');
+    } finally {
+      run.disabled = false;
+    }
   });
 
   refreshSelected();
   refreshPlan();
+  fillProjectPickers();
 
   /* One configuration to start with, so the panel shows the control rather than an
      empty box somebody has to guess at. The markup used to carry two, named after
@@ -7828,7 +9188,21 @@ function wireInferenceForm() {
  * hides the list.
  */
 /** `Dataset` does not carry this. Distinct from "not measured yet". */
-const NOT_IN_DATASET = '<span class="dash" title="Not carried by the dataset record: it has name, description, location, num_samples, num_observations, num_classes, source, status and timestamps, and nothing else (gap 16)">&mdash;</span>';
+/**
+ * A count this dataset does not have.
+ *
+ * **The tooltip used to name a gap, and the gap had closed.** It listed the columns
+ * `datasets` carries and said *"and nothing else (gap 16)"* — but the table has had
+ * `notes`, `archive_path`, `archive_sha256`, `archive_bytes`, `task` and `crop_source`
+ * added since that sentence was written, and every figure this constant is actually used
+ * for — `num_samples`, `num_observations`, `num_classes` — **is a column**. So it was
+ * never saying what it appeared to say: the record carries these, this dataset has not
+ * been given them.
+ *
+ * Which makes it a fact about one row rather than a standing claim about MARP, and that
+ * is the whole of the difference Isaac has been pointing at all day.
+ */
+const NOT_IN_DATASET = '<span class="dash" title="Not recorded for this dataset">&mdash;</span>';
 
 /**
  * Puts the saved datasets from `GET /api/v2/dataset` into the lifecycle table.
@@ -12340,9 +13714,63 @@ function paintFreshness() {
  *
  * @returns {void}
  */
+/**
+ * Say which code is answering, once.
+ *
+ * **Asked once and never again**, because the answer cannot change while the process
+ * lives -- that is the whole point of MARP reading it at startup. Repainting it on a
+ * timer would suggest otherwise.
+ *
+ * **Hidden until MARP says**, rather than showing "unknown" while the request is in
+ * flight: an empty label is honest about a question not yet answered, where a filled one
+ * would claim MARP had replied and not known.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function fillServerIdentity() {
+  const into = $('[data-server-started]');
+
+  if (!into || !window.MarpApi || typeof window.MarpApi.whoAmI !== 'function') return;
+
+  let server;
+
+  /* Guarded like the label beside it: the chrome must not be what breaks a page, and a
+     signed-out visitor gets null here rather than an answer. */
+  try {
+    const me = await window.MarpApi.whoAmI();
+
+    server = me && me.server;
+  } catch {
+    return;
+  }
+
+  if (!server || !server.started_at) return;
+
+  const started = new Date(server.started_at);
+
+  if (Number.isNaN(started.getTime())) return;
+
+  /* **`agoText` within the day, a date beyond it.** The label shares its vocabulary with
+     the freshness one beside it, so the two read as one thought -- but the case this
+     exists for is a server days behind its checkout, and "127h ago" is arithmetic the
+     reader has to do. A date is immediately obviously stale. */
+  const age = Date.now() - started.getTime();
+
+  into.textContent = `API started ${age < 86400000
+    ? agoText(age)
+    : started.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+  /* Null rather than a guess is MARP's rule for the commit, so say so in those words
+     instead of printing an empty parenthesis. */
+  into.title = `This MARP process started ${started.toLocaleString()}, on commit `
+    + `${server.commit || 'unknown -- git could not answer when it started'}`;
+  into.hidden = false;
+}
+
 function wireFreshness() {
   if (!$('[data-freshness]')) return;
 
+  fillServerIdentity();
   paintFreshness();
 
   const tick = setInterval(paintFreshness, 1000);
@@ -12361,6 +13789,92 @@ function wireFreshness() {
      refresh of its own. */
   if (reload) reload.addEventListener('click', () => location.reload());
 }
+
+/** The cadence every live screen keeps. The dataset builder's, which Isaac set. */
+const SCREEN_POLL_MS = 5000;
+
+/** Every live screen's tick, so the DOM tier can run one without waiting five seconds. */
+const screenPolls = [];
+
+/**
+ * Run every pending screen poll once. For the DOM tier; the application never calls it.
+ *
+ * @returns {Promise<void>}
+ */
+async function pollScreenNow() {
+  for (const tick of screenPolls) await tick();
+}
+
+/**
+ * Keep a screen current without rebuilding it.
+ *
+ * **One of these rather than five.** Freshness, live updating and expandable rows were
+ * each built a screen at a time as Isaac found them missing, so Datasets polled and
+ * Models did not, and the only thing deciding which was where he had last looked. This is
+ * the shared half: a screen says what it reads, what to write into the rows it already
+ * has, and when there is nothing left worth watching.
+ *
+ * **Patched, never rebuilt.** A rebuild closes the row somebody is reading -- the defect
+ * the Datasets table was fixed for -- so `patch` writes into cells and the table it was
+ * given keeps its identity, its scroll and its open expansions.
+ *
+ * **It stops.** A screen of finished work makes no requests at all, which is what keeps
+ * seven tabs open from being seven pollers.
+ *
+ * @param {Object} spec - `{read, patch, live}`.
+ * @returns {void}
+ */
+function watchScreen({ read, patch, live }) {
+  let timer = null;
+
+  /* **A seam for the DOM tier, the way `detail.redraw` is one on a row.** A watcher
+     schedules its first tick while the screen is still rendering, so a test has no moment
+     in which to intercept the timer -- and waiting five real seconds per assertion would
+     make the tier slow enough that nobody runs it. `pollScreenNow` runs what is pending,
+     once, on demand. It is not used by the application. */
+  screenPolls.push(() => again());
+
+  const again = async () => {
+    timer = null;
+
+    let data;
+
+    try {
+      data = await read();
+    } catch {
+      /* A failed poll is not a reason to stop: the top bar already says MARP is not
+         answering, and a screen that gave up would stay stale and silent after the
+         connection came back. */
+      timer = setTimeout(again, SCREEN_POLL_MS);
+      return;
+    }
+
+    patch(data);
+
+    if (live(data)) timer = setTimeout(again, SCREEN_POLL_MS);
+  };
+
+  timer = setTimeout(again, SCREEN_POLL_MS);
+
+  /* A timer with no end keeps a jsdom window alive, so the DOM tier hangs rather than
+     failing -- and a suite that never finishes is harder to diagnose than one that is
+     red. The same reason the freshness ticker is stopped. */
+  const stop = () => { if (timer) clearTimeout(timer); timer = null; };
+
+  window.addEventListener('pagehide', stop);
+  window.addEventListener('unload', stop);
+}
+
+/** The states worth watching: a screen holding any of these keeps asking. */
+const LIVE_STATES = new Set(['queued', 'running', 'leased', 'cancelling']);
+
+/**
+ * Is anything here still moving?
+ *
+ * @param {Object[]} jobs - Raw job rows.
+ * @returns {boolean}
+ */
+const anyJobLive = (jobs) => jobs.some((job) => LIVE_STATES.has(job.state));
 
 function boot(name, wire) {
   try {

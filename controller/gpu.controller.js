@@ -123,6 +123,19 @@ class GpuController {
     }
 
     /**
+     * One machine's readings over a window.
+     *
+     * @async
+     * @param {number|string} workerId - The machine.
+     * @param {Object} window - `{since, until}` as ISO instants.
+     * @returns {Promise<Object>} Parallel arrays, one entry per sample.
+     */
+    async readWorkerSeries(workerId, window) {
+        logger.info('Controller: readWorkerSeries');
+        return gpuService.readWorkerSeries(workerId, window);
+    }
+
+    /**
      * Rename a GPU machine.
      *
      * @async

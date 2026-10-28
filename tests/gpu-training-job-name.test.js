@@ -130,8 +130,11 @@ describe('A training job submitted without a name', () => {
            where it survives whatever the names are. */
         expect(job.name.slice(0, 32)).toMatch(/^\d{2}:\d{2}/);
 
-        /* **Not the id**, which is the whole point: "Job 21782" is what this replaces. */
-        expect(job.name).not.toContain(String(job.id));
+        /* **Not the id**, which is the whole point: "Job 21782" is what this replaces.
+           Checked part by part rather than as a substring: on CI's empty database the id
+           is 13, and the fixture's timestamped names carry a 13 often enough to fail. */
+        expect(job.name).not.toMatch(/^Job \d+$/);
+        expect(job.name.split(' · ')).not.toContain(String(job.id));
     });
 
     /**

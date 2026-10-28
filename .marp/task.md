@@ -589,3 +589,100 @@ Filled at G3.
   **Still unproved:** no classification run has happened, so `classify`, `accuracy_top1`
   and `accuracy_top5` are exercised only against fixtures; and this run was single-class,
   so the unresolved-class path and a second metric family have not met real data.
+
+---
+
+# The ML Dashboard made whole: inference, live training, classification, and every screen current
+
+Refs MarineAppliedResearch/MARP_API#104, #268. Branch `268-every-screen-standard` in the
+serving checkout, which every session's work this round was merged into. Worker side is
+MarineAppliedResearch/marp-inference-worker on `268-training-params-and-provenance`.
+
+Written after the work, on 2026-10-28, because this round was built without a spec: the
+G1 and G3 gates were skipped and this section is the record catching up. Scope is frozen
+at what is on the branch; nothing new is added under it.
+
+## Goal
+
+Somebody can run a model over a video from the Inference tab and review what it found;
+train a detection or a classification model and watch it while it trains; read every
+screen knowing how fresh it is; and see which code the server is running.
+
+## Requirements
+
+- **R1 — Inference submits.** The Inference tab's Run button submits a real job: model by
+  id with checksum, video, a line, an optional frame range, and the confidence the run
+  will actually use (0.15 by default). Base models are never offered.
+- **R2 — One automated session per run.** Each inference run creates its own session under
+  the dive, with `is_automated` true and `created_by` the person who submitted it. Its type
+  is derived from the model's species list, not asked for.
+- **R3 — A finished inference job says what it found.** Observation count and species
+  breakdown by the corrected species, and a Review link into the mosaic on exactly those.
+- **R4 — Every screen is current.** Each screen shows when its data was last read and when
+  it failed; anything that changes while watched updates in place without closing an open
+  row; rows that change carry an Updated column.
+- **R5 — Workers report what the machine is doing.** GPU, VRAM, temperature, power, CPU,
+  memory and disk, live; seven charts per worker over 1h/24h/7d/30d; a reading more than
+  five sample intervals old is shown as stale, not current; machines unheard for over two
+  days fold behind a toggle.
+- **R6 — Live training charts.** Running losses, GPU memory, throughput and ETA per batch,
+  validation progress, and phase markers, drawn from what the worker sends; every sample
+  the worker sends is stored.
+- **R7 — Classification trains end to end.** A classification dataset is built from mosaic
+  tiles; a classification run records per-epoch training and validation loss and top-1 /
+  top-5; its confusion matrix is labelled in species names; the model it produces is
+  registered as classification.
+- **R8 — Every registered model is reachable.** All models with files resolve through one
+  model store and download with their recorded checksum.
+- **R9 — The server says what it is running.** The top bar shows when the API started and,
+  on hover, the commit.
+- **R10 — Species names are consistently capitalised.** Case-differing pairs on different
+  lists are capitalised and kept separate; the one same-list duplicate is merged and
+  retired; model output names still resolve.
+- **R11 — No screen explains away an unbuilt feature.** Notes describing a gap are either
+  built or rewritten as plain facts.
+
+## Open assumptions
+
+- [x] **A1 · product/UI · blocking** — answered 2026-10-27, Isaac: *"one dive can have
+  individual sessions, so this would just be a session for that dive. and we'd record it
+  was the automated and who ran it."* Then, asked to choose: **one session per run**.
+- [x] **A2 · data-meaning · blocking** — answered 2026-10-27, Isaac: existing sessions are
+  **not** backfilled as automated ("None, new runs only"). `is_automated` false means "not
+  recorded as automated", not "made by a person".
+- [x] **A3 · scientific · blocking** — answered 2026-10-27, Isaac: classification images
+  are crops from the mosaic tiles; no background class. Per-crop versus per-frame left open
+  for later model types.
+- [x] **A4 · data-meaning · blocking** — answered 2026-10-27, Isaac: case-duplicate species
+  *"should probably share the same capitalization"*. Eight pairs are on different lists and
+  are different things, so they are capitalised, not merged.
+- [x] **A5 · scientific · non-blocking** — answered 2026-10-27: inference confidence stays
+  0.15, the documented preference — reviewers reject false positives cheaply; a missed
+  animal costs re-reviewing video.
+- [ ] **A6 · data-meaning · non-blocking** — MarineDebris holds two same-list duplicate
+  pairs (805/817 "Accessory item", 816/832 "Mechanical/electrical item"). Left alone.
+
+## Decisions
+
+- **2026-10-27** — classification class folders are `<species_id>_<slug>` with a
+  `classes.json`, because 37 species names contain a slash; labels are translated back to
+  species at ingest.
+- **2026-10-27** — classification image size defaults to 224 (the pretrained weights'
+  size); 320 is one selection away.
+- **2026-10-27** — base models are flagged `is_base` and refused for inference.
+- **2026-10-28** — a training sample is keyed by the event it came from, so markers and
+  samples sharing a step are all kept.
+
+## Acceptance criteria
+
+Each requirement R1–R11 is shown working against the server on port 3000 and the
+development database, and the named test groups that cover the changed code pass. The
+results, including what failed, are in `.marp/verification.md` under this round's heading.
+
+## Test plan
+
+`.marp/verification.md`, section "The ML Dashboard made whole".
+
+## Status
+
+Built and merged into the serving branch. Verification in progress.

@@ -115,6 +115,7 @@ const answers = (epochs, runs = [run(202, 21779)], evidence = {}) => ({
   listSessions: async () => [],
   listTrainingRuns: async () => runs,
   trainingRunEpochs: async () => epochs,
+  trainingRunSamples: async () => ({ matched: 0, returned: 0, strided: false, samples: [] }),
 });
 
 /** Open the row for a job and let its detail fill. */
@@ -2311,4 +2312,175 @@ test('run 207 arrives with no declared types, and the gallery still draws it', a
   assert.ok(captions.some((text) => /scored against/.test(text)), 'and val_batch0_labels');
   assert.ok(!captions.some((text) => /box ?pr curve/i.test(text)),
     'none of them falls through to its own stem');
+});
+
+/* ---------------------------------------------- the per-batch view of a live run */
+
+/** A batch sample, in the shape `GET /training_run/:id/samples` returns. */
+const step = (attemptId, n, metrics, extra = {}) => ({
+  attempt_id: attemptId,
+  step: n,
+  phase: 'training_batch',
+  epoch: 1,
+  batch: n,
+  batches_total: 3,
+  at: `2026-10-28T09:00:${String(n).padStart(2, '0')}.000Z`,
+  metrics: { epoch: 1, batch: n, batches_total: 3, ...metrics },
+  ...extra,
+});
+
+test('a running run graphs what the console would print, per batch', async (t) => {
+  /* Isaac: *"i don't want it as a command line, i want everything that would be showing
+     in the command line to be graphed!"* */
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)], [run(202, 21782)]),
+    listJobs: async () => ({ jobs: [job(21782, 'leased')], total: 1, limit: 500, offset: 0 }),
+    trainingRunSamples: async () => ({
+      matched: 3,
+      returned: 3,
+      strided: false,
+      samples: [
+        step(1, 1, { 'train/loss': 0.48, gpu_memory_bytes: 734003200, iterations_per_second: 6.81, epoch_eta_seconds: 0.3 }),
+        step(1, 2, { 'train/loss': 0.41, gpu_memory_bytes: 745000000, iterations_per_second: 7.02, epoch_eta_seconds: 0.2 }),
+        step(1, 3, { 'train/loss': 0.37, gpu_memory_bytes: 751000000, iterations_per_second: 7.11, epoch_eta_seconds: 0.1 }),
+      ],
+    }),
+  });
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21782);
+  const panel = detail.querySelector('.step-charts');
+
+  assert.ok(panel, 'the per-batch section drew');
+
+  const heads = [...panel.querySelectorAll('.evaluation-card h5')].map((h) => h.textContent.trim());
+
+  /* **Only what this run sent.** A classifier reports one `train/loss`; the detector's
+     three are absent from these samples and must not appear as empty frames. */
+  assert.deepEqual(heads, ['Loss', 'GPU memory', 'Throughput', 'Epoch ETA']);
+  assert.ok(!heads.includes('Box loss'), 'no chart for a key this run does not send');
+
+  assert.ok(panel.querySelector('.result-line.step-series').getAttribute('d'),
+    'the loss draws per batch');
+  assert.match(panel.textContent, /Training/, 'and the phase says what it is doing');
+  assert.match(panel.textContent, /epoch 1, batch 3 of 3/, 'and where it has got to');
+});
+
+test('a retry gets its own line rather than walking backwards through the first', async (t) => {
+  /* A second attempt restarts the step counter at 1, so step 1 appears twice in one
+     response with different `attempt_id`s. Drawn as one series it reads as the loss
+     collapsing — a picture of a run failing, invented from a counter reset. */
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)], [run(202, 21782)]),
+    listJobs: async () => ({ jobs: [job(21782, 'leased')], total: 1, limit: 500, offset: 0 }),
+    trainingRunSamples: async () => ({
+      matched: 4,
+      returned: 4,
+      strided: false,
+      samples: [
+        step(1, 1, { 'train/loss': 0.9 }), step(1, 2, { 'train/loss': 0.8 }),
+        step(2, 1, { 'train/loss': 0.7 }), step(2, 2, { 'train/loss': 0.6 }),
+      ],
+    }),
+  });
+
+  t.after(screen.close);
+
+  const panel = (await open(screen, 21782)).querySelector('.step-charts');
+  const lines = panel.querySelectorAll('.evaluation-card .result-line.step-series');
+
+  assert.equal(lines.length, 2, 'one line per attempt');
+  assert.notEqual(lines[0].getAttribute('d'), lines[1].getAttribute('d'));
+  assert.match(panel.textContent, /2 attempts/, 'and the card says there were two');
+});
+
+test('a poll asks only for what is new, and keeps what it already had', async (t) => {
+  /* Four hundred batches down the wire every five seconds for the life of a run is what
+     `after_step` exists to avoid. */
+  const asked = [];
+  let batch = 0;
+
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)], [run(202, 21782)]),
+    listJobs: async () => ({ jobs: [job(21782, 'leased')], total: 1, limit: 500, offset: 0 }),
+    trainingRunSamples: async (id, query) => {
+      asked.push(query);
+      batch += 1;
+
+      return batch === 1
+        ? { matched: 2, returned: 2, strided: false, samples: [step(1, 1, { 'train/loss': 0.9 }), step(1, 2, { 'train/loss': 0.8 })] }
+        : { matched: 1, returned: 1, strided: false, samples: [step(1, 3, { 'train/loss': 0.7 })] };
+    },
+  });
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21782);
+
+  /* A property rather than `deepEqual({})`: the object is built inside the jsdom realm,
+     so its prototype is not this one's and a strict deep-equal fails on two empty
+     objects that are identical in every way anybody cares about. */
+  assert.equal(asked[0].after_step, undefined, 'the first read asks for everything');
+
+  await detail.redraw();
+
+  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(asked[1].after_step, 2, 'and the next asks only for what follows step 2');
+
+  const d = detail.querySelector('.step-charts .result-line.step-series').getAttribute('d');
+
+  assert.equal((d.match(/[ML]/g) || []).length, 3, 'with all three points drawn, not just the new one');
+});
+
+test('the epoch charts sit under one Results heading', async (t) => {
+  /* From the #268 checklist: the live charts had *While it runs* over them and the epoch
+     charts had nothing, so the two read as one long column. */
+  const screen = await drawScreen('training.html', answers([epoch(1, { box_loss: 1.8 })]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const results = detail.querySelector('.run-results');
+
+  assert.ok(results, 'a Results section');
+  assert.equal(results.querySelector('h3').textContent.trim(), 'Results');
+  assert.ok(results.querySelector('.training-history-grid .result-line.box-loss'),
+    'and the epoch charts are inside it');
+});
+
+test('a trainer picture opens large, and steps through the rest of the gallery', async (t) => {
+  /* Isaac: *"i can't zoom in or see them bigger. maybe they should be clickable and it
+     should open a little scroll slide show so i can view them all?"* The weights are not
+     a picture, so they are not a slide. */
+  const screen = await drawScreen('training.html', answers([epoch(1)], [run(202, 21779)], {
+    files: [
+      { name: 'PR_curve', url: '/a/pr.png', content_type: 'image/png' },
+      { name: 'weights', url: '/a/w', content_type: 'application/octet-stream' },
+      { name: 'val_batch0_pred', url: '/a/vb.jpg', content_type: 'image/jpeg' },
+    ],
+  }));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  const tiles = detail.querySelectorAll('.plot-gallery .result-plot[data-file]:not(.is-file) img');
+
+  tiles[1].click();
+
+  const viewer = screen.document.getElementById('plot-viewer');
+
+  assert.ok(viewer && !viewer.hidden, 'clicking a picture opens the viewer');
+  assert.equal(viewer.querySelector('img').getAttribute('src'), '/a/vb.jpg', 'on the one clicked');
+  assert.equal(viewer.querySelector('.pv-count').textContent, '2 of 2', 'counting pictures, not files');
+
+  viewer.dispatchEvent(new screen.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  assert.equal(viewer.querySelector('img').getAttribute('src'), '/a/pr.png', 'and wraps round');
+
+  viewer.querySelector('img').click();
+  assert.ok(viewer.querySelector('.pv-stage').classList.contains('actual'), 'clicking it zooms to its own pixels');
+
+  viewer.dispatchEvent(new screen.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(viewer.hidden, 'and Escape closes it');
 });

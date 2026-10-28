@@ -479,7 +479,8 @@ produces an authentication failure.
 
 The host and port are deliberately not written down here. `marp db env` prints the
 ones your database is actually using, and a literal in this file would be wrong the
-first time anyone ran `db up --port` for a second worktree.
+first time anyone gave a second worktree its own database with
+`db up -Port <free port> -DataDirName <name>`.
 
 Optional integrations — Jellyfin and the reporting database — have their own
 variables. All are documented in `.env.example`.

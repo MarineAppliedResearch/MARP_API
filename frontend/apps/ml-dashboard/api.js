@@ -41,6 +41,22 @@
   /** The corpus's present. Fixed, so two people see the same relative times. */
   const NOW = Date.parse('2026-10-14T12:00:00Z');
 
+  /**
+   * The present, for anything working out how long ago something was.
+   *
+   * **Fixed for the corpus and the real clock for MARP.** `NOW` is the generated
+   * corpus's present, which is what keeps the screenshots from moving — and it was being
+   * used against live rows too. Everything the API returns is newer than 2026-10-14, so
+   * every *"how long ago"* came out negative, was clamped at zero, and the Workers page
+   * said **"0s ago"** about every machine for ever. Present, plausible, and wrong, which
+   * is why nobody saw it until Isaac noticed it never moved.
+   *
+   * @returns {number} Milliseconds since the epoch.
+   */
+  function now() {
+    return SWITCH.fixture ? NOW : Date.now();
+  }
+
   /** One seed for the whole corpus. Changing it changes every generated value. */
   const SEED = 0x4d415250; // "MARP"
 
@@ -959,6 +975,25 @@
    *
    * @returns {Promise<Object[]>}
    */
+  /**
+   * `GET /api/v2/gpu/workers/:id/series` -- one machine's readings over a window.
+   *
+   * Parallel arrays against `at`: `gpu`, `vram`, `temperature`, `power` from the GPU
+   * block, and `cpu`, `memory`, `disk` from the system block.
+   *
+   * **Nulls are gaps and must stay gaps.** A minute the machine did not report is null in
+   * every series, and the system three are null on every sample taken before the worker
+   * began sending them -- which is most of what is stored. A chart that reads those as
+   * zero draws a machine idling through hours it was switched off.
+   *
+   * @param {number|string} workerId - The machine.
+   * @param {Object} [window] - `{since, until}` as ISO instants.
+   * @returns {Promise<Object>}
+   */
+  function workerSeries(workerId, window) {
+    return request(`/gpu/workers/${encodeURIComponent(workerId)}/series`, { query: window || {} });
+  }
+
   function listWorkers() {
     return serve('workers', () => request('/gpu/workers'), () => {
       if (SWITCH.fail.has('@empty')) return [];
@@ -1167,6 +1202,65 @@
   }
 
   /**
+   * `GET /api/v2/ml_models?runnable=inference` -- the models inference may actually run.
+   *
+   * **A narrower list than the registry, and deliberately a separate call.** A
+   * pretrained base model is a real registered model and the registry screen should
+   * keep showing it; it is only *inference* that must never be handed one, because its
+   * classes are the upstream vocabulary rather than MARP species, so whatever it emits
+   * would be resolved against `species.comname` and written into the scientific record.
+   * Submission refuses one outright -- so a picker offering them was offering something
+   * the API would reject, which is how this was found.
+   *
+   * @returns {Promise<Object[]>}
+   */
+  function listRunnableModels() {
+    return serve('models', () => request('/ml_models?runnable=inference'),
+      () => (SWITCH.fail.has('@empty') ? [] : copy(REGISTRY.models).filter((m) => !m.is_base)));
+  }
+
+  /**
+   * `GET /api/v2/gpu/jobs/:id/observations` -- what one run actually produced.
+   *
+   * **A job's state does not answer this.** A job succeeds when its bytes arrive and are
+   * ingested, and ingesting an empty detections file is a success that produced nothing:
+   * job 21789 ran all of its frames, succeeded, and wrote zero observations, correctly.
+   * So `0` here is a measurement and renders as 0, where a job nobody has asked about
+   * yet renders as a dash.
+   *
+   * The breakdown is keyed on `species_id` rather than the label the model emitted,
+   * because a species correction changes the first and deliberately never rewrites the
+   * second -- counting by the label keeps a corrected observation under a name somebody
+   * has already rejected.
+   *
+   * @param {number|string} jobId - The job.
+   * @returns {Promise<Object>} `{job_id, state, session_id, observations, species}`.
+   */
+  function jobObservations(jobId) {
+    return serve('jobs', () => request(`/gpu/jobs/${jobId}/observations`), () => {
+      const r = rng(Number(jobId) || 1);
+      const names = ['Blue rockfish', 'Lingcod', 'Red urchin', 'Sunflower star'];
+      /* Built from the parts so the breakdown sums to the total, which is what the real
+         route guarantees and what the screen puts side by side. */
+      const species = names
+        .map((name, index) => ({
+          species_id: 700 + index,
+          species_name: name,
+          reported_name: name,
+          observations: int(r, 0, 60),
+        }))
+        .filter((row) => row.observations > 0);
+
+      return {
+        job_id: Number(jobId),
+        session_id: 1400 + (Number(jobId) % 7),
+        observations: species.reduce((sum, row) => sum + row.observations, 0),
+        species,
+      };
+    });
+  }
+
+  /**
    * `POST /api/v2/dataset/build` -- build a dataset out of the matching observations.
    *
    * **Answers immediately with the dataset and the job, not with a dataset.** A real
@@ -1315,6 +1409,33 @@
    * @param {number|string} runId - The training run.
    * @returns {Promise<Object>}
    */
+  /**
+   * `GET /api/v2/training_run/:id/samples` -- what the trainer is doing, per batch.
+   *
+   * `{matched, returned, strided, samples}`, each sample `{attempt_id, step, phase,
+   * epoch, batch, batches_total, at, metrics}`.
+   *
+   * **`metrics` is free-form on purpose.** A detector sends `train/box_loss`,
+   * `train/cls_loss` and `train/dfl_loss`; a classifier sends one `train/loss`. Read the
+   * keys that are there rather than expecting a set — columns for them would have been a
+   * migration per task and a row of nulls meaning *not this kind of run*.
+   *
+   * **`after_step` is per attempt**, so a poll asks only for what is new. A retry
+   * restarts the step counter at 1, which is why `attempt_id` has to group the series:
+   * without it a second attempt draws a line jumping backwards through the first.
+   *
+   * **`strided` must not be ignored.** A first read of a long run is thinned — every nth
+   * sample, never the first n or the last n — and the newest sample is always included,
+   * so a chart never looks stalled when it is not.
+   *
+   * @param {number|string} runId - The training run.
+   * @param {Object} [query] - `{after_step, limit}`.
+   * @returns {Promise<Object>}
+   */
+  function trainingRunSamples(runId, query) {
+    return request(`/training_run/${encodeURIComponent(runId)}/samples`, { query: query || {} });
+  }
+
   function trainingRunMetrics(runId) {
     return request(`/training_run/${encodeURIComponent(runId)}/metrics`);
   }
@@ -1784,9 +1905,12 @@
     throughputSeries,
     registrySeries,
     listWorkers,
+    workerSeries,
     listJobs,
     getJob,
+    jobObservations,
     listModels,
+    listRunnableModels,
     listModelVersions,
     listModelSpecies,
     listDatasets,
@@ -1794,6 +1918,7 @@
     freshness,
     trainingRunEpochs,
     trainingRunPace,
+    trainingRunSamples,
     trainingRunMetrics,
     trainingRunCurves,
     trainingRunArtifacts,
@@ -1817,6 +1942,7 @@
     ApiError,
     /* Exposed for the checks, not for the screens. A screen reading these is a
        screen that has learned something the real API will not tell it. */
+    now,
     _meta: { NOW, SEED, SWITCH, JOB_STATES, JOB_KINDS, WORKER_STATES },
   };
 })();

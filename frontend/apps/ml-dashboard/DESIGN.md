@@ -1073,7 +1073,7 @@ the new fields is the next pass, and it is cheap now that the shapes are fixed.
 ## Running it
 
 ```bash
-cd frontend/apps/marp-ml-dashboard
+cd frontend/apps/ml-dashboard
 npm install
 npm run serve      # then open the address it prints
 npm run lint       # parse, colours and the state vocabulary. About a second
@@ -1086,5 +1086,5 @@ the full phone column, and the phone fold — plus the account menu, and a drawe
 or expanded row where a screen has one. Looking at them is the review.
 
 The API serves this in place too: `app.js` serves any folder under
-`frontend/apps/` by name, so `/apps/marp-ml-dashboard/` opens the Dashboard. The
+`frontend/apps/` by name, so `/apps/ml-dashboard/` opens the Dashboard. The
 Machine Learning Dashboard card on the MARP landing page links to it.

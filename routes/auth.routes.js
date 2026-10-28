@@ -15,6 +15,7 @@ const rateLimit = require('express-rate-limit');
 const authController = require('../controller/auth.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { serverIdentity } = require('../config/server-identity');
 
 /**
  * OpenAPI tag label shared by all auth routes.
@@ -178,7 +179,7 @@ function registerAuthRoutes(app) {
     path: '/api/v2/auth/me',
     summary: 'Get the currently authenticated session user',
     description:
-      'Returns the currently authenticated MARP user associated with the request session. Returns 401 when the request has no valid authenticated session.',
+      'Returns the currently authenticated MARP user associated with the request session. Returns 401 when the request has no valid authenticated session.\n\nIt also carries `server`: what this process is, as `{started_at, commit}`, both read once at startup. It rides on this read because every screen already makes it before drawing, so nothing pays for a second round trip. A server serves the code it was started with rather than the code on your branch, and one here ran five days behind its checkout for a day -- the evidence looked like a defect in the feature somebody had just written. `commit` is null where git cannot answer, never a guess, and it reports what HEAD was rather than that the tree was clean.',
     tags: [AUTH_TAG],
     responses: {
       200: {
@@ -199,7 +200,9 @@ function registerAuthRoutes(app) {
       }
 
       // Return the current authenticated principal.
-      res.json({ user: req.user });
+      // The principal, and what is serving it. Two unrelated facts on one read,
+      // because every screen already makes this one before it draws.
+      res.json({ user: req.user, server: serverIdentity() });
     }),
   });
 }

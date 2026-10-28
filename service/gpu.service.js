@@ -31,6 +31,7 @@ const jellyfinRepository = require('../repository/jellyfin.repository');
 const gpuPlaybackService = require('./gpu-playback.service');
 const observationIngestService = require('./observation-ingest.service');
 const trainingMetricsService = require('./training-metrics.service');
+const inferenceSessionService = require('./inference-session.service');
 const logger = require('../logger/api.logger');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const {
@@ -67,6 +68,7 @@ const {
  * are recorded at.
  */
 const { ASSUMED_FPS } = require('../db/timecode');
+const { systemReading } = require('../db/worker-telemetry');
 
 /**
  * Which job states can be cleared wholesale.
@@ -693,12 +695,16 @@ class GpuService {
            was granted, as the attempt snapshot -- so the activity charts could show only
            the minutes a machine happened to be holding one, and an idle pool looked like
            no pool. Same field, written down instead of dropped. */
+        /* The machine's own reading goes with it. `capabilities.resources` is overwritten
+           on every poll, so without keeping it here a worker's CPU ten minutes ago is not
+           knowable anywhere -- which is why the Workers page could show a current figure
+           and no history. */
+        const resources = (body.capabilities && body.capabilities.resources) || null;
+
         await gpuRepository.sampleIdleWorker({
             workerId,
-            devices: body.capabilities
-                && body.capabilities.resources
-                && body.capabilities.resources.nvidia
-                && body.capabilities.resources.nvidia.devices,
+            devices: resources && resources.nvidia && resources.nvidia.devices,
+            system: systemReading(resources),
         });
 
         // And while something is happening, retire whatever has stopped
@@ -1620,6 +1626,59 @@ class GpuService {
      * @async
      * @returns {Promise<Array<Object>>} One entry per worker.
      */
+    /**
+     * One machine's readings over a window, shaped for a chart.
+     *
+     * **Parallel arrays, and nulls kept as nulls.** A caller plots `at` against each
+     * series; a minute the machine did not report is a `null` in every one of them rather
+     * than a missing entry, so the arrays stay the same length and a break is drawn where
+     * the machine was off. Collapsing those would silently join Tuesday to Thursday.
+     *
+     * **The first GPU only.** Every machine in this pool has one card, and a second would
+     * need its own series rather than an average — a mean across two cards is a number no
+     * sensor reported, which is the rule the rest of this file keeps.
+     *
+     * @async
+     * @param {number|string} workerId - The machine.
+     * @param {Object} [window] - `{since, until}` as ISO instants. Defaults to an hour.
+     * @returns {Promise<Object>} `{at, gpu, vram, temperature, power, cpu, memory, disk}`.
+     */
+    async readWorkerSeries(workerId, { since, until } = {}) {
+        const end = until ? new Date(until) : new Date();
+        const start = since ? new Date(since) : new Date(end.getTime() - 3600000);
+
+        const rows = await gpuRepository.listWorkerSamples({
+            workerId,
+            since: start.toISOString(),
+            until: end.toISOString(),
+        });
+
+        const series = {
+            at: [], gpu: [], vram: [], temperature: [], power: [], cpu: [], memory: [], disk: [],
+        };
+        /* A reading that is absent is null, never zero: the difference between a machine
+           that was idle and one that was not asked is the whole reason these charts are
+           worth drawing. */
+        const read = (from, key) => (from && from[key] !== undefined && from[key] !== null
+            ? Number(from[key]) : null);
+
+        for (const row of rows) {
+            const device = Array.isArray(row.devices) ? row.devices[0] : null;
+            const system = row.system || null;
+
+            series.at.push(row.at);
+            series.gpu.push(read(device, 'gpu_utilization_percent'));
+            series.vram.push(read(device, 'memory_percent_used'));
+            series.temperature.push(read(device, 'temperature_c'));
+            series.power.push(read(device, 'power_usage_watts'));
+            series.cpu.push(read(system && system.cpu, 'cpu_percent'));
+            series.memory.push(read(system && system.memory, 'percent_used'));
+            series.disk.push(read(system && system.disk, 'percent_used'));
+        }
+
+        return { worker_id: Number(workerId), since: start.toISOString(), until: end.toISOString(), ...series };
+    }
+
     async listPool() {
         // Sweeping here too, so the pool view does not show a machine as busy
         // with a job whose lease ran out an hour ago. A read that reports a state
@@ -1647,6 +1706,22 @@ class GpuService {
                     capabilities: row.capabilities,
                     enrolled_at: row.enrolled_at,
                     last_seen_at: row.last_seen_at,
+
+                    // The machine's own latest reading, which exists whether or not it is
+                    // working. `gpu_worker_samples` is written every minute from the
+                    // poll, not only on a job's heartbeat, and the LATERAL above keys on
+                    // `worker_id` alone -- so this row has always carried it and only the
+                    // attempt branch below ever looked.
+                    //
+                    // That left an idle machine with no GPU load, no VRAM, no temperature
+                    // and no power, which is what Isaac found: a worker that is plainly
+                    // on, reporting every minute, and showing nothing. A reading does
+                    // belong to a moment rather than to a job, so `as_of` travels with it
+                    // and the screen says how old it is.
+                    telemetry: row.sample_devices
+                        ? { gpus: reduceDevices(row.sample_devices), as_of: row.sample_at, live: true }
+                        : null,
+
                     attempts: [],
                 });
             }
@@ -1962,7 +2037,8 @@ class GpuService {
      */
     async submitJobs(body, principal) {
         const kind = requiredEnum(body.kind, 'kind', JOB_KINDS);
-        const spec = body.spec;
+        // Reassigned when a per-run session is created, so the stored spec names it.
+        let spec = body.spec;
 
         if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
             invalid('spec is required and must be an object.');
@@ -1986,6 +2062,12 @@ class GpuService {
         this.validateSubmittedModel(spec.model);
         await this.refuseBaseModelForInference(spec.model);
         this.validateSubmittedReduction(spec.reduction);
+
+        // Turns the per-run form into the descriptive one, so every check below --
+        // including the engine's understanding of the session type -- runs exactly as
+        // it does for a spec somebody wrote by hand.
+        const makeRunSession = await this.resolvePerRunSession(kind, spec);
+
         await this.validateSubmittedObservationTarget(kind, spec);
 
         // The range still reaches the queue and the worker as an explicit
@@ -2049,6 +2131,27 @@ class GpuService {
         const batchId = ranges.length > 1 ? crypto.randomUUID() : null;
         const createdBy = principal && principal.type === 'user' ? principal.id : null;
 
+        /* **Created here, after everything that can refuse.** A session written before a
+           bad range was caught would be an empty automated session on the annotation
+           GUI's opening screen, left behind by a submission that never happened. Every
+           400 above this line has already been raised.
+
+           **One session for the whole batch.** `piece_frames` splits one video into
+           several jobs; the person submitted one run, so they share it. */
+        let runSession = null;
+
+        if (makeRunSession) {
+            runSession = await inferenceSessionService.createForRun({
+                projectId: Number(spec.session.project_id),
+                dive: String(spec.session.dive),
+                line: String(spec.session.line),
+                type: String(spec.session.type),
+                createdBy,
+            });
+
+            spec = { ...spec, session: { session_id: runSession.session_id } };
+        }
+
         // Every piece of a split carries the same name, because the name is what
         // the person submitted and they submitted one thing.
         const rows = ranges.map((range) => ({
@@ -2086,6 +2189,18 @@ class GpuService {
 
         if (Object.keys(derivedRange).length > 0) {
             answer.derived_range = { ...derivedRange, frames: endFrame - startFrame };
+        }
+
+        /* Reported for the same reason `derived_range` is: MARP worked something out on
+           the submitter's behalf, and a derivation nobody can look at is how a wrong one
+           survives. It also gives the screen the id to link to. */
+        if (runSession) {
+            answer.session = {
+                session_id: runSession.session_id,
+                type: runSession.type,
+                dive: runSession.dive,
+                line: runSession.line,
+            };
         }
 
         return answer;
@@ -2548,6 +2663,102 @@ class GpuService {
      * @throws {ApiError} 400 when the session or the model is malformed, or when
      * a session is named without a model.
      */
+    /**
+     * Resolve `spec.session.per_run` into the descriptive form, if it is set.
+     *
+     * **One session per inference run**, by Isaac's decision on 2026-10-27, taken with
+     * the cost stated: a dive scanned in six submissions becomes six sessions on the
+     * annotation GUI's opening screen.
+     *
+     * **It does not touch a spec that did not ask.** The descriptive form
+     * `{project_id, dive, line, type}` still means what it has always meant -- the ingest
+     * finds an existing session for that dive and line before creating one, because a job
+     * is one piece of a video and the same dive is submitted many times over. Two tests
+     * hold that in place and this must not disturb them, so per-run is opt-in under its
+     * own key.
+     *
+     * **`type` is derived from the model rather than asked for**, which is the other half
+     * of the decision: a session's type chooses the species list its observations are read
+     * against, and the model's species already say which that is. A submitter may still
+     * name one, and a named type wins -- deriving over the top of it would be MARP
+     * overruling somebody who said what they meant.
+     *
+     * Rewrites `spec.session` to the descriptive form so every check after this point,
+     * including `assertEngineUnderstandsSessionType`, runs unchanged. Nothing is written
+     * here; the session itself is created once nothing else can refuse.
+     *
+     * @async
+     * @param {string} kind - The job kind.
+     * @param {Object} spec - The submitted spec, modified in place when per-run is asked.
+     * @returns {Promise<boolean>} True when a session must be created for this run.
+     * @throws {ApiError} 400 when the per-run form is incomplete or has no single type.
+     */
+    async resolvePerRunSession(kind, spec) {
+        const session = spec.session;
+
+        if (!session || typeof session !== 'object' || Array.isArray(session) || !session.per_run) {
+            return false;
+        }
+
+        if (!INGESTIBLE_JOB_KINDS.includes(kind)) {
+            invalid(
+                `spec.session.per_run asks for a session to write observations into, but a ${kind} `
+                + `job produces none. Only ${INGESTIBLE_JOB_KINDS.join(' and ')} jobs write observations.`
+            );
+        }
+
+        if (session.session_id !== undefined && session.session_id !== null) {
+            invalid(
+                'spec.session carries both session_id and per_run, which ask for opposite things: '
+                + 'one names a session that exists, the other makes a new one. Send whichever you meant.'
+            );
+        }
+
+        // `type` is the one of the four this form may leave out, because MARP can work it
+        // out. The other three identify the dive and nothing here could know them.
+        for (const field of ['project_id', 'dive', 'line']) {
+            if (session[field] === undefined || session[field] === null || String(session[field]).trim() === '') {
+                invalid(
+                    `spec.session.${field} is required with per_run: it says which dive the run is of, `
+                    + 'and MARP has no way to work that out. Only type may be left out, and it is '
+                    + 'derived from the model.'
+                );
+            }
+        }
+
+        let type = typeof session.type === 'string' ? session.type.trim() : '';
+
+        if (type === '') {
+            const modelId = spec.model && spec.model.ml_model_id;
+
+            if (!modelId) {
+                invalid(
+                    'spec.session.per_run leaves type to be derived from the model, so spec.model.'
+                    + 'ml_model_id is required -- a model named only by name and hash is not in the '
+                    + 'registry as far as this can tell. Name the model by id, or set spec.session.type.'
+                );
+            }
+
+            const derived = await inferenceSessionService.sessionTypeForModel(modelId);
+
+            if (derived.refusal) {
+                invalid(derived.refusal);
+            }
+
+            type = derived.type;
+        }
+
+        // The descriptive form, which everything downstream already understands.
+        spec.session = {
+            project_id: session.project_id,
+            dive: session.dive,
+            line: session.line,
+            type,
+        };
+
+        return true;
+    }
+
     async validateSubmittedObservationTarget(kind, spec) {
         const session = observationIngestService.validateSpecSession(spec.session);
 

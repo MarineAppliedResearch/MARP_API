@@ -193,6 +193,7 @@ async function registerTrainedModel({ db, job, transaction }) {
     fs.renameSync(partial, destination);
 
     const parent = spec.model && spec.model.ml_model_id ? Number(spec.model.ml_model_id) : null;
+    const modelType = await deriveModelType(db, { parent, datasetId: dataset.dataset_id, transaction });
     const [registered] = await db.sequelize.query(
         /* **`artifact.hash` is already the sha256 of these bytes**, because the
            artifact store is content-addressed -- the file this just copied was read from
@@ -207,7 +208,7 @@ async function registerTrainedModel({ db, job, transaction }) {
         `INSERT INTO ml_models (name, parent_model_id, model_type, architecture_version,
                                 storage_path, artifact_sha256, status, preferred, notes,
                                 training_run_id, created_at, updated_at)
-         VALUES (:name, :parent, 'detection', :architecture, :storagePath, :sha256, 'active',
+         VALUES (:name, :parent, :modelType, :architecture, :storagePath, :sha256, 'active',
                  false, :notes,
                  (SELECT id FROM training_runs WHERE job_id = :jobId ORDER BY id DESC LIMIT 1),
                  now(), now())
@@ -216,6 +217,7 @@ async function registerTrainedModel({ db, job, transaction }) {
             replacements: {
                 name,
                 parent,
+                modelType,
                 architecture: (spec.model && spec.model.name) || null,
                 storagePath: relative,
                 sha256: String(artifact.hash).toLowerCase(),
@@ -255,6 +257,61 @@ async function registerTrainedModel({ db, job, transaction }) {
     return { id: modelId, name, species: speciesIds.length };
 }
 
+
+/**
+ * What kind of model a training run produced.
+ *
+ * **It used to be the literal `'detection'`**, which was true of every run MARP had done
+ * and stopped being true the first time one was not: model 441,
+ * `Session-625-classify-test-2026-10-28`, is a classifier trained from `yolo11m-cls` and
+ * was registered as a detector. Nothing refuses that, and nothing downstream can tell --
+ * the registry, the task filter on the training form, and anything choosing a model to run
+ * all read this column and would have been wrong about it for as long as it stood.
+ *
+ * **The checkpoint first, the dataset second.** The parent is what was actually
+ * fine-tuned, and a checkpoint decides the task -- the engine is never told which task was
+ * asked for, which is why the training form filters its dropdown by task and
+ * `training-submit.test.mjs` pins that filter as a rule rather than a courtesy. The
+ * dataset's own `task` is the same answer arrived at from the other side, and it stands in
+ * when a run named its weights by name and hash without naming a registered model.
+ *
+ * **Refused rather than defaulted when neither can say.** `ml_models.model_type` is NOT
+ * NULL, so there is no honest gap to leave, and a guess here is precisely the defect being
+ * fixed: the weights are safe in the artifact store and a loud failure can be re-run,
+ * where a model silently filed under the wrong kind is found months later by somebody
+ * wondering why it will not load.
+ *
+ * @async
+ * @param {Object} db - The models object.
+ * @param {Object} params - `{parent, datasetId, transaction}`.
+ * @returns {Promise<string>} The `model_type` to record.
+ * @throws {Error} When neither the checkpoint nor the dataset says.
+ */
+async function deriveModelType(db, { parent, datasetId, transaction }) {
+    if (parent) {
+        const [row] = await db.sequelize.query(
+            'SELECT model_type FROM ml_models WHERE id = :parent',
+            { replacements: { parent }, type: db.Sequelize.QueryTypes.SELECT, transaction }
+        );
+
+        if (row && row.model_type) return row.model_type;
+    }
+
+    if (datasetId) {
+        const [row] = await db.sequelize.query(
+            'SELECT task FROM datasets WHERE id = :datasetId',
+            { replacements: { datasetId }, type: db.Sequelize.QueryTypes.SELECT, transaction }
+        );
+
+        if (row && row.task) return row.task;
+    }
+
+    throw new Error(
+        `cannot tell what kind of model this run produced: checkpoint ${parent || 'unnamed'} has no `
+        + `model_type and dataset ${datasetId || 'unnamed'} has no task. Record one of the two and `
+        + 'register again -- guessing here is how model 441 was filed as a detector.'
+    );
+}
 
 /**
  * The class names a dataset was packaged with.

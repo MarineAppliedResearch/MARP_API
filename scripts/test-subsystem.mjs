@@ -53,12 +53,19 @@ const SUBSYSTEMS = {
             'gpu-dataset-archive',
             'gpu-training-submit',
             'gpu-training-run-record',
+            // #104: what an inference job produced, which its state cannot say.
+            'inference-job-outcome',
+            // #104: the session a run creates for itself, and the type derived for it.
+            'inference-run-session',
             /* #268: the name a training job gets when nobody typed one. */
             'gpu-training-job-name',
             'gpu-trained-model-registration',
             /* #268: what the training panel reads back -- the per-epoch metric names the
                ingest was getting wrong, and the pace series nothing served. */
             'training-run-pace',
+            /* #268: the per-batch samples behind the live training charts -- the series,
+               the incremental read, and the striding a long run needs. */
+            'training-batch-samples',
             /* #268: bulk deletion of failed jobs. Builds and drops its own database,
                because the route deletes every failed job in whatever one it is pointed
                at -- no seeding scopes that. */

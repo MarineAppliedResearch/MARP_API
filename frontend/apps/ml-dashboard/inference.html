@@ -142,8 +142,7 @@
 
               <div class="pipeline-status">
                 <span class="pipeline-icon"><svg class="ico"><use href="#i-inference"/></svg></span>
-                <span><b>Detection + ByteTrack is available</b>
-                  <small>Other pipeline types are design placeholders and cannot be selected or submitted.</small></span>
+                <span><b>Detection + ByteTrack is available</b></span>
                 <span class="pill" data-state="online"><i class="dot"></i>Available</span>
               </div>
 
@@ -213,6 +212,13 @@
                 </header>
 
                 <section class="plan-section">
+                  <header><span><b>Where the observations go</b><small>A session per run, under the dive</small></span></header>
+                  <div class="model-fields">
+                    <label>MARP project<select class="sel" data-marp-project data-rendered></select></label>
+                  </div>
+                </section>
+
+                <section class="plan-section">
                   <header><span><b>Video ranges</b><small><span data-target-count></span> targets</small></span><button class="btn sm" type="button" data-edit-query>Edit query</button></header>
                   <div class="plan-targets" data-plan-targets data-rendered></div>
                 </section>
@@ -262,8 +268,8 @@
               <div class="field">
                 <label>&nbsp;</label>
                 <button class="btn primary big block" id="runBtn">
-                  <svg class="ico"><use href="#i-play"/></svg>Review request</button>
-                <span class="hint">Mockup &mdash; shows the request, sends nothing.</span>
+                  <svg class="ico"><use href="#i-play"/></svg>Queue runs</button>
+                <span class="hint" data-fills="run-status" data-rendered>Queues real GPU work.</span>
               </div>
             </div>
             <div class="spec" id="specOut" hidden>

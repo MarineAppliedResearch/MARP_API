@@ -755,8 +755,25 @@ const buildOpenApiSpec = () => {
                             user: {
                                 $ref: '#/components/schemas/AuthUser',
                             },
+                            server: {
+                                type: 'object',
+                                description: 'What this MARP process is, read once at startup. Here rather than on a route of its own because every screen already makes this read before it draws.',
+                                properties: {
+                                    started_at: {
+                                        type: 'string',
+                                        format: 'date-time',
+                                        description: 'When this process loaded.',
+                                    },
+                                    commit: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: '75891cc374e9db6e9f8e161f8a080be80693e3a4',
+                                        description: 'The commit the checkout was on at startup, which is the code this process is serving whatever the working tree has since become. Null when git cannot answer -- a deployed copy with no .git, or no git on PATH -- because a stale or invented hash would read as a measurement.',
+                                    },
+                                },
+                            },
                         },
-                        description: 'Authenticated session response containing the current MARP user profile.',
+                        description: 'Authenticated session response containing the current MARP user profile, and the identity of the process serving it.',
                     },
 
                     /**
@@ -2941,6 +2958,17 @@ const buildOpenApiSpec = () => {
                         properties: {
                             batch_id: { type: 'string', format: 'uuid', nullable: true, description: 'Null when the submission was a single job; set when it was split, and the way to find the pieces again.' },
                             jobs: { type: 'array', items: { $ref: '#/components/schemas/GpuJob' } },
+                            session: {
+                                type: 'object',
+                                nullable: true,
+                                description: 'The session created for this run, present only when `spec.session.per_run` asked for one. Reported because MARP worked it out on the submitter’s behalf -- including the type, when that was derived from the model -- and a derivation nobody can look at is how a wrong one survives.',
+                                properties: {
+                                    session_id: { type: 'integer', example: 1402 },
+                                    type: { type: 'string', example: 'Invert', description: 'Derived from the model’s species list unless the spec named one.' },
+                                    dive: { type: 'string', example: 'Dive 895' },
+                                    line: { type: 'string', example: '4' },
+                                },
+                            },
                         },
                     },
                     GpuJobList: {

@@ -132,6 +132,13 @@ class ObservationIngestRepository {
      * and a dive-and-line will be submitted many times over. `lineId` is written
      * as `dive_line`, which is the shape every existing session uses.
      *
+     * **Provenance is written on creation only, never on reuse.** A session found
+     * here already records who asked for the run that created it, and a second run
+     * over the same dive does not make that untrue -- overwriting it would throw
+     * away the only record of the first. So `created_by` is the first requester
+     * rather than the latest, and the per-run requester stays on each observation,
+     * which is where it is actually per-run.
+     *
      * @async
      * @param {Object} params - Session identity.
      * @param {number} params.projectId - Project the session belongs to.
@@ -139,10 +146,11 @@ class ObservationIngestRepository {
      * @param {string} params.line - Line name.
      * @param {string} params.type - Session type, e.g. `Invert`.
      * @param {number|null} params.userId - User to record as the session's owner.
+     * @param {number|null} [params.createdBy] - Who asked for the run, when known.
      * @param {Object} [transaction] - Transaction to work inside.
      * @returns {Promise<{session: Object, created: boolean}>} The session row.
      */
-    async findOrCreateSession({ projectId, dive, line, type, userId }, transaction) {
+    async findOrCreateSession({ projectId, dive, line, type, userId, createdBy = null }, transaction) {
         const [existing] = await this.db.sequelize.query(
             `SELECT * FROM sessions
               WHERE project_id = :projectId AND dive = :dive AND line = :line AND type = :type
@@ -160,13 +168,17 @@ class ObservationIngestRepository {
         }
 
         const [rows] = await this.db.sequelize.query(
-            `INSERT INTO sessions (project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
-             VALUES (:projectId, :userId, :dive, :line, :lineId, :type, NOW(), NOW())
+            /* `is_automated` is true rather than derived from `user_id` pointing at a
+               service account: that is a convention nothing enforces and the schema
+               does not show. Reaching this line at all means a machine produced it. */
+            `INSERT INTO sessions (project_id, user_id, created_by, is_automated, dive, line, "lineId", type, "createdAt", "updatedAt")
+             VALUES (:projectId, :userId, :createdBy, true, :dive, :line, :lineId, :type, NOW(), NOW())
              RETURNING *`,
             {
                 replacements: {
                     projectId,
                     userId,
+                    createdBy,
                     dive,
                     line,
                     lineId: `${dive}_${line}`,
@@ -210,12 +222,24 @@ class ObservationIngestRepository {
      * @param {Object} [transaction] - Transaction to read inside.
      * @returns {Promise<Array<Object>>} Matching species rows.
      */
+    /* **Matched without regard to case, and that is load-bearing rather than lenient.**
+       A model names its classes however its own vocabulary does -- the FathomNet and
+       MBARI lists are lowercase, MARP catalogues are overwhelmingly capitalised -- and the
+       two only ever agreed by accident. Capitalising the nine lowercase catalogue rows to
+       match the convention would, under exact matching, have stopped every detection from
+       those models resolving: the name would no longer be found, and every future
+       observation would arrive with no species and nothing saying why.
+
+       The narrowing below still does the work that matters. Folding case widens the
+       whole-catalogue fallback enough that a name on two lists can match twice, and two
+       matches resolve to null here rather than being chosen between -- which is the rule
+       this lookup already had, now reached slightly more often. */
     async findTrainedSpeciesByName(mlModelId, comname, transaction) {
         return this.db.sequelize.query(
             `SELECT s.id, s.taxserial, s.comname, s.species_list, s.observation_type
                FROM model_species ms
                JOIN species s ON s.id = ms.species_id
-              WHERE ms.model_id = :mlModelId AND s.comname = :comname
+              WHERE ms.model_id = :mlModelId AND LOWER(s.comname) = LOWER(:comname)
               ORDER BY s.id`,
             {
                 replacements: { mlModelId, comname },
@@ -277,10 +301,39 @@ class ObservationIngestRepository {
         return this.db.sequelize.query(
             `SELECT id, taxserial, comname, species_list, observation_type
                FROM species
-              WHERE comname = :comname
+              WHERE LOWER(comname) = LOWER(:comname)
               ORDER BY id`,
             { replacements: { comname }, type: QueryTypes.SELECT, transaction }
         );
+    }
+
+    /**
+     * One species by its id, or null.
+     *
+     * **For reading a species id back out of something that carries one.** A
+     * classification archive names its class folders `<species_id>_<slug>`, and a model
+     * trained on one reports those names -- so a handle whose dataset row is gone can
+     * still be placed by the id on the front of it.
+     *
+     * **It exists so that the id is validated rather than trusted.** Taking the integer
+     * and writing it into `species_id` would attach a measurement to whatever row happens
+     * to hold that number, or to no row at all; asking first means an id that names
+     * nothing resolves to null and is reported, which is the honest answer.
+     *
+     * @async
+     * @param {number} id - The species id.
+     * @param {Object} [transaction] - Transaction to read inside.
+     * @returns {Promise<?Object>} The species row, or null.
+     */
+    async findSpeciesById(id, transaction) {
+        if (!Number.isInteger(id)) return null;
+
+        const [row] = await this.db.sequelize.query(
+            `SELECT id, comname, species_list FROM species WHERE id = :id`,
+            { replacements: { id }, type: QueryTypes.SELECT, transaction }
+        );
+
+        return row || null;
     }
 
     /**

@@ -103,7 +103,7 @@ class TrainingMetricsService {
                 return { skipped: `job ${job.id} has no training run to record metrics against` };
             }
 
-            const rows = await this.resolveClasses(parsed.rows, run.model_id);
+            const rows = await this.resolveClasses(parsed.rows, run);
 
             /* A second artifact, deliberately: the curves are about a megabyte and a
                consumer wanting only the headline numbers should not parse one to skip
@@ -314,14 +314,24 @@ class TrainingMetricsService {
      * than picking one.
      *
      * @async
+     * **A classification run names its classes with MARP's own folder handles**, so
+     * the dataset's recorded mapping is consulted before any name matching. That is
+     * exact where name matching is a search, and it is the reason
+     * `dataset_classes.folder` exists.
+     *
      * @param {Array<Object>} rows - Rows from `db/final-metrics.js`.
-     * @param {number} modelId - The model the run trained.
+     * @param {Object} run - The training run, for its model and its dataset.
      * @returns {Promise<Array<Object>>} The same rows, each with `species_id`.
      */
-    async resolveClasses(rows, modelId) {
+    async resolveClasses(rows, run) {
         const cache = new Map();
 
+        /* Loaded once per report rather than per class: a hundred-class model would
+           otherwise be a hundred round trips for one small table. */
+        const folders = await this.repository.classFoldersFor(run.dataset_id);
+
         const resolved = [];
+        const unresolved = [];
 
         for (const row of rows) {
             if (row.class_name === null) {
@@ -330,10 +340,28 @@ class TrainingMetricsService {
             }
 
             if (!cache.has(row.class_name)) {
-                cache.set(row.class_name, await this.speciesFor(row.class_name, modelId));
+                cache.set(row.class_name, await this.speciesFor(row.class_name, run, folders));
             }
 
-            resolved.push({ ...row, species_id: cache.get(row.class_name) });
+            const speciesId = cache.get(row.class_name);
+
+            if (speciesId === null && !unresolved.includes(row.class_name)) {
+                unresolved.push(row.class_name);
+            }
+
+            resolved.push({ ...row, species_id: speciesId });
+        }
+
+        /* **Said out loud, once, with the names.** A class MARP cannot place is
+           stored with its reported name and a null species, which is honest and
+           invisible -- the row looks like every other row to anyone not already
+           suspicious. Reported here so a mismatch between a model's vocabulary and
+           MARP's catalogue is something somebody learns rather than discovers. */
+        if (unresolved.length) {
+            logger.info(
+                `training run ${run.id}: ${unresolved.length} class name(s) could not be `
+                + `resolved to a species and are stored unresolved: ${unresolved.join(', ')}`
+            );
         }
 
         return resolved;
@@ -343,12 +371,42 @@ class TrainingMetricsService {
      * The one species a class name means, or null when MARP cannot tell.
      *
      * @async
+     * **Three readings, most exact first.**
+     *
+     * 1. **The dataset's own record of what that folder was.** A classification
+     *    archive's folders are handles MARP generated, and the build wrote down what
+     *    each one meant. Nothing to match and nothing to parse.
+     * 2. **The species id on the front of the handle.** For a model whose dataset row
+     *    is gone, or one trained elsewhere from a MARP archive. Validated against
+     *    `species` rather than trusted: an id that names nothing is not a resolution,
+     *    and splitting on the *first* underscore only, because a slug contains them.
+     * 3. **The name, as detection class names have always resolved** -- narrowed to
+     *    the model's trained species first, because common names are not unique
+     *    across lists.
+     *
+     * Null when none of the three answers, and the caller reports it.
+     *
+     * @async
      * @param {string} className - The class as the model named it.
-     * @param {number} modelId - The model.
+     * @param {Object} run - The training run, for its model id.
+     * @param {Map<string, number>} folders - The dataset's folder mapping.
      * @returns {Promise<?number>} A species id, or null.
      */
-    async speciesFor(className, modelId) {
-        const trained = await ingestRepository.findTrainedSpeciesByName(modelId, className);
+    async speciesFor(className, run, folders) {
+        if (folders && folders.has(className)) return folders.get(className);
+
+        /* The leading integer, and only when it really is one followed by a
+           separator -- a species genuinely called "2024 survey marker" must not be
+           read as species 2024. */
+        const prefixed = /^(\d+)_/.exec(className);
+
+        if (prefixed) {
+            const exists = await ingestRepository.findSpeciesById(Number(prefixed[1]));
+
+            if (exists) return exists.id;
+        }
+
+        const trained = await ingestRepository.findTrainedSpeciesByName(run.model_id, className);
 
         if (trained.length === 1) return trained[0].id;
 
@@ -359,6 +417,65 @@ class TrainingMetricsService {
         const all = await ingestRepository.findSpeciesByName(className);
 
         return all.length === 1 ? all[0].id : null;
+    }
+
+    /**
+     * Translate a confusion matrix's axis labels into species names.
+     *
+     * **For a classification run the matrix is the only per-class output there is.** A
+     * classify report carries one overall row -- top-1, top-5, fitness -- and no per-class
+     * metrics at all, so the per-class resolution that `resolveClasses` does for detection
+     * reaches nothing here. Run 209's matrix arrived labelled
+     * `126_vermilion-rockfish … 26_kelp-greenling`: dataset folder handles, because
+     * Ultralytics takes a classify vocabulary from the subfolder names and keeps no other
+     * list. Untranslated, the only per-class thing MARP can show about a classification
+     * model is unreadable.
+     *
+     * **Positional, and the length never changes.** These labels index the matrix axes, so
+     * a dropped or reordered entry silently relabels every cell after it -- which is how a
+     * count gets read as the wrong species. A label that will not resolve keeps the handle
+     * it arrived with rather than becoming null or being removed.
+     *
+     * **The handle is kept beside the name, not thrown away.** It is the only way back to
+     * the directory in the archive the model was trained from, and it is what the `.pt`
+     * itself contains -- the same reason an observation keeps the `comname` the model
+     * reported beside the `species_id` somebody may later correct.
+     *
+     * @async
+     * @param {Array<string>} classes - The labels as reported, in axis order.
+     * @param {Object} run - The training run, for its model and its dataset.
+     * @returns {Promise<{names: Array<string>, handles: Array<string>, translated: number}>}
+     */
+    async resolveMatrixLabels(classes, run) {
+        const handles = classes.map((name) => String(name));
+
+        if (handles.length === 0) return { names: [], handles: [], translated: 0 };
+
+        const folders = await this.repository.classFoldersFor(run.dataset_id);
+        const cache = new Map();
+        const names = [];
+        let translated = 0;
+
+        for (const handle of handles) {
+            if (!cache.has(handle)) {
+                const speciesId = await this.speciesFor(handle, run, folders);
+                const species = speciesId === null || speciesId === undefined
+                    ? null
+                    : await ingestRepository.findSpeciesById(Number(speciesId));
+
+                cache.set(handle, species && species.comname ? species.comname : null);
+            }
+
+            const resolved = cache.get(handle);
+
+            // The handle itself when nothing resolved it: unreadable is better than wrong,
+            // and an empty axis label would be worse than either.
+            names.push(resolved === null ? handle : resolved);
+
+            if (resolved !== null && resolved !== handle) translated += 1;
+        }
+
+        return { names, handles, translated };
     }
 
     /**
@@ -388,10 +505,17 @@ class TrainingMetricsService {
                the gap -- a matrix built from per-class precision and recall is
                arithmetic dressed as a measurement. */
             if (parsed.confusion) {
+                /* Translated here rather than when it is read, because the resolution
+                   needs the dataset the run trained on -- and a dataset can be deleted
+                   while its matrix stays. Resolved once, at the moment the answer is
+                   knowable, is the same decision `resolveClasses` makes above. */
+                const labels = await this.resolveMatrixLabels(parsed.confusion.classes, run);
+
                 await this.repository.storeConfusionMatrix({
                     trainingRunId: run.id,
                     split: parsed.split,
-                    confusion: parsed.confusion,
+                    confusion: { ...parsed.confusion, classes: labels.names },
+                    handles: labels.translated > 0 ? labels.handles : null,
                     transaction,
                 });
             }

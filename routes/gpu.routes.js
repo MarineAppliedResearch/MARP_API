@@ -37,6 +37,7 @@ const { pipeline } = require('stream/promises');
 
 const gpuController = require('../controller/gpu.controller');
 const workerProvisioningController = require('../controller/worker_provisioning.controller');
+const inferenceOutcomeController = require('../controller/inference-outcome.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
 const {
@@ -634,6 +635,36 @@ function registerGpuRoutes(app) {
     });
 
     registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
+        path: '/api/gpu/workers/:id/series',
+        summary: 'One machine\'s readings over time',
+        description:
+            'Every per-minute sample this machine recorded in the window, oldest first, as parallel arrays against `at`. GPU utilisation, VRAM, temperature and power come from the GPU block, which has been sampled since the poll started keeping it; CPU, memory and disk come from the system block, which only exists on samples taken since the worker began sending it, so those series are null before that point rather than zero. **A minute with no sample is null in every series**, not a missing entry: the machine was off or between builds, and a chart draws a break there rather than joining across it. The first GPU only -- a mean across two cards would be a number no sensor reported.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The worker id.' },
+            { in: 'query', name: 'since', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Inclusive start. Defaults to an hour before `until`.' },
+            { in: 'query', name: 'until', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Exclusive end. Defaults to now.' },
+        ],
+        responses: {
+            200: {
+                description: 'The readings, or empty arrays where nothing was recorded.',
+                content: { 'application/json': { schema: { type: 'object' } } },
+            },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.readWorkerSeries(req.params.id, {
+                since: req.query.since,
+                until: req.query.until,
+            });
+
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
         method: 'post',
         permission: 'jobs:write',
         path: '/api/gpu/workers/:id/rename',
@@ -870,6 +901,65 @@ function registerGpuRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'jobs:read',
+        path: '/api/gpu/jobs/:id/observations',
+        summary: 'What an inference job actually produced',
+        description:
+            'The count of observations a job wrote, broken down by species, plus the session and model it wrote them under so a reader can open them. **This is the answer to "did it work", which a job state cannot give**: a job succeeds when its bytes arrive and are ingested, and ingesting an empty detections file is a success that produced nothing.\n\n'
+            + '**Grouped by `species_id`, with the label the model gave beside it.** Those are two different facts and they drift apart as soon as anybody reviews the output: a species correction changes `species_id` and deliberately never rewrites `comname`, which stays the label the model produced. A breakdown keyed on that label would keep counting a corrected observation under a name somebody has already rejected, so `species_name` is what it is and `reported_name` is what the model said. Where they disagree, the disagreement is the interesting part.\n\n'
+            + '**An unresolved species is counted, not dropped.** An observation whose `species_id` is null is still something the job produced, and a breakdown that omitted it would not add up to the total beside it.\n\n'
+            + '**Zero observations is a real answer, not an error.** A job can run every frame, hand over an empty detections file, be ingested correctly and have found nothing -- which is what happened on job 21789.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the job.' },
+        ],
+        responses: {
+            200: {
+                description: 'What the job produced.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                job_id: { type: 'integer' },
+                                kind: { type: 'string' },
+                                state: { type: 'string' },
+                                session_id: { type: 'integer', nullable: true, description: 'From the job spec. Null for a job whose spec names no session, which can never produce observations.' },
+                                ml_model_id: { type: 'integer', nullable: true },
+                                observations: { type: 'integer' },
+                                species: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            species_id: { type: 'integer', nullable: true },
+                                            species_name: { type: 'string', nullable: true, description: 'What it is, after any correction. Null when the species was never resolved.' },
+                                            reported_name: { type: 'string', nullable: true, description: 'What the model called it, which a correction never rewrites.' },
+                                            observations: { type: 'integer' },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const outcome = await inferenceOutcomeController.getJobOutcome(req.params.id);
+
+            if (!outcome) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `GPU job ${req.params.id} was not found.`);
+            }
+
+            res.json(outcome);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
         path: '/api/gpu/jobs/:id',
         summary: 'Fetch one job with its attempts and artifacts',
         description:
@@ -899,7 +989,7 @@ function registerGpuRoutes(app) {
         path: '/api/gpu/jobs',
         summary: 'Queue GPU work, splitting a long video if asked',
         description:
-            'Creates one job, or -- given `piece_frames` -- a batch of jobs sharing a `batch_id`, each covering its own piece of the frame range. N independent jobs rather than one job with children, so each piece leases, retries and fails on its own, which is what lets ten machines share a ten-hour video without any of them knowing about the others. The range is half-open -- `start_frame` is included, `end_frame` is one past the last frame -- so the pieces tile it exactly: the `end_frame` of one piece is the `start_frame` of the next, the frames covered are `end_frame - start_frame` with no off-by-one, and no frame is processed twice or missed. The last piece is short rather than over-long. An empty range is refused rather than queued. A range is required even for a whole video, so nothing downstream has to special-case the undivided case. The whole batch is inserted in one transaction: half a batch is worse than none, because somebody would have to work out which pieces were missing before resubmitting.\n\n`spec.video` carries **exactly one** of `jellyfin_item_id` or `url`; both together is refused rather than one silently winning. An item id is resolved to a playable URL when a worker leases the job, not here. A bare `url` is any other reachable source and needs `source_name` with it, because that is what appears as `video_source` on every observation and cannot be guessed from a URL.',
+            'Creates one job, or -- given `piece_frames` -- a batch of jobs sharing a `batch_id`, each covering its own piece of the frame range. N independent jobs rather than one job with children, so each piece leases, retries and fails on its own, which is what lets ten machines share a ten-hour video without any of them knowing about the others. The range is half-open -- `start_frame` is included, `end_frame` is one past the last frame -- so the pieces tile it exactly: the `end_frame` of one piece is the `start_frame` of the next, the frames covered are `end_frame - start_frame` with no off-by-one, and no frame is processed twice or missed. The last piece is short rather than over-long. An empty range is refused rather than queued. A range is required even for a whole video, so nothing downstream has to special-case the undivided case. The whole batch is inserted in one transaction: half a batch is worse than none, because somebody would have to work out which pieces were missing before resubmitting.\n\n`spec.video` carries **exactly one** of `jellyfin_item_id` or `url`; both together is refused rather than one silently winning. An item id is resolved to a playable URL when a worker leases the job, not here. A bare `url` is any other reachable source and needs `source_name` with it, because that is what appears as `video_source` on every observation and cannot be guessed from a URL.\n\n`spec.session` says where observations go, and takes one of three forms. `{session_id}` names a session that exists. `{project_id, dive, line, type}` describes one, and the ingest finds an existing session for that dive and line before creating one -- deliberately, because a job is one piece of a video and the same dive is submitted many times over. `{project_id, dive, line, per_run: true}` makes a **new session for this run**, which is the form the dashboard submits: who ran it differs between runs, so each run is its own session under the dive, recorded with `is_automated` and the submitter in `created_by`. A piece split is still one run and its jobs share the session. With `per_run`, `type` may be left out and is derived from the model\u2019s species list -- refused rather than guessed when a model was trained across more than one, because a session reads against a single list and half the output could not be named in whichever was picked. A `type` the spec names wins over the derived one. The session created is reported back on the response.',
         tags: [GPU_TAG],
         requestBody: {
             required: true,
