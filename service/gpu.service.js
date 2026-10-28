@@ -1769,6 +1769,10 @@ class GpuService {
                     kind: row.job_kind,
                     state: row.job_state,
                     batch_id: row.job_batch_id,
+                    // What the machine is working on, in the words the Jobs tab uses:
+                    // its name, and the spec its dive, line, range or dataset come from.
+                    name: row.job_name,
+                    spec: row.job_spec,
                 },
             });
         }

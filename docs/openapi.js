@@ -2433,6 +2433,18 @@ const buildOpenApiSpec = () => {
                                     elapsed_s: { type: 'number', minimum: 0, nullable: true, example: 142.375 },
                                 },
                             },
+                            job: {
+                                type: 'object',
+                                description: 'The job this attempt is running, enough to say what the machine is working on and to link to it: its name and the spec its dive, line, frame range or dataset come from.',
+                                properties: {
+                                    job_id: { type: 'integer', example: 21892 },
+                                    kind: { type: 'string', example: 'inference' },
+                                    state: { type: 'string', example: 'leased' },
+                                    batch_id: { type: 'string', format: 'uuid', nullable: true },
+                                    name: { type: 'string', nullable: true, example: 'Dive-1_Dive-2_20261028', description: 'As on the job row; null when nobody named it.' },
+                                    spec: { type: 'object', description: 'The job\'s spec, as submitted and stored.' },
+                                },
+                            },
                             telemetry: {
                                 type: 'object',
                                 nullable: true,

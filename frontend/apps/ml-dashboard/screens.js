@@ -6218,6 +6218,38 @@ function workerView(worker) {
  * @returns {string} Two `<tr>`s, the head and its body.
  */
 /**
+ * What one of a worker's slots is working on, linked to that job on the Jobs page.
+ *
+ * Isaac: *"the worker should also show exactly what job they are currently using, and
+ * there should be a link through to that job"*. Drawn through the Jobs tab's own
+ * `jobView`, `jobScopeText` and `jobDestination`, so a job reads the same here as there.
+ *
+ * @param {Object} attempt - One live attempt from `GET /gpu/workers`.
+ * @returns {string} `<dt>`/`<dd>` pairs, or nothing when the pool sent no job.
+ */
+function workingOn(attempt) {
+  const job = attempt.job;
+
+  if (!job || job.job_id === undefined || job.job_id === null) return '';
+
+  const view = jobView({
+    id: job.job_id, kind: job.kind, state: job.state, name: job.name,
+    spec: job.spec || {}, batch_id: job.batch_id, progress_done: null,
+  }, new Set());
+  const spec = view.spec;
+  const href = jobDestination({ id: job.job_id, kind: job.kind, spec });
+  const title = escapeHtml(view.title);
+  const scope = [
+    jobScopeText(view) || (spec.dataset && spec.dataset.name ? `Dataset ${spec.dataset.name}` : ''),
+    spec.range ? `frames ${spec.range.start_frame.toLocaleString()}–${spec.range.end_frame.toLocaleString()}` : '',
+    spec.model && spec.model.name ? spec.model.name : '',
+  ].filter(Boolean).map(escapeHtml).join(' &middot; ');
+
+  return `<dt>Job</dt><dd>${href ? `<a href="${href}">${title}</a>` : title} &middot; ${escapeHtml(view.kindLabel)}</dd>`
+    + (scope ? `<dt>Working on</dt><dd>${scope}</dd>` : '');
+}
+
+/**
  * A worker's rows, or one row saying why it could not be drawn.
  *
  * **One machine must not cost the pool.** A single worker whose record the screen
@@ -6276,6 +6308,7 @@ function workerRows(view) {
   const live = attempts.length
     ? `<div class="sect"><h3>${attempts.length === 1 ? 'Live attempt' : `Live attempts (${attempts.length})`}</h3>`
       + attempts.map((one) => '<dl class="kv">'
+        + workingOn(one)
         + `<dt>Attempt</dt><dd>${one.attempt_id} &middot; job ${one.job ? one.job.job_id : NOT_REPORTED}</dd>`
         + `<dt>State</dt><dd>${escapeHtml(one.state)}</dd>`
         + `<dt>Progress</dt><dd>${progressOf(one)}</dd>`
