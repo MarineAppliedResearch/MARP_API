@@ -378,6 +378,87 @@ describe('A classification run\'s class handles', () => {
      * and wrote down what it meant at the same moment. Matching on it is a join;
      * anything else here is a search or a parse.
      */
+    /**
+     * **For a classification run the matrix is the only per-class output there is.**
+     *
+     * Run 209 is the worked example: a classify report carries one overall row --
+     * `accuracy_top1` 0.638, `accuracy_top5` 0.913, `fitness` 0.776 -- and no per-class
+     * metrics at all, so the resolution the tests above exercise reaches nothing. Its
+     * matrix arrived labelled `126_vermilion-rockfish … 26_kelp-greenling`, which left
+     * the one per-class thing MARP can show about a classifier unreadable.
+     */
+    it('the matrix axis is labelled with species, not with folder handles', async () => {
+        const recorded = `${absentSpecies}_recorded-${runId}`;
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(handleReport([recorded])));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [row] = await query(
+            `SELECT class_names, class_handles, matrix FROM training_run_confusion_matrices
+              WHERE training_run_id = :id`,
+            { id: made.trainingRunId }
+        );
+
+        expect(row).toBeTruthy();
+
+        const [species] = await query('SELECT comname FROM species WHERE id = :id',
+            { id: made.speciesId });
+
+        // The axis says what it is...
+        expect(row.class_names[0]).toBe(species.comname);
+
+        // ...and keeps what the model called it, which is the only way back to the
+        // directory in the archive and is what the .pt itself contains.
+        expect(row.class_handles[0]).toBe(recorded);
+    });
+
+    it('keeps the axis the same length as the matrix, whatever resolved', async () => {
+        /* **The labels index the axes.** A dropped or reordered entry silently relabels
+           every cell after it, which is how a count is read as the wrong species -- so
+           a handle nothing can resolve keeps the handle rather than becoming null or
+           going missing. Three classes, one resolvable and two not. */
+        const recorded = `${absentSpecies}_recorded-${runId}`;
+        const classes = [recorded, `jest-nothing-${runId}`, `${absentSpecies}_also-nothing-${runId}`];
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(handleReport(classes)));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [row] = await query(
+            `SELECT class_names, class_handles, matrix, background_index
+               FROM training_run_confusion_matrices WHERE training_run_id = :id`,
+            { id: made.trainingRunId }
+        );
+
+        expect(row.class_names).toHaveLength(classes.length);
+        expect(row.class_handles).toEqual(classes);
+        // The report's matrix carries a background row, so it is one wider than the axis.
+        expect(row.matrix).toHaveLength(classes.length + 1);
+        expect(row.background_index).toBe(classes.length);
+
+        // The two that resolved to nothing are shown as the model named them.
+        expect(row.class_names[1]).toBe(classes[1]);
+        expect(row.class_names[2]).toBe(classes[2]);
+    });
+
+    it('records no handles when the model already named species', async () => {
+        /* Every detection run is this: the class names *are* comnames, so a handles
+           column repeating them would say nothing and still have to be read. */
+        const [species] = await query('SELECT comname FROM species WHERE id = :id',
+            { id: made.speciesId });
+
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(handleReport([species.comname])));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [row] = await query(
+            `SELECT class_names, class_handles FROM training_run_confusion_matrices
+              WHERE training_run_id = :id`,
+            { id: made.trainingRunId }
+        );
+
+        expect(row.class_names[0]).toBe(species.comname);
+        expect(row.class_handles).toBeNull();
+    });
+
     it('resolves a handle the dataset recorded, by the mapping rather than the name', async () => {
         const folder = `${absentSpecies}_recorded-${runId}`;
 
@@ -462,6 +543,116 @@ describe('A classification run\'s class handles', () => {
 
         expect(row).toBeTruthy();
         expect(row.species_id).toBeNull();
+    });
+});
+
+/**
+ * A detection run, which has a dataset like any other and no class folders in it.
+ *
+ * **This is the regression test that matters, and my first attempt at it was weaker
+ * than it looked.** That one set `training_runs.dataset_id` to NULL and asserted names
+ * still resolved -- but a real detection run *has* a dataset id: the job spec carries
+ * `dataset.dataset_id` and the ingest writes it. So the test exercised a run MARP does
+ * not produce, and the thing actually protecting detection -- `folder IS NOT NULL` in
+ * `classFoldersFor` -- was never reached.
+ *
+ * Caught by the session that wrote this ingest. It is the same shape as the fixture I
+ * caught in my own folder test an hour earlier: an assertion that passes for a reason
+ * other than the one it claims.
+ *
+ * So this run has a dataset, that dataset has class rows, and those rows have no
+ * `folder` -- which is exactly what every dataset built before classification existed
+ * looks like, and what every detection dataset built since looks like too.
+ */
+describe('A detection run whose dataset has class rows but no folders', () => {
+    let datasetId;
+
+    beforeEach(async () => {
+        await db.sequelize.query(
+            `DELETE FROM metrics_curves WHERE metrics_summary_id IN
+                 (SELECT id FROM metrics_summary WHERE training_run_id = :id)`,
+            { replacements: { id: made.trainingRunId }, logging: false }
+        );
+        await db.sequelize.query(
+            'DELETE FROM metrics_summary WHERE training_run_id = :id',
+            { replacements: { id: made.trainingRunId }, logging: false }
+        );
+        await db.sequelize.query('DELETE FROM artifacts WHERE job_id = :id', {
+            replacements: { id: made.jobId }, logging: false,
+        });
+    });
+
+    beforeAll(async () => {
+        const [dataset] = await query(
+            `INSERT INTO datasets (name, status, source, task, created_at, updated_at)
+             VALUES (:name, 'ready', 'jest', 'detection', NOW(), NOW())
+             RETURNING id`,
+            { name: `jest-detection-dataset-${runId}` }
+        );
+
+        datasetId = dataset.id;
+
+        /* **A class row with no folder, which is what a detection dataset records.**
+           Its archive names classes by index in `data.yaml`; there are no directories
+           to name. */
+        await query(
+            `INSERT INTO dataset_classes (dataset_id, species_id, class_index, folder, created_at, updated_at)
+             VALUES (:datasetId, :speciesId, 0, NULL, NOW(), NOW())`,
+            { datasetId, speciesId: made.speciesId }
+        );
+
+        await query(
+            'UPDATE training_runs SET dataset_id = :datasetId WHERE id = :id',
+            { datasetId, id: made.trainingRunId }
+        );
+    });
+
+    afterAll(async () => {
+        await db.sequelize.query(
+            'UPDATE training_runs SET dataset_id = NULL WHERE id = :id',
+            { replacements: { id: made.trainingRunId }, logging: false }
+        );
+        await db.sequelize.query('DELETE FROM dataset_classes WHERE dataset_id = :id', {
+            replacements: { id: datasetId }, logging: false,
+        });
+        await db.sequelize.query('DELETE FROM datasets WHERE id = :id', {
+            replacements: { id: datasetId }, logging: false,
+        });
+    });
+
+    /**
+     * **Plain common names, resolved the way they always were.** Nothing about adding a
+     * folder mapping may change what a detection run records -- its classes are species
+     * names and the model's own trained species are what narrow them.
+     */
+    it('still resolves its classes by name', async () => {
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(finalMetricsReport()));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [resolved] = await query(
+            'SELECT species_id FROM metrics_summary WHERE training_run_id = :id AND class_name = :name',
+            { id: made.trainingRunId, name: `jest-known-${runId}` }
+        );
+
+        expect(resolved).toBeTruthy();
+        expect(resolved.species_id).toBe(made.speciesId);
+    });
+
+    /**
+     * **And one it cannot place is still kept unresolved**, rather than being caught by
+     * a folder mapping that happens to hold a null key.
+     */
+    it('still keeps an unknown class under the name the model used', async () => {
+        await stageArtifact(FINAL_METRICS_ROLE, JSON.stringify(finalMetricsReport()));
+        await trainingMetricsService.ingestFinalMetrics(await jobWithArtifacts());
+
+        const [unresolved] = await query(
+            'SELECT class_name, species_id FROM metrics_summary WHERE training_run_id = :id AND class_name = :name',
+            { id: made.trainingRunId, name: `jest-unknown-${runId}` }
+        );
+
+        expect(unresolved).toBeTruthy();
+        expect(unresolved.species_id).toBeNull();
     });
 });
 

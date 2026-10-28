@@ -177,19 +177,20 @@ class TrainingMetricsRepository {
      * @param {Object} params.transaction - Transaction to write in.
      * @returns {Promise<void>} Nothing.
      */
-    async storeConfusionMatrix({ trainingRunId, split, confusion, transaction }) {
+    async storeConfusionMatrix({ trainingRunId, split, confusion, handles = null, transaction }) {
         const now = new Date();
 
         await this.db.sequelize.query(
             `INSERT INTO training_run_confusion_matrices
-                 (training_run_id, dataset_split, orientation, class_names,
+                 (training_run_id, dataset_split, orientation, class_names, class_handles,
                   background_index, matrix, created_at, updated_at)
              VALUES
-                 (:trainingRunId, :split, :orientation, :classNames,
+                 (:trainingRunId, :split, :orientation, :classNames, :classHandles,
                   :backgroundIndex, :matrix, :now, :now)
              ON CONFLICT (training_run_id, dataset_split) DO UPDATE SET
                  orientation      = EXCLUDED.orientation,
                  class_names      = EXCLUDED.class_names,
+                 class_handles    = EXCLUDED.class_handles,
                  background_index = EXCLUDED.background_index,
                  matrix           = EXCLUDED.matrix,
                  updated_at       = EXCLUDED.updated_at`,
@@ -199,6 +200,10 @@ class TrainingMetricsRepository {
                     split,
                     orientation: confusion.orientation,
                     classNames: JSON.stringify(confusion.classes),
+                    /* Null where the model already said species names, which is every
+                       detection run: a column that repeated `class_names` on every row
+                       would say nothing and still have to be read. */
+                    classHandles: handles ? JSON.stringify(handles) : null,
                     backgroundIndex: confusion.background_index,
                     matrix: JSON.stringify(confusion.matrix),
                     now,
@@ -356,7 +361,7 @@ class TrainingMetricsRepository {
      */
     async findConfusionMatrices(trainingRunId) {
         return this.db.sequelize.query(
-            `SELECT dataset_split, orientation, class_names, background_index, matrix
+            `SELECT dataset_split, orientation, class_names, class_handles, background_index, matrix
                FROM training_run_confusion_matrices
               WHERE training_run_id = :trainingRunId
               ORDER BY dataset_split`,

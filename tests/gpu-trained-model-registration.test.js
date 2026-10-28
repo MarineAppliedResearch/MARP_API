@@ -78,8 +78,13 @@ beforeAll(async () => {
     }
 
     const [parent] = await db.sequelize.query(
+        /* **A classifier, because that is the case that broke.** Registration recorded
+           the literal 'detection' for every run, which was true of all of them until
+           model 441 -- a classifier trained from yolo11m-cls, filed as a detector, with
+           nothing downstream able to tell. A detection parent here would let that bug
+           pass this suite. */
         `INSERT INTO ml_models (name, model_type, architecture_version, status, created_at, updated_at)
-         VALUES (:name, 'detection', 'yolo11m', 'active', now(), now())
+         VALUES (:name, 'classification', 'yolo11m-cls', 'active', now(), now())
          RETURNING id`,
         { replacements: { name: `jest-register-parent-${runId}` }, type: db.Sequelize.QueryTypes.INSERT, logging: false }
     );
@@ -205,6 +210,18 @@ describe('publishing a training job registers its model', () => {
         expect(model.name).toMatch(new RegExp(`^jest-register-dataset-${runId}-\\d{4}-\\d{2}-\\d{2}`));
         expect(model.parent_model_id).toBe(parentModelId);
         expect(model.status).toBe('active');
+
+        /* **The checkpoint decides the task.** Read from the parent rather than written
+           as a literal here, so this says why the answer is what it is: fine-tuning a
+           classifier produces a classifier, and the engine is never told which task was
+           asked for. */
+        const [parentRow] = await db.sequelize.query(
+            'SELECT model_type FROM ml_models WHERE id = :id',
+            { replacements: { id: parentModelId }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+        );
+
+        expect(parentRow.model_type).toBe('classification');
+        expect(model.model_type).toBe(parentRow.model_type);
 
         // Usable at once, but not the default: promoting a model nobody has looked at
         // would change what the next inference job runs.

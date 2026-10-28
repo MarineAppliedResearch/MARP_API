@@ -514,11 +514,23 @@ function confusionForReading(stored) {
         return classes[index] === undefined ? null : classes[index];
     });
 
+    /* **What the model called them, when that is not what they are shown as.** Positional
+       beside `labels`, so a reader can take index 7 from either and mean the same axis
+       entry. Absent rather than a copy of `labels` where the two agree, which is every
+       detection run -- a field that repeats the one above it is noise a caller still has
+       to understand. */
+    const handles = Array.isArray(stored.class_handles) && stored.class_handles.length === size - (
+        stored.background_index === undefined || stored.background_index === null ? 0 : 1
+    ) ? Array.from({ length: size }, (_, index) => (
+            index === stored.background_index ? 'background' : stored.class_handles[index]
+        )) : null;
+
     return {
         labels,
         rows,
         orientation: SERVED_ORIENTATION,
         background_index: stored.background_index === undefined ? null : stored.background_index,
+        ...(handles ? { handles } : {}),
     };
 }
 
