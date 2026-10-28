@@ -23,7 +23,7 @@ Review the dashboard through the main MARP API server. From the repository root:
 npm start
 ```
 
-Then open `/apps/marp-ml-dashboard/` on that API origin. `app.js` serves the
+Then open `/apps/ml-dashboard/` on that API origin. `app.js` serves the
 application, the MARP front page, authentication, route guards and the API itself;
 reviewing through one origin is what exposes the integrated behavior a person will
 actually use.
