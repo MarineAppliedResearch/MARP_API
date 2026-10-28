@@ -6217,9 +6217,27 @@ function workerView(worker) {
  * @param {Object} view - From `workerView`.
  * @returns {string} Two `<tr>`s, the head and its body.
  */
+/**
+ * A worker's rows, or one row saying why it could not be drawn.
+ *
+ * **One machine must not cost the pool.** A single worker whose record the screen
+ * misread used to throw out of the whole render, and the catch around it reported the
+ * pool as unreachable -- which it was not; the answer had arrived (#282).
+ *
+ * @param {Object} view - From `workerView`.
+ * @returns {string} Table rows.
+ */
+function workerRowsOrSay(view) {
+  try {
+    return workerRows(view);
+  } catch (error) {
+    return `<tr class="tblmsg" data-worker="${view.worker.worker_id}"><td class="error" colspan="11">`
+      + `Could not draw ${escapeHtml(view.worker.name || 'this worker')}: ${escapeHtml(error.message || String(error))}</td></tr>`;
+  }
+}
+
 function workerRows(view) {
   const { worker, caps } = view;
-  const attempt = (worker.attempts || [])[0] || null;
   const res = caps.resources || {};
 
   const head = `<tr class="runrow-head" data-worker="${worker.worker_id}" aria-expanded="false">`
@@ -6237,18 +6255,34 @@ function workerRows(view) {
     + `<td class="whb" data-updated data-sort="${WORKERS_SORT_KEYS.whb(view)}">${sinceText(workerLastSeen(worker))}</td>`
     + '</tr>';
 
-  const progress = attempt && attempt.progress_done !== null
-    ? `${attempt.progress_done.toLocaleString()} / ${attempt.progress_total.toLocaleString()} ${attempt.progress_unit}`
-    : 'No heartbeat yet';
+  /* **The shape `GET /gpu/workers` sends**: `progress: {done, total, unit, phase}`,
+     `attempt_id` and `job: {job_id}`. This read `progress_done`, `id` and `job_id`, which
+     a job row carries and a pool row never has -- and `undefined !== null` is true, so the
+     first busy machine threw and the whole table read "Could not load the pool" (#282).
+     Unseen for two weeks because the pool was idle whenever anyone looked. */
+  const counted = (n) => (n !== null && n !== undefined && Number.isFinite(Number(n)) ? Number(n).toLocaleString() : null);
+  const progressOf = (one) => {
+    const step = one.progress || {};
 
-  const live = attempt
-    ? '<div class="sect"><h3>Live attempt</h3><dl class="kv">'
-      + `<dt>Attempt</dt><dd>${attempt.id} &middot; job ${attempt.job_id}</dd>`
-      + `<dt>State</dt><dd>${attempt.state}</dd>`
-      + `<dt>Progress</dt><dd>${progress}</dd>`
-      + `<dt>Slot</dt><dd>${attempt.slot_index} of ${worker.slot_count}</dd>`
-      + `<dt>Heartbeat</dt><dd>${sinceText(attempt.last_heartbeat_at)}</dd>`
-      + '</dl></div>'
+    return counted(step.done) !== null
+      ? `${counted(step.done)}${counted(step.total) !== null ? ` / ${counted(step.total)}` : ''} ${escapeHtml(step.unit || '')}`
+        + (step.phase ? ` &middot; ${escapeHtml(step.phase)}` : '')
+      : 'No heartbeat yet';
+  };
+
+  /* **Every job the machine holds, not the first.** A four-slot worker runs four at
+     once, and showing one of them made a busy machine look a quarter as busy. */
+  const attempts = worker.attempts || [];
+  const live = attempts.length
+    ? `<div class="sect"><h3>${attempts.length === 1 ? 'Live attempt' : `Live attempts (${attempts.length})`}</h3>`
+      + attempts.map((one) => '<dl class="kv">'
+        + `<dt>Attempt</dt><dd>${one.attempt_id} &middot; job ${one.job ? one.job.job_id : NOT_REPORTED}</dd>`
+        + `<dt>State</dt><dd>${escapeHtml(one.state)}</dd>`
+        + `<dt>Progress</dt><dd>${progressOf(one)}</dd>`
+        + `<dt>Slot</dt><dd>${one.slot_index} of ${worker.slot_count}</dd>`
+        + `<dt>Heartbeat</dt><dd>${sinceText(one.last_heartbeat_at)}</dd>`
+        + '</dl>').join('')
+      + '</div>'
     : '<div class="sect"><h3>Live attempt</h3><p class="muted">No attempt on this machine right now.</p></div>';
 
   /* `hidden` for the same reason the registry's is: see `modelRows`. Isaac reported the
@@ -6522,7 +6556,7 @@ function applyWorkersQuery() {
   const gone = shown.filter((view) => view.gone);
 
   body.innerHTML = here.length || gone.length
-    ? here.map(workerRows).join('') + (gone.length ? gone.map(workerRows).join('') : '')
+    ? here.map(workerRowsOrSay).join('') + (gone.length ? gone.map(workerRowsOrSay).join('') : '')
     : '<tr class="tblmsg"><td class="empty" colspan="11">No workers match these filters.</td></tr>';
 
   /* Marked after rendering rather than in the row builder: `workerRows` returns two rows
@@ -6706,7 +6740,9 @@ async function renderWorkersTable() {
       });
     }
   } catch (error) {
-    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load the pool (${error.status || 'no answer'}). `
+    /* `no answer` only when there was none: an error with no status is the screen's own,
+       and saying the pool did not answer sent the search to the wrong place (#282). */
+    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load the pool (${error.status || escapeHtml(error.message || 'no answer')}). `
       + '<button class="btn sm" type="button" id="workersRetry">Try again</button></td></tr>';
     const retry = $('#workersRetry');
     if (retry) retry.addEventListener('click', renderWorkersTable);
