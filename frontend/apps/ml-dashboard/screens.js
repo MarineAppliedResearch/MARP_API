@@ -8871,7 +8871,7 @@ async function inferenceSubmissions() {
       /* Both identify the session and neither can be guessed. A line is typed onto the
          card and saved; a dive comes from the Jellyfin hierarchy. */
       if (!dive) refusals.push(where + ': ' + label + ' has no dive, so its session cannot be placed.');
-      if (!line) refusals.push(where + ': ' + label + ' has no line. Enter one on the card and save it.');
+      if (!line) refusals.push(where + ': ' + label + ' has no line. Type it into the Line box on its card.');
 
       configs.forEach((config) => {
         const pick = $('[data-model-pick]', config);
@@ -9019,10 +9019,33 @@ function wireInferenceForm() {
     + '" data-start-frame="' + safe(parts.from || '')
     + '" data-end-frame="' + safe(parts.to || '') + '"><span class="mini-thumb' + (parts.line ? '' : ' pending') + '">'
     + (parts.line ? 'L' + safe(parts.line) : '—') + '</span><span><b class="mono">' + safe(parts.title)
-    + '</b><small>' + (parts.dive ? safe(parts.dive) + ' · ' : '')
-    + (parts.line ? 'Line ' + safe(parts.line) : 'Line not assigned') + ' · ' + safe(parts.range)
-    + '</small></span><button class="btn sm icon" type="button" data-remove-target aria-label="Remove '
+    + '</b><small>' + (parts.dive ? safe(parts.dive) + ' · ' : '') + safe(parts.range)
+    /* **The line is typed here too.** It used to be read only from the picker at the
+       moment of Add, so a video added before its line was typed -- the natural order --
+       sat at "Line not assigned" with nowhere to put one, and the only way out was to
+       remove it and add it again. Isaac: *"it doesn't allow me to type a line number in
+       for the individual video"*. */
+    + '</small></span><label class="target-line">Line<input class="inp" type="text" inputmode="numeric"'
+    + ' data-target-line value="' + safe(parts.line || '') + '" placeholder="e.g. 4"'
+    + ' aria-label="Line for ' + safe(parts.title) + '"></label>'
+    + '<button class="btn sm icon" type="button" data-remove-target aria-label="Remove '
     + safe(parts.title) + '">' + ico('x', 'sm') + '</button></article>';
+
+  /* A card's line is what its submission carries, so the box writes straight onto the
+     card's dataset and the badge follows it. */
+  document.addEventListener('input', (event) => {
+    if (!event.target.matches('[data-target-line]')) return;
+
+    const target = event.target.closest('[data-target]');
+    const line = event.target.value.trim();
+    const badge = $('.mini-thumb', target);
+
+    target.dataset.videoLine = line;
+    if (badge) {
+      badge.textContent = line ? 'L' + line : '—';
+      badge.classList.toggle('pending', !line);
+    }
+  });
 
   document.addEventListener('change', (event) => {
     const choice = event.target.closest('[data-video-choice]');

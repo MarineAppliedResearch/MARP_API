@@ -1864,12 +1864,14 @@ details.fold .fbody { padding: 4px 12px 14px; }
 .plan-section > header b { color: var(--text); font-size: 11.5px; }
 .plan-section > header small { color: var(--faint); font-size: 9.5px; margin-top: 2px; }
 .plan-targets, .model-configs { display: grid; gap: 6px; }
-.plan-target { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px; border: 1px solid var(--hairline); border-radius: 4px; background: rgba(1, 6, 14, .34); }
+.plan-target { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 7px; border: 1px solid var(--hairline); border-radius: 4px; background: rgba(1, 6, 14, .34); }
 .mini-thumb { display: grid; place-items: center; width: 34px; height: 25px; border-radius: 3px; color: var(--cyan-300); background: rgba(42, 214, 220, .1); font-size: 9px; font-weight: 800; }
 .mini-thumb.pending { color: var(--faint); background: rgba(255, 255, 255, .04); }
 .plan-target b, .plan-target small { display: block; min-width: 0; }
 .plan-target b { color: var(--text); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
 .plan-target small { margin-top: 2px; color: var(--faint); font-size: 9px; }
+.plan-target .target-line { display: flex; align-items: center; gap: 5px; color: var(--faint); font-size: 9px; }
+.plan-target .target-line .inp { width: 52px; }
 .model-config { border: 1px solid var(--hairline-2); border-radius: 5px; background: rgba(1, 6, 14, .34); }
 .model-config > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; cursor: pointer; list-style: none; padding: 8px; }
 .model-config > summary::-webkit-details-marker { display: none; }
