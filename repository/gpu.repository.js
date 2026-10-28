@@ -953,7 +953,9 @@ class GpuRepository {
                         j.id               AS job_id,
                         j.kind             AS job_kind,
                         j.state            AS job_state,
-                        j.batch_id         AS job_batch_id
+                        j.batch_id         AS job_batch_id,
+                        j.name             AS job_name,
+                        j.spec             AS job_spec
                    FROM gpu_workers w
                    LEFT JOIN gpu_job_attempts a
                           ON a.worker_id = w.id

@@ -829,6 +829,19 @@ function loadSessions() {
  * @param {Object} spec - A job's `spec`.
  * @returns {Object} The session row, the inline session, or `{}`.
  */
+/**
+ * A dive as a reader says it. Jellyfin names many of them "Dive 47" already, and every
+ * scope on these screens put "Dive" in front, so they read "Dive Dive 47".
+ *
+ * @param {string|number} dive - `session.dive`, as recorded.
+ * @returns {string}
+ */
+function diveText(dive) {
+  const text = String(dive).trim();
+
+  return /^dive(?![a-z])/i.test(text) ? text : `Dive ${text}`;
+}
+
 function sessionFor(spec) {
   const asked = (spec || {}).session;
   const named = asked && asked.session_id !== undefined
@@ -901,7 +914,7 @@ function rowFor(view) {
   const { job, spec, session, state } = view;
 
   const scope = session.dive
-    ? `Dive ${session.dive}${session.line ? ` &middot; Line ${session.line}` : ''}`
+    ? `${diveText(session.dive)}${session.line ? ` &middot; Line ${session.line}` : ''}`
     : (spec.session && spec.session.session_id !== undefined
       ? `Session ${spec.session.session_id}`
       : 'No session');
@@ -1291,7 +1304,7 @@ function applyJobsQuery() {
 function jobScopeText(view) {
   const { session, spec } = view;
 
-  if (session.dive) return `Dive ${session.dive}${session.line ? ` · Line ${session.line}` : ''}`;
+  if (session.dive) return `${diveText(session.dive)}${session.line ? ` · Line ${session.line}` : ''}`;
   return spec.session && spec.session.session_id !== undefined ? `Session ${spec.session.session_id}` : '';
 }
 
@@ -4670,7 +4683,7 @@ function renderInferenceRecent(views) {
 
     return `<tr data-job="${job.id}">`
       + `<td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">${view.title}</span></span></td>`
-      + `<td class="jscope"><span class="two"><span class="a">Dive ${session.dive || '?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
+      + `<td class="jscope"><span class="two"><span class="a">${session.dive ? diveText(session.dive) : 'Dive ?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
       + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}">${statusWithProgress(view)}</td>`
       /* **A dash until asked, then whatever the answer is -- including zero.** Nothing
@@ -6217,9 +6230,59 @@ function workerView(worker) {
  * @param {Object} view - From `workerView`.
  * @returns {string} Two `<tr>`s, the head and its body.
  */
+/**
+ * What one of a worker's slots is working on, linked to that job on the Jobs page.
+ *
+ * Isaac: *"the worker should also show exactly what job they are currently using, and
+ * there should be a link through to that job"*. Drawn through the Jobs tab's own
+ * `jobView`, `jobScopeText` and `jobDestination`, so a job reads the same here as there.
+ *
+ * @param {Object} attempt - One live attempt from `GET /gpu/workers`.
+ * @returns {string} `<dt>`/`<dd>` pairs, or nothing when the pool sent no job.
+ */
+function workingOn(attempt) {
+  const job = attempt.job;
+
+  if (!job || job.job_id === undefined || job.job_id === null) return '';
+
+  const view = jobView({
+    id: job.job_id, kind: job.kind, state: job.state, name: job.name,
+    spec: job.spec || {}, batch_id: job.batch_id, progress_done: null,
+  }, new Set());
+  const spec = view.spec;
+  const href = jobDestination({ id: job.job_id, kind: job.kind, spec });
+  const title = escapeHtml(view.title);
+  const scope = [
+    jobScopeText(view) || (spec.dataset && spec.dataset.name ? `Dataset ${spec.dataset.name}` : ''),
+    spec.range ? `frames ${spec.range.start_frame.toLocaleString()}–${spec.range.end_frame.toLocaleString()}` : '',
+    spec.model && spec.model.name ? spec.model.name : '',
+  ].filter(Boolean).map(escapeHtml).join(' &middot; ');
+
+  return `<dt>Job</dt><dd>${href ? `<a href="${href}">${title}</a>` : title} &middot; ${escapeHtml(view.kindLabel)}</dd>`
+    + (scope ? `<dt>Working on</dt><dd>${scope}</dd>` : '');
+}
+
+/**
+ * A worker's rows, or one row saying why it could not be drawn.
+ *
+ * **One machine must not cost the pool.** A single worker whose record the screen
+ * misread used to throw out of the whole render, and the catch around it reported the
+ * pool as unreachable -- which it was not; the answer had arrived (#282).
+ *
+ * @param {Object} view - From `workerView`.
+ * @returns {string} Table rows.
+ */
+function workerRowsOrSay(view) {
+  try {
+    return workerRows(view);
+  } catch (error) {
+    return `<tr class="tblmsg" data-worker="${view.worker.worker_id}"><td class="error" colspan="11">`
+      + `Could not draw ${escapeHtml(view.worker.name || 'this worker')}: ${escapeHtml(error.message || String(error))}</td></tr>`;
+  }
+}
+
 function workerRows(view) {
   const { worker, caps } = view;
-  const attempt = (worker.attempts || [])[0] || null;
   const res = caps.resources || {};
 
   const head = `<tr class="runrow-head" data-worker="${worker.worker_id}" aria-expanded="false">`
@@ -6237,18 +6300,35 @@ function workerRows(view) {
     + `<td class="whb" data-updated data-sort="${WORKERS_SORT_KEYS.whb(view)}">${sinceText(workerLastSeen(worker))}</td>`
     + '</tr>';
 
-  const progress = attempt && attempt.progress_done !== null
-    ? `${attempt.progress_done.toLocaleString()} / ${attempt.progress_total.toLocaleString()} ${attempt.progress_unit}`
-    : 'No heartbeat yet';
+  /* **The shape `GET /gpu/workers` sends**: `progress: {done, total, unit, phase}`,
+     `attempt_id` and `job: {job_id}`. This read `progress_done`, `id` and `job_id`, which
+     a job row carries and a pool row never has -- and `undefined !== null` is true, so the
+     first busy machine threw and the whole table read "Could not load the pool" (#282).
+     Unseen for two weeks because the pool was idle whenever anyone looked. */
+  const counted = (n) => (n !== null && n !== undefined && Number.isFinite(Number(n)) ? Number(n).toLocaleString() : null);
+  const progressOf = (one) => {
+    const step = one.progress || {};
 
-  const live = attempt
-    ? '<div class="sect"><h3>Live attempt</h3><dl class="kv">'
-      + `<dt>Attempt</dt><dd>${attempt.id} &middot; job ${attempt.job_id}</dd>`
-      + `<dt>State</dt><dd>${attempt.state}</dd>`
-      + `<dt>Progress</dt><dd>${progress}</dd>`
-      + `<dt>Slot</dt><dd>${attempt.slot_index} of ${worker.slot_count}</dd>`
-      + `<dt>Heartbeat</dt><dd>${sinceText(attempt.last_heartbeat_at)}</dd>`
-      + '</dl></div>'
+    return counted(step.done) !== null
+      ? `${counted(step.done)}${counted(step.total) !== null ? ` / ${counted(step.total)}` : ''} ${escapeHtml(step.unit || '')}`
+        + (step.phase ? ` &middot; ${escapeHtml(step.phase)}` : '')
+      : 'No heartbeat yet';
+  };
+
+  /* **Every job the machine holds, not the first.** A four-slot worker runs four at
+     once, and showing one of them made a busy machine look a quarter as busy. */
+  const attempts = worker.attempts || [];
+  const live = attempts.length
+    ? `<div class="sect"><h3>${attempts.length === 1 ? 'Live attempt' : `Live attempts (${attempts.length})`}</h3>`
+      + attempts.map((one) => '<dl class="kv">'
+        + workingOn(one)
+        + `<dt>Attempt</dt><dd>${one.attempt_id} &middot; job ${one.job ? one.job.job_id : NOT_REPORTED}</dd>`
+        + `<dt>State</dt><dd>${escapeHtml(one.state)}</dd>`
+        + `<dt>Progress</dt><dd>${progressOf(one)}</dd>`
+        + `<dt>Slot</dt><dd>${one.slot_index} of ${worker.slot_count}</dd>`
+        + `<dt>Heartbeat</dt><dd>${sinceText(one.last_heartbeat_at)}</dd>`
+        + '</dl>').join('')
+      + '</div>'
     : '<div class="sect"><h3>Live attempt</h3><p class="muted">No attempt on this machine right now.</p></div>';
 
   /* `hidden` for the same reason the registry's is: see `modelRows`. Isaac reported the
@@ -6522,7 +6602,7 @@ function applyWorkersQuery() {
   const gone = shown.filter((view) => view.gone);
 
   body.innerHTML = here.length || gone.length
-    ? here.map(workerRows).join('') + (gone.length ? gone.map(workerRows).join('') : '')
+    ? here.map(workerRowsOrSay).join('') + (gone.length ? gone.map(workerRowsOrSay).join('') : '')
     : '<tr class="tblmsg"><td class="empty" colspan="11">No workers match these filters.</td></tr>';
 
   /* Marked after rendering rather than in the row builder: `workerRows` returns two rows
@@ -6706,7 +6786,9 @@ async function renderWorkersTable() {
       });
     }
   } catch (error) {
-    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load the pool (${error.status || 'no answer'}). `
+    /* `no answer` only when there was none: an error with no status is the screen's own,
+       and saying the pool did not answer sent the search to the wrong place (#282). */
+    body.innerHTML = `<tr class="tblmsg"><td class="error" colspan="11">Could not load the pool (${error.status || escapeHtml(error.message || 'no answer')}). `
       + '<button class="btn sm" type="button" id="workersRetry">Try again</button></td></tr>';
     const retry = $('#workersRetry');
     if (retry) retry.addEventListener('click', renderWorkersTable);

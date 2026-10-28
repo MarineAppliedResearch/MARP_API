@@ -240,6 +240,41 @@ function validateTelemetry(telemetry) {
 }
 
 /**
+ * The parts of a job's spec that say what a machine is working on, and nothing else.
+ *
+ * **No locations.** The pool view promises never to say where anything is -- a test
+ * fails on any `url`, `host` or `address` in it -- and a whole spec carries the video's
+ * and the model's URLs. So this keeps the session's dive and line, the frame range, and
+ * the model's and dataset's names: enough to say *Dive 47 · Line 1080 · frames
+ * 0-7,500 · CAMPA_GR1_TEST6-mixed* and to link to the job, which is all the Workers
+ * screen asks of it (#282).
+ *
+ * @param {?Object} spec - `gpu_jobs.spec`, as stored.
+ * @returns {Object} A subset safe to show beside a machine.
+ */
+function workingOnFrom(spec) {
+    const source = spec || {};
+    const session = source.session || {};
+    const out = {};
+
+    const kept = {};
+    for (const key of ['session_id', 'project_id', 'dive', 'line', 'type']) {
+        if (session[key] !== undefined && session[key] !== null) kept[key] = session[key];
+    }
+    if (Object.keys(kept).length) out.session = kept;
+
+    if (source.range) out.range = { start_frame: source.range.start_frame, end_frame: source.range.end_frame };
+    if (source.model && source.model.name) out.model = { name: source.model.name };
+    if (source.dataset && (source.dataset.name || source.dataset.dataset_id !== undefined)) {
+        out.dataset = { name: source.dataset.name || null, dataset_id: source.dataset.dataset_id ?? null };
+    }
+    if (source.dataset_id !== undefined) out.dataset_id = source.dataset_id;
+    if (source.video && source.video.source_name) out.video = { source_name: source.video.source_name };
+
+    return out;
+}
+
+/**
  * The GPU telemetry out of an attempt's `capabilities_snapshot` (#104, gap 27).
  *
  * The worker reads NVML on every poll and the coordinator stores the whole
@@ -1769,6 +1804,10 @@ class GpuService {
                     kind: row.job_kind,
                     state: row.job_state,
                     batch_id: row.job_batch_id,
+                    // What the machine is working on, in the words the Jobs tab uses:
+                    // its name, and the parts of its spec that say what it is doing.
+                    name: row.job_name,
+                    spec: workingOnFrom(row.job_spec),
                 },
             });
         }
