@@ -2893,6 +2893,29 @@
               }
             }
           },
+          "job": {
+            "type": "object",
+            "description": "The job being attempted, in summary.",
+            "properties": {
+              "job_id": {
+                "type": "integer",
+                "example": 41
+              },
+              "kind": {
+                "type": "string",
+                "example": "inference"
+              },
+              "state": {
+                "type": "string",
+                "example": "leased"
+              },
+              "batch_id": {
+                "type": "string",
+                "format": "uuid",
+                "nullable": true
+              }
+            }
+          },
           "telemetry": {
             "type": "object",
             "nullable": true,
@@ -2965,29 +2988,6 @@
                     }
                   }
                 }
-              }
-            }
-          },
-          "job": {
-            "type": "object",
-            "description": "The job being attempted, in summary.",
-            "properties": {
-              "job_id": {
-                "type": "integer",
-                "example": 41
-              },
-              "kind": {
-                "type": "string",
-                "example": "inference"
-              },
-              "state": {
-                "type": "string",
-                "example": "leased"
-              },
-              "batch_id": {
-                "type": "string",
-                "format": "uuid",
-                "nullable": true
               }
             }
           }
