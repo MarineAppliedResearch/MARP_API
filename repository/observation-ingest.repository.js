@@ -222,12 +222,24 @@ class ObservationIngestRepository {
      * @param {Object} [transaction] - Transaction to read inside.
      * @returns {Promise<Array<Object>>} Matching species rows.
      */
+    /* **Matched without regard to case, and that is load-bearing rather than lenient.**
+       A model names its classes however its own vocabulary does -- the FathomNet and
+       MBARI lists are lowercase, MARP catalogues are overwhelmingly capitalised -- and the
+       two only ever agreed by accident. Capitalising the nine lowercase catalogue rows to
+       match the convention would, under exact matching, have stopped every detection from
+       those models resolving: the name would no longer be found, and every future
+       observation would arrive with no species and nothing saying why.
+
+       The narrowing below still does the work that matters. Folding case widens the
+       whole-catalogue fallback enough that a name on two lists can match twice, and two
+       matches resolve to null here rather than being chosen between -- which is the rule
+       this lookup already had, now reached slightly more often. */
     async findTrainedSpeciesByName(mlModelId, comname, transaction) {
         return this.db.sequelize.query(
             `SELECT s.id, s.taxserial, s.comname, s.species_list, s.observation_type
                FROM model_species ms
                JOIN species s ON s.id = ms.species_id
-              WHERE ms.model_id = :mlModelId AND s.comname = :comname
+              WHERE ms.model_id = :mlModelId AND LOWER(s.comname) = LOWER(:comname)
               ORDER BY s.id`,
             {
                 replacements: { mlModelId, comname },
@@ -289,7 +301,7 @@ class ObservationIngestRepository {
         return this.db.sequelize.query(
             `SELECT id, taxserial, comname, species_list, observation_type
                FROM species
-              WHERE comname = :comname
+              WHERE LOWER(comname) = LOWER(:comname)
               ORDER BY id`,
             { replacements: { comname }, type: QueryTypes.SELECT, transaction }
         );
