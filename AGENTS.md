@@ -453,8 +453,30 @@ by having this repository load its own schema into it.
 marp db up                # scripts/marp.ps1 db up   /   sh scripts/marp.sh db up
 marp db status            # where yours is listening, and what is in it
 marp db env               # the DB_* lines to paste into .env
-marp db up --port 5440    # a second database, for a second worktree
+
+# A second database, for a second worktree. Both flags, always.
+marp db up -Port <free port> -DataDirName <name>      # PowerShell
+sh scripts/marp.sh db up --port <free port> --data-dir <name>
 ```
+
+**A port on its own does not make a second database**, and that is the trap: the data
+directory is what a database *is*, so `-Port` alone starts the default one somewhere else
+or finds it already running, and two worktrees quietly share one set of rows.
+`-DataDirName` is what puts it under `.postgres/instances/<name>`, and `db.sh`'s own help
+says it "needs its own `--port` too" because one server cannot serve two data directories.
+
+**The flag spellings are not interchangeable.** `marp.ps1` declares `-Port` and
+`-DataDirName`; the POSIX wrapper takes `--port` and `--data-dir`. A `--port` handed to
+the PowerShell wrapper is not a parameter it knows, so it falls into
+`ValueFromRemainingArguments` and is passed on positionally -- it does not set the port,
+and nothing says so.
+
+**Every instance is called the same thing.** `db.ps1` fixes the database name and there is
+no flag to change it, so a second worktree's database carries the production name exactly
+as the first does. That is survivable because *the host and port are what tell them
+apart*, which is also how `tests/setup/local-database-guard.js` decides: it reads
+`DB_HOST`, not the name. Do not expect a different name to protect you, and do not go
+looking for a flag that would give you one.
 
 **Do not write a host or a port into documentation here.** `db env` prints the current
 values and `db status` reports them. A host or port written into prose goes stale silently

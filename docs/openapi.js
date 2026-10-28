@@ -755,8 +755,25 @@ const buildOpenApiSpec = () => {
                             user: {
                                 $ref: '#/components/schemas/AuthUser',
                             },
+                            server: {
+                                type: 'object',
+                                description: 'What this MARP process is, read once at startup. Here rather than on a route of its own because every screen already makes this read before it draws.',
+                                properties: {
+                                    started_at: {
+                                        type: 'string',
+                                        format: 'date-time',
+                                        description: 'When this process loaded.',
+                                    },
+                                    commit: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: '75891cc374e9db6e9f8e161f8a080be80693e3a4',
+                                        description: 'The commit the checkout was on at startup, which is the code this process is serving whatever the working tree has since become. Null when git cannot answer -- a deployed copy with no .git, or no git on PATH -- because a stale or invented hash would read as a measurement.',
+                                    },
+                                },
+                            },
                         },
-                        description: 'Authenticated session response containing the current MARP user profile.',
+                        description: 'Authenticated session response containing the current MARP user profile, and the identity of the process serving it.',
                     },
 
                     /**
