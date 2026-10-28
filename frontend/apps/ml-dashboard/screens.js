@@ -1438,6 +1438,39 @@ function producedModelCell(run) {
 const TRAINING_EPOCH_POLL_MS = 5000;
 
 /**
+ * What a running run's step charts draw, and from which metric key.
+ *
+ * Isaac, on watching a run: *"i don't want it as a command line, i want everything that
+ * would be showing in the command line to be graphed!"* So this is what the Ultralytics
+ * console prints per batch, as charts: the running losses, the memory, the throughput and
+ * the estimate.
+ *
+ * **Keyed on the metric name the worker sent, and a chart with no key in the samples is
+ * not drawn.** `metrics` is deliberately free-form — a detector sends `train/box_loss`,
+ * `train/cls_loss` and `train/dfl_loss`, a classifier sends one `train/loss` — so the
+ * panel asks what arrived rather than deciding in advance. A classification run draws
+ * three charts and a detection run five, from the same table, with nothing declaring
+ * which task it is.
+ *
+ * **Two things are missing on purpose.** Instances per batch is unreachable from
+ * Ultralytics' callback, and there is no callback at all while it caches images, so a
+ * count of either would be invented. Both have been asked for three times and checked
+ * twice; leaving a space for them would invite a fourth.
+ */
+const STEP_CHARTS = [
+  { key: 'train/loss', title: 'Loss', unit: '', max: 'auto' },
+  { key: 'train/box_loss', title: 'Box loss', unit: '', max: 'auto' },
+  { key: 'train/cls_loss', title: 'Class loss', unit: '', max: 'auto' },
+  { key: 'train/dfl_loss', title: 'DFL loss', unit: '', max: 'auto' },
+  { key: 'gpu_memory_bytes', title: 'GPU memory', unit: ' GB', max: 'auto', scale: 1073741824 },
+  { key: 'iterations_per_second', title: 'Throughput', unit: ' it/s', max: 'auto' },
+  { key: 'epoch_eta_seconds', title: 'Epoch ETA', unit: ' s', max: 'auto' },
+];
+
+/** Batch samples by run id, appended to rather than refetched. */
+const trainingStepsByRun = new Map();
+
+/**
  * Per-threshold curves by run id, once each.
  *
  * `/curves` is about a thousand points per class where `/metrics` is a handful of rows,
@@ -1538,6 +1571,128 @@ function autoCeiling(drawn, count) {
       .filter((one) => one.values[0] !== null && one.values[0] !== undefined && one.values[0] > max)
       .map((one) => ({ key: one.key, label: one.label, value: one.values[0] })),
   };
+}
+
+/**
+ * Read whatever batch samples are new for a run, and keep them.
+ *
+ * **Appended, never refetched.** `after_step` is the last step already held, applied per
+ * attempt, so a poll asks for the handful of rows that arrived in the last few seconds
+ * rather than the whole run every time. A run of four hundred batches would otherwise be
+ * four hundred rows down the wire every five seconds for the whole of its life.
+ *
+ * **`strided` is handled by not meeting it.** A first read of a long run comes back
+ * thinned, and after that every read is incremental, so the stride applies once and the
+ * chart fills in from there. The newest sample is always included whatever the stride, so
+ * the line never looks stalled when it is not.
+ *
+ * @param {number} runId - The run.
+ * @returns {Promise<Object[]>} Every sample held, oldest first.
+ */
+async function readTrainingSteps(runId) {
+  const held = trainingStepsByRun.get(runId) || [];
+  /* The highest step seen, which is what `after_step` is measured against. A retry
+     restarts at 1, so this is deliberately the maximum across attempts rather than per
+     attempt: the endpoint applies it per attempt itself. */
+  const after = held.reduce((top, one) => Math.max(top, Number(one.step) || 0), 0);
+
+  let answer;
+
+  try {
+    answer = await window.MarpApi.trainingRunSamples(runId, after ? { after_step: after } : {});
+  } catch {
+    /* A failed read is a blip: the top bar says MARP is not answering, and what is
+       already held stays on screen rather than the charts emptying. */
+    return held;
+  }
+
+  const fresh = Array.isArray(answer.samples) ? answer.samples : [];
+
+  if (!fresh.length) return held;
+
+  const next = held.concat(fresh);
+
+  trainingStepsByRun.set(runId, next);
+
+  return next;
+}
+
+/**
+ * The step charts for a run that is going, and the phase band under them.
+ *
+ * **Per batch, not per epoch.** The epoch charts above fill in once a minute or once an
+ * hour; this is the view somebody watches, and it moves every few seconds. The x axis is
+ * the step within the attempt rather than the clock, because `at` is the worker's own
+ * clock and is good for ordering and duration and nothing else.
+ *
+ * **Grouped by attempt, because a retry restarts the step counter at 1.** Drawn as one
+ * series, a second attempt walks backwards through the first and reads as the loss
+ * collapsing. Each attempt gets its own line.
+ *
+ * @param {Object[]} samples - Every sample held for this run, oldest first.
+ * @returns {string}
+ */
+function stepCharts(samples) {
+  if (!samples.length) return '';
+
+  const box = { left: 46, right: 700, top: 24, bottom: 174 };
+  const attempts = [...new Set(samples.map((one) => one.attempt_id))];
+  const training = samples.filter((one) => one.phase === 'training_batch');
+  const latest = samples[samples.length - 1];
+
+  /* What this run actually reports. A chart nobody sent a key for is not drawn, which is
+     how one panel serves detection and classification without being told which it is. */
+  const present = STEP_CHARTS.filter((spec) => samples
+    .some((one) => one.metrics && one.metrics[spec.key] !== undefined && one.metrics[spec.key] !== null));
+
+  if (!present.length) return '';
+
+  const cards = present.map((spec) => {
+    const lines = attempts.map((attemptId, index) => {
+      const mine = training.filter((one) => one.attempt_id === attemptId);
+      const values = mine.map((one) => {
+        const raw = one.metrics ? one.metrics[spec.key] : null;
+
+        return raw === null || raw === undefined ? null : Number(raw) / (spec.scale || 1);
+      });
+
+      return { values, index };
+    });
+
+    const every = lines.flatMap((line) => line.values).filter((value) => value !== null);
+
+    if (!every.length) return '';
+
+    const top = Math.max(0.001, Math.ceil(Math.max(...every) * 100) / 100);
+    const last = [...lines[lines.length - 1].values].reverse()
+      .find((value) => value !== null && value !== undefined);
+
+    return '<article class="evaluation-card history-card" data-result-graph>'
+      + `<header><div><h5>${spec.title}</h5><p>Per batch`
+      + `${last === undefined ? '' : ` &middot; now ${Number(last).toFixed(spec.scale ? 2 : 3)}${spec.unit}`}`
+      + `${attempts.length > 1 ? ` &middot; ${attempts.length} attempts` : ''}</p></div></header>`
+      + `<div class="result-chart" role="img" aria-label="${spec.title} per batch">`
+      + '<svg viewBox="0 0 740 205" aria-hidden="true">'
+      + '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
+      + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>'
+      + `<g class="result-axis"><text x="38" y="28">${top}</text>`
+      + `<text x="38" y="103">${(top / 2).toFixed(spec.scale ? 2 : 3)}</text><text x="38" y="178">0</text></g>`
+      + lines.map((line) => `<path class="result-line step-series class-${(line.index % 4) + 1}" `
+        + `d="${gappyPath(line.values, top, box)}"/>`).join('')
+      + '</svg></div></article>';
+  }).join('');
+
+  /* **The phase as a band rather than a number**, because caching has no count: the
+     trainer gives no callback while it reads images, so how far through it is cannot be
+     known. What it is doing can. */
+  const phase = latest.phase === 'validating_batch' ? 'Validating' : 'Training';
+  const where = latest.epoch
+    ? `epoch ${latest.epoch}${latest.batch ? `, batch ${latest.batch}${latest.batches_total ? ` of ${latest.batches_total}` : ''}` : ''}`
+    : '';
+
+  return '<div class="sect step-charts"><h3>While it runs'
+    + `<span class="st" data-state="running"><span class="dot"></span>${phase}${where ? ` &middot; ${where}` : ''}</span></h3>`
+    + `<div class="curve-grid">${cards}</div></div>`;
 }
 
 /**
@@ -2519,9 +2674,16 @@ function trainingRunDetail(run, epochs, task, spec, evidence) {
     task ? TRAINING_TASKS[task].label : null,
   ].filter(Boolean).join(' &middot; ');
 
+  /* **Above the epoch charts, because it is the part that moves.** A run somebody is
+     watching reports a batch every few seconds and an epoch every few minutes; putting
+     the slower thing first would mean scrolling past it to see anything happen. Empty for
+     a finished run, whose batches are history its epoch charts already summarise. */
+  const steps = stepCharts(Array.isArray(found.steps) ? found.steps : []);
+
   return `<div class="jobdetail-head"><div><b>Training run ${run.id}</b>`
     + `<span>${about}</span></div></div>`
     + `<div class="jobmetrics">${settings}</div>`
+    + steps
     + `<div class="training-history-grid">${charts}</div>`
     + `<div class="training-evaluation-grid">${evaluation}</div>`;
 }
@@ -2736,6 +2898,7 @@ function wireTrainingJobDetail(head, detail) {
           files: gotFiles.status === 'fulfilled' ? gotFiles.value : [],
           curves: trainingCurvesByRun.get(run.id) || [],
           curvesState: trainingCurvesByRun.has(run.id) ? 'read' : 'unread',
+          steps: await readTrainingSteps(run.id),
         };
       } catch (error) {
         cell.innerHTML = '<div class="rundetail jobdetail"><p class="hint">Could not read this '

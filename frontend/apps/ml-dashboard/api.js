@@ -1409,6 +1409,33 @@
    * @param {number|string} runId - The training run.
    * @returns {Promise<Object>}
    */
+  /**
+   * `GET /api/v2/training_run/:id/samples` -- what the trainer is doing, per batch.
+   *
+   * `{matched, returned, strided, samples}`, each sample `{attempt_id, step, phase,
+   * epoch, batch, batches_total, at, metrics}`.
+   *
+   * **`metrics` is free-form on purpose.** A detector sends `train/box_loss`,
+   * `train/cls_loss` and `train/dfl_loss`; a classifier sends one `train/loss`. Read the
+   * keys that are there rather than expecting a set — columns for them would have been a
+   * migration per task and a row of nulls meaning *not this kind of run*.
+   *
+   * **`after_step` is per attempt**, so a poll asks only for what is new. A retry
+   * restarts the step counter at 1, which is why `attempt_id` has to group the series:
+   * without it a second attempt draws a line jumping backwards through the first.
+   *
+   * **`strided` must not be ignored.** A first read of a long run is thinned — every nth
+   * sample, never the first n or the last n — and the newest sample is always included,
+   * so a chart never looks stalled when it is not.
+   *
+   * @param {number|string} runId - The training run.
+   * @param {Object} [query] - `{after_step, limit}`.
+   * @returns {Promise<Object>}
+   */
+  function trainingRunSamples(runId, query) {
+    return request(`/training_run/${encodeURIComponent(runId)}/samples`, { query: query || {} });
+  }
+
   function trainingRunMetrics(runId) {
     return request(`/training_run/${encodeURIComponent(runId)}/metrics`);
   }
@@ -1891,6 +1918,7 @@
     freshness,
     trainingRunEpochs,
     trainingRunPace,
+    trainingRunSamples,
     trainingRunMetrics,
     trainingRunCurves,
     trainingRunArtifacts,
