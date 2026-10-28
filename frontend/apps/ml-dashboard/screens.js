@@ -7111,8 +7111,12 @@ function wireJobsCancel() {
       said(await window.MarpApi.cancelJobs(body));
       await afterJobsDelete();
     } catch (error) {
-      button.disabled = false;
       sayJobsDelete(error.message || `Could not cancel (${error.status || 'no answer'}).`, 'bad');
+    } finally {
+      /* **Always, not only on failure.** A row's button is thrown away by the redraw,
+         but the bulk bar's is not -- it stayed greyed after a successful cancel until
+         the page was reloaded, which Isaac found on the second selection. */
+      button.disabled = false;
     }
   };
 

@@ -91,6 +91,29 @@ test('ticked jobs are cancelled together, and the screen says what happened', as
   screen.close();
 });
 
+test('the bulk Cancel works a second time without a reload', async () => {
+  const screen = await jobsScreen([job(1, 'queued'), job(3, 'queued')]);
+  const { document } = screen;
+  const tick = (id) => {
+    const box = document.querySelector(`#jobs tbody tr[data-job="${id}"] .chkbox`);
+    box.checked = true;
+    box.dispatchEvent(new screen.window.Event('change'));
+  };
+
+  tick(1);
+  document.querySelector('#bulkCancel').click();
+  await settle();
+
+  /* Isaac's case: the button stayed greyed after the first one succeeded. */
+  assert.equal(document.querySelector('#bulkCancel').disabled, false, 'ready for the next selection');
+  tick(3);
+  document.querySelector('#bulkCancel').click();
+  await settle();
+
+  assert.deepEqual(screen.asked, [{ ids: [1] }, { ids: [3] }]);
+  screen.close();
+});
+
 test('the row stop icon cancels its own job', async () => {
   const screen = await jobsScreen([job(1, 'leased')]);
 
