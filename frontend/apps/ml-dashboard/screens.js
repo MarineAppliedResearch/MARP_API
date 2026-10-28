@@ -290,6 +290,12 @@ function mountTopbar() {
        for it on Models and it was absent everywhere; building it into the shared chrome
        is the difference between answering him once and answering him seven times. */
     + '<span class="fresh" data-freshness aria-live="polite" title="When MARP last answered"></span>'
+    /* **Which code is answering, beside when it last answered.** Passive and quiet: it
+       is not a control and nobody should have to look at it, but a server serves the
+       code it was started with rather than the code on your branch, and one here ran
+       five days behind its checkout for a day. The commit goes in the title, because
+       the question people actually ask is "is this current", not "which hash". */
+    + '<span class="fresh" data-server-started hidden></span>'
     + '<button class="btn icon" data-reload aria-label="Reload" title="Reload">' + ico('refresh') + '</button>'
     + (cfg.actions || []).map(btn).join('')
     + (cfg.kebab
@@ -12340,9 +12346,63 @@ function paintFreshness() {
  *
  * @returns {void}
  */
+/**
+ * Say which code is answering, once.
+ *
+ * **Asked once and never again**, because the answer cannot change while the process
+ * lives -- that is the whole point of MARP reading it at startup. Repainting it on a
+ * timer would suggest otherwise.
+ *
+ * **Hidden until MARP says**, rather than showing "unknown" while the request is in
+ * flight: an empty label is honest about a question not yet answered, where a filled one
+ * would claim MARP had replied and not known.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function fillServerIdentity() {
+  const into = $('[data-server-started]');
+
+  if (!into || !window.MarpApi || typeof window.MarpApi.whoAmI !== 'function') return;
+
+  let server;
+
+  /* Guarded like the label beside it: the chrome must not be what breaks a page, and a
+     signed-out visitor gets null here rather than an answer. */
+  try {
+    const me = await window.MarpApi.whoAmI();
+
+    server = me && me.server;
+  } catch {
+    return;
+  }
+
+  if (!server || !server.started_at) return;
+
+  const started = new Date(server.started_at);
+
+  if (Number.isNaN(started.getTime())) return;
+
+  /* **`agoText` within the day, a date beyond it.** The label shares its vocabulary with
+     the freshness one beside it, so the two read as one thought -- but the case this
+     exists for is a server days behind its checkout, and "127h ago" is arithmetic the
+     reader has to do. A date is immediately obviously stale. */
+  const age = Date.now() - started.getTime();
+
+  into.textContent = `API started ${age < 86400000
+    ? agoText(age)
+    : started.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+  /* Null rather than a guess is MARP's rule for the commit, so say so in those words
+     instead of printing an empty parenthesis. */
+  into.title = `This MARP process started ${started.toLocaleString()}, on commit `
+    + `${server.commit || 'unknown -- git could not answer when it started'}`;
+  into.hidden = false;
+}
+
 function wireFreshness() {
   if (!$('[data-freshness]')) return;
 
+  fillServerIdentity();
   paintFreshness();
 
   const tick = setInterval(paintFreshness, 1000);

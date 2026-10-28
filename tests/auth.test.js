@@ -181,6 +181,27 @@ describe('Local authentication', () => {
       permissions: [],
     });
 
+    /* **What is serving it, beside who it is.** A server serves the code it was
+       started with rather than the code on a branch, and one here ran five days
+       behind its checkout for a day -- the evidence looked like a defect in the
+       feature somebody had just written. This read is where that is answered,
+       because every screen already makes it before it draws. */
+    expect(typeof meRes.body.server.started_at).toBe('string');
+    expect(Number.isNaN(Date.parse(meRes.body.server.started_at))).toBe(false);
+
+    /* Null where git could not answer -- a deployed copy with no `.git` -- and a
+       full hash otherwise. Never a guess, because a screen renders it as fact. */
+    if (meRes.body.server.commit !== null) {
+      expect(meRes.body.server.commit).toMatch(/^[0-9a-f]{40}$/);
+    }
+
+    /* **Read once at startup, and the same on every read after.** That is the
+       property the whole thing rests on: re-reading HEAD later would report
+       whatever the working tree had since become, which is the lie being caught. */
+    const againRes = await agent.get('/api/v2/auth/me');
+
+    expect(againRes.body.server).toEqual(meRes.body.server);
+
     const logoutRes = await agent.post('/api/v2/auth/logout');
 
     expect(logoutRes.status).toBe(204);
