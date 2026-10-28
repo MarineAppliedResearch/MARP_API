@@ -945,9 +945,12 @@ function rowFor(view) {
       + '<svg class="ico sm"><use href="#i-trash"/></svg></button>'
     : '';
 
+  /* Cancel is wired by `wireJobsCancel`. The Open arrow that used to stand here on a
+     finished job had nothing behind it; the row's own expander is how a job is opened. */
   const actions = (live
-    ? '<button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
-    : '<button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button>')
+    ? `<button class="btn sm icon" type="button" data-cancel-job="${job.id}" aria-label="Cancel job ${job.id}"`
+      + ' title="Cancel this job"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
+    : '')
     + remove;
 
   /**
@@ -989,6 +992,7 @@ function rowFor(view) {
     + ` data-attempts="${job.attempts_made ?? 0}"`
     + ` data-max-attempts="${job.max_attempts ?? 0}"`
     + ` data-priority="${job.priority ?? 0}"`
+    + ` data-batch="${job.batch_id || ''}"`
     + ` data-by="${job.created_by ?? ''}"`
     /* **Which dataset a build built.** The Jobs detail shows job-level facts and the
        Datasets screen shows dataset-level ones, which is right -- but nothing said the
@@ -1194,7 +1198,9 @@ const jobsQuery = {
   issuesOnly: false,
   search: '',
   windowDays: 7,
-  sort: { key: 'created_at', dir: 'descending' },
+  /* `live` is no column: running first, then queued, then the rest newest first (#285).
+     Clicking a header replaces it with that column, as it always has. */
+  sort: { key: 'live', dir: 'descending' },
   page: 1,
   perPage: 18,
 };
@@ -1264,15 +1270,26 @@ function applyJobsQuery() {
   if (jobsQuery.search) views = views.filter((v) => v.haystack.includes(jobsQuery.search));
   views = views.filter((v) => Date.parse(v.job.created_at) >= since);
 
-  const key = JOBS_SORT_KEYS[jobsQuery.sort.key] || JOBS_SORT_KEYS.hupd;
-  const sign = jobsQuery.sort.dir === 'ascending' ? 1 : -1;
-  views.sort((a, b) => {
-    const left = key(a);
-    const right = key(b);
-    if (left < right) return -1 * sign;
-    if (left > right) return 1 * sign;
-    return b.job.id - a.job.id;  /* the same id tie-breaker the route uses */
-  });
+  if (jobsQuery.sort.key === 'live') {
+    /* **What is happening now, on page 1.** Newest first buried the four running pieces
+       of an 82-piece run among hundreds of finished jobs (#285). Sorted over the whole
+       window rather than the page, so it holds across pages -- which the Running and
+       Queued cards, reordering only the rows on screen, cannot do. */
+    const rank = (view) => ({ running: 0, queued: 1 }[view.state] ?? 2);
+    views.sort((a, b) => rank(a) - rank(b)
+      || Date.parse(b.job.created_at) - Date.parse(a.job.created_at)
+      || b.job.id - a.job.id);
+  } else {
+    const key = JOBS_SORT_KEYS[jobsQuery.sort.key] || JOBS_SORT_KEYS.hupd;
+    const sign = jobsQuery.sort.dir === 'ascending' ? 1 : -1;
+    views.sort((a, b) => {
+      const left = key(a);
+      const right = key(b);
+      if (left < right) return -1 * sign;
+      if (left > right) return 1 * sign;
+      return b.job.id - a.job.id;  /* the same id tie-breaker the route uses */
+    });
+  }
 
   jobsWindowViews = views;
 
@@ -7070,6 +7087,87 @@ async function datasetClause(id) {
  *
  * @returns {void}
  */
+/**
+ * Cancel: one job from its row or its detail, a ticked selection, or a whole run.
+ *
+ * **All three were drawn and none did anything** until #279: Isaac ticked a run's pieces,
+ * pressed Cancel and nothing happened. And a run is up to a hundred pieces paged eighteen
+ * to a screen, so ticking cannot reach one anyway -- the run's own button sends its
+ * `batch_id` and MARP finds the pieces, all of them, in one transaction.
+ *
+ * What came back is said in `#jobsDeleteSaid`, the screen's one place for "what the last
+ * action did", and the table is redrawn so every row shows its new state.
+ *
+ * @returns {void}
+ */
+function wireJobsCancel() {
+  const panel = $('table#jobs')?.closest('.panel');
+  if (!panel || !window.MarpApi) return;
+
+  /* "Skipped 12: 10 already succeeded, 2 already failed." Grouped by reason, because
+     twelve ids tell nobody anything that the two reasons do not. */
+  const said = (answer) => {
+    const skipped = answer.skipped || [];
+    const reasons = new Map();
+    for (const entry of skipped) reasons.set(entry.reason, (reasons.get(entry.reason) || 0) + 1);
+    const why = [...reasons].map(([reason, n]) => `${n} ${reason}`).join(', ');
+    sayJobsDelete(`Cancelled ${countOf(answer.cancelled, 'job')}.${skipped.length ? ` Skipped ${skipped.length}: ${why}.` : ''}`,
+      answer.cancelled ? 'ok' : 'bad');
+  };
+
+  const run = async (button, ask, body) => {
+    /* eslint-disable-next-line no-alert -- the app has no dialog of its own, and stopping
+       work somebody queued deserves a question. */
+    if (!window.confirm(ask)) return;
+    button.disabled = true;
+    try {
+      said(await window.MarpApi.cancelJobs(body));
+      await afterJobsDelete();
+    } catch (error) {
+      sayJobsDelete(error.message || `Could not cancel (${error.status || 'no answer'}).`, 'bad');
+    } finally {
+      /* **Always, not only on failure.** A row's button is thrown away by the redraw,
+         but the bulk bar's is not -- it stayed greyed after a successful cancel until
+         the page was reloaded, which Isaac found on the second selection. */
+      button.disabled = false;
+    }
+  };
+
+  /* Delegated, for the reason `wireJobsDelete` gives: the rows are replaced on every
+     filter, sort and page. */
+  const body = $('table#jobs tbody', panel);
+  if (body) {
+    body.addEventListener('click', (event) => {
+      const one = event.target.closest('[data-cancel-job]');
+      const whole = event.target.closest('[data-cancel-run]');
+      if (one) {
+        const row = $(`tr[data-job="${CSS.escape(one.dataset.cancelJob)}"]`, body);
+        const name = $('.jname .t', row)?.textContent.trim() || `Job ${one.dataset.cancelJob}`;
+        run(one, `Cancel "${name}"?\n\nA machine running it stops at its next heartbeat. A cancelled job is not started again.`,
+          { ids: [Number(one.dataset.cancelJob)] });
+      } else if (whole) {
+        run(whole, 'Cancel every piece of this run that is still queued or running?\n\n'
+          + 'Pieces that have already finished keep their results. A cancelled piece is not started again.',
+        { batch_id: whole.dataset.cancelRun });
+      }
+    });
+  }
+
+  const bulk = $('#bulkCancel', panel);
+  if (bulk) {
+    bulk.addEventListener('click', () => {
+      const ids = $$('tbody .chkbox', panel)
+        .filter((box) => box.checked)
+        .map((box) => Number(box.closest('tr[data-job]')?.dataset.job))
+        .filter(Boolean);
+      if (!ids.length) return;
+      run(bulk, `Cancel ${countOf(ids.length, 'job')}?\n\n`
+        + 'Any that have already finished are skipped, and this will say how many. A cancelled job is not started again.',
+      { ids });
+    });
+  }
+}
+
 function wireJobsDelete() {
   const panel = $('table#jobs')?.closest('.panel');
   if (!panel || !window.MarpApi) return;
@@ -7346,64 +7444,69 @@ async function renderJobsTable() {
  * Jobs keeps its complete list visible while the headline cards prioritize one
  * state. The overview history is a deterministic moving seam for later API data.
  */
+/**
+ * Fill an expanded job's attempts from `GET /gpu/jobs/:id`.
+ *
+ * **Fetched when the job is opened, not when the table is drawn.** A page is up to fifty
+ * rows and nobody opens most of them, so asking for every job's attempts up front would
+ * be fifty requests for one or two answers. Asked once per drawing of the row; a redraw
+ * builds a new row and asks again, which is what keeps it current.
+ *
+ * Each attempt is one machine's go at the job, so this is where a failure's own reason
+ * lives -- the last attempt's `failure_reason` is also lifted into the failed banner,
+ * because that sentence is the thing somebody opened a failed job to read.
+ *
+ * @param {Element} detail - The expanded row.
+ * @param {string} id - The job.
+ * @returns {Promise<void>}
+ */
+async function fillJobAttempts(detail, id) {
+  const place = $('[data-job-attempts]', detail);
+  if (!place || !window.MarpApi) return;
+
+  const at = (value) => {
+    if (!value) return '<span class="faint">&mdash;</span>';
+    const when = new Date(value);
+    return `${when.toISOString().slice(0, 10)} ${when.toTimeString().slice(0, 5)}`;
+  };
+
+  let attempts;
+  try {
+    ({ attempts = [] } = await window.MarpApi.getJob(id));
+  } catch (error) {
+    place.innerHTML = `<p class="faint">Could not load its attempts: ${escapeHtml(error.message || String(error.status || 'no answer'))}</p>`;
+    return;
+  }
+
+  if (!attempts.length) {
+    place.innerHTML = '<p class="faint">Never attempted.</p>';
+    return;
+  }
+
+  const rows = attempts.map((one) => {
+    const machine = (one.worker && one.worker.name) || (one.worker_id ? `Worker ${one.worker_id}` : '');
+    const done = one.progress_total
+      ? `${Number(one.progress_done || 0).toLocaleString()} / ${Number(one.progress_total).toLocaleString()} ${escapeHtml(one.progress_unit || '')}`
+      : '<span class="faint">&mdash;</span>';
+    return `<tr><td>${one.lease_epoch ?? ''}</td><td>${escapeHtml(machine)}</td><td>${escapeHtml(one.state || '')}</td>`
+      + `<td>${done}</td><td>${escapeHtml(one.progress_phase || '')}</td><td>${at(one.leased_at)}</td>`
+      + `<td>${at(one.finished_at)}</td><td>${one.failure_reason ? escapeHtml(one.failure_reason) : ''}</td></tr>`;
+  }).join('');
+
+  place.innerHTML = '<table class="tbl attempts-tbl"><thead><tr><th>Attempt</th><th>Machine</th><th>State</th>'
+    + '<th>Progress</th><th>Phase</th><th>Leased</th><th>Ended</th><th>Why it ended</th></tr></thead>'
+    + `<tbody>${rows}</tbody></table>`;
+
+  const reason = [...attempts].reverse().find((one) => one.failure_reason)?.failure_reason;
+  const banner = $('[data-job-failure]', detail);
+  if (banner && reason) banner.textContent = reason;
+}
+
 function wireJobsOverview() {
   const table = $('table#jobs');
   if (!table) return;
   const body = $('tbody', table);
   const metric = (label, value, note = '') => `<div class="jobmetric"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`;
-  const plotPath = (values, max) => values.map((value, index) => `${index ? 'L' : 'M'}${(46 + 654 * index / (values.length - 1)).toFixed(1)},${(174 - 150 * value / max).toFixed(1)}`).join(' ');
-  const chartGrid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/><line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
-  const trainingHistory = (endEpoch) => {
-    const loss = [
-      ['box-loss', 'Box loss', [1.78,1.53,1.31,1.15,1.01,.89,.78,.68,.59,.52,.46,.42]],
-      ['cls-loss', 'Class loss', [1.42,1.19,1.01,.86,.74,.63,.55,.48,.42,.37,.33,.29]],
-      ['dfl-loss', 'DFL loss', [1.66,1.48,1.31,1.18,1.07,.96,.86,.77,.69,.62,.56,.51]]
-    ];
-    const quality = [
-      ['precision', 'Precision', [.22,.31,.39,.46,.53,.59,.64,.68,.71,.74,.76,.78]],
-      ['recall', 'Recall', [.18,.25,.34,.41,.47,.54,.59,.63,.67,.69,.72,.74]],
-      ['map', 'mAP@50', [.12,.20,.29,.37,.45,.52,.58,.63,.68,.71,.74,.79]],
-      ['map95', 'mAP@50–95', [.06,.11,.17,.23,.29,.34,.39,.43,.46,.49,.51,.52]]
-    ];
-    const graph = (title, note, series, max, top, mid, aria) => `<article class="evaluation-card history-card" data-result-graph><header><div><h5>${title}</h5><p>${note}</p></div><div class="result-legend">${series.map(([key, label]) => `<button type="button" class="${key}" data-result-highlight="${key}">${label}</button>`).join('')}</div></header><div class="result-chart" role="img" aria-label="${aria}"><svg viewBox="0 0 740 205" aria-hidden="true">${chartGrid}<g class="result-axis"><text x="38" y="28">${top}</text><text x="38" y="103">${mid}</text><text x="38" y="178">0</text><text x="46" y="196">Epoch 1</text><text x="700" y="196">Epoch ${endEpoch}</text></g>${series.map(([key,, values]) => `<path class="result-line ${key}" d="${plotPath(values, max)}"/>`).join('')}</svg></div></article>`;
-    return `<section class="jobresults training-results"><header class="section-heading"><div><h4>Learning dynamics</h4><p>Optimization and validation quality are separated so unlike scales never imply a relationship.</p></div></header><div class="training-history-grid">${graph('Loss components', 'Lower is better · recorded each epoch', loss, 2, '2.0', '1.0', 'Box, classification and distribution focal loss by epoch')}${graph('Validation quality', 'Held-out validation split · higher is better', quality, 1, '1.0', '.5', 'Precision, recall, mAP at 50 IoU and mAP at 50 through 95 IoU by epoch')}</div></section>`;
-  };
-  const completedTrainingEvaluation = () => {
-    const classes = [
-      { name: 'Rockfish', support: 1860, p: .88, r: .84, f1: .86, ap50: .91, ap95: .63 },
-      { name: 'Flatfish', support: 1420, p: .84, r: .81, f1: .82, ap50: .87, ap95: .58 },
-      { name: 'Sculpin', support: 1120, p: .82, r: .77, f1: .79, ap50: .83, ap95: .54 },
-      { name: 'Lingcod', support: 880, p: .79, r: .75, f1: .77, ap50: .81, ap95: .51 },
-      { name: 'Pacific cod', support: 760, p: .78, r: .72, f1: .75, ap50: .79, ap95: .49 },
-      { name: 'Skate', support: 640, p: .76, r: .69, f1: .72, ap50: .76, ap95: .45 },
-      { name: 'Shark', support: 410, p: .73, r: .65, f1: .69, ap50: .72, ap95: .41 },
-      { name: 'Other fish', support: 2050, p: .71, r: .62, f1: .66, ap50: .68, ap95: .35 }
-    ];
-    const colors = classes.map((_, index) => `eval-c${index + 1}`);
-    const pr = classes.map((item, index) => {
-      const start = .995 - index * .008;
-      const values = [start,start-.01,start-.025,start-.045,start-.07,start-.10,start-.14,start-.19,start-.26,start-.35,start-.48,.08].map((value) => Math.max(.02, value - index * .017));
-      return `<path class="result-line ${colors[index]}" d="${plotPath(values, 1)}"/>`;
-    }).join('');
-    const legends = classes.map((item, index) => `<button type="button" class="${colors[index]}" data-result-highlight="${colors[index]}">${item.name}</button>`).join('');
-    const splitCell = (value, offset) => `<td data-test="${value.toFixed(2)}" data-val="${Math.min(.99, value + offset).toFixed(2)}" data-train="${Math.min(.99, value + offset * 2.2).toFixed(2)}">${value.toFixed(2)}</td>`;
-    const classRows = classes.map((item) => `<tr><th scope="row">${item.name}</th><td>${item.support.toLocaleString('en-US')}</td>${splitCell(item.p,.02)}${splitCell(item.r,.025)}${splitCell(item.f1,.022)}${splitCell(item.ap50,.018)}${splitCell(item.ap95,.024)}</tr>`).join('');
-    const matrix = classes.map((actual, row) => {
-      const diagonal = [.89,.85,.82,.79,.77,.74,.70,.67][row];
-      const rest = (1 - diagonal) / 7;
-      return `<b>${actual.name}</b>${classes.map((_, col) => {
-        const norm = col === row ? diagonal : rest * (1 + ((row + col) % 3 - 1) * .28);
-        const count = Math.round(actual.support * norm);
-        return `<i style="--heat:${Math.max(.04, norm).toFixed(2)}" data-norm="${Math.round(norm * 100)}%" data-count="${count.toLocaleString('en-US')}">${Math.round(norm * 100)}%</i>`;
-      }).join('')}`;
-    }).join('');
-    const balance = classes.map((item, index) => {
-      const max = 2050;
-      return `<div class="balance-row"><b>${item.name}</b><span><i class="train" style="width:${Math.round(item.support / max * 100)}%"></i><i class="val" style="width:${Math.round(item.support * .22 / max * 100)}%"></i><i class="test" style="width:${Math.round(item.support * .16 / max * 100)}%"></i></span><strong>${item.support.toLocaleString('en-US')}</strong></div>`;
-    }).join('');
-    return `<section class="training-evaluation" data-training-evaluation><header><div><h4>Final evaluation</h4><p><span data-split-label>Test</span> split · best checkpoint at epoch 94</p></div><div class="seg eval-splits" aria-label="Evaluation split"><button type="button" data-eval-split="train">Train</button><button type="button" data-eval-split="val">Validation</button><button type="button" class="on" data-eval-split="test" aria-pressed="true">Test</button></div></header><div class="evaluation-metrics">${metric('Macro F1', '0.78', '8 classes')}${metric('Precision', '0.81')}${metric('Recall', '0.76')}${metric('mAP@50', '0.79')}${metric('mAP@50–95', '0.52')}${metric('Best checkpoint', 'Epoch 94', 'last: epoch 100')}</div><div class="eval-tabs" role="tablist" aria-label="Evaluation views"><button type="button" class="on" role="tab" data-eval-tab="classes" aria-selected="true">Per-class quality</button><button type="button" role="tab" data-eval-tab="thresholds" aria-selected="false">Thresholds</button><button type="button" role="tab" data-eval-tab="confusion" aria-selected="false">Confusion matrix</button><button type="button" role="tab" data-eval-tab="balance" aria-selected="false">Class balance</button></div><div class="eval-view" data-eval-view="classes"><div class="class-metrics-wrap"><table class="class-metrics"><thead><tr><th>Class</th><th>Support</th><th>Precision</th><th>Recall</th><th>F1</th><th>AP@50</th><th>AP@50–95</th></tr></thead><tbody>${classRows}</tbody></table></div><article class="evaluation-card" data-result-graph><header><div><h5>Per-class precision–recall</h5><p>Eight classes · legend labels isolate individual curves</p></div><div class="result-legend eight-class">${legends}</div></header><div class="result-chart" role="img" aria-label="Precision recall curves for eight fish classes on the test split"><svg viewBox="0 0 740 205" aria-hidden="true">${chartGrid}<g class="result-axis"><text x="38" y="28">1.0</text><text x="38" y="103">.5</text><text x="38" y="178">0</text><text x="46" y="196">Recall 0</text><text x="700" y="196">Recall 1</text></g>${pr}</svg></div></article></div><div class="eval-view" data-eval-view="thresholds" hidden><article class="evaluation-card" data-result-graph><header><div><h5>Operating threshold</h5><p>Best macro F1 is 0.78 at confidence 0.61</p></div><div class="result-legend"><button type="button" class="precision" data-result-highlight="precision">Precision</button><button type="button" class="recall" data-result-highlight="recall">Recall</button><button type="button" class="f1-score" data-result-highlight="f1-score">F1</button></div></header><div class="result-chart" role="img" aria-label="Precision, recall and F1 by confidence threshold"><svg viewBox="0 0 740 205" aria-hidden="true">${chartGrid}<g class="result-axis"><text x="38" y="28">1.0</text><text x="38" y="103">.5</text><text x="38" y="178">0</text><text x="46" y="196">Confidence 0</text><text x="700" y="196">Confidence 1</text></g><path class="result-line precision" d="${plotPath([.31,.39,.47,.55,.63,.71,.78,.84,.89,.93,.96,.99],1)}"/><path class="result-line recall" d="${plotPath([.98,.96,.93,.89,.85,.80,.74,.66,.56,.43,.27,.06],1)}"/><path class="result-line f1-score" d="${plotPath([.47,.55,.62,.68,.72,.76,.78,.77,.69,.59,.42,.11],1)}"/><line class="threshold-mark" x1="445" y1="24" x2="445" y2="174"/><text class="threshold-label" x="451" y="38">chosen .61</text></svg></div></article></div><div class="eval-view" data-eval-view="confusion" hidden><article class="evaluation-card matrix-card"><header><div><h5>Confusion matrix</h5><p>Rows are actual class; columns are predicted class</p></div><div class="seg matrix-modes" aria-label="Confusion matrix values"><button type="button" class="on" data-matrix-mode="norm" aria-pressed="true">Normalized</button><button type="button" data-matrix-mode="count">Counts</button></div></header><div class="matrix-scroll"><div class="confusion eight" role="img" aria-label="Eight-class confusion matrix"><span></span>${classes.map((item) => `<b>${item.name}</b>`).join('')}${matrix}</div></div></article></div><div class="eval-view" data-eval-view="balance" hidden><article class="evaluation-card balance-card"><header><div><h5>Class balance</h5><p>Samples by class and dataset split</p></div><div class="balance-key"><span class="train">Train</span><span class="val">Validation</span><span class="test">Test</span></div></header><div class="balance-chart">${balance}</div></article></div><footer class="evaluation-artifacts"><div><b>Selected model</b><span>best.pt · epoch 94 · fitness 0.736</span></div><div><b>Last checkpoint</b><span>last.pt · epoch 100 · mAP@50–95 0.50</span></div><button class="btn sm" type="button">Weights &amp; plots</button><button class="btn sm" type="button">Hyperparameters</button></footer></section>`;
-  };
-
   /* **A dataset build is not a GPU job**, settled 2026-10-14 in #128. Six of
      them used to be prepended here, hand-written, because the design treated
      dataset construction as first-class work in *this* queue. The dashboard
@@ -7461,7 +7564,6 @@ function wireJobsOverview() {
     const progress = $('.jprog', head)?.textContent.trim() || 'Not started';
     const progressValue = Number($('.jprog', head)?.dataset.sort);
     const submitted = $('.jtime', head)?.textContent.trim().replace(/\s+/g, ' ') || '—';
-    const isTraining = type.toLowerCase() === 'training';
     const isDatasetBuild = type.toLowerCase() === 'dataset build';
 
     /* The dataset this build produced, as a link into the screen that owns it. The
@@ -7499,73 +7601,37 @@ function wireJobsOverview() {
     /* Nothing to offer is an absent strip, not an empty one. */
     const actions = (inner) => (inner ? `<div class="jobstate-actions">${inner}</div>` : '');
 
+    /* **Only what MARP records about this job.** Every number this section used to
+       draw -- a queue position worked out from the job id, "Waiting 8m 21s", "Priority
+       5", "12 GB GPU", "RTX 4090", "mAP@50 0.742" -- was written into the template and
+       shown on every job alike (#279). What is left comes off the row, and the attempts
+       below are fetched from the job itself when it is opened. */
+    const live = state === 'running' || state === 'queued';
+    const batch = head.dataset.batch;
+    const cancels = live
+      ? `<button class="btn sm" type="button" data-cancel-job="${id}" title="Stop this job. A machine running it stops at its next heartbeat.">Cancel job</button>`
+        + (batch ? `<button class="btn sm" type="button" data-cancel-run="${batch}" title="Cancel every piece of this run that is still queued or running">Cancel whole run</button>` : '')
+      : '';
+    const attemptText = maxAttempts ? `${attemptsMade} of ${maxAttempts}` : String(attemptsMade);
+    const measured = Number.isFinite(progressValue) && progressValue >= 0;
+
     let operational;
 
-    if (state === 'running' || state === 'paused' || state === 'cancelling') {
-      const stateNote = state === 'paused' ? 'Paused by itravers · capacity retained'
-        : state === 'cancelling' ? 'Finishing the current safe boundary'
-          : 'Healthy · heartbeat 4 seconds ago';
-      const measures = isDatasetBuild
-        ? metric('Frames', `${Math.max(9408, Math.round((progressValue || 47) * 632))} materialized`, progress)
-          + metric('Labels', `${Math.max(4100, Math.round((progressValue || 47) * 381))} written`)
-          + metric('Thumbnails', `${Math.max(2800, Math.round((progressValue || 47) * 296))} cached`)
-          + metric('Manifest', 'Pending', 'published only on success')
-        : isTraining
-        ? metric('Epoch', `${Math.max(1, Math.round((progressValue || 47) / 100 * 100))} / 100`, progress)
-          + metric('mAP@50', '0.742', 'best 0.751') + metric('Validation loss', '0.318', 'falling')
-          + metric('GPU', 'RTX 4090', '21.4 / 24 GB VRAM')
-        : metric('Frames', `${Math.max(8604, Math.round((progressValue || 47) * 183))} / 18,300`, progress)
-          + metric('Elapsed', '12m 04s') + metric('Remaining', '~13m') + metric('Throughput', '11.9 fps');
-      operational = `<section class="jobstate" data-job-state="active"><div class="jobstate-title"><div><h4>${isDatasetBuild ? 'Dataset materialization' : isTraining ? 'Training progress' : 'Inference progress'}</h4><p>${stateNote}</p></div><span class="bar wide"><i style="width:${Number.isFinite(progressValue) && progressValue > 0 ? progressValue : 47}%"></i></span></div><div class="jobmetrics">${measures}</div><div class="jobworkers"><span>${isDatasetBuild ? 'Build worker' : 'Workers'}</span><b>${isDatasetBuild ? 'dataset-builder-02' : isTraining ? 'bergstrom-4090' : 'campa-lab-02 · campa-lab-04 · reef-node-11'}</b><small>${isDatasetBuild ? 'image, label, thumbnail and manifest pipeline' : isTraining ? '1 GPU · exclusive lease' : '3 active · 21 ranges total'}</small></div></section>`;
+    if (state === 'running') {
+      operational = `<section class="jobstate" data-job-state="active"><div class="jobstate-title"><div><h4>Running</h4><p>On ${ranOn}</p></div>${measured ? `<span class="bar wide"><i style="width:${progressValue}%"></i></span>` : ''}</div><div class="jobmetrics">${metric('Progress', progress)}${metric('Attempt', attemptText)}</div>${actions(cancels)}</section>`;
     } else if (state === 'queued') {
-      const numericId = Number(String(id).replace(/\D/g, '')) || 1;
-      operational = `<section class="jobstate" data-job-state="queued"><div class="jobstate-title"><div><h4>Waiting for ${isDatasetBuild ? 'a build worker' : 'compute'}</h4><p>Eligible workers are busy; this job remains ready to lease.</p></div></div><div class="jobmetrics">${metric('Queue position', `#${numericId % 4 + 1}`, 'of 8 queued')}${metric('Waiting', '8m 21s', 'submitted today')}${metric('Priority', '5', 'normal')}${metric('Requirement', isDatasetBuild ? 'Build worker' : isTraining ? '24 GB GPU' : '12 GB GPU', isDatasetBuild ? 'storage + media access' : isTraining ? 'exclusive' : 'shareable')}</div><div class="jobstate-actions"><button class="btn sm" type="button">Start when available</button><button class="btn sm" type="button">Change priority</button><button class="btn sm danger" type="button">Cancel</button></div></section>`;
-    } else if (state === 'failed' || state === 'issues') {
-      const issue = state === 'failed' ? (isDatasetBuild ? 'Thumbnail reads failed during materialization' : isTraining ? 'CUDA out of memory during validation' : 'Worker stopped responding') : '2 ranges exhausted their retry limit';
-      const measures = isDatasetBuild
-        ? metric('Materialized', '6,104 / 18,660 frames') + metric('Labels', '5,988 written')
-          + metric('Partial output', 'Quarantined', 'not a usable dataset')
-        : isTraining
-        ? metric('Stopped', 'Epoch 37 / 100') + metric('Best mAP@50', '0.681') + metric('Checkpoint', 'Saved', 'last good epoch')
-        : metric('Succeeded', '19 / 21 ranges') + metric('Affected', '2 ranges', '1,800 frames') + metric('Partial results', '386 obs', 'not yet ingested');
-      operational = `<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>${issue}</h4><p>${state === 'failed' ? 'The job stopped and needs an operator decision.' : 'Usable work is preserved; only failed work needs to run again.'}</p></div></div><div class="jobmetrics">${measures}${metric('Attempts', state === 'failed' ? '1 / 3' : '3 / 3')}</div>${actions(duplicate)}</section>`;
+      const note = attemptsMade ? `Back in the queue after ${countOf(attemptsMade, 'attempt')}.` : 'No machine has leased it yet.';
+      operational = `<section class="jobstate" data-job-state="queued"><div class="jobstate-title"><div><h4>Waiting for a worker</h4><p>${note}</p></div></div><div class="jobmetrics">${metric('Priority', escapeHtml(priority))}${metric('Attempts', attemptText)}</div>${actions(cancels)}</section>`;
+    } else if (state === 'failed') {
+      operational = `<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>Failed</h4><p data-job-failure>Why it ended is recorded on its last attempt, below.</p></div></div><div class="jobmetrics">${metric('Progress', progress)}${metric('Attempts', attemptText)}</div>${actions(duplicate)}</section>`;
+    } else if (state === 'issues') {
+      operational = `<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>This piece finished; its run did not</h4><p>Another piece of the same run failed.</p></div></div><div class="jobmetrics">${metric('Progress', progress)}${metric('Attempts', attemptText)}</div></section>`;
     } else if (state === 'done') {
-      const measures = isTraining
-        ? metric('Registered', `${model} v1.0.3`) + metric('Best mAP@50', '0.781') + metric('Duration', '4h 18m') + metric('Checkpoint', '2.8 GB')
-        : metric('Observations', '412', 'ready for review') + metric('Ranges', '21 / 21') + metric('Duration', '26m 11s') + metric('Throughput', '11.6 fps');
-      operational = `<section class="jobstate" data-job-state="complete"><div class="jobstate-title"><div><h4>${isTraining ? 'Model version registered' : 'Results produced'}</h4><p>Completed cleanly; outputs are available to the rest of MARP.</p></div></div><div class="jobmetrics">${measures}</div><div class="jobstate-actions"><button class="btn sm" type="button">${isTraining ? 'Open model version' : 'Review observations'}</button><button class="btn sm" type="button">Run again</button></div></section>`;
+      operational = `<section class="jobstate" data-job-state="complete"><div class="jobstate-title"><div><h4>Finished</h4></div></div><div class="jobmetrics">${metric('Progress', progress)}${metric('Attempts', attemptText)}</div></section>`;
     } else {
-      operational = `<section class="jobstate" data-job-state="cancelled"><div class="jobstate-title"><div><h4>Job cancelled</h4><p>Cancelled by an operator; incomplete output was not published.</p></div></div><div class="jobmetrics">${metric('Stopped at', progress)}${metric('Cancelled by', 'itravers')}${metric('Reusable work', 'Preserved', 'completed ranges cached')}</div>${actions(`<button class="btn sm" type="button">Run again</button>${duplicate}`)}</section>`;
+      operational = `<section class="jobstate" data-job-state="cancelled"><div class="jobstate-title"><div><h4>${status}</h4></div></div><div class="jobmetrics">${metric('Stopped at', progress)}${metric('Attempts', attemptText)}</div>${actions(duplicate)}</section>`;
     }
 
-    let resultsPreview;
-    if (state === 'queued') {
-      resultsPreview = `<section class="jobresults empty"><div><h4>${isDatasetBuild ? 'Dataset output' : isTraining ? 'Training metrics' : 'Inference findings'}</h4><p>${isDatasetBuild ? 'No dataset artifacts exist until a build worker begins materialization.' : 'No result metrics exist until a worker begins this job.'}</p></div></section>`;
-    } else if (isDatasetBuild) {
-      resultsPreview = `<section class="jobresults dataset-build-results"><header class="section-heading"><div><h4>Dataset output so far</h4><p>Partial materialization is retained for retry but is not published as a ready dataset.</p></div></header><div class="jobmetrics">${metric('Membership', scopeContext || 'resolved')}${metric('Split', '70 / 20 / 10', 'overlap groups kept together')}${metric('Output', model, modelVersion)}${metric('Publication', state === 'failed' ? 'Blocked' : 'Pending', 'ready only after success')}</div></section>`;
-    } else if (isTraining) {
-      const endEpoch = state === 'done' ? 100 : Math.max(8, progressValue > 0 ? Math.round(progressValue) : 37);
-      resultsPreview = trainingHistory(endEpoch);
-      if (state === 'done') {
-        resultsPreview += completedTrainingEvaluation();
-      }
-    } else {
-      const family = /crab/i.test(name) ? ['Tanner crab', 'King crab', 'Hermit crab', 'Unknown crab']
-        : /fish|rockfish/i.test(name) ? ['Rockfish', 'Flatfish', 'Sculpin', 'Other fish']
-          : /sponge/i.test(name) ? ['Vase sponge', 'Boot sponge', 'Glass sponge', 'Other sponge']
-            : ['Sea star', 'Crab', 'Anemone', 'Sponge'];
-      const completeShare = state === 'done' || state === 'issues' ? 1 : Math.max(.16, progressValue > 0 ? progressValue / 100 : .37);
-      const baseCounts = [146, 118, 79, 69];
-      const counts = baseCounts.map((count) => Math.max(1, Math.round(count * completeShare)));
-      const confidences = [91, 87, 83, 78];
-      const ranges = ['84–97%', '79–94%', '72–91%', '66–88%'];
-      const maxCount = Math.max(...counts);
-      const classRows = family.map((label, index) => `<div class="finding-row"><b>${label}</b><span class="finding-count"><i style="width:${Math.round(counts[index] / maxCount * 100)}%"></i><strong>${counts[index]}</strong></span><span class="finding-confidence"><i style="width:${confidences[index]}%"></i><strong>${confidences[index]}%</strong><small>${ranges[index]}</small></span></div>`).join('');
-      const progressSeries = [0,.06,.15,.23,.34,.46,.57,.68,.77,.86,.94,1];
-      const series = baseCounts.map((count, classIndex) => progressSeries.map((share, index) => Math.round(count * completeShare * Math.max(0, share + Math.sin(index + classIndex) * .018))));
-      const total = counts.reduce((sum, count) => sum + count, 0);
-      resultsPreview = `<section class="jobresults inference-results"><header><div><h4>${state === 'done' ? 'Final findings' : 'Findings so far'}</h4><p>${total} detections · confidence shows median and 10–90% range</p></div><div class="result-legend classes">${family.map((label, index) => `<button type="button" class="class-${index + 1}" data-result-highlight="class-${index + 1}">${label}</button>`).join('')}</div></header><div class="inference-result-grid"><div class="finding-list"><div class="finding-head"><span>Class</span><span>Detections</span><span>Confidence</span></div>${classRows}</div><div class="result-chart" role="img" aria-label="Cumulative detections by processed range for ${family.join(', ')}"><svg viewBox="0 0 740 205" aria-hidden="true"><g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/><line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g><g class="result-axis"><text x="38" y="28">${maxCount}</text><text x="38" y="103">${Math.round(maxCount / 2)}</text><text x="38" y="178">0</text><text x="46" y="196">First range</text><text x="700" y="196">Latest range</text></g>${series.map((values, index) => `<path class="result-line class-${index + 1}" d="${plotPath(values, maxCount)}"/>`).join('')}</svg></div></div></section>`;
-    }
     const expand = document.createElement('td');
     expand.className = 'ex';
     expand.innerHTML = `<button class="exbtn" type="button" aria-label="Expand ${name}"><svg class="ico sm"><use href="#i-right"/></svg></button>`;
@@ -7581,144 +7647,21 @@ function wireJobsOverview() {
         <dl class="kv"><dt>Submitted</dt><dd>${submitted}</dd><dt>Submitted by</dt><dd>${submittedBy}</dd><dt>Priority</dt><dd>${priority}</dd><dt>Attempt policy</dt><dd>Up to ${maxAttempts} attempt${maxAttempts === 1 ? '' : 's'}</dd></dl>
       </div>
       ${operational}
-      ${resultsPreview}
-      <details class="diag"><summary>Diagnostics<span class="later">Attempts, worker lease and event log</span></summary><div class="dbody">
+      <details class="diag"><summary>Diagnostics<span class="later">Every attempt, and why each ended</span></summary><div class="dbody">
         <dl class="kv"><dt>Attempt</dt><dd>${attemptsMade} of ${maxAttempts}</dd><dt>Ran on</dt><dd>${ranOn}</dd><dt>Machines tried</dt><dd>${machines}</dd><dt>Job ID</dt><dd class="mono">${id}</dd></dl>
-        <div class="log"><div><span class="t">12:36:55</span><span class="l" data-lvl="info">info</span><span class="m">job ${id} status updated to ${status.toLowerCase()}</span></div><div><span class="t">12:36:54</span><span class="l" data-lvl="info">info</span><span class="m">worker checkpoint and lease state recorded</span></div></div>
+        <div class="jobattempts" data-job-attempts="${id}"><p class="faint">Opening the job loads its attempts.</p></div>
       </div></details>
     </div></td>`;
     head.after(detail);
-  });
 
-  $$('.jobresults:not(.empty)', body).forEach((results) => {
-    const topHeader = $(':scope > header', results);
-    const topBody = results.classList.contains('inference-results')
-      ? $(':scope > .inference-result-grid', results) : $(':scope > .result-chart', results);
-    if (topHeader && topBody) {
-      const group = document.createElement('div');
-      group.className = 'result-group';
-      group.dataset.resultGraph = '';
-      results.insertBefore(group, topHeader);
-      group.append(topHeader, topBody);
-    }
-  });
-
-  $$('[data-result-graph]', body).forEach((results) => {
-    const buttons = $$('[data-result-highlight]', results);
-    const highlight = (name) => {
-      const active = results.dataset.resultHighlight === name ? '' : name;
-      results.dataset.resultHighlight = active;
-      results.classList.toggle('is-highlighted', Boolean(active));
-      /* The stub and the break mark belong to a line and carry its key class, so they
-         follow it -- a highlighted series whose off-the-top mark stayed behind at full
-         strength would attach that number to whichever line is lit. */
-      $$('.result-line, .result-stub, .result-break', results).forEach((line) => line.classList.toggle('highlighted', Boolean(active) && line.classList.contains(active)));
-      buttons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.resultHighlight === active)));
-    };
-    buttons.forEach((button) => {
-      button.setAttribute('aria-pressed', 'false');
-      if (!button.title) button.title = `Highlight only ${button.textContent.trim()} on this graph; select it again or press Escape to restore every series`;
-      button.addEventListener('click', () => highlight(button.dataset.resultHighlight));
+    /* However it was opened -- its own row, Expand all, or a `?job=` link -- the row's
+       `hidden` is what changes, so that is what is watched. Once per drawing. */
+    const watch = new MutationObserver(() => {
+      if (detail.hidden) return;
+      watch.disconnect();
+      fillJobAttempts(detail, id);
     });
-    results.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && results.classList.contains('is-highlighted')) {
-        const selected = buttons.find((button) => button.getAttribute('aria-pressed') === 'true');
-        highlight('');
-        selected?.focus();
-      }
-    });
-  });
-
-  $$('[data-training-evaluation]', body).forEach((evaluation) => {
-    const artifactItems = [
-      ['Selected checkpoint', 'best.pt', '2.8 GB', 'Epoch 94 · fitness 0.736', 'Weights'],
-      ['Last checkpoint', 'last.pt', '2.8 GB', 'Epoch 100 · mAP@50–95 0.50', 'Weights'],
-      ['Epoch metrics', 'results.csv', '18 KB', '100 epochs · loss and validation metrics', 'Table'],
-      ['Resolved arguments', 'args.yaml', '4 KB', 'Exact submitted and derived run settings', 'Config'],
-      ['Evaluation plots', 'plots/', '11 files', 'PR, F1, P, R, confusion and label plots', 'Images']
-    ].map(([kind, name, size, note, format], index) => `<details class="artifact-row"${index === 0 ? ' open' : ''}><summary title="${kind}: ${note}. Expand for its recorded path and availability."><span><small>${kind}</small><b>${name}</b></span><span class="artifact-format">${format}</span><strong>${size}</strong></summary><div class="artifact-detail"><p>${note}</p><dl><div><dt>Recorded path</dt><dd class="mono">runs/1739/${name}</dd></div><div><dt>Availability</dt><dd><span class="artifact-state">Recorded</span> Download route not implemented</dd></div></dl></div></details>`).join('');
-    const configGroup = (title, items) => `<section class="config-group"><h6>${title}</h6><dl>${items.map(([label, value, note = '']) => `<div><dt>${label}</dt><dd>${value}${note ? `<small>${note}</small>` : ''}</dd></div>`).join('')}</dl></section>`;
-    const configuration = [
-      configGroup('Data', [['Dataset', 'GULF_2025_Fish_Train_v1'], ['Split', 'Train 70% · validation 20% · test 10%'], ['Training samples', '9,140'], ['Classes', '8'], ['Image policy', 'Letterbox · preserve aspect ratio']]),
-      configGroup('Model & input', [['Base model', 'MARP-Fish-Det v1.1.3'], ['Architecture', 'YOLOv8l detector'], ['Input size', '1280 × 1280 px'], ['Pretrained', 'Yes · registered checkpoint'], ['Batch size', '16', 'automatic mixed precision']]),
-      configGroup('Optimization', [['Epochs', '100'], ['Optimizer', 'AdamW'], ['Initial learning rate', '0.001'], ['Schedule', 'Cosine decay'], ['Weight decay', '0.0005'], ['Warm-up', '3 epochs'], ['Early stopping', '20 epochs patience']]),
-      configGroup('Reproducibility & runtime', [['Seed', '42'], ['Deterministic mode', 'Enabled'], ['Worker', 'gpu-worker-03'], ['Accelerator', '2 × NVIDIA A100 80 GB'], ['Runtime', 'CUDA 12.4 · PyTorch 2.5'], ['Training package', 'Ultralytics 8.3.41']])
-    ].join('');
-    const footer = $('.evaluation-artifacts', evaluation);
-    const drawerButtons = $$('button', footer);
-    drawerButtons[0].textContent = 'Artifacts';
-    drawerButtons[0].dataset.evaluationDrawerButton = 'artifacts';
-    drawerButtons[1].textContent = 'Run configuration';
-    drawerButtons[1].dataset.evaluationDrawerButton = 'configuration';
-    drawerButtons.forEach((button) => button.setAttribute('aria-expanded', 'false'));
-    footer.insertAdjacentHTML('afterend', `<div class="evaluation-drawers"><section class="evaluation-drawer" data-evaluation-drawer="artifacts" hidden><header><div><h5>Run artifacts</h5><p>Files recorded by this training run. Expand an item for provenance and availability.</p></div><button class="btn sm" type="button" data-close-evaluation-drawer aria-label="Close run artifacts">Close</button></header><div class="artifact-list">${artifactItems}</div></section><section class="evaluation-drawer" data-evaluation-drawer="configuration" hidden><header><div><h5>Resolved run configuration</h5><p>The settings the worker actually received, including derived defaults.</p></div><button class="btn sm" type="button" data-close-evaluation-drawer aria-label="Close run configuration">Close</button></header><div class="config-groups">${configuration}</div></section></div>`);
-    const drawers = $$('[data-evaluation-drawer]', evaluation);
-    const setDrawer = (name = '') => {
-      drawers.forEach((drawer) => { drawer.hidden = drawer.dataset.evaluationDrawer !== name; });
-      drawerButtons.forEach((button) => {
-        const on = button.dataset.evaluationDrawerButton === name;
-        button.classList.toggle('on', on);
-        button.setAttribute('aria-expanded', String(on));
-      });
-    };
-    drawerButtons.forEach((button) => button.addEventListener('click', () => {
-      const name = button.dataset.evaluationDrawerButton;
-      setDrawer(button.getAttribute('aria-expanded') === 'true' ? '' : name);
-    }));
-    $$('[data-close-evaluation-drawer]', evaluation).forEach((button) => button.addEventListener('click', () => {
-      const active = drawerButtons.find((control) => control.getAttribute('aria-expanded') === 'true');
-      setDrawer();
-      active?.focus();
-    }));
-    evaluation.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && drawerButtons.some((button) => button.getAttribute('aria-expanded') === 'true')) {
-        const active = drawerButtons.find((button) => button.getAttribute('aria-expanded') === 'true');
-        setDrawer();
-        active?.focus();
-      }
-    });
-
-    const tabs = $$('[data-eval-tab]', evaluation);
-    const views = $$('[data-eval-view]', evaluation);
-    tabs.forEach((tab) => tab.addEventListener('click', () => {
-      tabs.forEach((other) => {
-        const on = other === tab;
-        other.classList.toggle('on', on);
-        other.setAttribute('aria-selected', String(on));
-      });
-      views.forEach((view) => { view.hidden = view.dataset.evalView !== tab.dataset.evalTab; });
-    }));
-
-    const summaryValues = {
-      test: ['0.78', '0.81', '0.76', '0.79', '0.52'],
-      val: ['0.80', '0.83', '0.79', '0.81', '0.54'],
-      train: ['0.85', '0.88', '0.83', '0.87', '0.61']
-    };
-    const splitButtons = $$('[data-eval-split]', evaluation);
-    splitButtons.forEach((button) => button.addEventListener('click', () => {
-      const split = button.dataset.evalSplit;
-      splitButtons.forEach((other) => {
-        const on = other === button;
-        other.classList.toggle('on', on);
-        other.setAttribute('aria-pressed', String(on));
-      });
-      $('[data-split-label]', evaluation).textContent = split === 'val' ? 'Validation' : split[0].toUpperCase() + split.slice(1);
-      $$('.evaluation-metrics .jobmetric > b', evaluation).slice(0, 5)
-        .forEach((value, index) => { value.textContent = summaryValues[split][index]; });
-      $$('[data-test][data-val][data-train]', evaluation)
-        .forEach((cell) => { cell.textContent = cell.dataset[split]; });
-    }));
-
-    const matrixButtons = $$('[data-matrix-mode]', evaluation);
-    matrixButtons.forEach((button) => button.addEventListener('click', () => {
-      const mode = button.dataset.matrixMode;
-      matrixButtons.forEach((other) => {
-        const on = other === button;
-        other.classList.toggle('on', on);
-        other.setAttribute('aria-pressed', String(on));
-      });
-      $$('.confusion i[data-norm]', evaluation).forEach((cell) => { cell.textContent = cell.dataset[mode]; });
-    }));
+    watch.observe(detail, { attributes: true, attributeFilter: ['hidden'] });
   });
 
   const groups = () => $$('tr.runrow-head', body).map((head) => [head, head.nextElementSibling]);
@@ -11937,8 +11880,6 @@ const TIPS = {
   /* buttons */
   'More filters': 'Filter by worker, model, submitter or date',
   'Expand all': "Open every run's curves at once",
-  'Reprioritize': 'Move the selected jobs up or down the queue',
-  'Retry failed': 'Re-run only the pieces that failed',
   'Clear selection': 'Deselect every row',
   'Run inference': 'Submit the job as configured',
   'Start training': 'Submit the run as configured',
@@ -11951,12 +11892,8 @@ const TIPS = {
   'Retry': 'Re-run this job from the beginning',
   'Retry 2': 'Re-run only the two pieces that failed',
   'Stop': 'End this run now',
-  'Diagnostics': 'Attempts, leases and the event log',
-  'Open model version': 'Open the registered model version produced by this completed training job',
+  'Diagnostics': 'Every attempt at this job, and why each ended',
   'Open model': 'Open this model and version in the model registry',
-  'Review observations': 'Open the observations produced by this inference job for review',
-  'Start when available': 'Keep this job queued and begin automatically when eligible compute is free',
-  'Change priority': 'Adjust where this queued job competes for eligible compute',
   'Cancel': 'Stop this job and prevent it from taking more work',
   'Duplicate with changes': 'Create a new job prefilled from this one, then edit it before submitting',
   'Pause': 'Stop assigning new work while preserving completed progress',
@@ -14031,6 +13968,7 @@ Promise.all([renderJobsTable(), renderWorkersTable(), renderDashboardScreen(), r
      are the ones that bind once, to controls that outlive every redraw. */
   wireJobsControls();
   wireJobsDelete();
+  wireJobsCancel();
   wireWorkersControls();
   wireModelsControls();
   wireSorting();

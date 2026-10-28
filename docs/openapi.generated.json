@@ -4197,6 +4197,55 @@
           }
         }
       },
+      "GpuJobsCancelRequest": {
+        "type": "object",
+        "description": "Exactly one of `ids` and `batch_id`.",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 200,
+            "example": [
+              21805,
+              21806
+            ],
+            "description": "The jobs to cancel."
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Cancel every job in this run."
+          }
+        }
+      },
+      "GpuJobsCancelResponse": {
+        "type": "object",
+        "properties": {
+          "cancelled": {
+            "type": "integer",
+            "example": 70,
+            "description": "How many jobs this call cancelled."
+          },
+          "skipped": {
+            "type": "array",
+            "description": "Each job that was not cancelled, and why: already finished, or no such job.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "reason": {
+                  "type": "string",
+                  "example": "already succeeded"
+                }
+              }
+            }
+          }
+        }
+      },
       "GpuRequeueRequest": {
         "type": "object",
         "description": "Which video to requeue owed frames for. Omit both fields to requeue every video with interrupted work.",
@@ -17263,6 +17312,49 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/jobs/cancel": {
+      "post": {
+        "summary": "Cancel a selection of jobs, or every piece of one run",
+        "description": "Cancels the jobs named by `ids`, or every job sharing one `batch_id` -- the pieces of one split video. Exactly one of the two. Each job is cancelled exactly as `POST /gpu/jobs/{id}/cancel` would cancel it, and all of them in one transaction, so a run is cancelled together or not at all.\n\n**A job that has already finished is skipped and named**, with its state as the reason, and so is an id with no job. Cancelling something finished does nothing, which is not an error, but a caller who asked for 82 and got 70 is owed the other 12.\n\nA selection by `ids` is capped at 200, the same as a bulk delete. A run is not capped: it is a set MARP made, named rather than listed. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuJobsCancelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many were cancelled, and each one that was not with why.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuJobsCancelResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

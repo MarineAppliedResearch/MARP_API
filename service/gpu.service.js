@@ -2416,6 +2416,56 @@ class GpuService {
 
 
     /**
+     * Cancel a selection of jobs, or every piece of one run.
+     *
+     * Exactly one of `ids` and `batch_id`. Both would leave it unclear whether the
+     * caller meant the union or the overlap, so that is refused rather than guessed.
+     * The selection is capped at the same 200 as the bulk delete; a run is not,
+     * because a run is a set MARP made and the caller is naming it, not listing it.
+     *
+     * @async
+     * @param {Object} [body] - `{ids}` (an array or comma-separated) or `{batch_id}`.
+     * @returns {Promise<{cancelled: number, skipped: Array<{id: number, reason: string}>}>}
+     * @throws {ApiError} 400 when neither or both are given, or either is malformed.
+     */
+    async cancelJobs(body = {}) {
+        const MAX_SELECTION = 200;
+        const hasIds = body.ids !== undefined && body.ids !== null;
+        const hasBatch = body.batch_id !== undefined && body.batch_id !== null;
+
+        if (hasIds === hasBatch) invalid('Give either ids or batch_id, not both and not neither.');
+
+        if (hasBatch) {
+            const batchId = String(body.batch_id).trim();
+
+            /* `batch_id` is a uuid column, and anything else reaching the query is a
+               500 from PostgreSQL rather than the 400 it is. */
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batchId)) {
+                invalid('batch_id must be a uuid.');
+            }
+
+            const { cancelled, skipped } = await gpuRepository.cancelJobs({ batchId });
+            return { cancelled: cancelled.length, skipped };
+        }
+
+        const raw = Array.isArray(body.ids) ? body.ids : String(body.ids).split(',');
+        const ids = raw.map((value) => String(value).trim()).filter(Boolean).map(Number);
+
+        if (!ids.length) invalid('ids must name at least one job.');
+
+        if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+            invalid('ids must all be positive integers.');
+        }
+
+        if (ids.length > MAX_SELECTION) {
+            invalid(`ids names ${ids.length} jobs; ${MAX_SELECTION} is the most one request will cancel.`);
+        }
+
+        const { cancelled, skipped } = await gpuRepository.cancelJobs({ ids: [...new Set(ids)] });
+        return { cancelled: cancelled.length, skipped };
+    }
+
+    /**
      * What clearing a state would take with it, counted and deleting nothing.
      *
      * **A GET, not a flag on the DELETE, and that is the whole point of it.** An unknown

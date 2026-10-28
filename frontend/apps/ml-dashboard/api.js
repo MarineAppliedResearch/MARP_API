@@ -1172,6 +1172,19 @@
   }
 
   /**
+   * `POST /api/v2/gpu/jobs/cancel` -- cancel a selection, or every piece of one run.
+   *
+   * One transaction on the server, so a run of 82 pieces is cancelled together. What was
+   * already finished comes back in `skipped` with its state as the reason.
+   *
+   * @param {{ids: number[]}|{batch_id: string}} which - Exactly one of the two.
+   * @returns {Promise<{cancelled: number, skipped: Array<{id: number, reason: string}>}>}
+   */
+  function cancelJobs(which) {
+    return request('/gpu/jobs/cancel', { method: 'POST', body: which });
+  }
+
+  /**
    * `POST /api/v2/gpu/workers/:id/rename` -- the one worker mutation that
    * exists. Pause, drain, retire and the rest are gap 7.
    *
@@ -1934,6 +1947,7 @@
     listUsers,
     submitJob,
     cancelJob,
+    cancelJobs,
     deleteJob,
     deleteJobs,
     deletableJobs,

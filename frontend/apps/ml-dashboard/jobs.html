@@ -122,9 +122,9 @@
           </div>
           <div class="bulk" id="bulk" hidden>
             <span><span class="n" id="bulkN"></span> selected</span>
-            <button class="btn sm">Reprioritize</button>
-            <button class="btn sm">Retry failed</button>
-            <button class="btn sm">Cancel</button>
+            <!-- Reprioritize and Retry failed stood here from the mockup with nothing behind
+                 them; MARP has no way to change a job's priority or retry one (#279). -->
+            <button class="btn sm" type="button" id="bulkCancel"><svg class="ico sm"><use href="#i-stop"/></svg>Cancel</button>
             <button class="btn sm danger" type="button" id="bulkDelete"><svg class="ico sm"><use href="#i-trash"/></svg>Delete</button>
             <button class="btn sm ghost sp" id="bulkClear">Clear selection</button>
           </div>
@@ -138,7 +138,7 @@
                   <th class="chk"><input class="chkbox" type="checkbox" id="all" aria-label="Select every job on this page"></th>
                   <th class="hjob sortable">Job</th><th class="htype sortable">Type</th><th class="hscope sortable">Scope</th>
                   <th class="hmodel sortable">Model / output</th><th class="hstatus sortable">Status</th><th class="hprog sortable">Progress</th>
-                  <th class="hworker sortable" title="The machine that made the latest attempt">Worker</th><th class="hupd sortable" aria-sort="descending">Submitted</th><th class="hseen sortable" title="The later of the job's own timestamp and its latest heartbeat">Updated</th>
+                  <th class="hworker sortable" title="The machine that made the latest attempt">Worker</th><th class="hupd sortable">Submitted</th><th class="hseen sortable" title="The later of the job's own timestamp and its latest heartbeat">Updated</th>
                   <th class="hacts"><span class="vh">Actions</span></th>
                 </tr>
               </thead>
