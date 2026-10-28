@@ -8554,7 +8554,10 @@ function modelConfigMarkup() {
     + '<label>Track threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.30" data-setting="track_thresh"></label>'
     + '<label>Match threshold<input class="inp" type="number" min="0" max="1" step="0.01" value="0.70" data-setting="match_thresh"></label>'
     + '<label>Track buffer (frames)<input class="inp" type="number" min="1" value="240" data-setting="track_buffer"></label>'
-    + '<label>Piece size (frames)<input class="inp" type="number" min="1" value="900" data-setting="piece_frames"></label>'
+    /* **Minutes, not frames.** This was a frame count defaulting to 900 -- carried over
+       from the mockup, never chosen -- which is thirty seconds of 30 fps video and cut
+       three videos into 82 jobs. MARP converts at each video's own rate. */
+    + '<label>Piece length (minutes)<input class="inp" type="number" min="0.5" step="0.5" value="5" data-setting="piece_minutes"></label>'
     + '<label class="check"><input type="checkbox" data-setting="mot20"><span>MOT20 mode</span></label>'
     /* Stated rather than chosen. `reduction/keyframes.py` registers exactly one --
        `("v3_dirpad", "1")` -- and the two options here were "Best frame of each
@@ -8811,7 +8814,7 @@ function inferenceParams(config) {
     const key = input.dataset.setting;
 
     // Not a worker setting: it splits the submission into jobs, which is MARP's business.
-    if (key === 'piece_frames' || input.disabled) return;
+    if (key === 'piece_minutes' || input.disabled) return;
 
     if (input.type === 'checkbox') {
       if (input.checked) params[key] = true;
@@ -8894,8 +8897,8 @@ async function inferenceSubmissions() {
           return;
         }
 
-        const piece = $('[data-setting="piece_frames"]', config);
-        const pieceFrames = Number(piece ? piece.value : NaN);
+        const piece = $('[data-setting="piece_minutes"]', config);
+        const pieceMinutes = Number(piece ? piece.value : NaN);
         const params = inferenceParams(config);
         const body = {
           kind: 'inference',
@@ -8937,7 +8940,7 @@ async function inferenceSubmissions() {
           if (to !== '') body.spec.range.end_frame = Number(to);
         }
 
-        if (Number.isInteger(pieceFrames) && pieceFrames > 0) body.piece_frames = pieceFrames;
+        if (Number.isFinite(pieceMinutes) && pieceMinutes > 0) body.piece_seconds = pieceMinutes * 60;
         if (Object.keys(params).length) body.spec.params = params;
 
         bodies.push(body);
@@ -9145,16 +9148,11 @@ function wireInferenceForm() {
   run.addEventListener('click', async () => {
     const asked = await inferenceSubmissions();
 
-    /* The spec panel still opens, because somebody about to spend GPU hours should be
-       able to read what is going. It shows what was actually sent, not a sketch of it:
-       it used to print a `kind: 'inference_plan'` object that no MARP route accepts,
-       naming models by their display text and carrying no session, no hash and no
-       frames. Nothing was ever submitted. */
-    $('#specText').textContent = JSON.stringify(asked.bodies || asked.refusals, null, 2);
-    $('#specOut').hidden = false;
-
+    /* **Every refusal, in the status line.** They used to be readable in full only in a
+       panel that printed the raw request -- which Isaac pointed out nobody should be
+       shown -- while the status carried the first. */
     if (asked.refusals) {
-      sayRunStatus(asked.refusals[0], 'warning');
+      sayRunStatus(asked.refusals.join(' '), 'warning');
       return;
     }
 
