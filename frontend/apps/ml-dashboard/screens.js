@@ -4646,7 +4646,20 @@ async function renderInferenceScreen() {
  * and cache placement nothing records at all. Isaac asked for both columns to stay --
  * *"later maybe we will keep those scores"* -- so they wait rather than disappear.
  */
-const NOT_IN_REGISTRY = '<span class="dash" title="Nothing serves this yet: metrics_summary records precision, recall and mAP but no route lists them by run, and no worker reports which models it holds">&mdash;</span>';
+/**
+ * Something the registry has no way to know.
+ *
+ * **Half of what this used to say stopped being true.** It claimed that
+ * `metrics_summary` records precision, recall and mAP *"but no route lists them by run"*
+ * — and `GET /training_run/:id/metrics` has listed them by run since this morning. The
+ * column that half was for is gone, so the sentence survived describing nothing.
+ *
+ * What is left is true and checked: a worker's capability payload carries its engines,
+ * its reductions, its torch and CUDA versions and its hardware, and **nothing about which
+ * model weights it has on disk**. So *Cached on workers* is a question no machine is
+ * currently asked.
+ */
+const NOT_IN_REGISTRY = '<span class="dash" title="No worker reports which model weights it holds">&mdash;</span>';
 
 /**
  * A model MARP has no training run for.
@@ -8901,7 +8914,21 @@ function wireInferenceForm() {
  * hides the list.
  */
 /** `Dataset` does not carry this. Distinct from "not measured yet". */
-const NOT_IN_DATASET = '<span class="dash" title="Not carried by the dataset record: it has name, description, location, num_samples, num_observations, num_classes, source, status and timestamps, and nothing else (gap 16)">&mdash;</span>';
+/**
+ * A count this dataset does not have.
+ *
+ * **The tooltip used to name a gap, and the gap had closed.** It listed the columns
+ * `datasets` carries and said *"and nothing else (gap 16)"* — but the table has had
+ * `notes`, `archive_path`, `archive_sha256`, `archive_bytes`, `task` and `crop_source`
+ * added since that sentence was written, and every figure this constant is actually used
+ * for — `num_samples`, `num_observations`, `num_classes` — **is a column**. So it was
+ * never saying what it appeared to say: the record carries these, this dataset has not
+ * been given them.
+ *
+ * Which makes it a fact about one row rather than a standing claim about MARP, and that
+ * is the whole of the difference Isaac has been pointing at all day.
+ */
+const NOT_IN_DATASET = '<span class="dash" title="Not recorded for this dataset">&mdash;</span>';
 
 /**
  * Puts the saved datasets from `GET /api/v2/dataset` into the lifecycle table.
