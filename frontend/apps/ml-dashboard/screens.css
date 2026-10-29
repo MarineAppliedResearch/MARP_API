@@ -759,8 +759,7 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 /* Thin per-class lines under one thick mean, which is the shape of the plot everybody
    who has trained a model already knows. The classes are deliberately quiet: they are
    the spread, and the mean is the reading. */
-.curve-class { stroke-width: 1.2; opacity: .42; }
-.curve-mean { --key: var(--cyan-300); stroke-width: 3.2; opacity: 1; }
+.curve-mean { --key: var(--cyan-300); }
 /* **The one thing on every screen that says whether any of it is still true.** Quiet while
    it is fine and loud only when it is not: a stale page looks exactly like a current one,
    so the failure states are the ones worth seeing from across the room. */
@@ -775,8 +774,6 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .raw-metrics { display: flex; gap: 12px; padding: 0 12px 10px; }
 .raw-metrics a { color: var(--muted); font-size: 10.5px; text-decoration: underline; text-underline-offset: 2px; }
 .raw-metrics a:hover { color: var(--text); }
-.curve-key { display: flex; align-items: center; gap: 6px; padding: 0 12px 10px; color: var(--muted); font-size: 10.5px; }
-.curve-key .mean { width: 16px; height: 3px; border-radius: 2px; background: var(--cyan-300); }
 /* The AP column reads as a ranking rather than as five decimals to compare by eye. The
    bar sits behind the number rather than beside it, so the column keeps its width. */
 .apcell { position: relative; isolation: isolate; }

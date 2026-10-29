@@ -2593,9 +2593,9 @@ function curveChart(spec, series) {
 
   return '<article class="evaluation-card history-card curve-card">'
     + `<header><div><h5>${spec.title}</h5><p>${spec.note}</p></div></header>`
-    + chartSlot(option, `${chartText(spec.title)} over ${series.length} classes`)
-    + `<p class="curve-key"><span class="mean"></span>${meanName}`
-    + ` &middot; ${escapeHtml(spec.yLabel)} against ${escapeHtml(spec.xLabel.toLowerCase())}</p></article>`;
+    /* No key under the chart: the legend names the classes and the mean, and the title
+       says what is plotted against what. */
+    + `${chartSlot(option, `${chartText(spec.title)} over ${series.length} classes`)}</article>`;
 }
 
 /**
