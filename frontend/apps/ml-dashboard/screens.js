@@ -555,32 +555,13 @@ async function wirePoolUtilization() {
     '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
   };
 
-  const lines = Object.fromEntries($$('[data-pool-line]', root).map((l) => [l.dataset.poolLine, l]));
-  const areas = Object.fromEntries($$('[data-pool-area]', root).map((a) => [a.dataset.poolArea, a]));
   const buttons = $$('[data-pool-range]', root);
   const chart = $('.pool-chart', root);
-  const times = Object.fromEntries($$('[data-pool-time]', root).map((t) => [t.dataset.poolTime, t]));
+  const plot = $('.pool-plot', root);
 
-  const box = chart ? chart.querySelector('svg')?.getAttribute('viewBox')?.split(/\s+/) : null;
-  const width = box ? Number(box[2]) : 760;
-  const floor = 196;
-  const top = 28;
+  const blank = () => { if (plot) plot.innerHTML = ''; };
 
-  const x = (i, n) => 44 + (width - 70) * i / Math.max(1, n - 1);
-  const y = (v, max) => floor - (floor - top) * (v / Math.max(1, max));
-  const pathOf = (values, max) => values
-    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
-  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},${floor} L44,${floor} Z`;
-
-  const clock = (iso) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  };
-
-  const blank = () => {
-    [...Object.values(lines), ...Object.values(areas)].forEach((n) => n && n.removeAttribute('d'));
-    Object.values(times).forEach((t) => { t.textContent = ''; });
-  };
+  wireSeriesKeys(root, 'data-pool-highlight', plot);
 
   async function choose(next) {
     buttons.forEach((b) => {
@@ -621,43 +602,41 @@ async function wirePoolUtilization() {
 
       root.classList.remove('is-quiet');
 
+      /* **A bucket nobody sampled is a gap.** These were mapped with `|| 0`, so an
+         unsampled bucket drew 0% -- GPUs apparently idle across hours nobody measured. A
+         queue is a count of rows, where none waiting is a real zero. */
+      const at = points.map((p) => Date.parse(p.at));
+      const reading = (key) => points.map((p) => (p[key] === null || p[key] === undefined ? null : Number(p[key])));
+      const pair = (values) => values.map((value, index) => [at[index], value]);
       const samples = {
-        computeUsed: points.map((p) => p.avg_utilization_percent || 0),
-        vramUsed: points.map((p) => p.avg_memory_percent_used || 0),
         queueInference: points.map((p) => queuedInference.get(String(p.at)) || 0),
         queueTraining: points.map((p) => queuedTraining.get(String(p.at)) || 0),
       };
 
-      const areaValues = {
-        inference: points.map((p) => p.avg_inference_utilization_percent || 0),
-        training: points.map((p) => p.avg_training_utilization_percent || 0),
-      };
-
-      /* Utilization is a percentage; a queue is a count, scaled to its own peak
-         so a quiet queue does not flatten against a busy pool. */
-      const maxQueue = Math.max(1, ...samples.queueInference, ...samples.queueTraining);
-
-      if (lines.computeUsed) lines.computeUsed.setAttribute('d', pathOf(samples.computeUsed, 100));
-      if (lines.vramUsed) lines.vramUsed.setAttribute('d', pathOf(samples.vramUsed, 100));
-      if (lines.queueInference) lines.queueInference.setAttribute('d', pathOf(samples.queueInference, maxQueue));
-      if (lines.queueTraining) lines.queueTraining.setAttribute('d', pathOf(samples.queueTraining, maxQueue));
-
-      for (const [name, node] of Object.entries(areas)) {
-        if (node && areaValues[name]) node.setAttribute('d', areaOf(areaValues[name], 100));
-      }
-
-      if (times.start) times.start.textContent = clock(points[0].at);
-      if (times.middle) times.middle.textContent = clock(points[Math.floor(points.length / 2)].at);
-      if (times.end) times.end.textContent = 'Now';
+      /* Utilization is a percentage; a queue is a count, on its own axis so a quiet queue
+         does not flatten against a busy pool. */
+      const series = [
+        { id: 'inference', name: 'Inference', css: 'pool-area inference', kind: 'fill', unit: '%', data: pair(reading('avg_inference_utilization_percent')) },
+        { id: 'training', name: 'Training', css: 'pool-area training', kind: 'fill', unit: '%', data: pair(reading('avg_training_utilization_percent')) },
+        { id: 'computeUsed', name: 'Compute used', css: 'pool-line compute-used', unit: '%', data: pair(reading('avg_utilization_percent')) },
+        { id: 'vramUsed', name: 'VRAM used', css: 'pool-line vram-used', unit: '%', data: pair(reading('avg_memory_percent_used')) },
+        { id: 'queueTraining', name: 'Training queue', css: 'pool-line queue-training', axis: 1, data: pair(samples.queueTraining) },
+        { id: 'queueInference', name: 'Inference queue', css: 'pool-line queue-inference', axis: 1, data: pair(samples.queueInference) },
+      ];
 
       const last = points.at(-1);
 
-      if (chart) {
-        chart.setAttribute('aria-label', `GPU pool over ${label}: `
-          + `${Math.round(last.avg_utilization_percent || 0)} percent compute and `
-          + `${Math.round(last.avg_memory_percent_used || 0)} percent VRAM across `
-          + `${last.machines} reporting ${last.machines === 1 ? 'machine' : 'machines'}, `
-          + `${samples.queueInference.at(-1)} inference and ${samples.queueTraining.at(-1)} training jobs queued`);
+      const said = `GPU pool over ${label}: `
+        + `${Math.round(last.avg_utilization_percent || 0)} percent compute and `
+        + `${Math.round(last.avg_memory_percent_used || 0)} percent VRAM across `
+        + `${last.machines} reporting ${last.machines === 1 ? 'machine' : 'machines'}, `
+        + `${samples.queueInference.at(-1)} inference and ${samples.queueTraining.at(-1)} training jobs queued`;
+
+      if (chart) chart.setAttribute('aria-label', said);
+      if (plot) {
+        drawActivity(plot, activityOption({
+          root, series, axes: [{ name: 'Pool capacity', max: 100, unit: '%' }, { name: 'Queued jobs', whole: true }],
+        }), said, `pool-${next}`);
       }
     } catch (error) {
       blank();
@@ -1517,42 +1496,6 @@ const trainingStepsByRun = new Map();
 const trainingCurvesByRun = new Map();
 
 /**
- * A path through a series that may have holes in it.
- *
- * **Null is not zero, and this is where that is decided.** Most epoch metrics are null
- * today because the worker does not report them all yet, and a run with no validation
- * split will never have them. Plotting a null at zero draws a loss falling off a cliff or
- * an mAP collapsing — a picture of a model failing, invented out of a column nobody
- * filled. So a gap is a gap: the line stops and starts again after it.
- *
- * @param {Array<number|null>} values - One per epoch, in order.
- * @param {number} max - The top of the scale.
- * @param {Object} box - `{left, right, top, bottom}` in viewBox units.
- * @returns {string} An SVG path, empty when nothing was measured.
- */
-function gappyPath(values, max, box) {
-  const span = Math.max(1, values.length - 1);
-  const x = (i) => box.left + (box.right - box.left) * i / span;
-  const y = (v) => box.bottom - (box.bottom - box.top) * Math.max(0, Math.min(max, v)) / (max || 1);
-
-  let path = '';
-  let open = false;
-
-  values.forEach((value, index) => {
-    if (value === null || value === undefined || Number.isNaN(Number(value))) {
-      /* The break. Anything after this starts a new subpath. */
-      open = false;
-      return;
-    }
-
-    path += `${open ? 'L' : 'M'}${x(index).toFixed(1)},${y(Number(value)).toFixed(1)} `;
-    open = true;
-  });
-
-  return path.trim();
-}
-
-/**
  * How far above the settled losses the first epoch has to sit before it stops setting the
  * scale. Twice the highest value every later epoch reached.
  *
@@ -1574,9 +1517,9 @@ const WARMUP_RATIO = 2;
  * whose whole purpose is the gap between each train/validation pair.
  *
  * **So the scale follows epoch 2 onward, and what that leaves out is said rather than
- * hidden.** The alternative was to let `gappyPath` clamp quietly, and a flat line that is
+ * hidden.** The alternative was to clamp quietly, and a flat line that is
  * really a clamp cannot be told from a plateau -- which is a finding somebody would act
- * on. `clipped` is what the caller marks on the chart.
+ * on. `clipped` is what the caller names in its note, above where the chart opens.
  *
  * @param {Object[]} drawn - `{key, label, values}` per series, values one per epoch.
  * @param {number} count - How many epochs there are.
@@ -1671,7 +1614,6 @@ async function readTrainingSteps(runId) {
 function stepCharts(samples) {
   if (!samples.length) return '';
 
-  const box = { left: 46, right: 700, top: 24, bottom: 174 };
   const attempts = [...new Set(samples.map((one) => one.attempt_id))];
   const training = samples.filter((one) => one.phase === 'training_batch');
   const latest = samples[samples.length - 1];
@@ -1683,39 +1625,54 @@ function stepCharts(samples) {
 
   if (!present.length) return '';
 
+  const theme = chartTheme();
+  const digits = (spec) => (spec.scale ? 2 : 3);
+
   const cards = present.map((spec) => {
+    /* One line per attempt, at the step it reported: a strided first read has uneven
+       steps, and placing each point at its own step keeps the shape true. */
     const lines = attempts.map((attemptId, index) => {
       const mine = training.filter((one) => one.attempt_id === attemptId);
-      const values = mine.map((one) => {
+      const points = mine.map((one) => {
         const raw = one.metrics ? one.metrics[spec.key] : null;
 
-        return raw === null || raw === undefined ? null : Number(raw) / (spec.scale || 1);
+        return [one.step, raw === null || raw === undefined ? null : Number(raw) / (spec.scale || 1)];
       });
 
-      return { values, index };
+      return { attemptId, points, index };
     });
 
-    const every = lines.flatMap((line) => line.values).filter((value) => value !== null);
+    const every = lines.flatMap((line) => line.points.map((point) => point[1])).filter((value) => value !== null);
 
     if (!every.length) return '';
 
-    const top = Math.max(0.001, Math.ceil(Math.max(...every) * 100) / 100);
-    const last = [...lines[lines.length - 1].values].reverse()
+    const last = [...lines[lines.length - 1].points].reverse()
+      .map((point) => point[1])
       .find((value) => value !== null && value !== undefined);
 
-    return '<article class="evaluation-card history-card" data-result-graph>'
+    const option = {
+      grid: { left: 46, right: 18, top: attempts.length > 1 ? 40 : 30, bottom: 36 },
+      legend: { ...theme.legend, show: attempts.length > 1 },
+      xAxis: { type: 'value', min: 'dataMin', max: 'dataMax', name: 'Step', nameLocation: 'middle', nameGap: 24, ...theme.axis },
+      yAxis: { type: 'value', min: 0, ...theme.axis },
+      tooltip: { ...theme.tooltip, valueFormatter: (value) => (value === null || value === undefined ? 'not reported' : `${Number(value).toFixed(digits(spec))}${spec.unit}`) },
+      dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }],
+      /* A missing reading stays null, so the line breaks there rather than dropping. */
+      series: lines.map((line) => {
+        const { color } = chartKey(`class-${(line.index % 4) + 1}`);
+        return {
+          id: `attempt-${line.attemptId}`, name: attempts.length > 1 ? `Attempt ${line.index + 1}` : spec.title,
+          type: 'line', data: line.points, connectNulls: false, showSymbol: false,
+          lineStyle: { color, width: 1.6 }, itemStyle: { color },
+        };
+      }),
+    };
+
+    return '<article class="evaluation-card history-card">'
       + `<header><div><h5>${spec.title}</h5><p>Per batch`
-      + `${last === undefined ? '' : ` &middot; now ${Number(last).toFixed(spec.scale ? 2 : 3)}${spec.unit}`}`
+      + `${last === undefined ? '' : ` &middot; now ${Number(last).toFixed(digits(spec))}${spec.unit}`}`
       + `${attempts.length > 1 ? ` &middot; ${attempts.length} attempts` : ''}</p></div></header>`
-      + `<div class="result-chart" role="img" aria-label="${spec.title} per batch">`
-      + '<svg viewBox="0 0 740 205" aria-hidden="true">'
-      + '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
-      + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>'
-      + `<g class="result-axis"><text x="38" y="28">${top}</text>`
-      + `<text x="38" y="103">${(top / 2).toFixed(spec.scale ? 2 : 3)}</text><text x="38" y="178">0</text></g>`
-      + lines.map((line) => `<path class="result-line step-series class-${(line.index % 4) + 1}" `
-        + `d="${gappyPath(line.values, top, box)}"/>`).join('')
-      + '</svg></div></article>';
+      + `${chartSlot(option, `${spec.title} per batch`, { key: `steps-${attempts.join('-')}-${spec.key}` })}</article>`;
   }).join('');
 
   /* **The phase as a band rather than a number**, because caching has no count: the
@@ -1731,18 +1688,242 @@ function stepCharts(samples) {
     + `<div class="curve-grid">${cards}</div></div>`;
 }
 
+/* ------------------------------------------------------------------------------------
+   Charts, drawn by Apache ECharts (docs/decisions/0001, #275).
+
+   **A chart is a slot in the markup and an option held here.** Every screen builds its
+   panels as HTML strings and inserts them later, so a chart cannot be drawn where the
+   string is built -- there is no element yet. `chartSlot` returns the slot and keeps the
+   option; one observer on the document draws any slot the moment it lands, wherever it
+   was inserted from, and disposes the chart when its slot is taken away again.
+   ------------------------------------------------------------------------------------ */
+
+/** Options waiting for their slot to be inserted, by slot id. @type {Map<string, Object>} */
+const CHART_OPTIONS = new Map();
+
+let chartSeq = 0;
+
+/**
+ * Decode an HTML-escaped label, because ECharts writes text, not markup.
+ *
+ * @param {string} html - A label as the screens write it, `mAP@50&ndash;95`.
+ * @returns {string}
+ */
+function chartText(html) {
+  const holder = document.createElement('textarea');
+  holder.innerHTML = String(html);
+  return holder.value;
+}
+
+/**
+ * A series' colour and dash, from the CSS key the hand-drawn charts used.
+ *
+ * **Read from the stylesheet rather than repeated here**, so `.box-loss` is cyan and dashed
+ * in exactly one place and a legend swatch elsewhere cannot disagree with the line.
+ *
+ * @param {string} key - A series class such as `box-loss`.
+ * @param {Element} [within] - The panel the key is scoped to, when it is.
+ * @returns {{color: string, dash: number[]|null, fill: string|null}}
+ */
+function chartKey(key, within) {
+  const probe = document.createElement('span');
+  probe.className = key;
+  probe.hidden = true;
+  /* Inside the panel when given one: some keys are scoped to their panel, as
+     `.training-health .queued` is, and a probe on the body would not match them. */
+  (within || document.body).appendChild(probe);
+  const style = getComputedStyle(probe);
+  /* `--key` where the panel uses the shared vocabulary; the stroke or fill where it
+     styled its paths directly, as the Dashboard's pool chart does. */
+  const painted = (value) => (value && value !== 'none' ? value : '');
+  const color = style.getPropertyValue('--key').trim() || painted(style.stroke) || painted(style.fill);
+  let on = parseFloat(style.getPropertyValue('--dash-on'));
+  let off = parseFloat(style.getPropertyValue('--dash-off'));
+  if (!(on > 0) && style.strokeDasharray && style.strokeDasharray !== 'none') {
+    [on, off] = style.strokeDasharray.split(/[ ,]+/).map(parseFloat);
+  }
+  const fill = style.getPropertyValue('--fill').trim() || painted(style.fill);
+  probe.remove();
+  /* A zero gap is a solid line, which is how a panel says "not dashed". */
+  return { color: color || '#64f6f2', dash: on > 0 && off > 0 ? [on, off] : null, fill: fill || null };
+}
+
+/**
+ * The MARP theme, as the pieces of an ECharts option.
+ *
+ * @returns {Object} `{text, axis, tooltip, legend, toolbox}`.
+ */
+function chartTheme() {
+  const root = getComputedStyle(document.documentElement);
+  const token = (name, fallback) => root.getPropertyValue(name).trim() || fallback;
+  const text = token('--text', '#c7d4dd');
+  const muted = token('--muted', '#8198a8');
+  const line = token('--hairline', 'rgba(42, 214, 220, 0.11)');
+  const font = token('--body-font', 'sans-serif');
+
+  return {
+    text: { color: text, fontFamily: font },
+    axis: {
+      axisLine: { lineStyle: { color: line } },
+      axisTick: { lineStyle: { color: line } },
+      axisLabel: { color: muted, fontSize: 10 },
+      splitLine: { lineStyle: { color: line } },
+      nameTextStyle: { color: muted, fontSize: 10 },
+    },
+    /* **On the page, not in the card.** The card clips what overflows it, so a tooltip
+       drawn inside it was cut off at the chart's edge -- Isaac found it on the Loss chart.
+       Attached to the body it floats over whatever is beside the chart. */
+    tooltip: {
+      trigger: 'axis',
+      appendTo: 'body',
+      backgroundColor: token('--navy-900', '#03101f'),
+      borderColor: token('--border', 'rgba(42, 214, 220, 0.28)'),
+      textStyle: { color: text, fontSize: 12 },
+    },
+    /* `right` leaves room for the toolbox, so a legend that wraps on a narrow card wraps
+       before the zoom icons rather than under them. */
+    legend: { top: 0, left: 0, right: 72, textStyle: { color: text, fontSize: 10 }, itemWidth: 18, itemHeight: 8, inactiveColor: muted },
+    toolbox: {
+      right: 0, top: 0, itemSize: 13, iconStyle: { borderColor: muted },
+      feature: { dataZoom: { title: { zoom: 'Drag to zoom', back: 'Undo zoom' } }, restore: { title: 'Reset zoom' } },
+    },
+  };
+}
+
+/** Where somebody had zoomed each named chart, kept across a redraw. @type {Map<string, Object[]>} */
+const CHART_ZOOM = new Map();
+
+/**
+ * A slot for a chart, to put into a panel's markup.
+ *
+ * **A name keeps the zoom.** A live run's panel is redrawn every few seconds, which
+ * replaces its charts; a chart given a `key` that is stable across those redraws -- the
+ * run and the series, say -- comes back at the zoom it was left at instead of resetting
+ * under the person reading it.
+ *
+ * @param {Object} option - The ECharts option, without the theme.
+ * @param {string} label - What the chart shows, for a screen reader.
+ * @param {Object} [how] - `{key, height, bare}`. `key` is a name that stays the same across
+ *   redraws of this chart; `height` is pixels, for a chart whose height follows its data;
+ *   `bare` is for a chart going into a box that already has the frame and the label.
+ * @returns {string} The slot's HTML.
+ */
+function chartSlot(option, label, how = {}) {
+  const { key, height, bare } = how;
+  chartSeq += 1;
+  const id = `chart-${chartSeq}`;
+  CHART_OPTIONS.set(id, option);
+  return `<div class="${bare ? 'marp-chart bare' : 'result-chart marp-chart'}" data-chart="${id}"`
+    + `${key ? ` data-chart-key="${escapeHtml(key)}"` : ''}${height ? ` style="height:${Math.round(height)}px"` : ''}`
+    + `${bare ? '' : ` role="img" aria-label="${escapeHtml(label)}"`}></div>`;
+}
+
+/**
+ * What a confusion-matrix cell says, in one of its two readings.
+ *
+ * A share of 100% over two instances and over two thousand look identical, which is why
+ * both are offered: the share by default, the count one press away.
+ *
+ * @param {string} mode - `norm` or `count`.
+ * @returns {Function} An ECharts label formatter.
+ */
+function matrixLabel(mode) {
+  return mode === 'count'
+    ? (item) => item.value[3].toLocaleString('en-US')
+    : (item) => `${Math.round(item.value[2] * 100)}%`;
+}
+
+/**
+ * Draw every chart slot under `root` that has not been drawn.
+ *
+ * **The slot keeps its option** after drawing (`el.marpOption`), which is what a test reads
+ * to ask what a chart was given, alongside the SVG ECharts drew.
+ *
+ * @param {Element|Document} root - Where to look.
+ * @returns {void}
+ */
+function mountCharts(root) {
+  if (!window.echarts || !root.querySelectorAll) return;
+  const slots = root.matches && root.matches('[data-chart]') ? [root] : [];
+  slots.push(...root.querySelectorAll('[data-chart]'));
+
+  for (const el of slots) {
+    /* From the slot itself when it has been drawn before: a row the Jobs cards reorder is
+       taken out and put back, which releases its chart and has to draw it again. */
+    const option = el.marpOption || CHART_OPTIONS.get(el.dataset.chart);
+    if (!option || el.marpChart) continue;
+    CHART_OPTIONS.delete(el.dataset.chart);
+
+    /* **A size even when the slot has none yet.** A chart in a collapsed row has no width
+       until the row opens; drawn at a nominal size now, it is resized to the real one by
+       the observer below the moment it has one. */
+    const theme = chartTheme();
+    const chart = window.echarts.init(el, null, {
+      renderer: 'svg', width: el.clientWidth || 640, height: el.clientHeight || 220,
+    });
+    chart.setOption({ animation: false, textStyle: theme.text, tooltip: theme.tooltip, legend: theme.legend, toolbox: theme.toolbox, ...option });
+    el.marpChart = chart;
+    el.marpOption = option;
+
+    const zoom = el.dataset.chartKey && CHART_ZOOM.get(el.dataset.chartKey);
+    if (zoom) {
+      zoom.forEach((one, index) => chart.dispatchAction({ type: 'dataZoom', dataZoomIndex: index, start: one.start, end: one.end }));
+    }
+
+    if (window.ResizeObserver) {
+      el.marpResize = new ResizeObserver(() => {
+        if (el.clientWidth) chart.resize({ width: el.clientWidth, height: el.clientHeight || 220 });
+      });
+      el.marpResize.observe(el);
+    }
+  }
+}
+
+/**
+ * Let go of the charts under a node that has left the page.
+ *
+ * @param {Node} node - What was removed.
+ * @returns {void}
+ */
+function releaseCharts(node) {
+  if (!node.querySelectorAll) return;
+  const slots = node.matches && node.matches('[data-chart]') ? [node] : [];
+  slots.push(...node.querySelectorAll('[data-chart]'));
+  for (const el of slots) {
+    if (el.marpResize) el.marpResize.disconnect();
+    if (el.marpChart) {
+      if (el.dataset.chartKey) {
+        const zoom = (el.marpChart.getOption().dataZoom || []).map((one) => ({ start: one.start, end: one.end }));
+        CHART_ZOOM.set(el.dataset.chartKey, zoom);
+      }
+      el.marpChart.dispose();
+    }
+    el.marpChart = null;
+  }
+}
+
+/* One observer for the whole document: a slot is drawn when it arrives and released when
+   it goes, whichever screen put it there. */
+if (typeof MutationObserver !== 'undefined' && document.body) {
+  new MutationObserver((records) => {
+    for (const record of records) {
+      record.removedNodes.forEach(releaseCharts);
+      record.addedNodes.forEach(mountCharts);
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+}
+
 /**
  * One chart of several series over the epochs.
  *
- * Built out of the same `result-chart` / `result-line` vocabulary the Jobs detail already
- * uses, so nothing new was added to draw it and no library came with it.
+ * Drawn by ECharts through `chartSlot`, with each series' colour and dash taken from its
+ * existing CSS key, so the vocabulary is the one the hand-drawn version used (#275).
  *
  * @param {Object} spec - `{title, note, max, top, mid, series}`.
  * @param {Object[]} epochs - The run's epochs, earliest first.
  * @returns {string} An `<article>`, or an empty state when nothing was measured.
  */
 function epochChart(spec, epochs) {
-  const box = { left: 46, right: 700, top: 24, bottom: 174 };
   const drawn = spec.series
     .map(([key, label, column]) => {
       const values = epochs.map((epoch) => (epoch[column] === null || epoch[column] === undefined
@@ -1765,91 +1946,68 @@ function epochChart(spec, epochs) {
       + '</div></header></article>';
   }
 
-  /* **An axis that fits the data, where the data has no ceiling of its own.** `gappyPath`
-     clamps to `max`, so a fixed 2 draws every loss above 2 flat along the top -- and a
-     YOLO class loss routinely starts above 2 with many classes. A flat line that is
-     really a clamp is indistinguishable from a plateau, which is the worst way to be
-     wrong about a loss curve.
+  /* **An axis that fits the data, where the data has no ceiling of its own.** A YOLO class
+     loss routinely starts far above where it settles, and an axis scaled to that first
+     epoch flattens every other line along the bottom. So the chart opens zoomed to where
+     the run settled, and the first epoch is still there: the line leaves the top of the
+     chart rather than being cut or pinned to it, and Reset zoom shows its full height.
 
      Quality keeps its fixed 1: precision, recall and mAP are 0 to 1 by definition, and a
      fixed axis is what lets two runs be compared by eye. */
   const ceiling = spec.max === 'auto'
     ? autoCeiling(drawn, epochs.length)
     : { max: spec.max, clipped: [] };
-  const { max } = ceiling;
-  const labels = spec.max === 'auto'
-    ? { top: max.toFixed(1), mid: (max / 2).toFixed(1) }
-    : { top: spec.top, mid: spec.mid };
 
-  const legend = drawn.map((one) => `<button type="button" class="${one.key}" data-result-highlight="${one.key}"`
-    + `${one.measured ? '' : ' disabled title="Not reported for this run"'}>${one.label}</button>`).join('');
-
-  /* The same geometry `gappyPath` works in, needed here to put the break where the line
-     would have left the chart. */
-  const span = Math.max(1, epochs.length - 1);
-  const at = (index) => box.left + (box.right - box.left) * index / span;
-  const height = (value) => box.bottom - (box.bottom - box.top)
-    * Math.max(0, Math.min(max, value)) / (max || 1);
-
-  const cut = new Set(ceiling.clipped.map((one) => one.key));
-
-  /* **A clipped first epoch is dropped from its line rather than pinned to the ceiling.**
-     Clamping it would draw a vertex at the top of the axis that is indistinguishable from
-     a measurement taken there, which is the whole failure this is avoiding. The line
-     starts at epoch 2; a stub shows it coming down from above; the mark and the number
-     say what it was. */
-  const lines = drawn.map((one) => {
-    const values = cut.has(one.key) ? [null, ...one.values.slice(1)] : one.values;
-
-    return `<path class="result-line ${one.key}" d="${gappyPath(values, max, box)}"/>`;
-  }).join('');
-
-  const stubs = ceiling.clipped.map((one) => {
-    const next = drawn.find((series) => series.key === one.key).values[1];
-
-    /* Nothing to come down to when epoch 2 was not measured. The mark still stands. */
-    if (next === null || next === undefined) return '';
-
-    return `<path class="result-stub ${one.key}" `
-      + `d="M${at(0).toFixed(1)},${box.top} L${at(1).toFixed(1)},${height(next).toFixed(1)}"/>`;
-  }).join('');
-
-  /* The number at the break, because it is a real measurement and the most dramatic one
-     in the series -- recoverable by someone looking at the chart, not only from a note
-     somewhere else. */
-  const breaks = ceiling.clipped.map((one, index) => `<g class="result-break ${one.key}" `
-    + `transform="translate(${(at(0) + index * 15).toFixed(1)},${box.top})">`
-    + '<path class="break-mark" d="M-7,7 L-1,-4 M1,7 L7,-4"/>'
-    + `<title>${escapeHtml(one.label)} reached ${one.value.toFixed(2)} at epoch `
-    + `${epochs[0].epoch_number}, above this axis</title>`
-    + `<text x="10" y="4">${one.value.toFixed(2)}</text></g>`).join('');
-
-  const grid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
-    + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
-
+  const shown = drawn.filter((one) => one.measured);
+  const missing = drawn.filter((one) => !one.measured);
   const first = epochs.length ? epochs[0].epoch_number : 0;
-  const last = epochs.length ? epochs[epochs.length - 1].epoch_number : 0;
+  const theme = chartTheme();
 
-  /* The note carries the scale decision; the marks on the chart carry the numbers. Both,
-     because one says why the axis is where it is and the other says what was left out. */
-  const said = ceiling.clipped.length
-    ? ceiling.clipped.map((one) => `${one.label.toLowerCase()} ${one.value.toFixed(2)}`).join(', ')
-    : '';
-  const note = said
-    ? `${spec.note} &middot; scaled to epoch ${epochs[1] ? epochs[1].epoch_number : 2} onward, `
-      + `because epoch ${first} starts above the axis (${escapeHtml(said)})`
-    : spec.note;
+  const option = {
+    grid: { left: 42, right: 18, top: 40, bottom: 36 },
+    xAxis: {
+      type: 'category', data: epochs.map((epoch) => epoch.epoch_number), boundaryGap: false,
+      name: 'Epoch', nameLocation: 'middle', nameGap: 24, ...theme.axis,
+    },
+    yAxis: {
+      type: 'value', min: 0, max: spec.max === 'auto' ? undefined : spec.max, ...theme.axis,
+      /* Zoomed, the window's top is an arbitrary number that crowds the tick below it. */
+      axisLabel: { ...theme.axis.axisLabel, showMaxLabel: !ceiling.clipped.length },
+    },
+    tooltip: { ...theme.tooltip, valueFormatter: (value) => (value === null || value === undefined ? 'not reported' : Number(value).toFixed(3)) },
+    dataZoom: [
+      { type: 'inside', xAxisIndex: 0, filterMode: 'none' },
+      ...(ceiling.clipped.length
+        ? [{ type: 'inside', yAxisIndex: 0, filterMode: 'none', startValue: 0, endValue: ceiling.max, zoomOnMouseWheel: false, moveOnMouseMove: false }]
+        : []),
+    ],
+    /* A missing epoch stays null, so the line breaks there rather than dropping to zero. */
+    series: shown.map((one) => {
+      const { color, dash } = chartKey(one.key);
+      return {
+        id: one.key, name: chartText(one.label), type: 'line', data: one.values,
+        connectNulls: false, symbolSize: 5, lineStyle: { color, width: 2, type: dash || 'solid' }, itemStyle: { color },
+      };
+    }),
+  };
+
+  /* The note carries the scale decision, because the zoom it opens at is a choice made
+     here and a reader should know there is more above it. */
+  const said = ceiling.clipped.map((one) => `${one.label.toLowerCase()} ${one.value.toFixed(2)}`).join(', ');
+  const notes = [spec.note];
+  if (said) {
+    notes.push(`zoomed to epoch ${epochs[1] ? epochs[1].epoch_number : 2} onward, because epoch ${first} `
+      + `starts above it (${escapeHtml(said)}); Reset zoom shows all of it`);
+  }
+  if (missing.length) notes.push(`not reported for this run: ${missing.map((one) => one.label.toLowerCase()).join(', ')}`);
+
   const label = said
-    ? `${spec.title} by epoch, scaled past epoch ${first}, which reached ${said}`
+    ? `${spec.title} by epoch, zoomed past epoch ${first}, which reached ${said}`
     : `${spec.title} by epoch`;
 
-  return `<article class="evaluation-card history-card" data-result-graph><header><div><h5>${spec.title}</h5>`
-    + `<p>${note}</p></div><div class="result-legend">${legend}</div></header>`
-    + `<div class="result-chart" role="img" aria-label="${escapeHtml(label)}">`
-    + `<svg viewBox="0 0 740 205" aria-hidden="true">${grid}`
-    + `<g class="result-axis"><text x="38" y="28">${labels.top}</text><text x="38" y="103">${labels.mid}</text>`
-    + `<text x="38" y="178">0</text><text x="46" y="196">Epoch ${first}</text>`
-    + `<text x="700" y="196">Epoch ${last}</text></g>${lines}${stubs}${breaks}</svg></div></article>`;
+  return `<article class="evaluation-card history-card"><header><div><h5>${spec.title}</h5>`
+    + `<p>${notes.filter(Boolean).join(' &middot; ')}</p></div></header>`
+    + `${chartSlot(option, chartText(label), { key: epochs.length ? `epochs-${epochs[0].training_run_id}-${spec.title}` : '' })}</article>`;
 }
 
 /**
@@ -2101,28 +2259,48 @@ function confusionMatrix(matrix, image, raw = []) {
        vocabulary was shorter than the matrix, and the rows named those `Class 3` while
        the columns left the header blank -- the same axis, labelled two ways, which reads
        as the column having no name rather than as MARP not knowing it. */
-    const name = (index) => escapeHtml(matrix.labels[index] ?? `Class ${index}`);
+    const names = matrix.rows.map((_, index) => String(matrix.labels[index] ?? `Class ${index}`));
 
-    const cells = matrix.rows.map((row, r) => {
+    /* Each cell as [predicted, true, share of its true class, count]. The share drives the
+       colour in both readings, because a count's shade would follow class size instead of
+       how often the model got that class right. */
+    const cells = matrix.rows.flatMap((row, r) => {
       const sum = total(row);
+      return row.map((value, c) => {
+        const count = Number(value) || 0;
+        return [c, r, sum ? count / sum : 0, count];
+      });
+    });
 
-      return `<b>${name(r)}</b>`
-        + row.map((value, c) => {
-          const count = Number(value) || 0;
-          const share = sum ? count / sum : 0;
+    const theme = chartTheme();
+    const heat = chartKey('class-1').color;
+    const option = {
+      grid: { left: 96, right: 16, top: 12, bottom: 56 },
+      /* **The axes are named in words on the chart, not only in the caption.** True and
+         Predicted is the one thing a reader has to have right, and a confusion matrix
+         read the wrong way round is completely plausible while asserting the reverse of
+         what happened. The API transposes Ultralytics' own `matrix[predicted][true]` once
+         on the way out so that rows are true here, and this says so where it is read. */
+      xAxis: { type: 'category', data: names, name: 'Predicted class', nameLocation: 'middle', nameGap: 36, ...theme.axis, splitLine: { show: false } },
+      yAxis: { type: 'category', data: names, inverse: true, name: 'True class', nameLocation: 'middle', nameGap: 82, ...theme.axis, splitLine: { show: false } },
+      visualMap: { show: false, dimension: 2, min: 0, max: 1, inRange: { color: ['rgba(1, 6, 14, 0.5)', heat] } },
+      legend: { show: false },
+      toolbox: { ...theme.toolbox, show: names.length > 8 },
+      tooltip: {
+        ...theme.tooltip, trigger: 'item',
+        formatter: (item) => `${escapeHtml(names[item.value[1]])} predicted as ${escapeHtml(names[item.value[0]])}: `
+          + `${item.value[3].toLocaleString('en-US')} (${Math.round(item.value[2] * 100)}% of ${escapeHtml(names[item.value[1]])})`,
+      },
+      /* Zoom only where there are enough classes to need it. */
+      dataZoom: names.length > 8 ? [{ type: 'inside', xAxisIndex: 0 }, { type: 'inside', yAxisIndex: 0 }] : [],
+      series: [{
+        id: 'matrix', type: 'heatmap', data: cells,
+        label: { show: true, color: theme.text.color, fontSize: 10, fontWeight: 700, formatter: matrixLabel('norm') },
+        itemStyle: { borderColor: 'rgba(1, 6, 14, 0.9)', borderWidth: 2, borderRadius: 3 },
+        emphasis: { itemStyle: { borderColor: chartKey('curve-mean').color } },
+      }],
+    };
 
-          return `<i style="--heat:${Math.max(.04, share).toFixed(2)}" `
-            + `data-norm="${Math.round(share * 100)}%" data-count="${count.toLocaleString('en-US')}" `
-            + `title="${name(r)} predicted as ${name(c)}: `
-            + `${count.toLocaleString('en-US')}">${Math.round(share * 100)}%</i>`;
-        }).join('');
-    }).join('');
-
-    /* **The axes are named in words on the chart, not only in the caption.** True and
-       Predicted is the one thing a reader has to have right, and a confusion matrix read
-       the wrong way round is completely plausible while asserting the reverse of what
-       happened. The API transposes Ultralytics' own `matrix[predicted][true]` once on
-       the way out so that rows are true here, and this says so where it is being read. */
     const split = matrix.dataset_split ? ` &middot; ${escapeHtml(matrix.dataset_split)} split` : '';
 
     return '<article class="evaluation-card matrix-card" data-matrix><header><div><h5>Confusion matrix</h5>'
@@ -2141,11 +2319,9 @@ function confusionMatrix(matrix, image, raw = []) {
       + 'title="Each cell as a share of its true class">Normalised</button>'
       + '<button type="button" data-matrix-mode="count" aria-pressed="false" '
       + 'title="The instance counts the trainer recorded">Counts</button></div></header>'
-      + '<div class="matrix-scroll"><div class="matrix-frame">'
-      + '<span class="axis-y">True class</span>'
-      + `<div class="confusion" style="--cols:${matrix.labels.length}" role="img" aria-label="Confusion matrix over ${matrix.labels.length} classes, rows true and columns predicted">`
-      + `<span></span>${matrix.labels.map((label, index) => `<b>${name(index)}</b>`).join('')}${cells}`
-      + `</div><span class="axis-x">Predicted class</span></div></div>${source}</article>`;
+      + chartSlot(option, `Confusion matrix over ${names.length} classes, rows true and columns predicted`,
+        { height: Math.max(230, names.length * 40 + 80) })
+      + `${source}</article>`;
   }
 
   if (image) {
@@ -2353,53 +2529,64 @@ function perClassTable(classes) {
  * @returns {string}
  */
 function curveChart(spec, series) {
-  const box = { left: 46, right: 700, top: 24, bottom: 174 };
-  const at = (value) => box.left + (box.right - box.left) * Math.max(0, Math.min(1, value));
-  const up = (value) => box.bottom - (box.bottom - box.top) * Math.max(0, Math.min(1, value));
-
-  const pathOf = (xs, ys) => xs.map((x, index) => {
-    const y = ys[index];
-
-    if (x === null || x === undefined || y === null || y === undefined) return '';
-
-    return `${index ? 'L' : 'M'}${at(Number(x)).toFixed(1)},${up(Number(y)).toFixed(1)}`;
-  }).filter(Boolean).join(' ');
-
-  const lines = series.map((one, index) => `<path class="result-line curve-class class-${(index % 4) + 1}" `
-    + `data-class="${escapeHtml(one.class_name || '')}" d="${pathOf(one[spec.x], one[spec.y])}"/>`).join('');
-
   /* **The mean across classes, which is the line a reader looks at first.** Index-wise
      rather than interpolated: the API refuses a family whose arrays disagree in length,
      so every class shares one x axis and the columns line up by construction. */
   const width = series.reduce((most, one) => Math.max(most, (one[spec.y] || []).length), 0);
+  const finite = (value) => value !== null && value !== undefined && Number.isFinite(Number(value));
   const mean = [];
-  const meanX = [];
 
   for (let index = 0; index < width; index += 1) {
-    const values = series.map((one) => one[spec.y][index])
-      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
-      .map(Number);
-    const across = series.map((one) => one[spec.x][index])
-      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
-      .map(Number);
+    const ys = series.map((one) => one[spec.y][index]).filter(finite).map(Number);
+    const xs = series.map((one) => one[spec.x][index]).filter(finite).map(Number);
 
-    mean.push(values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
-    meanX.push(across.length ? across.reduce((sum, value) => sum + value, 0) / across.length : null);
+    mean.push(xs.length && ys.length
+      ? [xs.reduce((sum, value) => sum + value, 0) / xs.length, ys.reduce((sum, value) => sum + value, 0) / ys.length]
+      : [null, null]);
   }
 
-  const grid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
-    + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
+  const pairs = (one) => (one[spec.x] || []).map((x, index) => {
+    const y = one[spec.y][index];
+    return finite(x) && finite(y) ? [Number(x), Number(y)] : [null, null];
+  });
+
+  const theme = chartTheme();
+  const meanName = `Mean of ${series.length} class${series.length === 1 ? '' : 'es'}`;
+  const tick = (value) => (value === null || value === undefined ? '—' : Number(value).toFixed(3));
+
+  const option = {
+    grid: { left: 42, right: 18, top: 40, bottom: 36 },
+    /* Both axes are 0 to 1 by definition, so fixed: two runs compare by eye. */
+    xAxis: { type: 'value', min: 0, max: 1, name: spec.xLabel, nameLocation: 'middle', nameGap: 24, ...theme.axis },
+    yAxis: { type: 'value', min: 0, max: 1, name: spec.yLabel, ...theme.axis },
+    /* By item rather than by axis: the x values differ slightly per class, so "every line
+       at this x" is not a question these charts can answer. */
+    tooltip: {
+      ...theme.tooltip, trigger: 'item',
+      formatter: (item) => `${escapeHtml(item.seriesName)}<br>${escapeHtml(spec.xLabel)} ${tick(item.value[0])} · ${escapeHtml(spec.yLabel)} ${tick(item.value[1])}`,
+    },
+    dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }, { type: 'inside', yAxisIndex: 0, filterMode: 'none' }],
+    series: [
+      ...series.map((one, index) => {
+        const { color } = chartKey(`class-${(index % 4) + 1}`);
+        return {
+          id: `class-${index}`, name: chartText(one.class_name || `Class ${index}`), type: 'line',
+          data: pairs(one), connectNulls: false, showSymbol: false,
+          lineStyle: { color, width: 1.2, opacity: 0.42 }, itemStyle: { color }, emphasis: { lineStyle: { width: 2, opacity: 1 } },
+        };
+      }),
+      {
+        id: 'mean', name: meanName, type: 'line', data: mean, connectNulls: false, showSymbol: false, z: 3,
+        lineStyle: { color: chartKey('curve-mean').color, width: 3.2 }, itemStyle: { color: chartKey('curve-mean').color },
+      },
+    ],
+  };
 
   return '<article class="evaluation-card history-card curve-card">'
     + `<header><div><h5>${spec.title}</h5><p>${spec.note}</p></div></header>`
-    + `<div class="result-chart" role="img" aria-label="${escapeHtml(spec.title)} over ${series.length} classes">`
-    + `<svg viewBox="0 0 740 205" aria-hidden="true">${grid}`
-    + '<g class="result-axis"><text x="38" y="28">1.0</text><text x="38" y="103">.5</text>'
-    + `<text x="38" y="178">0</text><text x="46" y="196">${spec.xLabel} 0</text>`
-    + `<text x="700" y="196">${spec.xLabel} 1</text></g>${lines}`
-    + `<path class="result-line curve-mean" d="${pathOf(meanX, mean)}"/></svg></div>`
-    + `<p class="curve-key"><span class="mean"></span>Mean of ${series.length} class${series.length === 1 ? '' : 'es'}`
-    + ` &middot; ${escapeHtml(spec.yLabel)} against ${escapeHtml(spec.xLabel.toLowerCase())}</p></article>`;
+    /* No key under the chart: the legend names the classes and the mean, and the title
+       says what is plotted against what. */
+    + `${chartSlot(option, `${chartText(spec.title)} over ${series.length} classes`)}</article>`;
 }
 
 /**
@@ -3084,8 +3271,9 @@ function wireTrainingJobDetail(head, detail) {
         other.setAttribute('aria-pressed', String(on));
       });
 
-      for (const tile of $$('.confusion i[data-norm]', cell)) {
-        tile.textContent = tile.dataset[button.dataset.matrixMode];
+      const slot = $('[data-matrix] [data-chart]', cell);
+      if (slot && slot.marpChart) {
+        slot.marpChart.setOption({ series: [{ id: 'matrix', label: { formatter: matrixLabel(button.dataset.matrixMode) } }] });
       }
     }));
 
@@ -6434,7 +6622,7 @@ function wireWorkerReadings(head) {
       }
     }
 
-    into.innerHTML = workerCharts(held.get(range), range);
+    into.innerHTML = workerCharts(held.get(range), range, workerId);
 
     for (const button of $$('[data-worker-range]', into)) {
       button.addEventListener('click', () => {
@@ -6486,12 +6674,26 @@ const WORKER_RANGES = {
  * null for every older sample — and null here means *nobody measured*, which is the one
  * thing a line must never render as a floor.
  *
+ * **A machine that was off is a gap, not a ramp.** On a time axis two readings either side
+ * of an evening the worker was down would be joined by a straight line across it, which
+ * reads as a measured slow climb. So a null goes in wherever readings are more than three
+ * of their usual intervals apart.
+ *
  * @param {Object} series - From `GET /gpu/workers/:id/series`.
  * @param {string} range - Which window is selected.
+ * @param {string|number} workerId - The machine, so each chart keeps its own zoom.
  * @returns {string}
  */
-function workerCharts(series, range) {
-  const box = { left: 46, right: 700, top: 24, bottom: 174 };
+function workerCharts(series, range, workerId) {
+  const at = (series.at || []).map((value) => Date.parse(value));
+  const spacing = at.slice(1).map((value, index) => value - at[index]).sort((a, b) => a - b);
+  const usual = spacing.length ? spacing[Math.floor(spacing.length / 2)] : 0;
+  const theme = chartTheme();
+  const { color } = chartKey('result-line worker-series');
+  const pointsOf = (values) => values.flatMap((value, index) => {
+    const point = [at[index], value === null || value === undefined ? null : Number(value)];
+    return index && usual && at[index] - at[index - 1] > 3 * usual ? [[at[index - 1] + usual, null], point] : [point];
+  });
   const measured = (values) => values.some((value) => value !== null && value !== undefined);
 
   const cards = WORKER_CHARTS.map((spec) => {
@@ -6505,22 +6707,27 @@ function workerCharts(series, range) {
         + `<p>Not reported in ${WORKER_RANGES[range].label}</p></div></header></article>`;
     }
 
-    const real = values.filter((value) => value !== null && value !== undefined).map(Number);
-    const top = spec.max === 'auto'
-      ? Math.max(1, Math.ceil(Math.max(...real) * 1.1))
-      : spec.max;
     const last = [...values].reverse().find((value) => value !== null && value !== undefined);
+    const option = {
+      grid: { left: 44, right: 16, top: 30, bottom: 28 },
+      legend: { show: false },
+      xAxis: {
+        type: 'time', ...theme.axis, splitLine: { show: false },
+        axisLabel: { ...theme.axis.axisLabel, hideOverlap: true, formatter: { day: '{MM}-{dd}', hour: '{HH}:{mm}', minute: '{HH}:{mm}' } },
+      },
+      yAxis: { type: 'value', min: 0, max: spec.max === 'auto' ? undefined : spec.max, ...theme.axis, axisLabel: { ...theme.axis.axisLabel, formatter: `{value}${spec.unit}` } },
+      tooltip: { ...theme.tooltip, valueFormatter: (value) => (value === null || value === undefined ? 'not reported' : `${Math.round(value)}${spec.unit}`) },
+      dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }],
+      series: [{
+        id: spec.key, name: spec.title, type: 'line', data: pointsOf(values), connectNulls: false, showSymbol: false,
+        lineStyle: { color, width: 1.8 }, itemStyle: { color },
+      }],
+    };
 
-    return '<article class="evaluation-card history-card" data-result-graph>'
+    return '<article class="evaluation-card history-card">'
       + `<header><div><h5>${spec.title}</h5><p>${WORKER_RANGES[range].label}`
       + ` &middot; now ${Math.round(Number(last))}${spec.unit}</p></div></header>`
-      + `<div class="result-chart" role="img" aria-label="${spec.title} over ${WORKER_RANGES[range].label}">`
-      + '<svg viewBox="0 0 740 205" aria-hidden="true">'
-      + '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
-      + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>'
-      + `<g class="result-axis"><text x="38" y="28">${top}</text>`
-      + `<text x="38" y="103">${Math.round(top / 2)}</text><text x="38" y="178">0</text></g>`
-      + `<path class="result-line worker-series" d="${gappyPath(values, top, box)}"/></svg></div></article>`;
+      + `${chartSlot(option, `${spec.title} over ${WORKER_RANGES[range].label}`, { key: `worker-${workerId}-${range}-${spec.key}` })}</article>`;
   }).join('');
 
   const buttons = Object.keys(WORKER_RANGES).map((key) => `<button type="button" class="${key === range ? 'on' : ''}"`
@@ -7743,20 +7950,9 @@ function wireJobsOverview() {
   };
 
   const buttons = $$('[data-jobs-range]', root);
-  const lines = Object.fromEntries($$('[data-jobs-line]', root).map((line) => [line.dataset.jobsLine, line]));
   const chart = $('.jobs-chart', root);
-  const axis = $$('[data-jobs-axis]', root);
+  const blank = () => { if (chart) chart.innerHTML = ''; };
   let range = '24h';
-
-  /** Fit a run of values into the chart's box. */
-  const pathOf = (values, max) => values.map((value, index) =>
-    `${index ? 'L' : 'M'}${(42 + 700 * index / Math.max(1, values.length - 1)).toFixed(1)},`
-    + `${(198 - 174 * (value / Math.max(1, max))).toFixed(1)}`).join(' ');
-
-  const clock = (iso) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  };
 
   async function choose(next) {
     range = next;
@@ -7778,7 +7974,7 @@ function wireJobsOverview() {
       const points = series.points || [];
 
       if (!points.length) {
-        Object.values(lines).forEach((line) => line.removeAttribute('d'));
+        blank();
         if (chart) chart.setAttribute('aria-label', `No job activity recorded in ${label}`);
         return;
       }
@@ -7796,9 +7992,7 @@ function wireJobsOverview() {
          Nothing ran in this window, and saying so is clearer than drawing three
          lines on the floor and leaving somebody to work out they are all zero. */
       if (peak === 0) {
-        Object.values(lines).forEach((line) => line.removeAttribute('d'));
-        axis.forEach((text) => { text.textContent = ''; });
-        $$('[data-jobs-time]', root).forEach((label2) => { label2.textContent = ''; });
+        blank();
         if (chart) chart.setAttribute('aria-label', `No jobs submitted or finished in ${label}`);
         root.classList.add('is-quiet');
         return;
@@ -7806,31 +8000,25 @@ function wireJobsOverview() {
 
       root.classList.remove('is-quiet');
 
-      /* Round the top up to something the ticks can divide into thirds without
-         repeating: a max of 1 produced an axis reading 1, 1, 0, 0. */
-      const max = Math.max(3, Math.ceil(peak / 3) * 3);
-
-      Object.entries(lines).forEach(([name, line]) => {
-        if (samples[name]) line.setAttribute('d', pathOf(samples[name], max));
-      });
-
-      /* The axis is the data's range, not four numbers somebody picked. */
-      axis.forEach((text, index) => {
-        text.textContent = String(Math.round(max * (3 - index) / 3));
-      });
-
-      $$('[data-jobs-time]', root).forEach((label2, index) => {
-        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][index];
-        if (at) label2.textContent = index === 2 ? 'Now' : clock(at.at);
-      });
+      /* In whole jobs: a job and a half is not a count. */
+      const at = points.map((p) => Date.parse(p.at));
+      const pair = (values) => values.map((value, index) => [at[index], value]);
 
       if (chart) {
-        chart.setAttribute('aria-label', `Job activity over ${label}: `
+        drawActivity(chart, activityOption({
+          root,
+          axes: [{ whole: true }],
+          series: [
+            { id: 'started', name: 'Started', css: 'jobs-line started', data: pair(samples.started) },
+            { id: 'completed', name: 'Completed', css: 'jobs-line completed', data: pair(samples.completed) },
+            { id: 'queued', name: 'Queued', css: 'jobs-line queued', data: pair(samples.queued) },
+          ],
+        }), `Job activity over ${label}: `
           + `${samples.started.at(-1)} submitted, ${samples.completed.at(-1)} finished, `
-          + `${samples.queued.at(-1)} waiting`);
+          + `${samples.queued.at(-1)} waiting`, `jobs-activity-${range}`);
       }
     } catch (error) {
-      Object.values(lines).forEach((line) => line.removeAttribute('d'));
+      blank();
       if (chart) chart.setAttribute('aria-label', `Could not load job activity (${error.status || 'no answer'})`);
     }
   }
@@ -7842,9 +8030,9 @@ function wireJobsOverview() {
 /**
  * Draw one of the operational charts from a series.
  *
- * The four charts on this app share an SVG: a left axis, a right axis, three time labels,
- * some `<path>`s keyed by name, and a run of current readings underneath. Only the data and
- * the labels differ, so the drawing lives here once rather than a fourth time.
+ * Inference, Models and Datasets share this: a left axis, sometimes a right one, a few
+ * series keyed by name, and a run of current readings underneath. Only the data and the
+ * labels differ, so it lives here once. ECharts draws it (#275), through `activityOption`.
  *
  * @param {Object} spec
  * @param {Element} spec.root - The panel.
@@ -7853,39 +8041,24 @@ function wireJobsOverview() {
  * @param {string} spec.initial - Which range to open on.
  * @param {function(Object): Promise<Object>} spec.fetch - Given `{since, until, bucket}`, the answer.
  * @param {function(Object): Object} spec.read - Turns that answer into `{series, scales, current, quiet}`.
+ * @param {Object} spec.looks - `{name: {css, kind}}`: each series' colour key and whether it
+ *   is an `area` or a `line`. A series not named here is not drawn.
+ * @param {string[]} [spec.onRight] - The series measured on the right-hand axis.
  * @returns {Promise<void>}
  */
-async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read }) {
+async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read, looks, onRight = [] }) {
   if (!root) return;
 
   const camel = (name) => prefix + name[0].toUpperCase() + name.slice(1);
-  const lines = Object.fromEntries($$(`[data-${prefix}-line]`, root)
-    .map((l) => [l.dataset[camel('line')], l]));
-  const area = $(`[data-${prefix}-area]`, root);
-  const areaKey = area ? area.dataset[camel('area')] : null;
   const buttons = $$(`[data-${prefix}-range]`, root);
-  const chart = $('.inference-chart, .ops-chart', root);
-  const leftAxis = $$('.inference-axis.left text:not(.axis-title)', root)
-    .filter((t) => !t.hasAttribute(`data-${prefix}-time`));
-  const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
+  const chart = $('.inference-chart, .ops-chart, .dataset-chart', root);
 
-  const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
-  const y = (v, max) => 196 - 168 * (v / Math.max(1, max));
-  const pathOf = (values, max) => values
-    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
-  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`;
+  /* The legend key's own words for a series, so a tooltip says what the key says. */
+  const nameOf = (name) => $(`[data-${prefix}-highlight="${name}"]`, root)?.textContent.trim() || name;
 
-  /** Ticks from however many the markup has, not from an assumed four. */
-  const ticks = (nodes, top, format) => nodes.forEach((t, i) => {
-    const steps = Math.max(1, nodes.length - 1);
-    t.textContent = format(top * (steps - i) / steps);
-  });
+  const blank = () => { if (chart) chart.innerHTML = ''; };
 
-  const blank = () => {
-    [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
-    leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
-    $$(`[data-${prefix}-time]`, root).forEach((t) => { t.textContent = ''; });
-  };
+  wireSeriesKeys(root, `data-${prefix}-highlight`, chart);
 
   async function choose(next) {
     buttons.forEach((b) => {
@@ -7915,31 +8088,20 @@ async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read
 
       root.classList.remove('is-quiet');
 
-      for (const [name, values] of Object.entries(series)) {
-        const max = scales[name] || 1;
-        if (lines[name]) lines[name].setAttribute('d', pathOf(values, max));
-        if (area && areaKey === name) area.setAttribute('d', areaOf(values, max));
+      /* A series the data cannot fill is left undrawn rather than flattened to zero: an
+         empty track says "not recorded", a line along the floor says "recorded, and none". */
+      const at = points.map((p) => Date.parse(p.at));
+      const drawn = Object.entries(series).filter(([name]) => looks[name]).map(([name, values]) => ({
+        id: name, name: nameOf(name), css: looks[name].css, kind: looks[name].kind || 'line',
+        axis: onRight.includes(name) ? 1 : 0, data: values.map((value, index) => [at[index], value]),
+      }));
+      const axes = [{ format: scales.formatLeft }];
+      if (drawn.some((one) => one.axis === 1)) axes.push({ format: scales.formatRight, whole: true });
+
+      if (chart) {
+        drawActivity(chart, activityOption({ root, series: drawn, axes }),
+          current.aria || chart.getAttribute('aria-label') || '', `${prefix}-${next}`);
       }
-
-      /* A line the data cannot fill is left undrawn rather than flattened to
-         zero: an empty track says "not recorded", a line along the floor says
-         "recorded, and none". */
-      for (const [name, line] of Object.entries(lines)) {
-        if (!series[name]) line.removeAttribute('d');
-      }
-
-      ticks(leftAxis, scales.left ?? 1, scales.formatLeft || ((v) => String(Math.round(v))));
-      ticks(rightAxis, scales.right ?? 1, scales.formatRight || ((v) => String(Math.round(v))));
-
-      $$(`[data-${prefix}-time]`, root).forEach((t, i) => {
-        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][i];
-        if (!at) return;
-        const d = new Date(at.at);
-        t.textContent = i === 2 ? 'Now'
-          : (range.bucket === 'day'
-            ? d.toISOString().slice(5, 10)
-            : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-      });
 
       /* **The unit travels with the figure.** A number beside a chart with a one-word
          label is the Jobs badge problem again -- `1,189` with nothing saying "failed".
@@ -7959,8 +8121,6 @@ async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read
            stranded: "Clears in" with no duration reads as a rendering failure. */
         node.hidden = !node.textContent;
       });
-
-      if (chart && current.aria) chart.setAttribute('aria-label', current.aria);
     } catch (error) {
       blank();
       if (chart) chart.setAttribute('aria-label', `Could not load this chart (${error.status || 'no answer'})`);
@@ -8018,11 +8178,12 @@ function clearingNote(rate, queued) {
  */
 function wireInferenceThroughput() {
   const root = $('[data-inference-activity]');
-  if (!root || !$('.inference-chart svg', root)) return;
+  if (!root || !$('.inference-chart', root)) return;
 
   return drawSeriesChart({
     root,
     prefix: 'inference',
+    looks: { throughput: { css: 'throughput', kind: 'area' }, backlog: { css: 'backlog' } },
     initial: '24h',
     ranges: {
       /* The shared ladder; see `wirePoolUtilization`. */
@@ -8084,11 +8245,12 @@ function wireInferenceThroughput() {
  */
 function wireRegistryTrend() {
   const root = $('[data-ops-activity="models"]');
-  if (!root || !$('.ops-chart svg', root)) return;
+  if (!root || !$('.ops-chart', root)) return;
 
   return drawSeriesChart({
     root,
     prefix: 'ops',
+    looks: { registered: { css: 'registered', kind: 'area' }, in_use: { css: 'preferred' }, coverage: { css: 'coverage' } },
     initial: '1y',
     ranges: {
       /* The shared ladder; see `wirePoolUtilization`. A model is registered rarely, so
@@ -8133,13 +8295,137 @@ function wireRegistryTrend() {
    unlike models cannot be aggregated meaningfully, while system load, running
    work, queue depth and completions can. These fixtures preserve the seam a
    later metrics endpoint or stream can feed. */
+/**
+ * An activity chart's option: time along the bottom, one or two value axes.
+ *
+ * **One builder for every screen's activity panel**, because they are the same chart --
+ * Training, Datasets, Inference, Models, Jobs and the Dashboard each plot a few series
+ * from `/gpu/*\/series` over a chosen range -- and six hand-drawn copies of it is what
+ * #275 was filed against.
+ *
+ * Each series names the CSS key its colour and dash already come from, read inside the
+ * panel because those keys are scoped to it. A null reading stays null, so a line breaks
+ * where nothing was recorded rather than dropping to zero.
+ *
+ * @param {Object} spec - `{root, axes, series}`. `axes` is `[{name, max, unit, whole, format,
+ *   hidden}]` -- `hidden` for a scale a series needs and the chart has no room to label;
+ *   each series is `{id, name, css, kind, axis, unit, format, data}`, `kind` being `line`, `area`,
+ *   `fill` (an area with no line, shaded as the panel's CSS says) or `bar`, and `data`
+ *   `[[ms, value], ...]`.
+ * @returns {Object} The ECharts option.
+ */
+function activityOption({ root, axes, series }) {
+  const theme = chartTheme();
+
+  return {
+    grid: { left: 50, right: axes.length > 1 ? 46 : 18, top: 30, bottom: 28 },
+    legend: { show: false },
+    /* Top centre: both top corners carry an axis title on these charts. */
+    toolbox: { ...theme.toolbox, right: 'auto', left: 'center' },
+    xAxis: {
+      type: 'time', ...theme.axis, splitLine: { show: false },
+      axisLabel: { ...theme.axis.axisLabel, hideOverlap: true, formatter: { day: '{MM}-{dd}', hour: '{HH}:{mm}', minute: '{HH}:{mm}' } },
+    },
+    yAxis: axes.map((axis, index) => ({
+      type: 'value', name: axis.name, min: 0, max: axis.max, minInterval: axis.whole ? 1 : undefined, show: !axis.hidden,
+      ...theme.axis, splitLine: index ? { show: false } : theme.axis.splitLine,
+      axisLabel: { ...theme.axis.axisLabel, formatter: axis.format || (axis.unit ? `{value}${axis.unit}` : '{value}') },
+    })),
+    tooltip: { ...theme.tooltip },
+    dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }],
+    series: series.map((one) => {
+      const { color, dash, fill } = chartKey(one.css, root);
+      const shared = {
+        id: one.id, name: one.name, yAxisIndex: one.axis || 0, data: one.data, itemStyle: { color },
+        emphasis: { focus: 'series' }, blur: { lineStyle: { opacity: 0.12 }, itemStyle: { opacity: 0.12 }, areaStyle: { opacity: 0.03 } },
+        tooltip: {
+          valueFormatter: (value) => {
+            if (value === null || value === undefined) return 'not recorded';
+            if (one.format) return one.format(value);
+            return `${Number.isInteger(value) ? value : Number(value).toFixed(1)}${one.unit || ''}`;
+          },
+        },
+      };
+
+      if (one.kind === 'bar') {
+        return { ...shared, type: 'bar', barMaxWidth: 14, itemStyle: { color: fill || color, borderColor: color, borderWidth: 1 } };
+      }
+
+      /* `fill` is an area the panel shades itself, with its own transparency, and draws
+         without an outline -- the pool chart's two utilisation bands. */
+      if (one.kind === 'fill') {
+        return { ...shared, type: 'line', showSymbol: false, connectNulls: false, lineStyle: { width: 0 }, areaStyle: { color: fill || color, opacity: 1 } };
+      }
+
+      return {
+        ...shared, type: 'line', showSymbol: false, connectNulls: false,
+        lineStyle: { color, width: 2.2, type: dash || 'solid' },
+        areaStyle: one.kind === 'area' ? { color, opacity: 0.09 } : undefined,
+      };
+    }),
+  };
+}
+
+/**
+ * Draw an activity chart into its panel's chart box.
+ *
+ * @param {Element} box - The panel's chart box, which keeps its own frame and label.
+ * @param {Object} option - From `activityOption`.
+ * @param {string} label - What the chart shows, for a screen reader and for hover.
+ * @param {string} key - Stable across redraws of the same range, so a zoom survives one.
+ * @returns {void}
+ */
+function drawActivity(box, option, label, key) {
+  box.innerHTML = chartSlot(option, label, { key, bare: true });
+  box.setAttribute('aria-label', label);
+  box.title = label;
+}
+
+/**
+ * Light one series of a panel's chart and dim the rest, or restore them all.
+ *
+ * What the panels' key buttons did to the hand-drawn paths, done through ECharts so the
+ * buttons keep working on the chart that replaced them.
+ *
+ * @param {Element} box - The chart box.
+ * @param {string} id - The series to light; empty restores every series.
+ * @returns {void}
+ */
+function highlightSeries(box, id) {
+  const chart = box && $('[data-chart]', box)?.marpChart;
+  if (!chart) return;
+  chart.dispatchAction({ type: 'downplay' });
+  if (id) chart.dispatchAction({ type: 'highlight', seriesId: id });
+}
+
+/**
+ * Make a panel's key buttons light their series: press one to light it, again to restore.
+ *
+ * **These keys were drawn as buttons and wired to nothing** on the Inference, Models,
+ * Datasets and Dashboard charts; only Training's did anything. One wiring for all of them.
+ *
+ * @param {Element} root - The panel.
+ * @param {string} attr - The key buttons' attribute, such as `data-pool-highlight`.
+ * @param {Element} box - The chart box.
+ * @returns {void}
+ */
+function wireSeriesKeys(root, attr, box) {
+  const keys = $$(`[${attr}]`, root);
+  keys.forEach((button) => {
+    button.setAttribute('aria-pressed', 'false');
+    button.addEventListener('click', () => {
+      const id = button.getAttribute(attr);
+      const on = button.getAttribute('aria-pressed') !== 'true';
+      keys.forEach((other) => other.setAttribute('aria-pressed', String(on && other === button)));
+      highlightSeries(box, on ? id : '');
+    });
+  });
+}
+
 function wireTrainingActivity() {
   const root = $('[data-training-activity]');
   if (!root) return;
   const buttons = $$('[data-training-range]', root);
-  const lines = Object.fromEntries($$('[data-training-line]', root).map((line) => [line.dataset.trainingLine, line]));
-  const area = $('[data-training-area="compute"]', root);
-  const bars = $('[data-training-bars="completed"]', root);
   const chart = $('.training-chart', root);
   /* **Real, and the same two reads the Datasets activity chart makes.** This drew four
      hardcoded arrays per range -- the tiles above said 1 running, 0 queued, 2 completed
@@ -8155,22 +8441,6 @@ function wireTrainingActivity() {
 
   let range = '1h';
   let samples = null;
-  const coords = (values, scale, top) => values.map((value, index) => {
-    const x = 54 + 672 * index / Math.max(1, values.length - 1);
-    const y = 196 - 168 * Math.max(0, Math.min(top, value)) / (top || 1);
-
-    return [x, y];
-  });
-  const pathOf = (values, scale, top) => coords(values, scale, top)
-    .map(([x, y], index) => `${index ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  const barsOf = (values, top) => {
-    const width = Math.min(14, 480 / Math.max(1, values.length));
-
-    return coords(values, 'jobs', top).map(([x, y], index) => (values[index]
-      ? `M${(x - width / 2).toFixed(1)},196 V${y.toFixed(1)} H${(x + width / 2).toFixed(1)} V196 Z`
-      : '')).join(' ');
-  };
-
   /**
    * A series the window recorded nothing for.
    *
@@ -8197,19 +8467,9 @@ function wireTrainingActivity() {
   const draw = () => {
     if (!samples) return;
 
-    const { compute, running, queued, completed, label } = samples;
-
-    /* One scale for the three job counts so they can be read against each other, and a
-       fixed 0-100 for the percentage, which is not a count. */
-    const jobTop = Math.max(1, ...running, ...queued, ...completed);
-
+    const { at, compute, running, queued, completed, label } = samples;
     const computeOff = unmeasured(compute);
-
-    lines.compute.setAttribute('d', computeOff ? '' : pathOf(compute.map((v) => v ?? 0), 'compute', 100));
-    area.setAttribute('d', computeOff ? '' : `${pathOf(compute.map((v) => v ?? 0), 'compute', 100)} L726,196 L54,196 Z`);
-    lines.running.setAttribute('d', pathOf(running, 'jobs', jobTop));
-    lines.queued.setAttribute('d', pathOf(queued, 'jobs', jobTop));
-    bars.setAttribute('d', barsOf(completed, jobTop));
+    const pair = (values) => values.map((value, index) => [at[index], value]);
 
     /* The legend says which line is not there, rather than the chart implying a flat
        zero. Disabled, so it cannot be highlighted to reveal nothing. */
@@ -8233,8 +8493,20 @@ function wireTrainingActivity() {
       + `${computeOff ? 'no GPU reading recorded' : `${Math.round(compute.filter((v) => v != null).at(-1) ?? 0)}% of GPU compute used by training`}, `
       + `${running.at(-1) ?? 0} running, ${queued.at(-1) ?? 0} queued and ${totalCompleted} runs completed`;
 
-    chart.setAttribute('aria-label', said);
-    chart.title = said;
+    /* One scale for the three job counts so they can be read against each other, and a
+       fixed 0-100 for the percentage, which is not a count. A compute reading nothing
+       recorded stays a gap: it used to be drawn as 0%, which said the GPUs sat idle. */
+    const series = [
+      ...(computeOff ? [] : [{ id: 'compute', name: 'Training GPU compute', css: 'compute', kind: 'area', unit: '%', data: pair(compute) }]),
+      { id: 'running', name: 'Running jobs', css: 'running', axis: 1, data: pair(running) },
+      { id: 'queued', name: 'Queued jobs', css: 'queued', axis: 1, data: pair(queued) },
+      { id: 'completed', name: 'Completed runs', css: 'completed', kind: 'bar', axis: 1, data: pair(completed) },
+    ];
+
+    drawActivity(chart, activityOption({
+      root, series, axes: [{ name: 'GPU compute', max: 100, unit: '%' }, { name: 'Jobs', whole: true }],
+    }), said, `training-activity-${range}`);
+    highlightSeries(chart, root.dataset.highlight);
   };
 
   const choose = async (next) => {
@@ -8257,14 +8529,6 @@ function wireTrainingActivity() {
       const jobs = await window.MarpApi.jobSeries({ ...span, kind: 'training' });
       const points = jobs.points || [];
 
-      $$('[data-training-time]', root).forEach((text, index) => {
-        const at = points[Math.round((points.length - 1) * index / 2)];
-
-        text.textContent = at
-          ? new Date(at.at).toTimeString().slice(0, 5)
-          : '';
-      });
-
       if (!points.length) {
         root.classList.add('is-quiet');
         samples = null;
@@ -8280,6 +8544,7 @@ function wireTrainingActivity() {
          it -- the same decision the Datasets chart makes for builds. */
       samples = {
         label,
+        at: points.map((p) => Date.parse(p.at)),
         compute: points.map((p) => (p.avg_training_utilization_percent == null
           ? null : Number(p.avg_training_utilization_percent))),
         running: points.map((p) => Number(p.training_machines) || 0),
@@ -8303,7 +8568,7 @@ function wireTrainingActivity() {
     root.dataset.highlight = active;
     root.classList.toggle('is-highlighted', Boolean(active));
     highlightButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.trainingHighlight === active)));
-    $$('.training-line, .training-area, .training-bars', root).forEach((line) => line.classList.toggle('highlighted', Boolean(active) && line.classList.contains(active)));
+    highlightSeries(chart, active);
   };
   highlightButtons.forEach((button) => {
     button.title = `Highlight only ${button.textContent.trim()} on this graph; select it again or press Escape to restore all series`;
@@ -8360,11 +8625,14 @@ function wireDatasetActivity() {
   /* **The guard is on the chart, not on the panel.** This threw on a missing SVG once and
      took the rest of the boot script with it, so the tables below never rendered and it
      looked like the API had failed. */
-  if (!root || !$('.dataset-chart svg', root)) return;
+  if (!root || !$('.dataset-chart', root)) return;
 
   return drawSeriesChart({
     root,
     prefix: 'dataset',
+    looks: { rate: { css: 'throughput', kind: 'area' }, waiting: { css: 'backlog' }, finished: { css: 'done' } },
+    /* Builds are counted in ones, frames in thousands: two axes, so neither flattens. */
+    onRight: ['waiting', 'finished'],
     initial: '24h',
     ranges: {
       '24h': { since: (u) => new Date(u - 24 * 3600e3), bucket: 'hour', label: 'the last 24 hours', empty: 'No build activity' },
@@ -12105,7 +12373,7 @@ function applyTips() {
   $$('.jobstate h4').forEach((el) => {
     if (!el.title && el.nextElementSibling?.textContent.trim()) el.title = el.nextElementSibling.textContent.trim();
   });
-  $$('.class-metrics tbody td:first-child, .confusion > b, .balance-row > b').forEach((el) => {
+  $$('.class-metrics tbody td:first-child, .balance-row > b').forEach((el) => {
     if (!el.title) el.title = `${el.textContent.trim()}: one of the eight classes scored in this training evaluation`;
   });
 }
@@ -13344,31 +13612,11 @@ async function wirePoolCapacity() {
     '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
   };
 
-  const lines = Object.fromEntries($$('[data-ops-line]', root).map((l) => [l.dataset.opsLine, l]));
-  const area = $('[data-ops-area]', root);
   const buttons = $$('[data-ops-range]', root);
   const chart = $('.ops-chart', root);
-  const leftAxis = $$('.inference-axis.left text:not(.axis-title):not([data-ops-time])', root);
-  const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
+  const blank = () => { if (chart) chart.innerHTML = ''; };
 
-  const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
-
-  /* The geometry `gappyPath` already works in -- 54 to 726 across, 196 up to 28 -- so this
-     chart gets its break-on-null rather than a second copy of it. */
-  const BOX = { left: 54, right: 726, top: 28, bottom: 196 };
-  const pathOf = (values, max) => gappyPath(values, max, BOX);
-
-  /* **No area over a series with a hole.** Closing a path to the baseline across a gap
-     fills the gap, putting back the floor the line was just taught to avoid. The line
-     still draws; only the shading under it waits for a complete series. */
-  const areaOf = (values, max) => (values.some((v) => v === null || v === undefined)
-    ? ''
-    : `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`);
-
-  const clock = (iso) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  };
+  wireSeriesKeys(root, 'data-ops-highlight', chart);
 
   async function choose(next) {
     buttons.forEach((b) => {
@@ -13412,8 +13660,7 @@ async function wirePoolCapacity() {
       const anyReading = points.some((p) => p.machines > 0);
 
       if (!points.length || !anyReading) {
-        [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
-        leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
+        blank();
         if (chart) {
           chart.setAttribute('aria-label',
             /* **Not "a build".** A dataset build is run by the API and is not in
@@ -13429,35 +13676,6 @@ async function wirePoolCapacity() {
 
       root.classList.remove('is-quiet');
 
-      /* Utilization and VRAM are percentages and share the left axis; the queue
-         is a count and keeps the right one.
-
-         Rounded up to a whole number of ticks, so a quiet queue does not produce
-         an axis reading 1, 1, 1, 0, 0 -- a scale whose labels repeat says less
-         than no scale at all. */
-      const queueSteps = Math.max(1, rightAxis.length - 1);
-      const queuePeak = Math.max(...samples.queued, 0);
-      const maxQueued = Math.max(queueSteps, Math.ceil(queuePeak / queueSteps) * queueSteps);
-
-      if (lines.inference) lines.inference.setAttribute('d', pathOf(samples.inference, 100));
-      if (area) area.setAttribute('d', areaOf(samples.inference, 100));
-      if (lines.training) lines.training.setAttribute('d', pathOf(samples.training, 100));
-      if (lines.vram) lines.vram.setAttribute('d', pathOf(samples.vram, 100));
-      if (lines.queued) lines.queued.setAttribute('d', pathOf(samples.queued, maxQueued));
-
-      const ticks = (nodes, top, format) => nodes.forEach((t, i) => {
-        const steps = Math.max(1, nodes.length - 1);
-        t.textContent = format(top * (steps - i) / steps);
-      });
-
-      ticks(leftAxis, 100, (v) => `${Math.round(v)}%`);
-      ticks(rightAxis, maxQueued, (v) => String(Math.round(v)));
-
-      $$('[data-ops-time]', root).forEach((t, i) => {
-        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][i];
-        if (at) t.textContent = i === 2 ? 'Now' : clock(at.at);
-      });
-
       const last = points.at(-1);
       const current = {
         inference: `${Math.round(last.avg_inference_utilization_percent || 0)}%`,
@@ -13470,12 +13688,26 @@ async function wirePoolCapacity() {
         if (current[node.dataset.opsCurrent] !== undefined) node.textContent = current[node.dataset.opsCurrent];
       });
 
+      /* Utilization and VRAM are percentages and share the left axis; the queue is a
+         count and keeps the right one, in whole jobs. */
+      const at = points.map((p) => Date.parse(p.at));
+      const pair = (values) => values.map((value, index) => [at[index], value]);
+
       if (chart) {
-        chart.setAttribute('aria-label', `Pool capacity over ${label}: inference ${current.inference}, `
-          + `training ${current.training}, VRAM ${current.vram}, ${current.queued} waiting`);
+        drawActivity(chart, activityOption({
+          root,
+          axes: [{ max: 100, unit: '%' }, { whole: true }],
+          series: [
+            { id: 'inference', name: 'Inference', css: 'inference', kind: 'area', unit: '%', data: pair(samples.inference) },
+            { id: 'training', name: 'Training', css: 'training', unit: '%', data: pair(samples.training) },
+            { id: 'vram', name: 'VRAM', css: 'vram', unit: '%', data: pair(samples.vram) },
+            { id: 'queued', name: 'Queued', css: 'queued', axis: 1, data: pair(samples.queued) },
+          ],
+        }), `Pool capacity over ${label}: inference ${current.inference}, `
+          + `training ${current.training}, VRAM ${current.vram}, ${current.queued} waiting`, `workers-pool-${next}`);
       }
     } catch (error) {
-      [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
+      blank();
       if (chart) chart.setAttribute('aria-label', `Could not load pool capacity (${error.status || 'no answer'})`);
     }
   }
@@ -13497,21 +13729,11 @@ async function wireOperationalActivity() {
     '1y': { days: 365, bucket: 'day', label: 'year' },
   };
 
-  const lines = Object.fromEntries($$('[data-ops-line]', root).map((l) => [l.dataset.opsLine, l]));
-  const area = $('[data-ops-area]', root);
   const buttons = $$('[data-ops-range]', root);
   const chart = $('.ops-chart', root);
-  const leftAxis = $$('.inference-axis.left text:not(.axis-title):not([data-ops-time])', root);
-  const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
+  const blank = () => { if (chart) chart.innerHTML = ''; };
 
-  const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
-  const y = (v, max) => 196 - 168 * (v / Math.max(1, max));
-
-  const pathOf = (values, max) => values
-    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
-
-  /** The same line closed down to the baseline, for the filled area under it. */
-  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`;
+  wireSeriesKeys(root, 'data-ops-highlight', chart);
 
   const hours = (seconds) => {
     if (!seconds) return '0';
@@ -13519,8 +13741,6 @@ async function wireOperationalActivity() {
     const m = Math.round((seconds % 3600) / 60);
     return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
   };
-
-  const day = (iso) => new Date(iso).toISOString().slice(5, 10);
 
   async function choose(next) {
     buttons.forEach((b) => {
@@ -13543,46 +13763,21 @@ async function wireOperationalActivity() {
       /* The share of finishing work that did not succeed. Expressed against the
          same bucket rather than against the whole window, so a bad afternoon
          shows as a spike instead of being averaged away. */
-      const issues = points.map((p) => (p.finished ? Math.round(((p.finished - (p.succeeded || 0)) / p.finished) * 100) : 0));
-      const turnaround = points.map((p) => p.median_turnaround_s || 0);
+      /* **A bucket where nothing finished has no rate and no turnaround**, so both are
+         gaps there: drawn as 0% and 0s they read as a spotless, instant afternoon. */
+      const issues = points.map((p) => (p.finished ? Math.round(((p.finished - (p.succeeded || 0)) / p.finished) * 100) : null));
+      const turnaround = points.map((p) => (p.finished && p.median_turnaround_s != null ? Number(p.median_turnaround_s) : null));
 
       const peak = Math.max(...completed, 0);
 
       if (!points.length || peak === 0) {
-        [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
-        leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
+        blank();
         if (chart) chart.setAttribute('aria-label', `Nothing finished in the last ${label}`);
         root.classList.add('is-quiet');
         return;
       }
 
       root.classList.remove('is-quiet');
-
-      const maxJobs = Math.max(3, Math.ceil(peak / 3) * 3);
-      const maxTurn = Math.max(1, ...turnaround);
-
-      if (lines.completed) lines.completed.setAttribute('d', pathOf(completed, maxJobs));
-      if (area) area.setAttribute('d', areaOf(completed, maxJobs));
-      /* The issue rate is a percentage and the turnaround is seconds; each is
-         scaled to its own axis, which is why the chart carries two. */
-      if (lines.issues) lines.issues.setAttribute('d', pathOf(issues, 100));
-      if (lines.turnaround) lines.turnaround.setAttribute('d', pathOf(turnaround, maxTurn));
-
-      /* Steps from the tick count the markup actually has. Assuming four gave
-         the Workers chart a fifth label reading -33%, which is a utilization
-         nothing can have. */
-      const ticks = (nodes, top, format) => nodes.forEach((t, i) => {
-        const steps = Math.max(1, nodes.length - 1);
-        t.textContent = format(top * (steps - i) / steps);
-      });
-
-      ticks(leftAxis, maxJobs, (v) => String(Math.round(v)));
-      ticks(rightAxis, maxTurn, (v) => hours(Math.round(v)));
-
-      $$('[data-ops-time]', root).forEach((t, i) => {
-        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][i];
-        if (at) t.textContent = i === 2 ? 'Now' : day(at.at);
-      });
 
       const last = points.at(-1);
       const current = {
@@ -13595,13 +13790,27 @@ async function wireOperationalActivity() {
         if (current[node.dataset.opsCurrent] !== undefined) node.textContent = current[node.dataset.opsCurrent];
       });
 
+      /* Three scales: jobs on the left, turnaround on the right, and the issue rate on a
+         0-100 scale of its own that the chart has no room to label -- its readout and its
+         tooltip carry the percent sign. */
+      const at = points.map((p) => Date.parse(p.at));
+      const pair = (values) => values.map((value, index) => [at[index], value]);
+
       if (chart) {
-        chart.setAttribute('aria-label', `Completion activity over ${label}: `
+        drawActivity(chart, activityOption({
+          root,
+          axes: [{ whole: true }, { format: (v) => hours(Math.round(v)) }, { max: 100, hidden: true }],
+          series: [
+            { id: 'completed', name: 'Completed', css: 'completed', kind: 'area', data: pair(completed) },
+            { id: 'issues', name: 'With issues', css: 'issues', axis: 2, unit: '%', data: pair(issues) },
+            { id: 'turnaround', name: 'Median turnaround', css: 'turnaround', axis: 1, format: (v) => hours(Math.round(v)), data: pair(turnaround) },
+          ],
+        }), `Completion activity over ${label}: `
           + `${completed.at(-1)} finished in the last bucket, ${current.issues} with issues, `
-          + `median turnaround ${current.turnaround}`);
+          + `median turnaround ${current.turnaround}`, `outcomes-${next}`);
       }
     } catch (error) {
-      [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
+      blank();
       if (chart) chart.setAttribute('aria-label', `Could not load completion activity (${error.status || 'no answer'})`);
     }
   }

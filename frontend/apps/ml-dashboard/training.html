@@ -90,16 +90,7 @@
             </header>
             <div class="panel-bd inference-flow-bd">
               <div class="inference-chart training-chart" data-result-graph role="img" aria-label="System-wide training activity over the last 24 hours">
-                <svg viewBox="0 0 780 248" aria-hidden="true">
-                  <g class="jobs-grid"><line x1="54" y1="28" x2="726" y2="28"/><line x1="54" y1="70" x2="726" y2="70"/><line x1="54" y1="112" x2="726" y2="112"/><line x1="54" y1="154" x2="726" y2="154"/><line x1="54" y1="196" x2="726" y2="196"/></g>
-                  <g class="inference-axis left"><text x="46" y="32">100%</text><text x="46" y="74">75%</text><text x="46" y="116">50%</text><text x="46" y="158">25%</text><text x="46" y="200">0</text><text x="54" y="225" data-training-time>24h ago</text><text x="390" y="225" data-training-time>12h ago</text><text x="726" y="225" data-training-time>Now</text><text class="axis-title" x="54" y="15">GPU COMPUTE USED BY TRAINING</text></g>
-                  <g class="inference-axis right"><text x="734" y="32">8</text><text x="734" y="74">6</text><text x="734" y="116">4</text><text x="734" y="158">2</text><text x="734" y="200">0</text><text class="axis-title" x="726" y="15">JOBS</text></g>
-                  <path class="training-bars completed" data-training-bars="completed"/>
-                  <path class="training-area compute" data-training-area="compute"/>
-                  <path class="training-line compute" data-training-line="compute"/>
-                  <path class="training-line running" data-training-line="running"/>
-                  <path class="training-line queued" data-training-line="queued"/>
-                </svg>
+                <!-- Drawn by ECharts from /gpu/jobs/series (#275). -->
               </div>
               <div class="inference-flow-foot">
                 <div class="inference-chart-key training-chart-key result-legend">
@@ -492,6 +483,7 @@
 </div>
 
 <script src="./api.js"></script>
+<script src="../../shared/vendor/echarts/echarts.min.js"></script>
 <script src="./screens.js"></script>
 </body>
 </html>

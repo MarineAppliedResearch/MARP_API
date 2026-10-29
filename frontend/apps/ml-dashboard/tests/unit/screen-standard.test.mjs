@@ -437,15 +437,19 @@ test('a worker opens onto its own readings, and says which it has none of', asyn
   const card = (title) => [...into.querySelectorAll('.evaluation-card')]
     .find((one) => one.querySelector('h5').textContent.trim() === title);
 
-  assert.ok(card('GPU utilisation').querySelector('.result-line').getAttribute('d'),
-    'the GPU series draws');
+  /* Drawn by ECharts (#275): the slot keeps the option it was given. */
+  const gpu = card('GPU utilisation').querySelector('[data-chart]');
+
+  assert.ok(gpu?.marpChart, 'the GPU series draws');
+  assert.deepEqual(gpu.marpOption.series[0].data.map((point) => point[1]), [22, null, 29],
+    'the unmeasured minute is null, not zero');
 
   /* The gap in the middle is a break, not a line through zero. */
-  const d = card('GPU utilisation').querySelector('.result-line').getAttribute('d');
+  const d = [...gpu.querySelectorAll('path')].find((path) => path.getAttribute('stroke-width') === '1.8').getAttribute('d');
 
   assert.equal((d.match(/M/g) || []).length, 2, 'the unmeasured minute breaks the line');
 
-  assert.equal(card('CPU').querySelector('.result-line'), null, 'nothing drawn for CPU');
+  assert.equal(card('CPU').querySelector('[data-chart]'), null, 'nothing drawn for CPU');
   assert.match(card('CPU').textContent, /Not reported in the last hour/,
     'and it says so rather than drawing a floor');
 });
