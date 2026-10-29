@@ -1229,14 +1229,25 @@ class GpuService {
         const progress = this.validateProgress(body.progress);
 
         const parsedAttemptId = this.attemptIdFromPath(attemptId);
-        const outcome = await gpuRepository.recordHeartbeat({
-            attemptId: parsedAttemptId,
-            workerId,
-            leaseEpoch,
-            state: body.state,
-            progress,
-            telemetry: validateTelemetry(body.telemetry),
-        });
+        let outcome;
+
+        try {
+            outcome = await gpuRepository.recordHeartbeat({
+                attemptId: parsedAttemptId,
+                workerId,
+                leaseEpoch,
+                state: body.state,
+                progress,
+                telemetry: validateTelemetry(body.telemetry),
+            });
+        } catch (error) {
+            /* A heartbeat MARP could not save, as opposed to one it refused on purpose: the
+               lease will expire as if the worker went quiet, so say what really happened. */
+            if (!(error instanceof ApiError)) {
+                await gpuRepository.noteRefusedHeartbeat(parsedAttemptId, String(error && error.message || error).slice(0, 300));
+            }
+            throw error;
+        }
 
         // A refused heartbeat carries no accepted attempt. It may have named a
         // live attempt owned by somebody else, so it must not close that slot's

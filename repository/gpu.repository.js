@@ -945,8 +945,8 @@ class GpuRepository {
                         a.capabilities_snapshot,
                         s.at               AS sample_at,
                         s.devices          AS sample_devices,
-                        a.progress_done,
-                        a.progress_total,
+                        a.progress_done::float8 AS progress_done,
+                        a.progress_total::float8 AS progress_total,
                         a.progress_unit,
                         a.progress_phase,
                         a.progress_elapsed_s,
@@ -1160,8 +1160,8 @@ class GpuRepository {
 
             const jobs = await this.db.sequelize.query(
                 `SELECT j.*,
-                        a.progress_done,
-                        a.progress_total,
+                        a.progress_done::float8 AS progress_done,
+                        a.progress_total::float8 AS progress_total,
                         a.progress_unit,
                         a.progress_phase,
                         a.progress_elapsed_s,
@@ -1184,7 +1184,7 @@ class GpuRepository {
                           WHERE job_id = j.id) AS workers_used
                    FROM gpu_jobs j
                    LEFT JOIN LATERAL (
-                        SELECT progress_done, progress_total, progress_unit,
+                        SELECT progress_done::float8 AS progress_done, progress_total::float8 AS progress_total, progress_unit,
                                progress_phase, progress_elapsed_s, last_heartbeat_at,
                                worker_id
                           FROM gpu_job_attempts
@@ -1329,8 +1329,8 @@ class GpuRepository {
             const [context] = await this.db.sequelize.query(
                 `SELECT attempt.id AS attempt_id,
                         attempt.slot_index,
-                        attempt.progress_done,
-                        attempt.progress_total,
+                        attempt.progress_done::float8 AS progress_done,
+                        attempt.progress_total::float8 AS progress_total,
                         attempt.progress_unit,
                         job.spec,
                         worker.id AS worker_id,
@@ -1914,7 +1914,21 @@ class GpuRepository {
                 await this.db.sequelize.query(
                     `UPDATE gpu_job_attempts
                         SET state = 'abandoned',
-                            failure_reason = COALESCE(failure_reason, 'Lease expired: no heartbeat before lease_expires_at.'),
+                            /* **What actually happened, when MARP knows.** A worker can send
+                               a heartbeat every five seconds and still lose its lease, if MARP
+                               cannot save them -- job 21953 did, on an integer overflow -- and
+                               "no heartbeat" then sends whoever reads it looking at the wrong
+                               machine. A refused heartbeat leaves a note; the latest is the reason. */
+                            failure_reason = COALESCE(
+                                failure_reason,
+                                (SELECT 'Lease expired: the worker kept sending heartbeats but MARP could not save them ('
+                                        || (e.payload->>'error') || ').'
+                                   FROM gpu_job_events e
+                                  WHERE e.attempt_id = :attemptId AND e.kind = 'note'
+                                    AND e.payload->>'note' = 'heartbeat refused'
+                                  ORDER BY e.at DESC, e.seq ASC LIMIT 1),
+                                'Lease expired: no heartbeat before lease_expires_at.'
+                            ),
                             finished_at = NOW()
                       WHERE id = :attemptId`,
                     { replacements: { attemptId: attempt.id }, transaction }
@@ -3283,6 +3297,52 @@ class GpuRepository {
     // -----------------------------------------------------------------
     // Shared internals
     // -----------------------------------------------------------------
+
+    /**
+     * Note on an attempt that MARP refused one of its heartbeats, and why.
+     *
+     * **The worker cannot tell anyone, so MARP has to.** A heartbeat that fails on MARP's
+     * side -- a database error, not a refusal the worker can act on -- rolls back, the
+     * lease is not extended, and the attempt is later expired as though the worker had
+     * gone quiet. This is the record that it had not, read back by
+     * {@link GpuRepository#expireStaleLeases} as the failure reason.
+     *
+     * At most one note a minute for the same error, so a worker heartbeating every five
+     * seconds into a broken route does not write twelve a minute. Its own transaction,
+     * because the heartbeat's has already rolled back; and it never throws, because it is
+     * already reporting a failure.
+     *
+     * @async
+     * @param {number} attemptId - The attempt.
+     * @param {string} error - What went wrong, as the database said it.
+     * @returns {Promise<void>}
+     */
+    async noteRefusedHeartbeat(attemptId, error) {
+        try {
+            await this.db.sequelize.query(
+                `INSERT INTO gpu_job_events (attempt_id, seq, at, kind, payload)
+                 SELECT :attemptId,
+                        LEAST(COALESCE((SELECT MIN(seq) FROM gpu_job_events WHERE attempt_id = :attemptId), 0), 0) - 1,
+                        NOW(), 'note', :payload
+                  WHERE EXISTS (SELECT 1 FROM gpu_job_attempts WHERE id = :attemptId)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM gpu_job_events
+                         WHERE attempt_id = :attemptId AND kind = 'note'
+                           AND payload->>'note' = 'heartbeat refused'
+                           AND payload->>'error' = :error
+                           AND at > NOW() - INTERVAL '1 minute')`,
+                {
+                    replacements: {
+                        attemptId,
+                        error,
+                        payload: JSON.stringify({ note: 'heartbeat refused', error }),
+                    },
+                }
+            );
+        } catch (noteError) {
+            logger.error('Error::could not note a refused heartbeat: ' + noteError);
+        }
+    }
 
     /**
      * Append one coordinator note to an attempt's event stream.

@@ -3204,16 +3204,29 @@ function trainingJobDetail(view, run, epochs, pace, evidence) {
      waiting line and nothing at all. */
   runHasFinished = terminal;
 
+  /* **Why it failed, said where somebody is looking.** A training job that failed showed
+     no reason here at all -- job 21953, WpFeCec, failed three times over and the panel said
+     only that no run had been recorded. The reason is on the attempts, so they are read
+     when the panel opens and the last one's reason heads the section. */
+  const ended = ['failed', 'expired'].includes(view.state)
+    ? '<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg>'
+      + `<div><h4>${view.state === 'expired' ? 'Expired' : 'Failed'}</h4>`
+      + '<p data-job-failure>The attempts below say how each try ended.</p></div></div></section>'
+      + '<details class="diag" open><summary>Attempts<span class="later">Every try at this job, and why each ended</span></summary>'
+      + `<div class="dbody"><div class="jobattempts" data-job-attempts="${view.job.id}"></div></div></details>`
+    : '';
+
   if (!run) {
     /* **Expanding is not conditional on a run existing**, which is what broke watching:
        the gate used to be `data-run`, so the one job anybody wanted to watch -- the one
        still going -- had no expander at all. */
-    return `<div class="rundetail jobdetail">${live}`
-      + '<p class="hint">No training run has been recorded for this job yet. Its epochs, losses '
-      + 'and mAP appear here as soon as one is.</p></div>';
+    return `<div class="rundetail jobdetail">${live}${ended}`
+      + (ended ? '<p class="hint">It ended before training began, so no run was recorded.</p></div>'
+        : '<p class="hint">No training run has been recorded for this job yet. Its epochs, losses '
+          + 'and mAP appear here as soon as one is.</p></div>');
   }
 
-  return `<div class="rundetail jobdetail">${live}`
+  return `<div class="rundetail jobdetail">${live}${ended}`
     + `${trainingRunDetail(run, epochs, trainingTaskOf(view.job), view.job.spec, evidence)}</div>`;
 }
 
@@ -3293,6 +3306,7 @@ function wireTrainingJobDetail(head, detail) {
     }
 
     cell.innerHTML = trainingJobDetail(view, run, epochs, pace, evidence);
+    if ($('[data-job-attempts]', cell)) fillJobAttempts(cell, jobId);
 
     /* **The curves are fetched on asking, once per run.** A thousand points per class is
        a megabyte a panel should not pull on every expansion, still less on every
