@@ -5020,7 +5020,8 @@ function speciesOverTime(timeline, jobId) {
     : [];
 
   const option = {
-    grid: { left: 130, right: 16, top: 12, bottom: 40 },
+    /* Room above the rows for the zoom icons, which otherwise sit on the first species. */
+    grid: { left: 130, right: 16, top: 30, bottom: 40 },
     legend: { show: false },
     xAxis: { type: 'category', data: labels, name: 'Time in the video', nameLocation: 'middle', nameGap: 26, ...theme.axis, splitLine: { show: false } },
     yAxis: { type: 'category', data: shown.map((one) => one.name), inverse: true, ...theme.axis, splitLine: { show: false } },
@@ -5043,7 +5044,7 @@ function speciesOverTime(timeline, jobId) {
   return '<section class="findings species-time">'
     + `<h4>${pieces.length > 1 ? 'When in the video, across the run' : 'When in this piece'}</h4>`
     + `<p>Each row shaded against its own busiest ${videoClock(bucket)}${more}${mark.length ? ' &middot; this piece outlined' : ''}</p>`
-    + chartSlot(option, `Species over time, ${bucket} seconds a column`, { height: Math.max(160, shown.length * 26 + 60) })
+    + chartSlot(option, `Species over time, ${bucket} seconds a column`, { height: Math.max(180, shown.length * 26 + 80) })
     + '</section>';
 }
 
