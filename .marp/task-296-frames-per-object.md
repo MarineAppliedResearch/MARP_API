@@ -122,4 +122,8 @@ Written at G3.
 
 ## Status
 
-- **Gate:** implementing.
+- **Gate:** verifying. Live on the serving API, waiting on Isaac's check.
+- **Notes:** `test:ml` 399/399 and the dashboard unit tests 191/191 pass. Estimated against
+  dataset 391's own queries: every frame 155,258 (the real build cut 155,258); at 10 per
+  object 16,237 images (train 10,193, against 98,692 now); at 10 balanced 19,421. The
+  real-run speed check is not done.
