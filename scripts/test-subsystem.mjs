@@ -57,6 +57,8 @@ const SUBSYSTEMS = {
             'gpu-training-run-record',
             // #104: what an inference job produced, which its state cannot say.
             'inference-job-outcome',
+            // #288: what every piece of one run produced, together.
+            'inference-batch-outcome',
             // #104: the session a run creates for itself, and the type derived for it.
             'inference-run-session',
             /* #268: the name a training job gets when nobody typed one. */

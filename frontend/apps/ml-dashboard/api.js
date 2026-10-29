@@ -1233,6 +1233,19 @@
   }
 
   /**
+   * `GET /api/v2/gpu/batches/:batch_id/observations` -- what every piece of one run found.
+   *
+   * The run's total and its species in one read, with `states` saying how many pieces are
+   * in each state so a total from a run still going can be labelled as one (#288).
+   *
+   * @param {string} batchId - The run's `batch_id`.
+   * @returns {Promise<Object>}
+   */
+  function batchObservations(batchId) {
+    return request(`/gpu/batches/${encodeURIComponent(batchId)}/observations`);
+  }
+
+  /**
    * `GET /api/v2/gpu/jobs/:id/observations` -- what one run actually produced.
    *
    * **A job's state does not answer this.** A job succeeds when its bytes arrive and are
@@ -1922,6 +1935,7 @@
     listJobs,
     getJob,
     jobObservations,
+    batchObservations,
     listModels,
     listRunnableModels,
     listModelVersions,

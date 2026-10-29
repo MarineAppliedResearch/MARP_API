@@ -901,6 +901,73 @@ function registerGpuRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'jobs:read',
+        path: '/api/gpu/batches/:batch_id/observations',
+        summary: 'What every piece of one run produced, together',
+        description:
+            'The observation count and the per-species breakdown across every job sharing one `batch_id` -- the pieces of one split video -- grouped exactly as `GET /gpu/jobs/{id}/observations` groups one job, so the two add up. '
+            + 'One query for the run rather than one per piece: a dive split into 82 pieces was 82 requests for one number. '
+            + '**`states` says how far the run has got**, a count of pieces per state, because a total from a run still going is a total so far. '
+            + '`session_id` is the run\'s one session when there is exactly one, which is the usual case; `session_ids` lists them all.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'batch_id', required: true, schema: { type: 'string', format: 'uuid' }, description: 'The run, as its pieces carry it.' },
+        ],
+        responses: {
+            200: {
+                description: 'What the run produced.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                batch_id: { type: 'string', format: 'uuid' },
+                                pieces: { type: 'integer', description: 'How many jobs carry this batch_id.' },
+                                states: { type: 'object', additionalProperties: { type: 'integer' }, description: 'Pieces per job state, such as `{"succeeded": 70, "queued": 12}`.' },
+                                session_ids: { type: 'array', items: { type: 'integer' } },
+                                session_id: { type: 'integer', nullable: true, description: 'The one session, or null when the pieces name none or several.' },
+                                observations: { type: 'integer' },
+                                species: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            species_id: { type: 'integer', nullable: true },
+                                            species_name: { type: 'string', nullable: true, description: 'What it is, after any correction. Null when the species was never resolved.' },
+                                            reported_name: { type: 'string', nullable: true, description: 'What the model called it, which a correction never rewrites.' },
+                                            observations: { type: 'integer' },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const batchId = String(req.params.batch_id || '');
+
+            /* A uuid column: anything else would reach PostgreSQL and come back a 500. */
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batchId)) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'batch_id must be a uuid.');
+            }
+
+            const outcome = await inferenceOutcomeController.getBatchOutcome(batchId);
+
+            if (!outcome) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `No job carries batch_id ${batchId}.`);
+            }
+
+            res.json(outcome);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
         path: '/api/gpu/jobs/:id/observations',
         summary: 'What an inference job actually produced',
         description:

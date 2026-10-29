@@ -27,6 +27,18 @@ class InferenceOutcomeController {
         logger.info('Controller: getJobOutcome');
         return await inferenceOutcomeRepository.findJobOutcome(jobId);
     }
+
+    /**
+     * What every piece of one run wrote, together.
+     *
+     * @async
+     * @param {string} batchId - The run's `batch_id`.
+     * @returns {Promise<Object|null>} The outcome, or null when no job carries it.
+     */
+    async getBatchOutcome(batchId) {
+        logger.info('Controller: getBatchOutcome');
+        return await inferenceOutcomeRepository.findBatchOutcome(batchId);
+    }
 }
 
 module.exports = new InferenceOutcomeController();

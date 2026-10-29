@@ -3199,3 +3199,18 @@ td.whb.quiet { color: var(--amber-300); }
    is a row reading "frames waiting completed", three bare labels with nothing in front of
    them, which is what it looked like. */
 .dataset-activity.is-quiet .inference-flow-foot { display: none; }
+
+/* What an inference piece and its run found (#288): a count per species, ranked, with a
+   bar against the most common so the shape of the catch reads at a glance. */
+.findings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.findings { min-width: 0; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: var(--r-sm); background: var(--sunk); }
+.findings h4 { margin: 0 0 2px; color: var(--white); font-size: 12px; }
+.findings > p { margin: 0 0 8px; color: var(--muted); font-size: 11px; }
+.findlist { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.findlist li { display: grid; grid-template-columns: minmax(90px, 1.2fr) minmax(60px, 1fr) auto; gap: 8px; align-items: center; font-size: 11px; }
+.findlist b { min-width: 0; overflow-wrap: anywhere; color: var(--text); font-weight: 600; }
+.findlist strong { color: var(--white); font-variant-numeric: tabular-nums; }
+.findlist small { grid-column: 1 / -1; margin-top: -4px; color: var(--faint); }
+.findbar { height: 6px; border-radius: 3px; background: rgba(42, 214, 220, .08); overflow: hidden; }
+.findbar i { display: block; height: 100%; border-radius: inherit; background: var(--cyan-400); }
+.findings-go { margin: 10px 0 0; }

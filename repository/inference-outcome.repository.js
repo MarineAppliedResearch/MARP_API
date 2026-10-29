@@ -78,6 +78,67 @@ class InferenceOutcomeRepository {
 
         return { ...job, species };
     }
+
+    /**
+     * What every piece of one run wrote together, and which species.
+     *
+     * **One query for the run, not one per piece.** A long video is split into pieces that
+     * share a `batch_id` -- 82 of them for one CAMPA dive -- and reading each piece's
+     * outcome to add them up on the page was 82 requests for one number (#288).
+     *
+     * Grouped exactly as `findJobOutcome` groups one job, so a run's breakdown and its
+     * pieces' breakdowns add up to the same thing.
+     *
+     * **How far the run has got travels with the count**, by state, because a total from
+     * a run still going is a total *so far* and a screen has to be able to say so.
+     *
+     * @async
+     * @param {string} batchId - The run's `batch_id`.
+     * @returns {Promise<Object|null>} `{batch_id, pieces, states, session_ids, session_id,
+     *   observations, species}`, or null when no job carries that `batch_id`.
+     */
+    async findBatchOutcome(batchId) {
+        const pieces = await this.db.sequelize.query(
+            `SELECT j.state, COUNT(*)::int AS pieces,
+                    array_agg(DISTINCT (j.spec->'session'->>'session_id')::int)
+                        FILTER (WHERE j.spec->'session'->>'session_id' IS NOT NULL) AS session_ids
+               FROM gpu_jobs j
+              WHERE j.batch_id = :batchId
+              GROUP BY j.state`,
+            { replacements: { batchId }, type: QueryTypes.SELECT }
+        );
+
+        if (!pieces.length) return null;
+
+        const states = Object.fromEntries(pieces.map((row) => [row.state, row.pieces]));
+        const sessionIds = [...new Set(pieces.flatMap((row) => row.session_ids || []))].sort((a, b) => a - b);
+
+        const species = await this.db.sequelize.query(
+            `SELECT o.species_id,
+                    s.comname AS species_name,
+                    o.comname AS reported_name,
+                    COUNT(*)::int AS observations
+               FROM observations o
+               JOIN gpu_jobs j ON j.id = o.gpu_job_id
+               LEFT JOIN species s ON s.id = o.species_id
+              WHERE j.batch_id = :batchId
+              GROUP BY o.species_id, s.comname, o.comname
+              ORDER BY COUNT(*) DESC, s.comname, o.comname`,
+            { replacements: { batchId }, type: QueryTypes.SELECT }
+        );
+
+        return {
+            batch_id: batchId,
+            pieces: pieces.reduce((sum, row) => sum + row.pieces, 0),
+            states,
+            session_ids: sessionIds,
+            /* The one session when there is one, which is the usual case: a run is one
+               video, and a run makes its own session. */
+            session_id: sessionIds.length === 1 ? sessionIds[0] : null,
+            observations: species.reduce((sum, row) => sum + row.observations, 0),
+            species,
+        };
+    }
 }
 
 module.exports = new InferenceOutcomeRepository();

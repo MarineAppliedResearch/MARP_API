@@ -4854,6 +4854,114 @@ function renderInference(jobs) {
 }
 
 /**
+ * One list of what was found: a total, then each species with its count (#288).
+ *
+ * **Grouped by species, with the model's own words kept.** The route groups by species and
+ * by the name the model reported, because a review correction changes the first and never
+ * the second -- so one species can arrive as two rows. They are summed here into one line,
+ * and where the model called it something else that is said beside it, because that
+ * disagreement is the interesting part.
+ *
+ * **Zero is an answer.** A piece that ran every frame and found nothing says 0, which is
+ * a different fact from a piece nobody has counted.
+ *
+ * @param {string} title - What this list covers.
+ * @param {Object} outcome - From `jobObservations` or `batchObservations`.
+ * @param {string} [note] - How far the work it counts has got.
+ * @returns {string}
+ */
+function findingsSection(title, outcome, note = '') {
+  const total = Number(outcome.observations) || 0;
+  const groups = new Map();
+
+  for (const row of outcome.species || []) {
+    const key = row.species_id ?? `reported:${row.reported_name ?? ''}`;
+    const group = groups.get(key) || {
+      name: row.species_name || row.reported_name || 'Species not resolved', count: 0, reported: new Set(),
+    };
+    group.count += Number(row.observations) || 0;
+    if (row.species_name && row.reported_name && row.reported_name !== row.species_name) group.reported.add(row.reported_name);
+    groups.set(key, group);
+  }
+
+  const list = [...groups.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const most = Math.max(1, ...list.map((group) => group.count));
+  const rows = list.map((group) => `<li><b>${escapeHtml(group.name)}</b>`
+    + `<span class="findbar"><i style="width:${Math.max(2, Math.round(group.count / most * 100))}%"></i></span>`
+    + `<strong>${group.count.toLocaleString()}</strong>`
+    + `${group.reported.size ? `<small>reported as ${[...group.reported].map(escapeHtml).join(', ')}</small>` : ''}</li>`).join('');
+
+  return `<section class="findings"><h4>${title}</h4>`
+    + `<p>${countOf(total, 'observation')}${note ? ` &middot; ${note}` : ''}</p>`
+    + `${rows ? `<ol class="findlist">${rows}</ol>` : ''}</section>`;
+}
+
+/** Whole runs' totals by `batch_id`, so a second open of the same run is not a second read. */
+const inferenceRunOutcomes = new Map();
+
+/**
+ * Fill an open Inference row with what its piece found, and what its whole run found.
+ *
+ * **Read when the row is opened, and again on each poll while it stays open**: a running
+ * piece and a running run keep finding things, and their counts are labelled *so far*
+ * until every piece has finished, so a number that is still moving never reads as a total.
+ *
+ * @param {Element} place - The detail's `[data-inference-findings]` element.
+ * @returns {Promise<void>}
+ */
+async function fillInferenceFindings(place) {
+  if (!window.MarpApi) return;
+
+  const jobId = Number(place.dataset.inferenceFindings);
+  const batch = place.dataset.batch;
+  const { state } = place.dataset;
+  const finished = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(state);
+  const sections = [];
+  let session = null;
+
+  if (state === 'queued') {
+    sections.push('<section class="findings"><h4>This piece</h4><p>Not run yet, so nothing found yet.</p></section>');
+  } else {
+    try {
+      const piece = finished && inferenceOutcomes.has(jobId)
+        ? inferenceOutcomes.get(jobId)
+        : await window.MarpApi.jobObservations(jobId);
+      if (finished) inferenceOutcomes.set(jobId, piece);
+      session = piece.session_id;
+      sections.push(findingsSection('This piece', piece, finished ? '' : 'so far, while it runs'));
+    } catch (error) {
+      sections.push(`<section class="findings"><h4>This piece</h4><p class="faint">Could not read what it found (${error.status || 'no answer'}).</p></section>`);
+    }
+  }
+
+  if (batch) {
+    try {
+      const run = inferenceRunOutcomes.get(batch) && inferenceRunOutcomes.get(batch).done
+        ? inferenceRunOutcomes.get(batch).outcome
+        : await window.MarpApi.batchObservations(batch);
+      const states = run.states || {};
+      const going = (states.queued || 0) + (states.leased || 0);
+      const succeeded = states.succeeded || 0;
+      inferenceRunOutcomes.set(batch, { outcome: run, done: going === 0 });
+      session = run.session_id ?? session;
+      sections.push(findingsSection(`The whole run &middot; ${countOf(run.pieces, 'piece')}`, run,
+        `${succeeded.toLocaleString()} of ${run.pieces.toLocaleString()} finished${going ? ', so far' : ''}`));
+    } catch (error) {
+      sections.push(`<section class="findings"><h4>The whole run</h4><p class="faint">Could not read what it found (${error.status || 'no answer'}).</p></section>`);
+    }
+  }
+
+  /* Into the mosaic, filtered to the run's session: a run makes its own session, so that
+     is this run's observations and nothing else. Offered only when there is one. */
+  place.innerHTML = `<div class="findings-grid">${sections.join('')}</div>`;
+  const anything = $$('.findlist li', place).length > 0;
+  if (session && anything) {
+    place.insertAdjacentHTML('beforeend', `<p class="findings-go"><a class="btn sm" href="/apps/marp-mosaic-review/?session=${session}">`
+      + 'Review these in the mosaic</a></p>');
+  }
+}
+
+/**
  * The recent inference jobs table.
  *
  * Running work first, then anything needing attention, then the most recently
@@ -4886,7 +4994,10 @@ function renderInferenceRecent(views) {
     const tookMs = Math.max(0, Date.parse(job.updated_at) - Date.parse(job.created_at));
     const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
 
-    return `<tr data-job="${job.id}">`
+    /* **Expands onto what it found** (#288): the piece's species, and its whole run's when
+       it is one piece of a split video. */
+    return `<tr class="runrow-head" aria-expanded="false" data-job="${job.id}">`
+      + `<td class="ex"><button class="exbtn" type="button" aria-label="Show what ${escapeHtml(view.title)} found"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
       + `<td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">${view.title}</span></span></td>`
       + `<td class="jscope"><span class="two"><span class="a">${session.dive ? diveText(session.dive) : 'Dive ?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
       + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
@@ -4899,9 +5010,19 @@ function renderInferenceRecent(views) {
       + '<td class="jdet">' + NOT_COUNTED + '</td>'
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
-      + `<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
-      + '</tr>';
+      /* The Open arrow that stood here opened nothing; the row's expander does now. */
+      + '<td class="jacts"></td>'
+      + '</tr>'
+      + `<tr class="runrow-body" hidden><td colspan="9"><div class="rundetail" data-inference-findings="${job.id}"`
+      + ` data-batch="${job.batch_id || ''}" data-state="${view.state}"><p class="faint">Opening the row reads what it found.</p></div></td></tr>`;
   }).join('');
+
+  /* However it is opened, the row's `hidden` is what changes, so that is what is watched. */
+  $$('[data-inference-findings]', body).forEach((place) => {
+    const detail = place.closest('tr.runrow-body');
+    new MutationObserver(() => { if (!detail.hidden) fillInferenceFindings(place); })
+      .observe(detail, { attributes: true, attributeFilter: ['hidden'] });
+  });
 
   fillInferenceOutcomes(body, shown);
   watchInference();
@@ -5072,6 +5193,13 @@ function watchInference() {
 
       /* A job that has just finished is the one whose count is now worth asking for. */
       await fillInferenceOutcomes(body, drawn);
+
+      /* An open row keeps counting while its piece or its run is still going. */
+      for (const place of $$('tr.runrow-body:not([hidden]) [data-inference-findings]', body)) {
+        const view = views.get(Number(place.dataset.inferenceFindings));
+        if (view) place.dataset.state = view.state;
+        fillInferenceFindings(place);
+      }
 
       live = drawn.some((view) => ['running', 'queued'].includes(view.state));
     } catch {
