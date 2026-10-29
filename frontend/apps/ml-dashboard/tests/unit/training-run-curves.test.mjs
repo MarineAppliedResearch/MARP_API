@@ -516,6 +516,9 @@ test('a poll where only updated_at moved repaints that cell and nothing else', a
   assert.equal(head.getAttribute('aria-expanded'), 'true', 'with the expansion still open');
 });
 
+/** A series of a panel's ECharts activity chart by id, or null when it was not drawn (#275). */
+const activitySeries = (root, id) => root.querySelector('[data-chart]')?.marpOption.series.find((one) => one.id === id) || null;
+
 /** One bucket of the jobs series, as GET /gpu/jobs/series returns it. */
 const bucket = (at, extra = {}) => ({
   at,
@@ -558,9 +561,11 @@ test('the activity chart draws what the series says, at a 1h default', async (t)
   assert.equal(root.querySelector('[data-training-range].on').dataset.trainingRange, '1h',
     'defaulting to the hour Isaac asked for');
 
-  assert.ok(root.querySelector('.training-line.compute').getAttribute('d'), 'compute draws');
-  assert.ok(root.querySelector('.training-line.queued').getAttribute('d'), 'queued draws');
-  assert.ok(root.querySelector('.training-bars.completed').getAttribute('d').trim(), 'completed draws as bars');
+  assert.deepEqual(activitySeries(root, 'compute').data.map((point) => point[1]), [61, 74], 'compute draws');
+  assert.deepEqual(activitySeries(root, 'queued').data.map((point) => point[1]), [2, 1], 'queued draws');
+  assert.equal(activitySeries(root, 'completed').type, 'bar', 'completed draws as bars');
+  assert.equal(Date.parse('2026-10-23T19:30:00.000Z'), activitySeries(root, 'running').data[1][0],
+    'each point at its bucket time, so the axis is real time rather than a count of buckets');
 
   /* The readouts are the last bucket, except completed which is a count of events. */
   assert.equal(cur('compute'), '74%');
@@ -589,17 +594,14 @@ test('a GPU reading nobody took is absent, not a flat zero', async (t) => {
 
   const root = screen.document.querySelector('[data-training-activity]');
 
-  assert.equal(root.querySelector('.training-line.compute').getAttribute('d'), '',
-    'no line at all, rather than one along the bottom');
-  assert.equal(root.querySelector('.training-area').getAttribute('d'), '',
-    'and no area under it');
+  assert.equal(activitySeries(root, 'compute'), null, 'no line at all, rather than one along the bottom');
   assert.ok(root.querySelector('[data-training-highlight="compute"]').disabled,
     'its legend key cannot be pressed to reveal nothing');
   assert.ok(root.querySelector('[data-training-current="compute"] .dash'),
     'and the readout is a dash');
 
   /* The series that were recorded still draw. */
-  assert.ok(root.querySelector('.training-line.queued').getAttribute('d'), 'queued is unaffected');
+  assert.ok(activitySeries(root, 'queued'), 'queued is unaffected');
 });
 
 test('the pool chart draws a hole as a hole, not a dip to the floor', async (t) => {

@@ -638,6 +638,8 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 /* An ECharts chart (#275) sizes to its slot rather than to a viewBox, so the slot has the height. */
 .marp-chart { height: 230px; }
 .marp-chart svg { max-height: none; }
+/* Inside a panel's own chart box, which already draws the frame. */
+.marp-chart.bare { height: 248px; }
 .result-grid line { stroke: rgba(100, 246, 242, .18); stroke-width: 1.2; }
 .result-axis text { fill: var(--text); font: 600 10px var(--body-font); text-anchor: end; }
 .result-axis text:nth-last-child(2) { text-anchor: start; }

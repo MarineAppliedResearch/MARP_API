@@ -1729,7 +1729,7 @@ function stepCharts(samples) {
       + `<header><div><h5>${spec.title}</h5><p>Per batch`
       + `${last === undefined ? '' : ` &middot; now ${Number(last).toFixed(digits(spec))}${spec.unit}`}`
       + `${attempts.length > 1 ? ` &middot; ${attempts.length} attempts` : ''}</p></div></header>`
-      + `${chartSlot(option, `${spec.title} per batch`, `steps-${attempts.join('-')}-${spec.key}`)}</article>`;
+      + `${chartSlot(option, `${spec.title} per batch`, { key: `steps-${attempts.join('-')}-${spec.key}` })}</article>`;
   }).join('');
 
   /* **The phase as a band rather than a number**, because caching has no count: the
@@ -1779,19 +1779,24 @@ function chartText(html) {
  * in exactly one place and a legend swatch elsewhere cannot disagree with the line.
  *
  * @param {string} key - A series class such as `box-loss`.
- * @returns {{color: string, dash: number[]|null}}
+ * @param {Element} [within] - The panel the key is scoped to, when it is.
+ * @returns {{color: string, dash: number[]|null, fill: string|null}}
  */
-function chartKey(key) {
+function chartKey(key, within) {
   const probe = document.createElement('span');
   probe.className = key;
   probe.hidden = true;
-  document.body.appendChild(probe);
+  /* Inside the panel when given one: some keys are scoped to their panel, as
+     `.training-health .queued` is, and a probe on the body would not match them. */
+  (within || document.body).appendChild(probe);
   const style = getComputedStyle(probe);
   const color = style.getPropertyValue('--key').trim();
   const on = parseFloat(style.getPropertyValue('--dash-on'));
   const off = parseFloat(style.getPropertyValue('--dash-off'));
+  const fill = style.getPropertyValue('--fill').trim();
   probe.remove();
-  return { color: color || '#64f6f2', dash: on > 0 ? [on, off > 0 ? off : on] : null };
+  /* A zero gap is a solid line, which is how a panel says "not dashed". */
+  return { color: color || '#64f6f2', dash: on > 0 && off > 0 ? [on, off] : null, fill: fill || null };
 }
 
 /**
@@ -1849,16 +1854,19 @@ const CHART_ZOOM = new Map();
  *
  * @param {Object} option - The ECharts option, without the theme.
  * @param {string} label - What the chart shows, for a screen reader.
- * @param {string} [key] - A name that stays the same across redraws of this chart.
- * @param {number} [height] - Pixels, for a chart whose height follows its data.
+ * @param {Object} [how] - `{key, height, bare}`. `key` is a name that stays the same across
+ *   redraws of this chart; `height` is pixels, for a chart whose height follows its data;
+ *   `bare` is for a chart going into a box that already has the frame and the label.
  * @returns {string} The slot's HTML.
  */
-function chartSlot(option, label, key, height) {
+function chartSlot(option, label, how = {}) {
+  const { key, height, bare } = how;
   chartSeq += 1;
   const id = `chart-${chartSeq}`;
   CHART_OPTIONS.set(id, option);
-  return `<div class="result-chart marp-chart" data-chart="${id}"${key ? ` data-chart-key="${escapeHtml(key)}"` : ''}`
-    + `${height ? ` style="height:${Math.round(height)}px"` : ''} role="img" aria-label="${escapeHtml(label)}"></div>`;
+  return `<div class="${bare ? 'marp-chart bare' : 'result-chart marp-chart'}" data-chart="${id}"`
+    + `${key ? ` data-chart-key="${escapeHtml(key)}"` : ''}${height ? ` style="height:${Math.round(height)}px"` : ''}`
+    + `${bare ? '' : ` role="img" aria-label="${escapeHtml(label)}"`}></div>`;
 }
 
 /**
@@ -2050,7 +2058,7 @@ function epochChart(spec, epochs) {
 
   return `<article class="evaluation-card history-card"><header><div><h5>${spec.title}</h5>`
     + `<p>${notes.filter(Boolean).join(' &middot; ')}</p></div></header>`
-    + `${chartSlot(option, chartText(label), epochs.length ? `epochs-${epochs[0].training_run_id}-${spec.title}` : '')}</article>`;
+    + `${chartSlot(option, chartText(label), { key: epochs.length ? `epochs-${epochs[0].training_run_id}-${spec.title}` : '' })}</article>`;
 }
 
 /**
@@ -2363,7 +2371,7 @@ function confusionMatrix(matrix, image, raw = []) {
       + '<button type="button" data-matrix-mode="count" aria-pressed="false" '
       + 'title="The instance counts the trainer recorded">Counts</button></div></header>'
       + chartSlot(option, `Confusion matrix over ${names.length} classes, rows true and columns predicted`,
-        '', Math.max(230, names.length * 40 + 80))
+        { height: Math.max(230, names.length * 40 + 80) })
       + `${source}</article>`;
   }
 
@@ -8364,13 +8372,97 @@ function wireRegistryTrend() {
    unlike models cannot be aggregated meaningfully, while system load, running
    work, queue depth and completions can. These fixtures preserve the seam a
    later metrics endpoint or stream can feed. */
+/**
+ * An activity chart's option: time along the bottom, one or two value axes.
+ *
+ * **One builder for every screen's activity panel**, because they are the same chart --
+ * Training, Datasets, Inference, Models, Jobs and the Dashboard each plot a few series
+ * from `/gpu/*\/series` over a chosen range -- and six hand-drawn copies of it is what
+ * #275 was filed against.
+ *
+ * Each series names the CSS key its colour and dash already come from, read inside the
+ * panel because those keys are scoped to it. A null reading stays null, so a line breaks
+ * where nothing was recorded rather than dropping to zero.
+ *
+ * @param {Object} spec - `{root, axes, series}`. `axes` is `[{name, max, unit, whole}]`;
+ *   each series is `{id, name, css, kind, axis, unit, data}`, `kind` being `line`, `area`
+ *   or `bar` and `data` `[[ms, value], ...]`.
+ * @returns {Object} The ECharts option.
+ */
+function activityOption({ root, axes, series }) {
+  const theme = chartTheme();
+
+  return {
+    grid: { left: 50, right: axes.length > 1 ? 46 : 18, top: 30, bottom: 28 },
+    legend: { show: false },
+    xAxis: {
+      type: 'time', ...theme.axis, splitLine: { show: false },
+      axisLabel: { ...theme.axis.axisLabel, hideOverlap: true, formatter: { day: '{MM}-{dd}', hour: '{HH}:{mm}', minute: '{HH}:{mm}' } },
+    },
+    yAxis: axes.map((axis, index) => ({
+      type: 'value', name: axis.name, min: 0, max: axis.max, minInterval: axis.whole ? 1 : undefined,
+      ...theme.axis, splitLine: index ? { show: false } : theme.axis.splitLine,
+      axisLabel: { ...theme.axis.axisLabel, formatter: axis.unit ? `{value}${axis.unit}` : '{value}' },
+    })),
+    tooltip: { ...theme.tooltip },
+    dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }],
+    series: series.map((one) => {
+      const { color, dash, fill } = chartKey(one.css, root);
+      const shared = {
+        id: one.id, name: one.name, yAxisIndex: one.axis || 0, data: one.data, itemStyle: { color },
+        emphasis: { focus: 'series' }, blur: { lineStyle: { opacity: 0.12 }, itemStyle: { opacity: 0.12 }, areaStyle: { opacity: 0.03 } },
+        tooltip: { valueFormatter: (value) => (value === null || value === undefined ? 'not recorded' : `${Number.isInteger(value) ? value : Number(value).toFixed(1)}${one.unit || ''}`) },
+      };
+
+      if (one.kind === 'bar') {
+        return { ...shared, type: 'bar', barMaxWidth: 14, itemStyle: { color: fill || color, borderColor: color, borderWidth: 1 } };
+      }
+
+      return {
+        ...shared, type: 'line', showSymbol: false, connectNulls: false,
+        lineStyle: { color, width: 2.2, type: dash || 'solid' },
+        areaStyle: one.kind === 'area' ? { color, opacity: 0.09 } : undefined,
+      };
+    }),
+  };
+}
+
+/**
+ * Draw an activity chart into its panel's chart box.
+ *
+ * @param {Element} box - The panel's chart box, which keeps its own frame and label.
+ * @param {Object} option - From `activityOption`.
+ * @param {string} label - What the chart shows, for a screen reader and for hover.
+ * @param {string} key - Stable across redraws of the same range, so a zoom survives one.
+ * @returns {void}
+ */
+function drawActivity(box, option, label, key) {
+  box.innerHTML = chartSlot(option, label, { key, bare: true });
+  box.setAttribute('aria-label', label);
+  box.title = label;
+}
+
+/**
+ * Light one series of a panel's chart and dim the rest, or restore them all.
+ *
+ * What the panels' key buttons did to the hand-drawn paths, done through ECharts so the
+ * buttons keep working on the chart that replaced them.
+ *
+ * @param {Element} box - The chart box.
+ * @param {string} id - The series to light; empty restores every series.
+ * @returns {void}
+ */
+function highlightSeries(box, id) {
+  const chart = box && $('[data-chart]', box)?.marpChart;
+  if (!chart) return;
+  chart.dispatchAction({ type: 'downplay' });
+  if (id) chart.dispatchAction({ type: 'highlight', seriesId: id });
+}
+
 function wireTrainingActivity() {
   const root = $('[data-training-activity]');
   if (!root) return;
   const buttons = $$('[data-training-range]', root);
-  const lines = Object.fromEntries($$('[data-training-line]', root).map((line) => [line.dataset.trainingLine, line]));
-  const area = $('[data-training-area="compute"]', root);
-  const bars = $('[data-training-bars="completed"]', root);
   const chart = $('.training-chart', root);
   /* **Real, and the same two reads the Datasets activity chart makes.** This drew four
      hardcoded arrays per range -- the tiles above said 1 running, 0 queued, 2 completed
@@ -8386,22 +8478,6 @@ function wireTrainingActivity() {
 
   let range = '1h';
   let samples = null;
-  const coords = (values, scale, top) => values.map((value, index) => {
-    const x = 54 + 672 * index / Math.max(1, values.length - 1);
-    const y = 196 - 168 * Math.max(0, Math.min(top, value)) / (top || 1);
-
-    return [x, y];
-  });
-  const pathOf = (values, scale, top) => coords(values, scale, top)
-    .map(([x, y], index) => `${index ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  const barsOf = (values, top) => {
-    const width = Math.min(14, 480 / Math.max(1, values.length));
-
-    return coords(values, 'jobs', top).map(([x, y], index) => (values[index]
-      ? `M${(x - width / 2).toFixed(1)},196 V${y.toFixed(1)} H${(x + width / 2).toFixed(1)} V196 Z`
-      : '')).join(' ');
-  };
-
   /**
    * A series the window recorded nothing for.
    *
@@ -8428,19 +8504,9 @@ function wireTrainingActivity() {
   const draw = () => {
     if (!samples) return;
 
-    const { compute, running, queued, completed, label } = samples;
-
-    /* One scale for the three job counts so they can be read against each other, and a
-       fixed 0-100 for the percentage, which is not a count. */
-    const jobTop = Math.max(1, ...running, ...queued, ...completed);
-
+    const { at, compute, running, queued, completed, label } = samples;
     const computeOff = unmeasured(compute);
-
-    lines.compute.setAttribute('d', computeOff ? '' : pathOf(compute.map((v) => v ?? 0), 'compute', 100));
-    area.setAttribute('d', computeOff ? '' : `${pathOf(compute.map((v) => v ?? 0), 'compute', 100)} L726,196 L54,196 Z`);
-    lines.running.setAttribute('d', pathOf(running, 'jobs', jobTop));
-    lines.queued.setAttribute('d', pathOf(queued, 'jobs', jobTop));
-    bars.setAttribute('d', barsOf(completed, jobTop));
+    const pair = (values) => values.map((value, index) => [at[index], value]);
 
     /* The legend says which line is not there, rather than the chart implying a flat
        zero. Disabled, so it cannot be highlighted to reveal nothing. */
@@ -8464,8 +8530,20 @@ function wireTrainingActivity() {
       + `${computeOff ? 'no GPU reading recorded' : `${Math.round(compute.filter((v) => v != null).at(-1) ?? 0)}% of GPU compute used by training`}, `
       + `${running.at(-1) ?? 0} running, ${queued.at(-1) ?? 0} queued and ${totalCompleted} runs completed`;
 
-    chart.setAttribute('aria-label', said);
-    chart.title = said;
+    /* One scale for the three job counts so they can be read against each other, and a
+       fixed 0-100 for the percentage, which is not a count. A compute reading nothing
+       recorded stays a gap: it used to be drawn as 0%, which said the GPUs sat idle. */
+    const series = [
+      ...(computeOff ? [] : [{ id: 'compute', name: 'Training GPU compute', css: 'compute', kind: 'area', unit: '%', data: pair(compute) }]),
+      { id: 'running', name: 'Running jobs', css: 'running', axis: 1, data: pair(running) },
+      { id: 'queued', name: 'Queued jobs', css: 'queued', axis: 1, data: pair(queued) },
+      { id: 'completed', name: 'Completed runs', css: 'completed', kind: 'bar', axis: 1, data: pair(completed) },
+    ];
+
+    drawActivity(chart, activityOption({
+      root, series, axes: [{ name: 'GPU compute', max: 100, unit: '%' }, { name: 'Jobs', whole: true }],
+    }), said, `training-activity-${range}`);
+    highlightSeries(chart, root.dataset.highlight);
   };
 
   const choose = async (next) => {
@@ -8488,14 +8566,6 @@ function wireTrainingActivity() {
       const jobs = await window.MarpApi.jobSeries({ ...span, kind: 'training' });
       const points = jobs.points || [];
 
-      $$('[data-training-time]', root).forEach((text, index) => {
-        const at = points[Math.round((points.length - 1) * index / 2)];
-
-        text.textContent = at
-          ? new Date(at.at).toTimeString().slice(0, 5)
-          : '';
-      });
-
       if (!points.length) {
         root.classList.add('is-quiet');
         samples = null;
@@ -8511,6 +8581,7 @@ function wireTrainingActivity() {
          it -- the same decision the Datasets chart makes for builds. */
       samples = {
         label,
+        at: points.map((p) => Date.parse(p.at)),
         compute: points.map((p) => (p.avg_training_utilization_percent == null
           ? null : Number(p.avg_training_utilization_percent))),
         running: points.map((p) => Number(p.training_machines) || 0),
@@ -8534,7 +8605,7 @@ function wireTrainingActivity() {
     root.dataset.highlight = active;
     root.classList.toggle('is-highlighted', Boolean(active));
     highlightButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.trainingHighlight === active)));
-    $$('.training-line, .training-area, .training-bars', root).forEach((line) => line.classList.toggle('highlighted', Boolean(active) && line.classList.contains(active)));
+    highlightSeries(chart, active);
   };
   highlightButtons.forEach((button) => {
     button.title = `Highlight only ${button.textContent.trim()} on this graph; select it again or press Escape to restore all series`;
