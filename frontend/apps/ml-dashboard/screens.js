@@ -8320,6 +8320,8 @@ function activityOption({ root, axes, series }) {
   return {
     grid: { left: 50, right: axes.length > 1 ? 46 : 18, top: 30, bottom: 28 },
     legend: { show: false },
+    /* Top centre: both top corners carry an axis title on these charts. */
+    toolbox: { ...theme.toolbox, right: 'auto', left: 'center' },
     xAxis: {
       type: 'time', ...theme.axis, splitLine: { show: false },
       axisLabel: { ...theme.axis.axisLabel, hideOverlap: true, formatter: { day: '{MM}-{dd}', hour: '{HH}:{mm}', minute: '{HH}:{mm}' } },
