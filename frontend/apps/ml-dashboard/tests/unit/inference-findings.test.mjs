@@ -100,6 +100,22 @@ test('a finished piece shows its species, and its run what all the pieces found 
   assert.deepEqual(screen.asked.run, [RUN], 'the run is one read, not one per piece');
 });
 
+test('a run says what became of the pieces that did not finish', async (t) => {
+  /* Seen on a real run: "2 of 5 finished" with the other three cancelled read as three
+     still to come. */
+  const screen = await inferenceScreen([job(50, 'succeeded')], {
+    piece: () => ({ job_id: 50, session_id: 641, observations: 1, species: [{ species_id: 3, species_name: 'Rockfish', reported_name: 'Rockfish', observations: 1 }] }),
+    run: { batch_id: RUN, pieces: 5, states: { succeeded: 2, cancelled: 3 }, session_id: 641, observations: 1, species: [] },
+  });
+
+  t.after(screen.close);
+
+  const run = (await open(screen, 50)).querySelectorAll('.findings')[1];
+
+  assert.match(run.textContent, /2 of 5 finished, 3 cancelled/);
+  assert.doesNotMatch(run.textContent, /so far/, 'nothing is still going, so it is not a total so far');
+});
+
 test('a piece that found nothing says 0, rather than nothing', async (t) => {
   const screen = await inferenceScreen([job(20, 'succeeded', { batch_id: null })], {
     piece: () => ({ job_id: 20, session_id: 641, observations: 0, species: [] }),

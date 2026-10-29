@@ -4944,8 +4944,12 @@ async function fillInferenceFindings(place) {
       const succeeded = states.succeeded || 0;
       inferenceRunOutcomes.set(batch, { outcome: run, done: going === 0 });
       session = run.session_id ?? session;
+      /* What became of the pieces that did not finish, so "2 of 5" is not left to read as
+         three still to come when they were cancelled. */
+      const ended = [['failed', 'failed'], ['cancelled', 'cancelled'], ['expired', 'expired']]
+        .filter(([key]) => states[key]).map(([key, word]) => `${states[key].toLocaleString()} ${word}`);
       sections.push(findingsSection(`The whole run &middot; ${countOf(run.pieces, 'piece')}`, run,
-        `${succeeded.toLocaleString()} of ${run.pieces.toLocaleString()} finished${going ? ', so far' : ''}`));
+        [`${succeeded.toLocaleString()} of ${run.pieces.toLocaleString()} finished`, ...ended, ...(going ? ['so far'] : [])].join(', ')));
     } catch (error) {
       sections.push(`<section class="findings"><h4>The whole run</h4><p class="faint">Could not read what it found (${error.status || 'no answer'}).</p></section>`);
     }
