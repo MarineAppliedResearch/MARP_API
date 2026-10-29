@@ -17067,6 +17067,110 @@
         }
       }
     },
+    "/v2/gpu/batches/{batch_id}/observations": {
+      "get": {
+        "summary": "What every piece of one run produced, together",
+        "description": "The observation count and the per-species breakdown across every job sharing one `batch_id` -- the pieces of one split video -- grouped exactly as `GET /gpu/jobs/{id}/observations` groups one job, so the two add up. One query for the run rather than one per piece: a dive split into 82 pieces was 82 requests for one number. **`states` says how far the run has got**, a count of pieces per state, because a total from a run still going is a total so far. `session_id` is the run's one session when there is exactly one, which is the usual case; `session_ids` lists them all. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The run, as its pieces carry it."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the run produced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "batch_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "pieces": {
+                      "type": "integer",
+                      "description": "How many jobs carry this batch_id."
+                    },
+                    "states": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      },
+                      "description": "Pieces per job state, such as `{\"succeeded\": 70, \"queued\": 12}`."
+                    },
+                    "session_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "session_id": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "The one session, or null when the pieces name none or several."
+                    },
+                    "observations": {
+                      "type": "integer"
+                    },
+                    "species": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "species_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "species_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "What it is, after any correction. Null when the species was never resolved."
+                          },
+                          "reported_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "What the model called it, which a correction never rewrites."
+                          },
+                          "observations": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/gpu/jobs/{id}/observations": {
       "get": {
         "summary": "What an inference job actually produced",
