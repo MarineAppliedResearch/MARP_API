@@ -353,14 +353,39 @@ function vocabulary(rows) {
  * `interpolateBox` is **not** used: it is the thumbnail path's, it returns a box only
  * between two keyframes, and this walks every frame of the span anyway.
  *
+ * **Sampled when the build asks** (#296): only the frames picked for some object are cut,
+ * and each picked frame still carries the box of every selected object in it -- an
+ * unlabelled animal in a training image teaches the model it is background. Without
+ * `sampling` this is every frame, exactly as it was.
+ *
  * @param {Map<string, Array<Object>>} splits - From {@link assignSplits}.
  * @param {Array<Object>} classes - From {@link vocabulary}.
+ * @param {?Object} [sampling] - From {@link samplingSettings}; null for every frame.
  * @returns {Map<string, {split: string, frames: Map<number, Array<string>>}>} Keyed by
  * video source; each frame number maps to its label lines.
  */
-function extractionPlan(splits, classes) {
+function extractionPlan(splits, classes, sampling = null) {
     const indexOf = new Map(classes.map((c) => [c.species_id, c.class_index]));
     const byVideo = new Map();
+
+    /* Every frame picked for any object, per split and video. Splits are settled before
+       this, so a picked frame is shared only with objects in the same split. */
+    const chosen = new Map();
+
+    if (sampling) {
+        const picked = sampleFrames(splits, sampling);
+
+        for (const [split, rows] of splits) {
+            for (const row of rows) {
+                const key = `${split}::${row.video_source}`;
+
+                if (!chosen.has(key)) chosen.set(key, new Set());
+                for (const frame of picked.get(Number(row.observation_id))) chosen.get(key).add(frame);
+            }
+        }
+
+        for (const [key, frames] of chosen) chosen.set(key, [...frames].sort((a, b) => a - b));
+    }
 
     for (const [split, rows] of splits) {
         for (const row of rows) {
@@ -374,7 +399,16 @@ function extractionPlan(splits, classes) {
             const boxes = row.keyframes || [];
             const index = indexOf.get(Number(row.species_id));
 
-            for (let frame = Number(row.first_framenum); frame <= Number(row.last_framenum); frame++) {
+            const first = Number(row.first_framenum);
+            const last = Number(row.last_framenum);
+
+            /* Sampled: the chosen frames this object's track reaches, whoever picked
+               them. Otherwise every frame of the track. */
+            const frames = sampling
+                ? chosen.get(key).filter((frame) => frame >= first && frame <= last)
+                : Array.from({ length: last - first + 1 }, (_, i) => first + i);
+
+            for (const frame of frames) {
                 const box = boxAt(boxes, frame);
 
                 if (!box) continue;
@@ -680,7 +714,299 @@ function classificationPlan(splits, classes) {
     return wanted;
 }
 
+/**
+ * How many frames a build takes from each object when the build flow does not say.
+ *
+ * **Every frame of a track is about 92 near-copies of one animal.** Dataset 391 cut
+ * 155,258 images from 1,683 objects, and an epoch on it took 1 h 40 min. Ten frames
+ * spread across a track keeps the poses and angles and drops the copies (#296).
+ *
+ * @constant
+ * @type {number}
+ */
+const DEFAULT_FRAMES_PER_OBJECT = 10;
+
+/** The largest seed a build records: a 31-bit integer, so it survives JSON and SQL. */
+const MAX_SEED = 2147483647;
+
+/**
+ * The sampling a build asked for, checked and filled in.
+ *
+ * **Absent means every frame.** A spec queued before #296, retried or reclaimed, keeps
+ * meaning what it meant, and *Duplicate setup* of an old dataset fills *Every frame*.
+ * `frames_per_object: null` says the same thing out loud.
+ *
+ * **The seed is chosen here when none is given**, and then recorded, so a rebuild through
+ * *Duplicate setup* picks the same frames.
+ *
+ * @param {?Object} asked - `{frames_per_object, balance_classes, seed}` from the request.
+ * @param {Function} [random] - Where a new seed comes from; a test passes its own.
+ * @returns {?{frames_per_object: number, balance_classes: boolean, seed: number}} The
+ * settings, or null for every frame.
+ * @throws {Error} A message naming what was wrong and what is allowed.
+ */
+function samplingSettings(asked, random = Math.random) {
+    if (asked === undefined || asked === null) return null;
+
+    if (typeof asked !== 'object' || Array.isArray(asked)) {
+        throw new Error('sampling must be an object: {frames_per_object, balance_classes, seed}.');
+    }
+
+    const n = asked.frames_per_object;
+
+    if (n === undefined || n === null) return null;
+
+    if (!Number.isInteger(n) || n < 1) {
+        throw new Error('sampling.frames_per_object must be a whole number of 1 or more, or null for every frame.');
+    }
+
+    if (asked.balance_classes !== undefined && typeof asked.balance_classes !== 'boolean') {
+        throw new Error('sampling.balance_classes must be true or false.');
+    }
+
+    let seed = asked.seed;
+
+    if (seed === undefined || seed === null) {
+        seed = Math.floor(random() * MAX_SEED);
+    } else if (!Number.isInteger(seed) || seed < 0 || seed > MAX_SEED) {
+        throw new Error(`sampling.seed must be a whole number from 0 to ${MAX_SEED}.`);
+    }
+
+    return { frames_per_object: n, balance_classes: asked.balance_classes === true, seed };
+}
+
+/**
+ * A random number generator for one object, from the build's seed and the object's id.
+ *
+ * **Per object, not one stream for the build.** One stream would make each object's picks
+ * depend on how many objects came before it, so adding a query to a build would move the
+ * frames of every object after it. Seeded by id, the same object picks the same frames
+ * whatever else is in the build.
+ *
+ * FNV-1a to mix the two into 32 bits, then mulberry32: small, fast, and the same on every
+ * machine, which `Math.random` is not.
+ *
+ * @param {number} seed - The build's seed.
+ * @param {number} id - The observation.
+ * @returns {function(): number} Numbers in [0, 1).
+ */
+function objectRandom(seed, id) {
+    let hash = 0x811c9dc5;
+
+    for (const ch of `${seed}:${id}`) {
+        hash ^= ch.charCodeAt(0);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+
+    let state = hash;
+
+    return () => {
+        state = (state + 0x6d2b79f5) >>> 0;
+        let t = state;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/**
+ * The frames of an object's track that have a box to label.
+ *
+ * Usually every frame from first to last; a frame whose box falls wholly outside the
+ * picture has nothing to label, and is not a frame to pick.
+ *
+ * @param {Object} row - A selected observation.
+ * @returns {Array<number>} Ascending.
+ */
+function framesWithBox(row) {
+    const boxes = row.keyframes || [];
+    const out = [];
+
+    for (let frame = Number(row.first_framenum); frame <= Number(row.last_framenum); frame++) {
+        if (boxAt(boxes, frame)) out.push(frame);
+    }
+
+    return out;
+}
+
+/**
+ * Up to `n` frames spread across a track: one random frame from each of `n` equal stretches.
+ *
+ * **Spread, so the picks cover the whole track** -- the animal approaching, beside and
+ * behind the camera -- **and random within each stretch**, so they are not evenly spaced
+ * copies of one rhythm (decided with Isaac in #296). A track with `n` frames or fewer
+ * gives all of them.
+ *
+ * @param {Array<number>} available - From {@link framesWithBox}.
+ * @param {number} n - How many to take.
+ * @param {function(): number} random - From {@link objectRandom}.
+ * @returns {Array<number>} The picks, ascending.
+ */
+function pickFrames(available, n, random) {
+    if (available.length <= n) return [...available];
+
+    const picks = [];
+
+    for (let i = 0; i < n; i++) {
+        const lo = Math.floor((i * available.length) / n);
+        const hi = Math.floor(((i + 1) * available.length) / n);
+
+        picks.push(available[lo + Math.floor(random() * (hi - lo))]);
+    }
+
+    return picks;
+}
+
+/**
+ * How many frames each object takes, per split.
+ *
+ * Without balancing, `n` each. **With it, every class aims for what the largest class gets
+ * at `n` per object** (#296, *equal frames per class*), so a class with fewer objects takes
+ * more frames from each. Balanced within each split, against that split's own largest
+ * class, so validation and test are sampled the way train is (settled 2026-10-29, A2).
+ *
+ * A class's target is shared across its objects evenly, shortest track first: an object
+ * that cannot give its share gives every frame it has, and the rest is spread over the
+ * longer ones. A class whose tracks cannot reach the target gives everything.
+ *
+ * @param {Map<string, Array<Object>>} splits - Split name to its observations.
+ * @param {Map<number, Array<number>>} available - Observation id to its frames with a box.
+ * @param {{frames_per_object: number, balance_classes: boolean}} sampling - The settings.
+ * @returns {Map<number, number>} Observation id to how many frames it takes.
+ */
+function quotas(splits, available, sampling) {
+    const n = sampling.frames_per_object;
+    const out = new Map();
+
+    for (const rows of splits.values()) {
+        if (!sampling.balance_classes) {
+            for (const row of rows) out.set(Number(row.observation_id), n);
+            continue;
+        }
+
+        const byClass = new Map();
+
+        for (const row of rows) {
+            const id = Number(row.species_id);
+
+            if (!byClass.has(id)) byClass.set(id, []);
+            byClass.get(id).push(row);
+        }
+
+        const length = (row) => available.get(Number(row.observation_id)).length;
+        const atN = (members) => members.reduce((sum, row) => sum + Math.min(n, length(row)), 0);
+        const target = Math.max(...[...byClass.values()].map(atN));
+
+        for (const members of byClass.values()) {
+            const ordered = [...members].sort((a, b) => length(a) - length(b)
+                || Number(a.observation_id) - Number(b.observation_id));
+            let remaining = target;
+
+            ordered.forEach((row, index) => {
+                const share = Math.ceil(remaining / (ordered.length - index));
+                const take = Math.min(length(row), Math.max(0, share));
+
+                out.set(Number(row.observation_id), take);
+                remaining -= take;
+            });
+        }
+    }
+
+    return out;
+}
+
+/**
+ * The frames picked for each object, when a build samples.
+ *
+ * @param {Map<string, Array<Object>>} splits - Split name to its observations.
+ * @param {{frames_per_object: number, balance_classes: boolean, seed: number}} sampling -
+ * From {@link samplingSettings}.
+ * @returns {Map<number, Array<number>>} Observation id to its picked frames, ascending.
+ */
+function sampleFrames(splits, sampling) {
+    const available = new Map();
+
+    for (const rows of splits.values()) {
+        for (const row of rows) available.set(Number(row.observation_id), framesWithBox(row));
+    }
+
+    const take = quotas(splits, available, sampling);
+    const picked = new Map();
+
+    for (const [id, frames] of available) {
+        picked.set(id, pickFrames(frames, take.get(id), objectRandom(sampling.seed, id)));
+    }
+
+    return picked;
+}
+
+/**
+ * What a build would cut, without cutting it: images in total, per split and per class.
+ *
+ * **The same plan the build runs**, so the estimate on the build flow is the plan rather
+ * than a second calculation that could drift from it (#296). Per class counts images
+ * holding the class, as the build's own tally does. `every_frame` is the same selection
+ * without sampling, for "how many times fewer".
+ *
+ * @param {Map<string, Array<Object>>} splits - Split name to its observations.
+ * @param {Array<Object>} classes - From {@link vocabulary}.
+ * @param {?Object} sampling - From {@link samplingSettings}; null for every frame.
+ * @returns {{observations: number, images: number, every_frame: number,
+ * per_split: Object<string, number>, per_class: Array<Object>}}
+ */
+function estimateBuild(splits, classes, sampling) {
+    const plan = extractionPlan(splits, classes, sampling);
+    const perSplit = {};
+    const perClass = new Map(classes.map((entry) => [entry.class_index, 0]));
+    let images = 0;
+
+    for (const entry of plan.values()) {
+        perSplit[entry.split] = (perSplit[entry.split] || 0) + entry.frames.size;
+        images += entry.frames.size;
+
+        for (const lines of entry.frames.values()) {
+            for (const klass of new Set(lines.map((line) => Number(line.split(' ')[0])))) {
+                perClass.set(klass, (perClass.get(klass) || 0) + 1);
+            }
+        }
+    }
+
+    /* Every frame is counted as frames with a box, per split and video, rather than by
+       building a second plan: the labels are not needed to count them. */
+    let everyFrame = images;
+
+    if (sampling) {
+        const seen = new Map();
+
+        for (const [split, rows] of splits) {
+            for (const row of rows) {
+                const key = `${split}::${row.video_source}`;
+
+                if (!seen.has(key)) seen.set(key, new Set());
+                for (const frame of framesWithBox(row)) seen.get(key).add(frame);
+            }
+        }
+
+        everyFrame = [...seen.values()].reduce((sum, frames) => sum + frames.size, 0);
+    }
+
+    return {
+        observations: [...splits.values()].reduce((sum, rows) => sum + rows.length, 0),
+        images,
+        every_frame: everyFrame,
+        per_split: perSplit,
+        per_class: classes.map((entry) => ({
+            species_id: entry.species_id,
+            comname: entry.comname,
+            class_index: entry.class_index,
+            images: perClass.get(entry.class_index) || 0,
+        })),
+    };
+}
+
 module.exports = {
+    DEFAULT_FRAMES_PER_OBJECT,
+    MAX_SEED,
     NEAR_MISS_FRAMES,
     CLASSIFICATION_DIRECTORIES,
     CLASS_SLUG_LENGTH,
@@ -692,6 +1018,12 @@ module.exports = {
     classificationDirectoryFor,
     classificationPlan,
     connectedGroups,
+    estimateBuild,
     extractionPlan,
+    framesWithBox,
+    objectRandom,
+    pickFrames,
+    sampleFrames,
+    samplingSettings,
     vocabulary,
 };

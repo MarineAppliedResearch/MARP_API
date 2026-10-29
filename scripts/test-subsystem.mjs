@@ -177,6 +177,8 @@ const SUBSYSTEMS = {
                refusals that stop one being built that trains on a random split. Opens
                the tar, because the directory names are the whole contract. */
             'dataset-build-classification',
+            // #296: frames per object, the estimate, and that the two agree.
+            'dataset-build-sampling',
             /* #268 1.2: the build's progress as the Datasets screen reads it. Written
                on another branch, and registered from here deliberately -- this file has
                one writer, and two agents editing it from different assumptions is a

@@ -1328,6 +1328,22 @@
   }
 
   /**
+   * `POST /api/v2/dataset/build/estimate` -- what a build would cut, before queueing it.
+   *
+   * Takes the build's own body and answers with images in total, per split and per class,
+   * and what every frame would have been. The API runs the build's own selection and plan,
+   * so this is the plan rather than a guess (#296).
+   *
+   * @param {Object} build - `{subsets, splits, sampling}`.
+   * @returns {Promise<Object>} `{observations, images, every_frame, per_split, per_class}`.
+   */
+  function estimateDatasetBuild(build) {
+    return serve('datasets',
+      () => request('/dataset/build/estimate', { method: 'POST', body: build || {} }),
+      () => ({ observations: 0, images: 0, every_frame: 0, per_split: {}, per_class: [] }));
+  }
+
+  /**
    * `GET /api/v2/ml_models/:id/versions` -- the chain a model belongs to, oldest first.
    *
    * A model is always in its own chain, so a one-element answer means "not versioned"
@@ -1944,6 +1960,7 @@
     mosaicFacets,
     mosaicFrames,
     queueDatasetBuild,
+    estimateDatasetBuild,
     mosaicPages,
     listSessions,
     listVideoLibraries,

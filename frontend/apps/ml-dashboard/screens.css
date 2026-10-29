@@ -1678,6 +1678,13 @@ h2 > .later, summary > .later { vertical-align: middle; }
                text-transform: uppercase; margin-left: 6px; }
 .checks { display: grid; gap: 2px; }
 
+/* Frames per object (#296): the number, then the two switches, on one line. */
+.sampling-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.sampling-row .inp { width: 72px; }
+.sampling-row .check { padding: 0; }
+.build-sampling [data-build-estimate] { margin: 6px 0 0; }
+.build-sampling [data-build-estimate] b { color: var(--text); font-weight: 600; }
+
 /* A value the system resolved rather than the operator typing: the model
    version and hash a job is locked to. Read-only on purpose, and it looks it. */
 .ro {

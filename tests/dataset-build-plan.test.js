@@ -22,6 +22,7 @@
  */
 
 const {
+    DEFAULT_FRAMES_PER_OBJECT,
     NEAR_MISS_FRAMES,
     assignFromSubsets,
     assignSplits,
@@ -31,7 +32,11 @@ const {
     classificationDirectoryFor,
     classificationPlan,
     connectedGroups,
+    estimateBuild,
     extractionPlan,
+    pickFrames,
+    sampleFrames,
+    samplingSettings,
     vocabulary,
 } = require('../service/dataset-build-plan');
 
@@ -952,5 +957,188 @@ describe('the classification plan', () => {
         const stray = new Map([['train', [{ observation_id: 9, species_id: 999 }]]]);
 
         expect(() => classificationPlan(stray, classes)).toThrow(/not in this build/);
+    });
+});
+
+describe('frames per object (#296)', () => {
+
+    /* Dataset 391 cut every frame of every track: 155,258 images of 1,683 animals, about
+       92 near-copies each, and an epoch took 1 h 40 min. A build now takes N frames per
+       object, spread across the track, seeded so a rebuild picks the same ones. */
+    const sampling = (n, balance = false, seed = 7) => ({ frames_per_object: n, balance_classes: balance, seed });
+
+    /** Every frame a class's box appears on, in a plan. */
+    const framesOf = (plan, classIndex) => [...plan.values()].flatMap((entry) => [...entry.frames]
+        .filter(([, lines]) => lines.some((line) => line.startsWith(`${classIndex} `)))
+        .map(([frame]) => frame));
+
+    test('takes at most N frames per object, one from each of N equal stretches', () => {
+        const rows = [observation({ id: 1, first: 0, last: 999 })];
+        const plan = extractionPlan(assignSplits(connectedGroups(rows), { train: 1 }), vocabulary(rows), sampling(10));
+        const frames = framesOf(plan, 0).sort((a, b) => a - b);
+
+        expect(frames).toHaveLength(10);
+        // Spread: the i-th pick lies in the i-th hundred frames of the track.
+        frames.forEach((frame, i) => {
+            expect(frame).toBeGreaterThanOrEqual(i * 100);
+            expect(frame).toBeLessThan((i + 1) * 100);
+        });
+    });
+
+    test('a track shorter than N gives every frame it has', () => {
+        const rows = [observation({ id: 1, first: 50, last: 55 })];
+        const plan = extractionPlan(assignSplits(connectedGroups(rows), { train: 1 }), vocabulary(rows), sampling(10));
+
+        expect(framesOf(plan, 0).sort((a, b) => a - b)).toEqual([50, 51, 52, 53, 54, 55]);
+    });
+
+    test('the picks are random within a stretch, not evenly spaced', () => {
+        const available = Array.from({ length: 1000 }, (_, i) => i);
+        const draws = [0.1, 0.9, 0.5];
+        let k = 0;
+        const picks = pickFrames(available, 10, () => draws[k++ % 3]);
+        const gaps = new Set();
+
+        for (let i = 1; i < picks.length; i++) gaps.add(picks[i] - picks[i - 1]);
+
+        expect(gaps.size).toBeGreaterThan(1);
+    });
+
+    test('the same seed picks the same frames; another seed picks others', () => {
+        const rows = [observation({ id: 1, first: 0, last: 999 }), observation({ id: 2, video: 'b.mp4', first: 0, last: 999 })];
+        const splits = assignSplits(connectedGroups(rows), { train: 1 });
+
+        const once = sampleFrames(splits, sampling(10, false, 42));
+        const again = sampleFrames(splits, sampling(10, false, 42));
+        const other = sampleFrames(splits, sampling(10, false, 43));
+
+        expect([...again]).toEqual([...once]);
+        expect(other.get(1)).not.toEqual(once.get(1));
+    });
+
+    test('an object picks the same frames whatever else is in the build', () => {
+        const alone = [observation({ id: 1, first: 0, last: 999 })];
+        const crowded = selected([...alone, observation({ id: 2, video: 'b.mp4', first: 0, last: 999 })]);
+
+        const a = sampleFrames(assignSplits(connectedGroups(alone), { train: 1 }), sampling(10));
+        const b = sampleFrames(assignSplits(connectedGroups(crowded), { train: 1 }), sampling(10));
+
+        expect(b.get(1)).toEqual(a.get(1));
+    });
+
+    test('a frame picked for one object carries the box of every selected object in it', () => {
+        // Two animals on the same stretch of video, so each one's picks land in the other's span.
+        const rows = selected([
+            observation({ id: 1, first: 0, last: 999, species: 1, comname: 'Anemone' }),
+            observation({ id: 2, first: 0, last: 999, species: 2, comname: 'Mussel' }),
+        ]);
+        const plan = extractionPlan(assignSplits(connectedGroups(rows), { train: 1 }), vocabulary(rows), sampling(10));
+        const [entry] = [...plan.values()];
+
+        expect(entry.frames.size).toBeGreaterThan(10);
+        for (const lines of entry.frames.values()) expect(lines).toHaveLength(2);
+    });
+
+    test('balancing gives every class the image count of the largest at N per object', () => {
+        // Six anemones and two mussels, every track long. At N = 10 the anemones get 60
+        // images, so the two mussels take 30 each.
+        const rows = selected([
+            ...[1, 2, 3, 4, 5, 6].map((id) => observation({ id, video: `a${id}.mp4`, first: 0, last: 499, species: 1, comname: 'Anemone' })),
+            ...[7, 8].map((id) => observation({ id, video: `m${id}.mp4`, first: 0, last: 499, species: 2, comname: 'Mussel' })),
+        ]);
+        const splits = assignSplits(connectedGroups(rows), { train: 1 });
+        const estimate = estimateBuild(splits, vocabulary(rows), sampling(10, true));
+
+        expect(estimate.per_class.map((c) => [c.comname, c.images])).toEqual([['Anemone', 60], ['Mussel', 60]]);
+        expect(sampleFrames(splits, sampling(10, true)).get(7)).toHaveLength(30);
+    });
+
+    test('balancing stops at what the tracks hold, and spreads a short track\'s shortfall', () => {
+        // The mussels want 60: a track of 5 frames gives all 5 and the other gives 55.
+        const rows = selected([
+            ...[1, 2, 3, 4, 5, 6].map((id) => observation({ id, video: `a${id}.mp4`, first: 0, last: 499, species: 1, comname: 'Anemone' })),
+            observation({ id: 7, video: 'm7.mp4', first: 0, last: 4, species: 2, comname: 'Mussel' }),
+            observation({ id: 8, video: 'm8.mp4', first: 0, last: 499, species: 2, comname: 'Mussel' }),
+            observation({ id: 9, video: 'u9.mp4', first: 0, last: 2, species: 3, comname: 'Urchin' }),
+        ]);
+        const picked = sampleFrames(assignSplits(connectedGroups(rows), { train: 1 }), sampling(10, true));
+
+        expect(picked.get(7)).toHaveLength(5);
+        expect(picked.get(8)).toHaveLength(55);
+        expect(picked.get(9)).toHaveLength(3);
+        expect(picked.get(1)).toHaveLength(10);
+    });
+
+    test('balancing is per split, against that split\'s own largest class', () => {
+        const rows = selected([
+            ...[1, 2, 3, 4].map((id) => observation({ id, video: `a${id}.mp4`, first: 0, last: 499, species: 1, comname: 'Anemone' })),
+            observation({ id: 5, video: 'm5.mp4', first: 0, last: 499, species: 2, comname: 'Mussel' }),
+            observation({ id: 6, video: 'a6.mp4', first: 0, last: 499, species: 1, comname: 'Anemone' }),
+            observation({ id: 7, video: 'm7.mp4', first: 0, last: 499, species: 2, comname: 'Mussel' }),
+        ]);
+        const splits = new Map([
+            ['train', rows.filter((row) => row.observation_id <= 5)],
+            ['eval', rows.filter((row) => row.observation_id > 5)],
+        ]);
+        const picked = sampleFrames(splits, sampling(10, true));
+
+        expect(picked.get(5)).toHaveLength(40);
+        expect(picked.get(7)).toHaveLength(10);
+    });
+
+    test('sampling never moves an observation between splits', () => {
+        const rows = selected(Array.from({ length: 30 }, (_, i) => observation({
+            id: i + 1,
+            video: `v${i % 4}.mp4`,
+            first: i * 1000,
+            last: i * 1000 + 300,
+            species: (i % 3) + 1,
+            comname: ['A', 'B', 'C'][i % 3],
+        })));
+        const splits = assignSplits(connectedGroups(rows), { train: 0.8, eval: 0.2 });
+        const classes = vocabulary(rows);
+
+        const every = extractionPlan(splits, classes);
+        const sampled = extractionPlan(splits, classes, sampling(10, true));
+
+        expect([...sampled.keys()].sort()).toEqual([...every.keys()].sort());
+        for (const [key, entry] of sampled) expect(entry.split).toBe(every.get(key).split);
+    });
+
+    test('without sampling the plan is every frame, as before', () => {
+        const rows = [observation({ id: 1, first: 100, last: 199 })];
+        const splits = assignSplits(connectedGroups(rows), { train: 1 });
+
+        expect([...extractionPlan(splits, vocabulary(rows), null).values()][0].frames.size).toBe(100);
+        expect(samplingSettings(undefined)).toBeNull();
+        expect(samplingSettings({ frames_per_object: null })).toBeNull();
+    });
+
+    test('the estimate counts what the plan cuts, and what every frame would have been', () => {
+        const rows = selected([
+            observation({ id: 1, first: 0, last: 999, species: 1, comname: 'Anemone' }),
+            observation({ id: 2, first: 500, last: 1499, species: 2, comname: 'Mussel' }),
+        ]);
+        const splits = assignSplits(connectedGroups(rows), { train: 1 });
+        const classes = vocabulary(rows);
+        const plan = extractionPlan(splits, classes, sampling(10));
+        const estimate = estimateBuild(splits, classes, sampling(10));
+
+        expect(estimate.images).toBe([...plan.values()].reduce((sum, entry) => sum + entry.frames.size, 0));
+        expect(estimate.every_frame).toBe(1500);
+        expect(estimate.per_split).toEqual({ train: estimate.images });
+    });
+
+    test('the settings: a seed is chosen when none is given, and a bad value is refused', () => {
+        expect(samplingSettings({ frames_per_object: 10 }, () => 0.5)).toEqual({
+            frames_per_object: 10, balance_classes: false, seed: 1073741823,
+        });
+        expect(samplingSettings({ frames_per_object: 4, balance_classes: true, seed: 9 }))
+            .toEqual({ frames_per_object: 4, balance_classes: true, seed: 9 });
+        expect(() => samplingSettings({ frames_per_object: 0 })).toThrow(/1 or more/);
+        expect(() => samplingSettings({ frames_per_object: 2.5 })).toThrow(/whole number/);
+        expect(() => samplingSettings({ frames_per_object: 10, balance_classes: 'yes' })).toThrow(/true or false/);
+        expect(() => samplingSettings({ frames_per_object: 10, seed: -1 })).toThrow(/seed/);
+        expect(DEFAULT_FRAMES_PER_OBJECT).toBe(10);
     });
 });

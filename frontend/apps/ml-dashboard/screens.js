@@ -10606,6 +10606,22 @@ function recordRow(label, value) {
 }
 
 /**
+ * How a build chose its frames, as the Build record says it (#296).
+ *
+ * Null is every frame of every track: a build from before #296, or one that asked.
+ *
+ * @param {?Object} sampling - `{frames_per_object, balance_classes, seed}` from the spec.
+ * @returns {string} HTML.
+ */
+function samplingText(sampling) {
+  if (!sampling || !sampling.frames_per_object) return 'Every frame of every track';
+
+  return `${Number(sampling.frames_per_object).toLocaleString('en-US')} per object, spread across each track`
+    + `${sampling.balance_classes ? ' &middot; classes balanced' : ''}`
+    + ` &middot; seed <span class="mono">${escapeHtml(String(sampling.seed))}</span>`;
+}
+
+/**
  * The split bar, drawn from what is actually in the dataset.
  *
  * It was three hardcoded widths -- 70%, 20%, 10% -- on every dataset regardless, which is
@@ -11833,6 +11849,9 @@ async function wireDatasetPage() {
                there.** This request has already happened for Duplicate setup, and its 404
                is the honest answer that a legacy import has no build job at all. */
             detail.buildJobId = setup.jobId;
+
+            /* How its frames were chosen, which only the build's spec records (#296). */
+            $('.kv', detail)?.insertAdjacentHTML('beforeend', recordRow('Frames', samplingText(setup.sampling)));
 
             duplicate.disabled = false;
             duplicate.title = `Fill the build flow with the ${setup.subsets.length === 1
@@ -13123,6 +13142,7 @@ function wireDatasetBuilder() {
         : '\u00b7 no observations added';
     }
     document.dispatchEvent(new CustomEvent('dataset-total-change', { detail: { total } }));
+    refreshEstimate();
   };
   const appendSubset = (result) => {
     if ($$('[data-query-key]', list).some((row) => row.dataset.queryKey === result.key)) {
@@ -13280,6 +13300,108 @@ function wireDatasetBuilder() {
       : `Add all matching to ${splitLabels[selectedSplit]}`;
   };
 
+  /** The added queries as the build takes them: each a filter and a split or shares. */
+  const subsetsFromList = () => $$('li', list).map((row) => {
+    const subset = { filters: JSON.parse(row.dataset.filters || '{}') };
+
+    if (row.dataset.shares) subset.shares = JSON.parse(row.dataset.shares);
+    else subset.split = row.dataset.split || 'train';
+
+    return subset;
+  });
+
+  /* The seed a Duplicate carried in, so the copy picks the frames the original did. A
+     new build has none and the API chooses one when it is queued. */
+  let carriedSeed = null;
+
+  /**
+   * Frames per object, as the build takes it (#296). Null is every frame.
+   *
+   * @returns {?Object} `{frames_per_object, balance_classes, seed?}`.
+   */
+  const samplingSetting = () => {
+    if ($('#dsevery')?.checked) return null;
+
+    const n = Math.max(1, Math.round(Number($('#dsframes')?.value) || 10));
+    const sampling = { frames_per_object: n, balance_classes: Boolean($('#dsbalance')?.checked) };
+
+    if (carriedSeed !== null) sampling.seed = carriedSeed;
+
+    return sampling;
+  };
+
+  /* Every frame leaves nothing to set and nothing to balance. */
+  const syncSamplingControls = () => {
+    const every = Boolean($('#dsevery')?.checked);
+    const frames = $('#dsframes');
+    const balance = $('#dsbalance');
+
+    if (frames) frames.disabled = every;
+    if (balance) balance.disabled = every;
+  };
+
+  let estimateTimer = null;
+  let estimateAsked = 0;
+
+  /**
+   * How many images the build will cut, asked of the API after each change (#296).
+   *
+   * Debounced, and an answer to an earlier question is dropped, so a quick run of edits
+   * shows the last one's estimate rather than whichever came back last.
+   */
+  const refreshEstimate = () => {
+    const out = $('[data-build-estimate]');
+    if (!out) return;
+
+    clearTimeout(estimateTimer);
+
+    if (!$$('li', list).length) {
+      out.hidden = true;
+      out.innerHTML = '';
+      return;
+    }
+
+    estimateTimer = setTimeout(async () => {
+      const asked = ++estimateAsked;
+      const sampling = samplingSetting();
+
+      out.hidden = false;
+      out.textContent = 'Working out how many images the build will cut…';
+
+      try {
+        const answer = await window.MarpApi.estimateDatasetBuild({
+          subsets: subsetsFromList(),
+          splits: { train: 0.8, eval: 0.2 },
+          sampling,
+        });
+
+        if (asked !== estimateAsked) return;
+
+        const images = Number(answer.images || 0);
+        const every = Number(answer.every_frame || 0);
+        const fewer = sampling && images && every > images
+          ? `, <b>${(every / images).toFixed(1)}&times;</b> fewer than every frame (${every.toLocaleString('en-US')})`
+          : '';
+        const perClass = (answer.per_class || [])
+          .map((entry) => `${escapeHtml(entry.comname)} ${Number(entry.images).toLocaleString('en-US')}`)
+          .join(' &middot; ');
+
+        out.innerHTML = `The build will cut <b>${images.toLocaleString('en-US')}</b> images${fewer}.`
+          + (perClass ? `<br>Images per class: ${perClass}` : '');
+      } catch (error) {
+        if (asked !== estimateAsked) return;
+        out.textContent = `Could not work out the image count (${error.status || 'no answer'}). The build can still be queued.`;
+      }
+    }, 400);
+  };
+
+  for (const id of ['dsframes', 'dsevery', 'dsbalance']) {
+    $('#' + id)?.addEventListener('change', () => {
+      syncSamplingControls();
+      refreshEstimate();
+    });
+  }
+
   const queueBuild = async () => {
     const rows = $$('li', list);
 
@@ -13303,14 +13425,7 @@ function wireDatasetBuilder() {
     setStatus('Queueing the build…');
 
     try {
-      const subsets = rows.map((row) => {
-        const subset = { filters: JSON.parse(row.dataset.filters || '{}') };
-
-        if (row.dataset.shares) subset.shares = JSON.parse(row.dataset.shares);
-        else subset.split = row.dataset.split || 'train';
-
-        return subset;
-      });
+      const subsets = subsetsFromList();
 
       const queued = await window.MarpApi.queueDatasetBuild({
         name,
@@ -13319,6 +13434,7 @@ function wireDatasetBuilder() {
         /* Sent as well as the per-subset splits, because a build with one subset and no
            split named still has to divide into something. */
         splits: { train: 0.8, eval: 0.2 },
+        sampling: samplingSetting(),
       });
 
       setStatus(`Build queued as job ${queued.job.id}. It cuts the frames, writes the labels and `
@@ -13484,6 +13600,17 @@ function wireDatasetBuilder() {
     const described = $('#dsdesc');
 
     if (described) described.value = setup.description || '';
+
+    /* The frames as the original chose them, seed and all, so changing only N is the one
+       edit a rebuild at fewer frames needs. A build from before #296 took every frame. */
+    const sampling = setup.sampling || null;
+    const every = $('#dsevery');
+
+    if (every) every.checked = !sampling;
+    if (sampling && $('#dsframes')) $('#dsframes').value = String(sampling.frames_per_object);
+    if ($('#dsbalance')) $('#dsbalance').checked = Boolean(sampling && sampling.balance_classes);
+    carriedSeed = sampling && Number.isInteger(sampling.seed) ? sampling.seed : null;
+    syncSamplingControls();
 
     /* A build that named filters without subsets is one subset going to train, which is
        what the builder would have done with it. */
