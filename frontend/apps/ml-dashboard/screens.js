@@ -1671,7 +1671,6 @@ async function readTrainingSteps(runId) {
 function stepCharts(samples) {
   if (!samples.length) return '';
 
-  const box = { left: 46, right: 700, top: 24, bottom: 174 };
   const attempts = [...new Set(samples.map((one) => one.attempt_id))];
   const training = samples.filter((one) => one.phase === 'training_batch');
   const latest = samples[samples.length - 1];
@@ -1683,39 +1682,54 @@ function stepCharts(samples) {
 
   if (!present.length) return '';
 
+  const theme = chartTheme();
+  const digits = (spec) => (spec.scale ? 2 : 3);
+
   const cards = present.map((spec) => {
+    /* One line per attempt, at the step it reported: a strided first read has uneven
+       steps, and placing each point at its own step keeps the shape true. */
     const lines = attempts.map((attemptId, index) => {
       const mine = training.filter((one) => one.attempt_id === attemptId);
-      const values = mine.map((one) => {
+      const points = mine.map((one) => {
         const raw = one.metrics ? one.metrics[spec.key] : null;
 
-        return raw === null || raw === undefined ? null : Number(raw) / (spec.scale || 1);
+        return [one.step, raw === null || raw === undefined ? null : Number(raw) / (spec.scale || 1)];
       });
 
-      return { values, index };
+      return { attemptId, points, index };
     });
 
-    const every = lines.flatMap((line) => line.values).filter((value) => value !== null);
+    const every = lines.flatMap((line) => line.points.map((point) => point[1])).filter((value) => value !== null);
 
     if (!every.length) return '';
 
-    const top = Math.max(0.001, Math.ceil(Math.max(...every) * 100) / 100);
-    const last = [...lines[lines.length - 1].values].reverse()
+    const last = [...lines[lines.length - 1].points].reverse()
+      .map((point) => point[1])
       .find((value) => value !== null && value !== undefined);
 
-    return '<article class="evaluation-card history-card" data-result-graph>'
+    const option = {
+      grid: { left: 46, right: 18, top: attempts.length > 1 ? 40 : 30, bottom: 36 },
+      legend: { ...theme.legend, show: attempts.length > 1 },
+      xAxis: { type: 'value', min: 'dataMin', max: 'dataMax', name: 'Step', nameLocation: 'middle', nameGap: 24, ...theme.axis },
+      yAxis: { type: 'value', min: 0, ...theme.axis },
+      tooltip: { ...theme.tooltip, valueFormatter: (value) => (value === null || value === undefined ? 'not reported' : `${Number(value).toFixed(digits(spec))}${spec.unit}`) },
+      dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }],
+      /* A missing reading stays null, so the line breaks there rather than dropping. */
+      series: lines.map((line) => {
+        const { color } = chartKey(`class-${(line.index % 4) + 1}`);
+        return {
+          id: `attempt-${line.attemptId}`, name: attempts.length > 1 ? `Attempt ${line.index + 1}` : spec.title,
+          type: 'line', data: line.points, connectNulls: false, showSymbol: false,
+          lineStyle: { color, width: 1.6 }, itemStyle: { color },
+        };
+      }),
+    };
+
+    return '<article class="evaluation-card history-card">'
       + `<header><div><h5>${spec.title}</h5><p>Per batch`
-      + `${last === undefined ? '' : ` &middot; now ${Number(last).toFixed(spec.scale ? 2 : 3)}${spec.unit}`}`
+      + `${last === undefined ? '' : ` &middot; now ${Number(last).toFixed(digits(spec))}${spec.unit}`}`
       + `${attempts.length > 1 ? ` &middot; ${attempts.length} attempts` : ''}</p></div></header>`
-      + `<div class="result-chart" role="img" aria-label="${spec.title} per batch">`
-      + '<svg viewBox="0 0 740 205" aria-hidden="true">'
-      + '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
-      + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>'
-      + `<g class="result-axis"><text x="38" y="28">${top}</text>`
-      + `<text x="38" y="103">${(top / 2).toFixed(spec.scale ? 2 : 3)}</text><text x="38" y="178">0</text></g>`
-      + lines.map((line) => `<path class="result-line step-series class-${(line.index % 4) + 1}" `
-        + `d="${gappyPath(line.values, top, box)}"/>`).join('')
-      + '</svg></div></article>';
+      + `${chartSlot(option, `${spec.title} per batch`, `steps-${attempts.join('-')}-${spec.key}`)}</article>`;
   }).join('');
 
   /* **The phase as a band rather than a number**, because caching has no count: the
@@ -1822,18 +1836,28 @@ function chartTheme() {
   };
 }
 
+/** Where somebody had zoomed each named chart, kept across a redraw. @type {Map<string, Object[]>} */
+const CHART_ZOOM = new Map();
+
 /**
  * A slot for a chart, to put into a panel's markup.
  *
+ * **A name keeps the zoom.** A live run's panel is redrawn every few seconds, which
+ * replaces its charts; a chart given a `key` that is stable across those redraws -- the
+ * run and the series, say -- comes back at the zoom it was left at instead of resetting
+ * under the person reading it.
+ *
  * @param {Object} option - The ECharts option, without the theme.
  * @param {string} label - What the chart shows, for a screen reader.
+ * @param {string} [key] - A name that stays the same across redraws of this chart.
  * @returns {string} The slot's HTML.
  */
-function chartSlot(option, label) {
+function chartSlot(option, label, key) {
   chartSeq += 1;
   const id = `chart-${chartSeq}`;
   CHART_OPTIONS.set(id, option);
-  return `<div class="result-chart marp-chart" data-chart="${id}" role="img" aria-label="${escapeHtml(label)}"></div>`;
+  return `<div class="result-chart marp-chart" data-chart="${id}"${key ? ` data-chart-key="${escapeHtml(key)}"` : ''}`
+    + ` role="img" aria-label="${escapeHtml(label)}"></div>`;
 }
 
 /**
@@ -1868,6 +1892,11 @@ function mountCharts(root) {
     el.marpChart = chart;
     el.marpOption = option;
 
+    const zoom = el.dataset.chartKey && CHART_ZOOM.get(el.dataset.chartKey);
+    if (zoom) {
+      zoom.forEach((one, index) => chart.dispatchAction({ type: 'dataZoom', dataZoomIndex: index, start: one.start, end: one.end }));
+    }
+
     if (window.ResizeObserver) {
       el.marpResize = new ResizeObserver(() => {
         if (el.clientWidth) chart.resize({ width: el.clientWidth, height: el.clientHeight || 220 });
@@ -1889,7 +1918,13 @@ function releaseCharts(node) {
   slots.push(...node.querySelectorAll('[data-chart]'));
   for (const el of slots) {
     if (el.marpResize) el.marpResize.disconnect();
-    if (el.marpChart) el.marpChart.dispose();
+    if (el.marpChart) {
+      if (el.dataset.chartKey) {
+        const zoom = (el.marpChart.getOption().dataZoom || []).map((one) => ({ start: one.start, end: one.end }));
+        CHART_ZOOM.set(el.dataset.chartKey, zoom);
+      }
+      el.marpChart.dispose();
+    }
     el.marpChart = null;
   }
 }
@@ -1999,7 +2034,7 @@ function epochChart(spec, epochs) {
 
   return `<article class="evaluation-card history-card"><header><div><h5>${spec.title}</h5>`
     + `<p>${notes.filter(Boolean).join(' &middot; ')}</p></div></header>`
-    + `${chartSlot(option, chartText(label))}</article>`;
+    + `${chartSlot(option, chartText(label), epochs.length ? `epochs-${epochs[0].training_run_id}-${spec.title}` : '')}</article>`;
 }
 
 /**
@@ -2503,52 +2538,63 @@ function perClassTable(classes) {
  * @returns {string}
  */
 function curveChart(spec, series) {
-  const box = { left: 46, right: 700, top: 24, bottom: 174 };
-  const at = (value) => box.left + (box.right - box.left) * Math.max(0, Math.min(1, value));
-  const up = (value) => box.bottom - (box.bottom - box.top) * Math.max(0, Math.min(1, value));
-
-  const pathOf = (xs, ys) => xs.map((x, index) => {
-    const y = ys[index];
-
-    if (x === null || x === undefined || y === null || y === undefined) return '';
-
-    return `${index ? 'L' : 'M'}${at(Number(x)).toFixed(1)},${up(Number(y)).toFixed(1)}`;
-  }).filter(Boolean).join(' ');
-
-  const lines = series.map((one, index) => `<path class="result-line curve-class class-${(index % 4) + 1}" `
-    + `data-class="${escapeHtml(one.class_name || '')}" d="${pathOf(one[spec.x], one[spec.y])}"/>`).join('');
-
   /* **The mean across classes, which is the line a reader looks at first.** Index-wise
      rather than interpolated: the API refuses a family whose arrays disagree in length,
      so every class shares one x axis and the columns line up by construction. */
   const width = series.reduce((most, one) => Math.max(most, (one[spec.y] || []).length), 0);
+  const finite = (value) => value !== null && value !== undefined && Number.isFinite(Number(value));
   const mean = [];
-  const meanX = [];
 
   for (let index = 0; index < width; index += 1) {
-    const values = series.map((one) => one[spec.y][index])
-      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
-      .map(Number);
-    const across = series.map((one) => one[spec.x][index])
-      .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
-      .map(Number);
+    const ys = series.map((one) => one[spec.y][index]).filter(finite).map(Number);
+    const xs = series.map((one) => one[spec.x][index]).filter(finite).map(Number);
 
-    mean.push(values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
-    meanX.push(across.length ? across.reduce((sum, value) => sum + value, 0) / across.length : null);
+    mean.push(xs.length && ys.length
+      ? [xs.reduce((sum, value) => sum + value, 0) / xs.length, ys.reduce((sum, value) => sum + value, 0) / ys.length]
+      : [null, null]);
   }
 
-  const grid = '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
-    + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>';
+  const pairs = (one) => (one[spec.x] || []).map((x, index) => {
+    const y = one[spec.y][index];
+    return finite(x) && finite(y) ? [Number(x), Number(y)] : [null, null];
+  });
+
+  const theme = chartTheme();
+  const meanName = `Mean of ${series.length} class${series.length === 1 ? '' : 'es'}`;
+  const tick = (value) => (value === null || value === undefined ? '—' : Number(value).toFixed(3));
+
+  const option = {
+    grid: { left: 42, right: 18, top: 40, bottom: 36 },
+    /* Both axes are 0 to 1 by definition, so fixed: two runs compare by eye. */
+    xAxis: { type: 'value', min: 0, max: 1, name: spec.xLabel, nameLocation: 'middle', nameGap: 24, ...theme.axis },
+    yAxis: { type: 'value', min: 0, max: 1, name: spec.yLabel, ...theme.axis },
+    /* By item rather than by axis: the x values differ slightly per class, so "every line
+       at this x" is not a question these charts can answer. */
+    tooltip: {
+      ...theme.tooltip, trigger: 'item',
+      formatter: (item) => `${escapeHtml(item.seriesName)}<br>${escapeHtml(spec.xLabel)} ${tick(item.value[0])} · ${escapeHtml(spec.yLabel)} ${tick(item.value[1])}`,
+    },
+    dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }, { type: 'inside', yAxisIndex: 0, filterMode: 'none' }],
+    series: [
+      ...series.map((one, index) => {
+        const { color } = chartKey(`class-${(index % 4) + 1}`);
+        return {
+          id: `class-${index}`, name: chartText(one.class_name || `Class ${index}`), type: 'line',
+          data: pairs(one), connectNulls: false, showSymbol: false,
+          lineStyle: { color, width: 1.2, opacity: 0.42 }, itemStyle: { color }, emphasis: { lineStyle: { width: 2, opacity: 1 } },
+        };
+      }),
+      {
+        id: 'mean', name: meanName, type: 'line', data: mean, connectNulls: false, showSymbol: false, z: 3,
+        lineStyle: { color: chartKey('curve-mean').color, width: 3.2 }, itemStyle: { color: chartKey('curve-mean').color },
+      },
+    ],
+  };
 
   return '<article class="evaluation-card history-card curve-card">'
     + `<header><div><h5>${spec.title}</h5><p>${spec.note}</p></div></header>`
-    + `<div class="result-chart" role="img" aria-label="${escapeHtml(spec.title)} over ${series.length} classes">`
-    + `<svg viewBox="0 0 740 205" aria-hidden="true">${grid}`
-    + '<g class="result-axis"><text x="38" y="28">1.0</text><text x="38" y="103">.5</text>'
-    + `<text x="38" y="178">0</text><text x="46" y="196">${spec.xLabel} 0</text>`
-    + `<text x="700" y="196">${spec.xLabel} 1</text></g>${lines}`
-    + `<path class="result-line curve-mean" d="${pathOf(meanX, mean)}"/></svg></div>`
-    + `<p class="curve-key"><span class="mean"></span>Mean of ${series.length} class${series.length === 1 ? '' : 'es'}`
+    + chartSlot(option, `${chartText(spec.title)} over ${series.length} classes`)
+    + `<p class="curve-key"><span class="mean"></span>${meanName}`
     + ` &middot; ${escapeHtml(spec.yLabel)} against ${escapeHtml(spec.xLabel.toLowerCase())}</p></article>`;
 }
 

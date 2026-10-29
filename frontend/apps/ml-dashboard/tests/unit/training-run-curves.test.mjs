@@ -2023,8 +2023,13 @@ test('the threshold curves are read on asking, once, and drawn per class with a 
 
   const pr = panel.querySelector('.curve-card');
 
-  assert.equal(pr.querySelectorAll('.curve-class').length, 2, 'one thin line per class');
-  assert.ok(pr.querySelector('.curve-mean').getAttribute('d'), 'and the bold mean over them');
+  const curveSeries = chartIn(pr).marpOption.series;
+
+  assert.equal(curveSeries.filter((one) => one.id.startsWith('class-')).length, 2, 'one thin line per class');
+  assert.ok(curveSeries.find((one) => one.id === 'mean').data.some((point) => point[1] !== null),
+    'and the bold mean over them');
+  assert.ok([...chartIn(pr).querySelectorAll('path')].some((path) => path.getAttribute('stroke-width') === '3.2'),
+    'which ECharts drew, heavier than the classes');
 
   assert.equal(reads, 1, 'read once');
 
@@ -2346,7 +2351,7 @@ test('a running run graphs what the console would print, per batch', async (t) =
   assert.deepEqual(heads, ['Loss', 'GPU memory', 'Throughput', 'Epoch ETA']);
   assert.ok(!heads.includes('Box loss'), 'no chart for a key this run does not send');
 
-  assert.ok(panel.querySelector('.result-line.step-series').getAttribute('d'),
+  assert.ok(chartIn(panel.querySelector('.evaluation-card')).marpOption.series[0].data.some((point) => point[1] !== null),
     'the loss draws per batch');
   assert.match(panel.textContent, /Training/, 'and the phase says what it is doing');
   assert.match(panel.textContent, /epoch 1, batch 3 of 3/, 'and where it has got to');
@@ -2373,10 +2378,10 @@ test('a retry gets its own line rather than walking backwards through the first'
   t.after(screen.close);
 
   const panel = (await open(screen, 21782)).querySelector('.step-charts');
-  const lines = panel.querySelectorAll('.evaluation-card .result-line.step-series');
+  const lines = chartIn(panel.querySelector('.evaluation-card')).marpOption.series;
 
   assert.equal(lines.length, 2, 'one line per attempt');
-  assert.notEqual(lines[0].getAttribute('d'), lines[1].getAttribute('d'));
+  assert.notEqual(JSON.stringify(lines[0].data), JSON.stringify(lines[1].data), 'each with its own readings');
   assert.match(panel.textContent, /2 attempts/, 'and the card says there were two');
 });
 
@@ -2414,9 +2419,33 @@ test('a poll asks only for what is new, and keeps what it already had', async (t
 
   assert.equal(asked[1].after_step, 2, 'and the next asks only for what follows step 2');
 
-  const d = detail.querySelector('.step-charts .result-line.step-series').getAttribute('d');
+  const drawn = chartIn(detail.querySelector('.step-charts .evaluation-card')).marpOption.series[0].data;
 
-  assert.equal((d.match(/[ML]/g) || []).length, 3, 'with all three points drawn, not just the new one');
+  assert.equal(drawn.filter((point) => point[1] !== null).length, 3, 'with all three points drawn, not just the new one');
+});
+
+test('a chart keeps its zoom when a live panel is redrawn under it', async (t) => {
+  /* A live run's panel is redrawn every few seconds, which replaces its charts. Without a
+     name to carry it, a zoom somebody had set snapped back to the full range on every poll
+     -- the charts could be zoomed, but not for longer than one heartbeat. */
+  const screen = await drawScreen('training.html', answers([
+    epoch(1, { box_loss: 1.8 }), epoch(2, { box_loss: 1.4 }), epoch(3, { box_loss: 1.1 }), epoch(4, { box_loss: 0.9 }),
+  ]));
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 21779);
+  lossCard(detail).querySelector('[data-chart]').marpChart
+    .dispatchAction({ type: 'dataZoom', dataZoomIndex: 0, start: 50, end: 100 });
+
+  await detail.redraw();
+  for (let i = 0; i < 3; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const after = chartIn(lossCard(detail));
+  const zoom = after.marpChart.getOption().dataZoom[0];
+
+  assert.ok(after.marpChart, 'the redrawn chart is drawn');
+  assert.deepEqual([zoom.start, zoom.end], [50, 100], 'at the zoom it was left at, not the full range');
 });
 
 test('a chart tooltip is on the page, so the card cannot cut it off', async (t) => {
