@@ -3214,3 +3214,19 @@ td.whb.quiet { color: var(--amber-300); }
 .findbar { height: 6px; border-radius: 3px; background: rgba(42, 214, 220, .08); overflow: hidden; }
 .findbar i { display: block; height: 100%; border-radius: inherit; background: var(--cyan-400); }
 .findings-go { margin: 10px 0 0; }
+
+/* Which video, which stretch, and where it sits in the whole (#288). The strip is the
+   video; each piece of the run is a block in its state, this one outlined. */
+.video-where { margin: 0 0 12px; }
+.video-where h4 { margin: 0 0 2px; color: var(--white); font-size: 12px; overflow-wrap: anywhere; }
+.video-where > p { margin: 0 0 8px; color: var(--muted); font-size: 11px; }
+.video-where b { color: var(--text); }
+.video-strip { position: relative; height: 12px; border: 1px solid var(--hairline); border-radius: 3px; background: var(--sunk); overflow: hidden; }
+.video-strip i { position: absolute; top: 0; bottom: 0; background: var(--violet-300); opacity: .35; }
+.video-strip i.done { background: var(--mint-400); opacity: .75; }
+.video-strip i.running { background: var(--cyan-300); opacity: .85; }
+.video-strip i.failed { background: var(--red-400); opacity: .75; }
+.video-strip i.cancelled { background: var(--grey-400); opacity: .35; }
+.video-strip i.this { outline: 2px solid var(--white); outline-offset: -2px; z-index: 1; }
+.video-strip-axis { display: flex; justify-content: space-between; margin-top: 3px; color: var(--faint); font-size: 10px; }
+.species-time { margin-top: 12px; }

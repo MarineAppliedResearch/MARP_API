@@ -4937,6 +4937,116 @@ function findingsSection(title, outcome, note = '') {
     + `${rows ? `<ol class="findlist">${rows}</ol>` : ''}</section>`;
 }
 
+/**
+ * A time in a video, as the reviewer reads one: `1:05:03`, or `5:03` under an hour.
+ *
+ * @param {number|null} seconds - Seconds into the video.
+ * @returns {string}
+ */
+function videoClock(seconds) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return '?';
+  const total = Math.max(0, Math.round(Number(seconds)));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+/**
+ * Which video, which stretch of it, and where that sits in the whole (#288, with #293).
+ *
+ * **Isaac: *"I can't even tell what section of video is ran."*** The row said the dive and
+ * the line; nothing said which video or which minutes of it. This names the video, says
+ * the piece's range as time in that video, and draws the video as a strip with every
+ * piece of the run on it in its state, this piece outlined, so a run reads as how much of
+ * the video is done.
+ *
+ * @param {Object} timeline - From `jobTimeline` or `batchTimeline`.
+ * @param {number} jobId - The piece this row is, to outline.
+ * @returns {string}
+ */
+function videoWhereSection(timeline, jobId) {
+  const { video, pieces } = timeline;
+  const piece = pieces.find((one) => one.job_id === jobId) || pieces[0];
+  const length = video.duration_s || Math.max(0, ...pieces.map((one) => one.end_s || 0));
+  const at = (seconds) => (length ? Math.max(0, Math.min(100, (seconds / length) * 100)) : 0);
+  const STATE = { succeeded: 'done', leased: 'running', queued: 'queued', failed: 'failed', cancelled: 'cancelled', expired: 'cancelled' };
+
+  const strip = length
+    ? pieces.map((one) => `<i class="${STATE[one.state] || 'queued'}${one.job_id === piece.job_id ? ' this' : ''}"`
+      + ` style="left:${at(one.start_s || 0).toFixed(2)}%;width:${Math.max(0.4, at(one.end_s || 0) - at(one.start_s || 0)).toFixed(2)}%"`
+      + ` title="${videoClock(one.start_s)}–${videoClock(one.end_s)} · ${escapeHtml(one.state)}"></i>`).join('')
+    : '';
+
+  const frames = piece.start_frame !== null && piece.end_frame !== null
+    ? ` &middot; frames ${piece.start_frame.toLocaleString()}–${piece.end_frame.toLocaleString()}${video.fps ? ` at ${Number(video.fps.toFixed(3))} fps` : ''}`
+    : '';
+
+  return '<section class="video-where">'
+    + `<h4>${escapeHtml(video.name || 'Video not named')}</h4>`
+    + `<p>This piece: <b>${videoClock(piece.start_s)}–${videoClock(piece.end_s)}</b>${length ? ` of ${videoClock(length)}` : ''}${frames}</p>`
+    + (strip ? `<div class="video-strip" role="img" aria-label="Where this piece and the rest of its run sit in the video">${strip}</div>`
+      + `<div class="video-strip-axis"><span>0:00</span><span>${videoClock(length)}</span></div>` : '')
+    + '</section>';
+}
+
+/**
+ * Species over the video's time: a row per species, shaded by how many were seen when.
+ *
+ * **Normalised per species**, so a species seen four times shows where its four were
+ * beside one seen four hundred; the hover gives the real count. A stretch with nothing
+ * in it is drawn empty rather than left out, so a gap in the finds reads as a gap.
+ *
+ * @param {Object} timeline - From `jobTimeline` or `batchTimeline`.
+ * @param {number} jobId - The piece this row is, marked on a run's chart.
+ * @returns {string}
+ */
+function speciesOverTime(timeline, jobId) {
+  const { species, bucket_s: bucket, span, pieces } = timeline;
+  if (!species.length) return '';
+
+  const shown = species.slice(0, 12);
+  const buckets = shown[0].counts.length;
+  const labels = Array.from({ length: buckets }, (_, index) => videoClock(span.from_s + index * bucket));
+  const data = shown.flatMap((one, row) => {
+    const most = Math.max(1, ...one.counts);
+    return one.counts.map((count, column) => [column, row, count / most, count]);
+  });
+
+  const theme = chartTheme();
+  const piece = pieces.find((one) => one.job_id === jobId);
+  const mark = piece && pieces.length > 1 && piece.start_s !== null
+    ? [[{ xAxis: Math.floor((piece.start_s - span.from_s) / bucket) }, { xAxis: Math.max(0, Math.ceil((piece.end_s - span.from_s) / bucket) - 1) }]]
+    : [];
+
+  const option = {
+    grid: { left: 130, right: 16, top: 12, bottom: 40 },
+    legend: { show: false },
+    xAxis: { type: 'category', data: labels, name: 'Time in the video', nameLocation: 'middle', nameGap: 26, ...theme.axis, splitLine: { show: false } },
+    yAxis: { type: 'category', data: shown.map((one) => one.name), inverse: true, ...theme.axis, splitLine: { show: false } },
+    visualMap: { show: false, dimension: 2, min: 0, max: 1, inRange: { color: ['rgba(1, 6, 14, 0.5)', chartKey('curve-mean').color] } },
+    tooltip: {
+      ...theme.tooltip, trigger: 'item',
+      formatter: (item) => `${escapeHtml(shown[item.value[1]].name)}<br>${labels[item.value[0]]}–${videoClock(span.from_s + (item.value[0] + 1) * bucket)}: `
+        + `<b>${item.value[3].toLocaleString()}</b>`,
+    },
+    dataZoom: [{ type: 'inside', xAxisIndex: 0 }],
+    series: [{
+      id: 'density', type: 'heatmap', data,
+      itemStyle: { borderColor: 'rgba(1, 6, 14, 0.9)', borderWidth: 1 },
+      markArea: mark.length ? { silent: true, itemStyle: { color: 'transparent', borderColor: theme.text.color, borderWidth: 1 }, data: mark } : undefined,
+    }],
+  };
+
+  const more = species.length > shown.length ? ` &middot; the ${shown.length} most common of ${species.length}` : '';
+
+  return '<section class="findings species-time">'
+    + `<h4>${pieces.length > 1 ? 'When in the video, across the run' : 'When in this piece'}</h4>`
+    + `<p>Each row shaded against its own busiest ${videoClock(bucket)}${more}${mark.length ? ' &middot; this piece outlined' : ''}</p>`
+    + chartSlot(option, `Species over time, ${bucket} seconds a column`, { height: Math.max(160, shown.length * 26 + 60) })
+    + '</section>';
+}
+
 /** Whole runs' totals by `batch_id`, so a second open of the same run is not a second read. */
 const inferenceRunOutcomes = new Map();
 
@@ -4996,9 +5106,22 @@ async function fillInferenceFindings(place) {
     }
   }
 
+  /* **Which video, which stretch, and when things were found.** The run's timeline when
+     this is one piece of a run, since it carries this piece as well; the piece's own
+     otherwise. Read with the counts, each open, so a running run's strip keeps moving. */
+  let where = '';
+  let density = '';
+  try {
+    const time = batch ? await window.MarpApi.batchTimeline(batch) : await window.MarpApi.jobTimeline(jobId);
+    where = videoWhereSection(time, jobId);
+    density = speciesOverTime(time, jobId);
+  } catch (error) {
+    where = `<section class="video-where"><p class="faint">Could not read which video this ran on (${error.status || 'no answer'}).</p></section>`;
+  }
+
   /* Into the mosaic, filtered to the run's session: a run makes its own session, so that
      is this run's observations and nothing else. Offered only when there is one. */
-  place.innerHTML = `<div class="findings-grid">${sections.join('')}</div>`;
+  place.innerHTML = `${where}<div class="findings-grid">${sections.join('')}</div>${density}`;
   const anything = $$('.findlist li', place).length > 0;
   if (session && anything) {
     place.insertAdjacentHTML('beforeend', `<p class="findings-go"><a class="btn sm" href="/apps/marp-mosaic-review/?session=${session}">`
@@ -5059,7 +5182,7 @@ function renderInferenceRecent(views = inferenceList.views) {
     return `<tr class="runrow-head" aria-expanded="false" data-job="${job.id}">`
       + `<td class="ex"><button class="exbtn" type="button" aria-label="Show what ${escapeHtml(view.title)} found"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
       + `<td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">${view.title}</span></span></td>`
-      + `<td class="jscope"><span class="two"><span class="a">${session.dive ? diveText(session.dive) : 'Dive ?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
+      + `<td class="jscope"><span class="two"><span class="a">${session.dive ? diveText(session.dive) : 'Dive ?'} &middot; Line ${session.line || '?'}</span><span class="b">${[session.type, job.spec && job.spec.range ? `frames ${Number(job.spec.range.start_frame).toLocaleString()}–${Number(job.spec.range.end_frame).toLocaleString()}` : ''].filter(Boolean).join(' &middot; ')}</span></span></td>`
       + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}">${statusWithProgress(view)}</td>`
       /* **A dash until asked, then whatever the answer is -- including zero.** Nothing

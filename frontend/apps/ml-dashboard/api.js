@@ -1233,6 +1233,28 @@
   }
 
   /**
+   * `GET /api/v2/gpu/jobs/:id/timeline` -- which video a piece ran on, its range in that
+   * video's time, and its species counted per stretch of time (#288).
+   *
+   * @param {number} jobId - The piece.
+   * @returns {Promise<Object>}
+   */
+  function jobTimeline(jobId) {
+    return request(`/gpu/jobs/${encodeURIComponent(jobId)}/timeline`);
+  }
+
+  /**
+   * `GET /api/v2/gpu/batches/:batch_id/timeline` -- the same for a whole run: every
+   * piece's range and state along the video, and its species across the whole of it.
+   *
+   * @param {string} batchId - The run's `batch_id`.
+   * @returns {Promise<Object>}
+   */
+  function batchTimeline(batchId) {
+    return request(`/gpu/batches/${encodeURIComponent(batchId)}/timeline`);
+  }
+
+  /**
    * `GET /api/v2/gpu/batches/:batch_id/observations` -- what every piece of one run found.
    *
    * The run's total and its species in one read, with `states` saying how many pieces are
@@ -1936,6 +1958,8 @@
     getJob,
     jobObservations,
     batchObservations,
+    batchTimeline,
+    jobTimeline,
     listModels,
     listRunnableModels,
     listModelVersions,

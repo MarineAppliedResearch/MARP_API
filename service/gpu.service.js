@@ -3584,3 +3584,5 @@ function gapsWithin(covered, totalFrames) {
 }
 
 module.exports = new GpuService();
+/* The same file name a lease records as `video_source`, for the timeline to name a video by. */
+module.exports.fileNameFromPath = fileNameFromPath;

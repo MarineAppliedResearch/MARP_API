@@ -965,6 +965,118 @@ function registerGpuRoutes(app) {
         }),
     });
 
+    /** The answer both timeline routes give. */
+    const TIMELINE_SCHEMA = {
+        type: 'object',
+        properties: {
+            video: {
+                type: 'object',
+                properties: {
+                    jellyfin_item_id: { type: 'string', nullable: true },
+                    name: { type: 'string', nullable: true, description: 'The file name a lease records as video_source, from Jellyfin, or from the observations when Jellyfin does not answer.' },
+                    duration_s: { type: 'number', nullable: true, description: 'Null when Jellyfin could not be read.' },
+                    fps: { type: 'number', nullable: true, description: 'The rate frames are turned into seconds at.' },
+                    fps_assumed: { type: 'boolean', description: 'True when the video could not be read and fps is the 25 a lease assumes.' },
+                },
+            },
+            span: { type: 'object', properties: { from_s: { type: 'number' }, to_s: { type: 'number' } }, description: 'What the timeline covers: a piece\'s own range, or the whole video for a run.' },
+            bucket_s: { type: 'integer', description: 'Seconds per bucket, chosen so the span has at most 60.' },
+            pieces: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        job_id: { type: 'integer' }, state: { type: 'string' },
+                        start_frame: { type: 'integer', nullable: true }, end_frame: { type: 'integer', nullable: true },
+                        start_s: { type: 'number', nullable: true }, end_s: { type: 'number', nullable: true },
+                    },
+                },
+            },
+            species: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        species_id: { type: 'integer', nullable: true },
+                        name: { type: 'string' },
+                        total: { type: 'integer' },
+                        counts: { type: 'array', items: { type: 'integer' }, description: 'One count per bucket, from span.from_s.' },
+                    },
+                },
+            },
+        },
+    };
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
+        path: '/api/gpu/jobs/:id/timeline',
+        summary: 'An inference job\'s video, range and species over time',
+        description:
+            'Which video one inference job ran on, by name, with its length and frame rate; the stretch of it the job covered, in seconds of that video; and its observations counted per species per stretch of time, so a screen can say when in the video anything was found. '
+            + 'Counted in the database, from each observation\'s `mediaPosition`, the time in the video it was seen. '
+            + 'Jellyfin not answering costs the duration, not the timeline: the name falls back to what the observations recorded.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the job.' },
+        ],
+        responses: {
+            200: { description: 'The timeline.', content: { 'application/json': { schema: TIMELINE_SCHEMA } } },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const jobId = Number(req.params.id);
+
+            if (!Number.isInteger(jobId) || jobId <= 0) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'The job id must be a positive integer.');
+            }
+
+            const timeline = await inferenceOutcomeController.getTimeline({ jobId });
+
+            if (!timeline) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `No inference job ${jobId}.`);
+            }
+
+            res.json(timeline);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:read',
+        path: '/api/gpu/batches/:batch_id/timeline',
+        summary: 'A run\'s video, its pieces and species over the whole video',
+        description:
+            'The same as `GET /gpu/jobs/{id}/timeline` for every piece of one run together: the video, each piece\'s range and state, so a screen can draw which stretches are done, running, queued or ended, and the species counted across the whole video.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'batch_id', required: true, schema: { type: 'string', format: 'uuid' }, description: 'The run, as its pieces carry it.' },
+        ],
+        responses: {
+            200: { description: 'The timeline.', content: { 'application/json': { schema: TIMELINE_SCHEMA } } },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const batchId = String(req.params.batch_id || '');
+
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batchId)) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'batch_id must be a uuid.');
+            }
+
+            const timeline = await inferenceOutcomeController.getTimeline({ batchId });
+
+            if (!timeline) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `No inference job carries batch_id ${batchId}.`);
+            }
+
+            res.json(timeline);
+        }),
+    });
+
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'jobs:read',

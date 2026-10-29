@@ -139,7 +139,77 @@ class InferenceOutcomeRepository {
             species,
         };
     }
+    /**
+     * The pieces a timeline covers: one job, or every job of one run, in frame order.
+     *
+     * @async
+     * @param {Object} which - `{jobId}` or `{batchId}`.
+     * @returns {Promise<Object[]>} `{job_id, state, start_frame, end_frame, jellyfin_item_id}`.
+     */
+    async findTimelinePieces({ jobId = null, batchId = null }) {
+        return this.db.sequelize.query(
+            `SELECT j.id AS job_id, j.state,
+                    (j.spec->'range'->>'start_frame')::int AS start_frame,
+                    (j.spec->'range'->>'end_frame')::int AS end_frame,
+                    j.spec->'video'->>'jellyfin_item_id' AS jellyfin_item_id
+               FROM gpu_jobs j
+              WHERE j.kind = 'inference'
+                AND ${jobId !== null ? 'j.id = :jobId' : 'j.batch_id = :batchId'}
+              ORDER BY (j.spec->'range'->>'start_frame')::int NULLS LAST, j.id`,
+            { replacements: { jobId, batchId }, type: QueryTypes.SELECT }
+        );
+    }
+
+    /**
+     * Observations per species per stretch of video time, counted here rather than sent.
+     *
+     * `mediaPosition` is the time in the video an observation was seen, as
+     * `HH:MM:SS.fffffff`. A row whose position is missing or not in that shape is left
+     * out rather than guessed at; every observation the GPU pipeline writes has one.
+     *
+     * @async
+     * @param {Object} params - `{jobIds, bucketSeconds, fromSeconds}`.
+     * @returns {Promise<Object[]>} `{species_id, species_name, reported_name, bucket, n}`.
+     */
+    async countByTime({ jobIds, bucketSeconds, fromSeconds }) {
+        if (!jobIds.length) return [];
+
+        return this.db.sequelize.query(
+            `SELECT o.species_id,
+                    s.comname AS species_name,
+                    o.comname AS reported_name,
+                    FLOOR((EXTRACT(EPOCH FROM o."mediaPosition"::interval) - :fromSeconds) / :bucketSeconds)::int AS bucket,
+                    COUNT(*)::int AS n
+               FROM observations o
+               LEFT JOIN species s ON s.id = o.species_id
+              WHERE o.gpu_job_id IN (:jobIds)
+                AND o."mediaPosition" ~ '^[0-9]+:[0-9]{2}:[0-9]{2}([.][0-9]+)?$'
+              GROUP BY 1, 2, 3, 4`,
+            { replacements: { jobIds, bucketSeconds, fromSeconds }, type: QueryTypes.SELECT }
+        );
+    }
+
+    /**
+     * The video file name the observations of these jobs recorded, for when Jellyfin is not answering.
+     *
+     * @async
+     * @param {number[]} jobIds - The jobs.
+     * @returns {Promise<string|null>} The most common `video_source`, or null when none was recorded.
+     */
+    async observedVideoName(jobIds) {
+        if (!jobIds.length) return null;
+
+        const [row] = await this.db.sequelize.query(
+            `SELECT video_source FROM observations
+              WHERE gpu_job_id IN (:jobIds) AND video_source IS NOT NULL
+              GROUP BY video_source ORDER BY COUNT(*) DESC LIMIT 1`,
+            { replacements: { jobIds }, type: QueryTypes.SELECT }
+        );
+
+        return row ? row.video_source : null;
+    }
 }
+
 
 module.exports = new InferenceOutcomeRepository();
 module.exports.InferenceOutcomeRepository = InferenceOutcomeRepository;

@@ -8,6 +8,7 @@
  */
 
 const inferenceOutcomeRepository = require('../repository/inference-outcome.repository');
+const inferenceTimelineService = require('../service/inference-timeline.service');
 const logger = require('../logger/api.logger');
 
 /**
@@ -38,6 +39,18 @@ class InferenceOutcomeController {
     async getBatchOutcome(batchId) {
         logger.info('Controller: getBatchOutcome');
         return await inferenceOutcomeRepository.findBatchOutcome(batchId);
+    }
+
+    /**
+     * A job's or a run's video, range and species over time.
+     *
+     * @async
+     * @param {Object} which - `{jobId}` or `{batchId}`.
+     * @returns {Promise<Object|null>} The timeline, or null when there is no such job or run.
+     */
+    async getTimeline(which) {
+        logger.info('Controller: getTimeline');
+        return await inferenceTimelineService.timeline(which);
     }
 }
 

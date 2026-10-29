@@ -153,3 +153,78 @@ test('a row has its expander, and no Open arrow that opens nothing', async (t) =
   assert.ok(row.querySelector('.exbtn'));
   assert.equal(row.querySelector('[aria-label="Open"]'), null);
 });
+
+/* ------------------------------------------- which video, which stretch, and when (#293 into #288) */
+
+/** A run's timeline: a 21:57 video in five 5-minute pieces, the third this one. */
+const TIMELINE = {
+  video: { jellyfin_item_id: 'abc', name: '20210614_164041_Fwd.mp4', duration_s: 1317.2, fps: 25, fps_assumed: false },
+  span: { from_s: 0, to_s: 1317.2 },
+  bucket_s: 30,
+  pieces: [
+    { job_id: 60, state: 'succeeded', start_frame: 0, end_frame: 7500, start_s: 0, end_s: 300 },
+    { job_id: 61, state: 'cancelled', start_frame: 7500, end_frame: 15000, start_s: 300, end_s: 600 },
+    { job_id: 62, state: 'succeeded', start_frame: 15000, end_frame: 22500, start_s: 600, end_s: 900 },
+    { job_id: 63, state: 'leased', start_frame: 22500, end_frame: 30000, start_s: 900, end_s: 1200 },
+    { job_id: 64, state: 'queued', start_frame: 30000, end_frame: 32930, start_s: 1200, end_s: 1317.2 },
+  ],
+  species: [
+    { species_id: 3, name: 'California sea cucumber', total: 12, counts: [0, 2, 10, ...new Array(41).fill(0)] },
+    { species_id: 9, name: 'Fish-eating anemone', total: 1, counts: [...new Array(21).fill(0), 1, ...new Array(22).fill(0)] },
+  ],
+};
+
+test('an open row names its video, says its stretch as time, and draws where it sits', async (t) => {
+  const screen = await drawScreen('inference.html', {
+    listJobs: async () => ({ jobs: [job(62, 'succeeded', { spec: { session: { session_id: 641 }, model: { ml_model_id: 7 }, range: { start_frame: 15000, end_frame: 22500 } } })], total: 1, limit: 500, offset: 0 }),
+    listSessions: async () => [],
+    jobObservations: async () => ({ job_id: 62, session_id: 641, observations: 0, species: [] }),
+    batchObservations: async () => ({ batch_id: RUN, pieces: 5, states: { succeeded: 2 }, session_id: 641, observations: 0, species: [] }),
+    batchTimeline: async () => TIMELINE,
+  });
+
+  t.after(screen.close);
+
+  const row = screen.document.querySelector('.inference-table tbody tr[data-job="62"]');
+  assert.match(row.querySelector('.jscope').textContent, /frames 15,000.22,500/, 'the row says which frames, without opening it');
+
+  const detail = await open(screen, 62);
+  const where = detail.querySelector('.video-where');
+
+  assert.equal(where.querySelector('h4').textContent, '20210614_164041_Fwd.mp4', 'the video, by its file name');
+  assert.match(where.textContent, /This piece: 10:00.15:00 of 21:57/, 'its stretch as time in that video');
+
+  const blocks = [...where.querySelectorAll('.video-strip i')];
+  assert.equal(blocks.length, 5, 'every piece of the run on the strip');
+  assert.deepEqual(blocks.map((block) => block.className), ['done', 'cancelled', 'done this', 'running', 'queued'],
+    'each in its state, this one outlined');
+  assert.equal(blocks[2].style.left, '45.55%', 'placed at 10:00 of 21:57');
+});
+
+test('species over time is shaded per species, with the real counts on hover', async (t) => {
+  const screen = await drawScreen('inference.html', {
+    listJobs: async () => ({ jobs: [job(62, 'succeeded')], total: 1, limit: 500, offset: 0 }),
+    listSessions: async () => [],
+    jobObservations: async () => ({ job_id: 62, session_id: 641, observations: 13, species: [] }),
+    batchObservations: async () => ({ batch_id: RUN, pieces: 5, states: {}, session_id: 641, observations: 13, species: [] }),
+    batchTimeline: async () => TIMELINE,
+  });
+
+  t.after(screen.close);
+
+  const detail = await open(screen, 62);
+  const chart = detail.querySelector('.species-time [data-chart]');
+
+  assert.ok(chart?.marpChart, 'drawn as a heatmap');
+  const { data } = chart.marpOption.series[0];
+  const cell = (column, row) => data.find((one) => one[0] === column && one[1] === row);
+
+  assert.deepEqual([...chart.marpOption.yAxis.data], ['California sea cucumber', 'Fish-eating anemone']);
+  assert.deepEqual([...cell(2, 0)], [2, 0, 1, 10], 'the sea cucumbers\' busiest half-minute at full shade');
+  assert.deepEqual([...cell(1, 0)], [1, 0, 0.2, 2], 'two of ten at a fifth');
+  assert.deepEqual([...cell(21, 1)], [21, 1, 1, 1],
+    'and the one anemone at full shade too, rather than invisible beside them');
+  assert.deepEqual([...cell(0, 0)], [0, 0, 0, 0], 'a half-minute with nothing is drawn, empty');
+  assert.match(chart.marpOption.tooltip.formatter({ value: [21, 1, 1, 1] }), /Fish-eating anemone<br>10:30.11:00: <b>1<\/b>/);
+  assert.equal(chart.marpOption.series[0].markArea.data[0][0].xAxis, 20, 'this piece outlined from 10:00');
+});
