@@ -10639,6 +10639,29 @@
                     "example": "detection",
                     "description": "Which kind of model this dataset is for. Omitted means `detection`, which is what every dataset built before this existed is. The two produce different archives and are not interchangeable: a detection archive holds whole frames with YOLO label files and a `data.yaml`; a classification archive holds one picture per annotated box in a folder named for its class, with no `data.yaml` at all, because Ultralytics classify reads the class vocabulary from the folder names. **The pictures are the mosaic tiles a reviewer sees** -- the box plus 10% padding, squared, 320x320 -- and the dataset row records `crop_source` so nothing downstream has to assume which pixels were taken. Folder names are `<species_id>_<slug>` rather than species names, because 37 names in the catalogue contain a path separator and case alone does not distinguish two directories on Windows; `classes.json` beside the splits maps every folder back to its species and its exact common name. A classification build with no train split is refused, because Ultralytics would otherwise split what it finds 80/20 at random and report an accuracy that means nothing."
                   },
+                  "sampling": {
+                    "type": "object",
+                    "nullable": true,
+                    "description": "How many frames each object gives a **detection** build (#296). Omitted or null, or `frames_per_object: null`, is every frame of every track, which is what every build before this did. Otherwise each track is split into N equal stretches and one random frame is taken from each; a shorter track gives every frame it has. A frame picked for one object still carries the box of every selected object in it. `balance_classes` gives every class, in each split, the image count its largest class gets at N per object, taking more frames per object from a smaller class up to its track lengths. `seed` makes it reproducible; chosen at random when omitted, and recorded on the build either way. Ignored for classification, which already takes one picture per observation.",
+                    "properties": {
+                      "frames_per_object": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "nullable": true,
+                        "example": 10
+                      },
+                      "balance_classes": {
+                        "type": "boolean",
+                        "example": false
+                      },
+                      "seed": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647,
+                        "example": 1234
+                      }
+                    }
+                  },
                   "splits": {
                     "type": "object",
                     "description": "Shares, normalised here, keyed by split name. The archive carries `train` and `eval`, which is the shape the worker already trains on. Whole connected groups of observations are placed together, so a frame holding two animals cannot land in both.",
@@ -10668,6 +10691,128 @@
                     },
                     "job": {
                       "$ref": "#/components/schemas/GpuJob"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/dataset/build/estimate": {
+      "post": {
+        "summary": "How many images a detection build would cut, before queueing it",
+        "description": "Takes the same body as `POST /dataset/build` and answers with what that build would cut: images in total, per split and per class, and how many images every frame of every track would have been. **It runs the same selection and the same plan as the build** and cuts nothing, so the estimate on the build flow is the plan rather than a second calculation (#296). Per class counts images holding the class, as the dataset's own composition does. The build can still cut fewer, where a video turns out shorter than its keyframes say.\n\n**Without a seed the picks are drawn with seed 0**, so the totals are exact and only which frames are picked can differ from the build, whose seed is chosen when it is queued. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  },
+                  "subsets": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    },
+                    "description": "As on `POST /dataset/build`."
+                  },
+                  "splits": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "number"
+                    }
+                  },
+                  "sampling": {
+                    "type": "object",
+                    "nullable": true,
+                    "properties": {
+                      "frames_per_object": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "nullable": true,
+                        "example": 10
+                      },
+                      "balance_classes": {
+                        "type": "boolean",
+                        "example": false
+                      },
+                      "seed": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the build would cut.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "observations": {
+                      "type": "integer",
+                      "description": "Objects selected."
+                    },
+                    "images": {
+                      "type": "integer",
+                      "description": "Images the build would cut."
+                    },
+                    "every_frame": {
+                      "type": "integer",
+                      "description": "Images every frame of every track would have been."
+                    },
+                    "per_split": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    },
+                    "per_class": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "species_id": {
+                            "type": "integer"
+                          },
+                          "comname": {
+                            "type": "string"
+                          },
+                          "class_index": {
+                            "type": "integer"
+                          },
+                          "images": {
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -17144,6 +17289,303 @@
                           },
                           "observations": {
                             "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/jobs/{id}/timeline": {
+      "get": {
+        "summary": "An inference job's video, range and species over time",
+        "description": "Which video one inference job ran on, by name, with its length and frame rate; the stretch of it the job covered, in seconds of that video; and its observations counted per species per stretch of time, so a screen can say when in the video anything was found. Counted in the database, from each observation's `mediaPosition`, the time in the video it was seen. Jellyfin not answering costs the duration, not the timeline: the name falls back to what the observations recorded. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the job."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The timeline.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "video": {
+                      "type": "object",
+                      "properties": {
+                        "jellyfin_item_id": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "name": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "The file name a lease records as video_source, from Jellyfin, or from the observations when Jellyfin does not answer."
+                        },
+                        "duration_s": {
+                          "type": "number",
+                          "nullable": true,
+                          "description": "Null when Jellyfin could not be read."
+                        },
+                        "fps": {
+                          "type": "number",
+                          "nullable": true,
+                          "description": "The rate frames are turned into seconds at."
+                        },
+                        "fps_assumed": {
+                          "type": "boolean",
+                          "description": "True when the video could not be read and fps is the 25 a lease assumes."
+                        }
+                      }
+                    },
+                    "span": {
+                      "type": "object",
+                      "properties": {
+                        "from_s": {
+                          "type": "number"
+                        },
+                        "to_s": {
+                          "type": "number"
+                        }
+                      },
+                      "description": "What the timeline covers: a piece's own range, or the whole video for a run."
+                    },
+                    "bucket_s": {
+                      "type": "integer",
+                      "description": "Seconds per bucket, chosen so the span has at most 60."
+                    },
+                    "pieces": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "job_id": {
+                            "type": "integer"
+                          },
+                          "state": {
+                            "type": "string"
+                          },
+                          "start_frame": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "end_frame": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "start_s": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "end_s": {
+                            "type": "number",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    },
+                    "species": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "species_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "total": {
+                            "type": "integer"
+                          },
+                          "counts": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer"
+                            },
+                            "description": "One count per bucket, from span.from_s."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/batches/{batch_id}/timeline": {
+      "get": {
+        "summary": "A run's video, its pieces and species over the whole video",
+        "description": "The same as `GET /gpu/jobs/{id}/timeline` for every piece of one run together: the video, each piece's range and state, so a screen can draw which stretches are done, running, queued or ended, and the species counted across the whole video. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The run, as its pieces carry it."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The timeline.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "video": {
+                      "type": "object",
+                      "properties": {
+                        "jellyfin_item_id": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "name": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "The file name a lease records as video_source, from Jellyfin, or from the observations when Jellyfin does not answer."
+                        },
+                        "duration_s": {
+                          "type": "number",
+                          "nullable": true,
+                          "description": "Null when Jellyfin could not be read."
+                        },
+                        "fps": {
+                          "type": "number",
+                          "nullable": true,
+                          "description": "The rate frames are turned into seconds at."
+                        },
+                        "fps_assumed": {
+                          "type": "boolean",
+                          "description": "True when the video could not be read and fps is the 25 a lease assumes."
+                        }
+                      }
+                    },
+                    "span": {
+                      "type": "object",
+                      "properties": {
+                        "from_s": {
+                          "type": "number"
+                        },
+                        "to_s": {
+                          "type": "number"
+                        }
+                      },
+                      "description": "What the timeline covers: a piece's own range, or the whole video for a run."
+                    },
+                    "bucket_s": {
+                      "type": "integer",
+                      "description": "Seconds per bucket, chosen so the span has at most 60."
+                    },
+                    "pieces": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "job_id": {
+                            "type": "integer"
+                          },
+                          "state": {
+                            "type": "string"
+                          },
+                          "start_frame": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "end_frame": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "start_s": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "end_s": {
+                            "type": "number",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    },
+                    "species": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "species_id": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "total": {
+                            "type": "integer"
+                          },
+                          "counts": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer"
+                            },
+                            "description": "One count per bucket, from span.from_s."
                           }
                         }
                       }
