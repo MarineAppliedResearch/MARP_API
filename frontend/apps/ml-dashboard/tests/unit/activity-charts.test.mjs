@@ -66,3 +66,82 @@ test('Inference throughput draws what was processed, and nothing it has no serie
   assert.equal(seriesIn(root, 'backlog'), null,
     'the backlog is a current figure, never recorded per bucket, so it draws no line');
 });
+
+test('a worker that was switched off is a gap in its readings, not a ramp across the evening', async (t) => {
+  /* On a time axis, readings either side of hours the machine was off would be joined by
+     a straight line -- a slow, measured-looking climb nobody measured. */
+  const at = ['2026-10-27T18:00:00.000Z', '2026-10-27T18:01:00.000Z', '2026-10-27T18:02:00.000Z',
+    '2026-10-27T22:00:00.000Z', '2026-10-27T22:01:00.000Z'];
+  const screen = await drawScreen('workers.html', {
+    listWorkers: async () => [{
+      worker_id: 11, name: 'rig-03', state: 'online', activity: 'idle', slot_count: 1, worker_version: '0.1.9',
+      capabilities: { slots: 1 }, enrolled_at: '2026-10-01T00:00:00.000Z', last_seen_at: new Date().toISOString(), attempts: [],
+    }],
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    listSessions: async () => [],
+    workerSeries: async () => ({ at, gpu: [10, 12, 11, 60, 62], vram: [], temperature: [], power: [], cpu: [], memory: [], disk: [] }),
+  });
+
+  t.after(screen.close);
+
+  const head = screen.document.querySelector('table#workers tbody tr[data-worker="11"]');
+  head.querySelector('.exbtn').click();
+  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const gpu = [...head.nextElementSibling.querySelectorAll('.evaluation-card')]
+    .find((card) => card.querySelector('h5').textContent.trim() === 'GPU utilisation');
+  const data = gpu.querySelector('[data-chart]').marpOption.series[0].data;
+
+  assert.equal(data.length, 6, 'the five readings and one break');
+  assert.equal(data[3][1], null, 'a null between 18:02 and 22:00, where the machine was off');
+  assert.deepEqual(data.filter((point) => point[1] !== null).map((point) => point[1]), [10, 12, 11, 60, 62],
+    'and every reading itself kept');
+});
+
+test('the Dashboard pool chart draws an unsampled bucket as a gap, not idle GPUs', async (t) => {
+  const screen = await drawScreen('dashboard.html', {
+    listWorkers: async () => [],
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    jobSeries: async () => ({ points: [] }),
+    gpuSeries: async () => ({
+      points: [
+        { at: AT[0], machines: 1, avg_utilization_percent: 70, avg_memory_percent_used: 50, avg_inference_utilization_percent: 40, avg_training_utilization_percent: 30 },
+        { at: AT[1], machines: 0, avg_utilization_percent: null, avg_memory_percent_used: null, avg_inference_utilization_percent: null, avg_training_utilization_percent: null },
+        { at: AT[2], machines: 1, avg_utilization_percent: 80, avg_memory_percent_used: 55, avg_inference_utilization_percent: 50, avg_training_utilization_percent: 30 },
+      ],
+    }),
+  });
+
+  t.after(screen.close);
+
+  const root = screen.document.querySelector('[data-pool-history]');
+
+  assert.deepEqual(seriesIn(root, 'computeUsed').data.map((point) => point[1]), [70, null, 80],
+    'it was `|| 0`, which drew the GPUs idle for an hour nobody measured');
+  assert.equal(seriesIn(root, 'queueInference').yAxisIndex, 1, 'queues on their own axis');
+});
+
+test('Outcomes has no issue rate for a bucket where nothing finished', async (t) => {
+  const screen = await drawScreen('dashboard.html', {
+    listWorkers: async () => [],
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    gpuSeries: async () => ({ points: [] }),
+    jobSeries: async () => ({
+      points: [
+        { at: AT[0], finished: 4, succeeded: 3, median_turnaround_s: 600 },
+        { at: AT[1], finished: 0, succeeded: 0, median_turnaround_s: null },
+        { at: AT[2], finished: 2, succeeded: 2, median_turnaround_s: 300 },
+      ],
+    }),
+  });
+
+  t.after(screen.close);
+
+  const root = screen.document.querySelector('[data-ops-activity="outcomes"]');
+
+  assert.deepEqual(seriesIn(root, 'issues').data.map((point) => point[1]), [25, null, 0],
+    'nothing finished is no rate -- drawn as 0% it read as a spotless hour');
+  assert.deepEqual(seriesIn(root, 'turnaround').data.map((point) => point[1]), [600, null, 300]);
+  assert.deepEqual(seriesIn(root, 'completed').data.map((point) => point[1]), [4, 0, 2],
+    'while a count of none finished is a real zero');
+});

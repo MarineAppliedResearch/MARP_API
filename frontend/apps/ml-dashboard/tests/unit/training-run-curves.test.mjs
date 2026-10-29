@@ -628,22 +628,18 @@ test('the pool chart draws a hole as a hole, not a dip to the floor', async (t) 
   t.after(screen.close);
 
   const root = screen.document.querySelector('[data-ops-activity="workers"]');
-  const training = root.querySelector('[data-ops-line="training"]').getAttribute('d');
+  const training = activitySeries(root, 'training');
 
   assert.ok(training, 'the measured buckets should still draw');
+  assert.deepEqual(training.data.map((point) => point[1]), [70, null, 80],
+    'the unsampled bucket stays null -- read as 0% it says the GPUs went idle');
+  assert.equal(training.connectNulls, false, 'and the line stops there rather than joining across it');
 
-  /* A break, rather than three points joined through the middle one. */
-  assert.equal((training.match(/M/g) || []).length, 2,
-    `the line should stop at the unsampled bucket and start again after it (d="${training}")`);
+  /* ECharts breaks an area at a null as well, so the shading leaves the same gap. */
+  const inference = activitySeries(root, 'inference');
 
-  /* 196 is the baseline in this viewBox. A null plotted as 0% lands exactly there. */
-  assert.doesNotMatch(training, /,196(\.0)?\b/,
-    'nothing should be drawn on the floor: that is what a null read as 0% looks like, and '
-    + 'on a utilization chart it reads as the GPUs having gone idle');
-
-  /* The shading would fill the gap it was just taught to leave. */
-  assert.equal(root.querySelector('[data-ops-area]').getAttribute('d'), '',
-    'and no area while the series it shades has a hole in it');
+  assert.ok(inference.areaStyle, 'inference is still shaded');
+  assert.equal(inference.data[1][1], null, 'with the same hole in it');
 });
 
 test('a finished run with no artifacts shows nothing where they would be', async (t) => {

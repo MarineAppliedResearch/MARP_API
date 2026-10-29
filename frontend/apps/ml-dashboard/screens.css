@@ -640,6 +640,7 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .marp-chart svg { max-height: none; }
 /* Inside a panel's own chart box, which already draws the frame. */
 .marp-chart.bare { height: 248px; }
+.pool-plot .marp-chart.bare { height: 260px; }
 .result-grid line { stroke: rgba(100, 246, 242, .18); stroke-width: 1.2; }
 .result-axis text { fill: var(--text); font: 600 10px var(--body-font); text-anchor: end; }
 .result-axis text:nth-last-child(2) { text-anchor: start; }

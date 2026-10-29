@@ -555,32 +555,13 @@ async function wirePoolUtilization() {
     '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
   };
 
-  const lines = Object.fromEntries($$('[data-pool-line]', root).map((l) => [l.dataset.poolLine, l]));
-  const areas = Object.fromEntries($$('[data-pool-area]', root).map((a) => [a.dataset.poolArea, a]));
   const buttons = $$('[data-pool-range]', root);
   const chart = $('.pool-chart', root);
-  const times = Object.fromEntries($$('[data-pool-time]', root).map((t) => [t.dataset.poolTime, t]));
+  const plot = $('.pool-plot', root);
 
-  const box = chart ? chart.querySelector('svg')?.getAttribute('viewBox')?.split(/\s+/) : null;
-  const width = box ? Number(box[2]) : 760;
-  const floor = 196;
-  const top = 28;
+  const blank = () => { if (plot) plot.innerHTML = ''; };
 
-  const x = (i, n) => 44 + (width - 70) * i / Math.max(1, n - 1);
-  const y = (v, max) => floor - (floor - top) * (v / Math.max(1, max));
-  const pathOf = (values, max) => values
-    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
-  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},${floor} L44,${floor} Z`;
-
-  const clock = (iso) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  };
-
-  const blank = () => {
-    [...Object.values(lines), ...Object.values(areas)].forEach((n) => n && n.removeAttribute('d'));
-    Object.values(times).forEach((t) => { t.textContent = ''; });
-  };
+  wireSeriesKeys(root, 'data-pool-highlight', plot);
 
   async function choose(next) {
     buttons.forEach((b) => {
@@ -621,43 +602,41 @@ async function wirePoolUtilization() {
 
       root.classList.remove('is-quiet');
 
+      /* **A bucket nobody sampled is a gap.** These were mapped with `|| 0`, so an
+         unsampled bucket drew 0% -- GPUs apparently idle across hours nobody measured. A
+         queue is a count of rows, where none waiting is a real zero. */
+      const at = points.map((p) => Date.parse(p.at));
+      const reading = (key) => points.map((p) => (p[key] === null || p[key] === undefined ? null : Number(p[key])));
+      const pair = (values) => values.map((value, index) => [at[index], value]);
       const samples = {
-        computeUsed: points.map((p) => p.avg_utilization_percent || 0),
-        vramUsed: points.map((p) => p.avg_memory_percent_used || 0),
         queueInference: points.map((p) => queuedInference.get(String(p.at)) || 0),
         queueTraining: points.map((p) => queuedTraining.get(String(p.at)) || 0),
       };
 
-      const areaValues = {
-        inference: points.map((p) => p.avg_inference_utilization_percent || 0),
-        training: points.map((p) => p.avg_training_utilization_percent || 0),
-      };
-
-      /* Utilization is a percentage; a queue is a count, scaled to its own peak
-         so a quiet queue does not flatten against a busy pool. */
-      const maxQueue = Math.max(1, ...samples.queueInference, ...samples.queueTraining);
-
-      if (lines.computeUsed) lines.computeUsed.setAttribute('d', pathOf(samples.computeUsed, 100));
-      if (lines.vramUsed) lines.vramUsed.setAttribute('d', pathOf(samples.vramUsed, 100));
-      if (lines.queueInference) lines.queueInference.setAttribute('d', pathOf(samples.queueInference, maxQueue));
-      if (lines.queueTraining) lines.queueTraining.setAttribute('d', pathOf(samples.queueTraining, maxQueue));
-
-      for (const [name, node] of Object.entries(areas)) {
-        if (node && areaValues[name]) node.setAttribute('d', areaOf(areaValues[name], 100));
-      }
-
-      if (times.start) times.start.textContent = clock(points[0].at);
-      if (times.middle) times.middle.textContent = clock(points[Math.floor(points.length / 2)].at);
-      if (times.end) times.end.textContent = 'Now';
+      /* Utilization is a percentage; a queue is a count, on its own axis so a quiet queue
+         does not flatten against a busy pool. */
+      const series = [
+        { id: 'inference', name: 'Inference', css: 'pool-area inference', kind: 'fill', unit: '%', data: pair(reading('avg_inference_utilization_percent')) },
+        { id: 'training', name: 'Training', css: 'pool-area training', kind: 'fill', unit: '%', data: pair(reading('avg_training_utilization_percent')) },
+        { id: 'computeUsed', name: 'Compute used', css: 'pool-line compute-used', unit: '%', data: pair(reading('avg_utilization_percent')) },
+        { id: 'vramUsed', name: 'VRAM used', css: 'pool-line vram-used', unit: '%', data: pair(reading('avg_memory_percent_used')) },
+        { id: 'queueTraining', name: 'Training queue', css: 'pool-line queue-training', axis: 1, data: pair(samples.queueTraining) },
+        { id: 'queueInference', name: 'Inference queue', css: 'pool-line queue-inference', axis: 1, data: pair(samples.queueInference) },
+      ];
 
       const last = points.at(-1);
 
-      if (chart) {
-        chart.setAttribute('aria-label', `GPU pool over ${label}: `
-          + `${Math.round(last.avg_utilization_percent || 0)} percent compute and `
-          + `${Math.round(last.avg_memory_percent_used || 0)} percent VRAM across `
-          + `${last.machines} reporting ${last.machines === 1 ? 'machine' : 'machines'}, `
-          + `${samples.queueInference.at(-1)} inference and ${samples.queueTraining.at(-1)} training jobs queued`);
+      const said = `GPU pool over ${label}: `
+        + `${Math.round(last.avg_utilization_percent || 0)} percent compute and `
+        + `${Math.round(last.avg_memory_percent_used || 0)} percent VRAM across `
+        + `${last.machines} reporting ${last.machines === 1 ? 'machine' : 'machines'}, `
+        + `${samples.queueInference.at(-1)} inference and ${samples.queueTraining.at(-1)} training jobs queued`;
+
+      if (chart) chart.setAttribute('aria-label', said);
+      if (plot) {
+        drawActivity(plot, activityOption({
+          root, series, axes: [{ name: 'Pool capacity', max: 100, unit: '%' }, { name: 'Queued jobs', whole: true }],
+        }), said, `pool-${next}`);
       }
     } catch (error) {
       blank();
@@ -1517,42 +1496,6 @@ const trainingStepsByRun = new Map();
 const trainingCurvesByRun = new Map();
 
 /**
- * A path through a series that may have holes in it.
- *
- * **Null is not zero, and this is where that is decided.** Most epoch metrics are null
- * today because the worker does not report them all yet, and a run with no validation
- * split will never have them. Plotting a null at zero draws a loss falling off a cliff or
- * an mAP collapsing — a picture of a model failing, invented out of a column nobody
- * filled. So a gap is a gap: the line stops and starts again after it.
- *
- * @param {Array<number|null>} values - One per epoch, in order.
- * @param {number} max - The top of the scale.
- * @param {Object} box - `{left, right, top, bottom}` in viewBox units.
- * @returns {string} An SVG path, empty when nothing was measured.
- */
-function gappyPath(values, max, box) {
-  const span = Math.max(1, values.length - 1);
-  const x = (i) => box.left + (box.right - box.left) * i / span;
-  const y = (v) => box.bottom - (box.bottom - box.top) * Math.max(0, Math.min(max, v)) / (max || 1);
-
-  let path = '';
-  let open = false;
-
-  values.forEach((value, index) => {
-    if (value === null || value === undefined || Number.isNaN(Number(value))) {
-      /* The break. Anything after this starts a new subpath. */
-      open = false;
-      return;
-    }
-
-    path += `${open ? 'L' : 'M'}${x(index).toFixed(1)},${y(Number(value)).toFixed(1)} `;
-    open = true;
-  });
-
-  return path.trim();
-}
-
-/**
  * How far above the settled losses the first epoch has to sit before it stops setting the
  * scale. Twice the highest value every later epoch reached.
  *
@@ -1574,9 +1517,9 @@ const WARMUP_RATIO = 2;
  * whose whole purpose is the gap between each train/validation pair.
  *
  * **So the scale follows epoch 2 onward, and what that leaves out is said rather than
- * hidden.** The alternative was to let `gappyPath` clamp quietly, and a flat line that is
+ * hidden.** The alternative was to clamp quietly, and a flat line that is
  * really a clamp cannot be told from a plateau -- which is a finding somebody would act
- * on. `clipped` is what the caller marks on the chart.
+ * on. `clipped` is what the caller names in its note, above where the chart opens.
  *
  * @param {Object[]} drawn - `{key, label, values}` per series, values one per epoch.
  * @param {number} count - How many epochs there are.
@@ -1790,10 +1733,16 @@ function chartKey(key, within) {
      `.training-health .queued` is, and a probe on the body would not match them. */
   (within || document.body).appendChild(probe);
   const style = getComputedStyle(probe);
-  const color = style.getPropertyValue('--key').trim();
-  const on = parseFloat(style.getPropertyValue('--dash-on'));
-  const off = parseFloat(style.getPropertyValue('--dash-off'));
-  const fill = style.getPropertyValue('--fill').trim();
+  /* `--key` where the panel uses the shared vocabulary; the stroke or fill where it
+     styled its paths directly, as the Dashboard's pool chart does. */
+  const painted = (value) => (value && value !== 'none' ? value : '');
+  const color = style.getPropertyValue('--key').trim() || painted(style.stroke) || painted(style.fill);
+  let on = parseFloat(style.getPropertyValue('--dash-on'));
+  let off = parseFloat(style.getPropertyValue('--dash-off'));
+  if (!(on > 0) && style.strokeDasharray && style.strokeDasharray !== 'none') {
+    [on, off] = style.strokeDasharray.split(/[ ,]+/).map(parseFloat);
+  }
+  const fill = style.getPropertyValue('--fill').trim() || painted(style.fill);
   probe.remove();
   /* A zero gap is a solid line, which is how a panel says "not dashed". */
   return { color: color || '#64f6f2', dash: on > 0 && off > 0 ? [on, off] : null, fill: fill || null };
@@ -6673,7 +6622,7 @@ function wireWorkerReadings(head) {
       }
     }
 
-    into.innerHTML = workerCharts(held.get(range), range);
+    into.innerHTML = workerCharts(held.get(range), range, workerId);
 
     for (const button of $$('[data-worker-range]', into)) {
       button.addEventListener('click', () => {
@@ -6725,12 +6674,26 @@ const WORKER_RANGES = {
  * null for every older sample — and null here means *nobody measured*, which is the one
  * thing a line must never render as a floor.
  *
+ * **A machine that was off is a gap, not a ramp.** On a time axis two readings either side
+ * of an evening the worker was down would be joined by a straight line across it, which
+ * reads as a measured slow climb. So a null goes in wherever readings are more than three
+ * of their usual intervals apart.
+ *
  * @param {Object} series - From `GET /gpu/workers/:id/series`.
  * @param {string} range - Which window is selected.
+ * @param {string|number} workerId - The machine, so each chart keeps its own zoom.
  * @returns {string}
  */
-function workerCharts(series, range) {
-  const box = { left: 46, right: 700, top: 24, bottom: 174 };
+function workerCharts(series, range, workerId) {
+  const at = (series.at || []).map((value) => Date.parse(value));
+  const spacing = at.slice(1).map((value, index) => value - at[index]).sort((a, b) => a - b);
+  const usual = spacing.length ? spacing[Math.floor(spacing.length / 2)] : 0;
+  const theme = chartTheme();
+  const { color } = chartKey('result-line worker-series');
+  const pointsOf = (values) => values.flatMap((value, index) => {
+    const point = [at[index], value === null || value === undefined ? null : Number(value)];
+    return index && usual && at[index] - at[index - 1] > 3 * usual ? [[at[index - 1] + usual, null], point] : [point];
+  });
   const measured = (values) => values.some((value) => value !== null && value !== undefined);
 
   const cards = WORKER_CHARTS.map((spec) => {
@@ -6744,22 +6707,27 @@ function workerCharts(series, range) {
         + `<p>Not reported in ${WORKER_RANGES[range].label}</p></div></header></article>`;
     }
 
-    const real = values.filter((value) => value !== null && value !== undefined).map(Number);
-    const top = spec.max === 'auto'
-      ? Math.max(1, Math.ceil(Math.max(...real) * 1.1))
-      : spec.max;
     const last = [...values].reverse().find((value) => value !== null && value !== undefined);
+    const option = {
+      grid: { left: 44, right: 16, top: 30, bottom: 28 },
+      legend: { show: false },
+      xAxis: {
+        type: 'time', ...theme.axis, splitLine: { show: false },
+        axisLabel: { ...theme.axis.axisLabel, hideOverlap: true, formatter: { day: '{MM}-{dd}', hour: '{HH}:{mm}', minute: '{HH}:{mm}' } },
+      },
+      yAxis: { type: 'value', min: 0, max: spec.max === 'auto' ? undefined : spec.max, ...theme.axis, axisLabel: { ...theme.axis.axisLabel, formatter: `{value}${spec.unit}` } },
+      tooltip: { ...theme.tooltip, valueFormatter: (value) => (value === null || value === undefined ? 'not reported' : `${Math.round(value)}${spec.unit}`) },
+      dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }],
+      series: [{
+        id: spec.key, name: spec.title, type: 'line', data: pointsOf(values), connectNulls: false, showSymbol: false,
+        lineStyle: { color, width: 1.8 }, itemStyle: { color },
+      }],
+    };
 
-    return '<article class="evaluation-card history-card" data-result-graph>'
+    return '<article class="evaluation-card history-card">'
       + `<header><div><h5>${spec.title}</h5><p>${WORKER_RANGES[range].label}`
       + ` &middot; now ${Math.round(Number(last))}${spec.unit}</p></div></header>`
-      + `<div class="result-chart" role="img" aria-label="${spec.title} over ${WORKER_RANGES[range].label}">`
-      + '<svg viewBox="0 0 740 205" aria-hidden="true">'
-      + '<g class="result-grid"><line x1="46" y1="24" x2="700" y2="24"/>'
-      + '<line x1="46" y1="99" x2="700" y2="99"/><line x1="46" y1="174" x2="700" y2="174"/></g>'
-      + `<g class="result-axis"><text x="38" y="28">${top}</text>`
-      + `<text x="38" y="103">${Math.round(top / 2)}</text><text x="38" y="178">0</text></g>`
-      + `<path class="result-line worker-series" d="${gappyPath(values, top, box)}"/></svg></div></article>`;
+      + `${chartSlot(option, `${spec.title} over ${WORKER_RANGES[range].label}`, { key: `worker-${workerId}-${range}-${spec.key}` })}</article>`;
   }).join('');
 
   const buttons = Object.keys(WORKER_RANGES).map((key) => `<button type="button" class="${key === range ? 'on' : ''}"`
@@ -7982,20 +7950,9 @@ function wireJobsOverview() {
   };
 
   const buttons = $$('[data-jobs-range]', root);
-  const lines = Object.fromEntries($$('[data-jobs-line]', root).map((line) => [line.dataset.jobsLine, line]));
   const chart = $('.jobs-chart', root);
-  const axis = $$('[data-jobs-axis]', root);
+  const blank = () => { if (chart) chart.innerHTML = ''; };
   let range = '24h';
-
-  /** Fit a run of values into the chart's box. */
-  const pathOf = (values, max) => values.map((value, index) =>
-    `${index ? 'L' : 'M'}${(42 + 700 * index / Math.max(1, values.length - 1)).toFixed(1)},`
-    + `${(198 - 174 * (value / Math.max(1, max))).toFixed(1)}`).join(' ');
-
-  const clock = (iso) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  };
 
   async function choose(next) {
     range = next;
@@ -8017,7 +7974,7 @@ function wireJobsOverview() {
       const points = series.points || [];
 
       if (!points.length) {
-        Object.values(lines).forEach((line) => line.removeAttribute('d'));
+        blank();
         if (chart) chart.setAttribute('aria-label', `No job activity recorded in ${label}`);
         return;
       }
@@ -8035,9 +7992,7 @@ function wireJobsOverview() {
          Nothing ran in this window, and saying so is clearer than drawing three
          lines on the floor and leaving somebody to work out they are all zero. */
       if (peak === 0) {
-        Object.values(lines).forEach((line) => line.removeAttribute('d'));
-        axis.forEach((text) => { text.textContent = ''; });
-        $$('[data-jobs-time]', root).forEach((label2) => { label2.textContent = ''; });
+        blank();
         if (chart) chart.setAttribute('aria-label', `No jobs submitted or finished in ${label}`);
         root.classList.add('is-quiet');
         return;
@@ -8045,31 +8000,25 @@ function wireJobsOverview() {
 
       root.classList.remove('is-quiet');
 
-      /* Round the top up to something the ticks can divide into thirds without
-         repeating: a max of 1 produced an axis reading 1, 1, 0, 0. */
-      const max = Math.max(3, Math.ceil(peak / 3) * 3);
-
-      Object.entries(lines).forEach(([name, line]) => {
-        if (samples[name]) line.setAttribute('d', pathOf(samples[name], max));
-      });
-
-      /* The axis is the data's range, not four numbers somebody picked. */
-      axis.forEach((text, index) => {
-        text.textContent = String(Math.round(max * (3 - index) / 3));
-      });
-
-      $$('[data-jobs-time]', root).forEach((label2, index) => {
-        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][index];
-        if (at) label2.textContent = index === 2 ? 'Now' : clock(at.at);
-      });
+      /* In whole jobs: a job and a half is not a count. */
+      const at = points.map((p) => Date.parse(p.at));
+      const pair = (values) => values.map((value, index) => [at[index], value]);
 
       if (chart) {
-        chart.setAttribute('aria-label', `Job activity over ${label}: `
+        drawActivity(chart, activityOption({
+          root,
+          axes: [{ whole: true }],
+          series: [
+            { id: 'started', name: 'Started', css: 'jobs-line started', data: pair(samples.started) },
+            { id: 'completed', name: 'Completed', css: 'jobs-line completed', data: pair(samples.completed) },
+            { id: 'queued', name: 'Queued', css: 'jobs-line queued', data: pair(samples.queued) },
+          ],
+        }), `Job activity over ${label}: `
           + `${samples.started.at(-1)} submitted, ${samples.completed.at(-1)} finished, `
-          + `${samples.queued.at(-1)} waiting`);
+          + `${samples.queued.at(-1)} waiting`, `jobs-activity-${range}`);
       }
     } catch (error) {
-      Object.values(lines).forEach((line) => line.removeAttribute('d'));
+      blank();
       if (chart) chart.setAttribute('aria-label', `Could not load job activity (${error.status || 'no answer'})`);
     }
   }
@@ -8108,6 +8057,8 @@ async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read
   const nameOf = (name) => $(`[data-${prefix}-highlight="${name}"]`, root)?.textContent.trim() || name;
 
   const blank = () => { if (chart) chart.innerHTML = ''; };
+
+  wireSeriesKeys(root, `data-${prefix}-highlight`, chart);
 
   async function choose(next) {
     buttons.forEach((b) => {
@@ -8356,9 +8307,11 @@ function wireRegistryTrend() {
  * panel because those keys are scoped to it. A null reading stays null, so a line breaks
  * where nothing was recorded rather than dropping to zero.
  *
- * @param {Object} spec - `{root, axes, series}`. `axes` is `[{name, max, unit, whole, format}]`;
- *   each series is `{id, name, css, kind, axis, unit, data}`, `kind` being `line`, `area`
- *   or `bar` and `data` `[[ms, value], ...]`.
+ * @param {Object} spec - `{root, axes, series}`. `axes` is `[{name, max, unit, whole, format,
+ *   hidden}]` -- `hidden` for a scale a series needs and the chart has no room to label;
+ *   each series is `{id, name, css, kind, axis, unit, format, data}`, `kind` being `line`, `area`,
+ *   `fill` (an area with no line, shaded as the panel's CSS says) or `bar`, and `data`
+ *   `[[ms, value], ...]`.
  * @returns {Object} The ECharts option.
  */
 function activityOption({ root, axes, series }) {
@@ -8372,7 +8325,7 @@ function activityOption({ root, axes, series }) {
       axisLabel: { ...theme.axis.axisLabel, hideOverlap: true, formatter: { day: '{MM}-{dd}', hour: '{HH}:{mm}', minute: '{HH}:{mm}' } },
     },
     yAxis: axes.map((axis, index) => ({
-      type: 'value', name: axis.name, min: 0, max: axis.max, minInterval: axis.whole ? 1 : undefined,
+      type: 'value', name: axis.name, min: 0, max: axis.max, minInterval: axis.whole ? 1 : undefined, show: !axis.hidden,
       ...theme.axis, splitLine: index ? { show: false } : theme.axis.splitLine,
       axisLabel: { ...theme.axis.axisLabel, formatter: axis.format || (axis.unit ? `{value}${axis.unit}` : '{value}') },
     })),
@@ -8383,11 +8336,23 @@ function activityOption({ root, axes, series }) {
       const shared = {
         id: one.id, name: one.name, yAxisIndex: one.axis || 0, data: one.data, itemStyle: { color },
         emphasis: { focus: 'series' }, blur: { lineStyle: { opacity: 0.12 }, itemStyle: { opacity: 0.12 }, areaStyle: { opacity: 0.03 } },
-        tooltip: { valueFormatter: (value) => (value === null || value === undefined ? 'not recorded' : `${Number.isInteger(value) ? value : Number(value).toFixed(1)}${one.unit || ''}`) },
+        tooltip: {
+          valueFormatter: (value) => {
+            if (value === null || value === undefined) return 'not recorded';
+            if (one.format) return one.format(value);
+            return `${Number.isInteger(value) ? value : Number(value).toFixed(1)}${one.unit || ''}`;
+          },
+        },
       };
 
       if (one.kind === 'bar') {
         return { ...shared, type: 'bar', barMaxWidth: 14, itemStyle: { color: fill || color, borderColor: color, borderWidth: 1 } };
+      }
+
+      /* `fill` is an area the panel shades itself, with its own transparency, and draws
+         without an outline -- the pool chart's two utilisation bands. */
+      if (one.kind === 'fill') {
+        return { ...shared, type: 'line', showSymbol: false, connectNulls: false, lineStyle: { width: 0 }, areaStyle: { color: fill || color, opacity: 1 } };
       }
 
       return {
@@ -8429,6 +8394,30 @@ function highlightSeries(box, id) {
   if (!chart) return;
   chart.dispatchAction({ type: 'downplay' });
   if (id) chart.dispatchAction({ type: 'highlight', seriesId: id });
+}
+
+/**
+ * Make a panel's key buttons light their series: press one to light it, again to restore.
+ *
+ * **These keys were drawn as buttons and wired to nothing** on the Inference, Models,
+ * Datasets and Dashboard charts; only Training's did anything. One wiring for all of them.
+ *
+ * @param {Element} root - The panel.
+ * @param {string} attr - The key buttons' attribute, such as `data-pool-highlight`.
+ * @param {Element} box - The chart box.
+ * @returns {void}
+ */
+function wireSeriesKeys(root, attr, box) {
+  const keys = $$(`[${attr}]`, root);
+  keys.forEach((button) => {
+    button.setAttribute('aria-pressed', 'false');
+    button.addEventListener('click', () => {
+      const id = button.getAttribute(attr);
+      const on = button.getAttribute('aria-pressed') !== 'true';
+      keys.forEach((other) => other.setAttribute('aria-pressed', String(on && other === button)));
+      highlightSeries(box, on ? id : '');
+    });
+  });
 }
 
 function wireTrainingActivity() {
@@ -13621,31 +13610,11 @@ async function wirePoolCapacity() {
     '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
   };
 
-  const lines = Object.fromEntries($$('[data-ops-line]', root).map((l) => [l.dataset.opsLine, l]));
-  const area = $('[data-ops-area]', root);
   const buttons = $$('[data-ops-range]', root);
   const chart = $('.ops-chart', root);
-  const leftAxis = $$('.inference-axis.left text:not(.axis-title):not([data-ops-time])', root);
-  const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
+  const blank = () => { if (chart) chart.innerHTML = ''; };
 
-  const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
-
-  /* The geometry `gappyPath` already works in -- 54 to 726 across, 196 up to 28 -- so this
-     chart gets its break-on-null rather than a second copy of it. */
-  const BOX = { left: 54, right: 726, top: 28, bottom: 196 };
-  const pathOf = (values, max) => gappyPath(values, max, BOX);
-
-  /* **No area over a series with a hole.** Closing a path to the baseline across a gap
-     fills the gap, putting back the floor the line was just taught to avoid. The line
-     still draws; only the shading under it waits for a complete series. */
-  const areaOf = (values, max) => (values.some((v) => v === null || v === undefined)
-    ? ''
-    : `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`);
-
-  const clock = (iso) => {
-    const d = new Date(iso);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  };
+  wireSeriesKeys(root, 'data-ops-highlight', chart);
 
   async function choose(next) {
     buttons.forEach((b) => {
@@ -13689,8 +13658,7 @@ async function wirePoolCapacity() {
       const anyReading = points.some((p) => p.machines > 0);
 
       if (!points.length || !anyReading) {
-        [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
-        leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
+        blank();
         if (chart) {
           chart.setAttribute('aria-label',
             /* **Not "a build".** A dataset build is run by the API and is not in
@@ -13706,35 +13674,6 @@ async function wirePoolCapacity() {
 
       root.classList.remove('is-quiet');
 
-      /* Utilization and VRAM are percentages and share the left axis; the queue
-         is a count and keeps the right one.
-
-         Rounded up to a whole number of ticks, so a quiet queue does not produce
-         an axis reading 1, 1, 1, 0, 0 -- a scale whose labels repeat says less
-         than no scale at all. */
-      const queueSteps = Math.max(1, rightAxis.length - 1);
-      const queuePeak = Math.max(...samples.queued, 0);
-      const maxQueued = Math.max(queueSteps, Math.ceil(queuePeak / queueSteps) * queueSteps);
-
-      if (lines.inference) lines.inference.setAttribute('d', pathOf(samples.inference, 100));
-      if (area) area.setAttribute('d', areaOf(samples.inference, 100));
-      if (lines.training) lines.training.setAttribute('d', pathOf(samples.training, 100));
-      if (lines.vram) lines.vram.setAttribute('d', pathOf(samples.vram, 100));
-      if (lines.queued) lines.queued.setAttribute('d', pathOf(samples.queued, maxQueued));
-
-      const ticks = (nodes, top, format) => nodes.forEach((t, i) => {
-        const steps = Math.max(1, nodes.length - 1);
-        t.textContent = format(top * (steps - i) / steps);
-      });
-
-      ticks(leftAxis, 100, (v) => `${Math.round(v)}%`);
-      ticks(rightAxis, maxQueued, (v) => String(Math.round(v)));
-
-      $$('[data-ops-time]', root).forEach((t, i) => {
-        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][i];
-        if (at) t.textContent = i === 2 ? 'Now' : clock(at.at);
-      });
-
       const last = points.at(-1);
       const current = {
         inference: `${Math.round(last.avg_inference_utilization_percent || 0)}%`,
@@ -13747,12 +13686,26 @@ async function wirePoolCapacity() {
         if (current[node.dataset.opsCurrent] !== undefined) node.textContent = current[node.dataset.opsCurrent];
       });
 
+      /* Utilization and VRAM are percentages and share the left axis; the queue is a
+         count and keeps the right one, in whole jobs. */
+      const at = points.map((p) => Date.parse(p.at));
+      const pair = (values) => values.map((value, index) => [at[index], value]);
+
       if (chart) {
-        chart.setAttribute('aria-label', `Pool capacity over ${label}: inference ${current.inference}, `
-          + `training ${current.training}, VRAM ${current.vram}, ${current.queued} waiting`);
+        drawActivity(chart, activityOption({
+          root,
+          axes: [{ max: 100, unit: '%' }, { whole: true }],
+          series: [
+            { id: 'inference', name: 'Inference', css: 'inference', kind: 'area', unit: '%', data: pair(samples.inference) },
+            { id: 'training', name: 'Training', css: 'training', unit: '%', data: pair(samples.training) },
+            { id: 'vram', name: 'VRAM', css: 'vram', unit: '%', data: pair(samples.vram) },
+            { id: 'queued', name: 'Queued', css: 'queued', axis: 1, data: pair(samples.queued) },
+          ],
+        }), `Pool capacity over ${label}: inference ${current.inference}, `
+          + `training ${current.training}, VRAM ${current.vram}, ${current.queued} waiting`, `workers-pool-${next}`);
       }
     } catch (error) {
-      [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
+      blank();
       if (chart) chart.setAttribute('aria-label', `Could not load pool capacity (${error.status || 'no answer'})`);
     }
   }
@@ -13774,21 +13727,11 @@ async function wireOperationalActivity() {
     '1y': { days: 365, bucket: 'day', label: 'year' },
   };
 
-  const lines = Object.fromEntries($$('[data-ops-line]', root).map((l) => [l.dataset.opsLine, l]));
-  const area = $('[data-ops-area]', root);
   const buttons = $$('[data-ops-range]', root);
   const chart = $('.ops-chart', root);
-  const leftAxis = $$('.inference-axis.left text:not(.axis-title):not([data-ops-time])', root);
-  const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
+  const blank = () => { if (chart) chart.innerHTML = ''; };
 
-  const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
-  const y = (v, max) => 196 - 168 * (v / Math.max(1, max));
-
-  const pathOf = (values, max) => values
-    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
-
-  /** The same line closed down to the baseline, for the filled area under it. */
-  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`;
+  wireSeriesKeys(root, 'data-ops-highlight', chart);
 
   const hours = (seconds) => {
     if (!seconds) return '0';
@@ -13796,8 +13739,6 @@ async function wireOperationalActivity() {
     const m = Math.round((seconds % 3600) / 60);
     return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
   };
-
-  const day = (iso) => new Date(iso).toISOString().slice(5, 10);
 
   async function choose(next) {
     buttons.forEach((b) => {
@@ -13820,46 +13761,21 @@ async function wireOperationalActivity() {
       /* The share of finishing work that did not succeed. Expressed against the
          same bucket rather than against the whole window, so a bad afternoon
          shows as a spike instead of being averaged away. */
-      const issues = points.map((p) => (p.finished ? Math.round(((p.finished - (p.succeeded || 0)) / p.finished) * 100) : 0));
-      const turnaround = points.map((p) => p.median_turnaround_s || 0);
+      /* **A bucket where nothing finished has no rate and no turnaround**, so both are
+         gaps there: drawn as 0% and 0s they read as a spotless, instant afternoon. */
+      const issues = points.map((p) => (p.finished ? Math.round(((p.finished - (p.succeeded || 0)) / p.finished) * 100) : null));
+      const turnaround = points.map((p) => (p.finished && p.median_turnaround_s != null ? Number(p.median_turnaround_s) : null));
 
       const peak = Math.max(...completed, 0);
 
       if (!points.length || peak === 0) {
-        [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
-        leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
+        blank();
         if (chart) chart.setAttribute('aria-label', `Nothing finished in the last ${label}`);
         root.classList.add('is-quiet');
         return;
       }
 
       root.classList.remove('is-quiet');
-
-      const maxJobs = Math.max(3, Math.ceil(peak / 3) * 3);
-      const maxTurn = Math.max(1, ...turnaround);
-
-      if (lines.completed) lines.completed.setAttribute('d', pathOf(completed, maxJobs));
-      if (area) area.setAttribute('d', areaOf(completed, maxJobs));
-      /* The issue rate is a percentage and the turnaround is seconds; each is
-         scaled to its own axis, which is why the chart carries two. */
-      if (lines.issues) lines.issues.setAttribute('d', pathOf(issues, 100));
-      if (lines.turnaround) lines.turnaround.setAttribute('d', pathOf(turnaround, maxTurn));
-
-      /* Steps from the tick count the markup actually has. Assuming four gave
-         the Workers chart a fifth label reading -33%, which is a utilization
-         nothing can have. */
-      const ticks = (nodes, top, format) => nodes.forEach((t, i) => {
-        const steps = Math.max(1, nodes.length - 1);
-        t.textContent = format(top * (steps - i) / steps);
-      });
-
-      ticks(leftAxis, maxJobs, (v) => String(Math.round(v)));
-      ticks(rightAxis, maxTurn, (v) => hours(Math.round(v)));
-
-      $$('[data-ops-time]', root).forEach((t, i) => {
-        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][i];
-        if (at) t.textContent = i === 2 ? 'Now' : day(at.at);
-      });
 
       const last = points.at(-1);
       const current = {
@@ -13872,13 +13788,27 @@ async function wireOperationalActivity() {
         if (current[node.dataset.opsCurrent] !== undefined) node.textContent = current[node.dataset.opsCurrent];
       });
 
+      /* Three scales: jobs on the left, turnaround on the right, and the issue rate on a
+         0-100 scale of its own that the chart has no room to label -- its readout and its
+         tooltip carry the percent sign. */
+      const at = points.map((p) => Date.parse(p.at));
+      const pair = (values) => values.map((value, index) => [at[index], value]);
+
       if (chart) {
-        chart.setAttribute('aria-label', `Completion activity over ${label}: `
+        drawActivity(chart, activityOption({
+          root,
+          axes: [{ whole: true }, { format: (v) => hours(Math.round(v)) }, { max: 100, hidden: true }],
+          series: [
+            { id: 'completed', name: 'Completed', css: 'completed', kind: 'area', data: pair(completed) },
+            { id: 'issues', name: 'With issues', css: 'issues', axis: 2, unit: '%', data: pair(issues) },
+            { id: 'turnaround', name: 'Median turnaround', css: 'turnaround', axis: 1, format: (v) => hours(Math.round(v)), data: pair(turnaround) },
+          ],
+        }), `Completion activity over ${label}: `
           + `${completed.at(-1)} finished in the last bucket, ${current.issues} with issues, `
-          + `median turnaround ${current.turnaround}`);
+          + `median turnaround ${current.turnaround}`, `outcomes-${next}`);
       }
     } catch (error) {
-      [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
+      blank();
       if (chart) chart.setAttribute('aria-label', `Could not load completion activity (${error.status || 'no answer'})`);
     }
   }
