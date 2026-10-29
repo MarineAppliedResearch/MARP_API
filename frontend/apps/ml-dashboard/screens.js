@@ -7939,8 +7939,11 @@ async function fillJobAttempts(detail, id) {
 
   const at = (value) => {
     if (!value) return '<span class="faint">&mdash;</span>';
+    /* Both halves in local time. The date was the UTC one beside a local clock, so an
+       evening attempt read as tomorrow -- 23:01 on the 28th showed as the 29th. */
     const when = new Date(value);
-    return `${when.toISOString().slice(0, 10)} ${when.toTimeString().slice(0, 5)}`;
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${when.toTimeString().slice(0, 5)}`;
   };
 
   let attempts;

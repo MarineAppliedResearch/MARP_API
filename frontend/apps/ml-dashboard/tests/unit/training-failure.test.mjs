@@ -57,4 +57,9 @@ test('a failed training job heads with why, and lists every attempt with its own
   assert.match(rows[0].textContent, /MARP could not save them \(integer out of range\)/, 'each with its own reason');
   assert.match(rows[0].textContent, /71,303,168 \/ 20,126,426,112 bytes/, 'and how far it got');
   assert.match(detail.textContent, /ended before training began/, 'and no claim that a run is on its way');
+
+  /* The date and the time on one clock: an evening attempt must not read as tomorrow. */
+  const local = new Date(at);
+  const day = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`;
+  assert.ok(rows[0].textContent.includes(`${day} ${local.toTimeString().slice(0, 5)}`), 'leased at, in local time');
 });
