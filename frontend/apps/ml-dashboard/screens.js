@@ -1095,6 +1095,101 @@ function renderJobsSummary(jobs) {
   }
 }
 
+/* ------------------------------------------------------------------------------------
+   One pager for every table.
+
+   **Isaac: *"all of the tables should work and be paginated in the same way."*** Each
+   table had grown its own copy -- Jobs at 18 rows, Training runs at 10, Models at 8,
+   Workers at 5, Inference cut to 6 with no pager at all, so a run of 28 pieces pushed
+   every finished job off the tab. They were the same footer five times over, drifting.
+   This is the Jobs table's, now everyone's: what is shown out of how many, a window of
+   page buttons, and Rows 18 / 25 / 50.
+   ------------------------------------------------------------------------------------ */
+
+/** The rows-per-page every table offers, the first being where each starts. */
+const PAGE_SIZES = [18, 25, 50];
+
+/** The Training screen's jobs table page. */
+const trainingPage = { page: 1, perPage: PAGE_SIZES[0] };
+
+/** The Dashboard's jobs table page. */
+const dashboardPage = { page: 1, perPage: PAGE_SIZES[0] };
+
+/** The saved datasets table's page. */
+const datasetsPage = { page: 1, perPage: PAGE_SIZES[0] };
+
+/**
+ * The slice of `rows` a table's state says to show, with its page clamped to exist.
+ *
+ * @param {Array} rows - Every row the filters left, in order.
+ * @param {{page: number, perPage: number}} state - The table's paging state.
+ * @returns {{shown: Array, from: number, pages: number}}
+ */
+function pageOf(rows, state) {
+  const pages = Math.max(1, Math.ceil(rows.length / state.perPage));
+  state.page = Math.min(Math.max(1, state.page), pages);
+  const from = (state.page - 1) * state.perPage;
+  return { shown: rows.slice(from, from + state.perPage), from, pages };
+}
+
+/**
+ * Draw a table's footer: *Showing a-b of N*, the page buttons, and Rows.
+ *
+ * **Drawn whole, every time, into the footer element**, so no table's markup has to
+ * carry a pager that is a guess about its own length. The clicks are taken once per
+ * footer by delegation and call whichever `redraw` the latest draw handed in.
+ *
+ * @param {Element} footer - The table's `.panel-ft`.
+ * @param {{page: number, perPage: number}} state - The table's paging state; changed here.
+ * @param {Object} what - `{total, from, count, pages, noun, plural, empty, redraw}`.
+ * @returns {void}
+ */
+function drawPager(footer, state, what) {
+  if (!footer) return;
+
+  const { total, from, count, pages, noun, plural = `${noun}s`, empty, redraw } = what;
+  const page = state.page;
+  const first = Math.max(1, Math.min(page - 2, pages - 4));
+  const numbers = [];
+
+  for (let p = first; p <= Math.min(pages, first + 4); p += 1) {
+    numbers.push(`<button type="button" data-page="${p}"${p === page ? ' aria-current="page"' : ''}>${p}</button>`);
+  }
+
+  const sizes = PAGE_SIZES.includes(state.perPage) ? PAGE_SIZES : [...PAGE_SIZES, state.perPage].sort((a, b) => a - b);
+
+  footer.innerHTML = `<span>${count
+    ? `Showing <b class="strong">${(from + 1).toLocaleString()}&ndash;${(from + count).toLocaleString()}</b> of ${total.toLocaleString()} ${total === 1 ? noun : plural}`
+    : empty}</span>`
+    + '<div class="pager">'
+    + `<button type="button" aria-label="Previous page" data-page="${page - 1}"${page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`
+    + numbers.join('')
+    + `<button type="button" aria-label="Next page" data-page="${page + 1}"${page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`
+    + '</div>'
+    + '<span class="rpp">Rows <select class="sel" aria-label="Rows per page">'
+    + sizes.map((size) => `<option${size === state.perPage ? ' selected' : ''}>${size}</option>`).join('')
+    + '</select></span>';
+
+  footer.pagerRedraw = redraw;
+  footer.pagerState = state;
+
+  if (!footer.dataset.pagerWired) {
+    footer.dataset.pagerWired = 'true';
+    footer.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-page]');
+      if (!button || button.disabled) return;
+      footer.pagerState.page = Number(button.dataset.page);
+      footer.pagerRedraw();
+    });
+    footer.addEventListener('change', (event) => {
+      if (!event.target.matches('.rpp select')) return;
+      footer.pagerState.perPage = Number(event.target.value) || PAGE_SIZES[0];
+      footer.pagerState.page = 1;
+      footer.pagerRedraw();
+    });
+  }
+}
+
 /**
  * The count, the "showing" line, the pager and the sort arrows.
  *
@@ -1111,29 +1206,9 @@ function renderJobsHeaderState(total, from, shown, pages) {
   const count = $('.panel-hd .count');
   if (count) count.textContent = `(${total.toLocaleString()})`;
 
-  const showing = $('.panel-ft > span');
-  if (showing) {
-    showing.innerHTML = shown
-      ? `Showing <b class="strong">${(from + 1).toLocaleString()}&ndash;${(from + shown).toLocaleString()}</b> of ${total.toLocaleString()} jobs`
-      : 'No jobs match these filters';
-  }
-
-  const pager = $('.panel-ft .pager');
-  if (pager) {
-    /* Rebuilt rather than patched: the markup held a fixed run of five, which
-       is a lie about any list that is not exactly five pages long. */
-    const buttons = [`<button aria-label="Previous page" data-jobs-page="${jobsQuery.page - 1}"${jobsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
-
-    /* A window around the current page, so a hundred pages do not become a
-       hundred buttons. */
-    const first = Math.max(1, Math.min(jobsQuery.page - 2, pages - 4));
-    for (let p = first; p <= Math.min(pages, first + 4); p++) {
-      buttons.push(`<button data-jobs-page="${p}"${p === jobsQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
-    }
-
-    buttons.push(`<button aria-label="Next page" data-jobs-page="${jobsQuery.page + 1}"${jobsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
-    pager.innerHTML = buttons.join('');
-  }
+  drawPager($('#jobs')?.closest('.panel')?.querySelector('.panel-ft'), jobsQuery, {
+    total, from, count: shown, pages, noun: 'job', empty: 'No jobs match these filters', redraw: applyJobsQuery,
+  });
 
   /* The arrow is drawn from `aria-sort`, so the accessible state and the drawn
      state cannot disagree -- `DESIGN.md`, Tables. */
@@ -1181,7 +1256,7 @@ const jobsQuery = {
      Clicking a header replaces it with that column, as it always has. */
   sort: { key: 'live', dir: 'descending' },
   page: 1,
-  perPage: 18,
+  perPage: PAGE_SIZES[0],
 };
 
 /** How each sortable column is ordered. Keyed by the header's class. */
@@ -3522,23 +3597,23 @@ function renderTrainingRecent(views) {
 
      Severity belongs in the cards above, which already count *Needs attention*. A list
      headed Recent that hides the most recent run is answering a question nobody asked. */
-  const LIMIT = 3;
-  const shown = views
+  const ordered = views
     .slice()
-    .sort((a, b) => Date.parse(b.job.created_at) - Date.parse(a.job.created_at))
-    .slice(0, LIMIT);
+    .sort((a, b) => Date.parse(b.job.created_at) - Date.parse(a.job.created_at));
 
-  /* **The heading counts what is drawn, and says what it is out of.** `(8)` over three
-     rows is the panel misreporting itself, and a table that renders fewer rows than it
-     claims reads as missing data rather than as a summary. The full list is one click
-     away through the All jobs link beside this. */
+  /* **Every training job, a page at a time**, by the pager every table shares. It took
+     the newest three, so a fourth run could only be reached through another screen --
+     the same cut that hid every finished job on Inference behind a run in flight. */
+  const { shown, from, pages } = pageOf(ordered, trainingPage);
+  drawPager(table.closest('.panel')?.querySelector('.panel-ft'), trainingPage, {
+    total: ordered.length, from, count: shown.length, pages, noun: 'training job', empty: 'No training jobs yet',
+    redraw: () => renderTrainingRecent(views),
+  });
+
+  /* The heading counts every job; the footer says which of them are on this page. */
   const heading = $('.training-recent .panel-hd h2') || $$('.panel-hd h2').find((h) => /Recent training/.test(h.textContent));
 
-  if (heading) {
-    heading.textContent = views.length > shown.length
-      ? `Recent training jobs (${shown.length} of ${views.length.toLocaleString()})`
-      : `Recent training jobs (${views.length.toLocaleString()})`;
-  }
+  if (heading) heading.textContent = `Recent training jobs (${views.length.toLocaleString()})`;
 
   body.innerHTML = shown.map((view) => {
     const { job } = view;
@@ -4311,7 +4386,7 @@ function watchTrainingJobs() {
  * table above also uses. A server-side filter would be a second round trip for a list
  * of six.
  */
-const runsQuery = { search: '', status: 'all', page: 1, perPage: 10 };
+const runsQuery = { search: '', status: 'all', page: 1, perPage: PAGE_SIZES[0] };
 
 /** Every run, newest first, as the panel sorts and filters it. */
 let trainingRunRows = [];
@@ -4481,30 +4556,9 @@ function renderTrainingRunsHeader(panel, total, from, shown, pages) {
 
   if (count) count.textContent = `(${total.toLocaleString()})`;
 
-  const showing = $('.panel-ft > span', panel);
-
-  if (showing) {
-    showing.innerHTML = shown
-      ? `Showing <b class="strong">${(from + 1).toLocaleString()}&ndash;${(from + shown).toLocaleString()}</b> of ${total.toLocaleString()} run${total === 1 ? '' : 's'}`
-      : 'No training runs match these filters';
-  }
-
-  const pager = $('.panel-ft .pager', panel);
-
-  if (pager) {
-    /* Rebuilt rather than patched, for the reason the Jobs pager is: the markup held a
-       fixed 1/2/3 under a hardcoded "of 28 runs", which is a lie about any list that is
-       not exactly three pages long -- and this one is one page of six. */
-    const buttons = [`<button aria-label="Previous page" data-runs-page="${runsQuery.page - 1}"${runsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
-    const first = Math.max(1, Math.min(runsQuery.page - 2, pages - 4));
-
-    for (let page = first; page <= Math.min(pages, first + 4); page += 1) {
-      buttons.push(`<button data-runs-page="${page}"${page === runsQuery.page ? ' aria-current="page"' : ''}>${page}</button>`);
-    }
-
-    buttons.push(`<button aria-label="Next page" data-runs-page="${runsQuery.page + 1}"${runsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
-    pager.innerHTML = buttons.join('');
-  }
+  drawPager($('.panel-ft', panel), runsQuery, {
+    total, from, count: shown, pages, noun: 'run', empty: 'No training runs match these filters', redraw: renderTrainingRuns,
+  });
 }
 
 /**
@@ -4563,19 +4617,6 @@ function fillTrainingRuns(runs, views) {
     });
   }
 
-  const footer = $('.panel-ft', panel);
-
-  if (footer && !footer.dataset.wired) {
-    footer.dataset.wired = 'yes';
-    footer.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-runs-page]');
-
-      if (!button || button.disabled) return;
-
-      runsQuery.page = Number(button.dataset.runsPage);
-      renderTrainingRuns();
-    });
-  }
 
   renderTrainingRuns();
 }
@@ -4974,20 +5015,35 @@ async function fillInferenceFindings(place) {
  *
  * @param {Object[]} views - Inference job views.
  */
-function renderInferenceRecent(views) {
+/** The Inference table's page, and every job it pages through. */
+const inferenceList = { page: 1, perPage: PAGE_SIZES[0], views: [] };
+
+function renderInferenceRecent(views = inferenceList.views) {
   const table = $('.inference-table');
   if (!table) return;
+
+  inferenceList.views = views;
 
   const body = $('tbody', table);
   /* **In flight first, then newest.** Every failure used to outrank every success, so six
      September failures filled the table and the seven runs that succeeded today could
      not be reached from here at all. A failure keeps its place in *Needs attention*. */
   const live = (view) => (['running', 'queued'].includes(view.state) ? 0 : 1);
-  const shown = views
+  const ordered = views
     .slice()
     .sort((a, b) => (live(a) - live(b))
-      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
-    .slice(0, 6);
+      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)));
+
+  /* **Every inference job, a page at a time.** This was cut to six rows, so a run of 28
+     pieces filled all six with work in flight and every finished job vanished from the
+     tab -- Isaac: *"an inference job that's done is still an inference job"*. Paged rather
+     than drawn whole because each finished row reads its own detection count, and five
+     hundred rows would be five hundred reads. */
+  const { shown, from, pages } = pageOf(ordered, inferenceList);
+  drawPager(table.closest('.panel')?.querySelector('.panel-ft'), inferenceList, {
+    total: ordered.length, from, count: shown.length, pages, noun: 'inference job', empty: 'No inference jobs yet',
+    redraw: () => renderInferenceRecent(),
+  });
 
   const heading = $('.inference-recent .panel-hd h2');
   if (heading) heading.textContent = `Recent inference jobs (${views.length.toLocaleString()})`;
@@ -5309,7 +5365,7 @@ const MODEL_STATE = {
 const modelsQuery = {
   task: '', status: '', base: '', search: '',
   sort: { key: 'hupd', dir: 'descending' },
-  page: 1, perPage: 8,
+  page: 1, perPage: PAGE_SIZES[0],
 };
 
 /** How each sortable column orders. Keyed by the header's class. */
@@ -5520,23 +5576,9 @@ function applyModelsQuery() {
   const heading = $('#model-registry .panel-hd h2');
   if (heading) heading.textContent = `Model registry (${total.toLocaleString()})`;
 
-  const showing = $('#model-registry .panel-ft > span');
-  if (showing) {
-    showing.innerHTML = shown.length
-      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} models`
-      : 'No models match these filters';
-  }
-
-  const pager = $('#model-registry .panel-ft .pager');
-  if (pager) {
-    const buttons = [`<button aria-label="Previous page" data-models-page="${modelsQuery.page - 1}"${modelsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
-    const first = Math.max(1, Math.min(modelsQuery.page - 2, pages - 4));
-    for (let p = first; p <= Math.min(pages, first + 4); p++) {
-      buttons.push(`<button data-models-page="${p}"${p === modelsQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
-    }
-    buttons.push(`<button aria-label="Next page" data-models-page="${modelsQuery.page + 1}"${modelsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
-    pager.innerHTML = buttons.join('');
-  }
+  drawPager($('#model-registry .panel-ft'), modelsQuery, {
+    total, from, count: shown.length, pages, noun: 'model', empty: 'No models match these filters', redraw: applyModelsQuery,
+  });
 
   for (const th of $$('#models thead th.sortable')) {
     const sortKey = [...th.classList].find((c) => MODELS_SORT_KEYS[c]);
@@ -5787,15 +5829,6 @@ function wireModelsControls() {
     });
   }
 
-  const pager = $('.panel-ft .pager', panel);
-  if (pager) {
-    pager.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-models-page]');
-      if (!button || button.disabled) return;
-      modelsQuery.page = Number(button.dataset.modelsPage);
-      applyModelsQuery();
-    });
-  }
 }
 
 
@@ -6159,14 +6192,23 @@ function renderDashboardActivity(jobs) {
     .map((state) => newest(views.filter((v) => v.state === state))[0])
     .filter(Boolean);
 
-  const shown = [...running.slice(0, 2), ...attention.slice(0, 2), ...finished.slice(0, 1)];
+  const mix = [...running.slice(0, 2), ...attention.slice(0, 2), ...finished.slice(0, 1)];
 
   for (const pool of [attention.slice(2), running.slice(2), finished.slice(1)]) {
     for (const view of pool) {
-      if (shown.length >= 5) break;
-      shown.push(view);
+      if (mix.length >= 5) break;
+      mix.push(view);
     }
   }
+
+  /* **The mix leads, and then every other job, newest first, paged like every table.**
+     It stopped at the five, so anything past them could only be reached from Jobs. */
+  const rest = newest(views.filter((view) => !mix.includes(view)));
+  const { shown, from, pages } = pageOf([...mix, ...rest], dashboardPage);
+  drawPager(table.closest('.panel')?.querySelector('.panel-ft'), dashboardPage, {
+    total: views.length, from, count: shown.length, pages, noun: 'job', empty: 'No jobs yet',
+    redraw: () => renderDashboardActivity(jobs),
+  });
 
   body.innerHTML = shown.map((view) => {
     const progress = progressCell(view.job, view.state);
@@ -6285,7 +6327,7 @@ const WORKER_ACTIVITY = {
 const workersQuery = {
   activity: '', gpu: '', search: '',
   sort: { key: 'whb', dir: 'ascending' },
-  page: 1, perPage: 5,
+  page: 1, perPage: PAGE_SIZES[0],
 };
 
 /**
@@ -6979,23 +7021,9 @@ function applyWorkersQuery() {
   const count = $('#worker-pool .panel-hd .count');
   if (count) count.textContent = `(${total.toLocaleString()})`;
 
-  const showing = $('#worker-pool .panel-ft > span');
-  if (showing) {
-    showing.innerHTML = shown.length
-      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} workers`
-      : 'No workers match these filters';
-  }
-
-  const pager = $('#worker-pool .panel-ft .pager');
-  if (pager) {
-    const buttons = [`<button aria-label="Previous page" data-workers-page="${workersQuery.page - 1}"${workersQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
-    const first = Math.max(1, Math.min(workersQuery.page - 2, pages - 4));
-    for (let p = first; p <= Math.min(pages, first + 4); p++) {
-      buttons.push(`<button data-workers-page="${p}"${p === workersQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
-    }
-    buttons.push(`<button aria-label="Next page" data-workers-page="${workersQuery.page + 1}"${workersQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
-    pager.innerHTML = buttons.join('');
-  }
+  drawPager($('#worker-pool .panel-ft'), workersQuery, {
+    total, from, count: shown.length, pages, noun: 'worker', empty: 'No workers match these filters', redraw: applyWorkersQuery,
+  });
 
   for (const th of $$('#workers thead th.sortable')) {
     const sortKey = [...th.classList].find((c) => WORKERS_SORT_KEYS[c]);
@@ -7199,23 +7227,7 @@ function wireWorkersControls() {
     });
   }
 
-  const pager = $('.panel-ft .pager', panel);
-  if (pager) {
-    pager.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-workers-page]');
-      if (!button || button.disabled) return;
-      workersQuery.page = Number(button.dataset.workersPage);
-      applyWorkersQuery();
-    });
-  }
 
-  const perPage = $('.panel-ft .rpp select', panel);
-  if (perPage) {
-    perPage.addEventListener('change', () => {
-      workersQuery.perPage = Number(perPage.value) || 5;
-      renarrow();
-    });
-  }
 }
 
 
@@ -7314,23 +7326,7 @@ function wireJobsControls() {
 
   /* The pager is rebuilt on every draw, so its clicks are taken by delegation
      rather than bound to buttons that will not exist by the time they fire. */
-  const pager = $('.panel-ft .pager', panel);
-  if (pager) {
-    pager.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-jobs-page]');
-      if (!button || button.disabled) return;
-      jobsQuery.page = Number(button.dataset.jobsPage);
-      applyJobsQuery();
-    });
-  }
 
-  const perPage = $('.panel-ft .rpp select', panel);
-  if (perPage) {
-    perPage.addEventListener('change', () => {
-      jobsQuery.perPage = Number(perPage.value) || 18;
-      renarrow();
-    });
-  }
 }
 
 /* ====================================================== deleting jobs */
@@ -11763,7 +11759,7 @@ async function wireDatasetPage() {
   const search = $('[data-dataset-search]');
   const status = $('[data-dataset-status]');
   const count = $('[data-dataset-count]');
-  const footer = $('#saved-datasets-panel .panel-ft > span');
+  const footer = $('#saved-datasets-panel .panel-ft');
 
   /* **Reads the rows out of the DOM every time, rather than closing over a list.** The
      table is rebuilt when a build starts or finishes, so a captured node list is stale
@@ -11773,21 +11769,29 @@ async function wireDatasetPage() {
     const heads = $$(':scope > tr.runrow-head', body);
     const query = search.value.trim().toLowerCase();
     const wantedStatus = status.value;
-    let shown = 0;
+    const matching = heads.filter((head) => (!query || head.dataset.search.includes(query))
+      && (wantedStatus === 'all' || head.dataset.datasetStatus === wantedStatus));
+
+    /* Paged like every other table, by hiding the rows off this page: the table is the
+       whole list, drawn once, and a filter or a page only chooses which rows show. */
+    const { shown, from, pages } = pageOf(matching, datasetsPage);
+    const visible = new Set(shown);
+
     heads.forEach((head) => {
-      const match = (!query || head.dataset.search.includes(query))
-        && (wantedStatus === 'all' || head.dataset.datasetStatus === wantedStatus);
-      head.hidden = !match;
+      const on = visible.has(head);
+      head.hidden = !on;
       const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
         ? head.nextElementSibling : null;
-      if (detail) detail.hidden = !match || head.getAttribute('aria-expanded') !== 'true';
-      if (match) shown += 1;
+      if (detail) detail.hidden = !on || head.getAttribute('aria-expanded') !== 'true';
     });
     /* `heads.length`, not 20. The total was written in when there were twenty
        rows in the markup; the saved datasets come from the API now and there
        are as many as MARP holds. */
-    count.textContent = `(${shown} shown of ${heads.length})`;
-    if (footer) footer.innerHTML = `Showing <b class="strong">${shown}</b> of ${heads.length} builds and datasets`;
+    count.textContent = `(${matching.length} shown of ${heads.length})`;
+    drawPager(footer, datasetsPage, {
+      total: matching.length, from, count: shown.length, pages, noun: 'build or dataset', plural: 'builds and datasets',
+      empty: 'No datasets match these filters', redraw: filter,
+    });
   };
 
   /** What the table was last drawn from, so a poll can tell a move from a change. */
@@ -12034,8 +12038,9 @@ async function wireDatasetPage() {
     }, 0);
   });
 
-  search.addEventListener('input', filter);
-  status.addEventListener('change', filter);
+  /* A new filter starts at its first page, as it does on every other table. */
+  search.addEventListener('input', () => { datasetsPage.page = 1; filter(); });
+  status.addEventListener('change', () => { datasetsPage.page = 1; filter(); });
 }
 
 function wireAccordions() {
