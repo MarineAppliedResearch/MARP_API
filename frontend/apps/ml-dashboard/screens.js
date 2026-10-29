@@ -8081,9 +8081,9 @@ function wireJobsOverview() {
 /**
  * Draw one of the operational charts from a series.
  *
- * The four charts on this app share an SVG: a left axis, a right axis, three time labels,
- * some `<path>`s keyed by name, and a run of current readings underneath. Only the data and
- * the labels differ, so the drawing lives here once rather than a fourth time.
+ * Inference, Models and Datasets share this: a left axis, sometimes a right one, a few
+ * series keyed by name, and a run of current readings underneath. Only the data and the
+ * labels differ, so it lives here once. ECharts draws it (#275), through `activityOption`.
  *
  * @param {Object} spec
  * @param {Element} spec.root - The panel.
@@ -8092,39 +8092,22 @@ function wireJobsOverview() {
  * @param {string} spec.initial - Which range to open on.
  * @param {function(Object): Promise<Object>} spec.fetch - Given `{since, until, bucket}`, the answer.
  * @param {function(Object): Object} spec.read - Turns that answer into `{series, scales, current, quiet}`.
+ * @param {Object} spec.looks - `{name: {css, kind}}`: each series' colour key and whether it
+ *   is an `area` or a `line`. A series not named here is not drawn.
+ * @param {string[]} [spec.onRight] - The series measured on the right-hand axis.
  * @returns {Promise<void>}
  */
-async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read }) {
+async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read, looks, onRight = [] }) {
   if (!root) return;
 
   const camel = (name) => prefix + name[0].toUpperCase() + name.slice(1);
-  const lines = Object.fromEntries($$(`[data-${prefix}-line]`, root)
-    .map((l) => [l.dataset[camel('line')], l]));
-  const area = $(`[data-${prefix}-area]`, root);
-  const areaKey = area ? area.dataset[camel('area')] : null;
   const buttons = $$(`[data-${prefix}-range]`, root);
-  const chart = $('.inference-chart, .ops-chart', root);
-  const leftAxis = $$('.inference-axis.left text:not(.axis-title)', root)
-    .filter((t) => !t.hasAttribute(`data-${prefix}-time`));
-  const rightAxis = $$('.inference-axis.right text:not(.axis-title)', root);
+  const chart = $('.inference-chart, .ops-chart, .dataset-chart', root);
 
-  const x = (i, n) => 54 + 672 * i / Math.max(1, n - 1);
-  const y = (v, max) => 196 - 168 * (v / Math.max(1, max));
-  const pathOf = (values, max) => values
-    .map((v, i) => `${i ? 'L' : 'M'}${x(i, values.length).toFixed(1)},${y(v, max).toFixed(1)}`).join(' ');
-  const areaOf = (values, max) => `${pathOf(values, max)} L${x(values.length - 1, values.length).toFixed(1)},196 L54,196 Z`;
+  /* The legend key's own words for a series, so a tooltip says what the key says. */
+  const nameOf = (name) => $(`[data-${prefix}-highlight="${name}"]`, root)?.textContent.trim() || name;
 
-  /** Ticks from however many the markup has, not from an assumed four. */
-  const ticks = (nodes, top, format) => nodes.forEach((t, i) => {
-    const steps = Math.max(1, nodes.length - 1);
-    t.textContent = format(top * (steps - i) / steps);
-  });
-
-  const blank = () => {
-    [...Object.values(lines), area].forEach((n) => n && n.removeAttribute('d'));
-    leftAxis.concat(rightAxis).forEach((t) => { t.textContent = ''; });
-    $$(`[data-${prefix}-time]`, root).forEach((t) => { t.textContent = ''; });
-  };
+  const blank = () => { if (chart) chart.innerHTML = ''; };
 
   async function choose(next) {
     buttons.forEach((b) => {
@@ -8154,31 +8137,20 @@ async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read
 
       root.classList.remove('is-quiet');
 
-      for (const [name, values] of Object.entries(series)) {
-        const max = scales[name] || 1;
-        if (lines[name]) lines[name].setAttribute('d', pathOf(values, max));
-        if (area && areaKey === name) area.setAttribute('d', areaOf(values, max));
+      /* A series the data cannot fill is left undrawn rather than flattened to zero: an
+         empty track says "not recorded", a line along the floor says "recorded, and none". */
+      const at = points.map((p) => Date.parse(p.at));
+      const drawn = Object.entries(series).filter(([name]) => looks[name]).map(([name, values]) => ({
+        id: name, name: nameOf(name), css: looks[name].css, kind: looks[name].kind || 'line',
+        axis: onRight.includes(name) ? 1 : 0, data: values.map((value, index) => [at[index], value]),
+      }));
+      const axes = [{ format: scales.formatLeft }];
+      if (drawn.some((one) => one.axis === 1)) axes.push({ format: scales.formatRight, whole: true });
+
+      if (chart) {
+        drawActivity(chart, activityOption({ root, series: drawn, axes }),
+          current.aria || chart.getAttribute('aria-label') || '', `${prefix}-${next}`);
       }
-
-      /* A line the data cannot fill is left undrawn rather than flattened to
-         zero: an empty track says "not recorded", a line along the floor says
-         "recorded, and none". */
-      for (const [name, line] of Object.entries(lines)) {
-        if (!series[name]) line.removeAttribute('d');
-      }
-
-      ticks(leftAxis, scales.left ?? 1, scales.formatLeft || ((v) => String(Math.round(v))));
-      ticks(rightAxis, scales.right ?? 1, scales.formatRight || ((v) => String(Math.round(v))));
-
-      $$(`[data-${prefix}-time]`, root).forEach((t, i) => {
-        const at = [points[0], points[Math.floor(points.length / 2)], points.at(-1)][i];
-        if (!at) return;
-        const d = new Date(at.at);
-        t.textContent = i === 2 ? 'Now'
-          : (range.bucket === 'day'
-            ? d.toISOString().slice(5, 10)
-            : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-      });
 
       /* **The unit travels with the figure.** A number beside a chart with a one-word
          label is the Jobs badge problem again -- `1,189` with nothing saying "failed".
@@ -8198,8 +8170,6 @@ async function drawSeriesChart({ root, prefix, ranges, initial, fetch: ask, read
            stranded: "Clears in" with no duration reads as a rendering failure. */
         node.hidden = !node.textContent;
       });
-
-      if (chart && current.aria) chart.setAttribute('aria-label', current.aria);
     } catch (error) {
       blank();
       if (chart) chart.setAttribute('aria-label', `Could not load this chart (${error.status || 'no answer'})`);
@@ -8257,11 +8227,12 @@ function clearingNote(rate, queued) {
  */
 function wireInferenceThroughput() {
   const root = $('[data-inference-activity]');
-  if (!root || !$('.inference-chart svg', root)) return;
+  if (!root || !$('.inference-chart', root)) return;
 
   return drawSeriesChart({
     root,
     prefix: 'inference',
+    looks: { throughput: { css: 'throughput', kind: 'area' }, backlog: { css: 'backlog' } },
     initial: '24h',
     ranges: {
       /* The shared ladder; see `wirePoolUtilization`. */
@@ -8323,11 +8294,12 @@ function wireInferenceThroughput() {
  */
 function wireRegistryTrend() {
   const root = $('[data-ops-activity="models"]');
-  if (!root || !$('.ops-chart svg', root)) return;
+  if (!root || !$('.ops-chart', root)) return;
 
   return drawSeriesChart({
     root,
     prefix: 'ops',
+    looks: { registered: { css: 'registered', kind: 'area' }, in_use: { css: 'preferred' }, coverage: { css: 'coverage' } },
     initial: '1y',
     ranges: {
       /* The shared ladder; see `wirePoolUtilization`. A model is registered rarely, so
@@ -8384,7 +8356,7 @@ function wireRegistryTrend() {
  * panel because those keys are scoped to it. A null reading stays null, so a line breaks
  * where nothing was recorded rather than dropping to zero.
  *
- * @param {Object} spec - `{root, axes, series}`. `axes` is `[{name, max, unit, whole}]`;
+ * @param {Object} spec - `{root, axes, series}`. `axes` is `[{name, max, unit, whole, format}]`;
  *   each series is `{id, name, css, kind, axis, unit, data}`, `kind` being `line`, `area`
  *   or `bar` and `data` `[[ms, value], ...]`.
  * @returns {Object} The ECharts option.
@@ -8402,7 +8374,7 @@ function activityOption({ root, axes, series }) {
     yAxis: axes.map((axis, index) => ({
       type: 'value', name: axis.name, min: 0, max: axis.max, minInterval: axis.whole ? 1 : undefined,
       ...theme.axis, splitLine: index ? { show: false } : theme.axis.splitLine,
-      axisLabel: { ...theme.axis.axisLabel, formatter: axis.unit ? `{value}${axis.unit}` : '{value}' },
+      axisLabel: { ...theme.axis.axisLabel, formatter: axis.format || (axis.unit ? `{value}${axis.unit}` : '{value}') },
     })),
     tooltip: { ...theme.tooltip },
     dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }],
@@ -8662,11 +8634,14 @@ function wireDatasetActivity() {
   /* **The guard is on the chart, not on the panel.** This threw on a missing SVG once and
      took the rest of the boot script with it, so the tables below never rendered and it
      looked like the API had failed. */
-  if (!root || !$('.dataset-chart svg', root)) return;
+  if (!root || !$('.dataset-chart', root)) return;
 
   return drawSeriesChart({
     root,
     prefix: 'dataset',
+    looks: { rate: { css: 'throughput', kind: 'area' }, waiting: { css: 'backlog' }, finished: { css: 'done' } },
+    /* Builds are counted in ones, frames in thousands: two axes, so neither flattens. */
+    onRight: ['waiting', 'finished'],
     initial: '24h',
     ranges: {
       '24h': { since: (u) => new Date(u - 24 * 3600e3), bucket: 'hour', label: 'the last 24 hours', empty: 'No build activity' },
