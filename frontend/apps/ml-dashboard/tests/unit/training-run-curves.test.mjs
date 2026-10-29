@@ -2419,6 +2419,30 @@ test('a poll asks only for what is new, and keeps what it already had', async (t
   assert.equal((d.match(/[ML]/g) || []).length, 3, 'with all three points drawn, not just the new one');
 });
 
+test('a chart tooltip is on the page, so the card cannot cut it off', async (t) => {
+  /* Isaac, on the first ECharts charts: the popup was cut off at the edge of the graph and
+     only ever showed inside it. The card clips what overflows it, so a tooltip drawn
+     inside the card can never leave it. */
+  const screen = await drawScreen('training.html', answers([
+    epoch(1, { box_loss: 1.8 }), epoch(2, { box_loss: 1.4 }), epoch(3, { box_loss: 1.1 }),
+  ]));
+
+  t.after(screen.close);
+
+  const card = lossCard(await open(screen, 21779));
+  chartIn(card).marpChart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: 1 });
+  for (let i = 0; i < 3; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+
+  /* Only the two places it can be, which keeps this cheap: a floating div directly on the
+     body, or one inside the chart. */
+  const floating = (el) => el.tagName === 'DIV' && el.style.position === 'absolute' && /1\.400/.test(el.textContent);
+  const onPage = [...screen.document.body.children].find(floating);
+  const inChart = [...chartIn(card).querySelectorAll('div')].find(floating);
+
+  assert.ok(onPage, 'the tooltip, with the hovered value, is attached to the page body');
+  assert.equal(inChart, undefined, 'and is not inside the chart, where the card clips it');
+});
+
 test('the epoch charts sit under one Results heading', async (t) => {
   /* From the #268 checklist: the live charts had *While it runs* over them and the epoch
      charts had nothing, so the two read as one long column. */

@@ -1802,8 +1802,12 @@ function chartTheme() {
       splitLine: { lineStyle: { color: line } },
       nameTextStyle: { color: muted, fontSize: 10 },
     },
+    /* **On the page, not in the card.** The card clips what overflows it, so a tooltip
+       drawn inside it was cut off at the chart's edge -- Isaac found it on the Loss chart.
+       Attached to the body it floats over whatever is beside the chart. */
     tooltip: {
       trigger: 'axis',
+      appendTo: 'body',
       backgroundColor: token('--navy-900', '#03101f'),
       borderColor: token('--border', 'rgba(42, 214, 220, 0.28)'),
       textStyle: { color: text, fontSize: 12 },
