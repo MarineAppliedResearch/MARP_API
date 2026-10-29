@@ -706,18 +706,22 @@ test('a matrix MARP carries as numbers is drawn, not shown as a picture', async 
   t.after(screen.close);
 
   const detail = await open(screen, 21779);
-  const grid = detail.querySelector('.confusion');
+  const card = detail.querySelector('[data-matrix]');
+  const chart = chartIn(card);
 
-  assert.ok(grid, 'drawn as a grid rather than an <img>');
-  assert.equal(grid.style.getPropertyValue('--cols'), '3',
-    'sized from the data: the mockup was hardcoded to four classes');
-  assert.equal(detail.querySelectorAll('.confusion > i').length, 9, 'three by three');
+  assert.ok(chart?.marpChart, 'drawn as a heatmap rather than an <img>');
+  assert.equal(card.querySelector('img'), null);
+
+  const option = chart.marpOption;
+
+  assert.equal(option.xAxis.data.length, 3, 'sized from the data: the mockup was hardcoded to four classes');
+  assert.equal(option.series[0].data.length, 9, 'three by three');
 
   /* The whole reason to prefer numbers: a cell can say what it is. */
-  const first = grid.querySelector('i');
+  const first = option.series[0].data[0];
 
-  assert.equal(first.dataset.count, '8');
-  assert.match(first.getAttribute('title'), /Cookie star predicted as Cookie star: 8/);
+  assert.equal(first[3], 8);
+  assert.match(option.tooltip.formatter({ value: first }), /Cookie star predicted as Cookie star: 8/);
 });
 
 test('an image-only matrix is shown as a render, and labelled as one', async (t) => {
@@ -736,7 +740,7 @@ test('an image-only matrix is shown as a render, and labelled as one', async (t)
 
   const detail = await open(screen, 21779);
 
-  assert.equal(detail.querySelector('.confusion'), null, 'no grid, because there are no numbers');
+  assert.equal(detail.querySelector('[data-matrix]'), null, 'no heatmap, because there are no numbers');
   assert.ok(detail.querySelector('.result-plot img[src$="confusion_matrix.png"]'), 'the render is shown');
   assert.match(detail.textContent, /MARP does not carry the counts/,
     'and says so, rather than passing a picture off as a reading');
@@ -1940,26 +1944,24 @@ test('the confusion matrix names its axes in words and can be read as counts', a
   t.after(screen.close);
 
   const detail = await open(screen, 21779);
+  const card = detail.querySelector('[data-matrix]');
+  const drawn = () => drawnText(card);
 
-  assert.equal(detail.querySelector('.matrix-frame .axis-y').textContent, 'True class');
-  assert.equal(detail.querySelector('.matrix-frame .axis-x').textContent, 'Predicted class');
+  assert.ok(drawn().includes('True class'), 'the rows are named on the chart');
+  assert.ok(drawn().includes('Predicted class'), 'and so are the columns');
 
   /* The background row is kept and labelled rather than trimmed: from the model's point
      of view it is a real outcome and the row sums mean nothing without it. */
-  const labels = [...detail.querySelectorAll('.confusion > b')].map((b) => b.textContent);
-
-  assert.ok(labels.includes('background'), 'the background row is labelled, not dropped');
+  assert.ok(drawn().includes('background'), 'the background row is labelled, not dropped');
 
   /* A share of 100% over two instances and over two thousand look identical, which is
      why both readings are offered rather than one. */
-  const first = detail.querySelector('.confusion i');
+  assert.ok(drawn().includes('80%'), 'normalised by default');
 
-  assert.equal(first.textContent, '80%', 'normalised by default');
+  card.querySelector('[data-matrix-mode="count"]').click();
 
-  detail.querySelector('[data-matrix-mode="count"]').click();
-
-  assert.equal(first.textContent, '8', 'and the counts are one press away');
-  assert.equal(detail.querySelector('[data-matrix-mode="norm"]').getAttribute('aria-pressed'), 'false');
+  assert.ok(!drawn().includes('80%') && drawn().includes('8'), 'and the counts are one press away');
+  assert.equal(card.querySelector('[data-matrix-mode="norm"]').getAttribute('aria-pressed'), 'false');
 });
 
 test('per-class quality leads with the worst class, and shows the AP as a bar', async (t) => {
@@ -2059,10 +2061,10 @@ test('a matrix label MARP does not have is named the same way on both axes', asy
   t.after(screen.close);
 
   const detail = await open(screen, 21779);
-  const headers = [...detail.querySelectorAll('.confusion > b')].map((b) => b.textContent);
+  const option = chartIn(detail.querySelector('[data-matrix]')).marpOption;
 
-  assert.equal(headers.filter((text) => text === 'Class 1').length, 2,
-    'the unnamed class is Class 1 on the row and on the column, not blank on one of them');
+  assert.equal(option.xAxis.data[1], 'Class 1', 'the unnamed class is Class 1 on the column');
+  assert.equal(option.yAxis.data[1], 'Class 1', 'and on the row, not blank on one of them');
 });
 
 /* ------------------------------------------------------- the classify task */

@@ -1850,14 +1850,30 @@ const CHART_ZOOM = new Map();
  * @param {Object} option - The ECharts option, without the theme.
  * @param {string} label - What the chart shows, for a screen reader.
  * @param {string} [key] - A name that stays the same across redraws of this chart.
+ * @param {number} [height] - Pixels, for a chart whose height follows its data.
  * @returns {string} The slot's HTML.
  */
-function chartSlot(option, label, key) {
+function chartSlot(option, label, key, height) {
   chartSeq += 1;
   const id = `chart-${chartSeq}`;
   CHART_OPTIONS.set(id, option);
   return `<div class="result-chart marp-chart" data-chart="${id}"${key ? ` data-chart-key="${escapeHtml(key)}"` : ''}`
-    + ` role="img" aria-label="${escapeHtml(label)}"></div>`;
+    + `${height ? ` style="height:${Math.round(height)}px"` : ''} role="img" aria-label="${escapeHtml(label)}"></div>`;
+}
+
+/**
+ * What a confusion-matrix cell says, in one of its two readings.
+ *
+ * A share of 100% over two instances and over two thousand look identical, which is why
+ * both are offered: the share by default, the count one press away.
+ *
+ * @param {string} mode - `norm` or `count`.
+ * @returns {Function} An ECharts label formatter.
+ */
+function matrixLabel(mode) {
+  return mode === 'count'
+    ? (item) => item.value[3].toLocaleString('en-US')
+    : (item) => `${Math.round(item.value[2] * 100)}%`;
 }
 
 /**
@@ -2286,28 +2302,48 @@ function confusionMatrix(matrix, image, raw = []) {
        vocabulary was shorter than the matrix, and the rows named those `Class 3` while
        the columns left the header blank -- the same axis, labelled two ways, which reads
        as the column having no name rather than as MARP not knowing it. */
-    const name = (index) => escapeHtml(matrix.labels[index] ?? `Class ${index}`);
+    const names = matrix.rows.map((_, index) => String(matrix.labels[index] ?? `Class ${index}`));
 
-    const cells = matrix.rows.map((row, r) => {
+    /* Each cell as [predicted, true, share of its true class, count]. The share drives the
+       colour in both readings, because a count's shade would follow class size instead of
+       how often the model got that class right. */
+    const cells = matrix.rows.flatMap((row, r) => {
       const sum = total(row);
+      return row.map((value, c) => {
+        const count = Number(value) || 0;
+        return [c, r, sum ? count / sum : 0, count];
+      });
+    });
 
-      return `<b>${name(r)}</b>`
-        + row.map((value, c) => {
-          const count = Number(value) || 0;
-          const share = sum ? count / sum : 0;
+    const theme = chartTheme();
+    const heat = chartKey('class-1').color;
+    const option = {
+      grid: { left: 96, right: 16, top: 12, bottom: 56 },
+      /* **The axes are named in words on the chart, not only in the caption.** True and
+         Predicted is the one thing a reader has to have right, and a confusion matrix
+         read the wrong way round is completely plausible while asserting the reverse of
+         what happened. The API transposes Ultralytics' own `matrix[predicted][true]` once
+         on the way out so that rows are true here, and this says so where it is read. */
+      xAxis: { type: 'category', data: names, name: 'Predicted class', nameLocation: 'middle', nameGap: 36, ...theme.axis, splitLine: { show: false } },
+      yAxis: { type: 'category', data: names, inverse: true, name: 'True class', nameLocation: 'middle', nameGap: 82, ...theme.axis, splitLine: { show: false } },
+      visualMap: { show: false, dimension: 2, min: 0, max: 1, inRange: { color: ['rgba(1, 6, 14, 0.5)', heat] } },
+      legend: { show: false },
+      toolbox: { ...theme.toolbox, show: names.length > 8 },
+      tooltip: {
+        ...theme.tooltip, trigger: 'item',
+        formatter: (item) => `${escapeHtml(names[item.value[1]])} predicted as ${escapeHtml(names[item.value[0]])}: `
+          + `${item.value[3].toLocaleString('en-US')} (${Math.round(item.value[2] * 100)}% of ${escapeHtml(names[item.value[1]])})`,
+      },
+      /* Zoom only where there are enough classes to need it. */
+      dataZoom: names.length > 8 ? [{ type: 'inside', xAxisIndex: 0 }, { type: 'inside', yAxisIndex: 0 }] : [],
+      series: [{
+        id: 'matrix', type: 'heatmap', data: cells,
+        label: { show: true, color: theme.text.color, fontSize: 10, fontWeight: 700, formatter: matrixLabel('norm') },
+        itemStyle: { borderColor: 'rgba(1, 6, 14, 0.9)', borderWidth: 2, borderRadius: 3 },
+        emphasis: { itemStyle: { borderColor: chartKey('curve-mean').color } },
+      }],
+    };
 
-          return `<i style="--heat:${Math.max(.04, share).toFixed(2)}" `
-            + `data-norm="${Math.round(share * 100)}%" data-count="${count.toLocaleString('en-US')}" `
-            + `title="${name(r)} predicted as ${name(c)}: `
-            + `${count.toLocaleString('en-US')}">${Math.round(share * 100)}%</i>`;
-        }).join('');
-    }).join('');
-
-    /* **The axes are named in words on the chart, not only in the caption.** True and
-       Predicted is the one thing a reader has to have right, and a confusion matrix read
-       the wrong way round is completely plausible while asserting the reverse of what
-       happened. The API transposes Ultralytics' own `matrix[predicted][true]` once on
-       the way out so that rows are true here, and this says so where it is being read. */
     const split = matrix.dataset_split ? ` &middot; ${escapeHtml(matrix.dataset_split)} split` : '';
 
     return '<article class="evaluation-card matrix-card" data-matrix><header><div><h5>Confusion matrix</h5>'
@@ -2326,11 +2362,9 @@ function confusionMatrix(matrix, image, raw = []) {
       + 'title="Each cell as a share of its true class">Normalised</button>'
       + '<button type="button" data-matrix-mode="count" aria-pressed="false" '
       + 'title="The instance counts the trainer recorded">Counts</button></div></header>'
-      + '<div class="matrix-scroll"><div class="matrix-frame">'
-      + '<span class="axis-y">True class</span>'
-      + `<div class="confusion" style="--cols:${matrix.labels.length}" role="img" aria-label="Confusion matrix over ${matrix.labels.length} classes, rows true and columns predicted">`
-      + `<span></span>${matrix.labels.map((label, index) => `<b>${name(index)}</b>`).join('')}${cells}`
-      + `</div><span class="axis-x">Predicted class</span></div></div>${source}</article>`;
+      + chartSlot(option, `Confusion matrix over ${names.length} classes, rows true and columns predicted`,
+        '', Math.max(230, names.length * 40 + 80))
+      + `${source}</article>`;
   }
 
   if (image) {
@@ -3280,8 +3314,9 @@ function wireTrainingJobDetail(head, detail) {
         other.setAttribute('aria-pressed', String(on));
       });
 
-      for (const tile of $$('.confusion i[data-norm]', cell)) {
-        tile.textContent = tile.dataset[button.dataset.matrixMode];
+      const slot = $('[data-matrix] [data-chart]', cell);
+      if (slot && slot.marpChart) {
+        slot.marpChart.setOption({ series: [{ id: 'matrix', label: { formatter: matrixLabel(button.dataset.matrixMode) } }] });
       }
     }));
 
@@ -12301,7 +12336,7 @@ function applyTips() {
   $$('.jobstate h4').forEach((el) => {
     if (!el.title && el.nextElementSibling?.textContent.trim()) el.title = el.nextElementSibling.textContent.trim();
   });
-  $$('.class-metrics tbody td:first-child, .confusion > b, .balance-row > b').forEach((el) => {
+  $$('.class-metrics tbody td:first-child, .balance-row > b').forEach((el) => {
     if (!el.title) el.title = `${el.textContent.trim()}: one of the eight classes scored in this training evaluation`;
   });
 }
