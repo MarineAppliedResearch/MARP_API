@@ -45,6 +45,8 @@ const SUBSYSTEMS = {
             // #104: what the job list and the pool view can be asked, after the
             // dashboard's gaps 23 to 27 were closed.
             'gpu-finished-at',
+            // A 20 GB dataset download counted in bytes, and a heartbeat MARP cannot save.
+            'gpu-heartbeat-large-progress',
             // #279: cancelling a selection, or every piece of one run.
             'gpu-job-cancel',
             'gpu-job-list',
@@ -57,6 +59,10 @@ const SUBSYSTEMS = {
             'gpu-training-run-record',
             // #104: what an inference job produced, which its state cannot say.
             'inference-job-outcome',
+            // #288: what every piece of one run produced, together.
+            'inference-batch-outcome',
+            // #288: a piece's and a run's video, range and species over time.
+            'inference-timeline',
             // #104: the session a run creates for itself, and the type derived for it.
             'inference-run-session',
             /* #268: the name a training job gets when nobody typed one. */
@@ -171,6 +177,8 @@ const SUBSYSTEMS = {
                refusals that stop one being built that trains on a random split. Opens
                the tar, because the directory names are the whole contract. */
             'dataset-build-classification',
+            // #296: frames per object, the estimate, and that the two agree.
+            'dataset-build-sampling',
             /* #268 1.2: the build's progress as the Datasets screen reads it. Written
                on another branch, and registered from here deliberately -- this file has
                one writer, and two agents editing it from different assumptions is a

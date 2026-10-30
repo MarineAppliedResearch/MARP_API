@@ -89,7 +89,7 @@ async function apiWorkerId() {
  */
 async function queueBuild({
     name, description = null, filters = {}, subsets = null, image = null, splits,
-    createdBy = null, task = 'detection',
+    createdBy = null, task = 'detection', sampling = null,
 }) {
     const transaction = await db.sequelize.transaction();
 
@@ -114,7 +114,7 @@ async function queueBuild({
             {
                 replacements: {
                     name: `Build ${name}`,
-                    spec: JSON.stringify({ dataset_id: dataset.id, filters, subsets, image, splits, task }),
+                    spec: JSON.stringify({ dataset_id: dataset.id, filters, subsets, image, splits, task, sampling }),
                     createdBy,
                 },
                 type: QueryTypes.SELECT,
@@ -663,6 +663,8 @@ async function getBuildSetup(datasetId) {
         filters,
         splits: spec.splits || null,
         image: spec.image || null,
+        /* Null is every frame: a build from before #296, or one that asked for it. */
+        sampling: spec.sampling || null,
     };
 }
 

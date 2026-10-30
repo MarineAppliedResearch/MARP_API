@@ -302,6 +302,17 @@
                 <div class="dist split" data-dataset-composition data-rendered></div>
               </div>
 
+              <div class="field build-sampling" style="margin-top:14px">
+                <label for="dsframes">Frames per object
+                  <span class="faint" title="Each object's track is split into this many equal stretches and one random frame is taken from each. A frame picked for one object keeps the box of every other selected object in it. A shorter track gives every frame it has.">spread across each track</span></label>
+                <div class="sampling-row">
+                  <input class="inp" type="number" id="dsframes" min="1" step="1" value="10" aria-label="Frames per object">
+                  <label class="check"><input type="checkbox" id="dsevery"><span>Every frame</span></label>
+                  <label class="check" title="Every class, in each split, gets as many images as the largest class does at this many frames per object. A class with fewer objects takes more frames from each, up to its track lengths."><input type="checkbox" id="dsbalance"><span>Balance classes</span></label>
+                </div>
+                <p class="hint" data-build-estimate aria-live="polite" hidden></p>
+              </div>
+
               <div class="btnrow" style="margin-top:14px">
                 <button class="btn accent" type="button" data-queue-build
                         title="Cut the frames these observations point at, label them, and package one archive a worker can train on">
@@ -466,12 +477,8 @@
               </table>
             </div>
           </div>
-          <footer class="panel-ft">
-            <span data-rendered data-fills="showing"></span>
-            <div class="pager" data-rendered>
-              <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button><button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
-            </div>
-          </footer>
+          <!-- Drawn by drawPager(), the footer every table shares. -->
+          <footer class="panel-ft"></footer>
         </section>
       </div>
 

@@ -584,8 +584,10 @@ describe('GPU heartbeat', () => {
         );
 
         expect(attempt.state).toBe('running');
-        expect(attempt.progress_done).toBe(40);
-        expect(attempt.progress_total).toBe(100);
+        /* Through Number: the counts are BIGINT since a 20 GB download overflowed them, and
+           the driver hands a BIGINT back as a string to a query that reads it raw. */
+        expect(Number(attempt.progress_done)).toBe(40);
+        expect(Number(attempt.progress_total)).toBe(100);
         expect(attempt.progress_unit).toBe('frames');
         expect(attempt.progress_phase).toBe('inferring');
         expect(attempt.progress_elapsed_s).toBe(12.375);
@@ -698,7 +700,7 @@ describe('GPU heartbeat', () => {
 
         const [attempt] = await query('SELECT progress_done FROM gpu_job_attempts WHERE id = :id', { id: lease.attempt_id });
 
-        expect(attempt.progress_done).toBe(5);
+        expect(Number(attempt.progress_done)).toBe(5);
     });
 
     it('delivers a pause to a machine that has been paused', async () => {
@@ -1861,7 +1863,7 @@ describe('GPU worker rename', () => {
         expect(attempt.worker_id).toBe(worker.worker_id);
         expect(attempt.lease_epoch).toBe(lease.lease_epoch);
         expect(attempt.state).toBe('running');
-        expect(attempt.progress_done).toBe(7);
+        expect(Number(attempt.progress_done)).toBe(7);
 
         const [current] = await query('SELECT state FROM gpu_jobs WHERE id = :id', { id: job.id });
 

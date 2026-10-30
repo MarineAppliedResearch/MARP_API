@@ -1233,6 +1233,41 @@
   }
 
   /**
+   * `GET /api/v2/gpu/jobs/:id/timeline` -- which video a piece ran on, its range in that
+   * video's time, and its species counted per stretch of time (#288).
+   *
+   * @param {number} jobId - The piece.
+   * @returns {Promise<Object>}
+   */
+  function jobTimeline(jobId) {
+    return request(`/gpu/jobs/${encodeURIComponent(jobId)}/timeline`);
+  }
+
+  /**
+   * `GET /api/v2/gpu/batches/:batch_id/timeline` -- the same for a whole run: every
+   * piece's range and state along the video, and its species across the whole of it.
+   *
+   * @param {string} batchId - The run's `batch_id`.
+   * @returns {Promise<Object>}
+   */
+  function batchTimeline(batchId) {
+    return request(`/gpu/batches/${encodeURIComponent(batchId)}/timeline`);
+  }
+
+  /**
+   * `GET /api/v2/gpu/batches/:batch_id/observations` -- what every piece of one run found.
+   *
+   * The run's total and its species in one read, with `states` saying how many pieces are
+   * in each state so a total from a run still going can be labelled as one (#288).
+   *
+   * @param {string} batchId - The run's `batch_id`.
+   * @returns {Promise<Object>}
+   */
+  function batchObservations(batchId) {
+    return request(`/gpu/batches/${encodeURIComponent(batchId)}/observations`);
+  }
+
+  /**
    * `GET /api/v2/gpu/jobs/:id/observations` -- what one run actually produced.
    *
    * **A job's state does not answer this.** A job succeeds when its bytes arrive and are
@@ -1290,6 +1325,22 @@
     return serve('datasets',
       () => request('/dataset/build', { method: 'POST', body: build || {} }),
       () => ({ dataset: { id: 0, status: 'building' }, job: { id: 0, state: 'queued' } }));
+  }
+
+  /**
+   * `POST /api/v2/dataset/build/estimate` -- what a build would cut, before queueing it.
+   *
+   * Takes the build's own body and answers with images in total, per split and per class,
+   * and what every frame would have been. The API runs the build's own selection and plan,
+   * so this is the plan rather than a guess (#296).
+   *
+   * @param {Object} build - `{subsets, splits, sampling}`.
+   * @returns {Promise<Object>} `{observations, images, every_frame, per_split, per_class}`.
+   */
+  function estimateDatasetBuild(build) {
+    return serve('datasets',
+      () => request('/dataset/build/estimate', { method: 'POST', body: build || {} }),
+      () => ({ observations: 0, images: 0, every_frame: 0, per_split: {}, per_class: [] }));
   }
 
   /**
@@ -1909,6 +1960,7 @@
     mosaicFacets,
     mosaicFrames,
     queueDatasetBuild,
+    estimateDatasetBuild,
     mosaicPages,
     listSessions,
     listVideoLibraries,
@@ -1922,6 +1974,9 @@
     listJobs,
     getJob,
     jobObservations,
+    batchObservations,
+    batchTimeline,
+    jobTimeline,
     listModels,
     listRunnableModels,
     listModelVersions,

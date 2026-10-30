@@ -123,15 +123,27 @@ module.exports = (sequelize, DataTypes) => {
             },
 
             progress_done: {
-                type: DataTypes.INTEGER,
+                /* BIGINT: a dataset download is counted in bytes and passes 2^31 (#288 era,
+                   job 21953). Read back as a number, not the driver's string. */
+                type: DataTypes.BIGINT,
                 allowNull: true,
                 comment: 'Units finished. Overwritten in place at every heartbeat.',
+                get() {
+                    const value = this.getDataValue('progress_done');
+                    return value === null || value === undefined ? value : Number(value);
+                },
             },
 
             progress_total: {
-                type: DataTypes.INTEGER,
+                /* BIGINT: a dataset download is counted in bytes and passes 2^31 (#288 era,
+                   job 21953). Read back as a number, not the driver's string. */
+                type: DataTypes.BIGINT,
                 allowNull: true,
                 comment: 'Units expected in total.',
+                get() {
+                    const value = this.getDataValue('progress_total');
+                    return value === null || value === undefined ? value : Number(value);
+                },
             },
 
             progress_unit: {

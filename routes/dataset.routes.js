@@ -21,7 +21,8 @@ const datasetController = require('../controller/dataset.controller');
 const trainingMetricsController = require('../controller/training-metrics.controller');
 const modelArtifactService = require('../service/model-artifact.service');
 const datasetBuildRepository = require('../repository/dataset-build.repository');
-const { imageSettings, concurrency, BUILD_TASKS } = require('../service/dataset-build.service');
+const { imageSettings, concurrency, BUILD_TASKS, estimate } = require('../service/dataset-build.service');
+const { samplingSettings } = require('../service/dataset-build-plan');
 const datasetRepository = require('../repository/dataset.repository');
 const datasetPreviewService = require('../service/dataset-preview.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
@@ -212,6 +213,25 @@ function registerDatasetRoutes(app) {
                                     + 'random and report an accuracy that means nothing.',
                             },
 
+                            sampling: {
+                                type: 'object',
+                                nullable: true,
+                                description:
+                                    'How many frames each object gives a **detection** build (#296). Omitted or null, or '
+                                    + '`frames_per_object: null`, is every frame of every track, which is what every build before '
+                                    + 'this did. Otherwise each track is split into N equal stretches and one random frame is taken '
+                                    + 'from each; a shorter track gives every frame it has. A frame picked for one object still '
+                                    + 'carries the box of every selected object in it. `balance_classes` gives every class, in each '
+                                    + 'split, the image count its largest class gets at N per object, taking more frames per object '
+                                    + 'from a smaller class up to its track lengths. `seed` makes it reproducible; chosen at random '
+                                    + 'when omitted, and recorded on the build either way. Ignored for classification, which already '
+                                    + 'takes one picture per observation.',
+                                properties: {
+                                    frames_per_object: { type: 'integer', minimum: 1, nullable: true, example: 10 },
+                                    balance_classes: { type: 'boolean', example: false },
+                                    seed: { type: 'integer', minimum: 0, maximum: 2147483647, example: 1234 },
+                                },
+                            },
                             splits: {
                                 type: 'object',
                                 description:
@@ -245,7 +265,7 @@ function registerDatasetRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            const { name, description, filters, splits, subsets, image, task } = req.body || {};
+            const { name, description, filters, splits, subsets, image, task, sampling } = req.body || {};
 
             if (!name || !String(name).trim()) {
                 throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A dataset name is required.');
@@ -301,6 +321,19 @@ function registerDatasetRoutes(app) {
                 );
             }
 
+            /* **Settled here too, and the seed chosen now**, so the spec records the one
+               the build used and *Duplicate setup* can carry it (#296). Classification
+               is not sampled -- one picture per observation already. */
+            let sampled = null;
+
+            if (task !== 'classification') {
+                try {
+                    sampled = samplingSettings(sampling);
+                } catch (error) {
+                    throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, error.message);
+                }
+            }
+
             /* A service client can queue a build; only a person is recorded as having
                asked for it, the same way every other `created_by` here works. */
             const createdBy = req.principal && req.principal.type === 'user' ? req.principal.id : null;
@@ -314,9 +347,108 @@ function registerDatasetRoutes(app) {
                 splits,
                 createdBy,
                 task: task || 'detection',
+                sampling: sampled,
             });
 
             res.status(201).json(queued);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'datasets:read',
+        path: '/api/dataset/build/estimate',
+        summary: 'How many images a detection build would cut, before queueing it',
+        description:
+            'Takes the same body as `POST /dataset/build` and answers with what that build would cut: images in total, per split '
+            + 'and per class, and how many images every frame of every track would have been. **It runs the same selection and '
+            + 'the same plan as the build** and cuts nothing, so the estimate on the build flow is the plan rather than a second '
+            + 'calculation (#296). Per class counts images holding the class, as the dataset\'s own composition does. The build '
+            + 'can still cut fewer, where a video turns out shorter than its keyframes say.\n\n'
+            + '**Without a seed the picks are drawn with seed 0**, so the totals are exact and only which frames are picked can '
+            + 'differ from the build, whose seed is chosen when it is queued.',
+        tags: ['V1 \u00b7 MachineLearning'],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        properties: {
+                            filters: { $ref: '#/components/schemas/MosaicQueryFilters' },
+                            subsets: { type: 'array', items: { type: 'object' }, description: 'As on `POST /dataset/build`.' },
+                            splits: { type: 'object', additionalProperties: { type: 'number' } },
+                            sampling: {
+                                type: 'object',
+                                nullable: true,
+                                properties: {
+                                    frames_per_object: { type: 'integer', minimum: 1, nullable: true, example: 10 },
+                                    balance_classes: { type: 'boolean', example: false },
+                                    seed: { type: 'integer', minimum: 0, maximum: 2147483647 },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: 'What the build would cut.',
+                content: {
+                    'application/json': {
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                observations: { type: 'integer', description: 'Objects selected.' },
+                                images: { type: 'integer', description: 'Images the build would cut.' },
+                                every_frame: { type: 'integer', description: 'Images every frame of every track would have been.' },
+                                per_split: { type: 'object', additionalProperties: { type: 'integer' } },
+                                per_class: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            species_id: { type: 'integer' },
+                                            comname: { type: 'string' },
+                                            class_index: { type: 'integer' },
+                                            images: { type: 'integer' },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const { filters, subsets, splits, sampling } = req.body || {};
+            let settings;
+
+            /* Seed 0 when none is named, rather than a random one: an estimate that moved
+               on every keystroke would read as the selection changing. */
+            try {
+                settings = samplingSettings(sampling, () => 0);
+            } catch (error) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, error.message);
+            }
+
+            try {
+                res.json(await estimate({
+                    filters: filters || {},
+                    subsets: Array.isArray(subsets) && subsets.length ? subsets : null,
+                    splits,
+                }, settings));
+            } catch (error) {
+                /* A filter the mosaic cannot serve is the asker's mistake, as it is there. */
+                if (error && error.name === 'MosaicRequestError') {
+                    throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, error.message);
+                }
+                throw error;
+            }
         }),
     });
 

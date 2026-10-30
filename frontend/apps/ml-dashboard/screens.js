@@ -1095,6 +1095,101 @@ function renderJobsSummary(jobs) {
   }
 }
 
+/* ------------------------------------------------------------------------------------
+   One pager for every table.
+
+   **Isaac: *"all of the tables should work and be paginated in the same way."*** Each
+   table had grown its own copy -- Jobs at 18 rows, Training runs at 10, Models at 8,
+   Workers at 5, Inference cut to 6 with no pager at all, so a run of 28 pieces pushed
+   every finished job off the tab. They were the same footer five times over, drifting.
+   This is the Jobs table's, now everyone's: what is shown out of how many, a window of
+   page buttons, and Rows 18 / 25 / 50.
+   ------------------------------------------------------------------------------------ */
+
+/** The rows-per-page every table offers, the first being where each starts. */
+const PAGE_SIZES = [18, 25, 50];
+
+/** The Training screen's jobs table page. */
+const trainingPage = { page: 1, perPage: PAGE_SIZES[0] };
+
+/** The Dashboard's jobs table page. */
+const dashboardPage = { page: 1, perPage: PAGE_SIZES[0] };
+
+/** The saved datasets table's page. */
+const datasetsPage = { page: 1, perPage: PAGE_SIZES[0] };
+
+/**
+ * The slice of `rows` a table's state says to show, with its page clamped to exist.
+ *
+ * @param {Array} rows - Every row the filters left, in order.
+ * @param {{page: number, perPage: number}} state - The table's paging state.
+ * @returns {{shown: Array, from: number, pages: number}}
+ */
+function pageOf(rows, state) {
+  const pages = Math.max(1, Math.ceil(rows.length / state.perPage));
+  state.page = Math.min(Math.max(1, state.page), pages);
+  const from = (state.page - 1) * state.perPage;
+  return { shown: rows.slice(from, from + state.perPage), from, pages };
+}
+
+/**
+ * Draw a table's footer: *Showing a-b of N*, the page buttons, and Rows.
+ *
+ * **Drawn whole, every time, into the footer element**, so no table's markup has to
+ * carry a pager that is a guess about its own length. The clicks are taken once per
+ * footer by delegation and call whichever `redraw` the latest draw handed in.
+ *
+ * @param {Element} footer - The table's `.panel-ft`.
+ * @param {{page: number, perPage: number}} state - The table's paging state; changed here.
+ * @param {Object} what - `{total, from, count, pages, noun, plural, empty, redraw}`.
+ * @returns {void}
+ */
+function drawPager(footer, state, what) {
+  if (!footer) return;
+
+  const { total, from, count, pages, noun, plural = `${noun}s`, empty, redraw } = what;
+  const page = state.page;
+  const first = Math.max(1, Math.min(page - 2, pages - 4));
+  const numbers = [];
+
+  for (let p = first; p <= Math.min(pages, first + 4); p += 1) {
+    numbers.push(`<button type="button" data-page="${p}"${p === page ? ' aria-current="page"' : ''}>${p}</button>`);
+  }
+
+  const sizes = PAGE_SIZES.includes(state.perPage) ? PAGE_SIZES : [...PAGE_SIZES, state.perPage].sort((a, b) => a - b);
+
+  footer.innerHTML = `<span>${count
+    ? `Showing <b class="strong">${(from + 1).toLocaleString()}&ndash;${(from + count).toLocaleString()}</b> of ${total.toLocaleString()} ${total === 1 ? noun : plural}`
+    : empty}</span>`
+    + '<div class="pager">'
+    + `<button type="button" aria-label="Previous page" data-page="${page - 1}"${page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`
+    + numbers.join('')
+    + `<button type="button" aria-label="Next page" data-page="${page + 1}"${page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`
+    + '</div>'
+    + '<span class="rpp">Rows <select class="sel" aria-label="Rows per page">'
+    + sizes.map((size) => `<option${size === state.perPage ? ' selected' : ''}>${size}</option>`).join('')
+    + '</select></span>';
+
+  footer.pagerRedraw = redraw;
+  footer.pagerState = state;
+
+  if (!footer.dataset.pagerWired) {
+    footer.dataset.pagerWired = 'true';
+    footer.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-page]');
+      if (!button || button.disabled) return;
+      footer.pagerState.page = Number(button.dataset.page);
+      footer.pagerRedraw();
+    });
+    footer.addEventListener('change', (event) => {
+      if (!event.target.matches('.rpp select')) return;
+      footer.pagerState.perPage = Number(event.target.value) || PAGE_SIZES[0];
+      footer.pagerState.page = 1;
+      footer.pagerRedraw();
+    });
+  }
+}
+
 /**
  * The count, the "showing" line, the pager and the sort arrows.
  *
@@ -1111,29 +1206,9 @@ function renderJobsHeaderState(total, from, shown, pages) {
   const count = $('.panel-hd .count');
   if (count) count.textContent = `(${total.toLocaleString()})`;
 
-  const showing = $('.panel-ft > span');
-  if (showing) {
-    showing.innerHTML = shown
-      ? `Showing <b class="strong">${(from + 1).toLocaleString()}&ndash;${(from + shown).toLocaleString()}</b> of ${total.toLocaleString()} jobs`
-      : 'No jobs match these filters';
-  }
-
-  const pager = $('.panel-ft .pager');
-  if (pager) {
-    /* Rebuilt rather than patched: the markup held a fixed run of five, which
-       is a lie about any list that is not exactly five pages long. */
-    const buttons = [`<button aria-label="Previous page" data-jobs-page="${jobsQuery.page - 1}"${jobsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
-
-    /* A window around the current page, so a hundred pages do not become a
-       hundred buttons. */
-    const first = Math.max(1, Math.min(jobsQuery.page - 2, pages - 4));
-    for (let p = first; p <= Math.min(pages, first + 4); p++) {
-      buttons.push(`<button data-jobs-page="${p}"${p === jobsQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
-    }
-
-    buttons.push(`<button aria-label="Next page" data-jobs-page="${jobsQuery.page + 1}"${jobsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
-    pager.innerHTML = buttons.join('');
-  }
+  drawPager($('#jobs')?.closest('.panel')?.querySelector('.panel-ft'), jobsQuery, {
+    total, from, count: shown, pages, noun: 'job', empty: 'No jobs match these filters', redraw: applyJobsQuery,
+  });
 
   /* The arrow is drawn from `aria-sort`, so the accessible state and the drawn
      state cannot disagree -- `DESIGN.md`, Tables. */
@@ -1181,7 +1256,7 @@ const jobsQuery = {
      Clicking a header replaces it with that column, as it always has. */
   sort: { key: 'live', dir: 'descending' },
   page: 1,
-  perPage: 18,
+  perPage: PAGE_SIZES[0],
 };
 
 /** How each sortable column is ordered. Keyed by the header's class. */
@@ -3129,16 +3204,29 @@ function trainingJobDetail(view, run, epochs, pace, evidence) {
      waiting line and nothing at all. */
   runHasFinished = terminal;
 
+  /* **Why it failed, said where somebody is looking.** A training job that failed showed
+     no reason here at all -- job 21953, WpFeCec, failed three times over and the panel said
+     only that no run had been recorded. The reason is on the attempts, so they are read
+     when the panel opens and the last one's reason heads the section. */
+  const ended = ['failed', 'expired'].includes(view.state)
+    ? '<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg>'
+      + `<div><h4>${view.state === 'expired' ? 'Expired' : 'Failed'}</h4>`
+      + '<p data-job-failure>The attempts below say how each try ended.</p></div></div></section>'
+      + '<details class="diag" open><summary>Attempts<span class="later">Every try at this job, and why each ended</span></summary>'
+      + `<div class="dbody"><div class="jobattempts" data-job-attempts="${view.job.id}"></div></div></details>`
+    : '';
+
   if (!run) {
     /* **Expanding is not conditional on a run existing**, which is what broke watching:
        the gate used to be `data-run`, so the one job anybody wanted to watch -- the one
        still going -- had no expander at all. */
-    return `<div class="rundetail jobdetail">${live}`
-      + '<p class="hint">No training run has been recorded for this job yet. Its epochs, losses '
-      + 'and mAP appear here as soon as one is.</p></div>';
+    return `<div class="rundetail jobdetail">${live}${ended}`
+      + (ended ? '<p class="hint">It ended before training began, so no run was recorded.</p></div>'
+        : '<p class="hint">No training run has been recorded for this job yet. Its epochs, losses '
+          + 'and mAP appear here as soon as one is.</p></div>');
   }
 
-  return `<div class="rundetail jobdetail">${live}`
+  return `<div class="rundetail jobdetail">${live}${ended}`
     + `${trainingRunDetail(run, epochs, trainingTaskOf(view.job), view.job.spec, evidence)}</div>`;
 }
 
@@ -3218,6 +3306,7 @@ function wireTrainingJobDetail(head, detail) {
     }
 
     cell.innerHTML = trainingJobDetail(view, run, epochs, pace, evidence);
+    if ($('[data-job-attempts]', cell)) fillJobAttempts(cell, jobId);
 
     /* **The curves are fetched on asking, once per run.** A thousand points per class is
        a megabyte a panel should not pull on every expansion, still less on every
@@ -3522,23 +3611,23 @@ function renderTrainingRecent(views) {
 
      Severity belongs in the cards above, which already count *Needs attention*. A list
      headed Recent that hides the most recent run is answering a question nobody asked. */
-  const LIMIT = 3;
-  const shown = views
+  const ordered = views
     .slice()
-    .sort((a, b) => Date.parse(b.job.created_at) - Date.parse(a.job.created_at))
-    .slice(0, LIMIT);
+    .sort((a, b) => Date.parse(b.job.created_at) - Date.parse(a.job.created_at));
 
-  /* **The heading counts what is drawn, and says what it is out of.** `(8)` over three
-     rows is the panel misreporting itself, and a table that renders fewer rows than it
-     claims reads as missing data rather than as a summary. The full list is one click
-     away through the All jobs link beside this. */
+  /* **Every training job, a page at a time**, by the pager every table shares. It took
+     the newest three, so a fourth run could only be reached through another screen --
+     the same cut that hid every finished job on Inference behind a run in flight. */
+  const { shown, from, pages } = pageOf(ordered, trainingPage);
+  drawPager(table.closest('.panel')?.querySelector('.panel-ft'), trainingPage, {
+    total: ordered.length, from, count: shown.length, pages, noun: 'training job', empty: 'No training jobs yet',
+    redraw: () => renderTrainingRecent(views),
+  });
+
+  /* The heading counts every job; the footer says which of them are on this page. */
   const heading = $('.training-recent .panel-hd h2') || $$('.panel-hd h2').find((h) => /Recent training/.test(h.textContent));
 
-  if (heading) {
-    heading.textContent = views.length > shown.length
-      ? `Recent training jobs (${shown.length} of ${views.length.toLocaleString()})`
-      : `Recent training jobs (${views.length.toLocaleString()})`;
-  }
+  if (heading) heading.textContent = `Recent training jobs (${views.length.toLocaleString()})`;
 
   body.innerHTML = shown.map((view) => {
     const { job } = view;
@@ -4311,7 +4400,7 @@ function watchTrainingJobs() {
  * table above also uses. A server-side filter would be a second round trip for a list
  * of six.
  */
-const runsQuery = { search: '', status: 'all', page: 1, perPage: 10 };
+const runsQuery = { search: '', status: 'all', page: 1, perPage: PAGE_SIZES[0] };
 
 /** Every run, newest first, as the panel sorts and filters it. */
 let trainingRunRows = [];
@@ -4481,30 +4570,9 @@ function renderTrainingRunsHeader(panel, total, from, shown, pages) {
 
   if (count) count.textContent = `(${total.toLocaleString()})`;
 
-  const showing = $('.panel-ft > span', panel);
-
-  if (showing) {
-    showing.innerHTML = shown
-      ? `Showing <b class="strong">${(from + 1).toLocaleString()}&ndash;${(from + shown).toLocaleString()}</b> of ${total.toLocaleString()} run${total === 1 ? '' : 's'}`
-      : 'No training runs match these filters';
-  }
-
-  const pager = $('.panel-ft .pager', panel);
-
-  if (pager) {
-    /* Rebuilt rather than patched, for the reason the Jobs pager is: the markup held a
-       fixed 1/2/3 under a hardcoded "of 28 runs", which is a lie about any list that is
-       not exactly three pages long -- and this one is one page of six. */
-    const buttons = [`<button aria-label="Previous page" data-runs-page="${runsQuery.page - 1}"${runsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
-    const first = Math.max(1, Math.min(runsQuery.page - 2, pages - 4));
-
-    for (let page = first; page <= Math.min(pages, first + 4); page += 1) {
-      buttons.push(`<button data-runs-page="${page}"${page === runsQuery.page ? ' aria-current="page"' : ''}>${page}</button>`);
-    }
-
-    buttons.push(`<button aria-label="Next page" data-runs-page="${runsQuery.page + 1}"${runsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
-    pager.innerHTML = buttons.join('');
-  }
+  drawPager($('.panel-ft', panel), runsQuery, {
+    total, from, count: shown, pages, noun: 'run', empty: 'No training runs match these filters', redraw: renderTrainingRuns,
+  });
 }
 
 /**
@@ -4563,19 +4631,6 @@ function fillTrainingRuns(runs, views) {
     });
   }
 
-  const footer = $('.panel-ft', panel);
-
-  if (footer && !footer.dataset.wired) {
-    footer.dataset.wired = 'yes';
-    footer.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-runs-page]');
-
-      if (!button || button.disabled) return;
-
-      runsQuery.page = Number(button.dataset.runsPage);
-      renderTrainingRuns();
-    });
-  }
 
   renderTrainingRuns();
 }
@@ -4854,6 +4909,242 @@ function renderInference(jobs) {
 }
 
 /**
+ * One list of what was found: a total, then each species with its count (#288).
+ *
+ * **Grouped by species, with the model's own words kept.** The route groups by species and
+ * by the name the model reported, because a review correction changes the first and never
+ * the second -- so one species can arrive as two rows. They are summed here into one line,
+ * and where the model called it something else that is said beside it, because that
+ * disagreement is the interesting part.
+ *
+ * **Zero is an answer.** A piece that ran every frame and found nothing says 0, which is
+ * a different fact from a piece nobody has counted.
+ *
+ * @param {string} title - What this list covers.
+ * @param {Object} outcome - From `jobObservations` or `batchObservations`.
+ * @param {string} [note] - How far the work it counts has got.
+ * @returns {string}
+ */
+function findingsSection(title, outcome, note = '') {
+  const total = Number(outcome.observations) || 0;
+  const groups = new Map();
+
+  for (const row of outcome.species || []) {
+    const key = row.species_id ?? `reported:${row.reported_name ?? ''}`;
+    const group = groups.get(key) || {
+      name: row.species_name || row.reported_name || 'Species not resolved', count: 0, reported: new Set(),
+    };
+    group.count += Number(row.observations) || 0;
+    if (row.species_name && row.reported_name && row.reported_name !== row.species_name) group.reported.add(row.reported_name);
+    groups.set(key, group);
+  }
+
+  const list = [...groups.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const most = Math.max(1, ...list.map((group) => group.count));
+  const rows = list.map((group) => `<li><b>${escapeHtml(group.name)}</b>`
+    + `<span class="findbar"><i style="width:${Math.max(2, Math.round(group.count / most * 100))}%"></i></span>`
+    + `<strong>${group.count.toLocaleString()}</strong>`
+    + `${group.reported.size ? `<small>reported as ${[...group.reported].map(escapeHtml).join(', ')}</small>` : ''}</li>`).join('');
+
+  return `<section class="findings"><h4>${title}</h4>`
+    + `<p>${countOf(total, 'observation')}${note ? ` &middot; ${note}` : ''}</p>`
+    + `${rows ? `<ol class="findlist">${rows}</ol>` : ''}</section>`;
+}
+
+/**
+ * A time in a video, as the reviewer reads one: `1:05:03`, or `5:03` under an hour.
+ *
+ * @param {number|null} seconds - Seconds into the video.
+ * @returns {string}
+ */
+function videoClock(seconds) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(Number(seconds))) return '?';
+  const total = Math.max(0, Math.round(Number(seconds)));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
+}
+
+/**
+ * Which video, which stretch of it, and where that sits in the whole (#288, with #293).
+ *
+ * **Isaac: *"I can't even tell what section of video is ran."*** The row said the dive and
+ * the line; nothing said which video or which minutes of it. This names the video, says
+ * the piece's range as time in that video, and draws the video as a strip with every
+ * piece of the run on it in its state, this piece outlined, so a run reads as how much of
+ * the video is done.
+ *
+ * @param {Object} timeline - From `jobTimeline` or `batchTimeline`.
+ * @param {number} jobId - The piece this row is, to outline.
+ * @returns {string}
+ */
+function videoWhereSection(timeline, jobId) {
+  const { video, pieces } = timeline;
+  const piece = pieces.find((one) => one.job_id === jobId) || pieces[0];
+  const length = video.duration_s || Math.max(0, ...pieces.map((one) => one.end_s || 0));
+  const at = (seconds) => (length ? Math.max(0, Math.min(100, (seconds / length) * 100)) : 0);
+  const STATE = { succeeded: 'done', leased: 'running', queued: 'queued', failed: 'failed', cancelled: 'cancelled', expired: 'cancelled' };
+
+  const strip = length
+    ? pieces.map((one) => `<i class="${STATE[one.state] || 'queued'}${one.job_id === piece.job_id ? ' this' : ''}"`
+      + ` style="left:${at(one.start_s || 0).toFixed(2)}%;width:${Math.max(0.4, at(one.end_s || 0) - at(one.start_s || 0)).toFixed(2)}%"`
+      + ` title="${videoClock(one.start_s)}–${videoClock(one.end_s)} · ${escapeHtml(one.state)}"></i>`).join('')
+    : '';
+
+  const frames = piece.start_frame !== null && piece.end_frame !== null
+    ? ` &middot; frames ${piece.start_frame.toLocaleString()}–${piece.end_frame.toLocaleString()}${video.fps ? ` at ${Number(video.fps.toFixed(3))} fps` : ''}`
+    : '';
+
+  return '<section class="video-where">'
+    + `<h4>${escapeHtml(video.name || 'Video not named')}</h4>`
+    + `<p>This piece: <b>${videoClock(piece.start_s)}–${videoClock(piece.end_s)}</b>${length ? ` of ${videoClock(length)}` : ''}${frames}</p>`
+    + (strip ? `<div class="video-strip" role="img" aria-label="Where this piece and the rest of its run sit in the video">${strip}</div>`
+      + `<div class="video-strip-axis"><span>0:00</span><span>${videoClock(length)}</span></div>` : '')
+    + '</section>';
+}
+
+/**
+ * Species over the video's time: a row per species, shaded by how many were seen when.
+ *
+ * **Normalised per species**, so a species seen four times shows where its four were
+ * beside one seen four hundred; the hover gives the real count. A stretch with nothing
+ * in it is drawn empty rather than left out, so a gap in the finds reads as a gap.
+ *
+ * @param {Object} timeline - From `jobTimeline` or `batchTimeline`.
+ * @param {number} jobId - The piece this row is, marked on a run's chart.
+ * @returns {string}
+ */
+function speciesOverTime(timeline, jobId) {
+  const { species, bucket_s: bucket, span, pieces } = timeline;
+  if (!species.length) return '';
+
+  const shown = species.slice(0, 12);
+  const buckets = shown[0].counts.length;
+  const labels = Array.from({ length: buckets }, (_, index) => videoClock(span.from_s + index * bucket));
+  const data = shown.flatMap((one, row) => {
+    const most = Math.max(1, ...one.counts);
+    return one.counts.map((count, column) => [column, row, count / most, count]);
+  });
+
+  const theme = chartTheme();
+  const piece = pieces.find((one) => one.job_id === jobId);
+  const mark = piece && pieces.length > 1 && piece.start_s !== null
+    ? [[{ xAxis: Math.floor((piece.start_s - span.from_s) / bucket) }, { xAxis: Math.max(0, Math.ceil((piece.end_s - span.from_s) / bucket) - 1) }]]
+    : [];
+
+  const option = {
+    /* Room above the rows for the zoom icons, which otherwise sit on the first species. */
+    grid: { left: 130, right: 16, top: 30, bottom: 40 },
+    legend: { show: false },
+    xAxis: { type: 'category', data: labels, name: 'Time in the video', nameLocation: 'middle', nameGap: 26, ...theme.axis, splitLine: { show: false } },
+    yAxis: { type: 'category', data: shown.map((one) => one.name), inverse: true, ...theme.axis, splitLine: { show: false } },
+    visualMap: { show: false, dimension: 2, min: 0, max: 1, inRange: { color: ['rgba(1, 6, 14, 0.5)', chartKey('curve-mean').color] } },
+    tooltip: {
+      ...theme.tooltip, trigger: 'item',
+      formatter: (item) => `${escapeHtml(shown[item.value[1]].name)}<br>${labels[item.value[0]]}–${videoClock(span.from_s + (item.value[0] + 1) * bucket)}: `
+        + `<b>${item.value[3].toLocaleString()}</b>`,
+    },
+    dataZoom: [{ type: 'inside', xAxisIndex: 0 }],
+    series: [{
+      id: 'density', type: 'heatmap', data,
+      itemStyle: { borderColor: 'rgba(1, 6, 14, 0.9)', borderWidth: 1 },
+      markArea: mark.length ? { silent: true, itemStyle: { color: 'transparent', borderColor: theme.text.color, borderWidth: 1 }, data: mark } : undefined,
+    }],
+  };
+
+  const more = species.length > shown.length ? ` &middot; the ${shown.length} most common of ${species.length}` : '';
+
+  return '<section class="findings species-time">'
+    + `<h4>${pieces.length > 1 ? 'When in the video, across the run' : 'When in this piece'}</h4>`
+    + `<p>Each row shaded against its own busiest ${videoClock(bucket)}${more}${mark.length ? ' &middot; this piece outlined' : ''}</p>`
+    + chartSlot(option, `Species over time, ${bucket} seconds a column`, { height: Math.max(180, shown.length * 26 + 80) })
+    + '</section>';
+}
+
+/** Whole runs' totals by `batch_id`, so a second open of the same run is not a second read. */
+const inferenceRunOutcomes = new Map();
+
+/**
+ * Fill an open Inference row with what its piece found, and what its whole run found.
+ *
+ * **Read when the row is opened, and again on each poll while it stays open**: a running
+ * piece and a running run keep finding things, and their counts are labelled *so far*
+ * until every piece has finished, so a number that is still moving never reads as a total.
+ *
+ * @param {Element} place - The detail's `[data-inference-findings]` element.
+ * @returns {Promise<void>}
+ */
+async function fillInferenceFindings(place) {
+  if (!window.MarpApi) return;
+
+  const jobId = Number(place.dataset.inferenceFindings);
+  const batch = place.dataset.batch;
+  const { state } = place.dataset;
+  const finished = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(state);
+  const sections = [];
+  let session = null;
+
+  if (state === 'queued') {
+    sections.push('<section class="findings"><h4>This piece</h4><p>Not run yet, so nothing found yet.</p></section>');
+  } else {
+    try {
+      const piece = finished && inferenceOutcomes.has(jobId)
+        ? inferenceOutcomes.get(jobId)
+        : await window.MarpApi.jobObservations(jobId);
+      if (finished) inferenceOutcomes.set(jobId, piece);
+      session = piece.session_id;
+      sections.push(findingsSection('This piece', piece, finished ? '' : 'so far, while it runs'));
+    } catch (error) {
+      sections.push(`<section class="findings"><h4>This piece</h4><p class="faint">Could not read what it found (${error.status || 'no answer'}).</p></section>`);
+    }
+  }
+
+  if (batch) {
+    try {
+      const run = inferenceRunOutcomes.get(batch) && inferenceRunOutcomes.get(batch).done
+        ? inferenceRunOutcomes.get(batch).outcome
+        : await window.MarpApi.batchObservations(batch);
+      const states = run.states || {};
+      const going = (states.queued || 0) + (states.leased || 0);
+      const succeeded = states.succeeded || 0;
+      inferenceRunOutcomes.set(batch, { outcome: run, done: going === 0 });
+      session = run.session_id ?? session;
+      /* What became of the pieces that did not finish, so "2 of 5" is not left to read as
+         three still to come when they were cancelled. */
+      const ended = [['failed', 'failed'], ['cancelled', 'cancelled'], ['expired', 'expired']]
+        .filter(([key]) => states[key]).map(([key, word]) => `${states[key].toLocaleString()} ${word}`);
+      sections.push(findingsSection(`The whole run &middot; ${countOf(run.pieces, 'piece')}`, run,
+        [`${succeeded.toLocaleString()} of ${run.pieces.toLocaleString()} finished`, ...ended, ...(going ? ['so far'] : [])].join(', ')));
+    } catch (error) {
+      sections.push(`<section class="findings"><h4>The whole run</h4><p class="faint">Could not read what it found (${error.status || 'no answer'}).</p></section>`);
+    }
+  }
+
+  /* **Which video, which stretch, and when things were found.** The run's timeline when
+     this is one piece of a run, since it carries this piece as well; the piece's own
+     otherwise. Read with the counts, each open, so a running run's strip keeps moving. */
+  let where = '';
+  let density = '';
+  try {
+    const time = batch ? await window.MarpApi.batchTimeline(batch) : await window.MarpApi.jobTimeline(jobId);
+    where = videoWhereSection(time, jobId);
+    density = speciesOverTime(time, jobId);
+  } catch (error) {
+    where = `<section class="video-where"><p class="faint">Could not read which video this ran on (${error.status || 'no answer'}).</p></section>`;
+  }
+
+  /* Into the mosaic, filtered to the run's session: a run makes its own session, so that
+     is this run's observations and nothing else. Offered only when there is one. */
+  place.innerHTML = `${where}<div class="findings-grid">${sections.join('')}</div>${density}`;
+  const anything = $$('.findlist li', place).length > 0;
+  if (session && anything) {
+    place.insertAdjacentHTML('beforeend', `<p class="findings-go"><a class="btn sm" href="/apps/marp-mosaic-review/?session=${session}">`
+      + 'Review these in the mosaic</a></p>');
+  }
+}
+
+/**
  * The recent inference jobs table.
  *
  * Running work first, then anything needing attention, then the most recently
@@ -4862,20 +5153,35 @@ function renderInference(jobs) {
  *
  * @param {Object[]} views - Inference job views.
  */
-function renderInferenceRecent(views) {
+/** The Inference table's page, and every job it pages through. */
+const inferenceList = { page: 1, perPage: PAGE_SIZES[0], views: [] };
+
+function renderInferenceRecent(views = inferenceList.views) {
   const table = $('.inference-table');
   if (!table) return;
+
+  inferenceList.views = views;
 
   const body = $('tbody', table);
   /* **In flight first, then newest.** Every failure used to outrank every success, so six
      September failures filled the table and the seven runs that succeeded today could
      not be reached from here at all. A failure keeps its place in *Needs attention*. */
   const live = (view) => (['running', 'queued'].includes(view.state) ? 0 : 1);
-  const shown = views
+  const ordered = views
     .slice()
     .sort((a, b) => (live(a) - live(b))
-      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)))
-    .slice(0, 6);
+      || (Date.parse(b.job.updated_at) - Date.parse(a.job.updated_at)));
+
+  /* **Every inference job, a page at a time.** This was cut to six rows, so a run of 28
+     pieces filled all six with work in flight and every finished job vanished from the
+     tab -- Isaac: *"an inference job that's done is still an inference job"*. Paged rather
+     than drawn whole because each finished row reads its own detection count, and five
+     hundred rows would be five hundred reads. */
+  const { shown, from, pages } = pageOf(ordered, inferenceList);
+  drawPager(table.closest('.panel')?.querySelector('.panel-ft'), inferenceList, {
+    total: ordered.length, from, count: shown.length, pages, noun: 'inference job', empty: 'No inference jobs yet',
+    redraw: () => renderInferenceRecent(),
+  });
 
   const heading = $('.inference-recent .panel-hd h2');
   if (heading) heading.textContent = `Recent inference jobs (${views.length.toLocaleString()})`;
@@ -4886,9 +5192,12 @@ function renderInferenceRecent(views) {
     const tookMs = Math.max(0, Date.parse(job.updated_at) - Date.parse(job.created_at));
     const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
 
-    return `<tr data-job="${job.id}">`
+    /* **Expands onto what it found** (#288): the piece's species, and its whole run's when
+       it is one piece of a split video. */
+    return `<tr class="runrow-head" aria-expanded="false" data-job="${job.id}">`
+      + `<td class="ex"><button class="exbtn" type="button" aria-label="Show what ${escapeHtml(view.title)} found"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
       + `<td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">${view.title}</span></span></td>`
-      + `<td class="jscope"><span class="two"><span class="a">${session.dive ? diveText(session.dive) : 'Dive ?'} &middot; Line ${session.line || '?'}</span><span class="b">${session.type || ''}</span></span></td>`
+      + `<td class="jscope"><span class="two"><span class="a">${session.dive ? diveText(session.dive) : 'Dive ?'} &middot; Line ${session.line || '?'}</span><span class="b">${[session.type, job.spec && job.spec.range ? `frames ${Number(job.spec.range.start_frame).toLocaleString()}–${Number(job.spec.range.end_frame).toLocaleString()}` : ''].filter(Boolean).join(' &middot; ')}</span></span></td>`
       + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
       + `<td class="jstatus" data-sort="${JOB_STATE_RANK[view.state]}">${statusWithProgress(view)}</td>`
       /* **A dash until asked, then whatever the answer is -- including zero.** Nothing
@@ -4899,9 +5208,19 @@ function renderInferenceRecent(views) {
       + '<td class="jdet">' + NOT_COUNTED + '</td>'
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
       + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
-      + `<td class="jacts"><button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
-      + '</tr>';
+      /* The Open arrow that stood here opened nothing; the row's expander does now. */
+      + '<td class="jacts"></td>'
+      + '</tr>'
+      + `<tr class="runrow-body" hidden><td colspan="9"><div class="rundetail" data-inference-findings="${job.id}"`
+      + ` data-batch="${job.batch_id || ''}" data-state="${view.state}"><p class="faint">Opening the row reads what it found.</p></div></td></tr>`;
   }).join('');
+
+  /* However it is opened, the row's `hidden` is what changes, so that is what is watched. */
+  $$('[data-inference-findings]', body).forEach((place) => {
+    const detail = place.closest('tr.runrow-body');
+    new MutationObserver(() => { if (!detail.hidden) fillInferenceFindings(place); })
+      .observe(detail, { attributes: true, attributeFilter: ['hidden'] });
+  });
 
   fillInferenceOutcomes(body, shown);
   watchInference();
@@ -5073,6 +5392,13 @@ function watchInference() {
       /* A job that has just finished is the one whose count is now worth asking for. */
       await fillInferenceOutcomes(body, drawn);
 
+      /* An open row keeps counting while its piece or its run is still going. */
+      for (const place of $$('tr.runrow-body:not([hidden]) [data-inference-findings]', body)) {
+        const view = views.get(Number(place.dataset.inferenceFindings));
+        if (view) place.dataset.state = view.state;
+        fillInferenceFindings(place);
+      }
+
       live = drawn.some((view) => ['running', 'queued'].includes(view.state));
     } catch {
       /* A poll that fails is a blip; the last good answer stays on screen. Keep
@@ -5177,7 +5503,7 @@ const MODEL_STATE = {
 const modelsQuery = {
   task: '', status: '', base: '', search: '',
   sort: { key: 'hupd', dir: 'descending' },
-  page: 1, perPage: 8,
+  page: 1, perPage: PAGE_SIZES[0],
 };
 
 /** How each sortable column orders. Keyed by the header's class. */
@@ -5388,23 +5714,9 @@ function applyModelsQuery() {
   const heading = $('#model-registry .panel-hd h2');
   if (heading) heading.textContent = `Model registry (${total.toLocaleString()})`;
 
-  const showing = $('#model-registry .panel-ft > span');
-  if (showing) {
-    showing.innerHTML = shown.length
-      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} models`
-      : 'No models match these filters';
-  }
-
-  const pager = $('#model-registry .panel-ft .pager');
-  if (pager) {
-    const buttons = [`<button aria-label="Previous page" data-models-page="${modelsQuery.page - 1}"${modelsQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
-    const first = Math.max(1, Math.min(modelsQuery.page - 2, pages - 4));
-    for (let p = first; p <= Math.min(pages, first + 4); p++) {
-      buttons.push(`<button data-models-page="${p}"${p === modelsQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
-    }
-    buttons.push(`<button aria-label="Next page" data-models-page="${modelsQuery.page + 1}"${modelsQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
-    pager.innerHTML = buttons.join('');
-  }
+  drawPager($('#model-registry .panel-ft'), modelsQuery, {
+    total, from, count: shown.length, pages, noun: 'model', empty: 'No models match these filters', redraw: applyModelsQuery,
+  });
 
   for (const th of $$('#models thead th.sortable')) {
     const sortKey = [...th.classList].find((c) => MODELS_SORT_KEYS[c]);
@@ -5655,15 +5967,6 @@ function wireModelsControls() {
     });
   }
 
-  const pager = $('.panel-ft .pager', panel);
-  if (pager) {
-    pager.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-models-page]');
-      if (!button || button.disabled) return;
-      modelsQuery.page = Number(button.dataset.modelsPage);
-      applyModelsQuery();
-    });
-  }
 }
 
 
@@ -6027,14 +6330,23 @@ function renderDashboardActivity(jobs) {
     .map((state) => newest(views.filter((v) => v.state === state))[0])
     .filter(Boolean);
 
-  const shown = [...running.slice(0, 2), ...attention.slice(0, 2), ...finished.slice(0, 1)];
+  const mix = [...running.slice(0, 2), ...attention.slice(0, 2), ...finished.slice(0, 1)];
 
   for (const pool of [attention.slice(2), running.slice(2), finished.slice(1)]) {
     for (const view of pool) {
-      if (shown.length >= 5) break;
-      shown.push(view);
+      if (mix.length >= 5) break;
+      mix.push(view);
     }
   }
+
+  /* **The mix leads, and then every other job, newest first, paged like every table.**
+     It stopped at the five, so anything past them could only be reached from Jobs. */
+  const rest = newest(views.filter((view) => !mix.includes(view)));
+  const { shown, from, pages } = pageOf([...mix, ...rest], dashboardPage);
+  drawPager(table.closest('.panel')?.querySelector('.panel-ft'), dashboardPage, {
+    total: views.length, from, count: shown.length, pages, noun: 'job', empty: 'No jobs yet',
+    redraw: () => renderDashboardActivity(jobs),
+  });
 
   body.innerHTML = shown.map((view) => {
     const progress = progressCell(view.job, view.state);
@@ -6153,7 +6465,7 @@ const WORKER_ACTIVITY = {
 const workersQuery = {
   activity: '', gpu: '', search: '',
   sort: { key: 'whb', dir: 'ascending' },
-  page: 1, perPage: 5,
+  page: 1, perPage: PAGE_SIZES[0],
 };
 
 /**
@@ -6847,23 +7159,9 @@ function applyWorkersQuery() {
   const count = $('#worker-pool .panel-hd .count');
   if (count) count.textContent = `(${total.toLocaleString()})`;
 
-  const showing = $('#worker-pool .panel-ft > span');
-  if (showing) {
-    showing.innerHTML = shown.length
-      ? `Showing <b class="strong">${from + 1}&ndash;${from + shown.length}</b> of ${total.toLocaleString()} workers`
-      : 'No workers match these filters';
-  }
-
-  const pager = $('#worker-pool .panel-ft .pager');
-  if (pager) {
-    const buttons = [`<button aria-label="Previous page" data-workers-page="${workersQuery.page - 1}"${workersQuery.page === 1 ? ' disabled' : ''}><svg class="ico sm"><use href="#i-left"/></svg></button>`];
-    const first = Math.max(1, Math.min(workersQuery.page - 2, pages - 4));
-    for (let p = first; p <= Math.min(pages, first + 4); p++) {
-      buttons.push(`<button data-workers-page="${p}"${p === workersQuery.page ? ' aria-current="page"' : ''}>${p}</button>`);
-    }
-    buttons.push(`<button aria-label="Next page" data-workers-page="${workersQuery.page + 1}"${workersQuery.page >= pages ? ' disabled' : ''}><svg class="ico sm"><use href="#i-right"/></svg></button>`);
-    pager.innerHTML = buttons.join('');
-  }
+  drawPager($('#worker-pool .panel-ft'), workersQuery, {
+    total, from, count: shown.length, pages, noun: 'worker', empty: 'No workers match these filters', redraw: applyWorkersQuery,
+  });
 
   for (const th of $$('#workers thead th.sortable')) {
     const sortKey = [...th.classList].find((c) => WORKERS_SORT_KEYS[c]);
@@ -7067,23 +7365,7 @@ function wireWorkersControls() {
     });
   }
 
-  const pager = $('.panel-ft .pager', panel);
-  if (pager) {
-    pager.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-workers-page]');
-      if (!button || button.disabled) return;
-      workersQuery.page = Number(button.dataset.workersPage);
-      applyWorkersQuery();
-    });
-  }
 
-  const perPage = $('.panel-ft .rpp select', panel);
-  if (perPage) {
-    perPage.addEventListener('change', () => {
-      workersQuery.perPage = Number(perPage.value) || 5;
-      renarrow();
-    });
-  }
 }
 
 
@@ -7182,23 +7464,7 @@ function wireJobsControls() {
 
   /* The pager is rebuilt on every draw, so its clicks are taken by delegation
      rather than bound to buttons that will not exist by the time they fire. */
-  const pager = $('.panel-ft .pager', panel);
-  if (pager) {
-    pager.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-jobs-page]');
-      if (!button || button.disabled) return;
-      jobsQuery.page = Number(button.dataset.jobsPage);
-      applyJobsQuery();
-    });
-  }
 
-  const perPage = $('.panel-ft .rpp select', panel);
-  if (perPage) {
-    perPage.addEventListener('change', () => {
-      jobsQuery.perPage = Number(perPage.value) || 18;
-      renarrow();
-    });
-  }
 }
 
 /* ====================================================== deleting jobs */
@@ -7673,8 +7939,11 @@ async function fillJobAttempts(detail, id) {
 
   const at = (value) => {
     if (!value) return '<span class="faint">&mdash;</span>';
+    /* Both halves in local time. The date was the UTC one beside a local clock, so an
+       evening attempt read as tomorrow -- 23:01 on the 28th showed as the 29th. */
     const when = new Date(value);
-    return `${when.toISOString().slice(0, 10)} ${when.toTimeString().slice(0, 5)}`;
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${when.toTimeString().slice(0, 5)}`;
   };
 
   let attempts;
@@ -10337,6 +10606,22 @@ function recordRow(label, value) {
 }
 
 /**
+ * How a build chose its frames, as the Build record says it (#296).
+ *
+ * Null is every frame of every track: a build from before #296, or one that asked.
+ *
+ * @param {?Object} sampling - `{frames_per_object, balance_classes, seed}` from the spec.
+ * @returns {string} HTML.
+ */
+function samplingText(sampling) {
+  if (!sampling || !sampling.frames_per_object) return 'Every frame of every track';
+
+  return `${Number(sampling.frames_per_object).toLocaleString('en-US')} per object, spread across each track`
+    + `${sampling.balance_classes ? ' &middot; classes balanced' : ''}`
+    + ` &middot; seed <span class="mono">${escapeHtml(String(sampling.seed))}</span>`;
+}
+
+/**
  * The split bar, drawn from what is actually in the dataset.
  *
  * It was three hardcoded widths -- 70%, 20%, 10% -- on every dataset regardless, which is
@@ -11565,6 +11850,9 @@ async function wireDatasetPage() {
                is the honest answer that a legacy import has no build job at all. */
             detail.buildJobId = setup.jobId;
 
+            /* How its frames were chosen, which only the build's spec records (#296). */
+            $('.kv', detail)?.insertAdjacentHTML('beforeend', recordRow('Frames', samplingText(setup.sampling)));
+
             duplicate.disabled = false;
             duplicate.title = `Fill the build flow with the ${setup.subsets.length === 1
               ? 'query' : `${setup.subsets.length} queries`} this was built from. Creates nothing.`;
@@ -11631,7 +11919,7 @@ async function wireDatasetPage() {
   const search = $('[data-dataset-search]');
   const status = $('[data-dataset-status]');
   const count = $('[data-dataset-count]');
-  const footer = $('#saved-datasets-panel .panel-ft > span');
+  const footer = $('#saved-datasets-panel .panel-ft');
 
   /* **Reads the rows out of the DOM every time, rather than closing over a list.** The
      table is rebuilt when a build starts or finishes, so a captured node list is stale
@@ -11641,21 +11929,29 @@ async function wireDatasetPage() {
     const heads = $$(':scope > tr.runrow-head', body);
     const query = search.value.trim().toLowerCase();
     const wantedStatus = status.value;
-    let shown = 0;
+    const matching = heads.filter((head) => (!query || head.dataset.search.includes(query))
+      && (wantedStatus === 'all' || head.dataset.datasetStatus === wantedStatus));
+
+    /* Paged like every other table, by hiding the rows off this page: the table is the
+       whole list, drawn once, and a filter or a page only chooses which rows show. */
+    const { shown, from, pages } = pageOf(matching, datasetsPage);
+    const visible = new Set(shown);
+
     heads.forEach((head) => {
-      const match = (!query || head.dataset.search.includes(query))
-        && (wantedStatus === 'all' || head.dataset.datasetStatus === wantedStatus);
-      head.hidden = !match;
+      const on = visible.has(head);
+      head.hidden = !on;
       const detail = head.nextElementSibling?.classList.contains('dataset-row-detail')
         ? head.nextElementSibling : null;
-      if (detail) detail.hidden = !match || head.getAttribute('aria-expanded') !== 'true';
-      if (match) shown += 1;
+      if (detail) detail.hidden = !on || head.getAttribute('aria-expanded') !== 'true';
     });
     /* `heads.length`, not 20. The total was written in when there were twenty
        rows in the markup; the saved datasets come from the API now and there
        are as many as MARP holds. */
-    count.textContent = `(${shown} shown of ${heads.length})`;
-    if (footer) footer.innerHTML = `Showing <b class="strong">${shown}</b> of ${heads.length} builds and datasets`;
+    count.textContent = `(${matching.length} shown of ${heads.length})`;
+    drawPager(footer, datasetsPage, {
+      total: matching.length, from, count: shown.length, pages, noun: 'build or dataset', plural: 'builds and datasets',
+      empty: 'No datasets match these filters', redraw: filter,
+    });
   };
 
   /** What the table was last drawn from, so a poll can tell a move from a change. */
@@ -11902,8 +12198,9 @@ async function wireDatasetPage() {
     }, 0);
   });
 
-  search.addEventListener('input', filter);
-  status.addEventListener('change', filter);
+  /* A new filter starts at its first page, as it does on every other table. */
+  search.addEventListener('input', () => { datasetsPage.page = 1; filter(); });
+  status.addEventListener('change', () => { datasetsPage.page = 1; filter(); });
 }
 
 function wireAccordions() {
@@ -12845,6 +13142,7 @@ function wireDatasetBuilder() {
         : '\u00b7 no observations added';
     }
     document.dispatchEvent(new CustomEvent('dataset-total-change', { detail: { total } }));
+    refreshEstimate();
   };
   const appendSubset = (result) => {
     if ($$('[data-query-key]', list).some((row) => row.dataset.queryKey === result.key)) {
@@ -13002,6 +13300,108 @@ function wireDatasetBuilder() {
       : `Add all matching to ${splitLabels[selectedSplit]}`;
   };
 
+  /** The added queries as the build takes them: each a filter and a split or shares. */
+  const subsetsFromList = () => $$('li', list).map((row) => {
+    const subset = { filters: JSON.parse(row.dataset.filters || '{}') };
+
+    if (row.dataset.shares) subset.shares = JSON.parse(row.dataset.shares);
+    else subset.split = row.dataset.split || 'train';
+
+    return subset;
+  });
+
+  /* The seed a Duplicate carried in, so the copy picks the frames the original did. A
+     new build has none and the API chooses one when it is queued. */
+  let carriedSeed = null;
+
+  /**
+   * Frames per object, as the build takes it (#296). Null is every frame.
+   *
+   * @returns {?Object} `{frames_per_object, balance_classes, seed?}`.
+   */
+  const samplingSetting = () => {
+    if ($('#dsevery')?.checked) return null;
+
+    const n = Math.max(1, Math.round(Number($('#dsframes')?.value) || 10));
+    const sampling = { frames_per_object: n, balance_classes: Boolean($('#dsbalance')?.checked) };
+
+    if (carriedSeed !== null) sampling.seed = carriedSeed;
+
+    return sampling;
+  };
+
+  /* Every frame leaves nothing to set and nothing to balance. */
+  const syncSamplingControls = () => {
+    const every = Boolean($('#dsevery')?.checked);
+    const frames = $('#dsframes');
+    const balance = $('#dsbalance');
+
+    if (frames) frames.disabled = every;
+    if (balance) balance.disabled = every;
+  };
+
+  let estimateTimer = null;
+  let estimateAsked = 0;
+
+  /**
+   * How many images the build will cut, asked of the API after each change (#296).
+   *
+   * Debounced, and an answer to an earlier question is dropped, so a quick run of edits
+   * shows the last one's estimate rather than whichever came back last.
+   */
+  const refreshEstimate = () => {
+    const out = $('[data-build-estimate]');
+    if (!out) return;
+
+    clearTimeout(estimateTimer);
+
+    if (!$$('li', list).length) {
+      out.hidden = true;
+      out.innerHTML = '';
+      return;
+    }
+
+    estimateTimer = setTimeout(async () => {
+      const asked = ++estimateAsked;
+      const sampling = samplingSetting();
+
+      out.hidden = false;
+      out.textContent = 'Working out how many images the build will cut…';
+
+      try {
+        const answer = await window.MarpApi.estimateDatasetBuild({
+          subsets: subsetsFromList(),
+          splits: { train: 0.8, eval: 0.2 },
+          sampling,
+        });
+
+        if (asked !== estimateAsked) return;
+
+        const images = Number(answer.images || 0);
+        const every = Number(answer.every_frame || 0);
+        const fewer = sampling && images && every > images
+          ? `, <b>${(every / images).toFixed(1)}&times;</b> fewer than every frame (${every.toLocaleString('en-US')})`
+          : '';
+        const perClass = (answer.per_class || [])
+          .map((entry) => `${escapeHtml(entry.comname)} ${Number(entry.images).toLocaleString('en-US')}`)
+          .join(' &middot; ');
+
+        out.innerHTML = `The build will cut <b>${images.toLocaleString('en-US')}</b> images${fewer}.`
+          + (perClass ? `<br>Images per class: ${perClass}` : '');
+      } catch (error) {
+        if (asked !== estimateAsked) return;
+        out.textContent = `Could not work out the image count (${error.status || 'no answer'}). The build can still be queued.`;
+      }
+    }, 400);
+  };
+
+  for (const id of ['dsframes', 'dsevery', 'dsbalance']) {
+    $('#' + id)?.addEventListener('change', () => {
+      syncSamplingControls();
+      refreshEstimate();
+    });
+  }
+
   const queueBuild = async () => {
     const rows = $$('li', list);
 
@@ -13025,14 +13425,7 @@ function wireDatasetBuilder() {
     setStatus('Queueing the build…');
 
     try {
-      const subsets = rows.map((row) => {
-        const subset = { filters: JSON.parse(row.dataset.filters || '{}') };
-
-        if (row.dataset.shares) subset.shares = JSON.parse(row.dataset.shares);
-        else subset.split = row.dataset.split || 'train';
-
-        return subset;
-      });
+      const subsets = subsetsFromList();
 
       const queued = await window.MarpApi.queueDatasetBuild({
         name,
@@ -13041,6 +13434,7 @@ function wireDatasetBuilder() {
         /* Sent as well as the per-subset splits, because a build with one subset and no
            split named still has to divide into something. */
         splits: { train: 0.8, eval: 0.2 },
+        sampling: samplingSetting(),
       });
 
       setStatus(`Build queued as job ${queued.job.id}. It cuts the frames, writes the labels and `
@@ -13206,6 +13600,17 @@ function wireDatasetBuilder() {
     const described = $('#dsdesc');
 
     if (described) described.value = setup.description || '';
+
+    /* The frames as the original chose them, seed and all, so changing only N is the one
+       edit a rebuild at fewer frames needs. A build from before #296 took every frame. */
+    const sampling = setup.sampling || null;
+    const every = $('#dsevery');
+
+    if (every) every.checked = !sampling;
+    if (sampling && $('#dsframes')) $('#dsframes').value = String(sampling.frames_per_object);
+    if ($('#dsbalance')) $('#dsbalance').checked = Boolean(sampling && sampling.balance_classes);
+    carriedSeed = sampling && Number.isInteger(sampling.seed) ? sampling.seed : null;
+    syncSamplingControls();
 
     /* A build that named filters without subsets is one subset going to train, which is
        what the builder would have done with it. */

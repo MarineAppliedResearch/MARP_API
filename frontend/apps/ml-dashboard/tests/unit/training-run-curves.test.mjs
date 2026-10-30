@@ -1387,7 +1387,7 @@ test('a long generated name keeps its whole self on hover', async (t) => {
     'the whole name is one hover away rather than only inside the row');
 });
 
-test('the heading counts the rows it drew, and says what they are out of', async (t) => {
+test('the training table lists every job, newest first, with the shared footer', async (t) => {
   /* **The invariant that would have caught this.** The panel ranked by state and took
      three, so with eight jobs and three failures it drew the three failures and headed
      them "(8)". A table rendering fewer rows than it claims reads as missing data rather
@@ -1418,14 +1418,17 @@ test('the heading counts the rows it drew, and says what they are out of', async
   const rows = [...screen.document.querySelectorAll('.training-table tbody tr.runrow-head')];
   const heading = screen.document.querySelector('.training-recent .panel-hd h2').textContent;
 
-  assert.match(heading, /\(3 of 6\)/,
-    'the heading says how many it drew and how many exist, rather than only the total');
-  assert.equal(rows.length, 3, 'and that is how many rows there are');
+  /* **Every job now, a page at a time** -- the table took three, and Isaac's rule since
+     is that every table pages the same way. The footer says which are on the page. */
+  assert.match(heading, /\(6\)/, 'the heading counts every job');
+  assert.equal(rows.length, 6, 'and every one of them is a row, on one page of eighteen');
+  assert.match(screen.document.querySelector('.training-recent .panel-ft').textContent, /Showing 1.6 of 6 training jobs/,
+    'with the shared footer saying so');
 
-  /* Newest first, because the panel is called Recent. Under the old state ranking these
-     three would have been the two failures and a cancelled one. */
-  assert.deepEqual(rows.map((r) => r.dataset.job), ['21780', '21781', '21782'],
-    'the three most recent, whatever happened to them');
+  /* Newest first, because the panel is called Recent. Under the old state ranking the
+     first three would have been the two failures and a cancelled one. */
+  assert.deepEqual(rows.slice(0, 3).map((r) => r.dataset.job), ['21780', '21781', '21782'],
+    'the most recent first, whatever happened to them');
 
   /* The run that worked is visible, which is the whole complaint. */
   assert.ok(rows.some((r) => /Done|Succeeded/i.test(r.querySelector('.jstatus').textContent)),
@@ -1863,8 +1866,8 @@ test('a run outside the recent three still opens', async (t) => {
   t.after(screen.close);
 
   assert.equal(runRows(screen).length, 4);
-  assert.equal(screen.document.querySelectorAll('.training-table tbody tr[data-job]').length, 3,
-    'the panel above still shows three');
+  assert.equal(screen.document.querySelectorAll('.training-table tbody tr[data-job]').length, 4,
+    'the panel above lists every job now, paged like every table');
 
   /* The oldest, which is the one the recent table cuts. */
   const oldest = runRows(screen).at(-1);

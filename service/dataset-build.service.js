@@ -962,6 +962,80 @@ async function runClassificationBuild({ job, attempt, datasetId, staging, splits
 
     return { jobId: job.id, datasetId, written: cut.written, missing: cut.missing };
 }
+
+/**
+ * The observations a build selects, placed in their splits.
+ *
+ * Pulled out of {@link runOne} so the estimate on the build flow runs the same selection
+ * the build will (#296): an estimate made any other way is a second answer that can
+ * disagree with the first.
+ *
+ * @async
+ * @param {Object} spec - The build's spec: `subsets`, or `filters` and `splits`.
+ * @returns {Promise<{rows: Array<Object>, splits: Map<string, Array<Object>>}>}
+ */
+async function selectSplits(spec) {
+    /* Two shapes, because the builder has two. A dashboard build is a union of
+       queries each sent to a split by the person assembling it, and the splits it
+       declared are honoured. A build that only named filters gets the ratios. */
+    let rows;
+    let splits;
+
+    if (Array.isArray(spec.subsets) && spec.subsets.length) {
+        const selected = [];
+
+        for (const subset of spec.subsets) {
+            const matched = await mosaicRepository.selectForBuild({ filters: subset.filters || {} });
+
+            /* **A subset either names a split or names shares.** "These dives into
+               train" and "divide this query 70/20/10" are both things somebody says,
+               and a builder that only understood the first made them run the same
+               query three times to say the second. Shares are divided here, before
+               the subsets are reconciled, so the first-assignment rule still settles
+               an observation two subsets both matched. */
+            if (subset.shares && Object.keys(subset.shares).length) {
+                const divided = plan.assignSplits(plan.connectedGroups(matched), subset.shares);
+
+                for (const [split, rowsIn] of divided) selected.push({ split, rows: rowsIn });
+            } else {
+                selected.push({ split: subset.split || 'train', rows: matched });
+            }
+        }
+
+        splits = plan.assignFromSubsets(selected);
+        rows = [...splits.values()].flat();
+    } else {
+        rows = await mosaicRepository.selectForBuild({ filters: spec.filters || {} });
+        splits = plan.assignSplits(
+            plan.connectedGroups(rows),
+            spec.splits || { train: 0.8, eval: 0.2 }
+        );
+    }
+
+    return { rows, splits };
+}
+
+/**
+ * What a build would cut, worked out without cutting it.
+ *
+ * `POST /dataset/build/estimate`. The same selection and the same plan as the build, so
+ * the number on the build flow is what the build plans to cut (#296).
+ *
+ * @async
+ * @param {Object} spec - The build's body: `subsets` or `filters`, `splits`, `sampling`.
+ * @param {?Object} sampling - Already checked by `samplingSettings`; null for every frame.
+ * @returns {Promise<Object>} From `estimateBuild`.
+ */
+async function estimate(spec, sampling) {
+    const { rows, splits } = await selectSplits(spec);
+
+    if (!rows.length) {
+        return { observations: 0, images: 0, every_frame: 0, per_split: {}, per_class: [] };
+    }
+
+    return plan.estimateBuild(splits, plan.vocabulary(rows), sampling);
+}
+
 /**
  * Run one queued build, if there is one.
  *
@@ -992,42 +1066,7 @@ async function runOne() {
 
         await buildRepository.reportProgress(attempt.id, { phase: 'selecting', unit: 'frames' });
 
-        /* Two shapes, because the builder has two. A dashboard build is a union of
-           queries each sent to a split by the person assembling it, and the splits it
-           declared are honoured. A build that only named filters gets the ratios. */
-        let rows;
-        let splits;
-
-        if (Array.isArray(spec.subsets) && spec.subsets.length) {
-            const selected = [];
-
-            for (const subset of spec.subsets) {
-                const matched = await mosaicRepository.selectForBuild({ filters: subset.filters || {} });
-
-                /* **A subset either names a split or names shares.** "These dives into
-                   train" and "divide this query 70/20/10" are both things somebody says,
-                   and a builder that only understood the first made them run the same
-                   query three times to say the second. Shares are divided here, before
-                   the subsets are reconciled, so the first-assignment rule still settles
-                   an observation two subsets both matched. */
-                if (subset.shares && Object.keys(subset.shares).length) {
-                    const divided = plan.assignSplits(plan.connectedGroups(matched), subset.shares);
-
-                    for (const [split, rowsIn] of divided) selected.push({ split, rows: rowsIn });
-                } else {
-                    selected.push({ split: subset.split || 'train', rows: matched });
-                }
-            }
-
-            splits = plan.assignFromSubsets(selected);
-            rows = [...splits.values()].flat();
-        } else {
-            rows = await mosaicRepository.selectForBuild({ filters: spec.filters || {} });
-            splits = plan.assignSplits(
-                plan.connectedGroups(rows),
-                spec.splits || { train: 0.8, eval: 0.2 }
-            );
-        }
+        const { rows, splits } = await selectSplits(spec);
 
         if (!rows.length) {
             throw new Error('Those filters match no promoted observation with keyframes and a species.');
@@ -1047,7 +1086,9 @@ async function runOne() {
             });
         }
 
-        const videos = plan.extractionPlan(splits, classes);
+        /* Sampled when the spec says so (#296); a spec from before it has no `sampling`
+           and cuts every frame, as it did when it was queued. */
+        const videos = plan.extractionPlan(splits, classes, spec.sampling || null);
         const total = [...videos.values()].reduce((sum, entry) => sum + entry.frames.size, 0);
 
         /* **Counted off `splits`, the same way the membership rows are built at the end.**
@@ -1429,9 +1470,11 @@ module.exports = {
     writeCrops,
     imageSettings,
     dataYaml,
+    estimate,
     packageArchive,
     passes,
     runOne,
+    selectSplits,
     start,
     stop,
 };
