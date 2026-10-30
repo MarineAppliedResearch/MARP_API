@@ -3558,11 +3558,13 @@ function renderTraining(jobs) {
     if (sub) sub.innerHTML = '<span>open a run to see its best</span>';
   }
 
+  /* **The ring's own class names** (#298): a legend dot takes its colour from the
+     class, and `running` and `failed` had none, so two entries showed no dot. */
   const parts = [
-    ['running', running.length, 'Running'],
+    ['training', running.length, 'Running'],
     ['queued', queued.length, 'Queued'],
     ['done', done.length, 'Completed'],
-    ['failed', attention.length, 'Need attention'],
+    ['attention', attention.length, 'Need attention'],
   ];
   /* Two numbers, because they are two different things. `total` is how many jobs
      there are -- zero is an answer, and the middle of the ring reading "1" while
@@ -4871,11 +4873,13 @@ function renderInference(jobs) {
     `${attention.filter((v) => v.state === 'issues').length} with issues`,
   ]);
 
+  /* **The ring's own class names** (#298): a legend dot takes its colour from the
+     class, and `running` and `failed` had none, so two entries showed no dot. */
   const parts = [
-    ['running', running.length, 'Running'],
+    ['inference', running.length, 'Running'],
     ['queued', queued.length, 'Queued'],
     ['done', done.length, 'Completed today'],
-    ['failed', attention.length, 'Need attention'],
+    ['attention', attention.length, 'Need attention'],
   ];
   /* Two numbers, because they are two different things. `total` is how many jobs
      there are -- zero is an answer, and the middle of the ring reading "1" while
