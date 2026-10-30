@@ -1090,6 +1090,14 @@ body.viewing { overflow: hidden; }
 .activity-table th:nth-child(4) { width: 13%; }
 .activity-table th:nth-child(5) { width: 14%; }
 
+/* GPU power (#214): three figures over a chart, keyed like the activity charts. */
+.power-figures { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-bottom: 10px; color: var(--muted); font-size: 12px; }
+.power-figures b { color: var(--white); font-size: 18px; font-weight: 700; margin-right: 4px; }
+[data-workers-power] .power-now { --key: var(--amber-300); }
+[data-workers-power] .power-idle { --key: var(--grey-400); --dash-on: 5; --dash-off: 4; }
+[data-workers-power] .power-above b { color: var(--amber-300); }
+.power-chart { min-height: 220px; }
+
 /* ============================================================== state */
 
 [data-state="running"]    { --s: var(--st-running); }

@@ -49,6 +49,8 @@ const SUBSYSTEMS = {
             'gpu-heartbeat-large-progress',
             // #277: uptime is how long a worker has checked in without a break.
             'gpu-worker-uptime',
+            // #214: idle GPU power and the pool's power over time.
+            'gpu-worker-power',
             // #279: cancelling a selection, or every piece of one run.
             'gpu-job-cancel',
             'gpu-job-list',

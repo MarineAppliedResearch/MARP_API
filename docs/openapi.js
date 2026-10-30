@@ -2406,6 +2406,7 @@ const buildOpenApiSpec = () => {
                             enrolled_at: { type: 'string', format: 'date-time', description: 'When this machine was first seen.' },
                             last_seen_at: { type: 'string', format: 'date-time', nullable: true, description: 'Coordinator clock reading at the last poll or heartbeat.' },
                             up_since: { type: 'string', format: 'date-time', nullable: true, description: 'When the machine\'s current unbroken run of check-ins began: a silence over 180 seconds starts a new one. Uptime is now minus this while it is online.' },
+                            idle_power_watts: { type: 'number', nullable: true, example: 5, description: 'Idle GPU power: the median of its readings with no job over the last 7 days, summed across its cards. Null until it has idled with NVML reporting. GPU power only, not the whole machine.' },
                         },
                     },
                     GpuPoolAttempt: {
@@ -2757,6 +2758,7 @@ const buildOpenApiSpec = () => {
                                         max_utilization_percent: { type: 'integer', nullable: true, example: 99 },
                                         avg_memory_percent_used: { type: 'number', nullable: true, example: 61.2 },
                                         avg_power_usage_watts: { type: 'number', nullable: true, example: 298.7 },
+                                        total_power_watts: { type: 'number', nullable: true, example: 277, description: 'Total GPU power in the bucket: each machine summed across its cards and averaged over its readings, then added across machines. Null when nothing reported power.' },
                                         avg_inference_utilization_percent: { type: 'number', nullable: true, example: 91.2, description: 'Utilization series: the pool\'s compute spent on inference and tracking. Averaged over the readings taken while that kind of work was running, so a bucket where one machine trained and nine inferred reports what each was doing rather than one blended number describing neither. Null when no machine ran that kind in the bucket.' },
                                         avg_training_utilization_percent: { type: 'number', nullable: true, example: 97.8, description: 'Utilization series: the same, for training.' },
                                         inference_machines: { type: 'integer', nullable: true, example: 9, description: 'Utilization series: how many machines ran inference or tracking in this bucket.' },
