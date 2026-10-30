@@ -34,7 +34,7 @@ const JOBS = [
   job(13, 'leased', 150),
 ];
 
-const order = (document) => [...document.querySelectorAll('#jobs tbody tr.runrow-head')].map((r) => Number(r.dataset.job));
+const order = (document) => [...document.querySelectorAll('#jobs tbody tr[data-job]')].map((r) => Number(r.dataset.job));
 
 test('running jobs come first, then queued, then the rest newest first', async () => {
   const screen = await drawScreen('jobs.html', {
