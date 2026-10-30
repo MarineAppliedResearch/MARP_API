@@ -145,3 +145,39 @@ test('Outcomes has no issue rate for a bucket where nothing finished', async (t)
   assert.deepEqual(seriesIn(root, 'completed').data.map((point) => point[1]), [4, 0, 2],
     'while a count of none finished is a real zero');
 });
+
+test('Training activity draws running and compute from the series that have them (#302)', async (t) => {
+  /* Job 21970 trained while the chart said 0 running, 1 queued, and drew no compute: it
+     read the running count and the GPU reading off the job series, which carries neither.
+     Running is the job series' own count now, and compute comes from the GPU series,
+     matched by bucket. */
+  const screen = await drawScreen('training.html', {
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    listSessions: async () => [],
+    listModels: async () => [],
+    listDatasets: async () => [],
+    listTrainingRuns: async () => [],
+    jobSeries: async () => ({
+      points: AT.map((at, index) => ({ at, waiting: 0, running: index === 0 ? 0 : 1, succeeded: 0, finished: 0, created: 0 })),
+    }),
+    gpuSeries: async () => ({
+      points: [
+        { at: AT[1], machines: 1, avg_training_utilization_percent: 98 },
+        { at: AT[2], machines: 1, avg_training_utilization_percent: 99 },
+      ],
+    }),
+  });
+
+  t.after(screen.close);
+
+  const root = screen.document.querySelector('[data-training-activity]');
+  const readout = (name) => root.querySelector(`[data-training-current="${name}"]`).textContent;
+
+  assert.deepEqual(seriesIn(root, 'running').data.map((point) => point[1]), [0, 1, 1]);
+  assert.deepEqual(seriesIn(root, 'queued').data.map((point) => point[1]), [0, 0, 0]);
+  assert.deepEqual(seriesIn(root, 'compute').data.map((point) => point[1]), [null, 98, 99],
+    'compute from the GPU series, a gap where nothing was sampled');
+  assert.equal(readout('running'), '1');
+  assert.equal(readout('queued'), '0');
+  assert.equal(readout('compute'), '99%');
+});

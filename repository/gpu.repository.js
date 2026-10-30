@@ -562,10 +562,28 @@ class GpuRepository {
                             AND j.finished_at < b.at + ('1 ${bucket}')::interval
                             AND j.state = 'succeeded'
                             ${kind ? 'AND j.kind = :kind' : ''}) AS succeeded,
+                        /* **Waiting means no worker had it** (#302). This counted every
+                           job created and not yet finished, so a running job was counted
+                           as queued -- the Training chart read one queued and none running
+                           while job 21970 trained. A job between two attempts is waiting
+                           again, which is what a retry is. */
                         (SELECT count(*)::int FROM gpu_jobs j
                           WHERE j.created_at <= b.at
                             AND (j.finished_at IS NULL OR j.finished_at > b.at)
+                            AND NOT EXISTS (
+                                SELECT 1 FROM gpu_job_attempts a
+                                 WHERE a.job_id = j.id
+                                   AND a.leased_at <= b.at
+                                   AND (a.finished_at IS NULL OR a.finished_at > b.at))
                             ${kind ? 'AND j.kind = :kind' : ''}) AS waiting,
+                        /* And running is the other half: an attempt in progress at the
+                           bucket's start. Jobs, not machines -- training_machines on
+                           the GPU series counts machines that were sampled. */
+                        (SELECT count(DISTINCT j.id)::int FROM gpu_jobs j
+                           JOIN gpu_job_attempts a ON a.job_id = j.id
+                          WHERE a.leased_at <= b.at
+                            AND (a.finished_at IS NULL OR a.finished_at > b.at)
+                            ${kind ? 'AND j.kind = :kind' : ''}) AS running,
                         /* Median rather than mean: one job that sat in the queue
                            over a weekend drags an average into meaninglessness,
                            and the question is what a typical job took.
