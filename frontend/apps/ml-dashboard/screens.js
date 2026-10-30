@@ -1557,6 +1557,9 @@ const STEP_CHARTS = [
   { key: 'epoch_eta_seconds', title: 'Epoch ETA', unit: ' s', max: 'auto' },
 ];
 
+/** Readings per attempt at or below which each is drawn as a point as well as a line. */
+const STEP_POINTS_SHOWN = 200;
+
 /** Batch samples by run id, appended to rather than refetched. */
 const trainingStepsByRun = new Map();
 
@@ -1705,14 +1708,17 @@ function stepCharts(samples) {
 
   const cards = present.map((spec) => {
     /* One line per attempt, at the step it reported: a strided first read has uneven
-       steps, and placing each point at its own step keeps the shape true. */
-    const lines = attempts.map((attemptId, index) => {
-      const mine = training.filter((one) => one.attempt_id === attemptId);
-      const points = mine.map((one) => {
-        const raw = one.metrics ? one.metrics[spec.key] : null;
+       steps, and placing each point at its own step keeps the shape true.
 
-        return [one.step, raw === null || raw === undefined ? null : Number(raw) / (spec.scale || 1)];
-      });
+       **Only the samples that carry this key** (#295). A phase marker has no loss, and
+       read as a null it split the series into lone readings between gaps, which a line
+       with no symbols draws as nothing: job 21956 stored 100 losses over 102 epochs and
+       every chart was blank. */
+    const lines = attempts.map((attemptId, index) => {
+      const points = training
+        .filter((one) => one.attempt_id === attemptId && one.metrics
+          && one.metrics[spec.key] !== null && one.metrics[spec.key] !== undefined)
+        .map((one) => [one.step, Number(one.metrics[spec.key]) / (spec.scale || 1)]);
 
       return { attemptId, points, index };
     });
@@ -1732,12 +1738,14 @@ function stepCharts(samples) {
       yAxis: { type: 'value', min: 0, ...theme.axis },
       tooltip: { ...theme.tooltip, valueFormatter: (value) => (value === null || value === undefined ? 'not reported' : `${Number(value).toFixed(digits(spec))}${spec.unit}`) },
       dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }],
-      /* A missing reading stays null, so the line breaks there rather than dropping. */
+      /* **Each reading is a point while they are few**, so one reading, or one an epoch,
+         is visible rather than a line too short to draw (#295). */
       series: lines.map((line) => {
         const { color } = chartKey(`class-${(line.index % 4) + 1}`);
         return {
           id: `attempt-${line.attemptId}`, name: attempts.length > 1 ? `Attempt ${line.index + 1}` : spec.title,
-          type: 'line', data: line.points, connectNulls: false, showSymbol: false,
+          type: 'line', data: line.points, connectNulls: false,
+          showSymbol: line.points.length <= STEP_POINTS_SHOWN, symbol: 'circle', symbolSize: 4,
           lineStyle: { color, width: 1.6 }, itemStyle: { color },
         };
       }),
