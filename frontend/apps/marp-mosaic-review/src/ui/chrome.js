@@ -63,10 +63,14 @@ export function renderChrome() {
   $('#shown').textContent = state.loading ? '…' : state.rows.length;
   $('#total').textContent = state.total.toLocaleString();
   $('#perPage').textContent = state.pageSize;
-  $('#markedCount').textContent = markedCount;
+  /* **Both kinds of mark** (#290). This counted exceptions only, so in training review a
+     tile marked to promote -- the mark the reviewer is making -- left it at 0. The footer
+     already names the two apart; this is how many tiles here carry a mark at all. */
+  $('#markedCount').textContent = markedCount + acceptCount;
   /* This counts marks made here, which is not the same thing as the status filter. */
   $('#markedLabel').title =
-    `Tiles you have marked to ${m.verb.toLowerCase()} on this page. `
+    `Tiles you have marked on this page: ${markedCount} ${m.mark.toLowerCase()}`
+    + `${m.accepts ? `, ${acceptCount} ${acceptedValue(state.mode)}` : ''}. `
     + 'Decisions already recorded against these observations are shown on the tiles, '
     + 'and are not counted here.';
 

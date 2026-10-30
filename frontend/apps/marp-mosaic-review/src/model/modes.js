@@ -414,6 +414,31 @@ export function markedOnPage({ rows, marks, kind = null }) {
     && (kind === null || markKind(marks.get(r.observation_id)) === kind)).length;
 }
 
+/**
+ * How far through its question a mode is: how many have left the work still to do.
+ *
+ * **From the status counts, not from this sitting's pages** (#290). The bar was committed
+ * pages times the page size over the rows still matching -- so it forgot everything
+ * committed before the last reload, and one committed page of fifteen against 115,534
+ * undecided rounded to 0% and never moved. The counts are over the question's scope with
+ * no status filter, and a mode's `defaultStatus` is exactly the work it has left: what is
+ * not in it has been decided.
+ *
+ * @param {Object} args - `{mode, counts}`, counts as `POST /mosaic/observations/counts`
+ *   returns them.
+ * @returns {?{done: number, total: number}} Null before the counts have arrived.
+ */
+export function questionProgress({ mode, counts }) {
+  const m = MODES[mode];
+  const total = Number(counts && counts.total) || 0;
+
+  if (!m || !total) return null;
+
+  const left = m.defaultStatus.reduce((sum, status) => sum + (Number(counts[status]) || 0), 0);
+
+  return { done: Math.max(0, total - left), total };
+}
+
 export function commitCount({ mode, rows, marks }) {
   /* Delete acts on what is marked, imagery or not -- a row with no picture is skipped
      only when it is *unmarked*, so a marked one is destroyed either way. Filtering here

@@ -351,28 +351,25 @@ test.describe('progress is not in the rail', () => {
     await page.goto(undecided());
     await expectRealBacking(page);
     await ready(page);
-    await expect(page.locator('#progPct')).toHaveText('0%');
+    /* **Progress is the share of the question decided** (#290), from the status counts
+       the store refreshes after a commit. It was this sitting's committed pages over the
+       rows still matching, which forgot every earlier sitting and rounded one page of a
+       large question to 0% -- so a commit never moved it. Read as the decided count in
+       the text, which moves by exactly what the commit decided whatever the corpus size. */
+    const decided = async () => Number((await page.locator('#progText').innerText())
+      .match(/^([\d,]+) of/)[1].replace(/,/g, ''));
 
-    /* Progress is `round(committedPages * pageSize / total * 100)`, so on a corpus large
-       enough that one page is under half a percent it stays at 0% however correct the
-       updater is. Said out loud rather than left to read as the defect this check is
-       about: the answer is a narrower question, not a looser assertion. */
-    const scale = await page.evaluate(async () => {
-      const { state } = await import('./src/store.js');
-      return { total: state.total, pageSize: state.pageSize };
-    });
-    expect(Math.round((scale.pageSize / scale.total) * 100),
-      `one page of ${scale.pageSize} in ${scale.total} matching rows rounds to 0%, so `
-      + 'committing a page cannot move the percentage. Narrow the question this check '
-      + 'opens on rather than loosening what it asserts.').toBeGreaterThan(0);
+    await expect(page.locator('#progText')).toContainText(' decided');
+    const before = await decided();
+    const reviewable = await page.locator('.tile:not(.failed):not(.queued):not(.marked)').evaluateAll(
+      (tiles) => tiles.filter((tile) => !tile.querySelector('.badge')).length);
 
     await page.locator('#commit').click();
     await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
 
-    /* The move kept `progPct`, `progBar` and `progText` precisely so the `subscribe`
-       block in index.html did not have to change. This is what proves it did not. */
-    await expect(page.locator('#progPct')).not.toHaveText('0%');
-    await expect(page.locator('#progText')).toContainText(' of ');
+    await expect.poll(decided, { message: 'the commit moved the decided count' })
+      .toBe(before + reviewable);
+    await expect(page.locator('#progPct')).toHaveText(/%$/);
     expect(await page.locator('#progBar').evaluate((el) => el.style.width)).not.toBe('0%');
   });
 

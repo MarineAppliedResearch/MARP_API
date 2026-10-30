@@ -137,6 +137,7 @@
 
 <script type="module">
   import { actions, state, subscribe } from './src/store.js';
+  import { questionProgress } from './src/model/modes.js';
   import { mount } from './src/ui/mount.js';
   import { backendName } from './src/backend.js';
 
@@ -174,14 +175,18 @@
 
   mount();
 
-  /* progress is derived, not stored */
+  /* Progress is derived, not stored: the share of the question decided, from the status
+     counts the store refreshes after every commit (#290). One decimal under 10%, because
+     a page of fifteen against a hundred thousand is otherwise a bar that never moves. */
   subscribe(() => {
-    const done = state.committedPages.size * state.pageSize;
-    const pct = state.total ? Math.min(100, Math.round((done / state.total) * 100)) : 0;
-    document.getElementById('progPct').textContent = pct + '%';
-    document.getElementById('progBar').style.width = pct + '%';
-    document.getElementById('progText').textContent =
-      `${done.toLocaleString()} of ${state.total.toLocaleString()}`;
+    const progress = questionProgress({ mode: state.mode, counts: state.counts });
+    const share = progress ? Math.min(100, (progress.done / progress.total) * 100) : 0;
+    const pct = share < 10 ? Math.round(share * 10) / 10 : Math.round(share);
+    document.getElementById('progPct').textContent = progress ? pct + '%' : '\u2014';
+    document.getElementById('progBar').style.width = share + '%';
+    document.getElementById('progText').textContent = progress
+      ? `${progress.done.toLocaleString()} of ${progress.total.toLocaleString()} decided`
+      : '\u2014';
   });
 
   /* Query params for quick looks and screenshots:

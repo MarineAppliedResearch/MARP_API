@@ -1829,3 +1829,22 @@ test('#137 R1: existing decisions count only in their own mode', () => {
   assert.equal(page.isComplete(rows, new Map([[1, 'conflicted']]), 'scientific'), false);
   assert.equal(page.isComplete([], new Map(), 'scientific'), false);
 });
+
+/* #290: Progress is the share of the question decided, from the status counts. It was
+   this sitting's committed pages over the rows still matching, so it forgot every earlier
+   sitting and one page of fifteen against 115,534 rounded to 0% and never moved. */
+test('progress is what has left the mode\'s work, over the question', async () => {
+  const { questionProgress } = await import('../../src/model/modes.js');
+  const counts = { total: 118294, unreviewed: 117779, reviewed: 154, flagged: 361, undecided: 115534, promoted: 2367, excluded: 393 };
+
+  assert.deepEqual(questionProgress({ mode: 'training', counts }), { done: 2760, total: 118294 },
+    'promoted and excluded are decided; undecided is the work left');
+  assert.deepEqual(questionProgress({ mode: 'scientific', counts }), { done: 154, total: 118294 },
+    'flagged is still in the work, as the mode\'s default view says');
+
+  /* A commit of fifteen promotions moves it by fifteen. */
+  const after = { ...counts, undecided: counts.undecided - 15, promoted: counts.promoted + 15 };
+  assert.equal(questionProgress({ mode: 'training', counts: after }).done, 2775);
+
+  assert.equal(questionProgress({ mode: 'training', counts: { total: 0 } }), null, 'nothing before the counts arrive');
+});

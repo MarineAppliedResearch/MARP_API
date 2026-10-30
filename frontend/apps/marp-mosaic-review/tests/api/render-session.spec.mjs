@@ -362,6 +362,24 @@ test.describe('"Marked this page" means this page', () => {
       expect(Number(await counter(page).innerText())).toBe(fresh + 1);
     });
 
+  test('a mark to accept counts as well as a mark to except (#290)', async ({ page }) => {
+    /* In training review the reviewer right-clicks the tiles to promote, and the counter
+       counted only exceptions -- so marking promotions left it at 0 while the footer said
+       "1 promoted". Both kinds are marks on this page. */
+    await page.goto(undecided());
+    await expectRealBacking(page);
+    await ready(page);
+
+    const start = Number(await counter(page).innerText());
+    const except = await freshTile(page, { at: 0 });
+    const accept = await freshTile(page, { at: 1 });
+
+    await except.click();
+    await accept.click({ button: 'right' });
+
+    await expect(counter(page)).toHaveText(String(start + 2));
+  });
+
   test('R2: going back to a page shows its own count again', async ({ page }) => {
     await page.goto(undecided());
     await expectRealBacking(page);
