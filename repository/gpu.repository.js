@@ -2393,145 +2393,22 @@ class GpuRepository {
     }
 
     /**
- * Keep one per-batch sample of a training attempt.
- *
- * **The other half of {@link recordTrainingEpoch}, and the two are exclusive.** Both
- * read the same `metric` events; `db/epoch-metrics.js` decides which is which from the
- * phase, so a finished epoch writes a row in `epochs` and a sample writes one here, and
- * neither can write the other's. That routing is the whole reason the phase vocabulary
- * exists -- the two series overlap numerically, since a sample's step is a global batch
- * counter and an epoch's is the epoch number.
- *
- * **Every sample is kept, not just the latest.** A progress snapshot answers "where is
- * this now" and is overwritten; this answers "what has it been doing", which is a
- * series and cannot be. The volume is a chart rather than a flood: about 64 points per
- * epoch at the worker's 2.5-second rate.
- *
- * **The measurements are stored as they arrived.** A detector reports three losses by
- * name and a classifier one; nothing here maps, renames or drops them, so a worker that
- * starts sending a new number records it the day it does rather than the day MARP
- * learns about it. The four fields lifted out into columns -- epoch, batch,
- * batches_total and the step -- are the ones a query orders and pages on.
- *
- * @async
- * @param {number} attemptId - The attempt that reported it.
- * @param {Object} event - The `metric` event, already accepted onto the stream.
- * @param {Object} transaction - The events transaction, so the sample and its event
- * land together or not at all.
- * @returns {Promise<void>} Resolves once the row is written, or skipped.
- */
-    async recordTrainingSample(attemptId, event, transaction) {
-        const payload = event.payload || {};
-        const metrics = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : null;
-        const step = Number(payload.step);
-        const seq = Number(event.seq);
-
-        /* The seq is the row key now, so a sample without one cannot be stored. Nothing
-           produces that -- the events route requires a seq and this runs only for an
-           event already accepted onto the stream -- which is exactly why it is checked
-           here rather than left to a NOT NULL violation inside a shared transaction. */
-        if (!metrics || !Number.isInteger(step) || !Number.isInteger(seq)) return;
-
-        const phase = readPhase(payload.phase);
-
-        /* An epoch, or a phase MARP does not know. `recordTrainingEpoch` has already
-           said so for the unknown one; saying it twice would double every log line. */
-        if (phase.epoch || !phase.known) return;
-
-        /* **Lifted out, not removed.** These four stay in `metrics` as well as becoming
-           columns: the column is what a query uses, and the untouched bag is what lets
-           a reader see exactly what the worker sent. */
-        const whole = (value) => (Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : null);
-
-        /* The worker's own clock, kept as it sent it. Ordering and duration only --
-           valid within a run, never compared against MARP's clock or another machine's.
-           A sample with no usable timestamp keeps its step, which is what the series is
-           ordered by anyway. */
-        const at = event.at && !Number.isNaN(Date.parse(event.at)) ? event.at : null;
-
-        /* **Keyed by the event, not by what the sample says.** The first key here was
-           (attempt_id, step, phase), which assumed one sample per step per phase -- and
-           the worker sends validating/validated/saving markers through the same phase, at
-           the same step as the next epoch's batch 0. Job 21801 sent 14 events and MARP
-           kept 4, and the ones it kept were markers rather than measurements.
-
-           `seq` is the identity of the event this is a projection of, and gpu_job_events
-           is already unique on (attempt_id, seq) -- so a resend still dedupes and two
-           different events at one step both survive. */
-        await this.db.sequelize.query(
-            `INSERT INTO training_batch_samples
-                 (attempt_id, seq, step, phase, epoch, batch, batches_total, at, metrics, created_at)
-             VALUES (:attemptId, :seq, :step, :phase, :epoch, :batch, :batchesTotal, :at, :metrics, NOW())
-             ON CONFLICT (attempt_id, seq) DO NOTHING`,
-            {
-                replacements: {
-                    attemptId,
-                    seq,
-                    step,
-                    phase: String(payload.phase),
-                    epoch: whole(metrics.epoch),
-                    batch: whole(metrics.batch),
-                    batchesTotal: whole(metrics.batches_total),
-                    at,
-                    metrics: JSON.stringify(metrics),
-                },
-                transaction,
-            }
-        );
-    }
-/**
-     * Writes one epoch of a training run, opening the run if this is its first.
+     * The training run a training attempt reports into, opened if it is not yet.
      *
-     * **Why this exists at all.** The ML schema -- `training_runs`, `epochs`,
-     * `metrics_summary` -- was written for the legacy desktop script and nothing
-     * in the job path has ever filled it in. An event stream is enough to watch a
-     * job, and not enough to answer "what did this model learn, and when", which
-     * is what the dashboard and anybody comparing two models is actually asking.
-     *
-     * Silently does nothing for an inference job. Every job sends metrics; only a
-     * training job has epochs, and deciding that here rather than at the call
-     * site keeps one rule in one place.
+     * **Opened by the first reading, not the first finished epoch** (#295). The run
+     * used to be opened by `recordTrainingEpoch` alone, and the Training tab finds a
+     * run's per-batch readings through the run -- so for the whole of epoch 1, an hour
+     * and forty minutes on dataset 391, the live charts had nothing to draw although
+     * the readings were arriving. Both projections now call this, so whichever reading
+     * comes first opens the one run the job gets.
      *
      * @async
-     * @param {number} attemptId - The attempt the event arrived on.
-     * @param {Object} event - The accepted metric event.
-     * @param {Object} transaction - The open transaction to write inside.
-     * @returns {Promise<void>} Resolves when the epoch is written, or skipped.
+     * @param {number} attemptId - The attempt that reported.
+     * @param {Object} transaction - The events transaction.
+     * @returns {Promise<?number>} The run id, or null for a job that is not a training
+     * job or names no model.
      */
-    async recordTrainingEpoch(attemptId, event, transaction) {
-        const payload = event.payload || {};
-        const metrics = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : null;
-
-        // An epoch needs a number to be an epoch.
-        const epochNumber = Number(payload.step);
-        if (!metrics || !Number.isInteger(epochNumber)) return;
-
-        /* **And a number is no longer enough to tell an epoch from a sample.** This
-           used to read "a metric event without a step is a progress sample", which was
-           true while epochs were the only thing reported with one. The worker now
-           sends per-batch samples through the same call with a global batch counter
-           as the step, so the two series overlap numerically -- and because the insert
-           below is first-write-wins on `epoch_number`, a sample arriving as step 1
-           would take epoch 1 and the real one would never be written.
-
-           So the routing is on the word. `db/epoch-metrics.js` owns the vocabulary,
-           the same way it owns the metric names, so the ingest and anything
-           backfilling from the events cannot disagree about what a phase meant. */
-        const phase = readPhase(payload.phase);
-
-        if (!phase.known) {
-            /* **Said out loud rather than dropped.** A phase MARP has not been taught
-               is a worker and a coordinator disagreeing about the contract; the event
-               keeps the reading either way, so this is recoverable -- but only if
-               somebody knows to go and look. */
-            logger.info(
-                `attempt ${attemptId} reported metrics under an unrecognised phase `
-                + `"${payload.phase}"; kept on the event stream and written to no table`
-            );
-        }
-
-        if (!phase.epoch) return;
-
+    async openTrainingRun(attemptId, transaction) {
         const [job] = await this.db.sequelize.query(
             `SELECT j.id, j.kind, j.spec
                FROM gpu_job_attempts a
@@ -2540,7 +2417,7 @@ class GpuRepository {
             { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
         );
 
-        if (!job || job.kind !== 'training') return;
+        if (!job || job.kind !== 'training') return null;
 
         const spec = job.spec || {};
         const params = spec.params || {};
@@ -2552,7 +2429,7 @@ class GpuRepository {
            event batch fail over the record. The events are still written; only
            the projection is skipped. */
         const modelId = spec.model && spec.model.ml_model_id;
-        if (!modelId) return;
+        if (!modelId) return null;
 
         // One run per job. `FOR UPDATE` because two heartbeats carrying metrics
         // can arrive close together and both would otherwise open a run.
@@ -2665,6 +2542,157 @@ class GpuRepository {
             );
             trainingRunId = opened.id;
         }
+
+        return trainingRunId;
+    }
+
+    /**
+ * Keep one per-batch sample of a training attempt.
+ *
+ * **The other half of {@link recordTrainingEpoch}, and the two are exclusive.** Both
+ * read the same `metric` events; `db/epoch-metrics.js` decides which is which from the
+ * phase, so a finished epoch writes a row in `epochs` and a sample writes one here, and
+ * neither can write the other's. That routing is the whole reason the phase vocabulary
+ * exists -- the two series overlap numerically, since a sample's step is a global batch
+ * counter and an epoch's is the epoch number.
+ *
+ * **Every sample is kept, not just the latest.** A progress snapshot answers "where is
+ * this now" and is overwritten; this answers "what has it been doing", which is a
+ * series and cannot be. The volume is a chart rather than a flood: about 64 points per
+ * epoch at the worker's 2.5-second rate.
+ *
+ * **The measurements are stored as they arrived.** A detector reports three losses by
+ * name and a classifier one; nothing here maps, renames or drops them, so a worker that
+ * starts sending a new number records it the day it does rather than the day MARP
+ * learns about it. The four fields lifted out into columns -- epoch, batch,
+ * batches_total and the step -- are the ones a query orders and pages on.
+ *
+ * @async
+ * @param {number} attemptId - The attempt that reported it.
+ * @param {Object} event - The `metric` event, already accepted onto the stream.
+ * @param {Object} transaction - The events transaction, so the sample and its event
+ * land together or not at all.
+ * @returns {Promise<void>} Resolves once the row is written, or skipped.
+ */
+    async recordTrainingSample(attemptId, event, transaction) {
+        const payload = event.payload || {};
+        const metrics = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : null;
+        const step = Number(payload.step);
+        const seq = Number(event.seq);
+
+        /* The seq is the row key now, so a sample without one cannot be stored. Nothing
+           produces that -- the events route requires a seq and this runs only for an
+           event already accepted onto the stream -- which is exactly why it is checked
+           here rather than left to a NOT NULL violation inside a shared transaction. */
+        if (!metrics || !Number.isInteger(step) || !Number.isInteger(seq)) return;
+
+        const phase = readPhase(payload.phase);
+
+        /* An epoch, or a phase MARP does not know. `recordTrainingEpoch` has already
+           said so for the unknown one; saying it twice would double every log line. */
+        if (phase.epoch || !phase.known) return;
+
+        /* So the run, and with it the Training tab's live charts, exists from the first
+           batch rather than from the end of the first epoch (#295). */
+        await this.openTrainingRun(attemptId, transaction);
+
+        /* **Lifted out, not removed.** These four stay in `metrics` as well as becoming
+           columns: the column is what a query uses, and the untouched bag is what lets
+           a reader see exactly what the worker sent. */
+        const whole = (value) => (Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : null);
+
+        /* The worker's own clock, kept as it sent it. Ordering and duration only --
+           valid within a run, never compared against MARP's clock or another machine's.
+           A sample with no usable timestamp keeps its step, which is what the series is
+           ordered by anyway. */
+        const at = event.at && !Number.isNaN(Date.parse(event.at)) ? event.at : null;
+
+        /* **Keyed by the event, not by what the sample says.** The first key here was
+           (attempt_id, step, phase), which assumed one sample per step per phase -- and
+           the worker sends validating/validated/saving markers through the same phase, at
+           the same step as the next epoch's batch 0. Job 21801 sent 14 events and MARP
+           kept 4, and the ones it kept were markers rather than measurements.
+
+           `seq` is the identity of the event this is a projection of, and gpu_job_events
+           is already unique on (attempt_id, seq) -- so a resend still dedupes and two
+           different events at one step both survive. */
+        await this.db.sequelize.query(
+            `INSERT INTO training_batch_samples
+                 (attempt_id, seq, step, phase, epoch, batch, batches_total, at, metrics, created_at)
+             VALUES (:attemptId, :seq, :step, :phase, :epoch, :batch, :batchesTotal, :at, :metrics, NOW())
+             ON CONFLICT (attempt_id, seq) DO NOTHING`,
+            {
+                replacements: {
+                    attemptId,
+                    seq,
+                    step,
+                    phase: String(payload.phase),
+                    epoch: whole(metrics.epoch),
+                    batch: whole(metrics.batch),
+                    batchesTotal: whole(metrics.batches_total),
+                    at,
+                    metrics: JSON.stringify(metrics),
+                },
+                transaction,
+            }
+        );
+    }
+/**
+     * Writes one epoch of a training run, opening the run if this is its first.
+     *
+     * **Why this exists at all.** The ML schema -- `training_runs`, `epochs`,
+     * `metrics_summary` -- was written for the legacy desktop script and nothing
+     * in the job path has ever filled it in. An event stream is enough to watch a
+     * job, and not enough to answer "what did this model learn, and when", which
+     * is what the dashboard and anybody comparing two models is actually asking.
+     *
+     * Silently does nothing for an inference job. Every job sends metrics; only a
+     * training job has epochs, and deciding that here rather than at the call
+     * site keeps one rule in one place.
+     *
+     * @async
+     * @param {number} attemptId - The attempt the event arrived on.
+     * @param {Object} event - The accepted metric event.
+     * @param {Object} transaction - The open transaction to write inside.
+     * @returns {Promise<void>} Resolves when the epoch is written, or skipped.
+     */
+    async recordTrainingEpoch(attemptId, event, transaction) {
+        const payload = event.payload || {};
+        const metrics = payload.metrics && typeof payload.metrics === 'object' ? payload.metrics : null;
+
+        // An epoch needs a number to be an epoch.
+        const epochNumber = Number(payload.step);
+        if (!metrics || !Number.isInteger(epochNumber)) return;
+
+        /* **And a number is no longer enough to tell an epoch from a sample.** This
+           used to read "a metric event without a step is a progress sample", which was
+           true while epochs were the only thing reported with one. The worker now
+           sends per-batch samples through the same call with a global batch counter
+           as the step, so the two series overlap numerically -- and because the insert
+           below is first-write-wins on `epoch_number`, a sample arriving as step 1
+           would take epoch 1 and the real one would never be written.
+
+           So the routing is on the word. `db/epoch-metrics.js` owns the vocabulary,
+           the same way it owns the metric names, so the ingest and anything
+           backfilling from the events cannot disagree about what a phase meant. */
+        const phase = readPhase(payload.phase);
+
+        if (!phase.known) {
+            /* **Said out loud rather than dropped.** A phase MARP has not been taught
+               is a worker and a coordinator disagreeing about the contract; the event
+               keeps the reading either way, so this is recoverable -- but only if
+               somebody knows to go and look. */
+            logger.info(
+                `attempt ${attemptId} reported metrics under an unrecognised phase `
+                + `"${payload.phase}"; kept on the event stream and written to no table`
+            );
+        }
+
+        if (!phase.epoch) return;
+
+        const trainingRunId = await this.openTrainingRun(attemptId, transaction);
+
+        if (!trainingRunId) return;
 
         /* Ultralytics names its metrics by task and version, which is why the event
            payload is free-form, and anything not named in `db/epoch-metrics.js` stays
