@@ -594,13 +594,21 @@ describe('a training job writes training_runs and epochs', () => {
 
             expect(sample.status).toBe(200);
 
-            /* Nothing yet: a sample does not open a run and does not write a row. */
+            /* The sample opens the run, so the live charts have somewhere to read it
+               from before epoch 1 ends (#295) -- and it writes no epoch row. */
             const [opened] = await db.sequelize.query(
                 'SELECT id FROM training_runs WHERE job_id = :jobId',
                 { replacements: { jobId: job.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
             );
 
-            expect(opened).toBeUndefined();
+            expect(opened).toBeTruthy();
+
+            const [none] = await db.sequelize.query(
+                'SELECT count(*)::int AS n FROM epochs WHERE training_run_id = :id',
+                { replacements: { id: opened.id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+            );
+
+            expect(none.n).toBe(0);
 
             /* Now the epoch the sample was inside, with its own measurements. */
             const epoch = await post([epochEvent(1, 1, 0.44)]);
@@ -902,5 +910,96 @@ describe('a training job writes training_runs and epochs', () => {
         // `patience`, or was stopped by the operator, did fewer epochs than it
         // was asked for, and this column is read as how long it actually trained.
         expect(Number(run.total_epochs)).toBe(2);
+    });
+});
+
+/**
+ * The first per-batch reading opens the run, not the end of the first epoch (#295).
+ *
+ * The Training tab finds a run's per-batch readings through the run, and the run used to
+ * be opened only by a finished epoch. So for all of epoch 1 -- an hour and forty minutes
+ * on dataset 391 -- the live charts had nothing to draw, while the readings arrived.
+ * Its own job, because the suite above opens its run with an epoch on purpose.
+ */
+describe('a training job before its first epoch ends', () => {
+    let ownJob;
+    let ownAttempt;
+
+    beforeAll(async () => {
+        const [job] = await db.sequelize.query(
+            `INSERT INTO gpu_jobs (kind, spec, state, attempts_made, max_attempts)
+             VALUES ('training', :spec, 'leased', 1, 3) RETURNING id`,
+            {
+                replacements: {
+                    spec: JSON.stringify({
+                        engine: 'marp_training',
+                        model: { ml_model_id: modelId, name: 'jest', sha256: 'a'.repeat(64) },
+                        dataset: { dataset_id: datasetId },
+                        params: { epochs: 2, batch: 8 },
+                    }),
+                },
+                type: db.Sequelize.QueryTypes.SELECT,
+                logging: false,
+            }
+        );
+        ownJob = job.id;
+
+        const [attempt] = await db.sequelize.query(
+            `INSERT INTO gpu_job_attempts (job_id, worker_id, slot_index, lease_epoch, state, lease_expires_at)
+             VALUES (:jobId, :workerId, 1, 1, 'running', NOW() + INTERVAL '1 hour') RETURNING id`,
+            { replacements: { jobId: ownJob, workerId }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+        );
+        ownAttempt = attempt.id;
+    });
+
+    afterAll(async () => {
+        const drop = (sql, replacements) => db.sequelize.query(sql, { replacements, logging: false });
+
+        await drop('DELETE FROM training_runs WHERE job_id = :id', { id: ownJob });
+        await drop('DELETE FROM training_batch_samples WHERE attempt_id = :id', { id: ownAttempt });
+        await drop('DELETE FROM gpu_job_events WHERE attempt_id = :id', { id: ownAttempt });
+        await drop('DELETE FROM gpu_job_attempts WHERE id = :id', { id: ownAttempt });
+        await drop('DELETE FROM gpu_jobs WHERE id = :id', { id: ownJob });
+    });
+
+    test('a per-batch reading opens the run, and the run serves it', async () => {
+        const response = await global.api
+            .post(`/api/v2/gpu/attempts/${ownAttempt}/events`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: 1,
+                events: [{
+                    seq: 0,
+                    kind: 'metric',
+                    at: new Date().toISOString(),
+                    payload: {
+                        step: 12,
+                        phase: 'training_batch',
+                        metrics: { epoch: 1, batch: 12, batches_total: 637, 'train/box_loss': 1.08 },
+                    },
+                }],
+            });
+
+        expect(response.status).toBe(200);
+
+        const runs = await db.sequelize.query(
+            'SELECT id, total_epochs FROM training_runs WHERE job_id = :jobId',
+            { replacements: { jobId: ownJob }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+        );
+
+        expect(runs).toHaveLength(1);
+        expect(Number(runs[0].total_epochs)).toBe(2);
+
+        const samples = await global.api.get(`/api/v2/training_run/${runs[0].id}/samples`);
+
+        expect(samples.status).toBe(200);
+        expect(samples.body.samples.map((sample) => sample.batch)).toEqual([12]);
+
+        const epochs = await db.sequelize.query(
+            'SELECT count(*)::int AS n FROM epochs WHERE training_run_id = :id',
+            { replacements: { id: runs[0].id }, type: db.Sequelize.QueryTypes.SELECT, logging: false }
+        );
+
+        expect(epochs[0].n).toBe(0);
     });
 });

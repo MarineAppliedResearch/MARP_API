@@ -2360,6 +2360,40 @@ test('a running run graphs what the console would print, per batch', async (t) =
   assert.match(panel.textContent, /epoch 1, batch 3 of 3/, 'and where it has got to');
 });
 
+test('readings between phase markers are drawn, not left as a blank chart (#295)', async (t) => {
+  /* Job 21956: 102 epochs of 637 batches, and the worker stored a loss only at batch 0 of
+     each epoch. Between every two of them sat phase markers and validation samples with
+     no loss, which the chart read as gaps -- so each reading was alone between two nulls,
+     a line with no symbols drew nothing, and every per-batch chart was blank. */
+  const samples = [];
+
+  for (let epochNo = 1; epochNo <= 4; epochNo += 1) {
+    const at = (epochNo - 1) * 637;
+
+    samples.push(step(1, at, { 'train/box_loss': 0.5 - epochNo / 100, gpu_memory_bytes: 3.9e9 }, { epoch: epochNo, batch: 0 }));
+    samples.push(step(1, at + 637, { phase_entered: 'validating' }, { epoch: epochNo, batch: null }));
+    samples.push(step(1, at + 637, { gpu_memory_bytes: 3.5e9, iterations_per_second: 5.3 }, { phase: 'validating_batch', epoch: null, batch: 1 }));
+    samples.push(step(1, at + 637, { phase_entered: 'validated' }, { epoch: epochNo, batch: null }));
+  }
+
+  const screen = await drawScreen('training.html', {
+    ...answers([epoch(1)], [run(202, 21782)]),
+    listJobs: async () => ({ jobs: [job(21782, 'succeeded')], total: 1, limit: 500, offset: 0 }),
+    trainingRunSamples: async () => ({ matched: samples.length, returned: samples.length, strided: false, samples }),
+  });
+
+  t.after(screen.close);
+
+  const panel = (await open(screen, 21782)).querySelector('.step-charts');
+  const card = [...panel.querySelectorAll('.evaluation-card')].find((one) => /Box loss/.test(one.textContent));
+  const [line] = chartIn(card).marpOption.series;
+
+  assert.deepEqual(JSON.parse(JSON.stringify(line.data)), [[0, 0.49], [637, 0.48], [1274, 0.47], [1911, 0.46]],
+    'one point per reading, and no nulls from the markers between them');
+  assert.equal(line.showSymbol, true, 'each reading is drawn as a point while they are few');
+  assert.match(card.textContent, /now 0\.460/);
+});
+
 test('a retry gets its own line rather than walking backwards through the first', async (t) => {
   /* A second attempt restarts the step counter at 1, so step 1 appears twice in one
      response with different `attempt_id`s. Drawn as one series it reads as the loss
