@@ -229,6 +229,22 @@ function leaseRefusalReason(attempt, workerId, leaseEpoch) {
  *
  * @class GpuRepository
  */
+/**
+ * What every check-in writes into `gpu_workers.up_since` (#277).
+ *
+ * Kept, unless the machine had gone silent for longer than `WORKER_OFFLINE_SECONDS` --
+ * judged by the `last_seen_at` this same UPDATE is about to replace, which Postgres reads
+ * as the old value -- or has no run on record. Then a new run starts now. By time rather
+ * than by `state`, because the offline sweep only runs on a pool read.
+ *
+ * @constant
+ * @type {string}
+ */
+const UP_SINCE_ON_CHECK_IN = `CASE
+    WHEN up_since IS NULL OR last_seen_at IS NULL
+      OR last_seen_at < NOW() - (${WORKER_OFFLINE_SECONDS} * interval '1 second')
+    THEN NOW() ELSE up_since END`;
+
 class GpuRepository {
 
     db = {};
@@ -411,7 +427,8 @@ class GpuRepository {
         try {
             await this.db.sequelize.query(
                 `UPDATE gpu_workers
-                    SET last_seen_at = NOW(),
+                    SET up_since = ${UP_SINCE_ON_CHECK_IN},
+                        last_seen_at = NOW(),
                         state = CASE WHEN state = 'offline' THEN 'online' ELSE state END
                   WHERE id = :workerId`,
                 { replacements: { workerId } }
@@ -953,6 +970,7 @@ class GpuRepository {
                         w.capabilities,
                         w.enrolled_at,
                         w.last_seen_at,
+                        w.up_since,
                         a.id               AS attempt_id,
                         a.state            AS attempt_state,
                         a.slot_index       AS attempt_slot_index,
@@ -1875,7 +1893,8 @@ class GpuRepository {
             // The worker is demonstrably alive: it just asked for work.
             await this.db.sequelize.query(
                 `UPDATE gpu_workers
-                    SET last_seen_at = NOW(),
+                    SET up_since = ${UP_SINCE_ON_CHECK_IN},
+                        last_seen_at = NOW(),
                         state = CASE WHEN state = 'offline' THEN 'online' ELSE state END
                   WHERE id = :workerId`,
                 { replacements: { workerId }, transaction }
@@ -2043,7 +2062,7 @@ class GpuRepository {
             );
 
             await this.db.sequelize.query(
-                'UPDATE gpu_workers SET last_seen_at = NOW() WHERE id = :workerId',
+                `UPDATE gpu_workers SET up_since = ${UP_SINCE_ON_CHECK_IN}, last_seen_at = NOW() WHERE id = :workerId`,
                 { replacements: { workerId }, transaction }
             );
 

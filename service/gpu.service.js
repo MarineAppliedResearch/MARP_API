@@ -1752,6 +1752,8 @@ class GpuService {
                     capabilities: row.capabilities,
                     enrolled_at: row.enrolled_at,
                     last_seen_at: row.last_seen_at,
+                    /* Since when it has checked in without a break (#277). */
+                    up_since: row.up_since || null,
 
                     // The machine's own latest reading, which exists whether or not it is
                     // working. `gpu_worker_samples` is written every minute from the

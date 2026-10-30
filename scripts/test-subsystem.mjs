@@ -47,6 +47,8 @@ const SUBSYSTEMS = {
             'gpu-finished-at',
             // A 20 GB dataset download counted in bytes, and a heartbeat MARP cannot save.
             'gpu-heartbeat-large-progress',
+            // #277: uptime is how long a worker has checked in without a break.
+            'gpu-worker-uptime',
             // #279: cancelling a selection, or every piece of one run.
             'gpu-job-cancel',
             'gpu-job-list',

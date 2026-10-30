@@ -93,6 +93,11 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true,
                 comment: 'Coordinator clock reading at the last poll or heartbeat.',
             },
+            up_since: {
+                type: DataTypes.DATE,
+                allowNull: true,
+                comment: 'Start of the current unbroken run of check-ins; a silence over 180 s starts a new one.',
+            },
 
             state: {
                 type: DataTypes.STRING(16),
