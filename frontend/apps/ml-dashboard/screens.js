@@ -162,7 +162,7 @@ async function fillRailBadges() {
     badge.textContent = String(count);
     badge.hidden = !count;
 
-    /* **What the number is, not just the number.** The Jobs badge is a count of failed
+    /* **What the number is, not just the number.** The Jobs badge was a count of failed
        jobs and read as a bare 1,189 with nothing saying so; Isaac asked what it meant
        twice, once when it said 8. The count was always right -- the silence was the
        defect. */
@@ -170,15 +170,20 @@ async function fillRailBadges() {
   };
 
   try {
-    /* `limit: 1` because only the total is wanted and the rows are the expensive part;
-       none of them is drawn here. */
-    const [failed, inference, training] = await Promise.all([
-      window.MarpApi.listJobs({ state: 'failed', limit: 1 }),
+    /* `limit: 1` where only the total is wanted and the rows are the expensive part.
+       The Jobs badge needs the rows: what needs attention is decided per job (#315). */
+    const since = Date.now() - ATTENTION_BADGE_HOURS * 3600e3;
+    const [finished, inference, training] = await Promise.all([
+      window.MarpApi.listJobs({ finished_after: new Date(since).toISOString(), limit: 500 }),
       window.MarpApi.listJobs({ state: 'leased', kind: 'inference', limit: 1 }),
       window.MarpApi.listJobs({ state: 'leased', kind: 'training', limit: 1 }),
     ]);
 
-    set('jobs', failed.total || 0, 'failed jobs');
+    /* Counted exactly as the Jobs tab's Needs attention card counts. */
+    const rows = (finished.jobs || []).filter((j) => j.kind !== 'dataset_build');
+    const attention = needsAttention(rows, batchesWithIssues(rows), since).length;
+
+    set('jobs', attention, 'jobs need attention, last 24 hours');
     set('inference', inference.total || 0, 'inference jobs running');
     set('training', training.total || 0, 'training jobs running');
   } catch {
@@ -663,6 +668,29 @@ function batchesWithIssues(jobs) {
   for (const [id, { ok, bad }] of seen) if (ok && bad) issues.add(id);
   return issues;
 }
+
+/**
+ * The jobs that need attention: finished since `since`, and failed, expired, or succeeded
+ * in a batch where another piece did not.
+ *
+ * **One definition for the Jobs tab's card and the menu badge** (#315). The badge counted
+ * every failed job ever and read 1,191 beside a tab listing 190; Isaac settled on
+ * 2026-10-30 that it is the card's number at its default range, the last 24 hours.
+ *
+ * @param {Object[]} finished - Finished jobs to count over; dataset builds already left out.
+ * @param {Set<number>} issues - Batches with issues, from `batchesWithIssues`.
+ * @param {number} since - Epoch ms; a job finished before it is not counted.
+ * @returns {Object[]} The jobs that need attention.
+ */
+function needsAttention(finished, issues, since) {
+  const isIssue = (job) => job.state === 'succeeded' && job.batch_id && issues.has(job.batch_id);
+
+  return finished.filter((j) => (j.state === 'failed' || j.state === 'expired' || isIssue(j))
+    && j.finished_at && Date.parse(j.finished_at) >= since);
+}
+
+/** How far back the menu's Jobs badge counts: the Jobs tab's default range (#315). */
+const ATTENTION_BADGE_HOURS = 24;
 
 /**
  * The Progress cell.
@@ -1152,8 +1180,7 @@ function renderJobsSummary(jobs) {
 
   /* Scoped to the same range as Completed. Counting every failure in the window
      put 107 beside 22 completed, which compares a fortnight against a day. */
-  const attention = finished.filter((j) => (j.state === 'failed' || j.state === 'expired' || isIssue(j))
-    && inRange(j));
+  const attention = needsAttention(finished, issues, range.since);
 
   const doneLabel = `Completed, ${range.label}`;
   const doneCard = $('.stat[data-job-priority="done"] .stat-lab');
