@@ -76,7 +76,7 @@ test('a busy worker draws every job it holds, from the fields the pool sends', a
   /* Isaac: *"the worker should also show exactly what job they are currently using, and
      there should be a link through to that job"*. */
   const links = [...head.nextElementSibling.querySelectorAll('a')].map((a) => [a.getAttribute('href'), a.textContent]);
-  assert.deepEqual(links, [['./jobs.html?job=21892', 'Dive-47_20261028'], ['./jobs.html?job=21893', 'Dive-47_20261028']]);
+  assert.deepEqual(links, [['./inference.html?job=21892', 'Dive-47_20261028'], ['./inference.html?job=21893', 'Dive-47_20261028']]);
   assert.ok(detail.includes('Dive 47 · Line 1080 · frames 0–7,500 · CAMPA_GR1_TEST6-mixed'), detail);
   assert.ok(!detail.includes('Dive Dive'), 'a dive already named "Dive 47" is not prefixed again');
 });

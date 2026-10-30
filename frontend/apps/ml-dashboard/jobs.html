@@ -103,7 +103,6 @@
             <select class="sel" aria-label="Status"><option>All statuses</option><option>Running</option><option>Queued</option><option>Done</option><option>Issues</option><option>Failed</option><option>Cancelled</option><option>Expired</option></select>
             <select data-choices class="sel" aria-label="Window" title="Jobs is the job history; this is how far back it reaches"><option>Last 7 days</option><option>Last hour</option><option>Last 24 hours</option><option>Last 30 days</option><option>Last 90 days</option><option>This year</option></select>
             <button class="btn" type="button" data-jobs-export title="Download every job in this window as CSV"><svg class="ico"><use href="#i-download"/></svg>Export</button>
-            <button class="btn" type="button" id="expandAll"><svg class="ico"><use href="#i-right"/></svg>Expand all</button>
             <!-- Clearing the whole pile is only offered once the list IS the pile. Drawn
                  by wireJobsDelete() when Status is Failed and absent otherwise, because a
                  button that deletes 1,189 rows should not sit beside a filter all day. -->
@@ -130,7 +129,6 @@
             <table class="tbl fixed stack expandable" id="jobs">
               <thead>
                 <tr>
-                  <th class="ex"><span class="vh">Expand</span></th>
                   <th class="chk"><input class="chkbox" type="checkbox" id="all" aria-label="Select every job on this page"></th>
                   <th class="hjob sortable">Job</th><th class="htype sortable">Type</th><th class="hscope sortable">Scope</th>
                   <th class="hmodel sortable">Model / output</th><th class="hstatus sortable">Status</th><th class="hprog sortable">Progress</th>

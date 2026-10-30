@@ -1,5 +1,5 @@
 /**
- * Cancel on the Jobs screen, and what an expanded job claims about itself.
+ * Cancel on the Jobs screen, and what a job's row claims about itself.
  *
  * Found by Isaac on 2026-10-28 (#279): he ticked the pieces of a run, pressed Cancel, and
  * nothing happened -- the bulk bar's Cancel, the row's stop icon and the expanded job's
@@ -124,11 +124,11 @@ test('the row stop icon cancels its own job', async () => {
   screen.close();
 });
 
-test('an expanded piece of a run can cancel the whole run', async () => {
+test('a piece of a run can cancel the whole run from its row', async () => {
+  /* It was in the expanded detail, which Jobs rows no longer have (#291). */
   const screen = await jobsScreen([job(1, 'queued')]);
-  const detail = screen.document.querySelector('#jobs tbody tr.runrow-body');
+  const whole = screen.document.querySelector('#jobs tbody tr[data-job="1"] [data-cancel-run]');
 
-  const whole = detail.querySelector('[data-cancel-run]');
   assert.ok(whole, 'a queued piece of a run offers to cancel the run');
   whole.click();
   await settle();
@@ -151,37 +151,20 @@ const INVENTED = [/of 8 queued/, /8m 21s/, /12 GB/, /24 GB/, /RTX 4090/, /mAP@50
   /Learning dynamics/, /Findings so far/, /Final findings/, /Rockfish/, /21 \/ 21/, /412/];
 
 for (const state of ['queued', 'leased', 'failed', 'succeeded', 'cancelled', 'expired']) {
-  test(`an expanded ${state} job carries no invented measurement`, async () => {
-    const attempts = state === 'queued' ? [] : [{
-      id: 70, lease_epoch: 1, state: state === 'leased' ? 'running' : state, worker: { name: 'ABYSS' },
-      progress_done: 2500, progress_total: 7500, progress_unit: 'frames', progress_phase: 'inference',
-      leased_at: '2026-10-28T20:01:00.000Z', finished_at: null,
-      failure_reason: state === 'failed' ? 'Jellyfin answered 503 for the video' : null,
-    }];
+  test(`a ${state} job's row carries no invented measurement, and does not expand`, async () => {
+    /* #291: the row links to the job's own screen rather than opening a detail here. */
     const screen = await jobsScreen([job(5, state, {
-      batch_id: null, priority: 0, attempts_made: attempts.length, worker_name: attempts.length ? 'ABYSS' : null,
-    })], { getJob: async () => ({ job: {}, attempts, artifacts: [] }) });
+      batch_id: null, priority: 0, attempts_made: state === 'queued' ? 0 : 1, worker_name: state === 'queued' ? null : 'ABYSS',
+    })]);
 
-    const head = screen.document.querySelector('#jobs tbody tr.runrow-head');
-    const detail = head.nextElementSibling;
-    head.querySelector('.exbtn').click();
-    await settle();
+    const head = screen.document.querySelector('#jobs tbody tr[data-job="5"]');
+    const text = head.textContent;
 
-    const text = detail.textContent;
     for (const literal of INVENTED) assert.doesNotMatch(text, literal, `${state}: ${literal} is not about this job`);
-    assert.doesNotMatch(text, /Priority\s*5/, 'the job\'s priority is 0');
-    assert.doesNotMatch(text, /Change priority|Start when available|Run again|Review observations|Open model version/,
-      'controls with nothing behind them are not drawn');
-
-    if (attempts.length) {
-      assert.match(detail.querySelector('[data-job-attempts]').textContent, /ABYSS/, 'its attempt, from the job');
-    } else {
-      assert.match(detail.querySelector('[data-job-attempts]').textContent, /Never attempted/);
-    }
-    if (state === 'failed') {
-      assert.equal(detail.querySelector('[data-job-failure]').textContent, 'Jellyfin answered 503 for the video',
-        'the failed banner says why, from the attempt');
-    }
+    assert.equal(head.querySelector('.exbtn'), null, 'no expander');
+    assert.equal(screen.document.querySelectorAll('#jobs tbody tr.runrow-body').length, 0, 'no detail row');
+    assert.equal(head.querySelector('.jname a')?.getAttribute('href'), './inference.html?job=5',
+      'the name opens the job on Inference');
     screen.close();
   });
 }

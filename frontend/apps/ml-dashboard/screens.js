@@ -924,11 +924,16 @@ function rowFor(view) {
       + '<svg class="ico sm"><use href="#i-trash"/></svg></button>'
     : '';
 
-  /* Cancel is wired by `wireJobsCancel`. The Open arrow that used to stand here on a
-     finished job had nothing behind it; the row's own expander is how a job is opened. */
+  /* Cancel is wired by `wireJobsCancel`. **Cancel whole run is on the row too** (#291):
+     it lived in the expanded detail, which rows no longer have, and a run of eighty
+     pieces is not something to tick one box at a time. */
   const actions = (live
     ? `<button class="btn sm icon" type="button" data-cancel-job="${job.id}" aria-label="Cancel job ${job.id}"`
       + ' title="Cancel this job"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
+      + (job.batch_id
+        ? `<button class="btn sm icon" type="button" data-cancel-run="${job.batch_id}" aria-label="Cancel the whole run job ${job.id} belongs to"`
+          + ' title="Cancel every piece of this run that is still queued or running"><svg class="ico sm"><use href="#i-stop"/></svg><span class="vh">run</span></button>'
+        : '')
     : '')
     + remove;
 
@@ -980,7 +985,10 @@ function rowFor(view) {
        the job object. */
     + ` data-dataset="${job.kind === 'dataset_build' && job.spec && job.spec.dataset_id != null ? job.spec.dataset_id : ''}">`
     + `<td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job ${job.id}"></td>`
-    + `<td class="jname" title="${escapeHtml(view.title)}"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg><span class="t">${view.title}</span></span></td>`
+    /* **The name is the way in** (#291): to the job's row on the screen that owns it.
+       The row no longer expands here. */
+    + `<td class="jname" title="${escapeHtml(view.title)}"><span class="name"><svg class="ico ${view.kindIcon}"><use href="#i-${view.kindIcon}"/></svg>`
+    + `${jobDestination(job) ? `<a class="t" href="${jobDestination(job)}">${view.title}</a>` : `<span class="t">${view.title}</span>`}</span></td>`
     + `<td class="jtype"><span class="tag ${view.kindIcon}">${view.kindLabel}</span></td>`
     + `<td class="jscope"><span class="two"><span class="a">${scope}</span><span class="b">${frames}</span></span></td>`
     + `<td class="jmodel"><span class="two"><span class="a">${view.model}</span><span class="b">${view.reduction}</span></span></td>`
@@ -3737,6 +3745,7 @@ function renderTrainingRecent(views) {
   /* **Every training job, a page at a time**, by the pager every table shares. It took
      the newest three, so a fourth run could only be reached through another screen --
      the same cut that hid every finished job on Inference behind a run in flight. */
+  pageToRequestedJob(ordered, trainingPage);
   const { shown, from, pages } = pageOf(ordered, trainingPage);
   drawPager(table.closest('.panel')?.querySelector('.panel-ft'), trainingPage, {
     total: ordered.length, from, count: shown.length, pages, noun: 'training job', empty: 'No training jobs yet',
@@ -3840,6 +3849,7 @@ function renderTrainingRecent(views) {
   /* The delegated expander listener keys off `table.expandable`, so the rows it has just
      been given are wired by the sweep every other table uses. */
   wireAccordions();
+  openRequestedJob(body, trainingPage);
 }
 
 /**
@@ -5388,7 +5398,19 @@ async function fillInferenceFindings(place) {
 
   /* Into the mosaic, filtered to the run's session: a run makes its own session, so that
      is this run's observations and nothing else. Offered only when there is one. */
-  place.innerHTML = `${where}<div class="findings-grid">${sections.join('')}</div>${density}`;
+  /* **Why it ended, where the Jobs tab used to say it** (#291): a piece that failed or
+     expired lists its attempts and the last one's reason, as a training job does. */
+  const ended = ['failed', 'expired'].includes(state)
+    ? '<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg>'
+      + `<div><h4>${state === 'expired' ? 'Expired' : 'Failed'}</h4>`
+      + '<p data-job-failure>The attempts below say how each try ended.</p></div></div></section>'
+      + '<details class="diag" open><summary>Attempts<span class="later">Every try at this job, and why each ended</span></summary>'
+      + `<div class="dbody"><div class="jobattempts" data-job-attempts="${jobId}"></div></div></details>`
+    : '';
+
+  place.innerHTML = `${ended}${where}<div class="findings-grid">${sections.join('')}</div>${density}`;
+
+  if (ended) fillJobAttempts(place, jobId);
   const anything = $$('.findlist li', place).length > 0;
   if (session && anything) {
     place.insertAdjacentHTML('beforeend', `<p class="findings-go"><a class="btn sm" href="/apps/marp-mosaic-review/?session=${session}">`
@@ -5429,6 +5451,7 @@ function renderInferenceRecent(views = inferenceList.views) {
      tab -- Isaac: *"an inference job that's done is still an inference job"*. Paged rather
      than drawn whole because each finished row reads its own detection count, and five
      hundred rows would be five hundred reads. */
+  pageToRequestedJob(ordered, inferenceList);
   const { shown, from, pages } = pageOf(ordered, inferenceList);
   drawPager(table.closest('.panel')?.querySelector('.panel-ft'), inferenceList, {
     total: ordered.length, from, count: shown.length, pages, noun: 'inference job', empty: 'No inference jobs yet',
@@ -5479,6 +5502,7 @@ function renderInferenceRecent(views = inferenceList.views) {
 
   fillInferenceOutcomes(body, shown);
   watchInference();
+  openRequestedJob(body, inferenceList);
 }
 
 /**
@@ -6602,7 +6626,65 @@ function jobDestination(job) {
       : `./datasets.html?dataset=${encodeURIComponent(dataset)}`;
   }
 
-  return `./jobs.html?job=${encodeURIComponent(job.id)}`;
+  /* **The screen that owns the job, not the Jobs tab** (#291). Jobs rows used to expand
+     inline into a detail of their own, and every link into a job opened that. A training
+     job's home is its row on Training, an inference job's -- tracking is the older name
+     for the same work -- its row on Inference, which opens onto what it found. A
+     diagnostic job has no screen, so no link. */
+  if (job.kind === 'training') return `./training.html?job=${encodeURIComponent(job.id)}`;
+  if (INFERENCE_KINDS.includes(job.kind)) return `./inference.html?job=${encodeURIComponent(job.id)}`;
+
+  return null;
+}
+
+/** The job a `?job=` link asked a screen to open, or null. */
+function requestedJobId() {
+  const asked = Number(new URLSearchParams(window.location.search).get('job'));
+
+  return Number.isInteger(asked) && asked > 0 ? asked : null;
+}
+
+/**
+ * Turn a paged table to the page holding the job a `?job=` link asked for (#291).
+ *
+ * Once per load: after that the reader pages where they like.
+ *
+ * @param {Object[]} ordered - The table's rows in drawn order, each with a `job`.
+ * @param {Object} state - The table's pager state.
+ * @returns {void}
+ */
+function pageToRequestedJob(ordered, state) {
+  const wanted = requestedJobId();
+
+  if (!wanted || state.requestedShown) return;
+
+  const at = ordered.findIndex((row) => row.job && row.job.id === wanted);
+
+  if (at >= 0) state.page = Math.floor(at / state.perPage) + 1;
+}
+
+/**
+ * Open and bring into view the row a `?job=` link asked for, once.
+ *
+ * Opened through its own expander, so everything that loads on opening loads.
+ *
+ * @param {Element} body - The table body.
+ * @param {Object} state - The table's pager state, which remembers it was done.
+ * @returns {void}
+ */
+function openRequestedJob(body, state) {
+  const wanted = requestedJobId();
+
+  if (!wanted || state.requestedShown) return;
+
+  const head = $(`tr[data-job="${wanted}"]`, body);
+
+  if (!head) return;
+
+  state.requestedShown = true;
+
+  if (head.getAttribute('aria-expanded') !== 'true') $('.exbtn', head)?.click();
+  requestAnimationFrame(() => head.scrollIntoView({ block: 'center' }));
 }
 
 /**
@@ -8293,7 +8375,6 @@ function wireJobsOverview() {
   const table = $('table#jobs');
   if (!table) return;
   const body = $('tbody', table);
-  const metric = (label, value, note = '') => `<div class="jobmetric"><span>${label}</span><b>${value}</b>${note ? `<small>${note}</small>` : ''}</div>`;
   /* **A dataset build is not a GPU job**, settled 2026-10-14 in #128. Six of
      them used to be prepended here, hand-written, because the design treated
      dataset construction as first-class work in *this* queue. The dashboard
@@ -8303,155 +8384,12 @@ function wireJobsOverview() {
      nothing could ever have filled these rows, and they made the headline cards
      disagree with the table beneath them: 18 running against 20. See gap 19. */
 
-  /* The expanded row is the complete job view. Shared identity stays stable,
-     while the operational facts change with type and state. */
-  $$('tr[data-job]', body).forEach((head) => {
-    /* **Decorate a row once.** `applyJobsQuery` calls this on every re-render
-       and the boot calls it too, so eighteen jobs grew thirty-six detail rows
-       -- two apiece, the second one unreachable behind the first. Guarding here
-       rather than fixing the call order, because the next caller would make the
-       same mistake and this is the place that can refuse. */
-    if (head.classList.contains('runrow-head')) return;
-    head.classList.add('runrow-head');
-    head.setAttribute('aria-expanded', 'false');
-    const id = head.dataset.job;
-    const name = $('.jname .t', head)?.textContent.trim() || `Job ${id}`;
-    const type = $('.jtype', head)?.textContent.trim() || 'Job';
-    const scope = $('.jscope .a', head)?.textContent.trim() || '—';
-    const scopeContext = $('.jscope .b', head)?.textContent.trim() || '';
-    const model = $('.jmodel .a', head)?.textContent.trim() || '—';
-    const modelVersion = $('.jmodel .b', head)?.textContent.trim() || '';
-    const state = $('.jstatus [data-state]', head)?.dataset.state || 'queued';
-
-    /* Real facts about this job, carried on the row by `rowFor`. Every one of
-       these was previously a constant written into the detail template, so each
-       expanded job claimed the same submitter, the same priority and the same
-       attempt policy whatever it actually had. */
-    const attemptsMade = Number(head.dataset.attempts) || 0;
-    const maxAttempts = Number(head.dataset.maxAttempts) || 0;
-    const priority = head.dataset.priority || '0';
-    const machinesTried = Number(head.dataset.workersUsed) || 0;
-
-    const ranOn = head.dataset.worker
-      ? head.dataset.worker
-      : '<span class="faint">Never leased</span>';
-
-    const machines = machinesTried > 1
-      ? `${machinesTried} <span class="faint">· retried elsewhere</span>`
-      : (machinesTried === 1 ? '1' : '<span class="faint">None</span>');
-
-    /* `created_by` is a user id, and null when an application token submitted
-       the job -- which is most of them, because the worker pipeline does. */
-    const submittedBy = head.dataset.by
-      ? (USERS.get(Number(head.dataset.by))?.name
-        || USERS.get(Number(head.dataset.by))?.username
-        || `User ${head.dataset.by}`)
-      : '<span class="faint">An application token</span>';
-    const status = $('.jstatus', head)?.textContent.trim() || 'Queued';
-    const progress = $('.jprog', head)?.textContent.trim() || 'Not started';
-    const progressValue = Number($('.jprog', head)?.dataset.sort);
-    const submitted = $('.jtime', head)?.textContent.trim().replace(/\s+/g, ' ') || '—';
-    const isDatasetBuild = type.toLowerCase() === 'dataset build';
-
-    /* The dataset this build produced, as a link into the screen that owns it. The
-       receiver on that side expands the row it lands on, so the reader arrives at the
-       composition rather than at a table to search. No id, no link -- the same rule the
-       Dashboard's rows follow. */
-    const builtDataset = head.dataset.dataset;
-    const datasetLink = isDatasetBuild && builtDataset
-      ? `<p class="jobdetail-dataset">Built <a href="./datasets.html?dataset=${encodeURIComponent(builtDataset)}">dataset ${escapeHtml(builtDataset)}</a></p>`
-      : '';
-
-    /* **Duplicate with change, drawn only where there is somewhere to land.**
-       It makes a new job from this one's spec by filling the build flow in and letting it
-       be edited; nothing is created until Queue is pressed. That flow exists for a dataset
-       build and for nothing else on this dashboard yet -- the Inference screen assembles a
-       plan and prints it rather than submitting (`MarpApi.submitJob` has no callers), and
-       `#trainBtn` has no handler at all. So an inference, tracking or training job has no
-       form to arrive at, and a button that opened nothing would be the third dead control
-       on this screen rather than the first working one.
-
-       A link rather than a button because it navigates, and `?duplicate=1` is read on
-       arrival. The filling itself is the Datasets screen's -- `datasetBuildSetup` and the
-       `marp:duplicate-dataset-setup` event -- rather than a second implementation of
-       "new build from an old spec", which is how two of them drift apart.
-
-       It is a retry as well, which is why there is no Retry button beside it: a duplicate
-       nobody edits is the same build run again, and reaching it this way never resets
-       `attempts_made` or reopens a job the coordinator has closed. */
-    const duplicate = isDatasetBuild && builtDataset
-      ? `<a class="btn sm" href="./datasets.html?dataset=${encodeURIComponent(builtDataset)}&amp;duplicate=1"`
-        + ' title="Fill the build flow with the queries this ran, to edit before queueing. Creates nothing.">'
-        + '<svg class="ico"><use href="#i-copy"/></svg>Duplicate with changes</a>'
-      : '';
-
-    /* Nothing to offer is an absent strip, not an empty one. */
-    const actions = (inner) => (inner ? `<div class="jobstate-actions">${inner}</div>` : '');
-
-    /* **Only what MARP records about this job.** Every number this section used to
-       draw -- a queue position worked out from the job id, "Waiting 8m 21s", "Priority
-       5", "12 GB GPU", "RTX 4090", "mAP@50 0.742" -- was written into the template and
-       shown on every job alike (#279). What is left comes off the row, and the attempts
-       below are fetched from the job itself when it is opened. */
-    const live = state === 'running' || state === 'queued';
-    const batch = head.dataset.batch;
-    const cancels = live
-      ? `<button class="btn sm" type="button" data-cancel-job="${id}" title="Stop this job. A machine running it stops at its next heartbeat.">Cancel job</button>`
-        + (batch ? `<button class="btn sm" type="button" data-cancel-run="${batch}" title="Cancel every piece of this run that is still queued or running">Cancel whole run</button>` : '')
-      : '';
-    const attemptText = maxAttempts ? `${attemptsMade} of ${maxAttempts}` : String(attemptsMade);
-    const measured = Number.isFinite(progressValue) && progressValue >= 0;
-
-    let operational;
-
-    if (state === 'running') {
-      operational = `<section class="jobstate" data-job-state="active"><div class="jobstate-title"><div><h4>Running</h4><p>On ${ranOn}</p></div>${measured ? `<span class="bar wide"><i style="width:${progressValue}%"></i></span>` : ''}</div><div class="jobmetrics">${metric('Progress', progress)}${metric('Attempt', attemptText)}</div>${actions(cancels)}</section>`;
-    } else if (state === 'queued') {
-      const note = attemptsMade ? `Back in the queue after ${countOf(attemptsMade, 'attempt')}.` : 'No machine has leased it yet.';
-      operational = `<section class="jobstate" data-job-state="queued"><div class="jobstate-title"><div><h4>Waiting for a worker</h4><p>${note}</p></div></div><div class="jobmetrics">${metric('Priority', escapeHtml(priority))}${metric('Attempts', attemptText)}</div>${actions(cancels)}</section>`;
-    } else if (state === 'failed') {
-      operational = `<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>Failed</h4><p data-job-failure>Why it ended is recorded on its last attempt, below.</p></div></div><div class="jobmetrics">${metric('Progress', progress)}${metric('Attempts', attemptText)}</div>${actions(duplicate)}</section>`;
-    } else if (state === 'issues') {
-      operational = `<section class="jobstate" data-job-state="attention"><div class="jobstate-alert"><svg class="ico"><use href="#i-alert"/></svg><div><h4>This piece finished; its run did not</h4><p>Another piece of the same run failed.</p></div></div><div class="jobmetrics">${metric('Progress', progress)}${metric('Attempts', attemptText)}</div></section>`;
-    } else if (state === 'done') {
-      operational = `<section class="jobstate" data-job-state="complete"><div class="jobstate-title"><div><h4>Finished</h4></div></div><div class="jobmetrics">${metric('Progress', progress)}${metric('Attempts', attemptText)}</div></section>`;
-    } else {
-      operational = `<section class="jobstate" data-job-state="cancelled"><div class="jobstate-title"><div><h4>${status}</h4></div></div><div class="jobmetrics">${metric('Stopped at', progress)}${metric('Attempts', attemptText)}</div>${actions(duplicate)}</section>`;
-    }
-
-    const expand = document.createElement('td');
-    expand.className = 'ex';
-    expand.innerHTML = `<button class="exbtn" type="button" aria-label="Expand ${name}"><svg class="ico sm"><use href="#i-right"/></svg></button>`;
-    head.prepend(expand);
-
-    const detail = document.createElement('tr');
-    detail.className = 'runrow-body';
-    detail.hidden = true;
-    detail.innerHTML = `<td colspan="12"><div class="rundetail jobdetail">
-      <div class="jobdetail-head"><div><b>${name}</b><span>Job ${id} · ${type}</span>${datasetLink}</div><span class="st" data-state="${state}"><span class="dot"></span>${status}</span></div>
-      <div class="jobdetail-grid jobidentity">
-        <dl class="kv"><dt>Job ID</dt><dd class="mono">${id}</dd><dt>Type</dt><dd>${type}</dd><dt>Scope</dt><dd>${scope}${scopeContext ? ` <span class="faint">· ${scopeContext}</span>` : ''}</dd><dt>${isDatasetBuild ? 'Build output' : 'Locked model'}</dt><dd>${model} <span class="faint">${modelVersion}</span><div class="locked">Immutable from submission</div></dd></dl>
-        <dl class="kv"><dt>Submitted</dt><dd>${submitted}</dd><dt>Submitted by</dt><dd>${submittedBy}</dd><dt>Priority</dt><dd>${priority}</dd><dt>Attempt policy</dt><dd>Up to ${maxAttempts} attempt${maxAttempts === 1 ? '' : 's'}</dd></dl>
-      </div>
-      ${operational}
-      <details class="diag"><summary>Diagnostics<span class="later">Every attempt, and why each ended</span></summary><div class="dbody">
-        <dl class="kv"><dt>Attempt</dt><dd>${attemptsMade} of ${maxAttempts}</dd><dt>Ran on</dt><dd>${ranOn}</dd><dt>Machines tried</dt><dd>${machines}</dd><dt>Job ID</dt><dd class="mono">${id}</dd></dl>
-        <div class="jobattempts" data-job-attempts="${id}"><p class="faint">Opening the job loads its attempts.</p></div>
-      </div></details>
-    </div></td>`;
-    head.after(detail);
-
-    /* However it was opened -- its own row, Expand all, or a `?job=` link -- the row's
-       `hidden` is what changes, so that is what is watched. Once per drawing. */
-    const watch = new MutationObserver(() => {
-      if (detail.hidden) return;
-      watch.disconnect();
-      fillJobAttempts(detail, id);
-    });
-    watch.observe(detail, { attributes: true, attributeFilter: ['hidden'] });
-  });
-
-  const groups = () => $$('tr.runrow-head', body).map((head) => [head, head.nextElementSibling]);
+  /* **No expanded row** (#291). Every row used to grow a detail of its own here --
+     attempts, the failure reason, Cancel and Duplicate -- and the Jobs tab is not where
+     those belong. The name links to the job on the screen that owns it; Cancel stays on
+     the row as its stop button and the tick-box bar; attempts and why a job ended are on
+     that screen's row. */
+  const groups = () => $$('tr[data-job]', body).map((head) => [head]);
   $$('[data-job-priority]').forEach((card) => {
     card.addEventListener('click', () => {
       const priority = card.dataset.jobPriority;
@@ -8481,12 +8419,12 @@ function wireJobsOverview() {
   const requestedType = requested.get('type');
   const requestedStatus = requested.get('status');
   if (requestedJob) {
-    const head = $(`tr.runrow-head[data-job="${CSS.escape(requestedJob)}"]`, body);
-    if (head?.nextElementSibling?.classList.contains('runrow-body')) {
-      body.prepend(head.nextElementSibling);
+    /* An older link to a job here: it goes to the top, marked, and its name is the way
+       on to the screen that owns it. */
+    const head = $(`tr[data-job="${CSS.escape(requestedJob)}"]`, body);
+    if (head) {
       body.prepend(head);
-      head.setAttribute('aria-expanded', 'true');
-      head.nextElementSibling.hidden = false;
+      head.setAttribute('aria-current', 'true');
       requestAnimationFrame(() => head.scrollIntoView({ block: 'start' }));
     }
   } else if (requestedType || requestedStatus) {

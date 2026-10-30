@@ -114,7 +114,7 @@ test('a window past 30 days actually widens the table', async (t) => {
   ]);
   t.after(screen.close);
 
-  const rows = () => screen.document.querySelectorAll('#jobs tbody tr.runrow-head').length;
+  const rows = () => screen.document.querySelectorAll('#jobs tbody tr[data-job]').length;
   assert.equal(rows(), 1, 'the default 7-day window should hold only the newest job');
 
   const windowSelect = screen.document.querySelector('select[aria-label="Window"]');
@@ -134,7 +134,7 @@ test('Export writes every job the filters leave, not the page on screen', async 
   const screen = await drawJobs(many);
   t.after(screen.close);
 
-  assert.equal(screen.document.querySelectorAll('#jobs tbody tr.runrow-head').length, 18,
+  assert.equal(screen.document.querySelectorAll('#jobs tbody tr[data-job]').length, 18,
     'the page should still show eighteen, so the export is reaching past it');
 
   const blobs = captureDownloads(screen.window);
