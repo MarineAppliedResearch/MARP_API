@@ -6592,6 +6592,9 @@ function renderDashboardPool(workers) {
   /* The history panel's caption said "313 total slots" in markup, which is the
      same number this already computes and was wrong the moment the pool
      changed. Said once, from the pool. */
+  /* The pool's GPU power on the Dashboard too (#214). */
+  fillPoolPower(workers);
+
   /* The graph has its own panel now (#310), so this one is looked up on the page. */
   const slotsTotal = $('[data-pool-slots-total]');
   if (slotsTotal) slotsTotal.textContent = String(slots);
@@ -7056,6 +7059,129 @@ const vramLoadCell = (view) => {
       + `<span class="b">${gb(view.vramUsed)} of ${gb(view.vramTotal)} GB</span></span>`;
 };
 
+/**
+ * A worker's GPU power: what it draws now, its idle baseline, and the difference (#214).
+ *
+ * **Summed across its cards**, because the cost of a machine is all of them; the per-card
+ * figures are on the worker's own row when it is opened. **GPU power only** -- NVML reads
+ * the card, not the wall socket -- which the panel says. Settled with Isaac on 2026-10-30:
+ * a machine that is offline, or whose last reading is too old to be a reading, counts as
+ * 0 W, now and at idle alike, so the pool's figures add up across what is actually on.
+ *
+ * @param {Object} worker - A worker from `GET /gpu/workers`.
+ * @returns {{now: number, idle: number, above: number, reporting: boolean, idleKnown: boolean}}
+ */
+function workerPower(worker) {
+  const sampledAt = worker.telemetry ? Date.parse(worker.telemetry.as_of) : NaN;
+  const on = worker.state !== 'offline' && Number.isFinite(sampledAt)
+    && window.MarpApi.now() - sampledAt < SAMPLE_STALE_MS;
+  const cards = on ? (worker.telemetry.gpus || []).filter((gpu) => gpu.power_usage_watts !== null
+    && gpu.power_usage_watts !== undefined && Number.isFinite(Number(gpu.power_usage_watts))) : [];
+  const now = cards.reduce((sum, gpu) => sum + Number(gpu.power_usage_watts), 0);
+  const idleKnown = worker.idle_power_watts !== null && worker.idle_power_watts !== undefined;
+  const idle = on && idleKnown ? Number(worker.idle_power_watts) : 0;
+
+  return { now, idle, above: Math.max(0, now - idle), reporting: cards.length > 0, idleKnown };
+}
+
+/**
+ * The pool's GPU power: each machine's figures added up (#214).
+ *
+ * @param {Object[]} workers - From `GET /gpu/workers`.
+ * @returns {{now: number, idle: number, above: number, reporting: number}}
+ */
+function poolPower(workers) {
+  return (workers || []).map(workerPower).reduce((sum, one) => ({
+    now: sum.now + one.now,
+    idle: sum.idle + one.idle,
+    above: sum.above + one.above,
+    reporting: sum.reporting + (one.reporting ? 1 : 0),
+  }), { now: 0, idle: 0, above: 0, reporting: 0 });
+}
+
+/** Watts as a reader reads them. */
+const wattsText = (watts) => `${Math.round(watts).toLocaleString('en-US')} W`;
+
+/**
+ * Write the pool's three power figures wherever a screen shows them (#214).
+ *
+ * @param {Object[]} workers - From `GET /gpu/workers`.
+ * @returns {void}
+ */
+function fillPoolPower(workers) {
+  const power = poolPower(workers);
+
+  for (const [key, value] of Object.entries({ now: power.now, idle: power.idle, above: power.above })) {
+    for (const place of $$(`[data-power="${key}"]`)) place.textContent = wattsText(value);
+  }
+}
+
+/**
+ * The Workers tab's GPU power chart: the pool's total draw over a range, with today's
+ * idle baseline across it, so the area above the line is what the work cost (#214).
+ *
+ * @returns {void}
+ */
+function wireWorkersPower() {
+  const root = $('[data-workers-power]');
+  if (!root) return;
+
+  const RANGES = {
+    '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
+    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
+    '7d': { hours: 168, bucket: 'hour', label: 'the last 7 days' },
+    '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
+  };
+  const buttons = $$('[data-power-range]', root);
+  const box = $('.power-chart', root);
+
+  const choose = async (range) => {
+    buttons.forEach((button) => {
+      const on = button.dataset.powerRange === range;
+      button.classList.toggle('on', on);
+      button.setAttribute('aria-pressed', String(on));
+    });
+
+    const { hours, bucket, label } = RANGES[range];
+    const until = new Date();
+    const span = { since: new Date(until.getTime() - hours * 3600e3).toISOString(), until: until.toISOString(), bucket };
+
+    let points = [];
+
+    try {
+      points = (await window.MarpApi.gpuSeries(span)).points || [];
+    } catch {
+      points = [];
+    }
+
+    const measured = points.filter((point) => point.total_power_watts !== null && point.total_power_watts !== undefined);
+
+    if (!measured.length) {
+      box.innerHTML = `<p class="hint">No GPU power was reported in ${label}.</p>`;
+      return;
+    }
+
+    const idle = poolPower(workersPool || []).idle;
+    const at = (point) => Date.parse(point.at);
+    const said = `Pool GPU power over ${label}: ${wattsText(measured[measured.length - 1].total_power_watts)} at the end, `
+      + `against an idle baseline of ${wattsText(idle)}`;
+
+    drawActivity(box, activityOption({
+      root,
+      axes: [{ name: 'GPU power', unit: ' W' }],
+      series: [
+        { id: 'power', name: 'GPU power', css: 'power-now', kind: 'area', unit: ' W',
+          data: points.map((point) => [at(point), point.total_power_watts ?? null]) },
+        { id: 'idle', name: 'Idle baseline', css: 'power-idle', unit: ' W',
+          data: points.map((point) => [at(point), Math.round(idle * 10) / 10]) },
+      ],
+    }), said, `power-${range}`);
+  };
+
+  buttons.forEach((button) => button.addEventListener('click', () => choose(button.dataset.powerRange)));
+  choose('24h');
+}
+
 const thermalCell = (view) => {
   if (view.stale) return staleCell(view);
 
@@ -7063,8 +7189,27 @@ const thermalCell = (view) => {
     ? NOT_REPORTED
     : `<span class="two" title="As last sampled, ${view.asOf}">`
       + `<span class="a">${view.tempC === null ? '&mdash;' : `${view.tempC}&deg;C`}</span>`
-      + `<span class="b">${view.watts === null ? '&mdash;' : `${Math.round(view.watts)} W`}</span></span>`;
+      + `<span class="b">${powerLine(view.worker)}</span></span>`;
 };
+
+/**
+ * A worker's power cell line: what it draws now, and how much of that is above its idle
+ * baseline -- the part the work is responsible for (#214).
+ *
+ * @param {Object} worker - From `GET /gpu/workers`.
+ * @returns {string} HTML.
+ */
+function powerLine(worker) {
+  const power = workerPower(worker);
+
+  if (!power.reporting) return '&mdash;';
+
+  const above = power.idleKnown
+    ? ` <span class="faint" title="GPU power ${wattsText(power.now)} now; idle baseline ${wattsText(power.idle)}">+${wattsText(power.above)}</span>`
+    : '';
+
+  return `${wattsText(power.now)}${above}`;
+}
 
 function workerView(worker) {
   const caps = worker.capabilities || {};
@@ -7688,6 +7833,7 @@ async function renderWorkersTable() {
     workersPool = pool;
     renderWorkersSummary(pool, jobs.jobs);
     applyWorkersQuery();
+    fillPoolPower(pool);
 
     /* **A pool screen that does not move is the one that misleads most**: a worker going
        offline looks exactly like a worker that was offline when the tab was opened. The
@@ -7708,6 +7854,7 @@ async function renderWorkersTable() {
         patch: (next) => {
           workersPool = next;
           patchWorkerRows(next);
+          fillPoolPower(next);
         },
       });
     }
@@ -14826,6 +14973,7 @@ document.body.dataset.rail = 'closed';
 boot('sprite', mountSprite);
 boot('rail', mountRail);
 boot('rail-badges', fillRailBadges);
+boot('workers power', wireWorkersPower);
 /* **Kept current, not read once** (#299). The counts were read when the page loaded and
    never again, so a finished inference job left Inference reading 3 until a reload --
    and a count beside a menu exists to show at a glance that something changed. On the

@@ -1738,6 +1738,7 @@ class GpuService {
         await this.sweepStaleWorkers();
 
         const rows = await gpuRepository.listWorkerPoolRows();
+        const idlePower = await gpuRepository.workerIdlePower();
         const workers = new Map();
 
         for (const row of rows) {
@@ -1754,6 +1755,11 @@ class GpuService {
                     last_seen_at: row.last_seen_at,
                     /* Since when it has checked in without a break (#277). */
                     up_since: row.up_since || null,
+
+                    /* **Its idle GPU power** (#214): the median of its readings with no
+                       job over the last week, summed across its cards. Null until it has
+                       idled with NVML reporting. What it draws now is on `telemetry`. */
+                    idle_power_watts: idlePower.has(row.id) ? idlePower.get(row.id).idle_w : null,
 
                     // The machine's own latest reading, which exists whether or not it is
                     // working. `gpu_worker_samples` is written every minute from the
@@ -1918,7 +1924,22 @@ class GpuService {
     async gpuUtilizationSeries(query) {
         const window = this.seriesWindow(query);
 
-        return { ...window, points: await gpuRepository.gpuUtilizationSeries(window) };
+        const [points, power] = await Promise.all([
+            gpuRepository.gpuUtilizationSeries(window),
+            gpuRepository.poolPowerSeries(window),
+        ]);
+
+        /* **The pool's total GPU power beside its utilization** (#214), matched by bucket.
+           A bucket nothing reported power in reads null rather than zero. */
+        const byBucket = new Map(power.map((row) => [new Date(row.at).getTime(), row.total_power_watts]));
+
+        return {
+            ...window,
+            points: points.map((point) => ({
+                ...point,
+                total_power_watts: byBucket.has(new Date(point.at).getTime()) ? byBucket.get(new Date(point.at).getTime()) : null,
+            })),
+        };
     }
 
     /**

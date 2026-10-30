@@ -245,6 +245,9 @@ const UP_SINCE_ON_CHECK_IN = `CASE
       OR last_seen_at < NOW() - (${WORKER_OFFLINE_SECONDS} * interval '1 second')
     THEN NOW() ELSE up_since END`;
 
+/** How many days of idle readings a worker's idle baseline is the median of (#214). */
+const IDLE_POWER_DAYS = 7;
+
 class GpuRepository {
 
     db = {};
@@ -476,6 +479,75 @@ class GpuRepository {
      * `{id, name, last_seen_at}`.
      * @throws {Error} Re-throws any database failure.
      */
+    /**
+     * Each worker's idle GPU power: the median of its readings with no job, over a week (#214).
+     *
+     * Settled with Isaac on 2026-10-30: a rolling idle median rather than one reading at
+     * enrolment, because a volunteer's machine idles higher while its desktop is in use
+     * than at a login screen. A reading is the sum of the machine's cards, so a two-GPU
+     * worker's idle is both cards idling. A reading with no power (no NVML) is left out.
+     *
+     * @async
+     * @param {number} [days] - How far back.
+     * @returns {Promise<Map<number, {idle_w: number, samples: number}>>} By worker id.
+     */
+    async workerIdlePower(days = IDLE_POWER_DAYS) {
+        const rows = await this.db.sequelize.query(
+            `WITH readings AS (
+                 SELECT s.worker_id,
+                        (SELECT sum((d->>'power_usage_watts')::float)
+                           FROM jsonb_array_elements(s.devices) d
+                          WHERE d->>'power_usage_watts' IS NOT NULL) AS watts
+                   FROM gpu_worker_samples s
+                  WHERE s.job_kind IS NULL
+                    AND s.at > NOW() - (:days * interval '1 day')
+             )
+             SELECT worker_id,
+                    percentile_cont(0.5) WITHIN GROUP (ORDER BY watts)::float AS idle_w,
+                    count(*)::int AS samples
+               FROM readings
+              WHERE watts IS NOT NULL
+              GROUP BY worker_id`,
+            { replacements: { days }, type: QueryTypes.SELECT }
+        );
+
+        return new Map(rows.map((row) => [Number(row.worker_id), { idle_w: row.idle_w, samples: row.samples }]));
+    }
+
+    /**
+     * The pool's total GPU power over a window, bucketed (#214).
+     *
+     * Each machine's draw is the sum of its cards, averaged over its readings in the
+     * bucket; the pool's is the sum of the machines'. A bucket where nothing reported has
+     * no row, and the series it joins reads it as a gap.
+     *
+     * @async
+     * @param {Object} window - `{since, until, bucket}`; `bucket` is whitelisted upstream.
+     * @returns {Promise<Array<{at: Date, total_power_watts: number, machines: number}>>}
+     */
+    async poolPowerSeries({ since, until, bucket }) {
+        return this.db.sequelize.query(
+            `WITH readings AS (
+                 SELECT date_trunc('${bucket}', s.at) AS at, s.worker_id,
+                        (SELECT sum((d->>'power_usage_watts')::float)
+                           FROM jsonb_array_elements(s.devices) d
+                          WHERE d->>'power_usage_watts' IS NOT NULL) AS watts
+                   FROM gpu_worker_samples s
+                  WHERE s.at >= :since AND s.at < :until
+             ), per_machine AS (
+                 SELECT at, worker_id, avg(watts) AS watts
+                   FROM readings
+                  WHERE watts IS NOT NULL
+                  GROUP BY at, worker_id
+             )
+             SELECT at, round(sum(watts)::numeric, 1)::float AS total_power_watts, count(*)::int AS machines
+               FROM per_machine
+              GROUP BY at
+              ORDER BY at`,
+            { replacements: { since, until }, type: QueryTypes.SELECT }
+        );
+    }
+
     /**
      * The pool's GPU readings over a window, bucketed.
      *
