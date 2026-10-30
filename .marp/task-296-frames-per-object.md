@@ -118,7 +118,8 @@ That run needs the GPU that job 21954 is using now. When to run it is Isaac's ca
 
 ## Test plan
 
-Written at G3.
+See `.marp/verification-296-frames-per-object.md`: each requirement, the test that proves it,
+the results, and what is not covered.
 
 ## Status
 
