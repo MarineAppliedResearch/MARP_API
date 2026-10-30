@@ -1001,6 +1001,118 @@ function rowFor(view) {
 }
 
 /**
+ * The ranges the Completed cards follow, matched to the 1h / 24h / 7d / 30d menus beside
+ * them (#284), and the Jobs window each one opens.
+ *
+ * @constant
+ */
+const FINISHED_RANGES = {
+  '1h': { hours: 1, label: 'last hour', window: 'hour' },
+  '24h': { hours: 24, label: 'last 24 hours', window: 'today' },
+  '7d': { hours: 168, label: 'last 7 days', window: 'week' },
+  '30d': { hours: 720, label: 'last 30 days', window: 'month' },
+};
+
+/** Jobs finished in the chosen range, per screen: `{range, since, rows}`. */
+const finishedWindows = new Map();
+
+/**
+ * Which range a screen's menu has on, by the attribute its buttons carry.
+ *
+ * @param {string} attr - `data-inference-range` or `data-jobs-range`.
+ * @returns {string} A key of {@link FINISHED_RANGES}.
+ */
+function chosenRange(attr) {
+  const on = $(`[${attr}].on`) || $(`[${attr}][aria-pressed="true"]`);
+  const range = on && on.getAttribute(attr);
+
+  return FINISHED_RANGES[range] ? range : '24h';
+}
+
+/**
+ * What a Completed card counts over: the chosen range, and the jobs that finished in it.
+ *
+ * `rows` is null until {@link readFinishedWindow} has answered for this range, and the
+ * caller then counts over the jobs it already has.
+ *
+ * @param {string} screen - `inference` or `jobs`.
+ * @param {string} attr - The range buttons' attribute.
+ * @returns {{range: string, since: number, label: string, window: string, rows: ?Object[]}}
+ */
+function finishedWindow(screen, attr) {
+  const range = chosenRange(attr);
+  const held = finishedWindows.get(screen);
+  const { hours, label, window: asked } = FINISHED_RANGES[range];
+
+  return held && held.range === range
+    ? { ...held, label, window: asked }
+    : { range, since: Date.now() - hours * 3600e3, label, window: asked, rows: null };
+}
+
+/**
+ * Ask MARP for every job that finished in the chosen range (#284).
+ *
+ * **The API rather than the list already on the page**, which is the newest 500 jobs and
+ * would count a 30-day range short as soon as more than that finished in it. One read per
+ * kind, because the route filters on one.
+ *
+ * @param {string} screen - `inference` or `jobs`.
+ * @param {string} attr - The range buttons' attribute.
+ * @param {Array<?string>} kinds - Job kinds to ask for; `null` is every kind.
+ * @returns {Promise<void>}
+ */
+async function readFinishedWindow(screen, attr, kinds) {
+  const range = chosenRange(attr);
+  const since = Date.now() - FINISHED_RANGES[range].hours * 3600e3;
+  const after = new Date(since).toISOString();
+
+  const answers = await Promise.all(kinds.map((kind) => window.MarpApi.listJobs({
+    ...(kind ? { kind } : {}), finished_after: after, limit: 500,
+  })));
+
+  // A range changed while this was being read is the newer read's to answer.
+  if (chosenRange(attr) !== range) return;
+
+  finishedWindows.set(screen, { range, since, rows: answers.flatMap((answer) => answer.jobs || []) });
+}
+
+/** The jobs each screen's cards were last drawn from, to redraw them on a range change. */
+let lastSummaryJobs = null;
+let lastInferenceJobs = null;
+
+/**
+ * The Completed cards follow their screen's range menu (#284).
+ *
+ * Read once on load and again on every range click, then redrawn from the jobs the cards
+ * already had -- the menu's own handler moves its `.on` before this listener hears the
+ * click, because this one sits on the document.
+ *
+ * @returns {void}
+ */
+function wireCompletedRange() {
+  const screens = [
+    { screen: 'inference', attr: 'data-inference-range', kinds: INFERENCE_KINDS,
+      redraw: () => lastInferenceJobs && renderInference(lastInferenceJobs) },
+    { screen: 'jobs', attr: 'data-jobs-range', kinds: [null],
+      redraw: () => lastSummaryJobs && renderJobsSummary(lastSummaryJobs) },
+  ];
+
+  for (const { screen, attr, kinds, redraw } of screens) {
+    if (!$(`[${attr}]`)) continue;
+
+    const refresh = () => readFinishedWindow(screen, attr, kinds)
+      .then(redraw)
+      .catch(() => { /* The cards keep counting the jobs on the page. */ });
+
+    document.addEventListener('click', (event) => {
+      if (event.target.closest(`[${attr}]`)) refresh();
+    });
+
+    refresh();
+  }
+}
+
+/**
  * The four headline cards, counted from the same data as the table.
  *
  * **Counted over a fetched window, because the route cannot be asked.**
@@ -1015,25 +1127,30 @@ function rowFor(view) {
  * @param {Object[]} jobs - The window of jobs to count over.
  */
 function renderJobsSummary(jobs) {
-  const issues = batchesWithIssues(jobs);
+  lastSummaryJobs = jobs;
+
+  /* **Over the chosen range, not today** (#284). Finished jobs come from MARP for the
+     range the Job activity menu has on; until that read answers, the jobs on the page. */
+  const range = finishedWindow('jobs', 'data-jobs-range');
+  const finished = (range.rows || jobs).filter((j) => j.kind !== 'dataset_build');
+  const issues = batchesWithIssues(jobs.concat(range.rows || []));
 
   const isIssue = (job) => job.state === 'succeeded' && job.batch_id && issues.has(job.batch_id);
   const running = jobs.filter((j) => j.state === 'leased');
   const queued = jobs.filter((j) => j.state === 'queued');
 
-  /* "Today" is measured against the newest job in the corpus rather than the
-     reader's clock: the data layer's present is fixed so that two people see
-     the same screen, and a card reading the wall clock would undo that. */
-  const newest = jobs.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
-  /* Local midnight, not a rolling day from the newest row. */
-  const today = new Date().setHours(0, 0, 0, 0);
-  const done = jobs.filter((j) => j.state === 'succeeded'
-    && j.finished_at && Date.parse(j.finished_at) >= today);
+  const inRange = (j) => j.finished_at && Date.parse(j.finished_at) >= range.since;
+  const done = finished.filter((j) => j.state === 'succeeded' && inRange(j));
 
-  /* Scoped to the same day as Completed. Counting every failure in the window
+  /* Scoped to the same range as Completed. Counting every failure in the window
      put 107 beside 22 completed, which compares a fortnight against a day. */
-  const attention = jobs.filter((j) => (j.state === 'failed' || j.state === 'expired' || isIssue(j))
-    && j.finished_at && Date.parse(j.finished_at) >= today);
+  const attention = finished.filter((j) => (j.state === 'failed' || j.state === 'expired' || isIssue(j))
+    && inRange(j));
+
+  const doneLabel = `Completed, ${range.label}`;
+  const doneCard = $('.stat[data-job-priority="done"] .stat-lab');
+
+  if (doneCard) doneCard.textContent = doneLabel;
 
   const byKind = (rows, kind) => rows.filter((j) => j.kind === kind).length;
 
@@ -1067,7 +1184,7 @@ function renderJobsSummary(jobs) {
     ['inference', byKind(running, 'inference') + byKind(running, 'tracking'), 'Running inference'],
     ['training', byKind(running, 'training'), 'Running training'],
     ['queued', queued.length, 'Queued'],
-    ['done', done.length, 'Completed today'],
+    ['done', done.length, doneLabel],
     ['attention', attention.length, 'Need attention'],
   ];
   const donutTotal = donutParts.reduce((sum, [, value]) => sum + value, 0) || 1;
@@ -4939,25 +5056,43 @@ async function wireVideoPicker() {
  * @param {Object[]} jobs - Every job in the window.
  */
 function renderInference(jobs) {
+  lastInferenceJobs = jobs;
+
+  /* **Over the chosen range, not today** (#284): the Throughput & backlog menu's. */
+  const range = finishedWindow('inference', 'data-inference-range');
   const mine = jobs.filter((j) => INFERENCE_KINDS.includes(j.kind));
-  const issues = batchesWithIssues(jobs);
+  const issues = batchesWithIssues(jobs.concat(range.rows || []));
   const views = mine.map((job) => jobView(job, issues));
+  const finishedViews = (range.rows || mine)
+    .filter((j) => INFERENCE_KINDS.includes(j.kind))
+    .map((job) => jobView(job, issues));
 
   const running = views.filter((v) => v.state === 'running');
   const queued = views.filter((v) => v.state === 'queued');
   const newest = mine.reduce((max, j) => Math.max(max, Date.parse(j.created_at)), 0);
-  /* Local midnight, not a rolling day from the newest row. */
-  const today = new Date().setHours(0, 0, 0, 0);
-  const done = views.filter((v) => v.state === 'done'
-    && v.job.finished_at && Date.parse(v.job.finished_at) >= today);
+  const inRange = (v) => v.job.finished_at && Date.parse(v.job.finished_at) >= range.since;
+  const done = finishedViews.filter((v) => v.state === 'done' && inRange(v));
 
-  /* **Scoped to the same day as Completed.** Unscoped this counted every
+  /* **Scoped to the same range as Completed.** Unscoped this counted every
      failure in the fortnight -- 85 against 13 completed -- and the donut below
      then composed four numbers measured over different spans, which makes a
-     shape rather than a fact. A job that failed last week has not stopped
-     needing attention; this card is about today, beside the other three. */
-  const attention = views.filter((v) => ['failed', 'expired', 'issues'].includes(v.state)
-    && v.job.finished_at && Date.parse(v.job.finished_at) >= today);
+     shape rather than a fact. */
+  const attention = finishedViews.filter((v) => ['failed', 'expired', 'issues'].includes(v.state)
+    && inRange(v));
+
+  /* The card says which range it counts, and opens the same range on Jobs. */
+  const doneLabel = `Completed, ${range.label}`;
+  const doneCard = $('.stat[data-state="done"]');
+
+  if (doneCard) {
+    const lab = $('.stat-lab', doneCard);
+
+    if (lab) lab.textContent = doneLabel;
+    if (doneCard.tagName === 'A') {
+      doneCard.href = `./jobs.html?type=inference&window=${range.window}&status=done`;
+      doneCard.title = `Open inference work completed in the ${range.label} on Jobs`;
+    }
+  }
 
   const byLabel = {};
   for (const card of $$('.stat')) {
@@ -4981,7 +5116,7 @@ function renderInference(jobs) {
 
   set('Running inference', running.length, [big(frames(running)), 'in flight']);
   set('Queued inference', queued.length, [big(frames(queued)), 'waiting']);
-  set('Completed today', done.length, [big(frames(done)), `${done.filter((v) => v.state === 'done').length} clean`]);
+  set(doneLabel, done.length, [big(frames(done)), `${done.filter((v) => v.state === 'done').length} clean`]);
   set('Needs attention', attention.length, [
     `${attention.filter((v) => v.state === 'failed').length} failed`,
     `${attention.filter((v) => v.state === 'issues').length} with issues`,
@@ -4992,7 +5127,7 @@ function renderInference(jobs) {
   const parts = [
     ['inference', running.length, 'Running'],
     ['queued', queued.length, 'Queued'],
-    ['done', done.length, 'Completed today'],
+    ['done', done.length, doneLabel],
     ['attention', attention.length, 'Need attention'],
   ];
   /* Two numbers, because they are two different things. `total` is how many jobs
@@ -7544,7 +7679,7 @@ function wireJobsControls() {
   if (windowSel) {
     windowSel.addEventListener('change', () => {
       jobsQuery.windowDays = {
-        'Last 24 hours': 1, 'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'This year': 365,
+        'Last hour': 1 / 24, 'Last 24 hours': 1, 'Last 7 days': 7, 'Last 30 days': 30, 'Last 90 days': 90, 'This year': 365,
       }[windowSel.value] || 7;
       renarrow();
     });
@@ -7555,7 +7690,7 @@ function wireJobsControls() {
      kind"; those links pointed at History until it folded into Jobs, and the window they
      asked for is the whole of what they meant. Set on the select too, so the control
      agrees with the table instead of reading 7 days over a 1-day list. */
-  const askedWindow = { today: 'Last 24 hours', week: 'Last 7 days', month: 'Last 30 days' }[
+  const askedWindow = { hour: 'Last hour', today: 'Last 24 hours', week: 'Last 7 days', month: 'Last 30 days' }[
     new URLSearchParams(window.location.search).get('window')];
   if (askedWindow && windowSel) {
     windowSel.value = askedWindow;
@@ -12409,7 +12544,11 @@ const TIPS = {
   'Running jobs': 'Jobs a worker is executing right now',
   'Queued jobs': 'Submitted and waiting for a free GPU slot',
   'Needs attention': 'Failed, or finished with some pieces failed',
-  'Completed today': 'Finished since midnight',
+  /* The Completed cards follow their range menu (#284), so each range has its line. */
+  'Completed, last hour': 'Finished in the last hour, the range chosen beside it',
+  'Completed, last 24 hours': 'Finished in the last 24 hours, the range chosen beside it',
+  'Completed, last 7 days': 'Finished in the last 7 days, the range chosen beside it',
+  'Completed, last 30 days': 'Finished in the last 30 days, the range chosen beside it',
   'Workers reachable': 'Machines that answered recently, of every machine enrolled',
   'GPU slots in use': 'Concurrent jobs the pool is running, of its total capacity',
   'Training now': 'Training runs in progress',
@@ -14698,6 +14837,7 @@ boot('rail sheet', wireRailSheet);
 boot('switchers', wireSwitchers);
 boot('pool utilization', wirePoolUtilization);
 boot('inference throughput', wireInferenceThroughput);
+boot('completed follows range', wireCompletedRange);
 boot('registry trend', wireRegistryTrend);
 boot('training activity', wireTrainingActivity);
 boot('dataset activity', wireDatasetActivity);

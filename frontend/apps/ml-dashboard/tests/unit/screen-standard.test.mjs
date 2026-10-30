@@ -102,10 +102,11 @@ test('Jobs stops asking when nothing is left to watch', async (t) => {
   let reads = 0;
 
   const screen = await drawScreen('jobs.html', {
-    /* The header's three live counters read this endpoint too, with `limit: 1`. The
-       table's own read is the paged one. */
+    /* The header's three live counters read this endpoint too, with `limit: 1`, and the
+       Completed card asks for what finished in its range (#284). The table's own read is
+       the paged one with neither. */
     listJobs: async (query) => {
-      if (query && query.limit === 500) reads += 1;
+      if (query && query.limit === 500 && !query.finished_after) reads += 1;
       return { jobs: [job(901, 'succeeded')], total: 1, limit: 500, offset: 0 };
     },
     listSessions: async () => [],
