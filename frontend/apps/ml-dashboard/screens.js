@@ -3869,6 +3869,120 @@ function renderTrainingResult() {
       if (b) b.innerHTML = values[index] ?? NOT_RECORDED;
     });
   }
+
+  drawTrainingComposition(set);
+}
+
+/** The classes the Training panel lists before the rest are summed away. */
+const TRAINING_CLASSES_SHOWN = 8;
+
+/** Compositions by dataset id: a built dataset's split and classes do not change. */
+const trainingCompositions = new Map();
+
+/** The dataset whose composition was asked for last, so a slow answer cannot draw over it. */
+let trainingCompositionFor = null;
+
+/**
+ * The chosen dataset's saved split and class distribution (#294).
+ *
+ * Both were the mockup's literals -- a 70/20/10 bar, 8,992 train, California sea cucumber
+ * 3,418 -- the same for every dataset, beside counts that did change. They are what
+ * somebody reads to decide whether a dataset is worth training on, so a plausible wrong
+ * answer was worse than none. Drawn from `GET /dataset/:id/composition`, which the
+ * Datasets screen already draws its own from; the split bar is that screen's renderer.
+ *
+ * Classes are counted in images where the archive could be counted and observations
+ * otherwise, most first, and the label says which. The overlap-group figure is gone:
+ * MARP does not record it.
+ *
+ * @param {?Object} set - The chosen dataset row, or none.
+ * @returns {Promise<void>}
+ */
+async function drawTrainingComposition(set) {
+  const split = $('[data-fills="dataset-split"]');
+  const classes = $('[data-fills="dataset-classes"]');
+  const count = $('[data-fills="dataset-class-count"]');
+
+  if (!split || !classes) return;
+
+  const say = (text) => {
+    split.innerHTML = `<span class="hint">${text}</span>`;
+    classes.innerHTML = '';
+    if (count) count.textContent = '';
+  };
+
+  if (!set) {
+    trainingCompositionFor = null;
+    say('Choose a dataset to see how it was split and what is in it.');
+    return;
+  }
+
+  if (trainingCompositionFor === set.id && split.dataset.drawnFor === String(set.id)) return;
+
+  trainingCompositionFor = set.id;
+
+  let composition = trainingCompositions.get(set.id);
+
+  if (!composition) {
+    say('Reading this dataset&rsquo;s split and classes&hellip;');
+
+    try {
+      composition = await window.MarpApi.datasetComposition(set.id);
+    } catch (error) {
+      if (trainingCompositionFor === set.id) say(`Could not read this dataset&rsquo;s composition (${error.status || 'no answer'}).`);
+      return;
+    }
+
+    trainingCompositions.set(set.id, composition);
+  }
+
+  // Another dataset was chosen while this one was being read.
+  if (trainingCompositionFor !== set.id) return;
+
+  const bar = splitBar(composition.splits);
+
+  /* Summed across splits per species. Images when every row could count them, the
+     quantity the model trains on; observations otherwise, and the label follows. */
+  const rows = composition.speciesSplits || [];
+  const byImages = rows.length > 0 && rows.every((row) => row.images !== null && row.images !== undefined);
+  const totals = new Map();
+
+  for (const row of rows) {
+    const key = row.species_id;
+    const entry = totals.get(key) || { name: row.comname || `Species ${row.species_id}`, n: 0 };
+
+    entry.n += Number(byImages ? row.images : row.observations) || 0;
+    totals.set(key, entry);
+  }
+
+  const ranked = [...totals.values()].sort((x, y) => y.n - x.n || x.name.localeCompare(y.name));
+
+  split.dataset.drawnFor = String(set.id);
+
+  if (!bar && !ranked.length) {
+    say('No membership was recorded for this dataset, so its split and classes are not known.');
+    split.dataset.drawnFor = String(set.id);
+    return;
+  }
+
+  split.innerHTML = bar
+    ? `${bar}<span class="hint">Set when the dataset was saved</span>`
+    : '<span class="hint">No split was recorded for this dataset.</span>';
+
+  const shown = ranked.slice(0, TRAINING_CLASSES_SHOWN);
+  const most = Math.max(1, ...shown.map((entry) => entry.n));
+
+  if (count) {
+    count.textContent = ranked.length
+      ? `(${ranked.length > shown.length ? `${shown.length} of ${ranked.length}` : ranked.length}, in ${byImages ? 'images' : 'observations'})`
+      : '';
+  }
+
+  classes.innerHTML = shown.length
+    ? `<div class="dist">${shown.map((entry) => `<span class="k">${escapeHtml(entry.name)}</span>`
+      + `<span class="b"><i style="width:${Math.max(2, Math.round((entry.n / most) * 100))}%"></i></span>`
+      + `<span class="v">${entry.n.toLocaleString('en-US')}</span>`).join('')}</div>`
+    : '<span class="hint">No classes were recorded for this dataset.</span>';
 }
 
 /**

@@ -274,27 +274,17 @@
                 <span><b></b>dives</span>
               </div>
 
+              <!-- The chosen dataset's own split and classes, from GET /dataset/:id/composition
+                   (#294). Both were the mockup's literals, the same whatever dataset was
+                   chosen. -->
               <div class="field" style="margin-top:15px">
                 <label>Saved split <span class="ro-tag">read-only</span></label>
-                <div class="splitbar" role="img"
-                     aria-label="70 per cent train, 20 per cent validation, 10 per cent test">
-                  <i class="tr" style="width:70%"><span>70%</span></i>
-                  <i class="va" style="width:20%"><span>20%</span></i>
-                  <i class="te" style="width:10%"><span>10%</span></i>
-                </div>
-                <div class="splitkey">
-                  <span class="tr"><b>8,992</b> train</span>
-                  <span class="va"><b>2,569</b> validation</span>
-                  <span class="te"><b>1,285</b> test</span>
-                </div>
-                <span class="hint">Set when the dataset was saved &middot; 1,204 overlap groups</span>
+                <div data-rendered data-fills="dataset-split"></div>
               </div>
 
               <div class="field">
-                <label>Class distribution <span class="faint">(8 of 24)</span></label>
-                <div class="dist">
-<span class="k">California sea cucumber</span><span class="b"><i style="width:100%"></i></span><span class="v">3,418</span><span class="k">Sunflower star</span><span class="b"><i style="width:85%"></i></span><span class="v">2,914</span><span class="k">Red urchin</span><span class="b"><i style="width:62%"></i></span><span class="v">2,106</span><span class="k">Basket star</span><span class="b"><i style="width:49%"></i></span><span class="v">1,688</span><span class="k">Orange sea pen</span><span class="b"><i style="width:35%"></i></span><span class="v">1,204</span><span class="k">Giant plumose anemone</span><span class="b"><i style="width:28%"></i></span><span class="v">942</span><span class="k">Dungeness crab</span><span class="b"><i style="width:18%"></i></span><span class="v">604</span><span class="k">Cloud sponge</span><span class="b"><i style="width:12%"></i></span><span class="v">418</span>
-                </div>
+                <label>Class distribution <span class="faint" data-rendered data-fills="dataset-class-count"></span></label>
+                <div data-rendered data-fills="dataset-classes"></div>
               </div>
 
             </div>
