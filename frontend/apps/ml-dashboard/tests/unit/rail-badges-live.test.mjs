@@ -21,8 +21,16 @@ test('the menu counts follow MARP without a reload', async (t) => {
 
   const listJobs = async (query = {}) => {
     if (failNext) throw Object.assign(new Error('down'), { status: 503 });
-    const total = query.state === 'failed' ? counts.failed : counts[query.kind] || 0;
-    return { jobs: [], total, limit: 1, offset: 0 };
+
+    /* The Jobs badge reads the jobs that finished in the last 24 hours (#315). */
+    if (query.finished_after) {
+      const jobs = Array.from({ length: counts.failed }, (_, i) => ({
+        id: 900 + i, kind: 'inference', state: 'failed', finished_at: new Date().toISOString(),
+      }));
+      return { jobs, total: jobs.length, limit: 500, offset: 0 };
+    }
+
+    return { jobs: [], total: counts[query.kind] || 0, limit: 1, offset: 0 };
   };
 
   const screen = await drawScreen('models.html', { listJobs, listModels: async () => [] });
@@ -40,7 +48,7 @@ test('the menu counts follow MARP without a reload', async (t) => {
 
   assert.deepEqual(read(), ['4', '2', '1'], 'Inference 3 to 2, and Training appears, with no reload');
 
-  /* The failed jobs are deleted: a count that drops to zero hides its badge. */
+  /* Nothing needs attention any more: a count that drops to zero hides its badge. */
   counts.failed = 0;
   await screen.window.pollScreenNow();
 

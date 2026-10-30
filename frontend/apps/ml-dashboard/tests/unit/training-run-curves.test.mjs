@@ -1716,8 +1716,9 @@ test('the Training screen asks for training jobs, on the first read and on every
   t.after(screen.close);
 
   /* The header's three live counters read the job list too, deliberately unfiltered or
-     filtered to another kind. The table's own read is the paged one. */
-  const forTheTable = () => asked.filter((query) => query.limit === 500);
+     filtered to another kind, and the menu's Jobs badge reads the last day's finished jobs
+     (#315). The table's own read is the paged one without a window. */
+  const forTheTable = () => asked.filter((query) => query.limit === 500 && !query.finished_after);
 
   assert.equal(forTheTable().length, 1, 'one table read on load');
   assert.equal(forTheTable()[0].kind, 'training', 'filtered, or the API omits best_map50');
