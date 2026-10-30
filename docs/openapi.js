@@ -2405,6 +2405,7 @@ const buildOpenApiSpec = () => {
                             },
                             enrolled_at: { type: 'string', format: 'date-time', description: 'When this machine was first seen.' },
                             last_seen_at: { type: 'string', format: 'date-time', nullable: true, description: 'Coordinator clock reading at the last poll or heartbeat.' },
+                            up_since: { type: 'string', format: 'date-time', nullable: true, description: 'When the machine\'s current unbroken run of check-ins began: a silence over 180 seconds starts a new one. Uptime is now minus this while it is online.' },
                         },
                     },
                     GpuPoolAttempt: {

@@ -6935,6 +6935,7 @@ const WORKERS_SORT_KEYS = {
   wver: (v) => v.worker.worker_version || '',
   wgpu: (v) => v.gpu.toLowerCase(),
   wjobs: (v) => v.used / Math.max(1, v.worker.slot_count),
+  wup: (v) => v.upMs ?? -1,
   whb: (v) => (workerLastSeen(v.worker) ? -Date.parse(workerLastSeen(v.worker)) : Infinity),
 };
 
@@ -7096,8 +7097,13 @@ function workerView(worker) {
      so only the first is pinned; this one is the belt. */
   const reading = fresh ? sample : null;
 
+  /* Online is anything but offline: idle, busy and paused machines are all checking in. */
+  const upSince = worker.up_since ? Date.parse(worker.up_since) : NaN;
+  const upMs = worker.state !== 'offline' && Number.isFinite(upSince)
+    ? Math.max(0, window.MarpApi.now() - upSince) : null;
+
   return {
-    worker, caps, state, label,
+    worker, caps, state, label, upMs,
     activity: worker.activity,
     /* **The model number is the part that tells two machines apart**, and it is the part
        a 10% column was cutting off: *"NVIDIA GeForce RTX 4…"*. Every card in this pool is
@@ -7206,7 +7212,10 @@ function workerRows(view) {
     + `<td class="wmem" data-sort="${view.vramUsed ?? -1}">${vramLoadCell(view)}</td>`
     + `<td class="wmodel">${thermalCell(view)}</td>`
     + `<td class="num" data-sort="${view.used}">${view.used} / ${worker.slot_count}</td>`
-    + `<td class="wup">${NOT_REPORTED}</td>`
+    /* **How long it has checked in without a break** (#277), measured by MARP: the
+       worker's own process uptime read 4.8 s on a machine up for hours. A machine that
+       is offline has no uptime, and says so with a dash. */
+    + `<td class="wup" data-sort="${view.upMs ?? -1}">${view.upMs == null ? '<span class="dash">&mdash;</span>' : tookText(view.upMs)}</td>`
     + `<td class="whb" data-updated data-sort="${WORKERS_SORT_KEYS.whb(view)}">${sinceText(workerLastSeen(worker))}</td>`
     + '</tr>';
 
