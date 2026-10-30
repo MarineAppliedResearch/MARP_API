@@ -964,6 +964,7 @@ body.viewing { overflow: hidden; }
   .inference-table td.jtime { grid-area: 5 / 1; }
   .inference-table td:nth-child(7) { grid-area: 5 / 2; text-align: right; }
   .inference-table td.jacts { grid-area: 4 / 2; text-align: right; }
+  .inference-table td.jseen { grid-area: 6 / 1 / 6 / -1; color: var(--faint); }
   .inference-table td.jscope::before, .inference-table td.jmodel::before,
   .inference-table td.jprog::before, .inference-table td.jtime::before,
   .inference-table td:nth-child(7)::before {

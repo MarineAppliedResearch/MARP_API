@@ -3550,18 +3550,10 @@ function patchJobRows(body, views) {
        and the pill and nothing else, and the column had only ever been refreshed by
        accident, when the whole table was still being thrown away every poll. A job's
        `updated_at` moves on every report, including the one that finishes it. */
-    const seen = jobLastSeen(view.job);
-
-    if (seen) {
-      const updated = $('[data-updated]', head);
-
-      if (updated && updated.dataset.sort !== String(seen)) {
-        updated.innerHTML = datasetStamp(seen);
-        /* The sort key too, or sorting by Updated orders the table by what the
-           timestamps were when the page was drawn. */
-        updated.dataset.sort = String(seen);
-      }
-    }
+    /* The sort keys too, or sorting orders the table by what the timestamps were when
+       the page was drawn. Took moves here as well (#281), and settles at its final
+       duration on the poll that finishes the job. */
+    patchJobTimes(head, view);
 
     const status = $('.jstatus', head);
 
@@ -3759,8 +3751,7 @@ function renderTrainingRecent(views) {
   body.innerHTML = shown.map((view) => {
     const { job } = view;
     const started = new Date(job.created_at);
-    const tookMs = Math.max(0, Date.parse(job.updated_at) - Date.parse(job.created_at));
-    const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
+    const took = tookCell(view);
 
     /* The run this job produced, if it produced one. `training_runs.job_id` has existed
        since 20261020120000 and was missing from the model, so nothing could make this
@@ -3818,7 +3809,7 @@ function renderTrainingRecent(views) {
         : (run ? IN_THE_EXPANSION : NO_RUN_RECORDED)}</td>`
       + `<td class="jmap num" data-sort="${map.sort}">${map.html}</td>`
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
-      + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
+      + `<td class="jtook num" data-sort="${took.ms}">${took.html}</td>`
       /* **The same cell the Datasets table has, with the same marker.** `data-updated` is
          what the patch path finds and what the DOM tier asserts against. */
       + `<td class="jtime" data-updated data-sort="${lastSeen}">${datasetStamp(lastSeen)}</td>`
@@ -5450,8 +5441,8 @@ function renderInferenceRecent(views = inferenceList.views) {
   body.innerHTML = shown.map((view) => {
     const { job, session } = view;
     const started = new Date(job.created_at);
-    const tookMs = Math.max(0, Date.parse(job.updated_at) - Date.parse(job.created_at));
-    const terminal = ['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state);
+    const took = tookCell(view);
+    const lastSeen = jobLastSeen(job) || job.created_at;
 
     /* **Expands onto what it found** (#288): the piece's species, and its whole run's when
        it is one piece of a split video. */
@@ -5468,11 +5459,14 @@ function renderInferenceRecent(views = inferenceList.views) {
          measurement, and a 0 would claim one. */
       + '<td class="jdet">' + NOT_COUNTED + '</td>'
       + `<td class="jtime" data-sort="${job.created_at}"><span class="two"><span class="a">${started.toTimeString().slice(0, 5)}</span><span class="b">${started.toISOString().slice(0, 10)}</span></span></td>`
-      + `<td class="jtook num" data-sort="${tookMs}">${terminal ? tookText(tookMs) : '<span class="dash">&mdash;</span>'}</td>`
+      + `<td class="jtook num" data-sort="${took.ms}">${took.html}</td>`
+      /* **When it last reported** (#281), as Jobs and Training say it: the later of the
+         job's own stamp and its attempt's heartbeat, which is what moves while it runs. */
+      + `<td class="jseen" data-updated data-sort="${lastSeen}">${datasetStamp(lastSeen)}</td>`
       /* The Open arrow that stood here opened nothing; the row's expander does now. */
       + '<td class="jacts"></td>'
       + '</tr>'
-      + `<tr class="runrow-body" hidden><td colspan="9"><div class="rundetail" data-inference-findings="${job.id}"`
+      + `<tr class="runrow-body" hidden><td colspan="10"><div class="rundetail" data-inference-findings="${job.id}"`
       + ` data-batch="${job.batch_id || ''}" data-state="${view.state}"><p class="faint">Opening the row reads what it found.</p></div></td></tr>`;
   }).join('');
 
@@ -5614,6 +5608,8 @@ function patchInferenceRows(body, views) {
       status.dataset.sort = String(JOB_STATE_RANK[view.state]);
       status.dataset.stamp = stamp;
     }
+
+    patchJobTimes(row, view);
   }
 }
 
@@ -6248,6 +6244,60 @@ function tookText(ms) {
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
+}
+
+/**
+ * A job's *Took*: the final duration once it has finished, elapsed so far while it runs.
+ *
+ * **Never a figure that stops while the job works** (#281). It was `updated_at` minus
+ * `created_at`, and `gpu_jobs.updated_at` does not move while a job runs -- only the
+ * attempt's heartbeat does -- so a running job's Took stood still. Finished is measured
+ * to `finished_at`; running, to now, and a poll moves it. Queued has taken nothing yet.
+ *
+ * @param {Object} view - From `jobView`.
+ * @returns {{ms: number, html: string}} The sort key and the cell.
+ */
+function tookCell(view) {
+  const { job } = view;
+  const start = Date.parse(job.created_at);
+
+  if (['done', 'issues', 'failed', 'cancelled', 'expired'].includes(view.state)) {
+    const ms = Math.max(0, Date.parse(job.finished_at || job.updated_at) - start);
+    return { ms, html: tookText(ms) };
+  }
+
+  if (view.state === 'running') {
+    const ms = Math.max(0, Date.now() - start);
+    return { ms, html: `<span title="So far; still running">${tookText(ms)}</span>` };
+  }
+
+  return { ms: -1, html: '<span class="dash">&mdash;</span>' };
+}
+
+/**
+ * Move a row's *Took* and *Last update* to what the latest poll says (#281).
+ *
+ * @param {Element} row - A `tr[data-job]`.
+ * @param {Object} view - From `jobView`.
+ * @returns {void}
+ */
+function patchJobTimes(row, view) {
+  const took = $('.jtook', row);
+
+  if (took) {
+    const cell = tookCell(view);
+
+    if (took.innerHTML !== cell.html) took.innerHTML = cell.html;
+    took.dataset.sort = String(cell.ms);
+  }
+
+  const seen = jobLastSeen(view.job);
+  const updated = $('[data-updated]', row);
+
+  if (seen && updated && updated.dataset.sort !== String(seen)) {
+    updated.innerHTML = datasetStamp(seen);
+    updated.dataset.sort = String(seen);
+  }
 }
 
 /**
@@ -10487,7 +10537,11 @@ function buildElapsed(build) {
 function datasetStamp(iso) {
   const d = new Date(iso);
 
-  return `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${d.toISOString().slice(0, 10)}</span></span>`;
+  /* **The date on the same clock as the time.** `toISOString` is UTC, so an evening
+     stamp read as tomorrow beside its own local time. */
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  return `<span class="two"><span class="a">${d.toTimeString().slice(0, 5)}</span><span class="b">${day}</span></span>`;
 }
 
 function fillSavedDatasets(body, datasets, builds) {
@@ -12585,7 +12639,7 @@ const TIPS = {
   'Progress': 'Frames or epochs finished',
   'Workers': 'Machines on this job now, of the slots it asked for',
   'Submitted': 'When the job was queued',
-  'Updated': 'When anything about the job last changed',
+  'Last update': 'When the job last reported: its own timestamp or its latest heartbeat, whichever is later',
   'Started': 'When work actually began',
   'Took': 'Wall-clock time from start to finish',
   'Epochs': 'Epochs finished, of the number requested',
