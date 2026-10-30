@@ -538,24 +538,50 @@ async function cutPass(streamUrl, batch, fps, batchDir, image, video) {
 }
 
 async function cutVideo(entry, staging, image = imageSettings(), onBatch = null) {
-    const { streamUrl, probe } = await openVideo(entry.video);
-
-    const wanted = [...entry.frames.keys()].sort((a, b) => a - b);
     const directory = directoryFor(entry.split);
     const images = path.join(staging, directory, 'images');
     const labels = path.join(staging, directory, 'labels');
+    const stemOf = (frame) => `${path.parse(entry.video).name}_${String(frame).padStart(8, '0')}`;
 
     fs.mkdirSync(images, { recursive: true });
     fs.mkdirSync(labels, { recursive: true });
 
+    let written = 0;
+    let missing = 0;
+
+    /** Images holding each class, for this video's split. Keyed by class index. */
+    const perClass = new Map();
+    const tally = (lines) => {
+        for (const klass of new Set(lines.map((line) => Number(line.split(' ')[0])))) {
+            if (Number.isInteger(klass)) perClass.set(klass, (perClass.get(klass) || 0) + 1);
+        }
+    };
+
+    /* **What a resumed build already has is not cut again** (#292). A frame is done when
+       both its picture and its label are in staging -- the label is written after the
+       picture lands, so the pair is the record. It is counted as written, so the totals
+       come out exactly as an uninterrupted build's. A video with nothing left is not even
+       opened. */
+    const wanted = [];
+
+    for (const frame of [...entry.frames.keys()].sort((a, b) => a - b)) {
+        const stem = stemOf(frame);
+
+        if (fs.existsSync(path.join(labels, `${stem}.txt`)) && fs.existsSync(path.join(images, `${stem}.${image.extension}`))) {
+            written += 1;
+            tally(entry.frames.get(frame));
+        } else {
+            wanted.push(frame);
+        }
+    }
+
+    if (!wanted.length) return { written, missing, perClass };
+
+    const { streamUrl, probe } = await openVideo(entry.video);
+
     const cut = fs.mkdtempSync(path.join(os.tmpdir(), 'marp-build-'));
 
     try {
-        let written = 0;
-        let missing = 0;
-
-        /** Images holding each class, for this video's split. Keyed by class index. */
-        const perClass = new Map();
 
         /* **One pass per batch, not one pass per video.** `extractFrames` builds a
            `select` expression with a term per frame, so a video wanting 8,408 frames
@@ -600,7 +626,7 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
                 /* The video's name is in the filename, not just the frame number: two
                    videos in one split both have a frame 1200, and one would overwrite
                    the other. */
-                const stem = `${path.parse(entry.video).name}_${String(frame).padStart(8, '0')}`;
+                const stem = stemOf(frame);
 
                 /* **Moved, never re-encoded.** The extractor has already written the
                    format this build asked for, so both paths are a rename now -- which is
@@ -1057,7 +1083,33 @@ async function runOne() {
     const { job, attempt } = claimed;
     const spec = job.spec || {};
     const datasetId = spec.dataset_id;
-    const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'marp-dataset-'));
+
+    /* **Staged where a restart can find it** (#292): keyed by the job, under the API's own
+       storage, rather than a fresh temp directory each time. A build resumed after a
+       restart picks up the frames the last run cut. */
+    const staging = stagingFor(job.id);
+
+    fs.mkdirSync(staging, { recursive: true });
+
+    /* Renewed on a timer, not only on progress: packaging an archive reports nothing for
+       minutes, and a two-minute lease must not lapse under a build that is working. */
+    const keepAlive = setInterval(() => {
+        buildRepository.extendBuildLease(attempt.id).catch(() => { /* the next report renews it */ });
+    }, BUILD_KEEP_ALIVE_MS);
+
+    if (keepAlive.unref) keepAlive.unref();
+
+    /** Set when the build was handed back for a shutdown, so its staging is kept. */
+    let released = false;
+
+    /** Hand the build back at a safe boundary because the API is shutting down. */
+    const release = async () => {
+        released = true;
+        await buildRepository.releaseBuild({ jobId: job.id, attemptId: attempt.id });
+        logger.info(`Dataset build ${job.id} handed back for the shutdown; it resumes from its staging.`);
+
+        return { released: true, jobId: job.id, datasetId };
+    };
 
     try {
         /* Settled before anything is cut, so a bad format fails in a second rather than
@@ -1144,6 +1196,7 @@ async function runOne() {
             await buildRepository.reportProgress(attempt.id, {
                 phase, done, total, unit: 'frames',
             });
+            if (live.stopping) return await release();
             if (await buildRepository.isCancelled(job.id)) {
                 await buildRepository.failBuild({
                     jobId: job.id,
@@ -1167,7 +1220,10 @@ async function runOne() {
                 );
 
                 // Checked per pass rather than per video: a long video is minutes, and
-                // somebody who pressed cancel should not wait out the rest of it.
+                // somebody who pressed cancel should not wait out the rest of it. A
+                // shutdown stops at the same boundary.
+                if (live.stopping) return false;
+
                 return !await buildRepository.isCancelled(job.id);
             });
 
@@ -1190,6 +1246,10 @@ async function runOne() {
 
             for (const [klass, count] of cut.perClass || []) {
                 into.set(klass, (into.get(klass) || 0) + count);
+            }
+
+            if (cut.stopped && live.stopping && !await buildRepository.isCancelled(job.id)) {
+                return await release();
             }
 
             if (cut.stopped) {
@@ -1264,13 +1324,73 @@ async function runOne() {
 
         return { jobId: job.id, datasetId, failed: true, reason: error && error.message };
     } finally {
-        // Gigabytes of frames, whatever happened. The archive is already out of here.
-        fs.rmSync(staging, { recursive: true, force: true });
+        clearInterval(keepAlive);
+
+        /* Gigabytes of frames, removed once the build has an outcome -- built, failed or
+           cancelled. Kept when it was handed back for a shutdown: that is what it resumes
+           from. A process that is killed outright never gets here, and its staging is
+           kept by the same token. */
+        if (!released) fs.rmSync(staging, { recursive: true, force: true });
     }
 }
 
+/** Where builds stage, one directory per job, beside the archives (#292). */
+const STAGING_DIRECTORY = process.env.DATASET_STAGING_DIR
+    || path.join(path.dirname(ARCHIVE_DIRECTORY), 'dataset-staging');
+
+/** How often a running build renews its lease, in milliseconds. */
+const BUILD_KEEP_ALIVE_MS = 30000;
+
+/**
+ * A job's staging directory.
+ *
+ * @param {number} jobId - The build job.
+ * @returns {string}
+ */
+function stagingFor(jobId) {
+    return path.join(STAGING_DIRECTORY, `job-${jobId}`);
+}
+
+/**
+ * Remove staging nothing will resume (#292).
+ *
+ * A job's directory stays while the job is queued or running, which is when a resume can
+ * use it; anything else -- built, failed, cancelled, deleted -- goes. So do the temp
+ * directories builds staged into before staging was durable (`marp-dataset-*`), which no
+ * build can ever find again: one held 9.8 GB after a restart.
+ *
+ * @async
+ * @returns {Promise<number>} How many directories were removed.
+ */
+async function sweepStaging() {
+    let removed = 0;
+    const keep = await buildRepository.liveBuildJobIds();
+
+    if (fs.existsSync(STAGING_DIRECTORY)) {
+        for (const name of fs.readdirSync(STAGING_DIRECTORY)) {
+            const id = Number((name.match(/^job-(\d+)$/) || [])[1]);
+
+            if (!id || keep.has(id)) continue;
+
+            fs.rmSync(path.join(STAGING_DIRECTORY, name), { recursive: true, force: true });
+            removed += 1;
+        }
+    }
+
+    for (const name of fs.readdirSync(os.tmpdir())) {
+        if (!name.startsWith('marp-dataset-')) continue;
+
+        fs.rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true });
+        removed += 1;
+    }
+
+    if (removed) logger.info(`Removed ${removed} dataset staging director${removed === 1 ? 'y' : 'ies'} nothing will resume.`);
+
+    return removed;
+}
+
 /** The poller's own state. `inFlight` is how many builds are running right now. */
-const live = { started: false, timer: null, inFlight: 0 };
+const live = { started: false, timer: null, inFlight: 0, stopping: false };
 
 /** How long to wait before looking for another build when there was none. */
 const IDLE_MS = 15000;
@@ -1425,11 +1545,48 @@ function start() {
     }
 
     live.started = true;
+    live.stopping = false;
     live.timer = setTimeout(loop, 0);
 
     if (live.timer.unref) live.timer.unref();
 
+    sweepStaging().catch((error) => logger.error(`Dataset staging sweep: ${error && error.message}`));
+
+    /* **A normal shutdown hands builds back rather than killing them mid-frame** (#292).
+       Ctrl+C and SIGTERM stop each build at its next safe boundary, queued to resume.
+       Registered once; a hard kill never reaches here and is caught by the lease. */
+    if (!live.signals) {
+        live.signals = true;
+        for (const signal of ['SIGINT', 'SIGTERM']) {
+            process.once(signal, () => {
+                shutDown().finally(() => process.exit(0));
+            });
+        }
+    }
+
     return { started: true };
+}
+
+/**
+ * Stop for a shutdown: take nothing new, and hand running builds back at their next safe
+ * boundary (#292). Waits for them, up to a limit, because a build part-way through a pass
+ * needs a few seconds to reach one.
+ *
+ * @async
+ * @param {number} [waitMs] - The longest to wait.
+ * @returns {Promise<{running: number}>} How many were still running when it gave up.
+ */
+async function shutDown(waitMs = 30000) {
+    live.stopping = true;
+    stop();
+
+    const until = Date.now() + waitMs;
+
+    while (live.inFlight > 0 && Date.now() < until) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    return { running: live.inFlight };
 }
 
 /**
@@ -1475,6 +1632,12 @@ module.exports = {
     passes,
     runOne,
     selectSplits,
+    shutDown,
+    stagingFor,
+    sweepStaging,
+    STAGING_DIRECTORY,
     start,
     stop,
+    /** For tests: set or clear the shutdown flag a running build checks. */
+    setStopping: (value) => { live.stopping = Boolean(value); },
 };

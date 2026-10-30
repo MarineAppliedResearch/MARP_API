@@ -144,6 +144,20 @@ async function queueBuild({
  * @throws {Error} Re-throws any database failure.
  */
 /**
+ * How long a build's lease lasts without being renewed, in seconds (#292).
+ *
+ * It was an hour, so a build an API restart killed sat looking alive for up to an hour
+ * before anything noticed. The runner now renews it every 30 seconds on a timer as well as
+ * on every progress report, so two minutes is four missed renewals: a dead process is
+ * noticed within about two minutes, and a live one never lapses. Still decided by the
+ * lease rather than by "this process just started", so a second API process stays safe.
+ *
+ * @constant
+ * @type {number}
+ */
+const BUILD_LEASE_SECONDS = 120;
+
+/**
  * Return builds whose runner is gone to the queue.
  *
  * **A build does not survive the API restarting, and nothing noticed.** The process
@@ -171,7 +185,9 @@ async function reclaimAbandonedBuilds() {
     const [reclaimed] = await db.sequelize.query(
         `WITH abandoned AS (
                 SELECT j.id AS job_id, a.id AS attempt_id,
-                       j.attempts_made < j.max_attempts AS retryable
+                       /* **A restart is not a failure** (#292): the attempt it cost is
+                          given back below, so the build is always worth resuming. */
+                       TRUE AS retryable
                   FROM gpu_jobs j
                   JOIN gpu_job_attempts a ON a.job_id = j.id
                  WHERE j.kind = 'dataset_build'
@@ -184,7 +200,7 @@ async function reclaimAbandonedBuilds() {
                 UPDATE gpu_job_attempts a
                    SET state = 'abandoned',
                        finished_at = NOW(),
-                       failure_reason = 'The API stopped while this build was running, so it was abandoned.'
+                       failure_reason = 'The API stopped while this build was running; it resumes from where it got to.'
                   FROM abandoned ab
                  WHERE a.id = ab.attempt_id
                  RETURNING ab.job_id, ab.retryable
@@ -193,6 +209,7 @@ async function reclaimAbandonedBuilds() {
                 UPDATE gpu_jobs j
                    SET state = CASE WHEN c.retryable THEN 'queued' ELSE 'failed' END,
                        finished_at = CASE WHEN c.retryable THEN NULL ELSE NOW() END,
+                       attempts_made = GREATEST(0, j.attempts_made - 1),
                        updated_at = NOW()
                   FROM closed c
                  WHERE j.id = c.job_id
@@ -236,21 +253,26 @@ async function claimBuild() {
             return null;
         }
 
-        const epoch = Number(job.attempts_made) + 1;
+        const tries = Number(job.attempts_made) + 1;
 
+        /* **The epoch counts every attempt the job has had; `attempts_made` counts only the
+           real tries** (#292). A restart gives its attempt back, so the two part company
+           -- and an epoch taken from `attempts_made` would repeat one already on record. */
         const [attempt] = await db.sequelize.query(
             `INSERT INTO gpu_job_attempts
                  (job_id, worker_id, slot_index, lease_epoch, state, leased_at, lease_expires_at)
-             VALUES (:jobId, :workerId, 0, :epoch, 'running', NOW(), NOW() + INTERVAL '1 hour')
+             VALUES (:jobId, :workerId, 0,
+                     (SELECT COALESCE(MAX(lease_epoch), 0) + 1 FROM gpu_job_attempts WHERE job_id = :jobId),
+                     'running', NOW(), NOW() + (:leaseSeconds * INTERVAL '1 second'))
              RETURNING *`,
-            { replacements: { jobId: job.id, workerId, epoch }, type: QueryTypes.SELECT, transaction }
+            { replacements: { jobId: job.id, workerId, leaseSeconds: BUILD_LEASE_SECONDS }, type: QueryTypes.SELECT, transaction }
         );
 
         await db.sequelize.query(
             `UPDATE gpu_jobs
-                SET state = 'leased', attempts_made = :epoch, updated_at = NOW()
+                SET state = 'leased', attempts_made = :tries, updated_at = NOW()
               WHERE id = :jobId`,
-            { replacements: { jobId: job.id, epoch }, transaction }
+            { replacements: { jobId: job.id, tries }, transaction }
         );
 
         await transaction.commit();
@@ -302,10 +324,11 @@ async function reportProgress(attemptId, progress) {
                 progress_unit = COALESCE(:unit, progress_unit),
                 progress_phase = COALESCE(:phase, progress_phase),
                 last_heartbeat_at = NOW(),
-                lease_expires_at = NOW() + INTERVAL '1 hour'
+                lease_expires_at = NOW() + (:leaseSeconds * INTERVAL '1 second')
           WHERE id = :attemptId`,
         {
             replacements: {
+                leaseSeconds: BUILD_LEASE_SECONDS,
                 attemptId,
                 done: progress.done ?? null,
                 total: progress.total ?? null,
@@ -1246,10 +1269,85 @@ async function failBuild({ jobId, attemptId, datasetId, reason, cancelled = fals
     }
 }
 
+/**
+ * Keep a build's lease alive while it works (#292).
+ *
+ * The runner calls this on a timer, because a lease measured in minutes must not lapse
+ * through a stretch with no progress to report -- packaging a 20 GB archive is one.
+ *
+ * @async
+ * @param {number} attemptId - The attempt.
+ * @returns {Promise<void>}
+ */
+async function extendBuildLease(attemptId) {
+    await db.sequelize.query(
+        `UPDATE gpu_job_attempts
+            SET lease_expires_at = NOW() + (:leaseSeconds * INTERVAL '1 second'),
+                last_heartbeat_at = NOW()
+          WHERE id = :attemptId AND state = 'running'`,
+        { replacements: { attemptId, leaseSeconds: BUILD_LEASE_SECONDS } }
+    );
+}
+
+/**
+ * Hand a build back to the queue because the API is shutting down (#292).
+ *
+ * Not a failure and not a cancel: the attempt is closed as `abandoned`, the job goes back
+ * to `queued` with the attempt it cost given back, and the dataset stays `building`. Its
+ * staging is left where it is, and the next claim resumes from it.
+ *
+ * @async
+ * @param {Object} args - `{jobId, attemptId}`.
+ * @returns {Promise<void>}
+ */
+async function releaseBuild({ jobId, attemptId }) {
+    const transaction = await db.sequelize.transaction();
+
+    try {
+        await db.sequelize.query(
+            `UPDATE gpu_job_attempts
+                SET state = 'abandoned', finished_at = NOW(),
+                    failure_reason = 'The API shut down part-way; this build resumes from where it got to.'
+              WHERE id = :attemptId`,
+            { replacements: { attemptId }, transaction }
+        );
+        await db.sequelize.query(
+            `UPDATE gpu_jobs
+                SET state = 'queued', attempts_made = GREATEST(0, attempts_made - 1), updated_at = NOW()
+              WHERE id = :jobId AND state = 'leased'`,
+            { replacements: { jobId }, transaction }
+        );
+        await transaction.commit();
+    } catch (error) {
+        await transaction.rollback();
+        logger.error('Error::' + error);
+        throw error;
+    }
+}
+
+/**
+ * The dataset builds still waiting or running, whose staging must be kept.
+ *
+ * @async
+ * @returns {Promise<Set<number>>} Their job ids.
+ */
+async function liveBuildJobIds() {
+    const rows = await db.sequelize.query(
+        "SELECT id FROM gpu_jobs WHERE kind = 'dataset_build' AND state IN ('queued', 'leased')",
+        { type: QueryTypes.SELECT }
+    );
+
+    return new Set(rows.map((row) => Number(row.id)));
+}
+
 module.exports = {
     API_WORKER_NAME,
+    BUILD_LEASE_SECONDS,
     apiWorkerId,
     claimBuild,
+    extendBuildLease,
+    liveBuildJobIds,
+    releaseBuild,
     failBuild,
     isCancelled,
     queueBuild,
