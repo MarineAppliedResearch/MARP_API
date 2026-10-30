@@ -14559,6 +14559,12 @@ document.body.dataset.rail = 'closed';
 boot('sprite', mountSprite);
 boot('rail', mountRail);
 boot('rail-badges', fillRailBadges);
+/* **Kept current, not read once** (#299). The counts were read when the page loaded and
+   never again, so a finished inference job left Inference reading 3 until a reload --
+   and a count beside a menu exists to show at a glance that something changed. On the
+   same tick every screen keeps; `fillRailBadges` leaves the last counts in place when a
+   read fails, and never stops, because the rail is on every screen. */
+boot('rail-badges live', () => watchScreen({ read: fillRailBadges, patch: () => {}, live: () => true }));
 boot('topbar', mountTopbar);
 boot('topbar autohide', wireTopbarAutohide);
 boot('freshness', wireFreshness);
