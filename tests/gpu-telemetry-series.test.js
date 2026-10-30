@@ -299,3 +299,43 @@ describe('the series read back', () => {
         expect(table.present).toBe(true);
     });
 });
+
+/**
+ * A running job is running, not queued (#302).
+ *
+ * `waiting` counted every job created and not yet finished, so the Training chart read one
+ * queued and none running while job 21970 trained. Seeded in 2020, an hour nothing else in
+ * any database is in, so the counts are this file's alone.
+ */
+describe('waiting and running over a job\'s life', () => {
+    test('queued until leased, running while leased, neither once finished', async () => {
+        const [job] = await query(
+            `INSERT INTO gpu_jobs (kind, spec, state, priority, attempts_made, max_attempts, created_at, updated_at, finished_at)
+             VALUES ('training', '{}', 'succeeded', 0, 1, 3, '2020-01-01T10:00:00Z', '2020-01-01T10:10:00Z', '2020-01-01T10:10:00Z')
+             RETURNING id`
+        );
+
+        createdJobIds.push(job.id);
+
+        await query(
+            `INSERT INTO gpu_job_attempts
+                    (job_id, worker_id, slot_index, lease_epoch, state, leased_at, lease_expires_at, finished_at)
+             VALUES (:jobId, :workerId, 0, 1, 'succeeded', '2020-01-01T10:05:00Z', '2020-01-01T10:20:00Z', '2020-01-01T10:10:00Z')
+             RETURNING id`,
+            { jobId: job.id, workerId: lease.workerId }
+        );
+
+        const response = await global.api.get('/api/v2/gpu/jobs/series').query({
+            since: '2020-01-01T10:00:00Z', until: '2020-01-01T10:12:00Z', bucket: 'minute', kind: 'training',
+        });
+
+        expect(response.status).toBe(200);
+
+        const at = (minute) => response.body.points
+            .find((point) => new Date(point.at).getUTCMinutes() === minute);
+
+        expect([at(2).waiting, at(2).running]).toEqual([1, 0]);
+        expect([at(6).waiting, at(6).running]).toEqual([0, 1]);
+        expect([at(11).waiting, at(11).running]).toEqual([0, 0]);
+    });
+});

@@ -782,7 +782,7 @@ function registerGpuRoutes(app) {
         path: '/api/gpu/jobs/series',
         summary: 'How much work finished, and how much was waiting',
         description:
-            'Per-bucket counts from `gpu_jobs`, with nothing sampled: `finished` counts jobs whose `finished_at` falls in the bucket, `succeeded` the subset that worked, and `waiting` is reconstructed — a job was waiting at a given instant if it was created before it and had not finished by it. Answerable only because `finished_at` exists; `updated_at` moves on a heartbeat and would have counted a job that finished last week as finishing today.',
+            'Per-bucket counts from `gpu_jobs`, with nothing sampled: `finished` counts jobs whose `finished_at` falls in the bucket, `succeeded` the subset that worked, and `waiting` and `running` are reconstructed — a job was running at a given instant if an attempt held a lease on it then, and waiting if it had been created, had not finished, and no attempt held it (#302: a running job used to count as waiting). Answerable only because `finished_at` exists; `updated_at` moves on a heartbeat and would have counted a job that finished last week as finishing today.',
         tags: [GPU_TAG],
         parameters: [
             { in: 'query', name: 'since', required: false, schema: { type: 'string', format: 'date-time' }, description: 'Start of the window. Defaults to 24 hours before `until`.' },

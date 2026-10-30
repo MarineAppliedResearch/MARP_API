@@ -8807,8 +8807,16 @@ function wireTrainingActivity() {
     const span = { since: since.toISOString(), until: until.toISOString(), bucket };
 
     try {
-      const jobs = await window.MarpApi.jobSeries({ ...span, kind: 'training' });
+      /* **Two series, matched by bucket** (#302). Compute is a GPU reading and lives on
+         the telemetry series; this read it, and the running count, off the job series,
+         which has neither -- so the chart drew 0 running and no compute while ABYSS
+         reported 99% training every minute. */
+      const [jobs, gpu] = await Promise.all([
+        window.MarpApi.jobSeries({ ...span, kind: 'training' }),
+        window.MarpApi.gpuSeries(span).catch(() => ({ points: [] })),
+      ]);
       const points = jobs.points || [];
+      const gpuAt = new Map((gpu.points || []).map((p) => [Date.parse(p.at), p]));
 
       if (!points.length) {
         root.classList.add('is-quiet');
@@ -8826,9 +8834,12 @@ function wireTrainingActivity() {
       samples = {
         label,
         at: points.map((p) => Date.parse(p.at)),
-        compute: points.map((p) => (p.avg_training_utilization_percent == null
-          ? null : Number(p.avg_training_utilization_percent))),
-        running: points.map((p) => Number(p.training_machines) || 0),
+        compute: points.map((p) => {
+          const reading = gpuAt.get(Date.parse(p.at));
+          return reading && reading.avg_training_utilization_percent != null
+            ? Number(reading.avg_training_utilization_percent) : null;
+        }),
+        running: points.map((p) => Number(p.running) || 0),
         queued: points.map((p) => Number(p.waiting) || 0),
         completed: points.map((p) => Number(p.succeeded) || 0),
       };

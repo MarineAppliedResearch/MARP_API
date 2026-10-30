@@ -542,9 +542,18 @@ test('the activity chart draws what the series says, at a 1h default', async (t)
       since: q.since,
       until: q.until,
       bucket: q.bucket,
+      /* **The shapes the routes really return** (#302). This stub put compute and a
+         machine count on the job series, which carries neither -- so the test passed
+         while the real chart drew 0 running and no compute. */
       points: [
-        bucket('2026-10-23T19:00:00.000Z', { avg_training_utilization_percent: 61, training_machines: 1, waiting: 2 }),
-        bucket('2026-10-23T19:30:00.000Z', { avg_training_utilization_percent: 74, training_machines: 2, waiting: 1, succeeded: 1 }),
+        bucket('2026-10-23T19:00:00.000Z', { running: 1, waiting: 2 }),
+        bucket('2026-10-23T19:30:00.000Z', { running: 2, waiting: 1, succeeded: 1 }),
+      ],
+    }),
+    gpuSeries: async () => ({
+      points: [
+        { at: '2026-10-23T19:00:00.000Z', machines: 1, avg_training_utilization_percent: 61 },
+        { at: '2026-10-23T19:30:00.000Z', machines: 2, avg_training_utilization_percent: 74 },
       ],
     }),
   });
@@ -585,9 +594,10 @@ test('a GPU reading nobody took is absent, not a flat zero', async (t) => {
       since: q.since,
       until: q.until,
       bucket: q.bucket,
-      points: [bucket('2026-10-23T19:00:00.000Z', { training_machines: 1, waiting: 1 }),
-        bucket('2026-10-23T19:30:00.000Z', { training_machines: 1, waiting: 0, succeeded: 1 })],
+      points: [bucket('2026-10-23T19:00:00.000Z', { running: 1, waiting: 1 }),
+        bucket('2026-10-23T19:30:00.000Z', { running: 1, waiting: 0, succeeded: 1 })],
     }),
+    gpuSeries: async () => ({ points: [] }),
   });
 
   t.after(screen.close);
