@@ -1057,6 +1057,28 @@ body.viewing { overflow: hidden; }
   display: grid; grid-template-columns: minmax(0, 1fr);
   gap: var(--gap); align-items: start;
 }
+
+/* **Two-up rows** (#310): the donuts together, then the graphs. `.panel-row` had no rule,
+   so the first row stacked. Each pair is stretched to the same height so the row reads as
+   one band. */
+.panel-row[data-cols="2"] {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap); align-items: stretch;
+}
+.panel-row[data-cols="2"] > .panel { margin: 0; min-width: 0; }
+
+/* The pool panel holds the donut and the slots now; its graph has a panel of its own. */
+#worker-pool .worker-pool-bd {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "pool slots";
+}
+.pool-history-panel .pool-history { padding-left: 0; border-left: 0; }
+
+@media (max-width: 1050px) {
+  .panel-row[data-cols="2"] { grid-template-columns: minmax(0, 1fr); }
+  #worker-pool .worker-pool-bd { grid-template-columns: minmax(0, 1fr); grid-template-areas: "pool" "slots"; }
+  .pool-history-panel .pool-history { margin-top: 0; padding-top: 0; border-top: 0; }
+}
 .slots-label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
 .row-destination { color: inherit; text-decoration: none; }
 .row-destination:hover .a { color: var(--cyan-300); text-decoration: underline; }

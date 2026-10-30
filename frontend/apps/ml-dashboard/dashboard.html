@@ -67,12 +67,12 @@
       </nav>
 
       <div class="dashboard-panels">
-        <div class="panel-row" data-cols="2">
+        <!-- **Donuts on one row, graphs on the next** (#310). Each donut sat beside a graph,
+             and the pool's own graph was inside the pool panel, so the page read donut,
+             graph, donut and graph. -->
+        <div class="panel-row" data-cols="2" data-dashboard-row="donuts">
         <article class="panel"><header class="panel-hd"><div><h2>Outcomes</h2><p data-outcomes-window>How work ended recently</p></div></header><div class="panel-bd jobs-mix-bd"><div class="job-donut" data-rendered role="img" aria-label="Status breakdown"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="donut-track" cx="60" cy="60" r="43"/><circle class="donut-part done" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="198 49"/><circle class="donut-part queued" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="28 219" stroke-dashoffset="-198"/><circle class="donut-part attention" cx="60" cy="60" r="43" pathLength="247" stroke-dasharray="21 226" stroke-dashoffset="-226"/></svg><span><b></b><small>finished jobs</small></span></div><div class="job-mix-key"></div></div></article>
-        <article class="panel inference-flow ops-activity" data-ops-activity="outcomes"><header class="panel-hd inference-flow-hd"><div><h2>Completion activity</h2><p>Finished work, issue rate and median turnaround</p></div><div class="seg" aria-label="Completion activity range"><button type="button" data-ops-range="24h">24h</button><button type="button" data-ops-range="7d">7d</button><button type="button" class="on" data-ops-range="30d" aria-pressed="true">30d</button><button type="button" data-ops-range="1y">1y</button></div></header><div class="panel-bd inference-flow-bd"><div class="inference-chart ops-chart" role="img" aria-label="Completion activity over 30 days"><!-- Drawn by ECharts (#275). --></div><div class="inference-flow-foot"><div class="inference-chart-key result-legend"><button class="completed" data-ops-highlight="completed">Completed jobs</button><button class="issues" data-ops-highlight="issues">Issue / failure rate</button><button class="turnaround" data-ops-highlight="turnaround">Median turnaround</button></div><div class="inference-current"><span><b data-ops-current="completed"></b> completed today</span><span><b data-ops-current="issues"></b> issue rate</span><span><b data-ops-current="turnaround"></b> median</span><span class="live"><i class="dot"></i>Live</span></div></div></div></article>
-      </div>
-
-      <section class="panel" id="worker-pool">
+        <section class="panel" id="worker-pool">
           <header class="panel-hd">
             <h2 title="Paused machines stay reachable and take no new work. A worker counts as quiet only after 90 seconds, because an idle machine on a long poll can legitimately go a minute without speaking.">Worker pool</h2>
             <a class="more" href="./workers.html">All workers <svg class="ico sm"><use href="#i-arrow"/></svg></a>
@@ -99,6 +99,13 @@
               <span class="row"><span class="k">In use</span><span class="v" data-pool-used-summary></span><span class="p" data-pool-used-summary-percent></span></span>
               <span class="row"><span class="k">Available</span><span class="v" data-pool-available></span><span class="p" data-pool-available-percent></span></span>
             </div>
+          </div>
+        </section>
+        </div>
+        <div class="panel-row" data-cols="2" data-dashboard-row="graphs">
+        <article class="panel inference-flow ops-activity" data-ops-activity="outcomes"><header class="panel-hd inference-flow-hd"><div><h2>Completion activity</h2><p>Finished work, issue rate and median turnaround</p></div><div class="seg" aria-label="Completion activity range"><button type="button" data-ops-range="24h">24h</button><button type="button" data-ops-range="7d">7d</button><button type="button" class="on" data-ops-range="30d" aria-pressed="true">30d</button><button type="button" data-ops-range="1y">1y</button></div></header><div class="panel-bd inference-flow-bd"><div class="inference-chart ops-chart" role="img" aria-label="Completion activity over 30 days"><!-- Drawn by ECharts (#275). --></div><div class="inference-flow-foot"><div class="inference-chart-key result-legend"><button class="completed" data-ops-highlight="completed">Completed jobs</button><button class="issues" data-ops-highlight="issues">Issue / failure rate</button><button class="turnaround" data-ops-highlight="turnaround">Median turnaround</button></div><div class="inference-current"><span><b data-ops-current="completed"></b> completed today</span><span><b data-ops-current="issues"></b> issue rate</span><span><b data-ops-current="turnaround"></b> median</span><span class="live"><i class="dot"></i>Live</span></div></div></div></article>
+        <section class="panel pool-history-panel" id="pool-utilization">
+          <div class="panel-bd">
             <section class="pool-history" data-pool-history aria-labelledby="pool-history-title">
               <div class="pool-history-hd">
                 <div>
@@ -128,6 +135,7 @@
             </section>
           </div>
         </section>
+        </div>
 
         <section class="panel" id="current-activity">
           <header class="panel-hd">
