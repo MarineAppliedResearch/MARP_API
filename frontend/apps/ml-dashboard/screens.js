@@ -6592,7 +6592,9 @@ function renderDashboardPool(workers) {
   /* The history panel's caption said "313 total slots" in markup, which is the
      same number this already computes and was wrong the moment the pool
      changed. Said once, from the pool. */
-  write('[data-pool-slots-total]', String(slots));
+  /* The graph has its own panel now (#310), so this one is looked up on the page. */
+  const slotsTotal = $('[data-pool-slots-total]');
+  if (slotsTotal) slotsTotal.textContent = String(slots);
 }
 
 /**
