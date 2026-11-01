@@ -6929,6 +6929,45 @@ function workerLastSeen(worker) {
  * @param {Object[]} pool - The workers, as `listWorkers` returned them.
  * @returns {void}
  */
+/** The last bytes reading of each fetching attempt, for its download rate (#320). */
+const fetchReadings = new Map();
+
+/**
+ * A live attempt's progress, and its download rate while it fetches a dataset.
+ *
+ * **The rate is measured between two readings**, not divided by the attempt's elapsed
+ * time: a fetch resumed from 15 GB would otherwise claim a rate it never had (#320).
+ *
+ * @param {Object} one - An attempt from `GET /gpu/workers`.
+ * @returns {string} HTML.
+ */
+function attemptProgressText(one) {
+  const counted = (n) => (n !== null && n !== undefined && Number.isFinite(Number(n)) ? Number(n).toLocaleString() : null);
+  const step = one.progress || {};
+
+  if (counted(step.done) === null) return 'No heartbeat yet';
+
+  let rate = '';
+  if (step.unit === 'bytes' && step.phase === 'fetching_dataset') {
+    const now = { done: Number(step.done), at: Date.parse(one.last_heartbeat_at) || window.MarpApi.now() };
+    const before = fetchReadings.get(one.attempt_id);
+
+    if (!before) {
+      fetchReadings.set(one.attempt_id, now);
+    } else if (now.at > before.at) {
+      // A new heartbeat: the bytes since the last one, over the time between them.
+      rate = ` &middot; ${gbText(Math.max(0, now.done - before.done) / ((now.at - before.at) / 1000))}/s`;
+      fetchReadings.set(one.attempt_id, { ...now, rate });
+    } else {
+      // The same heartbeat read again: keep the rate it gave.
+      rate = before.rate || '';
+    }
+  }
+
+  return `${counted(step.done)}${counted(step.total) !== null ? ` / ${counted(step.total)}` : ''} ${escapeHtml(step.unit || '')}`
+    + (step.phase ? ` &middot; ${escapeHtml(step.phase)}` : '') + rate;
+}
+
 function patchWorkerRows(pool) {
   const body = $('table#workers tbody');
 
@@ -6957,6 +6996,19 @@ function patchWorkerRows(pool) {
       heartbeat.textContent = sinceText(worker.last_seen_at);
       heartbeat.dataset.sort = since;
     }
+
+    /* The opened panel follows the poll too (#320): an attempt's progress and download
+       rate, and the dataset cache, which fills as a dataset arrives. */
+    const detail = row.nextElementSibling;
+    if (!detail || !detail.matches('.runrow-body')) continue;
+
+    for (const one of worker.attempts || []) {
+      const cell = $(`[data-attempt-progress="${one.attempt_id}"]`, detail);
+      if (cell) cell.innerHTML = attemptProgressText(one);
+    }
+
+    const cache = $('[data-dataset-cache]', detail);
+    if (cache) cache.outerHTML = datasetCacheSection(worker);
   }
 }
 
@@ -7471,15 +7523,7 @@ function workerRows(view) {
      a job row carries and a pool row never has -- and `undefined !== null` is true, so the
      first busy machine threw and the whole table read "Could not load the pool" (#282).
      Unseen for two weeks because the pool was idle whenever anyone looked. */
-  const counted = (n) => (n !== null && n !== undefined && Number.isFinite(Number(n)) ? Number(n).toLocaleString() : null);
-  const progressOf = (one) => {
-    const step = one.progress || {};
-
-    return counted(step.done) !== null
-      ? `${counted(step.done)}${counted(step.total) !== null ? ` / ${counted(step.total)}` : ''} ${escapeHtml(step.unit || '')}`
-        + (step.phase ? ` &middot; ${escapeHtml(step.phase)}` : '')
-      : 'No heartbeat yet';
-  };
+  const progressOf = attemptProgressText;
 
   /* **Every job the machine holds, not the first.** A four-slot worker runs four at
      once, and showing one of them made a busy machine look a quarter as busy. */
@@ -7490,7 +7534,7 @@ function workerRows(view) {
         + workingOn(one)
         + `<dt>Attempt</dt><dd>${one.attempt_id} &middot; job ${one.job ? one.job.job_id : NOT_REPORTED}</dd>`
         + `<dt>State</dt><dd>${escapeHtml(one.state)}</dd>`
-        + `<dt>Progress</dt><dd>${progressOf(one)}</dd>`
+        + `<dt>Progress</dt><dd data-attempt-progress="${one.attempt_id}">${progressOf(one)}</dd>`
         + `<dt>Slot</dt><dd>${one.slot_index} of ${worker.slot_count}</dd>`
         + `<dt>Heartbeat</dt><dd>${sinceText(one.last_heartbeat_at)}</dd>`
         + '</dl>').join('')
