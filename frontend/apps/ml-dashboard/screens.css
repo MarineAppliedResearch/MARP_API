@@ -1098,6 +1098,10 @@ body.viewing { overflow: hidden; }
 [data-workers-power] .power-above b { color: var(--amber-300); }
 .power-chart { min-height: 220px; }
 
+/* A worker's cached datasets (#320): one line each, newest first. */
+.cache-entries { margin: 6px 0 8px; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.cache-entries li { padding: 2px 0; }
+
 /* ============================================================== state */
 
 [data-state="running"]    { --s: var(--st-running); }

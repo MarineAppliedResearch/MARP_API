@@ -333,6 +333,14 @@ function registerGpuRoutes(app) {
 
             const lease = await gpuController.pollForWork(req.body || {}, () => abandoned);
 
+            // What the machine is asked to do outside any job, as a header so an
+            // empty 204 carries it too and an older worker ignores it (#320). Taken
+            // only for a client still there to hear it.
+            if (!abandoned) {
+                const instructions = await gpuController.takeWorkerInstructions(req.body && req.body.worker_id);
+                if (instructions.length) res.setHeader('X-Marp-Worker-Instructions', instructions.join(','));
+            }
+
             // 204 rather than 200 with a null body: a long-poll that timed out
             // is a normal answer, and a worker should not have to parse one.
             if (!lease) {
@@ -691,6 +699,60 @@ function registerGpuRoutes(app) {
         handler: asyncHandler(async (req, res) => {
             const data = await gpuController.renameWorker(req.params.id, req.body || {});
             res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'put',
+        permission: 'jobs:write',
+        path: '/api/gpu/workers/:id/dataset-cache/floor',
+        summary: 'Set the free disk a GPU machine keeps for datasets',
+        description:
+            'A worker caches every training dataset it fetches and evicts the least recently used to keep at least this much of its disk free (#320). `keep_free_bytes` sets it for this machine; `null` puts back the default of 50 GB. The machine is told with its next training job. Not on any screen yet: the administration interface is #322.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The worker.' },
+        ],
+        requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuWorkerDatasetFloorRequest' } } },
+        },
+        responses: {
+            200: {
+                description: 'The floor the machine now keeps.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuWorkerDatasetFloor' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await gpuController.setDatasetKeepFree(req.params.id, req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
+        path: '/api/gpu/workers/:id/dataset-cache/clear',
+        summary: 'Ask a GPU machine to clear its dataset cache',
+        description:
+            'The machine is told on its next poll, as the `X-Marp-Worker-Instructions: clear-dataset-cache` header, and removes every cached dataset it is not training on, with any leftover partial downloads (#320). A dataset a job is using is kept. Asking again before the machine polls is the same request.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The worker.' },
+        ],
+        responses: {
+            200: {
+                description: 'The request is recorded.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuWorkerDatasetClear' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await gpuController.requestDatasetCacheClear(req.params.id));
         }),
     });
 

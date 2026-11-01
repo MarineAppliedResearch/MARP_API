@@ -57,6 +57,7 @@ const {
     SETTING_VALUE_TYPES,
     SETTING_SOURCES,
     RESULT_OUTCOMES,
+    DEFAULT_DATASET_KEEP_FREE_BYTES,
 } = require('../config/gpu-orchestration');
 
 /**
@@ -785,7 +786,7 @@ class GpuService {
                 let spec;
 
                 try {
-                    spec = await this.resolveSpecForLease(this.applyResumePoint(lease.job));
+                    spec = await this.resolveSpecForLease(this.applyResumePoint(lease.job), workerId);
                 } catch (error) {
                     // The lease is given up rather than handed over. Two worse
                     // options were available: hand out a spec with no URL in it,
@@ -854,10 +855,11 @@ class GpuService {
      *
      * @async
      * @param {Object} spec - The stored spec, as submitted.
+     * @param {number} [workerId] - The machine being handed it.
      * @returns {Promise<Object>} The spec a worker is handed.
      * @throws {Error} When either resolution fails.
      */
-    async resolveSpecForLease(spec) {
+    async resolveSpecForLease(spec, workerId) {
         /* A training job has no video, no frame range and no session to file
            observations into, so three of the four steps below have nothing to
            work on and `resolveVideoForLease` would refuse the lease outright.
@@ -868,7 +870,7 @@ class GpuService {
            The model's class names still matter, and arguably matter more here:
            they are what the finished weights will be registered with. */
         if (spec && typeof spec === 'object' && spec.dataset) {
-            return this.declareModelClassesForLease(spec);
+            return this.declareModelClassesForLease(await this.describeDatasetRoomForLease(spec, workerId));
         }
 
         return this.declareModelClassesForLease(
@@ -911,6 +913,33 @@ class GpuService {
      * @param {Object} spec - The spec being prepared for a lease.
      * @returns {Promise<Object>} The spec, with `model.class_names` where known.
      */
+    /**
+     * Tell a training job's worker how big its dataset is and how much disk to keep free (#320).
+     *
+     * At lease time rather than submission: the floor is the machine's, and which machine
+     * takes the job is not known until now. The size is read here too, so a job queued
+     * before #320 carries it as well.
+     *
+     * @async
+     * @param {Object} spec - A training spec naming a dataset.
+     * @param {number} [workerId] - The machine being handed it.
+     * @returns {Promise<Object>} The spec, with `dataset.size_bytes` and `dataset.keep_free_bytes`.
+     */
+    async describeDatasetRoomForLease(spec, workerId) {
+        if (!workerId) return spec;
+
+        const room = await gpuRepository.datasetRoomForLease(workerId, spec.dataset.dataset_id);
+
+        return {
+            ...spec,
+            dataset: {
+                ...spec.dataset,
+                size_bytes: room.sizeBytes,
+                keep_free_bytes: room.keepFree === null ? DEFAULT_DATASET_KEEP_FREE_BYTES : room.keepFree,
+            },
+        };
+    }
+
     async declareModelClassesForLease(spec) {
         const modelId = spec && spec.model && spec.model.ml_model_id;
 
@@ -1756,6 +1785,14 @@ class GpuService {
                     /* Since when it has checked in without a break (#277). */
                     up_since: row.up_since || null,
 
+                    /* **Its dataset cache** (#320): what it holds and the disk it is on, as
+                       its latest reading said, and the floor it evicts to keep. */
+                    dataset_cache: (row.sample_system && row.sample_system.dataset_cache) || null,
+                    dataset_keep_free_bytes: row.dataset_keep_free_bytes === null
+                        ? DEFAULT_DATASET_KEEP_FREE_BYTES : Number(row.dataset_keep_free_bytes),
+                    dataset_keep_free_is_default: row.dataset_keep_free_bytes === null,
+                    clear_dataset_cache_requested_at: row.clear_dataset_cache_requested_at || null,
+
                     /* **Its idle GPU power** (#214): the median of its readings with no
                        job over the last week, summed across its cards. Null until it has
                        idled with NVML reporting. What it draws now is on `telemetry`. */
@@ -1851,6 +1888,72 @@ class GpuService {
      * @returns {Promise<Object>} The machine as it now stands.
      * @throws {ApiError} 400 for a bad id or name, 404 when there is no such machine.
      */
+    /**
+     * Set the free disk a worker keeps for datasets (#320).
+     *
+     * `keep_free_bytes` null puts it back to the default. Not on any screen yet: the
+     * administration interface is #322.
+     *
+     * @async
+     * @param {string|number} workerId - From the path.
+     * @param {Object} body - `{keep_free_bytes}`.
+     * @returns {Promise<Object>} `{worker_id, keep_free_bytes, is_default}`.
+     * @throws {ApiError} 400 for a bad value, 404 for an unknown worker.
+     */
+    async setDatasetKeepFree(workerId, body) {
+        const id = Number(workerId);
+        if (!Number.isInteger(id)) invalid('The worker id in the path must be an integer.');
+
+        const raw = body ? body.keep_free_bytes : undefined;
+        if (raw === undefined) invalid('keep_free_bytes is required; null puts the default back.');
+        if (raw !== null && (!Number.isSafeInteger(raw) || raw < 0)) {
+            invalid('keep_free_bytes must be a whole number of bytes, at least 0, or null.');
+        }
+
+        const row = await gpuRepository.setDatasetKeepFree(id, raw);
+        if (!row) throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `Worker ${id} is not enrolled.`);
+
+        return {
+            worker_id: row.id,
+            keep_free_bytes: raw === null ? DEFAULT_DATASET_KEEP_FREE_BYTES : Number(row.dataset_keep_free_bytes),
+            is_default: raw === null,
+        };
+    }
+
+    /**
+     * Ask a worker to clear its dataset cache (#320).
+     *
+     * The machine is told on its next poll and removes every cached dataset it is not
+     * training on. Asking twice before it polls is one request.
+     *
+     * @async
+     * @param {string|number} workerId - From the path.
+     * @returns {Promise<Object>} `{worker_id, clear_dataset_cache_requested_at}`.
+     * @throws {ApiError} 400 for a bad id, 404 for an unknown worker.
+     */
+    async requestDatasetCacheClear(workerId) {
+        const id = Number(workerId);
+        if (!Number.isInteger(id)) invalid('The worker id in the path must be an integer.');
+
+        const row = await gpuRepository.requestDatasetCacheClear(id);
+        if (!row) throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `Worker ${id} is not enrolled.`);
+
+        return { worker_id: row.id, clear_dataset_cache_requested_at: row.clear_dataset_cache_requested_at };
+    }
+
+    /**
+     * What a polling worker is asked to do outside any job (#320).
+     *
+     * @async
+     * @param {*} workerId - From the poll body.
+     * @returns {Promise<string[]>} Instruction words; empty when there are none.
+     */
+    async takeWorkerInstructions(workerId) {
+        const id = Number(workerId);
+        if (!Number.isInteger(id)) return [];
+        return gpuRepository.takeWorkerInstructions(id);
+    }
+
     async renameWorker(workerId, body) {
         const id = Number(workerId);
 

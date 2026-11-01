@@ -98,6 +98,16 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true,
                 comment: 'Start of the current unbroken run of check-ins; a silence over 180 s starts a new one.',
             },
+            dataset_keep_free_bytes: {
+                type: DataTypes.BIGINT,
+                allowNull: true,
+                comment: 'Free disk this machine keeps by evicting cached datasets; null is the default.',
+            },
+            clear_dataset_cache_requested_at: {
+                type: DataTypes.DATE,
+                allowNull: true,
+                comment: 'When clearing the dataset cache was asked for; null once the machine has been told.',
+            },
 
             state: {
                 type: DataTypes.STRING(16),

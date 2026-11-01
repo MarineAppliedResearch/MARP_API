@@ -7027,6 +7027,76 @@ const resourceMemory = (caps) => {
     + `${memory.percent_used === undefined ? '' : ` &middot; ${Math.round(memory.percent_used)}%`}`;
 };
 
+/** Bytes as decimal gigabytes, the unit a disk is sold in and the floor is set in (#320). */
+const gbText = (bytes) => `${(Number(bytes) / 1e9).toFixed(Number(bytes) >= 1e10 ? 0 : 1)} GB`;
+
+/**
+ * A worker's dataset cache, for its detail panel (#320).
+ *
+ * What it holds, the disk it is on, and the floor it evicts to keep, as the machine last
+ * reported. A worker before 0.1.20 reports none, and the section says so in a dash.
+ *
+ * @param {Object} worker - From `GET /gpu/workers`.
+ * @returns {string} HTML.
+ */
+function datasetCacheSection(worker) {
+  const cache = worker.dataset_cache;
+  const floor = `${gbText(worker.dataset_keep_free_bytes)}${worker.dataset_keep_free_is_default ? ' (default)' : ''}`;
+  const asked = worker.clear_dataset_cache_requested_at;
+  const button = `<button class="btn sm" type="button" data-clear-dataset-cache="${worker.worker_id}"${asked ? ' disabled' : ''}>`
+    + `${asked ? 'Clear requested' : 'Clear cache'}</button>`;
+
+  if (!cache) {
+    return '<div class="sect" data-dataset-cache><h3>Dataset cache</h3><dl class="kv">'
+      + `<dt>Cached</dt><dd>${NOT_REPORTED}</dd><dt>Keeps free</dt><dd>${floor}</dd></dl></div>`;
+  }
+
+  const entries = cache.entries || [];
+  const listed = entries.map((entry) => `<li><span class="mono">${escapeHtml(String(entry.sha256).slice(0, 12))}</span>`
+    + ` &middot; ${entry.bytes === null ? NOT_REPORTED : gbText(entry.bytes)}`
+    + ` &middot; used ${sinceText(entry.last_used_at)}${entry.in_use ? ' &middot; <b>in use</b>' : ''}</li>`).join('');
+
+  return '<div class="sect" data-dataset-cache><h3>Dataset cache</h3><dl class="kv">'
+    + `<dt>Cached</dt><dd>${gbText(cache.bytes)} in ${countOf(entries.length, 'dataset')}`
+    + `${cache.partial_bytes ? ` &middot; ${gbText(cache.partial_bytes)} part-downloaded` : ''}</dd>`
+    + `<dt>Disk</dt><dd>${cache.disk ? `${gbText(cache.disk.free_bytes)} free of ${gbText(cache.disk.total_bytes)}` : NOT_REPORTED}</dd>`
+    + `<dt>Keeps free</dt><dd>${floor}</dd>`
+    + '</dl>'
+    + (listed ? `<ul class="cache-entries">${listed}</ul>` : '')
+    + `<p class="wdacts">${button}</p></div>`;
+}
+
+/**
+ * Clearing a worker's dataset cache from its detail panel (#320).
+ *
+ * Delegated, because the table is redrawn on every poll. The machine is told on its next
+ * poll; the button stays "Clear requested" until it has been.
+ *
+ * @returns {void}
+ */
+function wireWorkersDatasetCache() {
+  const table = $('table#workers');
+  if (!table || !window.MarpApi) return;
+
+  table.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-clear-dataset-cache]');
+    if (!button) return;
+
+    const id = Number(button.dataset.clearDatasetCache);
+    if (!window.confirm('Clear this machine\'s dataset cache?\n\nIt removes every cached dataset it is not training on, '
+      + 'the next time it checks in. A dataset it needs again is downloaded again.')) return;
+
+    button.disabled = true;
+    try {
+      await window.MarpApi.clearWorkerDatasetCache(id);
+      button.textContent = 'Clear requested';
+    } catch (error) {
+      button.disabled = false;
+      window.alert(`Could not ask for the cache to be cleared: ${error.message || error}`);
+    }
+  });
+}
+
 const resourceDisk = (caps) => {
   const disk = (caps.resources || {}).disk;
 
@@ -7459,6 +7529,7 @@ function workerRows(view) {
     + '</dl>'
     + '</div>'
     + live
+    + datasetCacheSection(worker)
     /* Filled when the row is opened rather than with the table: a series per machine for
        thirteen machines, most of which nobody expands, is a read for nothing. */
     + '</div><div class="worker-readings" data-worker-readings>'
@@ -15001,6 +15072,7 @@ boot('sprite', mountSprite);
 boot('rail', mountRail);
 boot('rail-badges', fillRailBadges);
 boot('workers power', wireWorkersPower);
+boot('workers dataset cache', wireWorkersDatasetCache);
 /* **Kept current, not read once** (#299). The counts were read when the page loaded and
    never again, so a finished inference job left Inference reading 3 until a reload --
    and a count beside a menu exists to show at a glance that something changed. On the

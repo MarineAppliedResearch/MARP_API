@@ -148,6 +148,23 @@ class GpuController {
         return gpuService.renameWorker(workerId, body);
     }
 
+    /** The free disk a worker keeps for datasets (#320). */
+    async setDatasetKeepFree(workerId, body) {
+        logger.info('Controller: setDatasetKeepFree');
+        return gpuService.setDatasetKeepFree(workerId, body);
+    }
+
+    /** Ask a worker to clear its dataset cache (#320). */
+    async requestDatasetCacheClear(workerId) {
+        logger.info('Controller: requestDatasetCacheClear');
+        return gpuService.requestDatasetCacheClear(workerId);
+    }
+
+    /** What a polling worker is asked to do outside any job (#320). */
+    async takeWorkerInstructions(workerId) {
+        return gpuService.takeWorkerInstructions(workerId);
+    }
+
     /**
      * List GPU jobs.
      *

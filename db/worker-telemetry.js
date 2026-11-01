@@ -11,8 +11,8 @@
  * @module db/worker-telemetry
  */
 
-/** The blocks a sample keeps, under the worker's own names. */
-const SYSTEM_BLOCKS = ['cpu', 'memory', 'disk'];
+/** The blocks a sample keeps, under the worker's own names. `dataset_cache` since #320. */
+const SYSTEM_BLOCKS = ['cpu', 'memory', 'disk', 'dataset_cache'];
 
 /**
  * The machine's own reading, as a sample stores it.
