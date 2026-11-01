@@ -428,8 +428,8 @@ test('section 3 follows the form instead of stating a mockup', async (t) => {
   assert.match(result.textContent, /Registers a new detection model from MARP-Rockfish-Base/);
   assert.doesNotMatch(result.textContent, /MARP-Multiclass-Det-XL|1\.0\.3/,
     'the mockup name and version should be gone');
-  assert.match(result.textContent, /MARP records no version number/,
-    'ml_models has no version column, so the number is not invented -- it is explained');
+  assert.match(result.textContent, /It starts with no version label/,
+    'a version is a free label since #321, given on the Models tab, never invented here');
 
   assert.match(trace.textContent, /CookieStarTest/, 'the dataset the form has');
   assert.match(trace.textContent, /3,361, by membership/, "and that dataset's own count");
@@ -443,8 +443,8 @@ test('section 3 follows the form instead of stating a mockup', async (t) => {
   base.dispatchEvent(new screen.window.Event('change', { bubbles: true }));
 
   assert.match(result.textContent, /from rockfish5-2026-10-20/, 'it follows the base picker');
-  assert.match(result.textContent, /Generation v3/,
-    'and the generation is walked from parent_model_id rather than guessed: 91 is a child of 90');
+  assert.doesNotMatch(result.textContent, /Generation v\d/,
+    'no chain-depth "version" since #321: two siblings both read v2, so it said nothing');
 });
 
 test('the dataset quad fills what a Dataset records and dashes what it does not', async (t) => {

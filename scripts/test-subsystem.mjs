@@ -169,6 +169,8 @@ const SUBSYSTEMS = {
             // #104: preferred models, version chains, dataset status and the
             // training-run listing the registry had no route for.
             'ml-registry',
+            // #321: what a model's weights say it is, upload, status and versions.
+            'ml-model-registry',
             // #268: grouping, splitting and vocabulary for a dataset build. Pure
             // functions, so they cost a second and belong with the registry they feed.
             'dataset-build-plan',

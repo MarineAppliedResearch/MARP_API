@@ -870,14 +870,16 @@ class GpuService {
            The model's class names still matter, and arguably matter more here:
            they are what the finished weights will be registered with. */
         if (spec && typeof spec === 'object' && spec.dataset) {
-            return this.declareModelClassesForLease(await this.describeDatasetRoomForLease(spec, workerId));
+            return this.describeModelForLease(
+                await this.declareModelClassesForLease(await this.describeDatasetRoomForLease(spec, workerId))
+            );
         }
 
-        return this.declareModelClassesForLease(
+        return this.describeModelForLease(await this.declareModelClassesForLease(
             await this.describeSessionForLease(
                 await this.resolveDataTypeForLease(await this.resolveVideoForLease(spec))
             )
-        );
+        ));
     }
 
     /**
@@ -938,6 +940,38 @@ class GpuService {
                 keep_free_bytes: room.keepFree === null ? DEFAULT_DATASET_KEEP_FREE_BYTES : room.keepFree,
             },
         };
+    }
+
+    /**
+     * Tell the worker what the model is: its architecture and task (#321).
+     *
+     * The worker labelled every model it cached `unknown` / `detect`. Attached when the
+     * registry knows, and never a refusal when it does not, for the reason the class names
+     * are not one either.
+     *
+     * @async
+     * @param {Object} spec - The spec being prepared for a lease.
+     * @returns {Promise<Object>} The spec, with `model.architecture` and `model.task` where known.
+     */
+    async describeModelForLease(spec) {
+        const modelId = spec && spec.model && spec.model.ml_model_id;
+        if (!modelId) return spec;
+
+        try {
+            const model = await gpuRepository.modelForLease(modelId);
+            if (!model) return spec;
+
+            return {
+                ...spec,
+                model: {
+                    ...spec.model,
+                    ...(model.architecture_version ? { architecture: model.architecture_version } : {}),
+                    ...(model.model_type ? { task: model.model_type } : {}),
+                },
+            };
+        } catch {
+            return spec;
+        }
     }
 
     async declareModelClassesForLease(spec) {

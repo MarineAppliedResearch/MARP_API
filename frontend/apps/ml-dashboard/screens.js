@@ -3959,14 +3959,9 @@ function renderTrainingResult() {
       continue;
     }
 
-    /* Generation, not a version: it is the depth of the `parent_model_id` chain, which is
-       the only thing MARP can say about where a model sits in a line. */
-    const generation = modelGeneration(base, byId);
-
     into.innerHTML = `<span class="a">Registers a new ${named[task]} model from ${escapeHtml(base.name)}</span>`
-      + `<span class="b">Generation v${generation + 1}, with ${produces[task]}</span>`
-      + '<span class="b">MARP records no version number &mdash; the result is its own registry '
-      + 'entry, named by the run that produces it</span>'
+      + `<span class="b">${base.architecture_version ? `${escapeHtml(base.architecture_version)}, ` : ''}with ${produces[task]}</span>`
+      + '<span class="b">It starts with no version label &mdash; give it one on the Models tab</span>'
       + '<span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>';
   }
 
@@ -3982,7 +3977,7 @@ function renderTrainingResult() {
       ? `${Number(set.num_observations).toLocaleString('en-US')}, by membership`
       : '<span class="dash" title="This dataset records no observation count">&mdash;</span>';
 
-    trace.innerHTML = `<dt>Base</dt><dd>${base ? `${escapeHtml(base.name)} <span class="faint">generation v${modelGeneration(base, byId)}</span>` : UNKNOWN}</dd>`
+    trace.innerHTML = `<dt>Base</dt><dd>${base ? `${escapeHtml(base.name)}${base.architecture_version ? ` <span class="faint">${escapeHtml(base.architecture_version)}</span>` : ''}` : UNKNOWN}</dd>`
       + `<dt>Dataset</dt><dd>${set ? escapeHtml(set.name) : UNKNOWN}</dd>`
       + `<dt>Observations</dt><dd>${observations}</dd>`
       /* The signed-in user, not a literal. `created_by` on the job is filled by the API
@@ -5793,17 +5788,15 @@ const NOT_IN_REGISTRY = '<span class="dash" title="No worker reports which model
  * a "None" would all read as a different sort of fact. Only the tooltip differs, because
  * the reason differs and a reader who asks deserves the real one.
  */
-const NO_REGISTERED_MODEL = '<span class="dash" title="MARP records no link from a run to the model it registered: training_runs.model_id and spec.model.ml_model_id are both the base model the run started FROM">&mdash;</span>';
+const NO_REGISTERED_MODEL = '<span class="dash" title="This run has registered no model: it is still running, it failed, or it published no weights">&mdash;</span>';
 
 let modelsTrainedOn = new Map();
 
-const NO_TRAINING_RUN = '<span class="dash" title="MARP records no link from a model to the run that produced it: training_runs.model_id is the base model a run started FROM, not the model it produced">&mdash;</span>';
+const NO_TRAINING_RUN = '<span class="dash" title="No training run produced this model: it was registered from weights trained elsewhere">&mdash;</span>';
 
-/** MARP's `ml_models.status`, in the design's own state words. @type {Object} */
+/** MARP's `ml_models.status`, in the design's own state words. Active or archived (#321). */
 const MODEL_STATE = {
-  trained: ['done', 'Trained'],
-  training: ['running', 'Training'],
-  draft: ['queued', 'Draft'],
+  active: ['done', 'Active'],
   archived: ['cancelled', 'Archived'],
 };
 
@@ -5818,13 +5811,12 @@ const modelsQuery = {
 const MODELS_SORT_KEYS = {
   hname: (v) => v.model.name.toLowerCase(),
   htask: (v) => v.model.model_type,
-  hver: (v) => v.version,
-  hstatus: (v) => ['training', 'draft', 'trained', 'archived'].indexOf(v.model.status),
-  hbase: (v) => (v.model.architecture_version || '').toLowerCase(),
-  /* **No `hdset` key, deliberately.** The column has nothing to sort: every row is the
-     same dash until MARP records which run produced a model. `Key metrics` and `Cached`
-     were the other two keyless-but-sortable headers and they are gone -- Isaac asked to
-     keep them once and to remove them now; the later call wins. */
+  hver: (v) => (v.model.version_label || '').toLowerCase(),
+  hstatus: (v) => ['active', 'archived'].indexOf(v.model.status),
+  hbase: (v) => (v.parent ? v.parent.name.toLowerCase() : ''),
+  /* No `hdset` key: `Key metrics` and `Cached` were the other keyless-but-sortable
+     headers and they are gone -- Isaac asked to keep them once and to remove them now;
+     the later call wins. */
   hupd: (v) => v.model.updated_at,
 };
 
@@ -5832,35 +5824,6 @@ const MODELS_SORT_KEYS = {
 let modelsRegistry = null;
 
 /** What each model trained on, by model id. Empty until the registry has loaded. */
-
-/**
- * Which generation a model is, by walking `parent_model_id`.
- *
- * **A version chain is a self-join** (gap 16): `ml_models` has no `versions`
- * array and no version number, so "v3" is a position in a chain rather than a
- * field. Walking it here is honest and cheap at registry size; it is also
- * exactly the work a route would do if one ever returned a chain.
- *
- * @param {Object} model - The model.
- * @param {Map<number,Object>} byId - Every model, by id.
- * @returns {number} 1 for a root model.
- */
-function modelGeneration(model, byId) {
-  let depth = 1;
-  let current = model;
-  const seen = new Set([model.id]);
-
-  while (current.parent_model_id && byId.has(current.parent_model_id)) {
-    /* A cycle would hang this. Self-joins are not guaranteed acyclic by
-       anything in the schema, so the walk refuses to revisit. */
-    if (seen.has(current.parent_model_id)) break;
-    seen.add(current.parent_model_id);
-    current = byId.get(current.parent_model_id);
-    depth += 1;
-  }
-  return depth;
-}
-
 
 /**
  * Which dataset each model actually learned from, by model id.
@@ -5910,14 +5873,14 @@ function modelView(model, byId) {
   const [state, label] = MODEL_STATE[model.status] || ['queued', model.status];
 
   const trainedOn = modelsTrainedOn.get(model.id) || null;
+  const parent = (model.parent_model_id && byId.get(model.parent_model_id)) || null;
 
   return {
-    model, state, label,
-    version: modelGeneration(model, byId),
+    model, state, label, parent,
     trainedOn,
     /* Searchable by what it trained on, which is how somebody looks for "every model
        that saw the inverts dataset". */
-    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.status} ${trainedOn ? trainedOn.name : ''}`.toLowerCase(),
+    haystack: `${model.name} ${model.model_type} ${model.architecture_version || ''} ${model.version_label || ''} ${model.status} ${trainedOn ? trainedOn.name : ''}`.toLowerCase(),
   };
 }
 
@@ -5929,24 +5892,19 @@ function modelView(model, byId) {
  * @returns {string} Two `<tr>`s.
  */
 function modelRows(view, byId) {
-  const { model } = view;
-  const parent = model.parent_model_id && byId.get(model.parent_model_id);
+  const { model, parent } = view;
 
   const head = `<tr class="runrow-head" data-model="${model.id}" aria-expanded="false">`
     + `<td class="ex"><button class="exbtn" type="button" aria-label="Show ${model.name} details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>`
     + `<td class="hname"><span class="name"><svg class="ico models"><use href="#i-models"/></svg><span class="t">${model.name}</span></span></td>`
-    + `<td class="htask"><span class="tag">${model.model_type}</span></td>`
-    + `<td class="hver">v${view.version}</td>`
+    + `<td class="htask"><span class="tag">${escapeHtml(model.model_type)}</span>`
+    + `${model.architecture_version ? ` <span class="faint">${escapeHtml(model.architecture_version)}</span>` : ''}</td>`
+    + `<td class="hver">${model.version_label ? escapeHtml(model.version_label) : NOT_REPORTED}</td>`
     + `<td class="hstatus" data-sort="${MODELS_SORT_KEYS.hstatus(view)}"><span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span></td>`
-    + `<td class="hbase">${model.architecture_version || NOT_REPORTED}</td>`
-    /* **Empty, because the link does not exist rather than because it is missing.**
-       This used to read `training_runs.model_id` as the model a run produced. It is the
-       base model the run started FROM -- `gpu.service.js` says so where it refuses a
-       submission without one -- so every row that showed a dataset was crediting a model
-       with what some *other* run trained on. rockfish5-2026-10-20 was named against
-       CookieStarTest on that basis, which it never saw. Nothing in `ml_models` or
-       `training_runs` records which run produced which model; until something does, this
-       column says so instead of guessing. */
+    /* The model it was fine-tuned from, by name (#321): this showed
+       `architecture_version`, which held the parent's name by accident. */
+    + `<td class="hbase">${parent ? escapeHtml(parent.name) : NOT_REPORTED}</td>`
+    /* Through `training_run_id`, the run that produced the model. */
     + `<td class="hdset">${view.trainedOn
       ? `<a href="./datasets.html?dataset=${encodeURIComponent(view.trainedOn.id)}" title="The dataset the run that produced this model learned from">${escapeHtml(view.trainedOn.name)}</a>`
       : NO_TRAINING_RUN}</td>`
@@ -5967,18 +5925,145 @@ function modelRows(view, byId) {
     + `<div class="wdhead"><span class="name"><svg class="ico models"><use href="#i-models"/></svg><span class="t">${model.name}</span></span>`
     + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
     + `<span class="wid mono" title="Model id as the registry reports it">ml_${model.id}</span></div>`
-    + '<div class="grid" data-cols="1">'
-    + '<div class="sect"><h3>In the registry</h3><dl class="kv">'
-    + `<dt>Task</dt><dd>${model.model_type}</dd>`
-    + `<dt>Architecture</dt><dd>${model.architecture_version || NOT_REPORTED}</dd>`
-    + `<dt>Generation</dt><dd>v${view.version}${parent ? ` &middot; from ${parent.name}` : ' &middot; root model'}</dd>`
-    + `<dt>Weights</dt><dd class="mono">${model.storage_path || NOT_REPORTED}</dd>`
-    + `<dt>Registered</dt><dd>${new Date(model.created_at).toISOString().slice(0, 10)}</dd>`
-    + `<dt>Updated</dt><dd>${sinceText(model.updated_at)}</dd>`
-    + '</dl></div>'
+    + '<div class="grid" data-cols="2">'
+    + modelRegistrySection(view)
+    + modelLineageSection(view, byId)
     + '</div></div></td></tr>';
 
   return head + body;
+}
+
+/**
+ * What the registry says a model is, and its weights (#321).
+ *
+ * Task, engine, architecture and format are read from the weights themselves; the
+ * version label is whatever somebody typed, and can be changed here.
+ *
+ * @param {Object} view - From `modelView`.
+ * @returns {string} HTML.
+ */
+function modelRegistrySection(view) {
+  const { model } = view;
+  const weights = model.weights || {};
+  const present = weights.present
+    ? `${gbText(weights.bytes)} on the API`
+    : '<span class="warn">Not on the API: a job cannot fetch it</span>';
+  const action = model.status === 'archived'
+    ? `<button class="btn sm" type="button" data-model-status="active" data-model-id="${model.id}">Restore</button>`
+    : `<button class="btn sm" type="button" data-model-status="archived" data-model-id="${model.id}">Archive</button>`;
+
+  return '<div class="sect" data-model-registry><h3>In the registry</h3><dl class="kv">'
+    + `<dt>Task</dt><dd>${escapeHtml(model.model_type)}</dd>`
+    + `<dt>Architecture</dt><dd>${model.architecture_version ? escapeHtml(model.architecture_version) : NOT_REPORTED}</dd>`
+    + `<dt>Engine</dt><dd>${model.engine ? escapeHtml(model.engine) : NOT_REPORTED}${model.file_format ? ` &middot; .${escapeHtml(model.file_format)}` : ''}</dd>`
+    + `<dt>Version label</dt><dd><input class="inp sm" data-model-label="${model.id}" maxlength="64" value="${escapeHtml(model.version_label || '')}" placeholder="none" aria-label="Version label">`
+    + ` <button class="btn sm" type="button" data-model-label-save="${model.id}">Save</button></dd>`
+    + `<dt>Weights</dt><dd>${present}</dd>`
+    + `<dt>sha256</dt><dd class="mono" title="${escapeHtml(model.artifact_sha256 || '')}">${model.artifact_sha256 ? escapeHtml(model.artifact_sha256.slice(0, 16)) + '&hellip;' : NOT_REPORTED}</dd>`
+    + `<dt>Kind</dt><dd>${model.is_base ? 'Base model: a starting point for training, never run for inference' : 'Runs inference'}${model.preferred ? ' &middot; <b>preferred</b> for its task' : ''}</dd>`
+    + `<dt>Registered</dt><dd>${new Date(model.created_at).toISOString().slice(0, 10)}</dd>`
+    + `<dt>Updated</dt><dd>${sinceText(model.updated_at)}</dd>`
+    + '</dl>'
+    + `<div class="wdacts">${action}</div></div>`;
+}
+
+/**
+ * Where a model came from and what came from it (#321).
+ *
+ * Its line back to the root through `parent_model_id`, the models trained from it, the
+ * run and dataset that produced it, and its species, read when the row is opened.
+ *
+ * @param {Object} view - From `modelView`.
+ * @param {Map<number,Object>} byId - Every model, by id.
+ * @returns {string} HTML.
+ */
+function modelLineageSection(view, byId) {
+  const { model } = view;
+  const line = [];
+  const seen = new Set([model.id]);
+  let current = model;
+
+  while (current.parent_model_id && byId.has(current.parent_model_id) && !seen.has(current.parent_model_id)) {
+    seen.add(current.parent_model_id);
+    current = byId.get(current.parent_model_id);
+    line.unshift(current);
+  }
+
+  const link = (one) => `<a href="./models.html?model=${one.id}">${escapeHtml(one.name)}</a>`;
+  const children = [...byId.values()].filter((one) => one.parent_model_id === model.id);
+
+  return '<div class="sect" data-model-lineage><h3>Lineage</h3><dl class="kv">'
+    + `<dt>From</dt><dd>${line.length ? `${line.map(link).join(' &rarr; ')} &rarr; <b>${escapeHtml(model.name)}</b>` : 'A root model: not trained from another in MARP'}</dd>`
+    + `<dt>Trained from it</dt><dd>${children.length ? children.map(link).join(', ') : 'None yet'}</dd>`
+    + `<dt>Produced by</dt><dd>${model.training_run_id ? `Training run ${model.training_run_id}` : NO_TRAINING_RUN}</dd>`
+    + `<dt>Trained on</dt><dd>${view.trainedOn ? `<a href="./datasets.html?dataset=${encodeURIComponent(view.trainedOn.id)}">${escapeHtml(view.trainedOn.name)}</a>` : NO_TRAINING_RUN}</dd>`
+    + `<dt>Species</dt><dd data-model-species="${model.id}">Opening the row reads them</dd>`
+    + '</dl></div>';
+}
+
+/**
+ * The Models tab's own actions: a version label, archive and restore, and each opened
+ * model's species (#321). Delegated, because the table is redrawn by every filter.
+ *
+ * @returns {void}
+ */
+function wireModelActions() {
+  const table = $('table#models');
+  if (!table || !window.MarpApi) return;
+
+  const refresh = async () => {
+    modelsRegistry = await window.MarpApi.listModels();
+    applyModelsQuery();
+  };
+
+  table.addEventListener('click', async (event) => {
+    const save = event.target.closest('[data-model-label-save]');
+    const status = event.target.closest('[data-model-status]');
+    const opened = event.target.closest('.exbtn, tr.runrow-head');
+
+    if (save) {
+      const id = Number(save.dataset.modelLabelSave);
+      const input = $(`[data-model-label="${id}"]`, table);
+      save.disabled = true;
+      try {
+        await window.MarpApi.updateModel(id, { version_label: input.value.trim() || null });
+        await refresh();
+      } catch (error) {
+        save.disabled = false;
+        window.alert(`Could not save the version label: ${error.message || error}`);
+      }
+      return;
+    }
+
+    if (status) {
+      const id = Number(status.dataset.modelId);
+      const next = status.dataset.modelStatus;
+      if (next === 'archived' && !window.confirm('Archive this model?\n\nIt is kept, with its history, but is no longer offered for new jobs. Restore it at any time.')) return;
+      status.disabled = true;
+      try {
+        await window.MarpApi.updateModel(id, { status: next });
+        await refresh();
+      } catch (error) {
+        status.disabled = false;
+        window.alert(`Could not change the status: ${error.message || error}`);
+      }
+      return;
+    }
+
+    if (opened) {
+      const head = opened.closest('tr.runrow-head');
+      const cell = head && $(`[data-model-species="${head.dataset.model}"]`, head.nextElementSibling || table);
+      if (!cell || cell.dataset.read) return;
+      cell.dataset.read = 'true';
+      try {
+        const species = await window.MarpApi.listModelSpecies(Number(head.dataset.model));
+        const names = (species || []).map((one) => one.comname || one.name).filter(Boolean);
+        cell.innerHTML = names.length ? names.map(escapeHtml).join(', ') : 'None registered';
+      } catch {
+        cell.innerHTML = NOT_REPORTED;
+      }
+    }
+  });
 }
 
 /** Narrows, sorts and pages the registry, then draws it. */
@@ -6074,14 +6159,12 @@ function openRequestedModel() {
  */
 function renderModelsSummary(views) {
   const count = (status) => views.filter((v) => v.model.status === status).length;
-  const trained = count('trained');
-  const training = count('training');
-  const draft = count('draft');
+  const active = count('active');
   const archived = count('archived');
   const total = views.length || 1;
 
   const newest = views.reduce((max, v) => Math.max(max, Date.parse(v.model.updated_at)), 0);
-  const recent = views.filter((v) => v.model.status === 'trained'
+  const recent = views.filter((v) => v.model.training_run_id
     && Date.parse(v.model.updated_at) >= newest - 7 * 86400000).length;
 
   const byLabel = {};
@@ -6098,7 +6181,7 @@ function renderModelsSummary(views) {
     if (s) s.innerHTML = `<span>${sub}</span>`;
   };
 
-  set('Registered models', String(views.length), `${trained} trained &middot; ${training} training`);
+  set('Registered models', String(views.length), `${active} active &middot; ${archived} archived`);
   /* Real since #260. One per `model_type`, enforced by a partial unique index,
      so this counts types that have chosen rather than models that are special. */
   const preferred = views.filter((v) => v.preferred).length;
@@ -6110,7 +6193,10 @@ function renderModelsSummary(views) {
   set('Cached on workers', NOT_IN_REGISTRY, 'no worker reports what it holds');
   set('Recently trained', String(recent), 'updated in the last 7 days');
 
-  const parts = [['done', trained, 'Trained'], ['running', training, 'Training'], ['queued', draft, 'Draft'], ['cancelled', archived, 'Archived']];
+  /* Active and archived (#321): every model is one or the other, so the ring adds up to
+     the number in its middle. It counted four statuses nothing wrote, and 29 of 31 models
+     were `active`, which it did not count at all. */
+  const parts = [['done', active, 'Active'], ['queued', archived, 'Archived']];
 
   const donut = $('.job-donut svg');
   if (donut) {
@@ -6219,8 +6305,8 @@ function fillModelsFilterOptions() {
   if (selects.Task) {
     selects.Task.innerHTML = ['<option>All tasks</option>', ...tasks.map((t) => `<option>${t}</option>`)].join('');
   }
-  if (selects['Base model']) {
-    selects['Base model'].innerHTML = ['<option>All base models</option>', ...bases.map((b) => `<option>${b}</option>`)].join('');
+  if (selects.Architecture) {
+    selects.Architecture.innerHTML = ['<option>All architectures</option>', ...bases.map((b) => `<option>${escapeHtml(b)}</option>`)].join('');
   }
 }
 
@@ -6238,13 +6324,11 @@ function wireModelsControls() {
     renarrow();
   });
   selects.Status?.addEventListener('change', () => {
-    modelsQuery.status = {
-      Trained: 'trained', Training: 'training', Draft: 'draft', Archived: 'archived',
-    }[selects.Status.value] || '';
+    modelsQuery.status = { Active: 'active', Archived: 'archived' }[selects.Status.value] || '';
     renarrow();
   });
-  selects['Base model']?.addEventListener('change', () => {
-    modelsQuery.base = selects['Base model'].value.startsWith('All') ? '' : selects['Base model'].value;
+  selects.Architecture?.addEventListener('change', () => {
+    modelsQuery.base = selects.Architecture.value.startsWith('All') ? '' : selects.Architecture.value;
     renarrow();
   });
   /* It had options and no listener, so even enabled it would have done nothing. */
@@ -14802,34 +14886,61 @@ function wireModelRegistration() {
   if (!drawer || !scrim || !form) return;
   const opener = $('[data-top-action="register"]');
   const status = $('[data-model-register-status]', drawer);
-  const source = $('[data-model-source]', drawer);
-  const upload = $('[data-model-upload]', drawer);
-  const uri = $('[data-model-uri]', drawer);
+  const parents = $('[data-model-register-parents]', drawer);
+  const submit = $('button[type="submit"]', drawer);
   const setOpen = (open) => {
     drawer.hidden = !open;
     scrim.hidden = !open;
     document.body.classList.toggle('has-drawer', open);
     if (open) {
       if (status) status.textContent = '';
+      /* The base models it may have come from: the registry as it stands now. */
+      if (parents && modelsRegistry) {
+        parents.innerHTML = '<option value="">None, or not in MARP</option>'
+          + [...modelsRegistry].sort((a, b) => a.name.localeCompare(b.name))
+            .map((one) => `<option value="${one.id}">${escapeHtml(one.name)}</option>`).join('');
+      }
       $('[name="name"]', form)?.focus();
     } else opener?.focus();
-  };
-  const setSource = () => {
-    const isUpload = source?.value === 'upload';
-    if (upload) upload.hidden = !isUpload;
-    if (uri) uri.hidden = isUpload;
   };
   opener?.addEventListener('click', () => setOpen(true));
   $$('[data-model-register-close]', drawer).forEach((button) => button.addEventListener('click', () => setOpen(false)));
   scrim.addEventListener('click', () => setOpen(false));
-  source?.addEventListener('change', setSource);
   drawer.addEventListener('keydown', (event) => { if (event.key === 'Escape') setOpen(false); });
-  form.addEventListener('submit', (event) => {
+
+  /* **Real since #321.** The weights go up as they are; MARP reads their task,
+     architecture and class names, and answers with the species that did not match. */
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!window.MarpApi) return;
+
     const data = new FormData(form);
-    if (status) status.textContent = `${data.get('name')} ${data.get('version')} is ready to register.`;
+    if (!data.get('parent_model_id')) data.delete('parent_model_id');
+    if (!String(data.get('version_label') || '').trim()) data.delete('version_label');
+
+    if (submit) submit.disabled = true;
+    if (status) status.textContent = 'Uploading and reading the weights…';
+    try {
+      const result = await window.MarpApi.uploadModel(data);
+      const unmatched = result.unmatched || [];
+      if (status) {
+        status.innerHTML = `Registered <b>${escapeHtml(result.model.name)}</b>: ${escapeHtml(result.model.model_type)}`
+          + `${result.model.architecture_version ? `, ${escapeHtml(result.model.architecture_version)}` : ''}, `
+          + `${result.matched.length} of ${result.class_names.length} classes matched to species.`
+          + (unmatched.length
+            ? ` <span class="warn">No species for ${unmatched.map((one) => escapeHtml(one.class_name)).join(', ')}: `
+              + 'detections of these cannot become observations.</span>'
+            : '');
+      }
+      form.reset();
+      modelsRegistry = await window.MarpApi.listModels();
+      applyModelsQuery();
+    } catch (error) {
+      if (status) status.textContent = `Not registered: ${error.message || error}`;
+    } finally {
+      if (submit) submit.disabled = false;
+    }
   });
-  setSource();
 }
 
 /* ==================================================================== boot */
@@ -15141,6 +15252,7 @@ boot('dataset activity', wireDatasetActivity);
 boot('completion activity', wireOperationalActivity);
 boot('pool capacity', wirePoolCapacity);
 boot('model registration', wireModelRegistration);
+boot('model actions', wireModelActions);
 boot('sliders', wireSliders);
 boot('inference form', wireInferenceForm);
 boot('accordions', wireAccordions);

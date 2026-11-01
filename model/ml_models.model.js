@@ -123,23 +123,59 @@ module.exports = (sequelize, DataTypes) => {
       model_type: {
         type: DataTypes.STRING,
         allowNull: false,
+        // The task, since #321: it was documented as a family and written as a task.
         comment:
-          'Model architecture family (e.g., "yolov8", "resnet", "deepsort").',
+          'What the model does: "detection", "classification", "segmentation", "pose" or "obb".',
         jsonSchema: {
             schema: { type: 'string', minLength: 1, maxLength: 255 },
-            description: 'Model architecture family (e.g., "yolov8", "resnet", "deepsort").',
-            examples: ['yolov8'],
+            description: 'What the model does: "detection", "classification", "segmentation", "pose" or "obb".',
+            examples: ['detection'],
         },
       },
 
       architecture_version: {
         type: DataTypes.STRING,
         allowNull: true,
+        // The architecture, since #321, read from the weights where they are on disk.
         comment:
-          'Specific version or variant of the architecture (e.g., "v8n", "custom-2025a").',
+          'The architecture, as Ultralytics names it (e.g., "yolov8x", "yolo11m-cls"). Null when not known.',
         jsonSchema: {
-            description: 'Specific version or variant of the architecture (e.g., "v8n", "custom-2025a").',
-            examples: ['v8n'],
+            description: 'The architecture, as Ultralytics names it (e.g., "yolov8x", "yolo11m-cls"). Null when not known.',
+            examples: ['yolov8x'],
+        },
+      },
+
+      engine: {
+        // What runs the weights (#321). Read from the weights' own model class.
+        type: DataTypes.STRING(32),
+        allowNull: true,
+        comment: 'What runs the weights, e.g. "ultralytics". Read from the weights where they are on disk.',
+        jsonSchema: {
+            description: 'What runs the weights, e.g. "ultralytics". Null when not known.',
+            examples: ['ultralytics'],
+        },
+      },
+
+      file_format: {
+        // Format of the weights file (#321).
+        type: DataTypes.STRING(16),
+        allowNull: true,
+        comment: 'Format of the weights file, e.g. "pt".',
+        jsonSchema: {
+            description: 'Format of the weights file, e.g. "pt".',
+            examples: ['pt'],
+        },
+      },
+
+      version_label: {
+        // A free label somebody typed (#321): Isaac chose this over numbers.
+        type: DataTypes.STRING(64),
+        allowNull: true,
+        comment: 'A free version label somebody typed. Null until one is.',
+        jsonSchema: {
+            schema: { type: 'string', maxLength: 64 },
+            description: 'A free version label somebody typed. Null until one is.',
+            examples: ['v2 - more quillback'],
         },
       },
 
@@ -174,13 +210,15 @@ module.exports = (sequelize, DataTypes) => {
       status: {
         type: DataTypes.STRING,
         allowNull: false,
-        defaultValue: 'draft',
+        defaultValue: 'active',
+        // Active or archived (#321): draft and training were documented and never set.
+        validate: { isIn: [['active', 'archived']] },
         comment:
-          'Lifecycle state of the model: "draft", "training", "trained", or "archived".',
+          'Lifecycle state: "active" (usable) or "archived" (kept for history, not offered for new jobs).',
         jsonSchema: {
-            schema: { type: 'string', enum: ['draft', 'training', 'trained', 'archived'] },
-            description: 'Lifecycle state of the model ("draft", "training", "trained", or "archived").',
-            examples: ['draft'],
+            schema: { type: 'string', enum: ['active', 'archived'] },
+            description: 'Lifecycle state: "active" (usable) or "archived" (kept for history, not offered for new jobs).',
+            examples: ['active'],
         },
       },
 

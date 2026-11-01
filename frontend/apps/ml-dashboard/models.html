@@ -94,16 +94,14 @@
               <option>All tasks</option><option>Object detection</option>
               <option>Classification</option><option>Segmentation</option>
             </select>
-            <!-- MARP's own ml_models lifecycle. This offered Ready / Testing / Error,
-                 three words the schema has never used, so two of its three choices
-                 could never have matched anything. tools/api-contract-check.mjs now
-                 fails if these drift from MlModel.status. -->
+            <!-- MARP's own ml_models lifecycle: active or archived since #321.
+                 tools/api-contract-check.mjs fails if these drift from MlModel.status. -->
             <select class="sel" aria-label="Status" title="Show one status only">
-              <option>All statuses</option><option>Trained</option>
-              <option>Training</option><option>Draft</option><option>Archived</option>
+              <option>All statuses</option><option>Active</option><option>Archived</option>
             </select>
-            <select class="sel" aria-label="Base model" title="Show models fine-tuned from one base">
-              <option>All base models</option><option>YOLOv8l</option><option>YOLOv8m</option>
+            <!-- Filled from the registry: the architectures its weights say they are. -->
+            <select class="sel" aria-label="Architecture" title="Show one architecture only" data-model-architectures>
+              <option>All architectures</option>
             </select>
           </div>
         </header>
@@ -115,10 +113,10 @@
                   <th class="ex"><span class="vh">Expand</span></th>
                   <th class="hname sortable" title="Sort by name">Model name</th>
                   <th class="htask sortable" title="Sort by task">Task</th>
-                  <th class="hver sortable" title="The version this row describes">Version</th>
+                  <th class="hver sortable" title="The version label somebody gave it">Version</th>
                   <th class="hstatus sortable" title="Whether the artifact is usable">Status</th>
-                  <th class="hbase sortable" title="What it was fine-tuned from">Base model</th>
-                  <th class="hdset" title="What a model trained on: MARP records no link from a model to the run that produced it, so this is empty for every model">Training dataset</th>
+                  <th class="hbase sortable" title="The model it was fine-tuned from">Base model</th>
+                  <th class="hdset" title="The dataset the run that produced it learned from">Training dataset</th>
                   <th class="hupd sortable" aria-sort="descending" title="When it was registered">Updated</th>
                   <th class="hacts"><span class="vh">Actions</span></th>
                 </tr>
@@ -139,12 +137,12 @@
 
 <div class="scrim" id="modelRegisterScrim" hidden></div>
 <aside class="drawer" id="modelRegisterDrawer" role="dialog" aria-modal="true" aria-labelledby="modelRegisterTitle" hidden>
-  <header class="drawer-hd"><div><h2 id="modelRegisterTitle">Register model</h2><div class="sub">Add a trained artifact and the information needed to use and audit it</div></div><span></span><button class="btn icon" data-model-register-close aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></header>
+  <header class="drawer-hd"><div><h2 id="modelRegisterTitle">Register model</h2><div class="sub">Upload an Ultralytics model's weights. MARP reads what it is and its classes from the file.</div></div><span></span><button class="btn icon" data-model-register-close aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button></header>
+  <!-- Real since #321: the fields are the ones MARP stores. Task, architecture, engine and
+       class names are read from the weights rather than typed. -->
   <form id="modelRegisterForm" class="drawer-bd">
-    <section class="sect"><h3>Identity</h3><div class="fieldrow"><label class="field"><span>Model name</span><input class="inp" name="name" required placeholder="MARP-Gorgonian-Det"></label><label class="field"><span>Version</span><input class="inp" name="version" required placeholder="1.0.0"></label></div><div class="fieldrow"><label class="field"><span>Task</span><select class="sel" name="task" required><option>Object detection</option><option>Classification</option><option>Segmentation</option></select></label><label class="field"><span>Runtime / format</span><select class="sel" name="runtime" required><option>Ultralytics / PyTorch</option><option>PyTorch checkpoint</option><option>ONNX</option><option>TensorRT</option></select></label></div><label class="field"><span>Description</span><textarea class="inp" name="description" rows="3" placeholder="What this model recognizes and where it should be used"></textarea></label></section>
-    <section class="sect"><h3>Weights</h3><label class="field"><span>Artifact source</span><select class="sel" name="source" data-model-source><option value="upload">Upload weights</option><option value="uri">Existing artifact URI</option></select></label><label class="field" data-model-upload><span>Weights file</span><input class="inp" type="file" name="weights" accept=".pt,.pth,.onnx,.engine"></label><label class="field" data-model-uri hidden><span>Artifact URI</span><input class="inp" name="uri" placeholder="s3://…, https://…, or managed storage path"></label><label class="field"><span>SHA-256</span><input class="inp mono" name="sha256" placeholder="Calculated for uploads; required for an existing URI"></label></section>
-    <section class="sect"><h3>Scientific provenance</h3><div class="fieldrow"><label class="field"><span>Training dataset</span><select class="sel" name="dataset"><option>ALL_Projects_Inverts_v5</option><option>CAMPA_2024_Rockfish_v3</option><option>External / not in MARP</option></select></label><label class="field"><span>Base model</span><input class="inp" name="base" placeholder="YOLOv8l or registered parent"></label></div><label class="field"><span>Classes</span><textarea class="inp" name="classes" rows="4" placeholder="One class per line, in model index order"></textarea></label><label class="field"><span>Training job or external run reference</span><input class="inp" name="run" placeholder="Job 1742, experiment URL, or other provenance"></label></section>
-    <section class="sect"><h3>Registry state</h3><div class="fieldrow"><label class="field"><span>Initial status</span><select class="sel" name="status"><option>Testing</option><option>Ready</option></select></label><label class="field"><span>Preferred use</span><input class="inp" name="preferred" placeholder="Optional deployment recommendation"></label></div><p class="hint">Registration preserves the artifact hash, class order, training provenance and runtime requirements as one immutable model version.</p></section>
+    <section class="sect"><h3>Model</h3><div class="fieldrow"><label class="field"><span>Model name</span><input class="inp" name="name" required maxlength="255" placeholder="MARP-Gorgonian-Det"></label><label class="field"><span>Version label</span><input class="inp" name="version_label" maxlength="64" placeholder="Optional, e.g. v2 - more quillback"></label></div><label class="field"><span>Notes</span><textarea class="inp" name="notes" rows="3" placeholder="What this model recognizes and where it came from"></textarea></label></section>
+    <section class="sect"><h3>Weights</h3><label class="field"><span>Weights file (.pt)</span><input class="inp" type="file" name="weights" accept=".pt" required></label><label class="field"><span>Base model</span><select class="sel" name="parent_model_id" data-model-register-parents><option value="">None, or not in MARP</option></select></label><p class="hint">Class names are matched to MARP species by common name. Any that match none are listed after registering: detections of those classes cannot become observations.</p></section>
   </form>
   <footer class="drawer-ft"><button class="btn" type="button" data-model-register-close>Cancel</button><button class="btn primary" type="submit" form="modelRegisterForm"><svg class="ico"><use href="#i-plus"/></svg>Register model</button><span class="hint" data-model-register-status role="status"></span></footer>
 </aside>

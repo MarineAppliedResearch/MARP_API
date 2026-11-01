@@ -1324,9 +1324,9 @@ const buildOpenApiSpec = () => {
                                     },
                                     status: {
                                         type: 'string',
-                                        enum: ['draft', 'training', 'trained', 'archived'],
-                                        example: 'trained',
-                                        description: 'Lifecycle state of the model ("draft", "training", "trained", or "archived").',
+                                        enum: ['active', 'archived'],
+                                        example: 'active',
+                                        description: 'Lifecycle state: "active" (usable) or "archived" (kept for history, not offered for new jobs). #321.',
                                     },
                                 },
                             },
