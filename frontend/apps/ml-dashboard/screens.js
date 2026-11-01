@@ -7027,8 +7027,11 @@ const resourceMemory = (caps) => {
     + `${memory.percent_used === undefined ? '' : ` &middot; ${Math.round(memory.percent_used)}%`}`;
 };
 
-/** Bytes as decimal gigabytes, the unit a disk is sold in and the floor is set in (#320). */
-const gbText = (bytes) => `${(Number(bytes) / 1e9).toFixed(Number(bytes) >= 1e10 ? 0 : 1)} GB`;
+/** Bytes as decimal gigabytes, the unit a disk is sold in and the floor is set in (#320).
+    Under a tenth of one, megabytes: a 4.8 MB dataset read "0.0 GB". */
+const gbText = (bytes) => (Number(bytes) < 1e8
+  ? `${Math.max(0.1, Number(bytes) / 1e6).toFixed(1)} MB`
+  : `${(Number(bytes) / 1e9).toFixed(Number(bytes) >= 1e10 ? 0 : 1)} GB`);
 
 /**
  * A worker's dataset cache, for its detail panel (#320).

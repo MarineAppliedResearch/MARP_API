@@ -37,6 +37,7 @@ const CACHE = {
   entries: [
     { sha256: '36de15ae'.padEnd(64, '0'), bytes: 1_939_871_777, last_used_at: new Date().toISOString(), in_use: true },
     { sha256: 'ec94afff'.padEnd(64, '0'), bytes: 19_896_580_862, last_used_at: '2026-10-29T06:00:00.000Z', in_use: false },
+    { sha256: '58f6cdca'.padEnd(64, '0'), bytes: 4_783_193, last_used_at: '2026-10-29T06:00:00.000Z', in_use: false },
   ],
   disk: { total_bytes: 1_999_210_803_200, free_bytes: 107_000_000_000 },
   keep_free_bytes: 50e9,
@@ -53,11 +54,12 @@ test('the Workers tab shows what each machine has cached, its disk and its floor
   const text = (section) => section.textContent.replace(/\s+/g, ' ');
 
   assert.equal(sections.length, 2, 'one per worker');
-  assert.match(text(sections[0]), /22 GB in 2 datasets/);
+  assert.match(text(sections[0]), /22 GB in 3 datasets/);
   assert.match(text(sections[0]), /107 GB free of 1999 GB/);
   assert.match(text(sections[0]), /Keeps free\s*50 GB \(default\)/);
   assert.match(text(sections[0]), /36de15ae0000 · 1\.9 GB · used .* · in use/);
   assert.match(text(sections[0]), /ec94afff0000 · 20 GB/);
+  assert.match(text(sections[0]), /58f6cdca0000 · 4\.8 MB/, 'a small dataset in MB, not "0.0 GB"');
 
   // A worker before 0.1.20 reports no cache: a dash, never a zero.
   assert.match(text(sections[1]), /Cached\s*—/);
