@@ -45,6 +45,7 @@ const { ARTIFACT_DIRECTORY } = require('../config/gpu-orchestration');
 // it is defined. Duplicating the `MODEL_STORAGE_ROOT` default here is what would
 // eventually let the route and the writer disagree about where models live.
 const { storageRoot } = require('../service/model-artifact.service');
+const { describeWeights } = require('../service/model-weights.service');
 const logger = require('../logger/api.logger');
 
 /** Where a registered model's weights are kept, relative to the model storage root. */
@@ -135,14 +136,15 @@ async function registerTrainedModel({ db, job, transaction }) {
     const spec = job.spec || {};
 
     // Already registered. The check is the job, not the hash: re-reporting a finished job
-    // must not produce a second model, and the weights of one run are one model.
+    // must not produce a second model, and the weights of one run are one model. Keyed on
+    // `training_run_id` since #321; it used to parse a sentence in `notes`.
     const [existing] = await db.sequelize.query(
         `SELECT m.id FROM ml_models m
-           JOIN training_runs r ON r.model_id IS NOT NULL AND r.job_id = :jobId
-          WHERE m.notes LIKE :marker
+           JOIN training_runs r ON r.id = m.training_run_id
+          WHERE r.job_id = :jobId
           LIMIT 1`,
         {
-            replacements: { jobId: job.id, marker: `%trained by GPU job ${job.id}.%` },
+            replacements: { jobId: job.id },
             type: db.Sequelize.QueryTypes.SELECT,
             transaction,
             logging: false,
@@ -194,6 +196,16 @@ async function registerTrainedModel({ db, job, transaction }) {
 
     const parent = spec.model && spec.model.ml_model_id ? Number(spec.model.ml_model_id) : null;
     const modelType = await deriveModelType(db, { parent, datasetId: dataset.dataset_id, transaction });
+
+    /* **What the weights say they are** (#321), read from the file just copied: the
+       architecture used to be the starting checkpoint's name, which is not one. A file
+       that cannot be read registers without them rather than failing the run. */
+    let described = { engine: null, architecture: null, file_format: 'pt' };
+    try {
+        described = describeWeights(destination);
+    } catch {
+        // Left null; scripts/describe-model-weights.js can fill them later.
+    }
     const [registered] = await db.sequelize.query(
         /* **`artifact.hash` is already the sha256 of these bytes**, because the
            artifact store is content-addressed -- the file this just copied was read from
@@ -206,9 +218,11 @@ async function registerTrainedModel({ db, job, transaction }) {
            named every model after the checkpoint it trained from. The subquery is the
            same run that sentence is written to. */
         `INSERT INTO ml_models (name, parent_model_id, model_type, architecture_version,
+                                engine, file_format,
                                 storage_path, artifact_sha256, status, preferred, notes,
                                 training_run_id, created_at, updated_at)
-         VALUES (:name, :parent, :modelType, :architecture, :storagePath, :sha256, 'active',
+         VALUES (:name, :parent, :modelType, :architecture, :engine, :fileFormat,
+                 :storagePath, :sha256, 'active',
                  false, :notes,
                  (SELECT id FROM training_runs WHERE job_id = :jobId ORDER BY id DESC LIMIT 1),
                  now(), now())
@@ -218,12 +232,12 @@ async function registerTrainedModel({ db, job, transaction }) {
                 name,
                 parent,
                 modelType,
-                architecture: (spec.model && spec.model.name) || null,
+                architecture: described.architecture,
+                engine: described.engine,
+                fileFormat: described.file_format,
                 storagePath: relative,
                 sha256: String(artifact.hash).toLowerCase(),
-                /* The sentence stays. It is the human-readable provenance, and the
-                   guard at the top of this function reads it to refuse registering the
-                   same job twice. */
+                /* The sentence stays as the human-readable provenance. */
                 notes: `Weights ${artifact.hash} trained by GPU job ${job.id}.`,
                 jobId: job.id,
             },

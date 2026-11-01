@@ -20,6 +20,11 @@ const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
 const datasetController = require('../controller/dataset.controller');
 const trainingMetricsController = require('../controller/training-metrics.controller');
 const modelArtifactService = require('../service/model-artifact.service');
+const modelUploadService = require('../service/model-upload.service');
+const multer = require('multer');
+
+/** The largest weights the dashboard takes: rockfish2 is 273 MB, an x-scale model ~140 MB. */
+const MAX_MODEL_UPLOAD_BYTES = 2 * 1000 ** 3;
 const datasetBuildRepository = require('../repository/dataset-build.repository');
 const { imageSettings, concurrency, BUILD_TASKS, estimate } = require('../service/dataset-build.service');
 const { samplingSettings } = require('../service/dataset-build-plan');
@@ -501,12 +506,23 @@ function registerDatasetRoutes(app) {
                 content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
             },
             404: { $ref: '#/components/responses/NotFoundError' },
+            409: { description: 'The weights on disk are not the ones registered: their sha256 differs from `artifact_sha256`.' },
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
             const artifact = await modelArtifactService.resolveArtifact(req.params.id);
             if (!artifact) {
                 throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `Model artifact ${req.params.id} was not found.`);
+            }
+
+            /* **Only the bytes that were registered** (#321). A file replaced on disk would
+               otherwise be served as this model, and only the worker's own check would
+               catch it -- after the download, on the worker's time. Hashed once per
+               version of the file, so this costs a read the first time only. */
+            const expected = artifact.model.artifact_sha256;
+            if (expected && await modelArtifactService.fileSha256(artifact.path) !== String(expected).toLowerCase()) {
+                throw new ApiError(409, ERROR_CODES.CONFLICT,
+                    `The weights on disk for model ${req.params.id} are not the ones registered for it: their sha256 differs.`);
             }
 
             res.type('application/octet-stream');
@@ -1269,6 +1285,64 @@ function registerDatasetRoutes(app) {
     // ---------------------------------------------------------------
     // ml_models write routes (model_id-keyed, distinct from GET /api/ml_models above)
     // ---------------------------------------------------------------
+
+    /* Uploaded weights land beside the store they move into, so moving one is a rename
+       on one disk rather than a second copy of a few hundred megabytes (#321). */
+    const weightsUpload = multer({
+        storage: multer.diskStorage({
+            destination: (req, file, callback) => {
+                const directory = path.join(modelArtifactService.storageRoot(), 'uploads');
+                fs.mkdirSync(directory, { recursive: true });
+                callback(null, directory);
+            },
+            filename: (req, file, callback) => callback(null, `${Date.now()}-${Math.random().toString(36).slice(2)}.pt.partial`),
+        }),
+        limits: { fileSize: MAX_MODEL_UPLOAD_BYTES, files: 1 },
+    }).single('weights');
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'models:write',
+        path: '/api/model/upload',
+        summary: 'Register a model by uploading its weights',
+        description: 'Takes an Ultralytics `.pt` as multipart field `weights`, with `name` and optionally `version_label`, `notes` and `parent_model_id`. MARP stores it, hashes it, reads its task, architecture, engine and class names from the file (without running it), and registers it as an active model. **Class names that match no MARP species register with a warning** (#321): the model gets the species that matched, and `unmatched` lists the rest -- detections of those classes cannot become observations. A name matching two species is unmatched, rather than guessed.',
+        tags: ['V1 · MachineLearning'],
+        requestBody: {
+            required: true,
+            content: { 'multipart/form-data': { schema: { type: 'object', required: ['weights', 'name'], properties: {
+                weights: { type: 'string', format: 'binary', description: 'The `.pt` file.' },
+                name: { type: 'string', description: 'What to call the model. Must not be registered already.' },
+                version_label: { type: 'string', maxLength: 64, description: 'A free version label.' },
+                notes: { type: 'string' },
+                parent_model_id: { type: 'integer', description: 'The model this one came from, if any.' },
+            } } } },
+        },
+        responses: {
+            201: { description: '`{model, class_names, matched, unmatched}`.' },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            409: { description: 'A model with that name is already registered.' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: [
+            (req, res, next) => weightsUpload(req, res, (error) => {
+                if (!error) { next(); return; }
+                next(error.code === 'LIMIT_FILE_SIZE'
+                    ? new ApiError(400, ERROR_CODES.VALIDATION_ERROR, `Weights must be ${MAX_MODEL_UPLOAD_BYTES / 1e9} GB or smaller.`)
+                    : new ApiError(400, ERROR_CODES.VALIDATION_ERROR, `The upload could not be read: ${error.message}`));
+            }),
+            asyncHandler(async (req, res) => {
+                if (!req.file) {
+                    throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'Attach the weights as the multipart field "weights".');
+                }
+                const result = await modelUploadService.registerUploadedModel({
+                    ...req.body,
+                    file: req.file.path,
+                    original_name: req.file.originalname,
+                });
+                res.status(201).json(result);
+            }),
+        ],
+    });
 
     registerVersionedRoute(app, {
         method: 'post',

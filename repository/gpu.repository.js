@@ -421,6 +421,22 @@ class GpuRepository {
     }
 
     /**
+     * What a leased job's worker is told about its model (#321).
+     *
+     * @async
+     * @param {number} modelId - `ml_models.id`.
+     * @returns {Promise<?{model_type: string, architecture_version: ?string}>} Or null.
+     */
+    async modelForLease(modelId) {
+        const [model] = await this.db.sequelize.query(
+            'SELECT model_type, architecture_version FROM ml_models WHERE id = :modelId',
+            { replacements: { modelId }, type: QueryTypes.SELECT }
+        );
+
+        return model || null;
+    }
+
+    /**
      * What a leased training job needs to know about room on this machine (#320).
      *
      * @async

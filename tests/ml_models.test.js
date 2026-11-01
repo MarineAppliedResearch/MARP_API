@@ -83,10 +83,10 @@ describe('ML model lifecycle', () => {
   it('updates the model', async () => {
     const res = await global.api
       .put(`/api/v2/model/${modelId}`)
-      .send({ model: { status: 'trained' } });
+      .send({ model: { status: 'archived' } });
 
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('trained');
+    expect(res.body.status).toBe('archived');
   });
 
   /**
@@ -98,7 +98,7 @@ describe('ML model lifecycle', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(modelId);
-    expect(res.body.status).toBe('trained');
+    expect(res.body.status).toBe('archived');
   });
 
   it('streams registered model bytes, including byte ranges', async () => {

@@ -1059,13 +1059,11 @@
               "status": {
                 "type": "string",
                 "enum": [
-                  "draft",
-                  "training",
-                  "trained",
+                  "active",
                   "archived"
                 ],
-                "example": "trained",
-                "description": "Lifecycle state of the model (\"draft\", \"training\", \"trained\", or \"archived\")."
+                "example": "active",
+                "description": "Lifecycle state: \"active\" (usable) or \"archived\" (kept for history, not offered for new jobs). #321."
               }
             }
           }
@@ -2821,6 +2819,26 @@
             "nullable": true,
             "description": "Coordinator clock reading at the last poll or heartbeat."
           },
+          "dataset_cache": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "What the dataset cache of the machine holds and the disk it is on, as its latest reading said (#320): `bytes`, `partial_bytes`, `entries` (sha256, bytes, last_used_at, in_use), `disk` (total_bytes, free_bytes) and `keep_free_bytes`. Null from a worker before 0.1.20."
+          },
+          "dataset_keep_free_bytes": {
+            "type": "integer",
+            "description": "The free disk MARP tells this machine to keep by evicting cached datasets (#320)."
+          },
+          "dataset_keep_free_is_default": {
+            "type": "boolean",
+            "description": "Whether that floor is the default rather than one set for this machine."
+          },
+          "clear_dataset_cache_requested_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When clearing the cache was asked for and not yet carried to the machine."
+          },
           "up_since": {
             "type": "string",
             "format": "date-time",
@@ -3289,6 +3307,51 @@
                 "example": "online"
               }
             }
+          }
+        }
+      },
+      "GpuWorkerDatasetFloorRequest": {
+        "type": "object",
+        "description": "The free disk a machine keeps for datasets (#320).",
+        "required": [
+          "keep_free_bytes"
+        ],
+        "properties": {
+          "keep_free_bytes": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "example": 50000000000,
+            "description": "Bytes of disk to keep free by evicting cached datasets. Null puts back the default, 50 GB."
+          }
+        }
+      },
+      "GpuWorkerDatasetFloor": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "integer"
+          },
+          "keep_free_bytes": {
+            "type": "integer",
+            "description": "The floor the machine now keeps."
+          },
+          "is_default": {
+            "type": "boolean",
+            "description": "Whether that is the default rather than one set for this machine."
+          }
+        }
+      },
+      "GpuWorkerDatasetClear": {
+        "type": "object",
+        "properties": {
+          "worker_id": {
+            "type": "integer"
+          },
+          "clear_dataset_cache_requested_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it was asked for. The machine is told on its next poll."
           }
         }
       },
@@ -6921,14 +6984,35 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 255,
-            "description": "Model architecture family (e.g., \"yolov8\", \"resnet\", \"deepsort\").",
-            "example": "yolov8"
+            "description": "What the model does: \"detection\", \"classification\", \"segmentation\", \"pose\" or \"obb\".",
+            "example": "detection"
           },
           "architecture_version": {
             "type": "string",
             "nullable": true,
-            "description": "Specific version or variant of the architecture (e.g., \"v8n\", \"custom-2025a\").",
-            "example": "v8n"
+            "description": "The architecture, as Ultralytics names it (e.g., \"yolov8x\", \"yolo11m-cls\"). Null when not known.",
+            "example": "yolov8x"
+          },
+          "engine": {
+            "type": "string",
+            "maxLength": 32,
+            "nullable": true,
+            "description": "What runs the weights, e.g. \"ultralytics\". Null when not known.",
+            "example": "ultralytics"
+          },
+          "file_format": {
+            "type": "string",
+            "maxLength": 16,
+            "nullable": true,
+            "description": "Format of the weights file, e.g. \"pt\".",
+            "example": "pt"
+          },
+          "version_label": {
+            "type": "string",
+            "maxLength": 64,
+            "nullable": true,
+            "description": "A free version label somebody typed. Null until one is.",
+            "example": "v2 - more quillback"
           },
           "storage_path": {
             "type": "string",
@@ -6945,15 +7029,13 @@
           },
           "status": {
             "type": "string",
-            "default": "draft",
+            "default": "active",
             "enum": [
-              "draft",
-              "training",
-              "trained",
+              "active",
               "archived"
             ],
-            "description": "Lifecycle state of the model (\"draft\", \"training\", \"trained\", or \"archived\").",
-            "example": "draft"
+            "description": "Lifecycle state: \"active\" (usable) or \"archived\" (kept for history, not offered for new jobs).",
+            "example": "active"
           },
           "is_base": {
             "type": "boolean",
@@ -10941,6 +11023,9 @@
           "404": {
             "$ref": "#/components/responses/NotFoundError"
           },
+          "409": {
+            "description": "The weights on disk are not the ones registered: their sha256 differs from `artifact_sha256`."
+          },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
           }
@@ -11769,6 +11854,72 @@
           },
           "409": {
             "description": "A model was trained from it, or it is still building. The message says which."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/model/upload": {
+      "post": {
+        "summary": "Register a model by uploading its weights",
+        "description": "Takes an Ultralytics `.pt` as multipart field `weights`, with `name` and optionally `version_label`, `notes` and `parent_model_id`. MARP stores it, hashes it, reads its task, architecture, engine and class names from the file (without running it), and registers it as an active model. **Class names that match no MARP species register with a warning** (#321): the model gets the species that matched, and `unmatched` lists the rest -- detections of those classes cannot become observations. A name matching two species is unmatched, rather than guessed. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "weights",
+                  "name"
+                ],
+                "properties": {
+                  "weights": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The `.pt` file."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "What to call the model. Must not be registered already."
+                  },
+                  "version_label": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "description": "A free version label."
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "parent_model_id": {
+                    "type": "integer",
+                    "description": "The model this one came from, if any."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "`{model, class_names, matched, unmatched}`."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "409": {
+            "description": "A model with that name is already registered."
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -16511,6 +16662,110 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GpuWorker"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/workers/{id}/dataset-cache/floor": {
+      "put": {
+        "summary": "Set the free disk a GPU machine keeps for datasets",
+        "description": "A worker caches every training dataset it fetches and evicts the least recently used to keep at least this much of its disk free (#320). `keep_free_bytes` sets it for this machine; `null` puts back the default of 50 GB. The machine is told with its next training job. Not on any screen yet: the administration interface is #322. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The worker."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuWorkerDatasetFloorRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The floor the machine now keeps.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuWorkerDatasetFloor"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/workers/{id}/dataset-cache/clear": {
+      "post": {
+        "summary": "Ask a GPU machine to clear its dataset cache",
+        "description": "The machine is told on its next poll, as the `X-Marp-Worker-Instructions: clear-dataset-cache` header, and removes every cached dataset it is not training on, with any leftover partial downloads (#320). A dataset a job is using is kept. Asking again before the machine polls is the same request. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The worker."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request is recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuWorkerDatasetClear"
                 }
               }
             }

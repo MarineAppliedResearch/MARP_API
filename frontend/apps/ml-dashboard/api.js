@@ -899,13 +899,16 @@
     let response;
 
     try {
+      /* A FormData body is sent as it is: the browser writes its own multipart
+         boundary into the content type, so this must not set one (#321). */
+      const form = typeof FormData !== 'undefined' && body instanceof FormData;
       response = await fetch(url, {
         method,
         credentials: 'same-origin',
-        headers: body === undefined
+        headers: body === undefined || form
           ? { accept: 'application/json' }
           : { accept: 'application/json', 'content-type': 'application/json' },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : form ? body : JSON.stringify(body),
       });
     } catch (error) {
       // No status at all: the request never arrived. Distinct from a 500, and a
@@ -1381,6 +1384,28 @@
    * @param {number|string} id - The model.
    * @returns {Promise<Object[]>}
    */
+  /**
+   * `PUT /api/v2/model/:id` -- change a model's version label or status (#321).
+   *
+   * @param {number} id - The model.
+   * @param {Object} fields - e.g. `{version_label}` or `{status: 'archived'}`.
+   * @returns {Promise<Object>} The model.
+   */
+  function updateModel(id, fields) {
+    return request(`/model/${encodeURIComponent(id)}`, { method: 'PUT', body: { model: fields } });
+  }
+
+  /**
+   * `POST /api/v2/model/upload` -- register a model from its weights (#321).
+   *
+   * @param {FormData} form - `weights`, `name`, and optionally `version_label`, `notes`,
+   *   `parent_model_id`.
+   * @returns {Promise<Object>} `{model, class_names, matched, unmatched}`.
+   */
+  function uploadModel(form) {
+    return request('/model/upload', { method: 'POST', body: form });
+  }
+
   function listModelSpecies(id) {
     return serve('models',
       () => request(`/ml_models/${encodeURIComponent(id)}/species`),
@@ -2019,6 +2044,8 @@
     deletableJobs,
     deleteJobsInState,
     renameWorker,
+    updateModel,
+    uploadModel,
     clearWorkerDatasetCache,
     ApiError,
     /* Exposed for the checks, not for the screens. A screen reading these is a

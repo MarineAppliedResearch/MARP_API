@@ -13,6 +13,7 @@
  */
 
 const datasetRepository  = require('../repository/dataset.repository');
+const modelArtifactService = require('./model-artifact.service');
 
 /**
  * Coordinates ML pipeline operations (models, datasets, training runs,
@@ -165,7 +166,13 @@ class DatasetService {
      * empty array.
      */
     async getMl_models(options) {
-        return await datasetRepository.getMl_models(options);
+        const models = await datasetRepository.getMl_models(options);
+
+        /* Each with whether its weights are on disk and their size (#321). */
+        return Promise.all(models.map(async (model) => {
+            const plain = model.get ? model.get({ plain: true }) : model;
+            return { ...plain, weights: await modelArtifactService.weightsOf(plain) };
+        }));
     }
 
     /**
@@ -248,7 +255,11 @@ class DatasetService {
      * a fallback value.
      */
     async getModelById(mlID){
-        return await datasetRepository.getModelById(mlID);
+        const model = await datasetRepository.getModelById(mlID);
+        if (!model) return model;
+
+        const plain = model.get ? model.get({ plain: true }) : model;
+        return { ...plain, weights: await modelArtifactService.weightsOf(plain) };
     }
 
     /**

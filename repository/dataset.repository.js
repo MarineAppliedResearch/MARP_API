@@ -738,7 +738,8 @@ class DatasetRepository {
                missing bytes would disqualify one too. Asking by capability means the
                caller does not have to change when the reason does -- `is_base=false`
                would hard-code today's single reason into every picker in the app. */
-            const where = options.runnable === 'inference' ? { is_base: false } : undefined;
+            /* Archived is the second reason since #321: kept for history, not offered. */
+            const where = options.runnable === 'inference' ? { is_base: false, status: 'active' } : undefined;
             const models = await this.db.ml_models.findAll(where ? { where } : undefined);
             console.log(`[INFO] Retrieved ${models.length} models`);
             return models;
