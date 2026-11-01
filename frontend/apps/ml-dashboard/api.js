@@ -1192,6 +1192,17 @@
    * @param {string} name - The new name.
    * @returns {Promise<Object>}
    */
+  /**
+   * `POST /api/v2/gpu/workers/:id/dataset-cache/clear` -- ask a machine to clear its
+   * dataset cache (#320). It is told on its next poll and keeps any dataset in use.
+   *
+   * @param {number} id - The worker.
+   * @returns {Promise<Object>} `{worker_id, clear_dataset_cache_requested_at}`.
+   */
+  function clearWorkerDatasetCache(id) {
+    return request(`/gpu/workers/${encodeURIComponent(id)}/dataset-cache/clear`, { method: 'POST' });
+  }
+
   function renameWorker(id, name) {
     return serve('workers', () => request(`/gpu/workers/${encodeURIComponent(id)}/rename`, { method: 'POST', body: { name } }), () => {
       const worker = CORPUS.workers.find((w) => w.worker_id === Number(id));
@@ -2008,6 +2019,7 @@
     deletableJobs,
     deleteJobsInState,
     renameWorker,
+    clearWorkerDatasetCache,
     ApiError,
     /* Exposed for the checks, not for the screens. A screen reading these is a
        screen that has learned something the real API will not tell it. */

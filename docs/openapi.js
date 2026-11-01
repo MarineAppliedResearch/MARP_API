@@ -2405,6 +2405,10 @@ const buildOpenApiSpec = () => {
                             },
                             enrolled_at: { type: 'string', format: 'date-time', description: 'When this machine was first seen.' },
                             last_seen_at: { type: 'string', format: 'date-time', nullable: true, description: 'Coordinator clock reading at the last poll or heartbeat.' },
+                            dataset_cache: { type: 'object', nullable: true, additionalProperties: true, description: 'What the dataset cache of the machine holds and the disk it is on, as its latest reading said (#320): `bytes`, `partial_bytes`, `entries` (sha256, bytes, last_used_at, in_use), `disk` (total_bytes, free_bytes) and `keep_free_bytes`. Null from a worker before 0.1.20.' },
+                            dataset_keep_free_bytes: { type: 'integer', description: 'The free disk MARP tells this machine to keep by evicting cached datasets (#320).' },
+                            dataset_keep_free_is_default: { type: 'boolean', description: 'Whether that floor is the default rather than one set for this machine.' },
+                            clear_dataset_cache_requested_at: { type: 'string', format: 'date-time', nullable: true, description: 'When clearing the cache was asked for and not yet carried to the machine.' },
                             up_since: { type: 'string', format: 'date-time', nullable: true, description: 'When the machine\'s current unbroken run of check-ins began: a silence over 180 seconds starts a new one. Uptime is now minus this while it is online.' },
                             idle_power_watts: { type: 'number', nullable: true, example: 5, description: 'Idle GPU power: the median of its readings with no job over the last 7 days, summed across its cards. Null until it has idled with NVML reporting. GPU power only, not the whole machine.' },
                         },
@@ -2609,6 +2613,29 @@ const buildOpenApiSpec = () => {
                                     state: { type: 'string', example: 'online' },
                                 },
                             },
+                        },
+                    },
+                    GpuWorkerDatasetFloorRequest: {
+                        type: 'object',
+                        description: 'The free disk a machine keeps for datasets (#320).',
+                        required: ['keep_free_bytes'],
+                        properties: {
+                            keep_free_bytes: { type: 'integer', nullable: true, minimum: 0, example: 50000000000, description: 'Bytes of disk to keep free by evicting cached datasets. Null puts back the default, 50 GB.' },
+                        },
+                    },
+                    GpuWorkerDatasetFloor: {
+                        type: 'object',
+                        properties: {
+                            worker_id: { type: 'integer' },
+                            keep_free_bytes: { type: 'integer', description: 'The floor the machine now keeps.' },
+                            is_default: { type: 'boolean', description: 'Whether that is the default rather than one set for this machine.' },
+                        },
+                    },
+                    GpuWorkerDatasetClear: {
+                        type: 'object',
+                        properties: {
+                            worker_id: { type: 'integer' },
+                            clear_dataset_cache_requested_at: { type: 'string', format: 'date-time', description: 'When it was asked for. The machine is told on its next poll.' },
                         },
                     },
                     GpuWorkerRenameRequest: {

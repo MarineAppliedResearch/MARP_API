@@ -365,6 +365,86 @@ class GpuRepository {
     }
 
     /**
+     * Set the free disk a worker keeps for datasets, or put it back to the default (#320).
+     *
+     * @async
+     * @param {number} workerId - Worker identifier.
+     * @param {?number} bytes - The floor, or null for the default.
+     * @returns {Promise<Object|null>} The worker row, or null when there is no such worker.
+     */
+    async setDatasetKeepFree(workerId, bytes) {
+        const [rows] = await this.db.sequelize.query(
+            `UPDATE gpu_workers SET dataset_keep_free_bytes = :bytes
+              WHERE id = :workerId
+          RETURNING id, dataset_keep_free_bytes::float8 AS dataset_keep_free_bytes`,
+            { replacements: { workerId, bytes } }
+        );
+
+        return rows[0] || null;
+    }
+
+    /**
+     * Ask a worker to clear its dataset cache on its next poll (#320).
+     *
+     * @async
+     * @param {number} workerId - Worker identifier.
+     * @returns {Promise<Object|null>} The worker row, or null when there is no such worker.
+     */
+    async requestDatasetCacheClear(workerId) {
+        const [rows] = await this.db.sequelize.query(
+            `UPDATE gpu_workers SET clear_dataset_cache_requested_at = NOW()
+              WHERE id = :workerId
+          RETURNING id, clear_dataset_cache_requested_at`,
+            { replacements: { workerId } }
+        );
+
+        return rows[0] || null;
+    }
+
+    /**
+     * What a worker has been asked to do outside any job, taken so it is asked once (#320).
+     *
+     * @async
+     * @param {number} workerId - Worker identifier.
+     * @returns {Promise<string[]>} Instruction words, empty when there are none.
+     */
+    async takeWorkerInstructions(workerId) {
+        const [rows] = await this.db.sequelize.query(
+            `UPDATE gpu_workers SET clear_dataset_cache_requested_at = NULL
+              WHERE id = :workerId
+                AND clear_dataset_cache_requested_at IS NOT NULL
+          RETURNING id`,
+            { replacements: { workerId } }
+        );
+
+        return rows.length ? ['clear-dataset-cache'] : [];
+    }
+
+    /**
+     * What a leased training job needs to know about room on this machine (#320).
+     *
+     * @async
+     * @param {number} workerId - Worker identifier.
+     * @param {?number} datasetId - `datasets.id` the job names.
+     * @returns {Promise<{keepFree: ?number, sizeBytes: ?number}>} Either may be null.
+     */
+    async datasetRoomForLease(workerId, datasetId) {
+        const [worker] = await this.db.sequelize.query(
+            'SELECT dataset_keep_free_bytes::float8 AS keep FROM gpu_workers WHERE id = :workerId',
+            { replacements: { workerId }, type: QueryTypes.SELECT }
+        );
+        const [dataset] = datasetId ? await this.db.sequelize.query(
+            'SELECT archive_bytes::float8 AS bytes FROM datasets WHERE id = :datasetId',
+            { replacements: { datasetId }, type: QueryTypes.SELECT }
+        ) : [];
+
+        return {
+            keepFree: worker && worker.keep !== null ? Number(worker.keep) : null,
+            sizeBytes: dataset && dataset.bytes !== null ? Number(dataset.bytes) : null,
+        };
+    }
+
+    /**
      * Fetch one worker by id.
      *
      * @async
@@ -1043,6 +1123,8 @@ class GpuRepository {
                         w.enrolled_at,
                         w.last_seen_at,
                         w.up_since,
+                        w.dataset_keep_free_bytes::float8 AS dataset_keep_free_bytes,
+                        w.clear_dataset_cache_requested_at,
                         a.id               AS attempt_id,
                         a.state            AS attempt_state,
                         a.slot_index       AS attempt_slot_index,
@@ -1053,6 +1135,7 @@ class GpuRepository {
                         a.capabilities_snapshot,
                         s.at               AS sample_at,
                         s.devices          AS sample_devices,
+                        s.system           AS sample_system,
                         a.progress_done::float8 AS progress_done,
                         a.progress_total::float8 AS progress_total,
                         a.progress_unit,
@@ -1075,7 +1158,7 @@ class GpuRepository {
                       capabilities_snapshot because that one is taken at the
                       poll, before the job starts, and reads near-idle. */
                    LEFT JOIN LATERAL (
-                        SELECT at, devices
+                        SELECT at, devices, system
                           FROM gpu_worker_samples
                          WHERE worker_id = w.id
                          ORDER BY at DESC

@@ -51,6 +51,8 @@ const SUBSYSTEMS = {
             'gpu-worker-uptime',
             // #214: idle GPU power and the pool's power over time.
             'gpu-worker-power',
+            // #320: the dataset cache floor, the archive size on a lease, clearing it.
+            'gpu-dataset-cache',
             // #279: cancelling a selection, or every piece of one run.
             'gpu-job-cancel',
             'gpu-job-list',

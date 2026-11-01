@@ -235,6 +235,17 @@ const DATASET_DIRECTORY = process.env.DATASET_STORAGE_DIR
     : path.join(__dirname, '..', 'storage', 'datasets');
 
 /**
+ * The free disk a worker keeps by evicting cached datasets, when nobody set its own (#320).
+ *
+ * Settled with Isaac on 2026-10-31: 50 GB, adjustable per worker through
+ * `gpu_workers.dataset_keep_free_bytes`. Decimal gigabytes, as a disk is sold.
+ *
+ * @constant
+ * @type {number}
+ */
+const DEFAULT_DATASET_KEEP_FREE_BYTES = 50 * 1000 ** 3;
+
+/**
  * What `datasets.archive_path` says, relative to the dataset directory's parent.
  *
  * @constant
@@ -489,6 +500,7 @@ module.exports = {
     ARTIFACT_PATH_PREFIX,
     DATASET_DIRECTORY,
     DATASET_PATH_PREFIX,
+    DEFAULT_DATASET_KEEP_FREE_BYTES,
     MEDIA_CLIENT_IDENTITY,
     WORKER_STATES,
     JOB_KINDS,
