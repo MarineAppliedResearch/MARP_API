@@ -87,3 +87,39 @@ test('Clear cache asks MARP, once confirmed', async (t) => {
   assert.equal(button.textContent, 'Clear requested');
   assert.equal(button.disabled, true);
 });
+
+test('a fetching attempt shows its download rate, and the panel follows the poll', async (t) => {
+  /* What MARP says, which the test moves between polls: 166 MB arrive in 10 s. */
+  const reading = { done: 1_000_000_000, at: '2026-10-31T17:00:00.000Z', cached: 1 };
+  const fetching = () => worker(1, {
+    activity: 'busy',
+    dataset_cache: { ...CACHE, entries: CACHE.entries.slice(0, reading.cached) },
+    attempts: [{
+      attempt_id: 77, state: 'leased', slot_index: 0, lease_epoch: 1, last_heartbeat_at: reading.at,
+      job: { job_id: 900 }, progress: { done: reading.done, total: 1_963_637_760, unit: 'bytes', phase: 'fetching_dataset' },
+    }],
+  });
+
+  const screen = await drawScreen('workers.html', {
+    listWorkers: async () => [fetching()],
+    listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+  });
+  t.after(screen.close);
+
+  const progress = () => screen.document.querySelector('[data-attempt-progress="77"]').textContent;
+  const cache = () => screen.document.querySelector('[data-dataset-cache]').textContent;
+
+  assert.doesNotMatch(progress(), /\/s/, 'one reading is not a rate');
+
+  reading.done += 166_000_000;
+  reading.at = '2026-10-31T17:00:10.000Z';
+  reading.cached = 2;
+  await screen.window.pollScreenNow();
+
+  assert.match(progress(), /1,166,000,000 \/ 1,963,637,760 bytes · fetching_dataset · 16\.6 MB\/s/);
+  assert.match(cache(), /in 2 datasets/, 'the cache section is redrawn from the poll too');
+
+  /* The same heartbeat read again keeps its rate rather than dropping it. */
+  await screen.window.pollScreenNow();
+  assert.match(progress(), /16\.6 MB\/s/);
+});
