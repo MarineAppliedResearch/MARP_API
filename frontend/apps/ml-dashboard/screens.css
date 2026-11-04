@@ -22,22 +22,46 @@
   --tone-test: 246, 196, 83;
 
   /* ---- state, decided once ------------------------------------------- */
-  --st-running: var(--cyan-400);
-  --st-queued: var(--blue-400);
-  --st-done: var(--green-400);
-  --st-issues: var(--amber-300);
-  --st-failed: var(--red-400);
+  /* **One colour per meaning, on every tab** (#318). Isaac, 2026-10-31: the rings, their
+     legends and the row pills had two palettes -- queued was blue on a row and violet in
+     the ring above it, an idle worker blue on its row and green in its ring. Settled
+     2026-11-03: in progress cyan, waiting violet, done or usable green, warning amber,
+     failed red, inactive grey; job kinds keep their own colours only where a ring splits
+     running work by kind. Every state below points at one of these, and so does every
+     ring, legend and state-coloured chart line. */
+  --orange-400: #f2913d;
+  --tone-progress: var(--cyan-400);
+  --tone-waiting: var(--violet-300);
+  --tone-done: var(--green-400);
+  --tone-warning: var(--amber-300);
+  --tone-failed: var(--red-400);
+  --tone-inactive: var(--grey-400);
+  --tone-inference: var(--blue-400);
+  --tone-training: var(--orange-400);
+
+  --st-running: var(--tone-progress);
+  --st-busy: var(--tone-progress);
+  --st-building: var(--tone-progress);
+  --st-queued: var(--tone-waiting);
+  --st-done: var(--tone-done);
+  --st-ready: var(--tone-done);
+  --st-active: var(--tone-done);
+  --st-online: var(--tone-done);
+  --st-idle: var(--tone-done);
   /* Amber and not grey: an expired lease is work MARP lost, and somebody has to
      resubmit it. Cancelled is work somebody stopped on purpose and needs
      nothing, which is what grey says. */
-  --st-expired: var(--amber-300);
-  --st-cancelled: var(--grey-400);
-  --st-cancelling: var(--amber-300);
-  --st-paused: var(--violet-300);
-  --st-online: var(--green-400);
-  --st-busy: var(--cyan-400);
-  --st-idle: var(--blue-400);
-  --st-offline: var(--grey-400);
+  --st-issues: var(--tone-warning);
+  --st-expired: var(--tone-warning);
+  --st-cancelling: var(--tone-warning);
+  --st-failed: var(--tone-failed);
+  --st-attention: var(--tone-failed);
+  --st-cancelled: var(--tone-inactive);
+  --st-archived: var(--tone-inactive);
+  --st-paused: var(--tone-inactive);
+  --st-offline: var(--tone-inactive);
+  --st-inference: var(--tone-inference);
+  --st-training: var(--tone-training);
   --s: var(--grey-400);
 
   /* ---- surfaces -------------------------------------------------------
@@ -358,12 +382,27 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .job-donut circle { fill: none; stroke-width: 17; }
 .donut-track { stroke: var(--sunk); }
 .donut-part { stroke-linecap: butt; }
-.donut-part.inference { stroke: var(--blue-400); }
-.donut-part.training { stroke: var(--amber-300); }
-.donut-part.datasets { stroke: var(--cyan-300); }
-.donut-part.queued { stroke: var(--violet-300); }
-.donut-part.done { stroke: var(--mint-400); }
-.donut-part.attention { stroke: var(--red-400); }
+/* A ring arc is coloured by its state, from the one map above (#318). */
+.donut-part.running { stroke: var(--st-running); }
+.donut-part.busy { stroke: var(--st-busy); }
+.donut-part.building { stroke: var(--st-building); }
+.donut-part.queued { stroke: var(--st-queued); }
+.donut-part.done { stroke: var(--st-done); }
+.donut-part.ready { stroke: var(--st-ready); }
+.donut-part.active { stroke: var(--st-active); }
+.donut-part.online { stroke: var(--st-online); }
+.donut-part.idle { stroke: var(--st-idle); }
+.donut-part.issues { stroke: var(--st-issues); }
+.donut-part.expired { stroke: var(--st-expired); }
+.donut-part.cancelling { stroke: var(--st-cancelling); }
+.donut-part.failed { stroke: var(--st-failed); }
+.donut-part.attention { stroke: var(--st-attention); }
+.donut-part.cancelled { stroke: var(--st-cancelled); }
+.donut-part.archived { stroke: var(--st-archived); }
+.donut-part.paused { stroke: var(--st-paused); }
+.donut-part.offline { stroke: var(--st-offline); }
+.donut-part.inference { stroke: var(--st-inference); }
+.donut-part.training { stroke: var(--st-training); }
 .job-donut > span { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
 .job-donut > span b { color: var(--white); font-size: 27px; line-height: 1; }
 .job-donut > span small { margin-top: 4px; color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
@@ -371,12 +410,27 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .job-mix-key span { display: grid; grid-template-columns: 9px 20px minmax(0, 1fr); gap: 7px; align-items: center; }
 .job-mix-key i { width: 8px; height: 8px; border-radius: 50%; background: var(--key); }
 .job-mix-key b { color: var(--white); text-align: right; }
-.job-mix-key .inference { --key: var(--blue-400); }
-.job-mix-key .training { --key: var(--amber-300); }
-.job-mix-key .datasets { --key: var(--cyan-300); }
-.job-mix-key .queued { --key: var(--violet-300); }
-.job-mix-key .done { --key: var(--mint-400); }
-.job-mix-key .attention { --key: var(--red-400); }
+/* And its legend dot, from the same map, so the two cannot disagree (#318). */
+.job-mix-key .running { --key: var(--st-running); }
+.job-mix-key .busy { --key: var(--st-busy); }
+.job-mix-key .building { --key: var(--st-building); }
+.job-mix-key .queued { --key: var(--st-queued); }
+.job-mix-key .done { --key: var(--st-done); }
+.job-mix-key .ready { --key: var(--st-ready); }
+.job-mix-key .active { --key: var(--st-active); }
+.job-mix-key .online { --key: var(--st-online); }
+.job-mix-key .idle { --key: var(--st-idle); }
+.job-mix-key .issues { --key: var(--st-issues); }
+.job-mix-key .expired { --key: var(--st-expired); }
+.job-mix-key .cancelling { --key: var(--st-cancelling); }
+.job-mix-key .failed { --key: var(--st-failed); }
+.job-mix-key .attention { --key: var(--st-attention); }
+.job-mix-key .cancelled { --key: var(--st-cancelled); }
+.job-mix-key .archived { --key: var(--st-archived); }
+.job-mix-key .paused { --key: var(--st-paused); }
+.job-mix-key .offline { --key: var(--st-offline); }
+.job-mix-key .inference { --key: var(--st-inference); }
+.job-mix-key .training { --key: var(--st-training); }
 .jobs-history-hd { align-items: flex-start; }
 .jobs-history-hd .seg { margin-left: auto; }
 .jobs-history-bd { display: grid; gap: 8px; }
@@ -387,14 +441,14 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .jobs-axis text:nth-last-child(3) { text-anchor: start; }
 .jobs-line { fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .jobs-line.started { stroke: var(--cyan-300); }
-.jobs-line.completed { stroke: var(--mint-400); }
-.jobs-line.queued { stroke: var(--violet-300); stroke-dasharray: 6 4; }
+.jobs-line.completed { stroke: var(--tone-done); }
+.jobs-line.queued { stroke: var(--tone-waiting); stroke-dasharray: 6 4; }
 .jobs-chart-key { display: flex; gap: 8px 15px; flex-wrap: wrap; color: var(--text); font-size: 10.5px; font-weight: 600; }
 .jobs-chart-key span { display: inline-flex; align-items: center; gap: 6px; }
 .jobs-chart-key span::before { content: ""; width: 13px; height: 2px; background: var(--key); }
 .jobs-chart-key .started { --key: var(--cyan-300); }
-.jobs-chart-key .completed { --key: var(--mint-400); }
-.jobs-chart-key .queued { --key: var(--violet-300); }
+.jobs-chart-key .completed { --key: var(--tone-done); }
+.jobs-chart-key .queued { --key: var(--tone-waiting); }
 .jobs-chart-key .live { margin-left: auto; color: var(--muted); }
 .jobs-chart-key .live::before { display: none; }
 .jobs-chart-key .live .dot { width: 6px; height: 6px; }
@@ -435,7 +489,7 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
    without relying on colour. */
 .inference-flow .throughput { --key: var(--cyan-300); --dash-on: 12px; --dash-off: 0px; }
 .inference-flow .backlog { --key: var(--violet-300); --dash-on: 7px; --dash-off: 5px; }
-.inference-flow .done { --key: var(--mint-400); --dash-on: 2px; --dash-off: 6px; }
+.inference-flow .done { --key: var(--tone-done); --dash-on: 2px; --dash-off: 6px; }
 .inference-line.throughput, .inference-line.backlog, .inference-line.done {
   stroke: var(--key); stroke-dasharray: var(--dash-on) var(--dash-off);
 }
@@ -475,7 +529,9 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
   vector-effect: non-scaling-stroke; transition: opacity 150ms ease, stroke-width 150ms ease;
 }
 .ops-activity .ops-area { fill: rgba(61, 214, 208, .09); transition: opacity 150ms ease; }
-.ops-activity .registered, .ops-activity .inference, .ops-activity .completed { --key: var(--cyan-300); }
+.ops-activity .registered { --key: var(--cyan-300); }
+.ops-activity .inference { --key: var(--tone-inference); }
+.ops-activity .completed { --key: var(--tone-done); }
 /* `in_use` with them, because the Models legend names that series "Models in use" while
    the line it points at is classed `preferred` -- so it had no colour of its own and fell
    back to the text colour, which is a swatch claiming a grey the chart never draws. The
@@ -483,16 +539,21 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
    match by name and by colour. Renaming one to match the other is the better fix and is
    somebody's call, not this stylesheet's. */
 .ops-activity .preferred, .ops-activity .in_use,
-.ops-activity .training, .ops-activity .issues { --key: var(--amber-300); }
+.ops-activity .training { --key: var(--tone-training); }
+.ops-activity .issues { --key: var(--tone-warning); }
 .ops-activity .coverage { --key: var(--mint-400); }
 .ops-activity .vram { --key: var(--violet-300); }
-.ops-activity .queued { --key: var(--red-400); }
+.ops-activity .queued { --key: var(--tone-waiting); }
 .ops-activity .turnaround { --key: var(--violet-300); }
-.ops-line.registered, .ops-line.inference, .ops-line.completed { stroke: var(--cyan-300); }
-.ops-line.preferred, .ops-line.training, .ops-line.issues { stroke: var(--amber-300); }
+.ops-line.registered { stroke: var(--cyan-300); }
+.ops-line.inference { stroke: var(--tone-inference); }
+.ops-line.completed { stroke: var(--tone-done); }
+.ops-line.preferred { stroke: var(--amber-300); }
+.ops-line.training { stroke: var(--tone-training); }
+.ops-line.issues { stroke: var(--tone-warning); }
 .ops-line.coverage { stroke: var(--mint-400); }
 .ops-line.vram { stroke: var(--violet-300); }
-.ops-line.queued { stroke: var(--red-400); stroke-dasharray: 7 5; }
+.ops-line.queued { stroke: var(--tone-waiting); stroke-dasharray: 7 5; }
 .ops-line.turnaround { stroke: var(--violet-300); stroke-dasharray: 7 5; }
 .ops-activity.is-highlighted .ops-line, .ops-activity.is-highlighted .ops-area { opacity: .12; }
 .ops-activity.is-highlighted .ops-line.highlighted { opacity: 1; stroke-width: 4.5; }
@@ -516,11 +577,11 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
    `.training-health` is on the article that encloses both the svg and the legend, so a
    token set here is in scope for both. A solid line is `12 0`, which is what
    `.inference-flow .throughput` says and what `stroke-dasharray` treats as solid. */
-.training-health .compute { --key: var(--cyan-300); --dash-on: 12px; --dash-off: 0px; }
-.training-health .running { --key: var(--mint-400); --dash-on: 12px; --dash-off: 0px; }
-.training-health .queued { --key: var(--violet-300); --dash-on: 7px; --dash-off: 5px; }
+.training-health .compute { --key: var(--tone-training); --dash-on: 12px; --dash-off: 0px; }
+.training-health .running { --key: var(--tone-progress); --dash-on: 12px; --dash-off: 0px; }
+.training-health .queued { --key: var(--tone-waiting); --dash-on: 7px; --dash-off: 5px; }
 /* Drawn as bars rather than a line, so it carries a fill as well. */
-.training-health .completed { --key: var(--amber-300); --fill: rgba(255, 190, 72, .45); }
+.training-health .completed { --key: var(--tone-done); --fill: rgba(167, 236, 53, .4); }
 
 .training-line.compute, .training-line.running, .training-line.queued {
   stroke: var(--key); stroke-dasharray: var(--dash-on) var(--dash-off);
@@ -1114,13 +1175,21 @@ body.viewing { overflow: hidden; }
 [data-state="cancelling"] { --s: var(--st-cancelling); }
 [data-state="paused"]     { --s: var(--st-paused); }
 [data-state="online"]     { --s: var(--st-online); }
+[data-state="building"]   { --s: var(--st-building); }
+[data-state="active"]     { --s: var(--st-active); }
+[data-state="archived"]   { --s: var(--st-archived); }
+[data-state="attention"]  { --s: var(--st-attention); }
+[data-state="inference"]  { --s: var(--st-inference); }
+[data-state="training"]   { --s: var(--st-training); }
+/* The pool ring's arcs: their stroke from the same map as the dots beside them (#318). */
+.pool .donut circle[data-state] { stroke: var(--s); }
 [data-state="busy"]       { --s: var(--st-busy); }
 [data-state="idle"]       { --s: var(--st-idle); }
 [data-state="offline"]    { --s: var(--st-offline); }
 /* A model has its own small lifecycle. These borrow the job colours rather than
    inventing new ones -- settled, in progress, broken -- but keep their own names
    so the markup says what it means. */
-[data-state="ready"]      { --s: var(--st-done); }
+[data-state="ready"]      { --s: var(--st-ready); }
 [data-state="testing"]    { --s: var(--st-running); }
 [data-state="error"]      { --s: var(--st-failed); }
 
@@ -1579,7 +1648,7 @@ h2 > .later, summary > .later { vertical-align: middle; }
 .pool-line.vram-used { stroke: var(--violet-300); stroke-width: 2.65; }
 .pool-area.inference { fill: rgba(45, 156, 255, .24); }
 .pool-area.training { fill: rgba(246, 196, 83, .22); }
-.pool-line.queue-training { stroke: var(--amber-300); stroke-dasharray: 7 4; }
+.pool-line.queue-training { stroke: var(--tone-training); stroke-dasharray: 7 4; }
 .pool-line.queue-inference { stroke: var(--blue-400); stroke-dasharray: 2 4; }
 .pool-chart-key {
   display: flex; gap: 6px 12px; align-items: center; flex-wrap: wrap;
@@ -1598,9 +1667,9 @@ h2 > .later, summary > .later { vertical-align: middle; }
 .pool-chart-key b { color: var(--white); font-size: 10.5px; font-weight: 700; }
 .pool-chart-key .compute-used::before { background: var(--cyan-300); }
 .pool-chart-key .vram-used::before { background: var(--violet-300); }
-.pool-chart-key .training::before { background: var(--amber-300); }
+.pool-chart-key .training::before { background: var(--tone-training); }
 .pool-chart-key .inference::before { background: var(--blue-400); }
-.pool-chart-key .queue-training::before { height: 0; border-top: 1px dashed var(--amber-300); }
+.pool-chart-key .queue-training::before { height: 0; border-top: 1px dashed var(--tone-training); }
 .pool-chart-key .queue-inference::before { height: 0; border-top: 1px dotted var(--blue-400); }
 .pool-chart-key .top-load::before { display: none; }
 .pool-chart-key .top-load { margin-left: auto; }
@@ -2108,13 +2177,13 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 }
 .dataset-activity .dataset-area { fill: rgba(61, 214, 208, .09); transition: opacity 150ms ease; }
 .dataset-line.throughput { stroke: var(--cyan-300); }
-.dataset-line.running { stroke: var(--mint-400); }
-.dataset-line.queued { stroke: var(--violet-300); stroke-dasharray: 7 5; }
-.dataset-bars.completed { fill: rgba(255, 190, 72, .45); stroke: var(--amber-300); stroke-width: 1; transition: opacity 150ms ease; }
+.dataset-line.running { stroke: var(--tone-progress); }
+.dataset-line.queued { stroke: var(--tone-waiting); stroke-dasharray: 7 5; }
+.dataset-bars.completed { fill: rgba(167, 236, 53, .4); stroke: var(--tone-done); stroke-width: 1; transition: opacity 150ms ease; }
 .dataset-chart-key .throughput { --key: var(--cyan-300); }
-.dataset-chart-key .running { --key: var(--mint-400); }
-.dataset-chart-key .queued { --key: var(--violet-300); }
-.dataset-chart-key .completed { --key: var(--amber-300); }
+.dataset-chart-key .running { --key: var(--tone-progress); }
+.dataset-chart-key .queued { --key: var(--tone-waiting); }
+.dataset-chart-key .completed { --key: var(--tone-done); }
 .dataset-activity.is-highlighted .dataset-line,
 .dataset-activity.is-highlighted .dataset-area,
 .dataset-activity.is-highlighted .dataset-bars { opacity: .12; }
@@ -3265,8 +3334,8 @@ td.whb.quiet { color: var(--amber-300); }
 .video-where b { color: var(--text); }
 .video-strip { position: relative; height: 12px; border: 1px solid var(--hairline); border-radius: 3px; background: var(--sunk); overflow: hidden; }
 .video-strip i { position: absolute; top: 0; bottom: 0; background: var(--violet-300); opacity: .35; }
-.video-strip i.done { background: var(--mint-400); opacity: .75; }
-.video-strip i.running { background: var(--cyan-300); opacity: .85; }
+.video-strip i.done { background: var(--tone-done); opacity: .75; }
+.video-strip i.running { background: var(--tone-progress); opacity: .85; }
 .video-strip i.failed { background: var(--red-400); opacity: .75; }
 .video-strip i.cancelled { background: var(--grey-400); opacity: .35; }
 .video-strip i.this { outline: 2px solid var(--white); outline-offset: -2px; z-index: 1; }

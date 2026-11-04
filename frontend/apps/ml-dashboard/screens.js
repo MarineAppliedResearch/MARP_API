@@ -3705,7 +3705,7 @@ function renderTraining(jobs) {
   /* **The ring's own class names** (#298): a legend dot takes its colour from the
      class, and `running` and `failed` had none, so two entries showed no dot. */
   const parts = [
-    ['training', running.length, 'Running'],
+    ['running', running.length, 'Running'],
     ['queued', queued.length, 'Queued'],
     ['done', done.length, 'Completed'],
     ['attention', attention.length, 'Need attention'],
@@ -3723,6 +3723,8 @@ function renderTraining(jobs) {
     let offset = 0;
     arcs.forEach((arc, index) => {
       const value = parts[index] ? parts[index][1] : 0;
+      // Coloured by its part's state, the class the legend uses too (#318).
+      arc.setAttribute('class', `donut-part ${parts[index] ? parts[index][0] : ''}`);
       arc.setAttribute('pathLength', String(scale));
       arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, scale - value)}`);
       arc.setAttribute('stroke-dashoffset', String(-offset));
@@ -5148,7 +5150,7 @@ function renderInference(jobs) {
   /* **The ring's own class names** (#298): a legend dot takes its colour from the
      class, and `running` and `failed` had none, so two entries showed no dot. */
   const parts = [
-    ['inference', running.length, 'Running'],
+    ['running', running.length, 'Running'],
     ['queued', queued.length, 'Queued'],
     ['done', done.length, doneLabel],
     ['attention', attention.length, 'Need attention'],
@@ -5166,6 +5168,8 @@ function renderInference(jobs) {
     let offset = 0;
     arcs.forEach((arc, index) => {
       const value = parts[index] ? parts[index][1] : 0;
+      // Coloured by its part's state, the class the legend uses too (#318).
+      arc.setAttribute('class', `donut-part ${parts[index] ? parts[index][0] : ''}`);
       arc.setAttribute('pathLength', String(scale));
       arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, scale - value)}`);
       arc.setAttribute('stroke-dashoffset', String(-offset));
@@ -6196,7 +6200,7 @@ function renderModelsSummary(views) {
   /* Active and archived (#321): every model is one or the other, so the ring adds up to
      the number in its middle. It counted four statuses nothing wrote, and 29 of 31 models
      were `active`, which it did not count at all. */
-  const parts = [['done', active, 'Active'], ['queued', archived, 'Archived']];
+  const parts = [['active', active, 'Active'], ['archived', archived, 'Archived']];
 
   const donut = $('.job-donut svg');
   if (donut) {
@@ -6204,6 +6208,8 @@ function renderModelsSummary(views) {
     let offset = 0;
     arcs.forEach((arc, index) => {
       const value = parts[index] ? parts[index][1] : 0;
+      // Coloured by its part's state, the class the legend uses too (#318).
+      arc.setAttribute('class', `donut-part ${parts[index] ? parts[index][0] : ''}`);
       arc.setAttribute('pathLength', String(total));
       arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
       arc.setAttribute('stroke-dashoffset', String(-offset));
@@ -6561,6 +6567,8 @@ function renderOutcomes(jobs) {
     let offset = 0;
     arcs.forEach((arc, index) => {
       const value = [done, issues, bad][index] || 0;
+      // The legend's own states: this arc was `queued` violet beside an amber "With issues" (#318).
+      arc.setAttribute('class', `donut-part ${['done', 'issues', 'failed'][index] || ''}`);
       arc.setAttribute('pathLength', String(total));
       arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
       arc.setAttribute('stroke-dashoffset', String(-offset));
@@ -6659,9 +6667,11 @@ function renderDashboardPool(workers) {
   const circumference = 2 * Math.PI * 54;
   const arcs = $$('.pool .donut circle', panel).slice(1);
   let offset = 0;
-  counts.forEach(([, value], index) => {
+  counts.forEach(([activity, value], index) => {
     const arc = arcs[index];
     if (!arc) return;
+    // Coloured by its state from the one map, as its legend dot is (#318).
+    arc.setAttribute('data-state', activity);
     const length = (value / total) * circumference;
     arc.setAttribute('stroke-dasharray', `${length.toFixed(1)} ${(circumference - length).toFixed(1)}`);
     arc.setAttribute('stroke-dashoffset', `${(-offset).toFixed(1)}`);
@@ -8010,16 +8020,18 @@ function renderWorkersSummary(workers, jobs) {
      count and nothing has to be converted into a percentage first. */
   const donut = $('.job-donut svg');
   if (donut) {
-    const parts = [['inference', busy], ['done', idle], ['queued', paused], ['attention', offline]];
+    const parts = [['busy', busy], ['idle', idle], ['paused', paused], ['offline', offline]];
     let offset = 0;
-    for (const [cls, value] of parts) {
-      const arc = $(`.donut-part.${cls}`, donut);
-      if (!arc) continue;
+    /* By position, each arc taking its part's state (#318): looked up by class, the arcs
+       had to carry the old names, and their colours were not the legend's. */
+    $$('.donut-part', donut).forEach((arc, index) => {
+      const [cls, value] = parts[index] || ['', 0];
+      arc.setAttribute('class', `donut-part ${cls}`);
       arc.setAttribute('pathLength', String(total));
       arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, total - value)}`);
       arc.setAttribute('stroke-dashoffset', String(-offset));
       offset += value;
-    }
+    });
     const middle = $('.job-donut > span > b');
     if (middle) middle.textContent = String(total);
     const label = $('.job-donut');
@@ -8028,7 +8040,7 @@ function renderWorkersSummary(workers, jobs) {
 
   const key = $('.job-mix-key');
   if (key) {
-    key.innerHTML = [['inference', busy, 'Busy'], ['done', idle, 'Idle'], ['queued', paused, 'Paused'], ['attention', offline, 'Offline']]
+    key.innerHTML = [['busy', busy, 'Busy'], ['idle', idle, 'Idle'], ['paused', paused, 'Paused'], ['offline', offline, 'Offline']]
       .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
       .join('');
   }
@@ -10970,7 +10982,7 @@ function renderDatasetsSummary(datasets, builds) {
   set('Ready datasets', ready, 'saved in MARP');
   set('Needs attention', attention, attention ? 'builds that failed' : 'nothing failed');
 
-  const parts = [['running', building, 'Building'], ['queued', queued, 'Queued'], ['done', ready, 'Ready'], ['failed', attention, 'Needs attention']];
+  const parts = [['building', building, 'Building'], ['queued', queued, 'Queued'], ['ready', ready, 'Ready'], ['attention', attention, 'Needs attention']];
 
   const donut = $('.job-donut svg');
   if (donut) {
@@ -10978,6 +10990,8 @@ function renderDatasetsSummary(datasets, builds) {
     let offset = 0;
     arcs.forEach((arc, index) => {
       const value = parts[index] ? parts[index][1] : 0;
+      // Coloured by its part's state, the class the legend uses too (#318).
+      arc.setAttribute('class', `donut-part ${parts[index] ? parts[index][0] : ''}`);
       arc.setAttribute('pathLength', String(total || 1));
       arc.setAttribute('stroke-dasharray', `${value} ${Math.max(0, (total || 1) - value)}`);
       arc.setAttribute('stroke-dashoffset', String(-offset));
