@@ -26,6 +26,7 @@ const fs = require('fs');
 const path = require('path');
 
 const gpuRepository = require('../repository/gpu.repository');
+const modelArtifactService = require('./model-artifact.service');
 const ingestRepository = require('../repository/observation-ingest.repository');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const gpuPlaybackService = require('./gpu-playback.service');
@@ -958,6 +959,9 @@ class GpuService {
         if (!modelId) return spec;
 
         try {
+            // Read from the weights first if nothing has been recorded yet.
+            await modelArtifactService.describeIfUnrecordedById(modelId);
+
             const model = await gpuRepository.modelForLease(modelId);
             if (!model) return spec;
 

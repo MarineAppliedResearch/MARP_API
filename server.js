@@ -98,3 +98,12 @@ const builds = datasetBuild.start();
 console.log(builds.started
     ? 'Dataset builds started.'
     : `Dataset builds are not running: ${builds.reason}`);
+
+// Models whose weights say what they are and whose rows do not yet: read and recorded
+// here, so no machine needs a step after an upgrade (#321). In the background, because
+// it reads files and the API should be serving meanwhile.
+require('./service/model-artifact.service').describeAllUnrecorded()
+    .then(({ checked, filled }) => {
+        if (checked) console.log(`Models described from their weights: ${filled} of ${checked} with nothing recorded.`);
+    })
+    .catch((error) => console.error(`Describing models from their weights failed: ${error && error.message}`));
