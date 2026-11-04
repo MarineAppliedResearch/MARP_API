@@ -170,7 +170,7 @@ class DatasetService {
 
         /* Each with whether its weights are on disk and their size (#321). */
         return Promise.all(models.map(async (model) => {
-            const plain = model.get ? model.get({ plain: true }) : model;
+            const plain = await modelArtifactService.describeIfUnrecorded(model.get ? model.get({ plain: true }) : model);
             return { ...plain, weights: await modelArtifactService.weightsOf(plain) };
         }));
     }
@@ -258,7 +258,7 @@ class DatasetService {
         const model = await datasetRepository.getModelById(mlID);
         if (!model) return model;
 
-        const plain = model.get ? model.get({ plain: true }) : model;
+        const plain = await modelArtifactService.describeIfUnrecorded(model.get ? model.get({ plain: true }) : model);
         return { ...plain, weights: await modelArtifactService.weightsOf(plain) };
     }
 

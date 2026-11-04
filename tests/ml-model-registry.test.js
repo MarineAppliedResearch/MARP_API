@@ -183,3 +183,57 @@ describe('Register Model uploads weights (#321)', () => {
             .toBeGreaterThanOrEqual(400);
     });
 });
+
+describe('The API records what weights say by itself (#321)', () => {
+
+    const modelArtifactService = require('../service/model-artifact.service');
+
+    /** A model row whose weights are a copy of one fixture, with nothing recorded. */
+    async function unrecorded(name, fixture, extra = {}) {
+        const relative = `models/${name}/weights/${name}.pt`;
+        await fs.mkdir(path.join(made.root, path.dirname(relative)), { recursive: true });
+        if (fixture) await fs.copyFile(path.join(FIXTURES, fixture), path.join(made.root, relative));
+        else await fs.writeFile(path.join(made.root, relative), 'not a checkpoint');
+
+        const row = await db.ml_models.create({ name, model_type: 'detection', storage_path: relative, status: 'active', ...extra });
+        made.modelIds.push(row.id);
+        return row.id;
+    }
+
+    const recorded = async (id) => (await db.ml_models.findByPk(id)).get({ plain: true });
+
+    it('fills a model the first time it is read, and keeps it', async () => {
+        const id = await unrecorded(`jest-321-unrecorded-${runId}`, 'tiny-detector.pt');
+
+        const response = await global.api.get(`/api/v2/model/${id}`);
+
+        expect(response.body).toMatchObject({ engine: 'ultralytics', architecture_version: 'yolo11n', file_format: 'pt' });
+        expect(await recorded(id)).toMatchObject({ engine: 'ultralytics', architecture_version: 'yolo11n', file_format: 'pt' });
+    });
+
+    it('fills every unrecorded model at startup, making an older row exact', async () => {
+        const id = await unrecorded(`jest-321-older-${runId}`, 'tiny-classifier.pt',
+            { model_type: 'classification', architecture_version: 'yolov8', engine: 'ultralytics' });
+
+        const sweep = await modelArtifactService.describeAllUnrecorded();
+
+        expect(sweep.filled).toBeGreaterThanOrEqual(1);
+        expect(await recorded(id)).toMatchObject({ architecture_version: 'yolov8m-cls', file_format: 'pt' });
+    });
+
+    it('leaves a file it cannot read as it was', async () => {
+        const id = await unrecorded(`jest-321-unreadable-${runId}`, null);
+
+        await modelArtifactService.describeAllUnrecorded();
+
+        expect(await recorded(id)).toMatchObject({ engine: null, architecture_version: null, file_format: null });
+    });
+
+    it('fills a model a job is leased against before telling the worker', async () => {
+        const id = await unrecorded(`jest-321-leased-${runId}`, 'tiny-detector.pt');
+
+        const spec = await gpuService.describeModelForLease({ model: { name: 'm.pt', sha256: 'a'.repeat(64), ml_model_id: id } });
+
+        expect(spec.model).toMatchObject({ architecture: 'yolo11n', task: 'detection' });
+    });
+});

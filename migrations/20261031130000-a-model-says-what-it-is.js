@@ -19,10 +19,10 @@
  *   (`draft`, `training`) becomes `archived`, so nothing of unknown standing is offered
  *   for new jobs; its original is in `notes` like the rest.
  * - **An older `YOLOv8` model** is task `detection`, engine `ultralytics`, architecture
- *   `yolov8`. `scripts/describe-model-weights.js` refines that from the weights where they
- *   are on disk (`yolov8x`).
+ *   `yolov8`. The API refines that from the weights where they are on disk (`yolov8x`),
+ *   in `describeIfUnrecorded`.
  * - **A value that is not an architecture** (a checkpoint name, a phase) is cleared to
- *   null, original in `notes`, for the same script to fill from the weights.
+ *   null, original in `notes`, for the API to fill from the weights.
  *
  * Adds `engine`, `file_format` and `version_label`, all nullable; `version_label` is the
  * free label Isaac chose over version numbers, blank until somebody types one.

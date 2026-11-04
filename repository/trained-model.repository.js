@@ -204,7 +204,7 @@ async function registerTrainedModel({ db, job, transaction }) {
     try {
         described = describeWeights(destination);
     } catch {
-        // Left null; scripts/describe-model-weights.js can fill them later.
+        // Left null; the API reads them from the weights the next time it meets the model.
     }
     const [registered] = await db.sequelize.query(
         /* **`artifact.hash` is already the sha256 of these bytes**, because the
