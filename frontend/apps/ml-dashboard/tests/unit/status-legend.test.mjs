@@ -29,7 +29,9 @@ const job = (id, kind, state) => ({
   spec: {}, progress_done: null, progress_total: null, created_at: at, updated_at: at, finished_at: state === 'leased' ? null : at,
 });
 
-for (const [page, kind, ring] of [['inference.html', 'inference', 'inference'], ['training.html', 'training', 'training']]) {
+/* Running is `running`, in-progress cyan, since #318: a ring that does not split running
+   work by kind uses the state's colour, not the kind's (Isaac, 2026-11-03). */
+for (const [page, kind, ring] of [['inference.html', 'inference', 'running'], ['training.html', 'training', 'running']]) {
   test(`${page}: every legend entry has a dot coloured as its ring segment`, async (t) => {
     const jobs = [job(1, kind, 'leased'), job(2, kind, 'queued'), job(3, kind, 'succeeded'), job(4, kind, 'failed')];
     const screen = await drawScreen(page, {
