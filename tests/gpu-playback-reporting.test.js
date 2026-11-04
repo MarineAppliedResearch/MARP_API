@@ -223,7 +223,7 @@ describe('GPU Jellyfin playback lifecycle', () => {
         expect(jellyfinRepository.reportPlaybackStopped).toHaveBeenCalledTimes(1);
     });
 
-    it('stops playback when a valid heartbeat returns pause', async () => {
+    it('stops playback when a valid heartbeat returns yield, which a paused machine gets (#319)', async () => {
         const { lease: leased } = await lease({ jellyfin_item_id: ITEM_ID });
         jellyfinRepository.getPlaybackSession.mockResolvedValue(activeSession());
         await db.sequelize.query('UPDATE gpu_workers SET state = \'paused\' WHERE id = :workerId', {
@@ -235,7 +235,7 @@ describe('GPU Jellyfin playback lifecycle', () => {
             .send({ worker_id: workerId, lease_epoch: leased.lease_epoch, state: 'running' });
 
         expect(response.status).toBe(200);
-        expect(response.body.action).toBe('pause');
+        expect(response.body.action).toBe('yield');
         expect(jellyfinRepository.reportPlaybackStopped).toHaveBeenCalledTimes(1);
     });
 

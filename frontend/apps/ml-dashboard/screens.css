@@ -54,6 +54,7 @@
   --st-issues: var(--tone-warning);
   --st-expired: var(--tone-warning);
   --st-cancelling: var(--tone-warning);
+  --st-draining: var(--tone-warning);
   --st-failed: var(--tone-failed);
   --st-attention: var(--tone-failed);
   --st-cancelled: var(--tone-inactive);
@@ -403,6 +404,7 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .donut-part.offline { stroke: var(--st-offline); }
 .donut-part.inference { stroke: var(--st-inference); }
 .donut-part.training { stroke: var(--st-training); }
+.donut-part.draining { stroke: var(--st-draining); }
 .job-donut > span { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
 .job-donut > span b { color: var(--white); font-size: 27px; line-height: 1; }
 .job-donut > span small { margin-top: 4px; color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
@@ -431,6 +433,7 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 .job-mix-key .offline { --key: var(--st-offline); }
 .job-mix-key .inference { --key: var(--st-inference); }
 .job-mix-key .training { --key: var(--st-training); }
+.job-mix-key .draining { --key: var(--st-draining); }
 .jobs-history-hd { align-items: flex-start; }
 .jobs-history-hd .seg { margin-left: auto; }
 .jobs-history-bd { display: grid; gap: 8px; }
@@ -1162,6 +1165,13 @@ body.viewing { overflow: hidden; }
 .cache-entries { margin: 6px 0 8px; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
 .cache-entries li { padding: 2px 0; }
 
+/* **A control is drawn only for somebody who may use it** (#319): `data-control` is
+   hidden until the page knows the signed-in person holds `jobs:write`. Somebody who can
+   read the pool but not change it sees every panel and none of the buttons. */
+body:not([data-can-control]) [data-control] { display: none !important; }
+.wdacts .btn + .btn { margin-left: 6px; }
+.move-run { display: inline-flex; gap: 2px; }
+
 /* ============================================================== state */
 
 [data-state="running"]    { --s: var(--st-running); }
@@ -1178,6 +1188,7 @@ body.viewing { overflow: hidden; }
 [data-state="active"]     { --s: var(--st-active); }
 [data-state="archived"]   { --s: var(--st-archived); }
 [data-state="attention"]  { --s: var(--st-attention); }
+[data-state="draining"]   { --s: var(--st-draining); }
 [data-state="inference"]  { --s: var(--st-inference); }
 [data-state="training"]   { --s: var(--st-training); }
 /* The pool ring's arcs: their stroke from the same map as the dots beside them (#318). */

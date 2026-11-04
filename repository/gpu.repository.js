@@ -73,6 +73,8 @@ const {
     RESULT_OUTCOMES,
     SAMPLE_RETENTION_DAYS,
     LEASABLE_JOB_KINDS,
+    OPERATOR_WORKER_STATES,
+    RETRY_ATTEMPTS,
 } = require('../config/gpu-orchestration');
 
 /**
@@ -315,11 +317,13 @@ class GpuRepository {
             });
 
             // Re-enrolment. The state goes back to online because a machine that
-            // is talking is by definition not offline; a deliberate `paused` is
-            // not preserved, since re-enrolling is how an operator restarts a
-            // worker they had parked. `name` is deliberately absent: see above.
+            // is talking is by definition not offline -- **unless an operator set
+            // it** (#319). Paused, draining and retired are decisions made on the
+            // dashboard, and a worker restarting must not undo them; it used to,
+            // when re-enrolling was the only way to unpark a machine. `name` is
+            // deliberately absent: see above.
             await worker.update({
-                state: 'online',
+                state: OPERATOR_WORKER_STATES.includes(worker.state) ? worker.state : 'online',
                 last_seen_at: now,
                 slot_count: slotCount === undefined ? worker.slot_count : slotCount,
                 worker_version: workerVersion === undefined ? worker.worker_version : workerVersion,
@@ -458,6 +462,161 @@ class GpuRepository {
             keepFree: worker && worker.keep !== null ? Number(worker.keep) : null,
             sizeBytes: dataset && dataset.bytes !== null ? Number(dataset.bytes) : null,
         };
+    }
+
+    /**
+     * Set a worker's state from the dashboard (#319).
+     *
+     * @async
+     * @param {number} workerId - Worker identifier.
+     * @param {string} state - One of `WORKER_STATES`.
+     * @returns {Promise<Object|null>} `{id, state}`, or null when there is no such worker.
+     */
+    async setWorkerState(workerId, state) {
+        const [rows] = await this.db.sequelize.query(
+            'UPDATE gpu_workers SET state = :state WHERE id = :workerId RETURNING id, state',
+            { replacements: { workerId, state } }
+        );
+
+        return rows[0] || null;
+    }
+
+    /**
+     * Put failed and expired jobs back in the queue with a fresh attempt budget (#319).
+     *
+     * **Fresh, not one more** (Isaac, 2026-11-03): the budget is what is spent so far plus
+     * `RETRY_ATTEMPTS`, so a retried job gets the same tries and automatic retries a new one
+     * does. Its resume point is kept, so a piece that got part way carries on from there.
+     * Anything not failed or expired -- finished, cancelled on purpose, still running -- is
+     * reported as skipped rather than touched.
+     *
+     * @async
+     * @param {Object} which - `{ids}` or `{batchId}`.
+     * @returns {Promise<{retried: number[], skipped: Array<{id, reason}>}>}
+     */
+    async retryJobs({ ids = null, batchId = null }) {
+        const where = ids ? 'id IN (:ids)' : 'batch_id = :batchId';
+        const transaction = await this.db.sequelize.transaction();
+
+        try {
+            const found = await this.db.sequelize.query(
+                `SELECT id, state FROM gpu_jobs WHERE ${where} ORDER BY id FOR UPDATE`,
+                { replacements: { ids, batchId }, type: QueryTypes.SELECT, transaction }
+            );
+
+            const failed = found.filter((row) => row.state === 'failed' || row.state === 'expired').map((row) => Number(row.id));
+            const retried = failed.length
+                ? await this.db.sequelize.query(
+                    `UPDATE gpu_jobs
+                        SET state = 'queued',
+                            max_attempts = ${ATTEMPTS_SPENT_SQL} + :fresh,
+                            finished_at = NULL,
+                            updated_at = NOW()
+                      WHERE id IN (:failed)
+                      RETURNING id`,
+                    { replacements: { failed, fresh: RETRY_ATTEMPTS }, type: QueryTypes.SELECT, transaction }
+                )
+                : [];
+
+            await transaction.commit();
+
+            const skipped = found
+                .filter((row) => !failed.includes(Number(row.id)))
+                .map((row) => ({ id: Number(row.id), reason: `${row.state}, not failed` }));
+            const seen = new Set(found.map((row) => Number(row.id)));
+            for (const id of ids || []) {
+                if (!seen.has(Number(id))) skipped.push({ id: Number(id), reason: 'no such job' });
+            }
+
+            return { retried: retried.map((row) => Number(row.id)), skipped };
+        } catch (error) {
+            await transaction.rollback();
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * Move a queued job, with the rest of its run, sooner or later in the queue (#319).
+     *
+     * **A run moves as one block.** A run is cut into pieces that queue together, and
+     * moving one of eighty-two pieces a place says nothing anybody means. So the job's
+     * queued run-mates move with it; a job with no run moves alone.
+     *
+     * **The queue is renumbered**, as the dataset build queue is: every queued job gets a
+     * priority from N down to 1 in its new order. Swapping with a neighbour does nothing
+     * when both are 0, and max + 1 climbs for ever. A job submitted afterwards is 0, so it
+     * joins the back. Moving past either end is not an error: nothing changes.
+     *
+     * @async
+     * @param {number} jobId - A queued job.
+     * @param {string} direction - `up`, `down` or `front`.
+     * @returns {Promise<?{moved: boolean, position: number, of: number}>} Null when the job is
+     *   not queued; `position` counts runs from 1 at the front.
+     */
+    async moveJob(jobId, direction) {
+        const transaction = await this.db.sequelize.transaction();
+
+        try {
+            const queued = await this.db.sequelize.query(
+                `SELECT id, batch_id FROM gpu_jobs
+                  WHERE state = 'queued'
+                  ORDER BY priority DESC, created_at ASC, id ASC
+                  FOR UPDATE`,
+                { type: QueryTypes.SELECT, transaction }
+            );
+
+            const target = queued.find((row) => Number(row.id) === Number(jobId));
+            if (!target) {
+                await transaction.rollback();
+                return null;
+            }
+
+            // Runs in queue order, each the jobs it has queued.
+            const units = [];
+            const byBatch = new Map();
+            for (const row of queued) {
+                const key = row.batch_id ? `b:${row.batch_id}` : `j:${row.id}`;
+                if (!byBatch.has(key)) {
+                    byBatch.set(key, []);
+                    units.push(byBatch.get(key));
+                }
+                byBatch.get(key).push(row);
+            }
+
+            const from = units.findIndex((unit) => unit.includes(target));
+            const to = direction === 'front' ? 0
+                : direction === 'up' ? Math.max(0, from - 1)
+                    : Math.min(units.length - 1, from + 1);
+
+            if (to !== from) {
+                const [unit] = units.splice(from, 1);
+                units.splice(to, 0, unit);
+
+                const ordered = units.flat();
+                await this.db.sequelize.query(
+                    `UPDATE gpu_jobs AS j
+                        SET priority = v.priority, updated_at = NOW()
+                       FROM (SELECT unnest(ARRAY[:ids]::bigint[]) AS id,
+                                    unnest(ARRAY[:priorities]::int[]) AS priority) AS v
+                      WHERE j.id = v.id`,
+                    {
+                        replacements: {
+                            ids: ordered.map((row) => Number(row.id)),
+                            priorities: ordered.map((row, index) => ordered.length - index),
+                        },
+                        transaction,
+                    }
+                );
+            }
+
+            await transaction.commit();
+            return { moved: to !== from, position: to + 1, of: units.length };
+        } catch (error) {
+            await transaction.rollback();
+            logger.error('Error::' + error);
+            throw error;
+        }
     }
 
     /**
@@ -2384,10 +2543,13 @@ class GpuRepository {
                 };
             }
 
-            if (worker && worker.state === 'paused') {
+            // **Pause now and Retire hand the job back** (#319): `yield`, so it keeps its
+            // resume point and uses no attempt, and another machine carries on. A
+            // draining machine is answered `continue`: drain means finish this one.
+            if (worker && (worker.state === 'paused' || worker.state === 'retired')) {
                 return {
-                    action: 'pause',
-                    reason: 'this worker is paused',
+                    action: 'yield',
+                    reason: `this worker is ${worker.state}`,
                     lease_expires_at: updatedAttempt.lease_expires_at,
                     attempt: updatedAttempt,
                 };

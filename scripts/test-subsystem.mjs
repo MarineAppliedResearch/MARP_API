@@ -55,6 +55,8 @@ const SUBSYSTEMS = {
             'gpu-dataset-cache',
             // #279: cancelling a selection, or every piece of one run.
             'gpu-job-cancel',
+            // #319: pause now, drain, resume, retire; retry; move up, down, front.
+            'gpu-job-worker-controls',
             'gpu-job-list',
             'gpu-pool-telemetry',
             'gpu-telemetry-series',

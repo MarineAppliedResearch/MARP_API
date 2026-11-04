@@ -947,7 +947,7 @@ function rowFor(view) {
      thing somebody legitimately wants rather than a cancellation. */
   const removable = job.state !== 'leased';
   const remove = removable
-    ? `<button class="btn sm icon danger" type="button" data-delete-job="${job.id}"`
+    ? `<button class="btn sm icon danger" type="button" data-control data-delete-job="${job.id}"`
       + ` aria-label="Delete job ${job.id}" title="Delete this job and everything recorded against it">`
       + '<svg class="ico sm"><use href="#i-trash"/></svg></button>'
     : '';
@@ -955,11 +955,32 @@ function rowFor(view) {
   /* Cancel is wired by `wireJobsCancel`. **Cancel whole run is on the row too** (#291):
      it lived in the expanded detail, which rows no longer have, and a run of eighty
      pieces is not something to tick one box at a time. */
-  const actions = (live
-    ? `<button class="btn sm icon" type="button" data-cancel-job="${job.id}" aria-label="Cancel job ${job.id}"`
+  /* **Retry and move, since #319.** Retry is on a failed or expired job, and on its run
+     when it has one; the run's finished pieces are never rerun. Move is on a queued job
+     and moves its whole run: up, down or to the front. */
+  const failedHere = job.state === 'failed' || job.state === 'expired';
+  const retry = failedHere
+    ? `<button class="btn sm icon" type="button" data-control data-retry-job="${job.id}" aria-label="Retry job ${job.id}"`
+      + ' title="Put this job back in the queue with a fresh set of attempts"><svg class="ico sm"><use href="#i-refresh"/></svg></button>'
+      + (job.batch_id
+        ? `<button class="btn sm icon" type="button" data-control data-retry-run="${job.batch_id}" aria-label="Retry the failed pieces of the run job ${job.id} belongs to"`
+          + ' title="Retry every failed or expired piece of this run; finished pieces are not rerun"><svg class="ico sm"><use href="#i-refresh"/></svg><span class="vh">run</span></button>'
+        : '')
+    : '';
+  const move = job.state === 'queued'
+    ? `<span class="move-run" data-control>`
+      + ['front', 'up', 'down'].map((direction) => `<button class="btn sm icon" type="button" data-move-job="${job.id}" data-direction="${direction}"`
+        + ` aria-label="Move ${job.batch_id ? 'the run' : 'job'} ${direction === 'front' ? 'to the front of the queue' : `${direction} the queue`}"`
+        + ` title="${{ front: 'Run next', up: 'Move up the queue', down: 'Move down the queue' }[direction]}${job.batch_id ? ', with the rest of its run' : ''}">`
+        + `${{ front: '&#x2912;', up: '&uarr;', down: '&darr;' }[direction]}</button>`).join('')
+      + '</span>'
+    : '';
+
+  const actions = move + retry + (live
+    ? `<button class="btn sm icon" type="button" data-control data-cancel-job="${job.id}" aria-label="Cancel job ${job.id}"`
       + ' title="Cancel this job"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
       + (job.batch_id
-        ? `<button class="btn sm icon" type="button" data-cancel-run="${job.batch_id}" aria-label="Cancel the whole run job ${job.id} belongs to"`
+        ? `<button class="btn sm icon" type="button" data-control data-cancel-run="${job.batch_id}" aria-label="Cancel the whole run job ${job.id} belongs to"`
           + ' title="Cancel every piece of this run that is still queued or running"><svg class="ico sm"><use href="#i-stop"/></svg><span class="vh">run</span></button>'
         : '')
     : '')
@@ -6659,7 +6680,9 @@ function renderDashboardPool(workers) {
   if (!panel) return;
 
   const total = workers.length || 1;
-  const counts = ['busy', 'idle', 'paused', 'offline']
+  /* Retired machines are out of the pool (#319), and draining ones are still in it. */
+  workers = workers.filter((w) => w.activity !== 'retired');
+  const counts = ['busy', 'idle', 'paused', 'offline', 'draining']
     .map((activity) => [activity, workers.filter((w) => w.activity === activity).length]);
 
   /* The donut's arcs are measured in circumference rather than `pathLength`
@@ -6976,8 +6999,11 @@ const NOT_REPORTED = '<span class="dash" title="This machine has not reported it
 const WORKER_ACTIVITY = {
   busy: ['busy', 'Busy'],
   idle: ['idle', 'Idle'],
+  /* Finishing what it holds and taking no more, and taken out of the pool (#319). */
+  draining: ['draining', 'Draining'],
   paused: ['paused', 'Paused'],
   offline: ['offline', 'Offline'],
+  retired: ['retired', 'Retired'],
 };
 
 /** What the Workers screen is asking for. The route takes no parameters at all. */
@@ -7575,7 +7601,7 @@ function workerRows(view) {
     + `<div class="wdhead"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">${worker.name}</span></span>`
     + `<span class="st" data-state="${view.state}"><span class="dot"></span>${view.label}</span>`
     + `<span class="wid mono" title="Worker id as the pool reports it">wk_${worker.worker_id}</span>`
-    + '<span class="wdacts"><button class="btn sm" title="Rename is the one worker mutation the API has"><svg class="ico sm"><use href="#i-pencil"/></svg>Rename</button></span></div>'
+    + `<span class="wdacts">${workerControls(worker)}</span></div>`
     + '<div class="grid" data-cols="2">'
     + '<div class="sect"><h3>Reported at enrolment</h3><dl class="kv">'
     /* Same mistake the row had: `caps.gpu`, `caps.driver` and `caps.cuda` are keys no
@@ -7825,7 +7851,9 @@ function applyWorkersQuery() {
   const body = $('tbody', table);
   let views = workersPool.map(workerView);
 
+  /* A retired machine leaves the list unless asked for by name (#319): kept, not shown. */
   if (workersQuery.activity) views = views.filter((v) => v.activity === workersQuery.activity);
+  else views = views.filter((v) => v.activity !== 'retired');
   if (workersQuery.gpu) views = views.filter((v) => v.gpu.toLowerCase().includes(workersQuery.gpu));
   if (workersQuery.search) views = views.filter((v) => v.haystack.includes(workersQuery.search));
 
@@ -7907,11 +7935,14 @@ function applyWorkersQuery() {
  * @param {Object[]} jobs - A window of jobs, for the two queue cards.
  */
 function renderWorkersSummary(workers, jobs) {
+  /* A retired machine is out of the pool (#319): kept, and not counted. */
+  workers = workers.filter((w) => w.activity !== 'retired');
   const by = (activity) => workers.filter((w) => w.activity === activity).length;
   const busy = by('busy');
   const idle = by('idle');
   const paused = by('paused');
   const offline = by('offline');
+  const draining = by('draining');
   const total = workers.length;
 
   /* Reachable is everything the scheduler could still talk to, which includes a
@@ -7954,7 +7985,7 @@ function renderWorkersSummary(workers, jobs) {
      count and nothing has to be converted into a percentage first. */
   const donut = $('.job-donut svg');
   if (donut) {
-    const parts = [['busy', busy], ['idle', idle], ['paused', paused], ['offline', offline]];
+    const parts = [['busy', busy], ['idle', idle], ['paused', paused], ['offline', offline], ['draining', draining]];
     let offset = 0;
     /* By position, each arc taking its part's state (#318): looked up by class, the arcs
        had to carry the old names, and their colours were not the legend's. */
@@ -7969,12 +8000,12 @@ function renderWorkersSummary(workers, jobs) {
     const middle = $('.job-donut > span > b');
     if (middle) middle.textContent = String(total);
     const label = $('.job-donut');
-    if (label) label.setAttribute('aria-label', `${total} workers: ${busy} busy, ${idle} idle, ${paused} paused and ${offline} offline`);
+    if (label) label.setAttribute('aria-label', `${total} workers: ${busy} busy, ${idle} idle, ${draining} draining, ${paused} paused and ${offline} offline`);
   }
 
   const key = $('.job-mix-key');
   if (key) {
-    key.innerHTML = [['busy', busy, 'Busy'], ['idle', idle, 'Idle'], ['paused', paused, 'Paused'], ['offline', offline, 'Offline']]
+    key.innerHTML = [['busy', busy, 'Busy'], ['idle', idle, 'Idle'], ['draining', draining, 'Draining'], ['paused', paused, 'Paused'], ['offline', offline, 'Offline']]
       .map(([cls, value, text]) => `<span class="${cls}"><i></i><b>${value}</b> ${text}</span>`)
       .join('');
   }
@@ -8066,7 +8097,9 @@ function wireWorkersControls() {
   const [activitySel, gpuSel] = $$('.panel-tools select', panel);
   if (activitySel) {
     activitySel.addEventListener('change', () => {
-      workersQuery.activity = { Busy: 'busy', Idle: 'idle', Paused: 'paused', Offline: 'offline' }[activitySel.value] || '';
+      workersQuery.activity = {
+        Busy: 'busy', Idle: 'idle', Draining: 'draining', Paused: 'paused', Offline: 'offline', Retired: 'retired',
+      }[activitySel.value] || '';
       renarrow();
     });
   }
@@ -14904,6 +14937,141 @@ function wireModelRegistration() {
   });
 }
 
+/**
+ * Show the controls to somebody who may use them (#319).
+ *
+ * `data-control` buttons are hidden by CSS until this finds `jobs:write` on the signed-in
+ * person, the permission every control route checks. A read that fails leaves them
+ * hidden: a button that answers 403 is worse than none.
+ *
+ * @returns {Promise<void>}
+ */
+async function grantControls() {
+  if (!window.MarpApi) return;
+  try {
+    const me = await window.MarpApi.whoAmI();
+    const permissions = (me && me.user && me.user.permissions) || [];
+    document.body.toggleAttribute('data-can-control', permissions.includes('jobs:write'));
+  } catch {
+    document.body.removeAttribute('data-can-control');
+  }
+}
+
+/**
+ * A worker's controls, for the state it is in (#319).
+ *
+ * Pause now hands its job back at once; Drain lets the job finish and takes no more;
+ * Resume takes work again; Retire takes it out of the pool, keeping its history and
+ * token. Rename stays.
+ *
+ * @param {Object} worker - From `GET /gpu/workers`.
+ * @returns {string} HTML.
+ */
+function workerControls(worker) {
+  const button = (action, label, title) => `<button class="btn sm" type="button" data-control data-worker-control="${action}"`
+    + ` data-worker-id="${worker.worker_id}" title="${title}">${label}</button>`;
+  const offered = {
+    online: ['pause', 'drain', 'retire'],
+    offline: ['retire'],
+    paused: ['resume', 'retire'],
+    draining: ['resume', 'pause', 'retire'],
+    retired: ['resume'],
+  }[worker.state] || [];
+  const words = {
+    pause: ['Pause now', 'Stop taking work and hand any running job back now; it keeps its progress and uses no attempt'],
+    drain: ['Drain', 'Finish the running job, then take no more'],
+    resume: ['Resume', 'Take work again'],
+    retire: ['Retire', 'Take no work and leave the pool list; its history is kept and Resume brings it back'],
+  };
+
+  return offered.map((action) => button(action, ...words[action])).join('')
+    + '<button class="btn sm" data-control title="Rename is a worker mutation the API has"><svg class="ico sm"><use href="#i-pencil"/></svg>Rename</button>';
+}
+
+/**
+ * The Workers tab's controls, delegated because the table is redrawn by every poll (#319).
+ *
+ * @returns {void}
+ */
+function wireWorkerControls() {
+  const table = $('table#workers');
+  if (!table || !window.MarpApi) return;
+
+  table.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-worker-control]');
+    if (!button) return;
+
+    const action = button.dataset.workerControl;
+    const asks = {
+      pause: 'Pause this machine now?\n\nIt stops taking work, and a job it is running is handed back at its next heartbeat, keeping its progress.',
+      retire: 'Retire this machine?\n\nIt takes no work and leaves the pool list. Its history is kept, and Resume brings it back.',
+    };
+    if (asks[action] && !window.confirm(asks[action])) return;
+
+    button.disabled = true;
+    try {
+      await window.MarpApi.controlWorker(Number(button.dataset.workerId), action);
+      if (window.pollScreenNow) await window.pollScreenNow();
+      await renderWorkersTable();
+    } catch (error) {
+      button.disabled = false;
+      window.alert(`Could not ${action} this machine: ${error.message || error}`);
+    }
+  });
+}
+
+/**
+ * The Jobs tab's Retry and Move, on rows and in the bulk bar (#319).
+ *
+ * @returns {void}
+ */
+function wireJobsRetryAndMove() {
+  const panel = $('table#jobs')?.closest('.panel');
+  if (!panel || !window.MarpApi) return;
+
+  const retried = (answer) => {
+    const skipped = answer.skipped || [];
+    sayJobsDelete(`Retried ${countOf(answer.retried, 'job')}.${skipped.length ? ` Skipped ${skipped.length}: they were not failed.` : ''}`,
+      answer.retried ? 'ok' : 'bad');
+  };
+
+  const act = async (button, call) => {
+    button.disabled = true;
+    try {
+      await call();
+      await afterJobsDelete();
+    } catch (error) {
+      sayJobsDelete(error.message || `Could not do that (${error.status || 'no answer'}).`, 'bad');
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  $('table#jobs tbody', panel)?.addEventListener('click', (event) => {
+    const one = event.target.closest('[data-retry-job]');
+    const run = event.target.closest('[data-retry-run]');
+    const move = event.target.closest('[data-move-job]');
+
+    if (one) act(one, async () => retried(await window.MarpApi.retryJobs({ ids: [Number(one.dataset.retryJob)] })));
+    else if (run) act(run, async () => retried(await window.MarpApi.retryJobs({ batch_id: run.dataset.retryRun })));
+    else if (move) {
+      act(move, async () => {
+        const answer = await window.MarpApi.moveJob(Number(move.dataset.moveJob), move.dataset.direction);
+        sayJobsDelete(answer.moved ? `Moved to place ${answer.position} of ${answer.of} in the queue.` : 'Already there.', 'ok');
+      });
+    }
+  });
+
+  const bulk = $('#bulkRetry', panel);
+  bulk?.addEventListener('click', () => {
+    const ids = $$('tbody .chkbox', panel)
+      .filter((box) => box.checked)
+      .map((box) => Number(box.closest('tr[data-job]')?.dataset.job))
+      .filter(Boolean);
+    if (ids.length) act(bulk, async () => retried(await window.MarpApi.retryJobs({ ids })));
+  });
+}
+
 /* ==================================================================== boot */
 
 /**
@@ -15212,6 +15380,9 @@ boot('dataset activity', wireDatasetActivity);
 boot('completion activity', wireOperationalActivity);
 boot('pool capacity', wirePoolCapacity);
 boot('model registration', wireModelRegistration);
+boot('job retry and move', wireJobsRetryAndMove);
+boot('worker controls', wireWorkerControls);
+boot('control permission', grantControls);
 boot('model actions', wireModelActions);
 boot('sliders', wireSliders);
 boot('inference form', wireInferenceForm);

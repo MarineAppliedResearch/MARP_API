@@ -24,7 +24,7 @@ const MAP = {
   running: 'progress', busy: 'progress', building: 'progress',
   queued: 'waiting',
   done: 'done', ready: 'done', active: 'done', online: 'done', idle: 'done',
-  issues: 'warning', expired: 'warning', cancelling: 'warning',
+  issues: 'warning', expired: 'warning', cancelling: 'warning', draining: 'warning',
   failed: 'failed', attention: 'failed',
   cancelled: 'inactive', archived: 'inactive', paused: 'inactive', offline: 'inactive',
   inference: 'inference', training: 'training',

@@ -703,6 +703,84 @@ function registerGpuRoutes(app) {
     });
 
     registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
+        path: '/api/gpu/workers/:id/control',
+        summary: 'Pause now, drain, resume or retire a GPU machine',
+        description: '`{action}` is one of: **pause**, which takes no work and hands any running job back now, keeping its resume point and using no attempt; **drain**, which takes no work and lets the running job finish; **resume**, which takes work again; **retire**, which is pause and also leaves the pool list, keeping the machine\'s history and token so resume brings it back (#319). A running job learns at its next heartbeat, as `yield` (pause, retire) or `continue` (drain). Each survives the machine restarting: re-enrolment no longer resets them. Workers before 0.1.22 do not know `yield` and carry on, as they would with any unknown answer.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The worker.' },
+        ],
+        requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { type: 'object', required: ['action'], properties: {
+                action: { type: 'string', enum: ['pause', 'drain', 'resume', 'retire'] },
+            } } } },
+        },
+        responses: {
+            200: { description: '`{worker_id, state}`, the state the machine is now in.' },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await gpuController.controlWorker(req.params.id, req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
+        path: '/api/gpu/jobs/retry',
+        summary: 'Retry failed jobs, or the failed pieces of one run',
+        description: '`{ids}` or `{batch_id}`. Failed and expired jobs go back in the queue with a fresh attempt budget -- what they have spent plus the usual three -- and keep their resume point (#319). Anything else is skipped with its state as the reason: a finished piece is never rerun, and a cancelled one was stopped on purpose.',
+        tags: [GPU_TAG],
+        requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { type: 'object', properties: {
+                ids: { type: 'array', items: { type: 'integer' }, maxItems: 200 },
+                batch_id: { type: 'string', format: 'uuid' },
+            } } } },
+        },
+        responses: {
+            200: { description: '`{retried, skipped}`: how many went back in the queue, and the rest with why.' },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await gpuController.retryJobs(req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
+        path: '/api/gpu/jobs/:id/move',
+        summary: 'Move a queued job and its run up, down or to the front',
+        description: '`{direction}` is `up`, `down` or `front`. **A run moves as one block**: the job\'s queued run-mates move with it, because moving one of eighty-two pieces says nothing anybody means. The queue is renumbered from N down to 1 on each move, as the dataset build queue is, so a job submitted afterwards joins the back. Moving past either end is not an error: `moved` is false. A job that is not queued is 409 (#319).',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'A queued job.' },
+        ],
+        requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { type: 'object', required: ['direction'], properties: {
+                direction: { type: 'string', enum: ['up', 'down', 'front'] },
+            } } } },
+        },
+        responses: {
+            200: { description: '`{job_id, moved, position, of}`: its run\'s place in the queue, counting runs from 1 at the front.' },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            409: { description: 'The job is not queued.' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await gpuController.moveJob(req.params.id, req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
         method: 'put',
         permission: 'jobs:write',
         path: '/api/gpu/workers/:id/dataset-cache/floor',
