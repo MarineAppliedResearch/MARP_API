@@ -166,7 +166,7 @@ class GpuController {
         return gpuService.moveJob(jobId, body);
     }
 
-    /** The free disk a worker keeps for datasets (#320).
+    /** The free disk a worker keeps for datasets (#320). */
     async setDatasetKeepFree(workerId, body) {
         logger.info('Controller: setDatasetKeepFree');
         return gpuService.setDatasetKeepFree(workerId, body);

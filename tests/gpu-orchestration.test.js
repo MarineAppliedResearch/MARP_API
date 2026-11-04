@@ -703,7 +703,7 @@ describe('GPU heartbeat', () => {
         expect(Number(attempt.progress_done)).toBe(5);
     });
 
-    it('delivers a pause to a machine that has been paused', async () => {
+    it('hands the job back from a machine that has been paused (#319)', async () => {
         const { lease } = await submitAndLease();
 
         await db.sequelize.query('UPDATE gpu_workers SET state = \'paused\' WHERE id = :workerId', {
@@ -715,7 +715,8 @@ describe('GPU heartbeat', () => {
                 .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
                 .send({ worker_id: workerId, lease_epoch: lease.lease_epoch, state: 'running' });
 
-            expect(beat.body.action).toBe('pause');
+            // `yield` since #319: a paused machine hands its job back, keeping the resume point.
+            expect(beat.body.action).toBe('yield');
         } finally {
             await db.sequelize.query('UPDATE gpu_workers SET state = \'online\' WHERE id = :workerId', {
                 replacements: { workerId },
