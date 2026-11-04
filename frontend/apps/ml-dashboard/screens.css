@@ -1155,9 +1155,8 @@ body.viewing { overflow: hidden; }
 .power-figures { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-bottom: 10px; color: var(--muted); font-size: 12px; }
 .power-figures b { color: var(--white); font-size: 18px; font-weight: 700; margin-right: 4px; }
 [data-workers-power] .power-now { --key: var(--amber-300); }
-[data-workers-power] .power-idle { --key: var(--grey-400); --dash-on: 5; --dash-off: 4; }
+[data-workers-power] .power-idle { --key: var(--grey-400); --dash-on: 5px; --dash-off: 4px; }
 [data-workers-power] .power-above b { color: var(--amber-300); }
-.power-chart { min-height: 220px; }
 
 /* A worker's cached datasets (#320): one line each, newest first. */
 .cache-entries { margin: 6px 0 8px; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }

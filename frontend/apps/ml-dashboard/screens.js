@@ -7362,72 +7362,6 @@ function fillPoolPower(workers) {
   }
 }
 
-/**
- * The Workers tab's GPU power chart: the pool's total draw over a range, with today's
- * idle baseline across it, so the area above the line is what the work cost (#214).
- *
- * @returns {void}
- */
-function wireWorkersPower() {
-  const root = $('[data-workers-power]');
-  if (!root) return;
-
-  const RANGES = {
-    '1h': { hours: 1, bucket: 'minute', label: 'the last hour' },
-    '24h': { hours: 24, bucket: 'hour', label: 'the last 24 hours' },
-    '7d': { hours: 168, bucket: 'hour', label: 'the last 7 days' },
-    '30d': { hours: 720, bucket: 'day', label: 'the last 30 days' },
-  };
-  const buttons = $$('[data-power-range]', root);
-  const box = $('.power-chart', root);
-
-  const choose = async (range) => {
-    buttons.forEach((button) => {
-      const on = button.dataset.powerRange === range;
-      button.classList.toggle('on', on);
-      button.setAttribute('aria-pressed', String(on));
-    });
-
-    const { hours, bucket, label } = RANGES[range];
-    const until = new Date();
-    const span = { since: new Date(until.getTime() - hours * 3600e3).toISOString(), until: until.toISOString(), bucket };
-
-    let points = [];
-
-    try {
-      points = (await window.MarpApi.gpuSeries(span)).points || [];
-    } catch {
-      points = [];
-    }
-
-    const measured = points.filter((point) => point.total_power_watts !== null && point.total_power_watts !== undefined);
-
-    if (!measured.length) {
-      box.innerHTML = `<p class="hint">No GPU power was reported in ${label}.</p>`;
-      return;
-    }
-
-    const idle = poolPower(workersPool || []).idle;
-    const at = (point) => Date.parse(point.at);
-    const said = `Pool GPU power over ${label}: ${wattsText(measured[measured.length - 1].total_power_watts)} at the end, `
-      + `against an idle baseline of ${wattsText(idle)}`;
-
-    drawActivity(box, activityOption({
-      root,
-      axes: [{ name: 'GPU power', unit: ' W' }],
-      series: [
-        { id: 'power', name: 'GPU power', css: 'power-now', kind: 'area', unit: ' W',
-          data: points.map((point) => [at(point), point.total_power_watts ?? null]) },
-        { id: 'idle', name: 'Idle baseline', css: 'power-idle', unit: ' W',
-          data: points.map((point) => [at(point), Math.round(idle * 10) / 10]) },
-      ],
-    }), said, `power-${range}`);
-  };
-
-  buttons.forEach((button) => button.addEventListener('click', () => choose(button.dataset.powerRange)));
-  choose('24h');
-}
-
 const thermalCell = (view) => {
   if (view.stale) return staleCell(view);
 
@@ -14729,6 +14663,9 @@ async function wirePoolCapacity() {
         training: points.map((p) => percent(p.avg_training_utilization_percent)),
         vram: points.map((p) => percent(p.avg_memory_percent_used)),
         queued: points.map((p) => queuedBy.get(String(p.at)) || 0),
+        /* The pool's total GPU power per bucket (#214), here since #317. Null where
+           nothing reported power, which draws a gap rather than a zero. */
+        power: points.map((p) => (p.total_power_watts === null || p.total_power_watts === undefined ? null : Number(p.total_power_watts))),
       };
 
       const anyReading = points.some((p) => p.machines > 0);
@@ -14756,29 +14693,39 @@ async function wirePoolCapacity() {
         training: `${Math.round(last.avg_training_utilization_percent || 0)}%`,
         vram: `${Math.round(last.avg_memory_percent_used || 0)}%`,
         queued: String(samples.queued.at(-1)),
+        power: samples.power.at(-1) === null ? '—' : wattsText(samples.power.at(-1)),
       };
 
       $$('[data-ops-current]', root).forEach((node) => {
         if (current[node.dataset.opsCurrent] !== undefined) node.textContent = current[node.dataset.opsCurrent];
       });
 
-      /* Utilization and VRAM are percentages and share the left axis; the queue is a
-         count and keeps the right one, in whole jobs. */
+      /* Utilization and VRAM are percentages on the left axis; GPU power is watts on the
+         right (#317, which folded the separate power chart in). The queue is a count with
+         an axis of its own that is not drawn -- Isaac, 2026-11-03: its numbers are in the
+         key and the tooltip, so each side of the chart carries one unit. */
       const at = points.map((p) => Date.parse(p.at));
       const pair = (values) => values.map((value, index) => [at[index], value]);
+      /* Today's idle baseline, from the workers. Read here when the table has not loaded
+         them yet, or the line would be drawn at zero and stay there. */
+      const pool = workersPool || await window.MarpApi.listWorkers().catch(() => []);
+      const idle = Math.round(poolPower(pool || []).idle * 10) / 10;
 
       if (chart) {
         drawActivity(chart, activityOption({
           root,
-          axes: [{ max: 100, unit: '%' }, { whole: true }],
+          axes: [{ max: 100, unit: '%' }, { name: 'GPU power', unit: ' W' }, { whole: true, hidden: true }],
           series: [
             { id: 'inference', name: 'Inference', css: 'inference', kind: 'area', unit: '%', data: pair(samples.inference) },
             { id: 'training', name: 'Training', css: 'training', unit: '%', data: pair(samples.training) },
             { id: 'vram', name: 'VRAM', css: 'vram', unit: '%', data: pair(samples.vram) },
-            { id: 'queued', name: 'Queued', css: 'queued', axis: 1, data: pair(samples.queued) },
+            { id: 'power', name: 'GPU power', css: 'power-now', axis: 1, unit: ' W', data: pair(samples.power) },
+            { id: 'idle', name: 'Idle baseline', css: 'power-idle', axis: 1, unit: ' W', data: at.map((time) => [time, idle]) },
+            { id: 'queued', name: 'Queued', css: 'queued', axis: 2, data: pair(samples.queued) },
           ],
         }), `Pool capacity over ${label}: inference ${current.inference}, `
-          + `training ${current.training}, VRAM ${current.vram}, ${current.queued} waiting`, `workers-pool-${next}`);
+          + `training ${current.training}, VRAM ${current.vram}, ${current.queued} waiting, `
+          + `GPU power ${current.power} against an idle baseline of ${wattsText(idle)}`, `workers-pool-${next}`);
       }
     } catch (error) {
       blank();
@@ -15243,7 +15190,6 @@ document.body.dataset.rail = 'closed';
 boot('sprite', mountSprite);
 boot('rail', mountRail);
 boot('rail-badges', fillRailBadges);
-boot('workers power', wireWorkersPower);
 boot('workers dataset cache', wireWorkersDatasetCache);
 /* **Kept current, not read once** (#299). The counts were read when the page loaded and
    never again, so a finished inference job left Inference reading 3 until a reload --
