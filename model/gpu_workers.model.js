@@ -113,7 +113,7 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(16),
                 allowNull: false,
                 defaultValue: 'online',
-                comment: 'One of online, offline, paused.',
+                comment: 'One of online, offline, paused, draining, retired.',
             },
 
             slot_count: {

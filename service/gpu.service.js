@@ -753,8 +753,8 @@ class GpuService {
         // A paused machine is not given work. Without this it would lease a job,
         // be told to pause at its first heartbeat, and give the job back -- so a
         // paused worker that kept polling would churn the whole queue through
-        // pointless leases.
-        if (worker.state === 'paused') {
+        // pointless leases. Draining and retired take none either (#319).
+        if (['paused', 'draining', 'retired'].includes(worker.state)) {
             return null;
         }
 
@@ -1926,6 +1926,93 @@ class GpuService {
      * @returns {Promise<Object>} The machine as it now stands.
      * @throws {ApiError} 400 for a bad id or name, 404 when there is no such machine.
      */
+    /**
+     * Pause now, drain, resume or retire a worker from the dashboard (#319).
+     *
+     * - **pause**: take no work, and hand any running job back now (`yield` at its next
+     *   heartbeat: the resume point is kept and no attempt is used).
+     * - **drain**: take no work, and let the running job finish.
+     * - **resume**: take work again.
+     * - **retire**: as pause, and leave the pool list; history and token are kept, so
+     *   resume brings it back (Isaac, 2026-11-03).
+     *
+     * Each survives the worker restarting: re-enrolment no longer resets them.
+     *
+     * @async
+     * @param {string|number} workerId - From the path.
+     * @param {Object} body - `{action}`.
+     * @returns {Promise<Object>} `{worker_id, state}`.
+     * @throws {ApiError} 400 for an unknown action, 404 for an unknown worker.
+     */
+    async controlWorker(workerId, body) {
+        const id = Number(workerId);
+        if (!Number.isInteger(id)) invalid('The worker id in the path must be an integer.');
+
+        const state = { pause: 'paused', drain: 'draining', resume: 'online', retire: 'retired' }[body && body.action];
+        if (!state) invalid('action must be one of pause, drain, resume or retire.');
+
+        const row = await gpuRepository.setWorkerState(id, state);
+        if (!row) throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `Worker ${id} is not enrolled.`);
+
+        return { worker_id: row.id, state: row.state };
+    }
+
+    /**
+     * Retry failed and expired jobs, by selection or by run (#319).
+     *
+     * @async
+     * @param {Object} body - `{ids}` or `{batch_id}`.
+     * @returns {Promise<Object>} `{retried, skipped}`.
+     * @throws {ApiError} 400 for a bad selection.
+     */
+    async retryJobs(body = {}) {
+        const hasIds = body.ids !== undefined && body.ids !== null;
+        const hasBatch = body.batch_id !== undefined && body.batch_id !== null;
+
+        if (hasIds === hasBatch) invalid('Give either ids or batch_id, not both and not neither.');
+
+        if (hasBatch) {
+            const batchId = String(body.batch_id).trim();
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batchId)) {
+                invalid('batch_id must be a uuid.');
+            }
+            const { retried, skipped } = await gpuRepository.retryJobs({ batchId });
+            return { retried: retried.length, skipped };
+        }
+
+        const ids = (Array.isArray(body.ids) ? body.ids : String(body.ids).split(','))
+            .map((value) => String(value).trim()).filter(Boolean).map(Number);
+
+        if (!ids.length) invalid('ids must name at least one job.');
+        if (ids.some((id) => !Number.isInteger(id) || id <= 0)) invalid('ids must all be positive integers.');
+        if (ids.length > 200) invalid(`ids names ${ids.length} jobs; 200 is the most one request will retry.`);
+
+        const { retried, skipped } = await gpuRepository.retryJobs({ ids: [...new Set(ids)] });
+        return { retried: retried.length, skipped };
+    }
+
+    /**
+     * Move a queued job, with the rest of its run, up, down or to the front (#319).
+     *
+     * @async
+     * @param {string|number} jobId - From the path.
+     * @param {Object} body - `{direction}`.
+     * @returns {Promise<Object>} `{job_id, moved, position, of}`.
+     * @throws {ApiError} 400 for a bad direction, 409 when the job is not queued.
+     */
+    async moveJob(jobId, body) {
+        const id = Number(jobId);
+        if (!Number.isInteger(id) || id <= 0) invalid('The job id in the path must be a positive integer.');
+
+        const direction = body && body.direction;
+        if (!['up', 'down', 'front'].includes(direction)) invalid('direction must be up, down or front.');
+
+        const moved = await gpuRepository.moveJob(id, direction);
+        if (!moved) throw new ApiError(409, ERROR_CODES.CONFLICT, `Job ${id} is not queued, so it has no place in the queue to move.`);
+
+        return { job_id: id, ...moved };
+    }
+
     /**
      * Set the free disk a worker keeps for datasets (#320).
      *

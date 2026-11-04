@@ -1206,6 +1206,38 @@
     return request(`/gpu/workers/${encodeURIComponent(id)}/dataset-cache/clear`, { method: 'POST' });
   }
 
+  /**
+   * `POST /api/v2/gpu/workers/:id/control` -- pause now, drain, resume or retire (#319).
+   *
+   * @param {number} id - The worker.
+   * @param {string} action - `pause`, `drain`, `resume` or `retire`.
+   * @returns {Promise<Object>} `{worker_id, state}`.
+   */
+  function controlWorker(id, action) {
+    return request(`/gpu/workers/${encodeURIComponent(id)}/control`, { method: 'POST', body: { action } });
+  }
+
+  /**
+   * `POST /api/v2/gpu/jobs/retry` -- failed and expired jobs back in the queue (#319).
+   *
+   * @param {Object} which - `{ids}` or `{batch_id}`.
+   * @returns {Promise<Object>} `{retried, skipped}`.
+   */
+  function retryJobs(which) {
+    return request('/gpu/jobs/retry', { method: 'POST', body: which });
+  }
+
+  /**
+   * `POST /api/v2/gpu/jobs/:id/move` -- a queued job and its run up, down or to the front (#319).
+   *
+   * @param {number} id - A queued job.
+   * @param {string} direction - `up`, `down` or `front`.
+   * @returns {Promise<Object>} `{job_id, moved, position, of}`.
+   */
+  function moveJob(id, direction) {
+    return request(`/gpu/jobs/${encodeURIComponent(id)}/move`, { method: 'POST', body: { direction } });
+  }
+
   function renameWorker(id, name) {
     return serve('workers', () => request(`/gpu/workers/${encodeURIComponent(id)}/rename`, { method: 'POST', body: { name } }), () => {
       const worker = CORPUS.workers.find((w) => w.worker_id === Number(id));
@@ -2044,6 +2076,9 @@
     deletableJobs,
     deleteJobsInState,
     renameWorker,
+    controlWorker,
+    retryJobs,
+    moveJob,
     updateModel,
     uploadModel,
     clearWorkerDatasetCache,

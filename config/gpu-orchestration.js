@@ -274,7 +274,25 @@ const MEDIA_CLIENT_IDENTITY = { name: 'MARP GPU coordinator' };
  * @constant
  * @type {Array<string>}
  */
-const WORKER_STATES = ['online', 'offline', 'paused'];
+/* `draining` and `retired` since #319: drain finishes the running job and takes no more;
+   retire takes no work and leaves the pool list, keeping its history and its token. */
+const WORKER_STATES = ['online', 'offline', 'paused', 'draining', 'retired'];
+
+/**
+ * The states an operator sets, which a worker's own check-ins must not undo (#319).
+ *
+ * @constant
+ * @type {string[]}
+ */
+const OPERATOR_WORKER_STATES = ['paused', 'draining', 'retired'];
+
+/**
+ * The attempts a retried job is given: the same budget a new one gets (#319).
+ *
+ * @constant
+ * @type {number}
+ */
+const RETRY_ATTEMPTS = 3;
 
 /**
  * What a job can be.
@@ -479,7 +497,9 @@ const RESULT_OUTCOMES = ['succeeded', 'failed', 'cancelled', 'yielded'];
  * @constant
  * @type {Array<string>}
  */
-const CONTROL_ACTIONS = ['continue', 'cancel', 'pause', 'abandon'];
+/* `yield` since #319: hand the attempt back now, with its resume point and without using
+   an attempt -- what Pause now asks of a running job. */
+const CONTROL_ACTIONS = ['continue', 'cancel', 'pause', 'abandon', 'yield'];
 
 module.exports = {
     HEARTBEAT_SECONDS,
@@ -503,6 +523,8 @@ module.exports = {
     DEFAULT_DATASET_KEEP_FREE_BYTES,
     MEDIA_CLIENT_IDENTITY,
     WORKER_STATES,
+    OPERATOR_WORKER_STATES,
+    RETRY_ATTEMPTS,
     JOB_KINDS,
     LEASABLE_JOB_KINDS,
     INGESTIBLE_JOB_KINDS,

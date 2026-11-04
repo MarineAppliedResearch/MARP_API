@@ -148,7 +148,25 @@ class GpuController {
         return gpuService.renameWorker(workerId, body);
     }
 
-    /** The free disk a worker keeps for datasets (#320). */
+    /** Pause now, drain, resume or retire a worker (#319). */
+    async controlWorker(workerId, body) {
+        logger.info('Controller: controlWorker');
+        return gpuService.controlWorker(workerId, body);
+    }
+
+    /** Retry failed and expired jobs (#319). */
+    async retryJobs(body) {
+        logger.info('Controller: retryJobs');
+        return gpuService.retryJobs(body);
+    }
+
+    /** Move a queued job and its run in the queue (#319). */
+    async moveJob(jobId, body) {
+        logger.info('Controller: moveJob');
+        return gpuService.moveJob(jobId, body);
+    }
+
+    /** The free disk a worker keeps for datasets (#320).
     async setDatasetKeepFree(workerId, body) {
         logger.info('Controller: setDatasetKeepFree');
         return gpuService.setDatasetKeepFree(workerId, body);

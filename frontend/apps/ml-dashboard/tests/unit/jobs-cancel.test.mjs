@@ -141,7 +141,8 @@ test('the bulk bar offers nothing that has no API behind it', async () => {
   const screen = await jobsScreen([job(1, 'queued')]);
   const labels = [...screen.document.querySelectorAll('#bulk button')].map((b) => b.textContent.trim());
 
-  assert.deepEqual(labels, ['Cancel', 'Delete', 'Clear selection']);
+  // Retry failed since #319, which put an API behind it.
+  assert.deepEqual(labels, ['Retry failed', 'Cancel', 'Delete', 'Clear selection']);
   screen.close();
 });
 
