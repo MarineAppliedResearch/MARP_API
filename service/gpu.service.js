@@ -215,10 +215,16 @@ function reduceDevices(devices) {
  * nothing to report, and both are fine.
  *
  * @param {*} telemetry - `body.telemetry`, as supplied.
- * @returns {?Object} `{devices}`, or null when there is nothing to record.
+ * @returns {?Object} `{devices, cpu?, memory?, disk?, dataset_cache?}`, or null when there
+ *   is nothing to record.
  * @throws {ApiError} 400 when present but not shaped like a reading.
  */
 function validateTelemetry(telemetry) {
+    /* **The machine's own reading rides along** (#320): CPU, memory, disk and the dataset
+       cache, under `systemReading`'s names. This returned `{devices}` alone, so every
+       heartbeat sample stored a null system block -- the Workers tab had no CPU, memory,
+       disk or cache figure for any machine while it worked, and the comment where the
+       sample is written said the opposite. Found on a live run, 2026-11-05. */
     if (telemetry === undefined || telemetry === null) {
         return null;
     }
@@ -226,6 +232,11 @@ function validateTelemetry(telemetry) {
     if (typeof telemetry !== 'object' || Array.isArray(telemetry)) {
         invalid('telemetry must be an object carrying a devices array.');
     }
+
+    /* A machine with no GPU sends its system reading and no `devices` at all, which is
+       none rather than malformed: refusing it would answer that machine's heartbeat 400
+       and cost its job the lease. */
+    if (telemetry.devices === undefined) telemetry = { ...telemetry, devices: [] };
 
     if (!Array.isArray(telemetry.devices)) {
         invalid('telemetry.devices must be an array.');
@@ -237,8 +248,11 @@ function validateTelemetry(telemetry) {
         }
     }
 
-    // An empty array is "I have no GPU", which is the same as not reporting.
-    return telemetry.devices.length ? { devices: telemetry.devices } : null;
+    // An empty array is "I have no GPU"; such a machine still has a system to report.
+    const system = systemReading(telemetry);
+    if (!telemetry.devices.length && !system) return null;
+
+    return { devices: telemetry.devices, ...(system || {}) };
 }
 
 /**

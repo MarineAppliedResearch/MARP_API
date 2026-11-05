@@ -195,6 +195,30 @@ describe('a heartbeat may carry the machine\'s GPU reading', () => {
         expect(rows[0].devices[0].gpu_utilization_percent).toBe(99);
     });
 
+    test('the machine\'s own reading is kept with it: cpu, memory, disk and the dataset cache (#320)', async () => {
+        /* A heartbeat's sample stored a null system block for every machine: the reading
+           was dropped before it was written. Found on a live run, 2026-11-05. */
+        const cache = { bytes: 1963637760, entries: [{ sha256: 'a'.repeat(64), bytes: 1963637760, in_use: true }] };
+        const response = await heartbeat({
+            devices: [{ name: 'jest-gpu', gpu_utilization_percent: 70 }],
+            cpu: { percent: 31 }, memory: { percent_used: 44 }, disk: { free_bytes: 5 }, dataset_cache: cache,
+        });
+
+        expect(response.status).toBe(200);
+
+        const [row] = await query(
+            'SELECT system FROM gpu_worker_samples WHERE worker_id = :id ORDER BY at DESC LIMIT 1',
+            { id: lease.workerId }
+        );
+        expect(row.system).toEqual({ cpu: { percent: 31 }, memory: { percent_used: 44 }, disk: { free_bytes: 5 }, dataset_cache: cache });
+    });
+
+    test('a machine with no GPU sends its reading without devices, and is not refused', async () => {
+        const response = await heartbeat({ cpu: { percent: 12 } });
+
+        expect(response.status).toBe(200);
+    });
+
     test('telemetry that is not shaped like a reading is a 400', async () => {
         const response = await heartbeat({ devices: 'all of them' });
 
