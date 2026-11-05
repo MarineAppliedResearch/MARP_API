@@ -382,6 +382,18 @@ class GpuController {
     }
 
     /**
+     * The checkpoint a paused training job carries on from (#319).
+     *
+     * @async
+     * @param {number|string} jobId - Job identifier from the path.
+     * @returns {Promise<Object>} `{sha256, absolutePath}`.
+     */
+    async resumeCheckpoint(jobId) {
+        logger.info('Controller: resumeCheckpoint');
+        return gpuService.resumeCheckpoint(jobId);
+    }
+
+    /**
      * Ingest one job's observations into the annotation record.
      *
      * @async

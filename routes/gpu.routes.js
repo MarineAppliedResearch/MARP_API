@@ -549,6 +549,33 @@ function registerGpuRoutes(app) {
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'jobs:execute',
+        path: '/api/gpu/jobs/:id/checkpoint',
+        summary: 'Fetch the checkpoint a paused training job carries on from',
+        description:
+            'A training job handed back part way -- Pause now on its worker -- uploads its latest epoch as an artifact with role `resume`. The next attempt is given `spec.resume` naming this route and the checkpoint\'s sha256, fetches it, verifies it, and resumes training from it rather than from epoch 0 (#319). The newest checkpoint wins when a job has been paused more than once.\n\nGated on `jobs:execute`, like the dataset and the model: fetching what a job needs is part of executing it. Scoped to a job rather than to a hash, so this is not a general file route.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The `gpu_jobs.id` being resumed.' },
+        ],
+        responses: {
+            200: { description: 'The checkpoint.', content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } } },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const checkpoint = await gpuController.resumeCheckpoint(req.params.id);
+
+            res.type('application/octet-stream');
+            res.setHeader('ETag', `"checkpoint-${checkpoint.sha256}"`);
+            await new Promise((resolve, reject) => {
+                res.sendFile(checkpoint.absolutePath, (error) => error ? reject(error) : resolve());
+            });
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:execute',
         path: '/api/gpu/datasets/:id/archive',
         summary: 'Fetch a packaged dataset, for a worker about to train on it',
         description:

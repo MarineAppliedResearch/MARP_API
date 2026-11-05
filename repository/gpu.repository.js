@@ -425,6 +425,28 @@ class GpuRepository {
     }
 
     /**
+     * The checkpoint a paused training job carries on from (#319).
+     *
+     * A worker handed back part way uploads the run's latest epoch as role `resume`,
+     * recorded like any other artifact of the job. The newest one wins: a run paused
+     * twice carries on from the second pause, not the first.
+     *
+     * @async
+     * @param {number} jobId - `gpu_jobs.id`.
+     * @returns {Promise<?string>} Its sha256, or null when the job left none.
+     */
+    async resumeCheckpointFor(jobId) {
+        const [row] = await this.db.sequelize.query(
+            `SELECT hash FROM artifacts
+              WHERE job_id = :jobId AND artifact_type = 'resume' AND hash IS NOT NULL
+              ORDER BY id DESC LIMIT 1`,
+            { replacements: { jobId }, type: QueryTypes.SELECT }
+        );
+
+        return row ? row.hash : null;
+    }
+
+    /**
      * What a leased job's worker is told about its model (#321).
      *
      * @async
