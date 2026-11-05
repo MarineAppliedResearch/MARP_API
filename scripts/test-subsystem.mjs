@@ -57,6 +57,8 @@ const SUBSYSTEMS = {
             'gpu-job-cancel',
             // #319: pause now, drain, resume, retire; retry; move up, down, front.
             'gpu-job-worker-controls',
+            // #319: a paused training run carries on from its checkpoint.
+            'gpu-training-resume',
             'gpu-job-list',
             'gpu-pool-telemetry',
             'gpu-telemetry-series',

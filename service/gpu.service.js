@@ -801,7 +801,7 @@ class GpuService {
                 let spec;
 
                 try {
-                    spec = await this.resolveSpecForLease(this.applyResumePoint(lease.job), workerId);
+                    spec = await this.resolveSpecForLease(this.applyResumePoint(lease.job), workerId, lease.job.id);
                 } catch (error) {
                     // The lease is given up rather than handed over. Two worse
                     // options were available: hand out a spec with no URL in it,
@@ -874,7 +874,7 @@ class GpuService {
      * @returns {Promise<Object>} The spec a worker is handed.
      * @throws {Error} When either resolution fails.
      */
-    async resolveSpecForLease(spec, workerId) {
+    async resolveSpecForLease(spec, workerId, jobId = null) {
         /* A training job has no video, no frame range and no session to file
            observations into, so three of the four steps below have nothing to
            work on and `resolveVideoForLease` would refuse the lease outright.
@@ -885,9 +885,9 @@ class GpuService {
            The model's class names still matter, and arguably matter more here:
            they are what the finished weights will be registered with. */
         if (spec && typeof spec === 'object' && spec.dataset) {
-            return this.describeModelForLease(
+            return this.describeResumeForLease(await this.describeModelForLease(
                 await this.declareModelClassesForLease(await this.describeDatasetRoomForLease(spec, workerId))
-            );
+            ), jobId);
         }
 
         return this.describeModelForLease(await this.declareModelClassesForLease(
@@ -955,6 +955,54 @@ class GpuService {
                 keep_free_bytes: room.keepFree === null ? DEFAULT_DATASET_KEEP_FREE_BYTES : room.keepFree,
             },
         };
+    }
+
+    /**
+     * Name the checkpoint a paused training run carries on from (#319).
+     *
+     * Pause now handed a training run back and the next attempt began at epoch 0,
+     * throwing away every epoch done before the pause. A run handed back part way now
+     * uploads its latest epoch; this tells the next attempt where to fetch it, so it
+     * resumes instead. A job that left none trains from the start, as before.
+     *
+     * @async
+     * @param {Object} spec - The training spec being prepared for a lease.
+     * @param {?number} jobId - The job, whose checkpoint it is.
+     * @returns {Promise<Object>} The spec, with `resume` when there is one.
+     */
+    async describeResumeForLease(spec, jobId) {
+        if (!jobId) return spec;
+
+        const sha256 = await gpuRepository.resumeCheckpointFor(jobId);
+
+        // Recorded but not on disk would fail the worker minutes in; start over instead.
+        if (!sha256 || !fs.existsSync(path.join(ARTIFACT_DIRECTORY, sha256))) return spec;
+
+        return { ...spec, resume: { url: `/api/v2/gpu/jobs/${jobId}/checkpoint`, sha256 } };
+    }
+
+    /**
+     * The checkpoint file a paused training job carries on from (#319).
+     *
+     * @async
+     * @param {number|string} jobId - Job identifier from the path.
+     * @returns {Promise<{sha256: string, absolutePath: string}>} The file to send.
+     */
+    async resumeCheckpoint(jobId) {
+        const id = Number(jobId);
+        if (!Number.isInteger(id) || id <= 0) invalid('job id must be a positive integer.');
+
+        const sha256 = await gpuRepository.resumeCheckpointFor(id);
+        if (!sha256) throw new ApiError(404, ERROR_CODES.NOT_FOUND, `Job ${id} has no checkpoint to resume from.`);
+
+        // Named for its own hash by the staging step, so nothing from the row becomes a path.
+        if (!/^[0-9a-f]{64}$/.test(sha256)) throw new ApiError(404, ERROR_CODES.NOT_FOUND, `Job ${id}'s checkpoint is malformed.`);
+        const absolutePath = path.join(ARTIFACT_DIRECTORY, sha256);
+        if (!fs.existsSync(absolutePath)) {
+            throw new ApiError(404, ERROR_CODES.NOT_FOUND, `Job ${id}'s checkpoint is recorded but missing from the artifact store.`);
+        }
+
+        return { sha256, absolutePath };
     }
 
     /**
