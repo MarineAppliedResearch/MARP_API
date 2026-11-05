@@ -193,6 +193,12 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true,
                 comment: 'When this attempt\'s observations were taken into the record. The ingest guard: a job resumed by several volunteers has one of these per segment.',
             },
+
+            resumed_from_sha256: {
+                type: DataTypes.STRING(64),
+                allowNull: true,
+                comment: 'The checkpoint this attempt was handed to resume training from (#319); null when it started from the beginning.',
+            },
         },
         {
             sequelize,

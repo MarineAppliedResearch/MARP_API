@@ -20,7 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const app = require('./app');
-const { listenHttpAndHttps } = require('./config/listen');
+const { listenHttpAndHttps, allowLongUploads } = require('./config/listen');
 const { STORAGE_SOURCE } = require('./config/thumbnails');
 const thumbnailExtraction = require('./service/thumbnail-extraction.service');
 const datasetBuild = require('./service/dataset-build.service');
@@ -73,9 +73,9 @@ if (httpsKeyPath && httpsCertPath) {
         () => console.log(`Server listening (http and https) on the port  ${port}`)
     );
 } else {
-    app.listen(port, () => {
+    allowLongUploads(app.listen(port, () => {
         console.log(`Server listening on the port  ${port}`);
-    });
+    }));
 }
 
 // Thumbnail extraction (#118). Reports and declines rather than throwing when

@@ -25,6 +25,27 @@ const net = require('net');
 const TLS_HANDSHAKE = 0x16;
 
 /**
+ * How long one request may take to arrive, two hours (#319).
+ *
+ * Node's default is five minutes, and a worker uploading a training checkpoint over a
+ * home connection takes longer: a 500 MB checkpoint was cut off at exactly five minutes,
+ * so a paused run had nothing to resume from. Headers are still held to Node's own
+ * limit, which is what guards against a client that connects and says nothing.
+ */
+const REQUEST_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Let a slow upload finish rather than cutting it off at Node's five minutes.
+ *
+ * @param {http.Server} server - A server that handles requests.
+ * @returns {http.Server} The same server.
+ */
+function allowLongUploads(server) {
+    server.requestTimeout = REQUEST_TIMEOUT_MS;
+    return server;
+}
+
+/**
  * Listen on `port` for both protocols, handing each connection to the right server.
  *
  * @param {Function} app - The request handler, an Express application.
@@ -34,8 +55,8 @@ const TLS_HANDSHAKE = 0x16;
  * @returns {net.Server} The listening socket.
  */
 function listenHttpAndHttps(app, port, tls, onListening) {
-    const plain = http.createServer(app);
-    const secure = https.createServer(tls, app);
+    const plain = allowLongUploads(http.createServer(app));
+    const secure = allowLongUploads(https.createServer(tls, app));
 
     const server = net.createServer((socket) => {
         // Look at the first byte only, then hand the socket over with it put back.
@@ -53,4 +74,4 @@ function listenHttpAndHttps(app, port, tls, onListening) {
     return server.listen(port, onListening);
 }
 
-module.exports = { listenHttpAndHttps };
+module.exports = { listenHttpAndHttps, allowLongUploads, REQUEST_TIMEOUT_MS };

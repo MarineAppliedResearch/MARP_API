@@ -825,6 +825,11 @@ class GpuService {
 
                 await gpuPlaybackService.start(lease.attempt.id);
 
+                // So a checkpoint this attempt then fails on is not handed out again (#319).
+                if (spec && spec.resume) {
+                    await gpuRepository.recordAttemptResumedFrom(lease.attempt.id, spec.resume.sha256);
+                }
+
                 return {
                     job_id: lease.job.id,
                     attempt_id: lease.attempt.id,
@@ -961,9 +966,10 @@ class GpuService {
      * Name the checkpoint a paused training run carries on from (#319).
      *
      * Pause now handed a training run back and the next attempt began at epoch 0,
-     * throwing away every epoch done before the pause. A run handed back part way now
-     * uploads its latest epoch; this tells the next attempt where to fetch it, so it
-     * resumes instead. A job that left none trains from the start, as before.
+     * throwing away every epoch done before the pause. A run handed back or failing part
+     * way now uploads its latest epoch; this tells the next attempt where to fetch it, so
+     * it resumes instead. A job that left none, or whose checkpoint a resumed attempt
+     * failed on, trains from the start.
      *
      * @async
      * @param {Object} spec - The training spec being prepared for a lease.
