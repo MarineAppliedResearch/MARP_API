@@ -427,23 +427,51 @@ class GpuRepository {
     /**
      * The checkpoint a paused training job carries on from (#319).
      *
-     * A worker handed back part way uploads the run's latest epoch as role `resume`,
-     * recorded like any other artifact of the job. The newest one wins: a run paused
-     * twice carries on from the second pause, not the first.
+     * A worker handed back part way, or failing part way, uploads the run's latest epoch
+     * as role `resume`, recorded like any other artifact of the job. The newest one wins:
+     * a run paused twice carries on from the second pause, not the first.
+     *
+     * **Not once a resumed attempt has failed.** A checkpoint can be what broke the run,
+     * and then every retry would load it and fail the same way, spending the whole
+     * budget. So the newest checkpoint is skipped when an attempt from the one that
+     * published it onward resumed from a checkpoint and failed: the next attempt starts
+     * from the beginning, and a bad checkpoint costs one attempt, not all of them. Never
+     * an older checkpoint instead -- the failed attempt came after it too.
      *
      * @async
      * @param {number} jobId - `gpu_jobs.id`.
-     * @returns {Promise<?string>} Its sha256, or null when the job left none.
+     * @returns {Promise<?string>} Its sha256, or null when there is none to resume from.
      */
     async resumeCheckpointFor(jobId) {
         const [row] = await this.db.sequelize.query(
-            `SELECT hash FROM artifacts
-              WHERE job_id = :jobId AND artifact_type = 'resume' AND hash IS NOT NULL
-              ORDER BY id DESC LIMIT 1`,
+            `SELECT a.hash,
+                    EXISTS (SELECT 1 FROM gpu_job_attempts t
+                             WHERE t.job_id = a.job_id
+                               AND t.state = 'failed'
+                               AND t.resumed_from_sha256 IS NOT NULL
+                               AND t.id >= COALESCE((a.metadata->>'attempt_id')::bigint, 0)) AS spoilt
+               FROM artifacts a
+              WHERE a.job_id = :jobId AND a.artifact_type = 'resume' AND a.hash IS NOT NULL
+              ORDER BY a.id DESC LIMIT 1`,
             { replacements: { jobId }, type: QueryTypes.SELECT }
         );
 
-        return row ? row.hash : null;
+        return row && !row.spoilt ? row.hash : null;
+    }
+
+    /**
+     * Record the checkpoint an attempt was handed to resume from (#319).
+     *
+     * @async
+     * @param {number} attemptId - `gpu_job_attempts.id`.
+     * @param {string} sha256 - The checkpoint.
+     * @returns {Promise<void>}
+     */
+    async recordAttemptResumedFrom(attemptId, sha256) {
+        await this.db.sequelize.query(
+            'UPDATE gpu_job_attempts SET resumed_from_sha256 = :sha256 WHERE id = :attemptId',
+            { replacements: { attemptId, sha256 } }
+        );
     }
 
     /**
@@ -3419,6 +3447,16 @@ class GpuRepository {
                 });
 
                 jobState = released.jobState;
+
+                // **A failed training run keeps the checkpoint it uploaded** (#319), so
+                // the retry carries on from its last epoch rather than from the start.
+                // Only that: a failure's other uploads stay unrecorded, as they were.
+                artifactsRecorded = await this.recordJobArtifacts({
+                    job,
+                    attempt,
+                    artifacts: (artifacts || []).filter((artifact) => artifact.role === 'resume'),
+                    transaction,
+                });
             } else if (outcome === 'yielded') {
                 // An operator stopped this run part-way. The frames behind it are
                 // real, so the attempt is kept and ingested like a success; the
