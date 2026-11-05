@@ -19,7 +19,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const { listenHttpAndHttps } = require('../config/listen');
+const { listenHttpAndHttps, allowLongUploads, REQUEST_TIMEOUT_MS } = require('../config/listen');
 
 let server;
 let port;
@@ -111,3 +111,17 @@ describe('a browser asking for a page over plain http (#181)', () => {
     });
 });
 
+
+describe('Long uploads (#319)', () => {
+
+    // A 500 MB training checkpoint over a home connection was cut off at exactly
+    // Node's default five minutes, so a paused run had nothing to resume from.
+    it('lets a request take longer than Node allows by default', () => {
+        const nodeDefault = http.createServer().requestTimeout;
+        const server = allowLongUploads(http.createServer());
+
+        expect(nodeDefault).toBe(5 * 60 * 1000);
+        expect(server.requestTimeout).toBe(REQUEST_TIMEOUT_MS);
+        expect(REQUEST_TIMEOUT_MS).toBeGreaterThan(nodeDefault);
+    });
+});
