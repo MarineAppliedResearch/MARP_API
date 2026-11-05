@@ -123,3 +123,32 @@ test('a fetching attempt shows its download rate, and the panel follows the poll
   await screen.window.pollScreenNow();
   assert.match(progress(), /16\.6 MB\/s/);
 });
+
+test('a checkpoint or model download shows its rate too', async (t) => {
+  /* marp-inference-worker#84: the worker now heartbeats while it fetches what a job
+     needs before it starts, under phases of their own. 30 MB arrive in 10 s. */
+  for (const phase of ['fetching_checkpoint', 'fetching_model']) {
+    const reading = { done: 100_000_000, at: '2026-11-05T22:15:10.000Z' };
+    const fetching = () => worker(1, {
+      activity: 'busy',
+      dataset_cache: CACHE,
+      attempts: [{
+        attempt_id: 78, state: 'leased', slot_index: 0, lease_epoch: 1, last_heartbeat_at: reading.at,
+        job: { job_id: 901 }, progress: { done: reading.done, total: 545_921_331, unit: 'bytes', phase },
+      }],
+    });
+
+    const screen = await drawScreen('workers.html', {
+      listWorkers: async () => [fetching()],
+      listJobs: async () => ({ jobs: [], total: 0, limit: 500, offset: 0 }),
+    });
+    t.after(screen.close);
+
+    reading.done += 30_000_000;
+    reading.at = '2026-11-05T22:15:20.000Z';
+    await screen.window.pollScreenNow();
+
+    const progress = screen.document.querySelector('[data-attempt-progress="78"]').textContent;
+    assert.match(progress, new RegExp(`130,000,000 / 545,921,331 bytes · ${phase} · 3\.0 MB/s`));
+  }
+});

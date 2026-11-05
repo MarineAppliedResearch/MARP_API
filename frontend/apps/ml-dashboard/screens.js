@@ -7053,7 +7053,8 @@ function workerLastSeen(worker) {
 const fetchReadings = new Map();
 
 /**
- * A live attempt's progress, and its download rate while it fetches a dataset.
+ * A live attempt's progress, and its download rate while it fetches a dataset, a model or a
+ * checkpoint (marp-inference-worker#84).
  *
  * **The rate is measured between two readings**, not divided by the attempt's elapsed
  * time: a fetch resumed from 15 GB would otherwise claim a rate it never had (#320).
@@ -7068,7 +7069,7 @@ function attemptProgressText(one) {
   if (counted(step.done) === null) return 'No heartbeat yet';
 
   let rate = '';
-  if (step.unit === 'bytes' && step.phase === 'fetching_dataset') {
+  if (step.unit === 'bytes' && String(step.phase || '').startsWith('fetching_')) {
     const now = { done: Number(step.done), at: Date.parse(one.last_heartbeat_at) || window.MarpApi.now() };
     const before = fetchReadings.get(one.attempt_id);
 
