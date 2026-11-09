@@ -3420,6 +3420,11 @@ const buildOpenApiSpec = () => {
                                 example: [100125],
                                 description: 'Ids whose decision this reviewer is taking back. **Review and training only** -- a delete records no decision to take back. A withdrawal deletes the projection row and leaves every log row, because undecided is the absence of a row. An id that is also marked is a 400.',
                             },
+                            seen_in_video: {
+                                type: 'boolean',
+                                example: true,
+                                description: 'The decision was made watching the observation in its video (#337), so an **explicit `accept` mark** is recorded even when the observation has no Mosaic picture: the reviewer saw the animal itself. Unmarked rows in the same request still need their picture. Absent means false.',
+                            },
                         },
                     },
                     MosaicCommitResult: {

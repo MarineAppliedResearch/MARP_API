@@ -14,7 +14,7 @@ import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
 import { renderFrameViewer, wireFrameViewer } from './frame-viewer.js';
-import { followQueryInVideoWindow } from './video-window.js';
+import { followQueryInVideoWindow, showInVideoWindow, onVideoWindowReview, renderVideoBlocked } from './video-window.js';
 import { queryFilters } from '../model/filters.js';
 import { MARK_ACCEPT, MARK_EXCEPT } from '../model/modes.js';
 import { normalizeRect, idsInRect } from '../model/drag-selection.js';
@@ -180,7 +180,7 @@ function wireGrid() {
     if (gridDrag) { cancelGridDrag(); return; }
     const touch = lastPointerType === 'touch';
     if (!touch && (lastPointerType !== 'mouse' || (e.button !== 0 && e.button !== 2))) return;
-    if (state.picker || e.target.closest('[data-badge],[data-changed],[data-act],a,input,select,textarea')) return;
+    if (state.picker || e.target.closest('[data-badge],[data-video],[data-changed],[data-act],a,input,select,textarea')) return;
     if (!e.target.closest('.tile') && e.target !== grid) return;
 
     /* Stop native image dragging before Chromium can cancel our pointer gesture. */
@@ -258,6 +258,15 @@ function wireGrid() {
        uninterrupted gesture, so opening the panel is a separate target. */
     const badge = e.target.closest('[data-badge]');
     if (badge) { e.stopPropagation(); actions.openPicker(Number(badge.dataset.badge)); return; }
+
+    /* The tile's video button (#338): opens the video and marks nothing. The query goes
+       too, so every observation in the video it matches is drawn beside this one. */
+    const video = e.target.closest('[data-video]');
+    if (video) {
+      e.stopPropagation();
+      showInVideoWindow(Number(video.dataset.video));
+      return;
+    }
 
     const chip = e.target.closest('[data-changed]');
     if (chip) { e.stopPropagation(); actions.openCorrection(Number(chip.dataset.changed)); return; }
@@ -444,6 +453,12 @@ export function mount() {
   wireRail();
   wireDismissal();
   wireLayout();
+  // A review made on the video page reaches its tile here, without a reload (#337).
+  onVideoWindowReview((change) => actions.reviewedInVideo(change));
+  // The refused-window bar (#341): its link opens the video, and both close the bar.
+  $('#videoBlocked').addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="dismiss-video-blocked"],[data-video-link]')) actions.dismissVideoBlocked();
+  });
 
   /* Re-measure after every render: a single measurement is unreliable because the
      field settles after layout, and setPageSize no-ops when nothing changed, so this
@@ -464,6 +479,7 @@ export function mount() {
     // boxes (#181 R9). Sent only when it has changed.
     followQueryInVideoWindow(queryFilters(state.mode, state.filters));
     renderConfirm();
+    renderVideoBlocked();
     renderFrameViewer();
     renderRail();
     requestAnimationFrame(computeLayout);

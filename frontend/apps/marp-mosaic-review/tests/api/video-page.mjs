@@ -5,11 +5,13 @@
 import { expect } from '@playwright/test';
 import { pageOf } from './support.mjs';
 
-/* An observation in a video Jellyfin has, whose own box is on the picture it opens at. */
-export async function editableObservation(request) {
+/* An observation in a video Jellyfin has, whose own box is on the picture it opens at.
+   `withPicture` asks for one with a Mosaic picture, which accepting it as reviewed needs. */
+export async function editableObservation(request, { withPicture = false } = {}) {
   const { rows } = await pageOf(request, {}, { pageSize: 50 });
+  const candidates = rows.filter((row) => !withPicture || row.thumbnail_status === 'ready');
   const res = await request.post('/api/v2/mosaic/observations/video-context', {
-    data: { observation_ids: rows.map((row) => row.observation_id) }
+    data: { observation_ids: candidates.map((row) => row.observation_id) }
   });
   expect(res.ok(), `the video-context read was refused: ${res.status()}`).toBeTruthy();
   for (const video of (await res.json()).videos.filter((entry) => entry.jellyfin_item_id)) {

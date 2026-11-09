@@ -460,6 +460,8 @@ function registerMosaicRoutes(app) {
                                             comname: { type: 'string', nullable: true },
                                             obs_id: { type: 'integer', nullable: true, description: 'The observation\'s number within its session, as the annotation GUI labels it.' },
                                             version: { type: 'integer', description: 'The row version a delete must name.' },
+                                            review_decision: { type: 'string', nullable: true, enum: ['reviewed', 'flagged', null], description: 'The current scientific review decision; null when nobody has decided (#337).' },
+                                            flag_reason: { type: 'string', nullable: true, description: 'Why it was flagged, when it was.' },
                                             count: { type: 'integer', nullable: true },
                                             session_id: { type: 'integer', nullable: true },
                                             open_ended: { type: 'boolean', description: 'The track has no end keyframe yet, so its last box is drawn forward until one is set.' },

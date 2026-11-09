@@ -13,7 +13,7 @@ import { MODES, isMode, commitCount, commitActsOnMarked, pendingException, accep
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 import * as dimensions from './model/dimensions.js';
-import { currentSpeciesName } from './model/row.js';
+import { currentSpeciesName, initialsOfUsername } from './model/row.js';
 import { toQuery, fromQuery } from './model/query-url.js';
 import { plan } from './model/schedule.js';
 import { createCache, keyFor } from './model/cache.js';
@@ -117,6 +117,8 @@ export const state = {
    * (a defect in this client). None of them discards a mark.
    */
   failure: null,
+  /* `{ id, address }` when the browser refused the video window for that observation (#341). */
+  videoBlocked: null,
   page: 1,
   pageSize: 45,
   pageCount: 1,
@@ -2154,6 +2156,19 @@ export const actions = {
   },
 
   /** Dismiss whatever the last failure said. The reviewer has read it. */
+  /** The browser refused the video window (#341); the address opens it another way. */
+  videoBlocked(id, address) {
+    state.videoBlocked = { id, address };
+    fire('videoBlocked', { id });
+    notify();
+  },
+
+  dismissVideoBlocked() {
+    if (!state.videoBlocked) return;
+    state.videoBlocked = null;
+    notify();
+  },
+
   dismissFailure() {
     if (!state.failure) return;
     fire('dismissFailure', { kind: state.failure.kind });
@@ -2179,5 +2194,32 @@ export const actions = {
   },
 
   /* The window itself is ui/video-window.js's (#181); this records that it was asked for. */
-  openVideo(id) { fire('openVideo', { id }); }
+  openVideo(id) { fire('openVideo', { id }); },
+
+  /**
+   * A scientific review made on the video page (#337), shown on its tile without a reload.
+   *
+   * The video page has already committed it, so this records nothing: it brings the held
+   * row up to date, as a correction does, and drops any mark this window was holding for
+   * it, which would otherwise commit later and overwrite the decision just made there.
+   *
+   * @param {{observationId: number, decision: (string|null), reason: (string|null)}} change
+   */
+  reviewedInVideo({ observationId, decision, reason }) {
+    const me = state.me || {};
+    const rows = [
+      ...state.rows.filter((row) => row.observation_id === observationId),
+      ...(cache.rowsFor([observationId]) || [])
+    ];
+    for (const row of new Set(rows)) {
+      row.review_decision = decision;
+      row.flag_reason = decision === 'flagged' ? reason : null;
+      row.review_note = null;
+      row.review_reviewer_id = decision ? (me.user_id ?? null) : null;
+      row.review_reviewer_initials = decision ? initialsOfUsername(me.username) : null;
+    }
+    if (state.mode === 'scientific') state.marks.delete(observationId);
+    fire('reviewedInVideo', { id: observationId, decision, reason });
+    notify();
+  }
 };

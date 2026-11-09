@@ -31,6 +31,21 @@ export const currentSpeciesName = (row) =>
   (row && (row.species_comname != null ? row.species_comname : row.comname)) || null;
 
 /**
+ * A reviewer's initials from their username, the same rule the server uses for the badge.
+ *
+ * @param {string} username
+ * @returns {string|null}
+ */
+export function initialsOfUsername(username) {
+  const parts = String(username || '').split(/[\s._-]+/u).filter(Boolean);
+  if (!parts.length) return null;
+  const firstPart = Array.from(parts[0]);
+  return (parts.length > 1
+    ? (firstPart[0] || '') + (Array.from(parts[parts.length - 1])[0] || '')
+    : firstPart.slice(0, 2).join('')).toUpperCase();
+}
+
+/**
  * The label the annotator chose, which is what "was X" means.
  *
  * Separate from {@link currentSpeciesName} so the two can never be swapped by accident,

@@ -10,7 +10,7 @@ import {
   existingState, existingNote, reviewerInitialsFor, pendingTakeBack, borrowedTags,
   acceptedValue, markKind, MARK_ACCEPT
 } from '../model/modes.js';
-import { currentSpeciesName } from '../model/row.js';
+import { currentSpeciesName, initialsOfUsername } from '../model/row.js';
 import { isDestroyed } from '../model/page.js';
 import { MarpBackend } from '../backend.js';
 import { ICON } from './dom.js';
@@ -42,15 +42,6 @@ const noteIndicator = (note) => note
 const escapeText = (value) => String(value || '').replace(/[&<>"']/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[character]));
-
-const initialsOfUsername = (username) => {
-  const parts = String(username || '').split(/[\s._-]+/u).filter(Boolean);
-  if (!parts.length) return null;
-  const firstPart = Array.from(parts[0]);
-  return (parts.length > 1
-    ? (firstPart[0] || '') + (Array.from(parts[parts.length - 1])[0] || '')
-    : firstPart.slice(0, 2).join('')).toUpperCase();
-};
 
 const attribution = (initials) => initials
   ? `<span class="reviewer-attribution" title="Decision by ${escapeText(initials)}">${escapeText(initials)}</span>`
@@ -352,10 +343,18 @@ export function tile(row) {
     ? `<span class="refusal" data-refused="${id}">${ICON.cross}${refused.reason}</span>`
     : '';
 
+  /* **The video, without a decision first** (#338). Opening the video is how a reviewer
+     decides, so it cannot wait on the badge, which only exists once the tile is marked.
+     Its own target like the badge, so a click on the tile still only marks. Not on a
+     deleted row: there is nothing left to show. */
+  const video = gone
+    ? ''
+    : `<span class="video-chip" data-video="${id}" title="Open the video at this observation">${ICON.play}</span>`;
+
   /* `aria-disabled`, never `disabled`: the tile stays a real button that a real click
      still reaches, so "the click does nothing" is a thing the render tier can observe
      rather than something the browser swallows before the app sees it. */
   return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}"${gone ? ' aria-disabled="true"' : ''}>
       ${body(row)}${badge}${corner(row, id, { marked, changed, existing, outcome })}
-      ${refusal}${borrowed(row)}${confidenceChip(row)}<span class="cap">${name}</span></button>`;
+      ${refusal}${borrowed(row)}${confidenceChip(row)}${video}<span class="cap">${name}</span></button>`;
 }

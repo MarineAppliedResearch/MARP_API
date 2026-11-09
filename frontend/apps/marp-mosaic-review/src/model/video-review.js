@@ -8,6 +8,24 @@
  * a phone. A 20-second window of it is about 700 keyframes and 100 KB.
  */
 
+/**
+ * The video window's name and its channel's, one for both so they cannot drift. Here rather
+ * than in `ui/video-window.js` so the video page can name it without loading the Mosaic.
+ */
+export const VIDEO_WINDOW = 'marp-mosaic-video';
+
+/**
+ * The colour a box is drawn in once it has been reviewed (#337), the Mosaic's own colours for
+ * the two decisions: green for reviewed, amber for flagged. Undecided boxes keep their
+ * species colour. Reviewing while the video plays only works if what is done shows.
+ *
+ * @param {string|null} decision - `review_decision`.
+ * @returns {string|null} A colour, or null to keep the species colour.
+ */
+export function reviewColour(decision) {
+  return decision === 'reviewed' ? '#a7ec35' : decision === 'flagged' ? '#f6c453' : null;
+}
+
 /** Seconds per keyframe window. */
 export const WINDOW_SECONDS = 20;
 

@@ -6,8 +6,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  WINDOW_SECONDS, windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour
+  WINDOW_SECONDS, windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour
 } from '../../src/model/video-review.js';
+
+test('#337: a reviewed box is green, a flagged one amber, an undecided one keeps its species colour', () => {
+  assert.equal(reviewColour('reviewed'), '#a7ec35');
+  assert.equal(reviewColour('flagged'), '#f6c453');
+  assert.equal(reviewColour(null), null);
+  assert.equal(reviewColour(undefined), null);
+});
 
 test('#181: the windows held are the playhead\'s own, the next, and the one before', () => {
   assert.equal(WINDOW_SECONDS, 20);

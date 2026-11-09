@@ -17,7 +17,8 @@ export const ICON = {
   del:  '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M6 1h4l.6 1H14v2H2V2h3.4zM3 5h10l-.8 10H3.8z"/></svg>',
   exc:  '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM3.9 8a4.1 4.1 0 016.3-3.4L4.6 10.2A4 4 0 013.9 8zm4.1 4.1a4 4 0 01-2.2-.7l5.6-5.6A4.1 4.1 0 018 12.1z"/></svg>',
   pro:  '<svg viewBox="0 0 16 16" fill="currentColor"><path d="m8 1 2 4.4 4.8.5-3.6 3.2 1 4.7L8 11.4 3.8 13.8l1-4.7L1.2 5.9 6 5.4z"/></svg>',
-  cross: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M12.6 4.8 11.2 3.4 8 6.6 4.8 3.4 3.4 4.8 6.6 8l-3.2 3.2 1.4 1.4L8 9.4l3.2 3.2 1.4-1.4L9.4 8z"/></svg>'
+  cross: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M12.6 4.8 11.2 3.4 8 6.6 4.8 3.4 3.4 4.8 6.6 8l-3.2 3.2 1.4 1.4L8 9.4l3.2 3.2 1.4-1.4L9.4 8z"/></svg>',
+  play: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg>'
 };
 
 /* `initialsOf` was here, and the account menu it drew for is now one shared component

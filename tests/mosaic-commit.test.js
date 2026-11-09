@@ -878,6 +878,34 @@ describe('the mosaic page commit (#106)', () => {
             expect(await currentFor(a)).toEqual([]);
         });
 
+        // #337, Isaac 2026-11-09: on the video page the reviewer is watching the animal
+        // itself, so accepting it there needs no Mosaic picture. Only that explicit mark:
+        // an unmarked row sent beside it is still a sweep, and still needs its picture.
+        it('records an accept mark made on the video page without a picture, and still skips an unmarked one', async () => {
+            const [a, b] = await addObservations(2);
+
+            await removeImagery(a);
+            await removeImagery(b);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a), await at(b)],
+                marks: [{ observation_id: a, kind: 'accept' }],
+                seen_in_video: true,
+            });
+
+            expect(res.status).toBe(200);
+            expect(res.body.reviewed.map((entry) => entry.observation_id)).toEqual([a]);
+            expect(res.body.skipped).toEqual([{ observation_id: b, reason: 'no-imagery' }]);
+        });
+
+        it('refuses a seen_in_video that is not true or false', async () => {
+            const [a] = await addObservations(1);
+
+            const res = await alice.post(REVIEW).send({ observations: [await at(a)], seen_in_video: 'yes' });
+
+            expect(res.status).toBe(400);
+        });
+
         it('still flags a row with no imagery when the exception has another reason', async () => {
             const [a] = await addObservations(1);
 

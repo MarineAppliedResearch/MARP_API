@@ -16,6 +16,7 @@
  */
 import { MarpApi } from '../api/index.js';
 import { withRecent } from '../model/box-edit.js';
+import { MODES } from '../model/modes.js';
 
 /* A search is worth sending from two characters, as the Mosaic's own species picker. */
 const MIN_TERM = 2;
@@ -225,13 +226,74 @@ export function openSpeciesPopup({ popup, at, title, sessions = [], sessionId, l
 }
 
 /**
+ * The scientific review of the selected observation, decided here while watching it (#337).
+ *
+ * The same decisions and reasons as the Mosaic grid's Scientific Data Review, recorded the
+ * same way, so a reviewer who opened the video to decide does not have to go back to the
+ * grid and find the tile again to say what they decided.
+ *
+ * **One compact row of its own.** In the title line it took the species name's room (Isaac,
+ * 2026-11-09: the name showed as "Sh..."), and as a row of full-size buttons it covered the
+ * picture on a phone. So: a tick, and a flag menu that names its reason once flagged, both
+ * small, and take-back once there is something to take back. The decided one is coloured
+ * as its box is.
+ *
+ * @param {Object} row - The observation, carrying `review_decision` and `flag_reason`.
+ * @param {Object} [review] - `{ canReview, busy }`.
+ * @param {Object} on - `{ review(kind, reason), takeBack() }`.
+ * @returns {HTMLElement|null} The row, or null without permission.
+ */
+function reviewControls(row, review, on) {
+  if (!review || !review.canReview) return null;
+  const decision = row.review_decision || null;
+  const controls = element('div', 'panel-review');
+  controls.dataset.review = decision || 'unreviewed';
+  // Saving: drawn dimmed with a busy cursor until the decision lands.
+  controls.setAttribute('aria-busy', review.busy ? 'true' : 'false');
+
+  const button = (label, name, title, handler, enabled) => {
+    const control = element('button', null, label);
+    control.type = 'button';
+    control.dataset.review = name;
+    control.title = title;
+    control.setAttribute('aria-label', title);
+    control.disabled = review.busy || !enabled;
+    control.addEventListener('click', handler);
+    controls.append(control);
+  };
+  button(decision === 'reviewed' ? '✓ Reviewed' : '✓ Mark reviewed', 'reviewed',
+    decision === 'reviewed' ? 'Reviewed' : 'Mark reviewed', () => on.review('accept', null), decision !== 'reviewed');
+
+  const flag = document.createElement('select');
+  flag.dataset.review = 'flag';
+  flag.disabled = review.busy;
+  const flagged = decision === 'flagged' ? `Flagged: ${row.flag_reason || 'no reason'}` : 'Flag, with a reason';
+  flag.title = flagged;
+  flag.setAttribute('aria-label', flagged);
+  flag.append(new Option(decision === 'flagged' ? `⚑ ${row.flag_reason || 'Flagged'}` : '⚑ Flag…', '', true, true));
+  flag.options[0].disabled = true;
+  for (const reason of MODES.scientific.reasons) {
+    const option = new Option(reason, reason);
+    option.disabled = decision === 'flagged' && row.flag_reason === reason;
+    flag.append(option);
+  }
+  flag.addEventListener('change', () => { if (flag.value) on.review('except', flag.value); });
+  controls.append(flag);
+
+  if (decision) button('↺', 'take-back', 'Take back the decision', on.takeBack, true);
+  return controls;
+}
+
+/**
  * Fill the panel for the selected observation, or hide it.
  *
  * @param {HTMLElement} panel
  * @param {Object|null} model - `{ row, colour, session, keyframes, canWrite, canDelete,
- *   picture }`, or null for no selection. `picture` is 'working', 'done' or absent: cutting
- *   the Mosaic picture takes seconds, and what the button says has to survive a re-render.
- * @param {Object} on - `{ rename, count, merge, picture, remove, seek, close }`.
+ *   picture, review }`, or null for no selection. `picture` is 'working', 'done' or absent:
+ *   cutting the Mosaic picture takes seconds, and what the button says has to survive a
+ *   re-render. `review` is `{ canReview, busy }`, and the decision is read off the row.
+ * @param {Object} on - `{ rename, count, merge, picture, remove, seek, close, review,
+ *   takeBack }`.
  */
 export function renderPanel(panel, model, on) {
   if (!model) {
@@ -239,7 +301,7 @@ export function renderPanel(panel, model, on) {
     panel.replaceChildren();
     return;
   }
-  const { row, colour, session, keyframes, canWrite, canDelete, picture } = model;
+  const { row, colour, session, keyframes, canWrite, canDelete, picture, review } = model;
   const head = element('div', 'annotate-head');
   const swatch = element('span', 'swatch');
   swatch.style.background = colour;
@@ -297,9 +359,12 @@ export function renderPanel(panel, model, on) {
   action(picture === 'working' ? 'Cutting the picture from this frame…'
     : picture === 'done' ? 'Mosaic picture updated ✓'
       : 'Use this frame for the Mosaic picture', 'picture', on.picture, picture !== 'working');
-  action('Merge another observation into this one…', 'merge', on.merge, canWrite);
+  // One line on a phone, which pays for the review row above it (#337).
+  action('Merge another into this one…', 'merge', on.merge, canWrite);
   if (canDelete) action('Delete observation…', 'remove', on.remove);
 
-  panel.replaceChildren(head, facts, element('div', 'panel-label', 'Keyframes'), list, actions);
+  const reviewing = reviewControls(row, review, on);
+  panel.replaceChildren(head, facts, ...(reviewing ? [reviewing] : []),
+    element('div', 'panel-label', 'Keyframes'), list, actions);
   panel.hidden = false;
 }

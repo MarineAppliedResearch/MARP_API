@@ -145,6 +145,9 @@ async function videoObservations(body = {}) {
             count: row.count,
             session_id: row.session_id,
             version: row.version,
+            // The scientific review, so the page can show and change it (#337).
+            review_decision: row.review_decision || null,
+            flag_reason: row.flag_reason || null,
             start_s: Number(row.first_framenum) / rate,
             end_s: Number(row.last_framenum) / rate,
             // No `end` keyframe: still being made, so the page draws its last box forward

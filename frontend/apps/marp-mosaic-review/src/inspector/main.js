@@ -18,9 +18,8 @@
  * the password: it goes from this form to Jellyfin and nowhere else.
  */
 import { MarpApi } from '../api/index.js';
-import { VIDEO_WINDOW } from '../ui/video-window.js';
 import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
-import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour } from '../model/video-review.js';
+import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW } from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
 import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '../model/box-edit.js';
@@ -69,6 +68,10 @@ for (const id of ['addPopup', 'obsPanel', 'boxMenu']) {
 /* What the reviewer may do beyond moving boxes: add, rename, count, merge (observations:write). */
 let canAnnotate = false;
 let canDelete = false;
+/* Reviewing needs the Mosaic's own permission, not the box editor's (#337). */
+let canReview = false;
+/* True while a review decision is on its way, so a second click cannot race it. */
+let reviewing = false;
 
 /* A box drawn and not yet given a species: painted in the GUI's drawing colour, DeepPink. */
 const DRAWING = '#ff1493';
@@ -171,8 +174,9 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
 
   for (const entry of entries) {
     const keyframe = keyframeShown(entry.box.keyframes, t, rate);
+    const reviewed = showing.rows.get(entry.box.observation_id);
     drawBox(context, entry, {
-      colour: speciesColour(entry.box.comname),
+      colour: reviewColour(reviewed && reviewed.review_decision) || speciesColour(entry.box.comname),
       type: keyframe ? keyframe.type : 'interpolated',
       selected: entry.key === editor.selectedKey,
       pressed: editor.pressFor(entry.key),
@@ -601,6 +605,60 @@ function usePicture(entry, t) {
 }
 
 /* The panel follows the selection: the selected observation, or nothing (R7). */
+/**
+ * Record a scientific review of `row`, made on this page (#337), and tell the Mosaic.
+ *
+ * Through the Mosaic's own commit route, one observation at a time and with the version
+ * this page was given, so a decision about an observation that changed since is refused
+ * rather than recorded against something the reviewer was not looking at.
+ *
+ * @param {Object} row - The observation, from this page's read.
+ * @param {{kind: string, reason: (string|null), takeBack: boolean}} change
+ */
+async function recordReview(row, { kind, reason = null, takeBack = false }) {
+  if (reviewing) return;
+  reviewing = true;
+  updatePanel();
+  const id = row.observation_id;
+  try {
+    const answer = await MarpApi.commitPage({
+      mode: 'scientific',
+      rows: [{ observation_id: id, version: row.version }],
+      marks: takeBack ? new Map() : new Map([[id, { kind, reason }]]),
+      withdraw: takeBack ? [id] : [],
+      // Watched here, so marking it reviewed needs no Mosaic picture (Isaac, 2026-11-09).
+      seenInVideo: true
+    });
+    const mine = (list) => (list || []).find((entry) => entry.observation_id === id);
+    if (mine(answer.conflicted)) {
+      status('Not recorded: this observation changed since the video opened. Reopen it from the Mosaic and decide again.');
+      return;
+    }
+    const skipped = mine(answer.skipped);
+    if (skipped) {
+      status(skipped.reason === 'no-imagery'
+        ? 'Not recorded: it has no Mosaic picture yet, and a reviewed decision needs one. Flagging still works.'
+        : `Not recorded: ${skipped.reason === 'not-found' ? 'the observation no longer exists' : skipped.reason}.`);
+      return;
+    }
+    const decision = takeBack ? null : kind === 'accept' ? 'reviewed' : 'flagged';
+    row.review_decision = decision;
+    row.flag_reason = decision === 'flagged' ? reason : null;
+    status(takeBack ? 'Decision taken back.'
+      : decision === 'reviewed' ? 'Marked reviewed.' : `Flagged: ${reason}.`);
+    redraw();
+    // The Mosaic shows it on the tile without a reload.
+    if (typeof BroadcastChannel !== 'undefined') {
+      new BroadcastChannel(VIDEO_WINDOW).postMessage({ type: 'reviewed', observationId: id, decision, reason: row.flag_reason });
+    }
+  } catch (error) {
+    status(`Not recorded: ${error.message}`);
+  } finally {
+    reviewing = false;
+    updatePanel();
+  }
+}
+
 function updatePanel() {
   const key = editor.selectedKey;
   const id = key ? Number(key.split('_')[0]) : null;
@@ -620,9 +678,12 @@ function updatePanel() {
     keyframes,
     canWrite: canAnnotate,
     canDelete,
-    picture: pictureState
+    picture: pictureState,
+    review: { canReview, busy: reviewing }
   }, {
     close: () => { editor.select(null); returnKeyboard(); },
+    review: (kind, reason) => recordReview(row, { kind, reason }),
+    takeBack: () => recordReview(row, { takeBack: true }),
     seek: (t) => {
       if (!player.engine) return;
       player.engine.pause();
@@ -710,6 +771,7 @@ function updatePanel() {
 
 MarpApi.whoami().then((user) => {
   const permissions = (user && user.permissions) || [];
+  canReview = permissions.includes('observations:write');
   if (permissions.includes('keyframes:write')) {
     canAnnotate = permissions.includes('observations:write');
     canDelete = canAnnotate;
@@ -726,6 +788,8 @@ window.MARP_VIDEO = {
     const o = $('boxes').getBoundingClientRect();
     return drawnNow.rects.map(({ key, box, rect }) => ({
       key, observation_id: box.observation_id, comname: box.comname,
+      // The colour it is drawn in, which says its review (#337).
+      colour: reviewColour((showing.rows.get(box.observation_id) || {}).review_decision) || speciesColour(box.comname),
       rect: { left: rect.left + o.left, top: rect.top + o.top, width: rect.width, height: rect.height }
     }));
   },

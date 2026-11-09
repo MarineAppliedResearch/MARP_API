@@ -26,7 +26,13 @@ async function emptySpot(page) {
       ? { left: element.left + (element.width - element.height * aspect) / 2, top: element.top, width: element.height * aspect, height: element.height }
       : { left: element.left, top: element.top + (element.height - element.width / aspect) / 2, width: element.width, height: element.width / aspect };
     const boxes = window.MARP_VIDEO.drawn.map((d) => d.rect);
-    const free = (x, y) => boxes.every((r) => x + 80 < r.left || x > r.left + r.width || y + 60 < r.top || y > r.top + r.height);
+    // Clear of every box on all four sides, with room for what is drawn around a box: its
+    // label tab hangs below it and its handles stand off its edges, and a drag that starts
+    // on either moves that box instead of drawing a new one -- which is how a second box
+    // drawn a few pixels under the first used to fail.
+    const MARGIN = 28;
+    const free = (x, y) => boxes.every((r) => x + 80 < r.left - MARGIN || x > r.left + r.width + MARGIN
+      || y + 60 < r.top - MARGIN || y > r.top + r.height + MARGIN);
     for (let fy = 0.15; fy < 0.6; fy += 0.1) {
       for (let fx = 0.1; fx < 0.8; fx += 0.1) {
         const x = picture.left + picture.width * fx;

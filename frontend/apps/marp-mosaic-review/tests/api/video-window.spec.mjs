@@ -47,6 +47,65 @@ test('#181 Open video shows the observation in its own window, and reuses that w
     }
   });
 
+test('#338 a tile opens its video without being marked', async ({ page, context }) => {
+  const seeded = await seedPage({ count: 1, thumbnail: 'ready' });
+  try {
+    await page.goto(seeded.address);
+    await expectRealBacking(page);
+    await ready(page);
+    const [id] = seeded.ids;
+    const tile = page.locator(`.tile[data-id="${id}"]`);
+
+    // Undecided, so there is no badge to open a panel from: the video button is the way in.
+    await expect(tile.locator('[data-badge]')).toHaveCount(0);
+
+    const opened = context.waitForEvent('page');
+    await tile.locator('[data-video]').click();
+    const inspector = await opened;
+    await inspector.waitForLoadState();
+    await expect(inspector).toHaveURL(/\/inspect\.html/);
+    await expect(inspector.locator('#inspectTitle')).toContainText(String(id));
+
+    // And the tile is exactly as it was: nothing marked, nothing to commit.
+    await expect(tile).not.toHaveClass(/marked/);
+    await expect(page.locator('.pick')).toHaveCount(0);
+  } finally {
+    await seeded.remove();
+  }
+});
+
+test('#341 a refused video window says so, and its link opens the video', async ({ page, context }) => {
+  const seeded = await seedPage({ count: 1, thumbnail: 'ready' });
+  try {
+    // The browser's pop-up blocker, as the page sees it: window.open returns nothing.
+    await page.addInitScript(() => { window.open = () => null; });
+    await page.goto(seeded.address);
+    await expectRealBacking(page);
+    await ready(page);
+    const [id] = seeded.ids;
+
+    const bar = page.locator('#videoBlocked');
+    await expect(bar).toBeHidden();
+    await page.locator(`.tile[data-id="${id}"] [data-video]`).click();
+
+    // Said, not silent.
+    await expect(bar).toBeVisible();
+    await expect(bar).toContainText('blocked the video window');
+    const link = bar.locator('[data-video-link]');
+    await expect(link).toHaveAttribute('href', /inspect\.html#/);
+
+    // A link the reviewer clicks is allowed where the script's window was not.
+    const opened = context.waitForEvent('page');
+    await link.click();
+    const inspector = await opened;
+    await inspector.waitForLoadState();
+    await expect(inspector.locator('#inspectTitle')).toContainText(String(id));
+    await expect(bar).toBeHidden();
+  } finally {
+    await seeded.remove();
+  }
+});
+
 /* An observation on the testing database whose video really resolves, found rather than
    pinned. Fails, never skips, when there is none. */
 async function playableObservation(request) {
