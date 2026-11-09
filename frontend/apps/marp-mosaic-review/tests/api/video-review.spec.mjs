@@ -48,6 +48,14 @@ test('#337 the video page flags an observation and takes the flag back, and the 
       const panel = page.locator('#obsPanel');
       await expect(panel).toBeVisible();
 
+      // The menu's choices are readable: their text is not the colour they are drawn on.
+      const contrast = await panel.locator('select[data-review="flag"] option').nth(1).evaluate((option) => {
+        const style = getComputedStyle(option);
+        return { color: style.color, background: style.backgroundColor };
+      });
+      expect(contrast.color).not.toBe(contrast.background);
+      expect(contrast.background).not.toBe('rgba(0, 0, 0, 0)');
+
       // Flag it as a false detection, from where it is being watched.
       const flagged = page.waitForResponse((r) => r.url().endsWith('/mosaic/observations/review'));
       await panel.locator('select[data-review="flag"]').selectOption('False detection');

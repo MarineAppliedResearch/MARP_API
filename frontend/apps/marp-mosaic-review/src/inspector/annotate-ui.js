@@ -248,6 +248,8 @@ function reviewControls(row, review, on) {
   const decision = row.review_decision || null;
   const controls = element('div', 'panel-review');
   controls.dataset.review = decision || 'unreviewed';
+  // Saving: drawn dimmed with a busy cursor until the decision lands.
+  controls.setAttribute('aria-busy', review.busy ? 'true' : 'false');
 
   const button = (label, name, title, handler, enabled) => {
     const control = element('button', null, label);

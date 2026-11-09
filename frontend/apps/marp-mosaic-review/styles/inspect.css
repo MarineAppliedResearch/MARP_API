@@ -383,6 +383,41 @@ body {
   cursor: default;
 }
 
+/* The menu's list is drawn by the browser on its own white, and the options inherited the
+   panel's white text: unreadable (Isaac, 2026-11-09). They say their own colours, the same
+   whether the menu is flagged or not. */
+.panel-review select option {
+  color: var(--white, #f7fafc);
+  background: var(--navy-900, #03101f);
+}
+
+.panel-review select option:disabled {
+  color: var(--muted, #8a97a6);
+}
+
+/* A control that looks like one before it answers (Isaac, 2026-11-09: "it doesn't feel like
+   a button until it responds"): lit on hover, pressed while held. */
+.panel-review button:not(:disabled):hover,
+.panel-review select:not(:disabled):hover {
+  border-color: var(--cyan-300, #64f6f2) !important;
+  background-color: rgba(100, 246, 242, .12);
+}
+
+.panel-review button:not(:disabled):active {
+  transform: translateY(1px);
+  background-color: rgba(100, 246, 242, .28);
+}
+
+/* Saving: the decision is on its way, and nothing more can be asked until it lands. */
+.panel-review[aria-busy="true"] {
+  opacity: .6;
+  cursor: progress;
+}
+
+.panel-review[aria-busy="true"] * {
+  cursor: progress !important;
+}
+
 .panel-review[data-review="reviewed"] [data-review="reviewed"] {
   color: #0d1a02 !important;
   background: #a7ec35;
