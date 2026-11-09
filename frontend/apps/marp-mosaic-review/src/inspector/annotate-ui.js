@@ -232,22 +232,21 @@ export function openSpeciesPopup({ popup, at, title, sessions = [], sessionId, l
  * same way, so a reviewer who opened the video to decide does not have to go back to the
  * grid and find the tile again to say what they decided.
  *
- * **In the title line, and adding no height.** Every line this panel grows covers more of the
- * picture it is about, and on a phone the panel already lies over half of it: a review row
- * made the box-drawing checks fail there because there was nowhere left to draw. So the
- * controls are compact -- a tick, a flag menu, and take-back once there is something to take
- * back -- and each says its whole meaning in its tooltip and accessible name. The decided one
- * is coloured, which is the status.
+ * **One compact row of its own.** In the title line it took the species name's room (Isaac,
+ * 2026-11-09: the name showed as "Sh..."), and as a row of full-size buttons it covered the
+ * picture on a phone. So: a tick, and a flag menu that names its reason once flagged, both
+ * small, and take-back once there is something to take back. The decided one is coloured
+ * as its box is.
  *
  * @param {Object} row - The observation, carrying `review_decision` and `flag_reason`.
  * @param {Object} [review] - `{ canReview, busy }`.
  * @param {Object} on - `{ review(kind, reason), takeBack() }`.
- * @returns {HTMLElement|null} The controls, or null without permission.
+ * @returns {HTMLElement|null} The row, or null without permission.
  */
 function reviewControls(row, review, on) {
   if (!review || !review.canReview) return null;
   const decision = row.review_decision || null;
-  const controls = element('span', 'panel-review');
+  const controls = element('div', 'panel-review');
   controls.dataset.review = decision || 'unreviewed';
 
   const button = (label, name, title, handler, enabled) => {
@@ -260,8 +259,8 @@ function reviewControls(row, review, on) {
     control.addEventListener('click', handler);
     controls.append(control);
   };
-  button('✓', 'reviewed', decision === 'reviewed' ? 'Reviewed' : 'Mark reviewed',
-    () => on.review('accept', null), decision !== 'reviewed');
+  button(decision === 'reviewed' ? '✓ Reviewed' : '✓ Mark reviewed', 'reviewed',
+    decision === 'reviewed' ? 'Reviewed' : 'Mark reviewed', () => on.review('accept', null), decision !== 'reviewed');
 
   const flag = document.createElement('select');
   flag.dataset.review = 'flag';
@@ -269,7 +268,7 @@ function reviewControls(row, review, on) {
   const flagged = decision === 'flagged' ? `Flagged: ${row.flag_reason || 'no reason'}` : 'Flag, with a reason';
   flag.title = flagged;
   flag.setAttribute('aria-label', flagged);
-  flag.append(new Option('⚑', '', true, true));
+  flag.append(new Option(decision === 'flagged' ? `⚑ ${row.flag_reason || 'Flagged'}` : '⚑ Flag…', '', true, true));
   flag.options[0].disabled = true;
   for (const reason of MODES.scientific.reasons) {
     const option = new Option(reason, reason);
@@ -305,8 +304,6 @@ export function renderPanel(panel, model, on) {
   const swatch = element('span', 'swatch');
   swatch.style.background = colour;
   head.append(swatch, element('strong', 'panel-name', row.comname || 'Unknown'));
-  const reviewing = reviewControls(row, review, on);
-  if (reviewing) head.append(reviewing);
   const closer = element('button', 'annotate-close', '×');
   closer.type = 'button';
   closer.setAttribute('aria-label', 'Close');
@@ -360,9 +357,12 @@ export function renderPanel(panel, model, on) {
   action(picture === 'working' ? 'Cutting the picture from this frame…'
     : picture === 'done' ? 'Mosaic picture updated ✓'
       : 'Use this frame for the Mosaic picture', 'picture', on.picture, picture !== 'working');
-  action('Merge another observation into this one…', 'merge', on.merge, canWrite);
+  // One line on a phone, which pays for the review row above it (#337).
+  action('Merge another into this one…', 'merge', on.merge, canWrite);
   if (canDelete) action('Delete observation…', 'remove', on.remove);
 
-  panel.replaceChildren(head, facts, element('div', 'panel-label', 'Keyframes'), list, actions);
+  const reviewing = reviewControls(row, review, on);
+  panel.replaceChildren(head, facts, ...(reviewing ? [reviewing] : []),
+    element('div', 'panel-label', 'Keyframes'), list, actions);
   panel.hidden = false;
 }

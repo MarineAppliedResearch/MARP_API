@@ -351,32 +351,32 @@ body {
   cursor: default;
 }
 
-/* The review (#337), in the title line: a tick, a flag menu, take-back. The decided control
-   is coloured, which is the whole of the status, so the panel grows no taller. */
-.annotate-head strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* The review (#337): one compact row under the facts -- a tick, a flag menu naming its
+   reason, take-back. The decided control takes the colour its box is drawn in. */
 .panel-review {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  margin: 0 0 6px;
 }
 
 .panel-review button,
 .panel-review select {
-  min-width: 26px;
-  height: 24px;
-  padding: 0 5px !important;
+  height: 22px;
+  padding: 0 6px !important;
   border: 1px solid var(--border) !important;
   border-radius: 4px;
   font: inherit;
+  font-size: 12px;
   color: var(--white);
   background: none;
   cursor: pointer;
+}
+
+.panel-review select {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .panel-review button:disabled {
@@ -384,13 +384,13 @@ body {
 }
 
 .panel-review[data-review="reviewed"] [data-review="reviewed"] {
-  color: #02181a;
-  background: var(--cyan-300, #6fe3ea);
+  color: #0d1a02 !important;
+  background: #a7ec35;
 }
 
 .panel-review[data-review="flagged"] select {
   color: #241a02;
-  background: var(--amber-300, #f6c453);
+  background: #f6c453;
 }
 
 /* Which species names the popup is searching, and the way to widen it (2026-10-14). */

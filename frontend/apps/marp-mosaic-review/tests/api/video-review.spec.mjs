@@ -34,7 +34,7 @@ async function putBack(request, id, before) {
 test('#337 the video page flags an observation and takes the flag back, and the Mosaic hears both',
   async ({ page, context, request }) => {
     test.setTimeout(240_000);
-    const id = await editableObservation(request);
+    const id = await editableObservation(request, { withPicture: true });
     const before = await reviewOf(request, id);
 
     // The Mosaic, open beside it, as the reviewer has it.
@@ -54,6 +54,12 @@ test('#337 the video page flags an observation and takes the flag back, and the 
       expect((await flagged).ok()).toBe(true);
       await expect(panel.locator('.panel-review')).toHaveAttribute('data-review', 'flagged');
       await expect(panel.locator('select[data-review="flag"]')).toHaveAttribute('title', 'Flagged: False detection');
+      // The box itself turns the flag's amber, so what is done shows while the video plays.
+      await expect.poll(async () => (await boxOf(page, id)).colour).toBe('#f6c453');
+      // The menu names the reason, not only a flag.
+      await expect(panel.locator('select[data-review="flag"] option:checked')).toHaveText('⚑ False detection');
+      // The species name has its line to itself.
+      await expect(panel.locator('.panel-name')).toBeVisible();
       expect(await reviewOf(request, id)).toMatchObject({ decision: 'flagged', reason: 'False detection' });
       await expect(mosaic.locator('#logList')).toContainText(`reviewedInVideo`);
       await expect(mosaic.locator('#logList')).toContainText(`id:${id},decision:flagged`);
@@ -63,9 +69,19 @@ test('#337 the video page flags an observation and takes the flag back, and the 
       await panel.locator('[data-review="take-back"]').click();
       expect((await taken).ok()).toBe(true);
       await expect(panel.locator('.panel-review')).toHaveAttribute('data-review', 'unreviewed');
-      await expect(panel.locator('button[data-review="reviewed"]')).toHaveAttribute('title', 'Mark reviewed');
+      await expect(panel.locator('button[data-review="reviewed"]')).toHaveText('✓ Mark reviewed');
+      await expect.poll(async () => (await boxOf(page, id)).colour).not.toBe('#f6c453');
       expect((await reviewOf(request, id)).decision).toBeNull();
       await expect(mosaic.locator('#logList')).toContainText(`id:${id},decision:null`);
+
+      // Marked reviewed, the box turns the reviewed green.
+      const accepted = page.waitForResponse((r) => r.url().endsWith('/mosaic/observations/review'));
+      await panel.locator('button[data-review="reviewed"]').click();
+      expect((await accepted).ok()).toBe(true);
+      await expect(panel.locator('button[data-review="reviewed"]')).toHaveText('✓ Reviewed');
+      await expect.poll(async () => (await boxOf(page, id)).colour).toBe('#a7ec35');
+      expect((await reviewOf(request, id)).decision).toBe('reviewed');
+      await expect(mosaic.locator('#logList')).toContainText(`id:${id},decision:reviewed`);
     } finally {
       await putBack(request, id, before);
     }

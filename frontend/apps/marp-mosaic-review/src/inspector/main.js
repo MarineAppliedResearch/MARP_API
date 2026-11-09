@@ -19,7 +19,7 @@
  */
 import { MarpApi } from '../api/index.js';
 import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
-import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, VIDEO_WINDOW } from '../model/video-review.js';
+import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW } from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
 import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '../model/box-edit.js';
@@ -174,8 +174,9 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
 
   for (const entry of entries) {
     const keyframe = keyframeShown(entry.box.keyframes, t, rate);
+    const reviewed = showing.rows.get(entry.box.observation_id);
     drawBox(context, entry, {
-      colour: speciesColour(entry.box.comname),
+      colour: reviewColour(reviewed && reviewed.review_decision) || speciesColour(entry.box.comname),
       type: keyframe ? keyframe.type : 'interpolated',
       selected: entry.key === editor.selectedKey,
       pressed: editor.pressFor(entry.key),
@@ -643,6 +644,7 @@ async function recordReview(row, { kind, reason = null, takeBack = false }) {
     row.flag_reason = decision === 'flagged' ? reason : null;
     status(takeBack ? 'Decision taken back.'
       : decision === 'reviewed' ? 'Marked reviewed.' : `Flagged: ${reason}.`);
+    redraw();
     // The Mosaic shows it on the tile without a reload.
     if (typeof BroadcastChannel !== 'undefined') {
       new BroadcastChannel(VIDEO_WINDOW).postMessage({ type: 'reviewed', observationId: id, decision, reason: row.flag_reason });
@@ -784,6 +786,8 @@ window.MARP_VIDEO = {
     const o = $('boxes').getBoundingClientRect();
     return drawnNow.rects.map(({ key, box, rect }) => ({
       key, observation_id: box.observation_id, comname: box.comname,
+      // The colour it is drawn in, which says its review (#337).
+      colour: reviewColour((showing.rows.get(box.observation_id) || {}).review_decision) || speciesColour(box.comname),
       rect: { left: rect.left + o.left, top: rect.top + o.top, width: rect.width, height: rect.height }
     }));
   },
