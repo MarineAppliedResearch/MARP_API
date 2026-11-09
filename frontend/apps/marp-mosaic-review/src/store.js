@@ -117,6 +117,8 @@ export const state = {
    * (a defect in this client). None of them discards a mark.
    */
   failure: null,
+  /* `{ id, address }` when the browser refused the video window for that observation (#341). */
+  videoBlocked: null,
   page: 1,
   pageSize: 45,
   pageCount: 1,
@@ -2154,6 +2156,19 @@ export const actions = {
   },
 
   /** Dismiss whatever the last failure said. The reviewer has read it. */
+  /** The browser refused the video window (#341); the address opens it another way. */
+  videoBlocked(id, address) {
+    state.videoBlocked = { id, address };
+    fire('videoBlocked', { id });
+    notify();
+  },
+
+  dismissVideoBlocked() {
+    if (!state.videoBlocked) return;
+    state.videoBlocked = null;
+    notify();
+  },
+
   dismissFailure() {
     if (!state.failure) return;
     fire('dismissFailure', { kind: state.failure.kind });

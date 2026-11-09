@@ -351,18 +351,46 @@ body {
   cursor: default;
 }
 
-/* The review (#337): what has been decided, then the decisions. */
+/* The review (#337), in the title line: a tick, a flag menu, take-back. The decided control
+   is coloured, which is the whole of the status, so the panel grows no taller. */
+.annotate-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .panel-review {
-  margin: 4px 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 
-.panel-review-state {
-  margin-bottom: 6px;
-  font-weight: 600;
+.panel-review button,
+.panel-review select {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 5px !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px;
+  font: inherit;
+  color: var(--white);
+  background: none;
+  cursor: pointer;
 }
 
-.panel-review[data-review="flagged"] .panel-review-state {
-  color: var(--amber-300, #f6c453);
+.panel-review button:disabled {
+  cursor: default;
+}
+
+.panel-review[data-review="reviewed"] [data-review="reviewed"] {
+  color: #02181a;
+  background: var(--cyan-300, #6fe3ea);
+}
+
+.panel-review[data-review="flagged"] select {
+  color: #241a02;
+  background: var(--amber-300, #f6c453);
 }
 
 /* Which species names the popup is searching, and the way to widen it (2026-10-14). */

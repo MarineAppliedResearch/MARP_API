@@ -9,8 +9,13 @@
  * `BroadcastChannel` and brought forward.
  */
 
+import { state, actions } from '../store.js';
+import { queryFilters } from '../model/filters.js';
+import { $ } from './dom.js';
+
 /* The window's name and the channel's, one for both so they cannot drift. */
-export const VIDEO_WINDOW = 'marp-mosaic-video';
+import { VIDEO_WINDOW } from '../model/video-review.js';
+export { VIDEO_WINDOW };
 
 /* The page, beside the Mosaic's own. */
 const PAGE = 'inspect.html';
@@ -69,6 +74,43 @@ export function openVideoWindow(observationId, filters) {
  *
  * @param {Function} handler - `({observationId, decision, reason})`.
  */
+/**
+ * Open the video for one observation with the Mosaic's current query, and **say so when the
+ * browser refuses** (#341). `window.open` returns nothing when a pop-up is blocked, and this
+ * used to be ignored, so the click did nothing at all.
+ *
+ * @param {number} id - The observation.
+ */
+export function showInVideoWindow(id) {
+  const filters = queryFilters(state.mode, state.filters);
+  if (openVideoWindow(id, filters)) {
+    if (state.videoBlocked) actions.dismissVideoBlocked();
+    actions.openVideo(id);
+    return;
+  }
+  const url = new URL(PAGE, window.location.href);
+  url.hash = encodeURIComponent(JSON.stringify({ type: 'show', observationId: id, filters }));
+  actions.videoBlocked(id, url.toString());
+}
+
+/** The bar that says the video window was refused, and opens it as a link instead. */
+export function renderVideoBlocked() {
+  const host = $('#videoBlocked');
+  if (!host) return;
+  const blocked = state.videoBlocked;
+  host.hidden = !blocked;
+  if (!blocked) {
+    host.innerHTML = '';
+    return;
+  }
+  /* A link the reviewer clicks is opened where a script's window was refused, and naming
+     the same window means the next observation is sent to it like any other. */
+  host.innerHTML = `<span>Your browser blocked the video window.</span>
+    <a href="${blocked.address}" target="${VIDEO_WINDOW}" data-video-link>Open the video</a>
+    <span class="muted">or allow pop-ups for this site.</span>
+    <button type="button" data-act="dismiss-video-blocked" aria-label="Dismiss">×</button>`;
+}
+
 export function onVideoWindowReview(handler) {
   const open = videoChannel();
   if (!open) return;

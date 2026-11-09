@@ -18,9 +18,8 @@
  * the password: it goes from this form to Jellyfin and nowhere else.
  */
 import { MarpApi } from '../api/index.js';
-import { VIDEO_WINDOW } from '../ui/video-window.js';
 import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
-import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour } from '../model/video-review.js';
+import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, VIDEO_WINDOW } from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
 import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '../model/box-edit.js';

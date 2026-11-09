@@ -232,39 +232,55 @@ export function openSpeciesPopup({ popup, at, title, sessions = [], sessionId, l
  * same way, so a reviewer who opened the video to decide does not have to go back to the
  * grid and find the tile again to say what they decided.
  *
+ * **In the title line, and adding no height.** Every line this panel grows covers more of the
+ * picture it is about, and on a phone the panel already lies over half of it: a review row
+ * made the box-drawing checks fail there because there was nowhere left to draw. So the
+ * controls are compact -- a tick, a flag menu, and take-back once there is something to take
+ * back -- and each says its whole meaning in its tooltip and accessible name. The decided one
+ * is coloured, which is the status.
+ *
  * @param {Object} row - The observation, carrying `review_decision` and `flag_reason`.
  * @param {Object} [review] - `{ canReview, busy }`.
  * @param {Object} on - `{ review(kind, reason), takeBack() }`.
- * @returns {Array<HTMLElement>} The label and the section, or nothing without permission.
+ * @returns {HTMLElement|null} The controls, or null without permission.
  */
-function reviewSection(row, review, on) {
-  if (!review || !review.canReview) return [];
+function reviewControls(row, review, on) {
+  if (!review || !review.canReview) return null;
   const decision = row.review_decision || null;
-  const section = element('div', 'panel-review');
-  section.dataset.review = decision || 'unreviewed';
-  section.append(element('div', 'panel-review-state',
-    decision === 'reviewed' ? 'Reviewed'
-      : decision === 'flagged' ? `Flagged · ${row.flag_reason || 'no reason'}`
-        : 'Not reviewed yet'));
+  const controls = element('span', 'panel-review');
+  controls.dataset.review = decision || 'unreviewed';
 
-  const buttons = element('div', 'panel-actions');
-  const add = (label, name, handler, enabled) => {
-    const button = element('button', null, label);
-    button.type = 'button';
-    button.dataset.review = name;
-    button.disabled = review.busy || !enabled;
-    button.addEventListener('click', handler);
-    buttons.append(button);
+  const button = (label, name, title, handler, enabled) => {
+    const control = element('button', null, label);
+    control.type = 'button';
+    control.dataset.review = name;
+    control.title = title;
+    control.setAttribute('aria-label', title);
+    control.disabled = review.busy || !enabled;
+    control.addEventListener('click', handler);
+    controls.append(control);
   };
-  add('Mark reviewed', 'reviewed', () => on.review('accept', null), decision !== 'reviewed');
-  for (const reason of MODES.scientific.reasons) {
-    const current = decision === 'flagged' && row.flag_reason === reason;
-    add(`Flag: ${reason}`, `flag:${reason}`, () => on.review('except', reason), !current);
-  }
-  if (decision) add('Take back the decision', 'take-back', on.takeBack, true);
-  section.append(buttons);
+  button('✓', 'reviewed', decision === 'reviewed' ? 'Reviewed' : 'Mark reviewed',
+    () => on.review('accept', null), decision !== 'reviewed');
 
-  return [element('div', 'panel-label', 'Review'), section];
+  const flag = document.createElement('select');
+  flag.dataset.review = 'flag';
+  flag.disabled = review.busy;
+  const flagged = decision === 'flagged' ? `Flagged: ${row.flag_reason || 'no reason'}` : 'Flag, with a reason';
+  flag.title = flagged;
+  flag.setAttribute('aria-label', flagged);
+  flag.append(new Option('⚑', '', true, true));
+  flag.options[0].disabled = true;
+  for (const reason of MODES.scientific.reasons) {
+    const option = new Option(reason, reason);
+    option.disabled = decision === 'flagged' && row.flag_reason === reason;
+    flag.append(option);
+  }
+  flag.addEventListener('change', () => { if (flag.value) on.review('except', flag.value); });
+  controls.append(flag);
+
+  if (decision) button('↺', 'take-back', 'Take back the decision', on.takeBack, true);
+  return controls;
 }
 
 /**
@@ -289,6 +305,8 @@ export function renderPanel(panel, model, on) {
   const swatch = element('span', 'swatch');
   swatch.style.background = colour;
   head.append(swatch, element('strong', 'panel-name', row.comname || 'Unknown'));
+  const reviewing = reviewControls(row, review, on);
+  if (reviewing) head.append(reviewing);
   const closer = element('button', 'annotate-close', '×');
   closer.type = 'button';
   closer.setAttribute('aria-label', 'Close');
@@ -345,7 +363,6 @@ export function renderPanel(panel, model, on) {
   action('Merge another observation into this one…', 'merge', on.merge, canWrite);
   if (canDelete) action('Delete observation…', 'remove', on.remove);
 
-  panel.replaceChildren(head, facts, ...reviewSection(row, review, on),
-    element('div', 'panel-label', 'Keyframes'), list, actions);
+  panel.replaceChildren(head, facts, element('div', 'panel-label', 'Keyframes'), list, actions);
   panel.hidden = false;
 }

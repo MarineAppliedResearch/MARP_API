@@ -14,7 +14,7 @@ import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
 import { renderFrameViewer, wireFrameViewer } from './frame-viewer.js';
-import { followQueryInVideoWindow, openVideoWindow, onVideoWindowReview } from './video-window.js';
+import { followQueryInVideoWindow, showInVideoWindow, onVideoWindowReview, renderVideoBlocked } from './video-window.js';
 import { queryFilters } from '../model/filters.js';
 import { MARK_ACCEPT, MARK_EXCEPT } from '../model/modes.js';
 import { normalizeRect, idsInRect } from '../model/drag-selection.js';
@@ -264,9 +264,7 @@ function wireGrid() {
     const video = e.target.closest('[data-video]');
     if (video) {
       e.stopPropagation();
-      const id = Number(video.dataset.video);
-      openVideoWindow(id, queryFilters(state.mode, state.filters));
-      actions.openVideo(id);
+      showInVideoWindow(Number(video.dataset.video));
       return;
     }
 
@@ -457,6 +455,10 @@ export function mount() {
   wireLayout();
   // A review made on the video page reaches its tile here, without a reload (#337).
   onVideoWindowReview((change) => actions.reviewedInVideo(change));
+  // The refused-window bar (#341): its link opens the video, and both close the bar.
+  $('#videoBlocked').addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="dismiss-video-blocked"],[data-video-link]')) actions.dismissVideoBlocked();
+  });
 
   /* Re-measure after every render: a single measurement is unreliable because the
      field settles after layout, and setPageSize no-ops when nothing changed, so this
@@ -477,6 +479,7 @@ export function mount() {
     // boxes (#181 R9). Sent only when it has changed.
     followQueryInVideoWindow(queryFilters(state.mode, state.filters));
     renderConfirm();
+    renderVideoBlocked();
     renderFrameViewer();
     renderRail();
     requestAnimationFrame(computeLayout);

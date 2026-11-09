@@ -50,9 +50,10 @@ test('#337 the video page flags an observation and takes the flag back, and the 
 
       // Flag it as a false detection, from where it is being watched.
       const flagged = page.waitForResponse((r) => r.url().endsWith('/mosaic/observations/review'));
-      await panel.locator('[data-review="flag:False detection"]').click();
+      await panel.locator('select[data-review="flag"]').selectOption('False detection');
       expect((await flagged).ok()).toBe(true);
-      await expect(panel.locator('.panel-review-state')).toHaveText('Flagged · False detection');
+      await expect(panel.locator('.panel-review')).toHaveAttribute('data-review', 'flagged');
+      await expect(panel.locator('select[data-review="flag"]')).toHaveAttribute('title', 'Flagged: False detection');
       expect(await reviewOf(request, id)).toMatchObject({ decision: 'flagged', reason: 'False detection' });
       await expect(mosaic.locator('#logList')).toContainText(`reviewedInVideo`);
       await expect(mosaic.locator('#logList')).toContainText(`id:${id},decision:flagged`);
@@ -61,7 +62,8 @@ test('#337 the video page flags an observation and takes the flag back, and the 
       const taken = page.waitForResponse((r) => r.url().endsWith('/mosaic/observations/review'));
       await panel.locator('[data-review="take-back"]').click();
       expect((await taken).ok()).toBe(true);
-      await expect(panel.locator('.panel-review-state')).toHaveText('Not reviewed yet');
+      await expect(panel.locator('.panel-review')).toHaveAttribute('data-review', 'unreviewed');
+      await expect(panel.locator('button[data-review="reviewed"]')).toHaveAttribute('title', 'Mark reviewed');
       expect((await reviewOf(request, id)).decision).toBeNull();
       await expect(mosaic.locator('#logList')).toContainText(`id:${id},decision:null`);
     } finally {

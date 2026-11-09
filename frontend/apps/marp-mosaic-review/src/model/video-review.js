@@ -8,6 +8,12 @@
  * a phone. A 20-second window of it is about 700 keyframes and 100 KB.
  */
 
+/**
+ * The video window's name and its channel's, one for both so they cannot drift. Here rather
+ * than in `ui/video-window.js` so the video page can name it without loading the Mosaic.
+ */
+export const VIDEO_WINDOW = 'marp-mosaic-video';
+
 /** Seconds per keyframe window. */
 export const WINDOW_SECONDS = 20;
 
