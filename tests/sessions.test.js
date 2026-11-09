@@ -90,6 +90,46 @@ describe('Session lifecycle', () => {
   });
 
   /**
+   * A new session has no timecode rate, which the GUI reads as 25 -- what
+   * every session before VIDEO_PROCESSING_GUI#221 was recorded with.
+   */
+  it('starts with no timecode rate', async () => {
+    const res = await global.api.get(`/api/v2/session/${sessionId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.timecode_rate).toBeNull();
+  });
+
+  /**
+   * The GUI saves the rate it was synced with and reads it back when the
+   * session reopens. DEPR2's video is 25 fps with 29.97 drop-frame timecode.
+   */
+  it('keeps the timecode rate it is given', async () => {
+    const put = await global.api
+      .put('/api/v2/session')
+      .send({ session: { session_id: sessionId, timecode_rate: '29.97DF' } });
+    expect(put.status).toBe(200);
+
+    const res = await global.api.get(`/api/v2/session/${sessionId}`);
+    expect(res.body.timecode_rate).toBe('29.97DF');
+  });
+
+  /**
+   * Anything but the two rates the GUI knows how to read is not stored:
+   * a rate nobody can interpret would make the session's frames ambiguous.
+   * The update route swallows the validation error, so the proof is the
+   * value left behind.
+   */
+  it('does not store a timecode rate it does not know', async () => {
+    await global.api
+      .put('/api/v2/session')
+      .send({ session: { session_id: sessionId, timecode_rate: '30' } });
+
+    const res = await global.api.get(`/api/v2/session/${sessionId}`);
+    expect(res.body.timecode_rate).toBe('29.97DF');
+  });
+
+  /**
    * DELETE /api/session/:id should remove the session, leaving no trace
    * in the dev database.
    */
