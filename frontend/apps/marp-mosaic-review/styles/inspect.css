@@ -351,6 +351,20 @@ body {
   cursor: default;
 }
 
+/* The review (#337): what has been decided, then the decisions. */
+.panel-review {
+  margin: 4px 0 10px;
+}
+
+.panel-review-state {
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.panel-review[data-review="flagged"] .panel-review-state {
+  color: var(--amber-300, #f6c453);
+}
+
 /* Which species names the popup is searching, and the way to widen it (2026-10-14). */
 .annotate-scope {
   display: flex;

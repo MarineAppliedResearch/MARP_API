@@ -19400,6 +19400,21 @@
                             "type": "integer",
                             "description": "The row version a delete must name."
                           },
+                          "review_decision": {
+                            "type": "string",
+                            "nullable": true,
+                            "enum": [
+                              "reviewed",
+                              "flagged",
+                              null
+                            ],
+                            "description": "The current scientific review decision; null when nobody has decided (#337)."
+                          },
+                          "flag_reason": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Why it was flagged, when it was."
+                          },
                           "count": {
                             "type": "integer",
                             "nullable": true

@@ -10,7 +10,7 @@ import {
   existingState, existingNote, reviewerInitialsFor, pendingTakeBack, borrowedTags,
   acceptedValue, markKind, MARK_ACCEPT
 } from '../model/modes.js';
-import { currentSpeciesName } from '../model/row.js';
+import { currentSpeciesName, initialsOfUsername } from '../model/row.js';
 import { isDestroyed } from '../model/page.js';
 import { MarpBackend } from '../backend.js';
 import { ICON } from './dom.js';
@@ -42,15 +42,6 @@ const noteIndicator = (note) => note
 const escapeText = (value) => String(value || '').replace(/[&<>"']/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[character]));
-
-const initialsOfUsername = (username) => {
-  const parts = String(username || '').split(/[\s._-]+/u).filter(Boolean);
-  if (!parts.length) return null;
-  const firstPart = Array.from(parts[0]);
-  return (parts.length > 1
-    ? (firstPart[0] || '') + (Array.from(parts[parts.length - 1])[0] || '')
-    : firstPart.slice(0, 2).join('')).toUpperCase();
-};
 
 const attribution = (initials) => initials
   ? `<span class="reviewer-attribution" title="Decision by ${escapeText(initials)}">${escapeText(initials)}</span>`

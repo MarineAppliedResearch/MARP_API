@@ -14,7 +14,7 @@ import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
 import { renderFrameViewer, wireFrameViewer } from './frame-viewer.js';
-import { followQueryInVideoWindow, openVideoWindow } from './video-window.js';
+import { followQueryInVideoWindow, openVideoWindow, onVideoWindowReview } from './video-window.js';
 import { queryFilters } from '../model/filters.js';
 import { MARK_ACCEPT, MARK_EXCEPT } from '../model/modes.js';
 import { normalizeRect, idsInRect } from '../model/drag-selection.js';
@@ -455,6 +455,8 @@ export function mount() {
   wireRail();
   wireDismissal();
   wireLayout();
+  // A review made on the video page reaches its tile here, without a reload (#337).
+  onVideoWindowReview((change) => actions.reviewedInVideo(change));
 
   /* Re-measure after every render: a single measurement is unreliable because the
      field settles after layout, and setPageSize no-ops when nothing changed, so this

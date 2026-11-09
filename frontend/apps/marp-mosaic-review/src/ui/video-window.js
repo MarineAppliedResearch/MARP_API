@@ -63,6 +63,21 @@ export function openVideoWindow(observationId, filters) {
  * Tell an open video page the Mosaic's query has changed, so its boxes follow it (R9). Only
  * once a page has been opened this session, and only when the query is not the one it has.
  */
+/**
+ * Call `handler` with each scientific review the video page records (#337), so the tile
+ * that observation belongs to can show it without a reload.
+ *
+ * @param {Function} handler - `({observationId, decision, reason})`.
+ */
+export function onVideoWindowReview(handler) {
+  const open = videoChannel();
+  if (!open) return;
+  open.addEventListener('message', (event) => {
+    const message = event.data || {};
+    if (message.type === 'reviewed' && Number.isInteger(message.observationId)) handler(message);
+  });
+}
+
 export function followQueryInVideoWindow(filters) {
   if (toldQuery === null) return;
   const text = JSON.stringify(filters || {});
