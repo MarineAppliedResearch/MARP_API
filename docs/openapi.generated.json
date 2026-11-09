@@ -4174,6 +4174,11 @@
             "example": 0,
             "description": "Higher is claimed first. Defaults to 0."
           },
+          "submission_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The submission this request is part of (#336). A dive is submitted as one request per video; sending one id with all of them makes them one run, which is what the Mosaic run filter offers. Omitted, the request is a submission of its own."
+          },
           "max_attempts": {
             "type": "integer",
             "minimum": 1,
@@ -4633,9 +4638,9 @@
               "type": "string"
             },
             "example": [
-              "job-21974"
+              "3f2a6c1e-9b1d-4c7a-8e2f-0a1b2c3d4e5f"
             ],
-            "description": "One inference run each (#336): an ML Dashboard submission's `gpu_jobs.batch_id`, or `job-<id>` for a job submitted on its own. Scientific data is read per run, so the same model run twice on a video is never counted together. Observations no run made, such as hand annotation, match no run."
+            "description": "One inference run each (#336): a submission's `gpu_jobs.submission_id` -- every video of one dive submitted together, for one model -- or `job-<id>` for a job with none. Scientific data is read per run, so the same model run twice on a video is never counted together. Observations no run made, such as hand annotation, match no run."
           },
           "confidence": {
             "type": "object",
@@ -5571,7 +5576,7 @@
         "properties": {
           "facets": {
             "type": "object",
-            "description": "Keyed by dimension name: project, dive, line, sessionType, session, species, model, run. A run is labelled with its name, model and when it was submitted, newest first, because run names repeat.",
+            "description": "Keyed by dimension name: project, dive, line, sessionType, session, species, model, run. A run is labelled with its name, model, when it was submitted and how many videos it covers, newest first, because run names repeat.",
             "additionalProperties": {
               "type": "array",
               "items": {

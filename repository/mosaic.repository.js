@@ -571,20 +571,20 @@ function predicates(filters, bind, { status = true } = {}) {
     set('model', 'o.ml_model_id', 'int[]');
 
     // #336: one inference run. Scientific data is read per run for each dive (Isaac,
-    // 2026-11-09), so the same model run twice on a video is never counted together. A
-    // run is one ML Dashboard submission -- `gpu_jobs.batch_id` -- and a job submitted on
-    // its own, with no batch, is a run of one, named `job-<id>`. Written as a subquery so
-    // no query that uses these predicates has to join `gpu_jobs` to be able to.
+    // 2026-11-09), so the same model run twice on a video is never counted together. **A
+    // run is one submission**: every video of a dive submitted together, for one model --
+    // `gpu_jobs.submission_id`. A job from before that existed and somehow left out of the
+    // backfill falls back to its batch, then to itself as `job-<id>`. A subquery, so no
+    // query that uses these predicates has to join `gpu_jobs` to be able to.
     const runs = setValue(filters.run, 'run');
     if (runs) {
         if (runs.some((value) => typeof value !== 'string' || !RUN_ID.test(value))) {
             throw new MosaicRequestError(
-                `filters.run takes run ids -- a batch id, or job-<id> for a run of one -- not ${JSON.stringify(runs[0])}`
+                `filters.run takes run ids -- a submission's id, or job-<id> -- not ${JSON.stringify(runs[0])}`
             );
         }
-        const ids = bind.add(runs);
-        where.push(`(o.gpu_job_id IN (SELECT j.id FROM gpu_jobs j WHERE j.batch_id::text = ANY(${ids}::varchar[]))
-        OR ('job-' || o.gpu_job_id) = ANY(${ids}::varchar[]))`);
+        where.push(`o.gpu_job_id IN (SELECT j.id FROM gpu_jobs j
+                     WHERE ${RUN_KEY('j', 'j.id')} = ANY(${bind.add(runs)}::varchar[]))`);
     }
 
     if (isActive(filters.confidence)) {
@@ -921,8 +921,11 @@ SELECT count(*)::int AS n
  * @constant
  * @type {Object}
  */
-/** A run id: a batch's uuid, or `job-<id>` for a job submitted on its own (#336). */
+/** A run id: a submission's uuid, or `job-<id>` for a job with none (#336). */
 const RUN_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|job-[0-9]+)$/;
+
+/** The run a job belongs to, as SQL: its submission, else its batch, else itself (#336). */
+const RUN_KEY = (job, jobId) => `coalesce(${job}.submission_id::text, ${job}.batch_id::text, 'job-' || ${jobId})`;
 
 const FACET_DIMENSIONS = {
     project: { value: 'p.name', label: 'p.name' },
@@ -932,13 +935,14 @@ const FACET_DIMENSIONS = {
     session: { value: 'o.session_id', label: 'o.session_id::text' },
     species: { value: 'o.species_id', label: 'sp.comname', list: 'sp.species_list' },
     model: { value: 'o.ml_model_id', label: 'm.name', joins: '\n  LEFT JOIN ml_models m ON m.id = o.ml_model_id' },
-    // #336. Named by what it was given, its model and when, because names repeat: three
-    // runs submitted together on 2026-10-30 are all "Dive01_20261030". The label is taken
-    // across a run's pieces, so it is one per run, and the newest run comes first.
+    // #336. Named by what it was given, its model, when, and how many videos it covers,
+    // because names repeat. The label is taken across a run's pieces and videos, so it is
+    // one per run, and the newest run comes first.
     run: {
-        value: "coalesce(gj.batch_id::text, 'job-' || o.gpu_job_id)",
+        value: RUN_KEY('gj', 'o.gpu_job_id'),
         label: "coalesce(min(gj.name), 'Unnamed run') || ' · ' || coalesce(min(rm.name), 'unknown model')"
-            + " || ' · ' || to_char(min(gj.created_at), 'YYYY-MM-DD HH24:MI')",
+            + " || ' · ' || to_char(min(gj.created_at), 'YYYY-MM-DD HH24:MI')"
+            + " || ' · ' || count(DISTINCT o.video_source) || CASE WHEN count(DISTINCT o.video_source) = 1 THEN ' video' ELSE ' videos' END",
         aggregateLabel: true,
         order: 'min(gj.created_at) DESC',
         joins: '\n  LEFT JOIN gpu_jobs gj ON gj.id = o.gpu_job_id\n  LEFT JOIN ml_models rm ON rm.id = o.ml_model_id',

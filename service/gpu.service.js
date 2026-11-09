@@ -86,6 +86,9 @@ const { systemReading } = require('../db/worker-telemetry');
  */
 const DELETABLE_STATES = ['failed'];
 
+/** A uuid, as a submission id is sent (#336). */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Jellyfin reports durations in 100-nanosecond ticks.
  *
@@ -2524,6 +2527,17 @@ class GpuService {
 
         const ranges = this.splitRange(startFrame, endFrame, pieceFrames);
         const batchId = ranges.length > 1 ? crypto.randomUUID() : null;
+
+        // **One run is one submission** (#336): every video of a dive submitted together.
+        // The dashboard sends one id for all the requests of a click, per dive and model;
+        // a request that sends none is a submission of its own.
+        let submissionId = crypto.randomUUID();
+        if (body.submission_id !== undefined && body.submission_id !== null) {
+            if (typeof body.submission_id !== 'string' || !UUID_PATTERN.test(body.submission_id)) {
+                invalid('submission_id must be a uuid.');
+            }
+            submissionId = body.submission_id.toLowerCase();
+        }
         const createdBy = principal && principal.type === 'user' ? principal.id : null;
 
         /* **Created here, after everything that can refuse.** A session written before a
@@ -2551,6 +2565,7 @@ class GpuService {
         // the person submitted and they submitted one thing.
         const rows = ranges.map((range) => ({
             batch_id: batchId,
+            submission_id: submissionId,
             name,
             kind,
             spec: { ...spec, range },
