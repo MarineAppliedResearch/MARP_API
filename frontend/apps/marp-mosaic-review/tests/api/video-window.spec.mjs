@@ -47,6 +47,33 @@ test('#181 Open video shows the observation in its own window, and reuses that w
     }
   });
 
+test('#338 a tile opens its video without being marked', async ({ page, context }) => {
+  const seeded = await seedPage({ count: 1, thumbnail: 'ready' });
+  try {
+    await page.goto(seeded.address);
+    await expectRealBacking(page);
+    await ready(page);
+    const [id] = seeded.ids;
+    const tile = page.locator(`.tile[data-id="${id}"]`);
+
+    // Undecided, so there is no badge to open a panel from: the video button is the way in.
+    await expect(tile.locator('[data-badge]')).toHaveCount(0);
+
+    const opened = context.waitForEvent('page');
+    await tile.locator('[data-video]').click();
+    const inspector = await opened;
+    await inspector.waitForLoadState();
+    await expect(inspector).toHaveURL(/\/inspect\.html/);
+    await expect(inspector.locator('#inspectTitle')).toContainText(String(id));
+
+    // And the tile is exactly as it was: nothing marked, nothing to commit.
+    await expect(tile).not.toHaveClass(/marked/);
+    await expect(page.locator('.pick')).toHaveCount(0);
+  } finally {
+    await seeded.remove();
+  }
+});
+
 /* An observation on the testing database whose video really resolves, found rather than
    pinned. Fails, never skips, when there is none. */
 async function playableObservation(request) {

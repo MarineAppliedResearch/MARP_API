@@ -352,10 +352,18 @@ export function tile(row) {
     ? `<span class="refusal" data-refused="${id}">${ICON.cross}${refused.reason}</span>`
     : '';
 
+  /* **The video, without a decision first** (#338). Opening the video is how a reviewer
+     decides, so it cannot wait on the badge, which only exists once the tile is marked.
+     Its own target like the badge, so a click on the tile still only marks. Not on a
+     deleted row: there is nothing left to show. */
+  const video = gone
+    ? ''
+    : `<span class="video-chip" data-video="${id}" title="Open the video at this observation">${ICON.play}</span>`;
+
   /* `aria-disabled`, never `disabled`: the tile stays a real button that a real click
      still reaches, so "the click does nothing" is a thing the render tier can observe
      rather than something the browser swallows before the app sees it. */
   return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}"${gone ? ' aria-disabled="true"' : ''}>
       ${body(row)}${badge}${corner(row, id, { marked, changed, existing, outcome })}
-      ${refusal}${borrowed(row)}${confidenceChip(row)}<span class="cap">${name}</span></button>`;
+      ${refusal}${borrowed(row)}${confidenceChip(row)}${video}<span class="cap">${name}</span></button>`;
 }

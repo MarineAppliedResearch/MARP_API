@@ -332,7 +332,7 @@ body.rail-collapsed .fcount { display: grid; }
         background: #101215; outline: 1px solid var(--tile-bd); outline-offset: -1px;
         padding: 0; border: 0; display: block; touch-action: manipulation; user-select: none; }
 .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 28px 3.5px 5px;
+.cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 28px 3.5px 28px;
        background: transparent;
        -webkit-backdrop-filter: none;
        backdrop-filter: none;
@@ -362,6 +362,14 @@ body.rail-collapsed .fcount { display: grid; }
                border: 1px solid rgba(246, 196, 83, .55); color: var(--amber-300);
                font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600;
                max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The video button (#338), the confidence chip's mirror in the other bottom corner, which is
+   why the caption is padded the same on both sides. Always shown: a touch screen has no hover. */
+.video-chip { position: absolute; left: 4px; bottom: 3px; z-index: 4;
+              width: 18px; height: 14px; border-radius: 2px; cursor: pointer;
+              display: flex; align-items: center; justify-content: center;
+              background: rgba(8, 9, 11, .30); color: #f7fafc; }
+.video-chip svg { width: 8px; height: 8px; display: block; }
+.video-chip:hover { background: var(--cyan-300); color: #02181a; }
 .confidence-chip { position: absolute; right: 4px; bottom: 3px; z-index: 4;
                    min-width: 18px; padding: 1.5px 4px; border-radius: 2px;
                    background: rgba(8, 9, 11, .30); color: #f7fafc;
