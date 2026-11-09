@@ -68,8 +68,11 @@ export function idList(ids, label) {
  */
 export function filtersBody(filters = {}) {
   const out = {};
+  /* `run` is a submission's uuid or `job-<id>` (#336), a string like these and not an id
+     list. Left out of this list, the rail kept a chosen run in the address and never sent
+     it, so choosing one changed nothing. */
   const keys = [
-    'project', 'dive', 'line', 'sessionType',
+    'project', 'dive', 'line', 'sessionType', 'run',
     'confidence', 'timeOfDay', 'date', 'reviewStatus', 'trainingDisposition'
   ];
 

@@ -924,6 +924,16 @@ SELECT count(*)::int AS n
 /** A run id: a submission's uuid, or `job-<id>` for a job with none (#336). */
 const RUN_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|job-[0-9]+)$/;
 
+/**
+ * The zone a run's time is told in: this server's own, which is where MARP is used. The
+ * database answers in UTC, so a run submitted at 21:19 read 04:19 the next day (Isaac,
+ * 2026-11-09). Inlined into SQL, so it is held to the characters a zone name has.
+ */
+const RUN_TIME_ZONE = (() => {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    return /^[A-Za-z0-9_+\-/]+$/.test(zone) ? zone : 'UTC';
+})();
+
 /** The run a job belongs to, as SQL: its submission, else its batch, else itself (#336). */
 const RUN_KEY = (job, jobId) => `coalesce(${job}.submission_id::text, ${job}.batch_id::text, 'job-' || ${jobId})`;
 
@@ -941,7 +951,7 @@ const FACET_DIMENSIONS = {
     run: {
         value: RUN_KEY('gj', 'o.gpu_job_id'),
         label: "coalesce(min(gj.name), 'Unnamed run') || ' · ' || coalesce(min(rm.name), 'unknown model')"
-            + " || ' · ' || to_char(min(gj.created_at), 'YYYY-MM-DD HH24:MI')"
+            + ` || ' · ' || to_char(min(gj.created_at) AT TIME ZONE '${RUN_TIME_ZONE}', 'YYYY-MM-DD HH24:MI')`
             + " || ' · ' || count(DISTINCT o.video_source) || CASE WHEN count(DISTINCT o.video_source) = 1 THEN ' video' ELSE ' videos' END",
         aggregateLabel: true,
         order: 'min(gj.created_at) DESC',

@@ -29,6 +29,7 @@ import {
   createObservationBody, countBody, pictureBody
 } from '../../src/api/requests.js';
 import { sortTerms } from '../../src/model/filters.js';
+import { DIMENSIONS, KIND } from '../../src/model/dimensions.js';
 
 /** What the body is once it has been serialised, which is the only version that matters. */
 const onWire = (body) => JSON.parse(JSON.stringify(body));
@@ -107,6 +108,17 @@ test('R5: model and session are keys too, for the same reason', () => {
   assert.deepEqual(wire.model, [91]);
   assert.deepEqual(wire.session, [400, 401]);
   assert.throws(() => filtersBody({ model: ['BatStarNet v3.2'] }), /integers/);
+});
+
+test('#336: every set filter the rail offers reaches the request, the run among them', () => {
+  // The run filter was offered and never sent: filtersBody names its keys, and run was not
+  // one of them, so choosing a run changed nothing. Every set dimension is checked, so the
+  // next one cannot be forgotten the same way.
+  for (const dimension of DIMENSIONS.filter((d) => d.kind === KIND.SET)) {
+    const value = dimension.numeric ? [7] : ['3f2a6c1e-9b1d-4c7a-8e2f-0a1b2c3d4e5f'];
+    const wire = onWire(filtersBody({ [dimension.key]: value }));
+    assert.deepEqual(wire[dimension.key], value, `${dimension.key} was not sent`);
+  }
 });
 
 test('an empty selection is not sent, because absence means not filtering', () => {

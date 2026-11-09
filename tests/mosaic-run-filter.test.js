@@ -123,6 +123,14 @@ describe('the run filter (#336)', () => {
             `^Jest Run ${runId} · Jest Run Model ${runId} · \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2} · ${videos}$`);
         expect(runs[0].label).toMatch(label('1 video'));
         expect(runs[1].label).toMatch(label('2 videos'));
+        // In this server's own time zone, not the database's UTC: a run submitted at 21:19
+        // read 04:19 the next day.
+        const [{ created_at: at }] = await q('SELECT created_at FROM gpu_jobs WHERE id = :id',
+            { id: Number(ids.singleRun.slice(4)) });
+        const local = new Intl.DateTimeFormat('sv-SE', {
+            year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+        }).format(new Date(at));
+        expect(runs[0].label).toContain(` · ${local} · `);
     });
 
     it('answers only the chosen run, a submission of two videos as one', async () => {
