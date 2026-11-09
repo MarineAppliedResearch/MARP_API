@@ -1,0 +1,225 @@
+{
+  "settings": {
+    "arch": "convnext_tiny",
+    "data": "dataset_v2.csv",
+    "crop": "bottom_middle",
+    "overlay_rows_removed": 0.25,
+    "size": 224,
+    "head_epochs": 3,
+    "full_epochs": 6,
+    "frames": {
+      "train": 17033,
+      "val": 4012,
+      "test": 4906
+    }
+  },
+  "frozen_test": {
+    "Rock": {
+      "f1": 0.892,
+      "precision": 0.882,
+      "recall": 0.903,
+      "frames_present": 3129,
+      "always_present_f1": 0.779
+    },
+    "Mud": {
+      "f1": 0.529,
+      "precision": 0.379,
+      "recall": 0.877,
+      "frames_present": 786,
+      "always_present_f1": 0.276
+    },
+    "Sand": {
+      "f1": 0.74,
+      "precision": 0.829,
+      "recall": 0.668,
+      "frames_present": 2073,
+      "always_present_f1": 0.594
+    },
+    "Cobble": {
+      "f1": 0.503,
+      "precision": 0.435,
+      "recall": 0.596,
+      "frames_present": 705,
+      "always_present_f1": 0.251
+    },
+    "Boulder": {
+      "f1": 0.34,
+      "precision": 0.239,
+      "recall": 0.595,
+      "frames_present": 227,
+      "always_present_f1": 0.088
+    },
+    "macro_f1": 0.601,
+    "macro_always_present_f1": 0.398,
+    "all_substrates_right": 0.426
+  },
+  "finetuned_test": {
+    "Rock": {
+      "f1": 0.917,
+      "precision": 0.883,
+      "recall": 0.954,
+      "frames_present": 3129,
+      "always_present_f1": 0.779
+    },
+    "Mud": {
+      "f1": 0.568,
+      "precision": 0.423,
+      "recall": 0.866,
+      "frames_present": 786,
+      "always_present_f1": 0.276
+    },
+    "Sand": {
+      "f1": 0.815,
+      "precision": 0.876,
+      "recall": 0.762,
+      "frames_present": 2073,
+      "always_present_f1": 0.594
+    },
+    "Cobble": {
+      "f1": 0.555,
+      "precision": 0.433,
+      "recall": 0.773,
+      "frames_present": 705,
+      "always_present_f1": 0.251
+    },
+    "Boulder": {
+      "f1": 0.463,
+      "precision": 0.389,
+      "recall": 0.573,
+      "frames_present": 227,
+      "always_present_f1": 0.088
+    },
+    "macro_f1": 0.664,
+    "macro_always_present_f1": 0.398,
+    "all_substrates_right": 0.51
+  },
+  "thresholds": {
+    "Rock": 0.35,
+    "Mud": 0.1,
+    "Sand": 0.7999999999999999,
+    "Cobble": 0.35,
+    "Boulder": 0.44999999999999996
+  },
+  "finetuned_test_by_project": {
+    "CAMPA 2024": {
+      "Rock": {
+        "f1": 0.933,
+        "precision": 0.927,
+        "recall": 0.94,
+        "frames_present": 403,
+        "always_present_f1": 0.729
+      },
+      "Mud": {
+        "f1": 0.634,
+        "precision": 0.518,
+        "recall": 0.819,
+        "frames_present": 287,
+        "always_present_f1": 0.58
+      },
+      "Sand": {
+        "f1": 0.503,
+        "precision": 0.381,
+        "recall": 0.74,
+        "frames_present": 50,
+        "always_present_f1": 0.133
+      },
+      "Cobble": {
+        "f1": 0.517,
+        "precision": 0.469,
+        "recall": 0.577,
+        "frames_present": 52,
+        "always_present_f1": 0.138
+      },
+      "Boulder": {
+        "f1": 0.663,
+        "precision": 0.726,
+        "recall": 0.611,
+        "frames_present": 113,
+        "always_present_f1": 0.277
+      },
+      "macro_f1": 0.65,
+      "macro_always_present_f1": 0.371,
+      "all_substrates_right": 0.489
+    },
+    "CAMPA 2026": {
+      "Rock": {
+        "f1": 0.888,
+        "precision": 0.835,
+        "recall": 0.947,
+        "frames_present": 1760,
+        "always_present_f1": 0.784
+      },
+      "Mud": {
+        "f1": 0.695,
+        "precision": 0.561,
+        "recall": 0.913,
+        "frames_present": 379,
+        "always_present_f1": 0.244
+      },
+      "Sand": {
+        "f1": 0.897,
+        "precision": 0.907,
+        "recall": 0.887,
+        "frames_present": 1431,
+        "always_present_f1": 0.688
+      },
+      "Cobble": {
+        "f1": 0.572,
+        "precision": 0.44,
+        "recall": 0.82,
+        "frames_present": 567,
+        "always_present_f1": 0.344
+      },
+      "Boulder": {
+        "f1": 0.32,
+        "precision": 0.234,
+        "recall": 0.507,
+        "frames_present": 73,
+        "always_present_f1": 0.052
+      },
+      "macro_f1": 0.674,
+      "macro_always_present_f1": 0.422,
+      "all_substrates_right": 0.5
+    },
+    "CAMPA-2025": {
+      "Rock": {
+        "f1": 0.968,
+        "precision": 0.964,
+        "recall": 0.972,
+        "frames_present": 966,
+        "always_present_f1": 0.792
+      },
+      "Mud": {
+        "f1": 0.303,
+        "precision": 0.186,
+        "recall": 0.833,
+        "frames_present": 120,
+        "always_present_f1": 0.151
+      },
+      "Sand": {
+        "f1": 0.61,
+        "precision": 0.893,
+        "recall": 0.463,
+        "frames_present": 592,
+        "always_present_f1": 0.573
+      },
+      "Cobble": {
+        "f1": 0.45,
+        "precision": 0.368,
+        "recall": 0.581,
+        "frames_present": 86,
+        "always_present_f1": 0.11
+      },
+      "Boulder": {
+        "f1": 0.393,
+        "precision": 0.296,
+        "recall": 0.585,
+        "frames_present": 41,
+        "always_present_f1": 0.054
+      },
+      "macro_f1": 0.545,
+      "macro_always_present_f1": 0.336,
+      "all_substrates_right": 0.538
+    }
+  }
+}

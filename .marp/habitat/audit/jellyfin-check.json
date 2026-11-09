@@ -1,0 +1,6770 @@
+[
+  {
+    "source": "1_1.mp4",
+    "project": "MERCI 3",
+    "hours": 2.8558333333333334,
+    "score": 100,
+    "name": "1_1",
+    "error": null
+  },
+  {
+    "source": "2_1.mp4",
+    "project": "MERCI 3",
+    "hours": 3.105277777777778,
+    "score": 85,
+    "name": "6_2.1",
+    "error": null
+  },
+  {
+    "source": "11_1.mp4",
+    "project": "MERCI 3",
+    "hours": 2.308333333333333,
+    "score": 85,
+    "name": "11_10",
+    "error": null
+  },
+  {
+    "source": "5_2.mp4",
+    "project": "MERCI 3",
+    "hours": 0.8602777777777778,
+    "score": 85,
+    "name": "23_15.2",
+    "error": null
+  },
+  {
+    "source": "9_3.mp4",
+    "project": "MERCI 3",
+    "hours": 0.15666666666666668,
+    "score": 85,
+    "name": "20181013_044933_Fwd",
+    "error": null
+  },
+  {
+    "source": "7_1.mp4",
+    "project": "MERCI 3",
+    "hours": 1.0755555555555556,
+    "score": 85,
+    "name": "17_15",
+    "error": null
+  },
+  {
+    "source": "9_2.mp4",
+    "project": "MERCI 3",
+    "hours": 0.11694444444444445,
+    "score": 85,
+    "name": "29_26",
+    "error": null
+  },
+  {
+    "source": "9_1.mp4",
+    "project": "MERCI 3",
+    "hours": 4.881388888888889,
+    "score": 85,
+    "name": "11_9.1",
+    "error": null
+  },
+  {
+    "source": "7_2.mp4",
+    "project": "MERCI 3",
+    "hours": 0.7769444444444444,
+    "score": 100,
+    "name": "7_2",
+    "error": null
+  },
+  {
+    "source": "1_2.mp4",
+    "project": "MERCI 3",
+    "hours": 0.9986111111111111,
+    "score": 85,
+    "name": "20181012_071528_Fwd",
+    "error": null
+  },
+  {
+    "source": "12_1.mp4",
+    "project": "MERCI 3",
+    "hours": 0.39111111111111113,
+    "score": 85,
+    "name": "20181012_100525_Fwd",
+    "error": null
+  },
+  {
+    "source": "1_3.mp4",
+    "project": "MERCI 3",
+    "hours": 0.42027777777777775,
+    "score": 85,
+    "name": "20181016_011311_Fwd",
+    "error": null
+  },
+  {
+    "source": "14_2.mp4",
+    "project": "MERCI 3",
+    "hours": 1.7683333333333333,
+    "score": 85,
+    "name": "20181014_234552_Fwd",
+    "error": null
+  },
+  {
+    "source": "5_1.mp4",
+    "project": "MERCI 3",
+    "hours": 4.381111111111111,
+    "score": 85,
+    "name": "23_15.1",
+    "error": null
+  },
+  {
+    "source": "14_4.mp4",
+    "project": "MERCI 3",
+    "hours": 1.2038888888888888,
+    "score": 85,
+    "name": "20210623_001444_Fwd",
+    "error": null
+  },
+  {
+    "source": "15_2.mp4",
+    "project": "MERCI 3",
+    "hours": 1.3922222222222222,
+    "score": 85,
+    "name": "23_15.2",
+    "error": null
+  },
+  {
+    "source": "16_1.mp4",
+    "project": "MERCI 3",
+    "hours": 3.0347222222222223,
+    "score": 85,
+    "name": "16_14",
+    "error": null
+  },
+  {
+    "source": "16_3.mp4",
+    "project": "MERCI 3",
+    "hours": 1.343611111111111,
+    "score": 85,
+    "name": "24_16.3",
+    "error": null
+  },
+  {
+    "source": "17_1.mp4",
+    "project": "MERCI 3",
+    "hours": 4.203888888888889,
+    "score": 85,
+    "name": "17_15",
+    "error": null
+  },
+  {
+    "source": "17_3.mp4",
+    "project": "MERCI 3",
+    "hours": 0.9816666666666667,
+    "score": 85,
+    "name": "25_17.3",
+    "error": null
+  },
+  {
+    "source": "18_2.mp4",
+    "project": "MERCI 3",
+    "hours": 0.38972222222222225,
+    "score": 85,
+    "name": "20181018_200817_Fwd",
+    "error": null
+  },
+  {
+    "source": "18_4.mp4",
+    "project": "MERCI 3",
+    "hours": 0.4775,
+    "score": 85,
+    "name": "20190718_184442_Fwd",
+    "error": null
+  },
+  {
+    "source": "18_6.mp4",
+    "project": "MERCI 3",
+    "hours": 0.4452777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "19_2.mp4",
+    "project": "MERCI 3",
+    "hours": 1.511111111111111,
+    "score": 85,
+    "name": "20181019_234652_Fwd",
+    "error": null
+  },
+  {
+    "source": "6_1.mp4",
+    "project": "MERCI 3",
+    "hours": 1.4513888888888888,
+    "score": 100,
+    "name": "6_1",
+    "error": null
+  },
+  {
+    "source": "5_3.mp4",
+    "project": "MERCI 3",
+    "hours": 2.6416666666666666,
+    "score": 85,
+    "name": "23_15.3",
+    "error": null
+  },
+  {
+    "source": "14_1.mp4",
+    "project": "MERCI 3",
+    "hours": 1.9169444444444443,
+    "score": 85,
+    "name": "14_12",
+    "error": null
+  },
+  {
+    "source": "20_1.mp4",
+    "project": "MERCI 3",
+    "hours": 3.0816666666666666,
+    "score": 85,
+    "name": "20_13",
+    "error": null
+  },
+  {
+    "source": "15_3.mp4",
+    "project": "MERCI 3",
+    "hours": 1.323611111111111,
+    "score": 85,
+    "name": "23_15.3",
+    "error": null
+  },
+  {
+    "source": "14_3.mp4",
+    "project": "MERCI 3",
+    "hours": 1.1108333333333333,
+    "score": 85,
+    "name": "20190720_143355_Fwd",
+    "error": null
+  },
+  {
+    "source": "16_4.mp4",
+    "project": "MERCI 3",
+    "hours": 0.5533333333333333,
+    "score": 85,
+    "name": "24_16.4",
+    "error": null
+  },
+  {
+    "source": "18_3.mp4",
+    "project": "MERCI 3",
+    "hours": 0.3616666666666667,
+    "score": 85,
+    "name": "20200909_183344_Fwd",
+    "error": null
+  },
+  {
+    "source": "17_2.mp4",
+    "project": "MERCI 3",
+    "hours": 1.0455555555555556,
+    "score": 85,
+    "name": "25_17.2",
+    "error": null
+  },
+  {
+    "source": "18_5.mp4",
+    "project": "MERCI 3",
+    "hours": 0.43027777777777776,
+    "score": 85,
+    "name": "20181012_061855_Fwd",
+    "error": null
+  },
+  {
+    "source": "15_1.mp4",
+    "project": "MERCI 3",
+    "hours": 3.2177777777777776,
+    "score": 85,
+    "name": "23_15.1",
+    "error": null
+  },
+  {
+    "source": "16_2.mp4",
+    "project": "MERCI 3",
+    "hours": 0.4033333333333333,
+    "score": 85,
+    "name": "24_16.2",
+    "error": null
+  },
+  {
+    "source": "18_1.mp4",
+    "project": "MERCI 3",
+    "hours": 2.5705555555555555,
+    "score": 85,
+    "name": "18_16",
+    "error": null
+  },
+  {
+    "source": "19_1.mp4",
+    "project": "MERCI 3",
+    "hours": 2.137777777777778,
+    "score": 85,
+    "name": "19_17",
+    "error": null
+  },
+  {
+    "source": "2_2.mp4",
+    "project": "MERCI 3",
+    "hours": 4.054722222222222,
+    "score": 85,
+    "name": "6_2.2",
+    "error": null
+  },
+  {
+    "source": "16_5.mp4",
+    "project": "MERCI 3",
+    "hours": 0.5488888888888889,
+    "score": 85,
+    "name": "20200907_165535_Fwd",
+    "error": null
+  },
+  {
+    "source": "4_1.mp4",
+    "project": "SALT 5",
+    "hours": 6.149166666666667,
+    "score": 85,
+    "name": "14_12",
+    "error": null
+  },
+  {
+    "source": "10_1.mp4",
+    "project": "SALT 5",
+    "hours": 2.7225,
+    "score": 85,
+    "name": "10_10",
+    "error": null
+  },
+  {
+    "source": "10_2.mp4",
+    "project": "SALT 5",
+    "hours": 0.6147222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "8_1.mp4",
+    "project": "SALT 5",
+    "hours": 3.2552777777777777,
+    "score": 85,
+    "name": "18_16",
+    "error": null
+  },
+  {
+    "source": "13_1.mp4",
+    "project": "SALT 5",
+    "hours": 3.3033333333333332,
+    "score": 85,
+    "name": "14_13.1",
+    "error": null
+  },
+  {
+    "source": "23_1.mp4",
+    "project": "SALT 5",
+    "hours": 4.259722222222222,
+    "score": 85,
+    "name": "23_15",
+    "error": null
+  },
+  {
+    "source": "22_1.mp4",
+    "project": "SALT 5",
+    "hours": 3.948611111111111,
+    "score": 85,
+    "name": "22_14",
+    "error": null
+  },
+  {
+    "source": "20181013_052933 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.971111111111111,
+    "score": 100,
+    "name": "20181013_052933_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181018_224027 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.2047222222222222,
+    "score": 100,
+    "name": "20181018_224027_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_033920 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.3566666666666667,
+    "score": 100,
+    "name": "20181012_033920_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_045026 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8591666666666666,
+    "score": 100,
+    "name": "20181012_045026_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_061855 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5866666666666667,
+    "score": 100,
+    "name": "20181012_061855_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_051712 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6830555555555555,
+    "score": 100,
+    "name": "20181012_051712_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_072919 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5611111111111111,
+    "score": 100,
+    "name": "20181012_072919_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_065943 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7455555555555555,
+    "score": 100,
+    "name": "20181012_065943_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_083117 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8394444444444444,
+    "score": 100,
+    "name": "20181012_083117_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_075513 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7444444444444445,
+    "score": 100,
+    "name": "20181012_075513_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_090050 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7913888888888889,
+    "score": 100,
+    "name": "20181012_090050_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_094948 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6066666666666667,
+    "score": 100,
+    "name": "20181012_094948_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181012_092618 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8694444444444445,
+    "score": 100,
+    "name": "20181012_092618_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181013_024212 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5402777777777777,
+    "score": 100,
+    "name": "20181013_024212_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181013_055629 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2788888888888889,
+    "score": 100,
+    "name": "20181013_055629_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181013_021723 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2802777777777778,
+    "score": 100,
+    "name": "20181013_021723_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181013_033240 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.4802777777777778,
+    "score": 100,
+    "name": "20181013_033240_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181013_063449 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6588888888888889,
+    "score": 100,
+    "name": "20181013_063449_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181013_081202 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5869444444444445,
+    "score": 100,
+    "name": "20181013_081202_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181013_070946 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.76,
+    "score": 100,
+    "name": "20181013_070946_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181013_085003 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8302777777777778,
+    "score": 100,
+    "name": "20181013_085003_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181015_061905 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.3677777777777778,
+    "score": 100,
+    "name": "20181015_061905_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181013_092941 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8383333333333334,
+    "score": 100,
+    "name": "20181013_092941_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181015_234602 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.28694444444444445,
+    "score": 100,
+    "name": "20181015_234602_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181016_005531 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.835,
+    "score": 100,
+    "name": "20181016_005531_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181015_065821 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6380555555555556,
+    "score": 100,
+    "name": "20181015_065821_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181016_020129 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.2338888888888888,
+    "score": 100,
+    "name": "20181016_020129_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181016_001249 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5586111111111111,
+    "score": 100,
+    "name": "20181016_001249_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181016_012356 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.4563888888888889,
+    "score": 100,
+    "name": "20181016_012356_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181016_060353 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6541666666666667,
+    "score": 100,
+    "name": "20181016_060353_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_043949 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.4661111111111111,
+    "score": 100,
+    "name": "20181017_043949_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_024525 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.25222222222222224,
+    "score": 100,
+    "name": "20181017_024525_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_070412 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.2938888888888889,
+    "score": 100,
+    "name": "20181017_070412_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_074523 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7505555555555555,
+    "score": 100,
+    "name": "20181017_074523_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_081111 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7825,
+    "score": 100,
+    "name": "20181017_081111_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181018_043339 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7038888888888889,
+    "score": 100,
+    "name": "20181018_043339_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181018_035445 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7666666666666667,
+    "score": 100,
+    "name": "20181018_035445_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181018_070700 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7766666666666666,
+    "score": 100,
+    "name": "20181018_070700_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181018_232432 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.3997222222222222,
+    "score": 100,
+    "name": "20181018_232432_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181018_050424 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8566666666666667,
+    "score": 100,
+    "name": "20181018_050424_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181019_002255 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.25194444444444447,
+    "score": 100,
+    "name": "20181019_002255_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181018_220304 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.4825,
+    "score": 100,
+    "name": "20181018_220304_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181018_235605 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2586111111111111,
+    "score": 100,
+    "name": "20181018_235605_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181019_052140 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2561111111111111,
+    "score": 100,
+    "name": "20181019_052140_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181020_014701 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5847222222222223,
+    "score": 100,
+    "name": "20181020_014701_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181020_053132 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8166666666666667,
+    "score": 100,
+    "name": "20181020_053132_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181019_043041 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.25194444444444447,
+    "score": 100,
+    "name": "20181019_043041_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181020_011419 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5327777777777778,
+    "score": 100,
+    "name": "20181020_011419_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181020_064345 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5722222222222222,
+    "score": 100,
+    "name": "20181020_064345_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181020_081128 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5905555555555555,
+    "score": 100,
+    "name": "20181020_081128_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181021_032137 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.4444444444444444,
+    "score": 100,
+    "name": "20181021_032137_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181020_023552 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6505555555555556,
+    "score": 100,
+    "name": "20181020_023552_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181021_041129 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.25333333333333335,
+    "score": 100,
+    "name": "20181021_041129_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181020_055754 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5847222222222223,
+    "score": 100,
+    "name": "20181020_055754_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181020_071156 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.68,
+    "score": 100,
+    "name": "20181020_071156_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_021633 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5305555555555556,
+    "score": 100,
+    "name": "20181022_021633_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_031434 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5683333333333334,
+    "score": 100,
+    "name": "20181022_031434_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181020_085109 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8597222222222223,
+    "score": 100,
+    "name": "20181020_085109_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_042823 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.32666666666666666,
+    "score": 100,
+    "name": "20181022_042823_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_081233 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7638888888888888,
+    "score": 100,
+    "name": "20181022_081233_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181021_034556 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5402777777777777,
+    "score": 100,
+    "name": "20181021_034556_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181023_030203 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7683333333333333,
+    "score": 100,
+    "name": "20181023_030203_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_090651 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7558333333333334,
+    "score": 100,
+    "name": "20181022_090651_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181023_040355 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.9091666666666667,
+    "score": 100,
+    "name": "20181023_040355_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_015515 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5997222222222223,
+    "score": 100,
+    "name": "20181022_015515_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_025042 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.40305555555555556,
+    "score": 100,
+    "name": "20181022_025042_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_035717 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.3377777777777778,
+    "score": 100,
+    "name": "20181022_035717_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_050031 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5694444444444444,
+    "score": 100,
+    "name": "20181022_050031_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_083645 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6783333333333333,
+    "score": 100,
+    "name": "20181022_083645_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181023_050834 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7402777777777778,
+    "score": 100,
+    "name": "20181023_050834_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181026_090657 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.4836111111111111,
+    "score": 100,
+    "name": "20181026_090657_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181027_050341 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2561111111111111,
+    "score": 100,
+    "name": "20181027_050341_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181027_030123 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2688888888888889,
+    "score": 100,
+    "name": "20181027_030123_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181027_053830 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2613888888888889,
+    "score": 100,
+    "name": "20181027_053830_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_034312 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7572222222222222,
+    "score": 100,
+    "name": "20181017_034312_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_050556 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7972222222222223,
+    "score": 100,
+    "name": "20181017_050556_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_063242 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7352777777777778,
+    "score": 100,
+    "name": "20181017_063242_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181027_065104 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2733333333333333,
+    "score": 100,
+    "name": "20181027_065104_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181028_021203 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.26055555555555554,
+    "score": 100,
+    "name": "20181028_021203_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181028_032020 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.25277777777777777,
+    "score": 100,
+    "name": "20181028_032020_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181028_042259 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.935,
+    "score": 100,
+    "name": "20181028_042259_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181030_033036 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7433333333333333,
+    "score": 100,
+    "name": "20181030_033036_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181028_092751 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.25972222222222224,
+    "score": 100,
+    "name": "20181028_092751_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181030_060537 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6113888888888889,
+    "score": 100,
+    "name": "20181030_060537_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181030_072913 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7425,
+    "score": 100,
+    "name": "20181030_072913_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181031_023710 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5775,
+    "score": 100,
+    "name": "20181031_023710_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181101_034724 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.2461111111111112,
+    "score": 100,
+    "name": "20181101_034724_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181101_064231 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5255555555555556,
+    "score": 100,
+    "name": "20181101_064231_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_092834 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5952777777777778,
+    "score": 100,
+    "name": "20181022_092834_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181101_075013 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5194444444444445,
+    "score": 100,
+    "name": "20181101_075013_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181102_022827 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.465,
+    "score": 100,
+    "name": "20181102_022827_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181102_033115 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7658333333333334,
+    "score": 100,
+    "name": "20181102_033115_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181102_043521 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7644444444444445,
+    "score": 100,
+    "name": "20181102_043521_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181102_064802 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8933333333333333,
+    "score": 100,
+    "name": "20181102_064802_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181023_033424 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8461111111111111,
+    "score": 100,
+    "name": "20181023_033424_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181103_061735 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6875,
+    "score": 100,
+    "name": "20181103_061735_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181023_043431 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7561111111111111,
+    "score": 100,
+    "name": "20181023_043431_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181023_054714 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.46944444444444444,
+    "score": 100,
+    "name": "20181023_054714_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181103_085218 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6094444444444445,
+    "score": 100,
+    "name": "20181103_085218_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181103_094625 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5694444444444444,
+    "score": 100,
+    "name": "20181103_094625_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181104_044458 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.24916666666666668,
+    "score": 100,
+    "name": "20181104_044458_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181026_103122 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.48277777777777775,
+    "score": 100,
+    "name": "20181026_103122_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181104_085451 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6680555555555555,
+    "score": 100,
+    "name": "20181104_085451_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181105_013740 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.76,
+    "score": 100,
+    "name": "20181105_013740_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181102_053529 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.0947222222222222,
+    "score": 100,
+    "name": "20181102_053529_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181105_031926 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7688888888888888,
+    "score": 100,
+    "name": "20181105_031926_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181104_034702 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2602777777777778,
+    "score": 100,
+    "name": "20181104_034702_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181027_043217 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.25194444444444447,
+    "score": 100,
+    "name": "20181027_043217_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181105_052236 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.58,
+    "score": 100,
+    "name": "20181105_052236_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181107_092053 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8644444444444445,
+    "score": 100,
+    "name": "20181107_092053_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181027_074312 Fwd.mp4",
+    "project": "PS2410",
+    "hours": 0.2922222222222222,
+    "score": 100,
+    "name": "20181027_074312_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181106_090513 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.515,
+    "score": 100,
+    "name": "20181106_090513_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181027_060641 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.35138888888888886,
+    "score": 100,
+    "name": "20181027_060641_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181107_080847 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6213888888888889,
+    "score": 100,
+    "name": "20181107_080847_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181028_024827 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.25305555555555553,
+    "score": 100,
+    "name": "20181028_024827_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181028_035341 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2594444444444444,
+    "score": 100,
+    "name": "20181028_035341_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181028_072248 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.26361111111111113,
+    "score": 100,
+    "name": "20181028_072248_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181030_023342 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7994444444444444,
+    "score": 100,
+    "name": "20181030_023342_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181107_074001 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5511111111111111,
+    "score": 100,
+    "name": "20181107_074001_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181030_045858 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.43,
+    "score": 100,
+    "name": "20181030_045858_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181028_065830 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8980555555555556,
+    "score": 100,
+    "name": "20181028_065830_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181105_035949 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7333333333333333,
+    "score": 100,
+    "name": "20181105_035949_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181030_064500 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.038888888888889,
+    "score": 100,
+    "name": "20181030_064500_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181104_093218 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8297222222222222,
+    "score": 100,
+    "name": "20181104_093218_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181030_090610 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6472222222222223,
+    "score": 100,
+    "name": "20181030_090610_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181031_031146 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.2763888888888889,
+    "score": 100,
+    "name": "20181031_031146_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_031146 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.42333333333333334,
+    "score": 100,
+    "name": "20181017_031146_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181101_030308 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.7030555555555555,
+    "score": 100,
+    "name": "20181101_030308_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_041359 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.25805555555555554,
+    "score": 100,
+    "name": "20181017_041359_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181017_055358 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6144444444444445,
+    "score": 100,
+    "name": "20181017_055358_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181103_081934 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6419444444444444,
+    "score": 100,
+    "name": "20181103_081934_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181104_041349 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0,
+    "score": 100,
+    "name": "20181104_041349_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181101_071324 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.30833333333333335,
+    "score": 100,
+    "name": "20181101_071324_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181022_073920 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.0080555555555555,
+    "score": 100,
+    "name": "20181022_073920_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181101_084226 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.4225,
+    "score": 100,
+    "name": "20181101_084226_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181102_015750 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5011111111111111,
+    "score": 100,
+    "name": "20181102_015750_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181101_044353 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6575,
+    "score": 100,
+    "name": "20181101_044353_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181102_061140 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 1.5622222222222222,
+    "score": 100,
+    "name": "20181102_061140_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181102_035845 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5872222222222222,
+    "score": 100,
+    "name": "20181102_035845_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181102_030015 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5461111111111111,
+    "score": 100,
+    "name": "20181102_030015_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181103_053055 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.9888888888888889,
+    "score": 100,
+    "name": "20181103_053055_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181103_091839 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.44583333333333336,
+    "score": 100,
+    "name": "20181103_091839_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181104_082649 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5369444444444444,
+    "score": 100,
+    "name": "20181104_082649_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181105_021950 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.27805555555555556,
+    "score": 100,
+    "name": "20181105_021950_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181106_083211 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.6088888888888889,
+    "score": 100,
+    "name": "20181106_083211_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_171520 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.5463888888888889,
+    "score": 100,
+    "name": "20240730_171520_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_190910 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 2.6075,
+    "score": 100,
+    "name": "20240730_190910_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181107_084225 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.8927777777777778,
+    "score": 100,
+    "name": "20181107_084225_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181101_085804 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.5169444444444444,
+    "score": 100,
+    "name": "20181101_085804_Fwd",
+    "error": null
+  },
+  {
+    "source": "20181102_050204 Fwd.mp4",
+    "project": "NOAA Express 2018",
+    "hours": 0.9386111111111111,
+    "score": 100,
+    "name": "20181102_050204_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240731_183051 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 2.145,
+    "score": 100,
+    "name": "20240731_183051_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_154643 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.8213888888888888,
+    "score": 100,
+    "name": "20240727_154643_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_181958 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6886111111111111,
+    "score": 100,
+    "name": "20240727_181958_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_163021 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.9263888888888889,
+    "score": 100,
+    "name": "20240727_163021_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_171404 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.485,
+    "score": 100,
+    "name": "20240727_171404_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_174909 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6697222222222222,
+    "score": 100,
+    "name": "20240727_174909_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_201102 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.9772222222222222,
+    "score": 100,
+    "name": "20240727_201102_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_001125 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6405555555555555,
+    "score": 100,
+    "name": "20240728_001125_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_210312 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6425,
+    "score": 100,
+    "name": "20240727_210312_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_193401 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.5802777777777778,
+    "score": 100,
+    "name": "20240727_193401_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_185645 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.7166666666666667,
+    "score": 100,
+    "name": "20240727_185645_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_171446 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6233333333333333,
+    "score": 100,
+    "name": "20240728_171446_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_005840 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6272222222222222,
+    "score": 100,
+    "name": "20240728_005840_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_221754 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6705555555555556,
+    "score": 100,
+    "name": "20240728_221754_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_233057 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.725,
+    "score": 100,
+    "name": "20240727_233057_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240727_224846 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.7213888888888889,
+    "score": 100,
+    "name": "20240727_224846_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_174539 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.48083333333333333,
+    "score": 100,
+    "name": "20240728_174539_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_150326 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.14416666666666667,
+    "score": 100,
+    "name": "20240729_150326_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_172728 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.7008333333333333,
+    "score": 100,
+    "name": "20240729_172728_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_163927 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.5686111111111111,
+    "score": 100,
+    "name": "20240728_163927_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_155504 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.8177777777777778,
+    "score": 100,
+    "name": "20240728_155504_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_211159 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3308333333333333,
+    "score": 100,
+    "name": "20240729_211159_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_212354 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.44416666666666665,
+    "score": 100,
+    "name": "20240729_212354_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_225143 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.48305555555555557,
+    "score": 100,
+    "name": "20240728_225143_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_182149 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.1738888888888889,
+    "score": 100,
+    "name": "20240728_182149_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_175415 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.42055555555555557,
+    "score": 100,
+    "name": "20240730_175415_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_232029 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4297222222222222,
+    "score": 100,
+    "name": "20240728_232029_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_183052 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.8055555555555556,
+    "score": 100,
+    "name": "20240730_183052_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_221310 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3522222222222222,
+    "score": 100,
+    "name": "20240730_221310_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_154215 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.8136111111111111,
+    "score": 100,
+    "name": "20240729_154215_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240731_150901 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.9669444444444445,
+    "score": 100,
+    "name": "20240731_150901_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240731_170130 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.33694444444444444,
+    "score": 100,
+    "name": "20240731_170130_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_180248 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.5302777777777777,
+    "score": 100,
+    "name": "20240729_180248_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240731_203651 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.49972222222222223,
+    "score": 100,
+    "name": "20240731_203651_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_161909 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.45611111111111113,
+    "score": 100,
+    "name": "20240801_161909_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_182332 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3711111111111111,
+    "score": 100,
+    "name": "20240801_182332_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_155748 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.455,
+    "score": 100,
+    "name": "20240802_155748_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_164240 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.36666666666666664,
+    "score": 100,
+    "name": "20240730_164240_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_194411 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4577777777777778,
+    "score": 100,
+    "name": "20240730_194411_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_224155 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.5583333333333333,
+    "score": 100,
+    "name": "20240730_224155_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_181641 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.5138888888888888,
+    "score": 100,
+    "name": "20240802_181641_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240731_190500 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.5125,
+    "score": 100,
+    "name": "20240731_190500_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_204829 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.5302777777777777,
+    "score": 100,
+    "name": "20240802_204829_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240731_154439 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.5155555555555555,
+    "score": 100,
+    "name": "20240731_154439_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_003453 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3972222222222222,
+    "score": 100,
+    "name": "20240803_003453_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_211052 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.7330555555555556,
+    "score": 100,
+    "name": "20240728_211052_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_161242 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.45666666666666667,
+    "score": 100,
+    "name": "20240803_161242_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_181104 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4747222222222222,
+    "score": 100,
+    "name": "20240803_181104_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240728_235115 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6066666666666667,
+    "score": 100,
+    "name": "20240728_235115_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_210526 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4325,
+    "score": 100,
+    "name": "20240803_210526_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_142909 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.20527777777777778,
+    "score": 100,
+    "name": "20240801_142909_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_145131 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4625,
+    "score": 100,
+    "name": "20240801_145131_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_162117 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.7827777777777778,
+    "score": 100,
+    "name": "20240729_162117_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_165104 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.7511111111111111,
+    "score": 100,
+    "name": "20240729_165104_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_193528 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.8730555555555556,
+    "score": 100,
+    "name": "20240729_193528_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_163833 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4988888888888889,
+    "score": 100,
+    "name": "20240801_163833_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_185504 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.35777777777777775,
+    "score": 100,
+    "name": "20240729_185504_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_185533 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4305555555555556,
+    "score": 100,
+    "name": "20240801_185533_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_214406 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6063888888888889,
+    "score": 100,
+    "name": "20240730_214406_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_162609 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3663888888888889,
+    "score": 100,
+    "name": "20240802_162609_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_234335 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.1775,
+    "score": 100,
+    "name": "20240730_234335_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240731_193528 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6641666666666667,
+    "score": 100,
+    "name": "20240731_193528_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_151157 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.5997222222222223,
+    "score": 100,
+    "name": "20240801_151157_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_174637 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.2625,
+    "score": 100,
+    "name": "20240801_174637_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_191624 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.25972222222222224,
+    "score": 100,
+    "name": "20240801_191624_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_192946 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4483333333333333,
+    "score": 100,
+    "name": "20240802_192946_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_164546 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4027777777777778,
+    "score": 100,
+    "name": "20240802_164546_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_195638 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6580555555555555,
+    "score": 100,
+    "name": "20240802_195638_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_234008 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.48777777777777775,
+    "score": 100,
+    "name": "20240802_234008_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_151929 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.43805555555555553,
+    "score": 100,
+    "name": "20240803_151929_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_172929 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4772222222222222,
+    "score": 100,
+    "name": "20240803_172929_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_231208 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.39416666666666667,
+    "score": 100,
+    "name": "20240802_231208_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_185232 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4288888888888889,
+    "score": 100,
+    "name": "20240803_185232_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_145446 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4025,
+    "score": 100,
+    "name": "20240803_145446_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_163707 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.4625,
+    "score": 100,
+    "name": "20240803_163707_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_183219 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3963888888888889,
+    "score": 100,
+    "name": "20240803_183219_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_211951 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.32972222222222225,
+    "score": 100,
+    "name": "20240730_211951_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240731_161152 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3636111111111111,
+    "score": 100,
+    "name": "20240731_161152_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240731_163803 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3383333333333333,
+    "score": 100,
+    "name": "20240731_163803_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_180420 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3475,
+    "score": 100,
+    "name": "20240801_180420_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240730_231708 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3466666666666667,
+    "score": 100,
+    "name": "20240730_231708_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_202137 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6525,
+    "score": 100,
+    "name": "20240802_202137_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_154255 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6747222222222222,
+    "score": 100,
+    "name": "20240803_154255_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_174920 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6166666666666667,
+    "score": 100,
+    "name": "20240803_174920_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240731_200534 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.41555555555555557,
+    "score": 100,
+    "name": "20240731_200534_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_153018 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6738888888888889,
+    "score": 100,
+    "name": "20240802_153018_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_000751 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3861111111111111,
+    "score": 100,
+    "name": "20240803_000751_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240802_173901 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6694444444444444,
+    "score": 100,
+    "name": "20240802_173901_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240801_154043 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.37555555555555553,
+    "score": 100,
+    "name": "20240801_154043_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240803_204027 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.3488888888888889,
+    "score": 100,
+    "name": "20240803_204027_Fwd",
+    "error": null
+  },
+  {
+    "source": "20240729_190611 Fwd.mp4",
+    "project": "CAMPA 2024",
+    "hours": 0.6208333333333333,
+    "score": 100,
+    "name": "20240729_190611_Fwd",
+    "error": null
+  },
+  {
+    "source": "26_1.mp4",
+    "project": "MERCI 4",
+    "hours": 1.7183333333333333,
+    "score": 85,
+    "name": "26_18",
+    "error": null
+  },
+  {
+    "source": "25_1.mp4",
+    "project": "MERCI 4",
+    "hours": 0.6894444444444444,
+    "score": 85,
+    "name": "25_17",
+    "error": null
+  },
+  {
+    "source": "26_2.mp4",
+    "project": "MERCI 4",
+    "hours": 1.2963888888888888,
+    "score": 85,
+    "name": "26_20",
+    "error": null
+  },
+  {
+    "source": "29_1.mp4",
+    "project": "MERCI 4",
+    "hours": 0.40194444444444444,
+    "score": 85,
+    "name": "20200629_141739_Fwd",
+    "error": null
+  },
+  {
+    "source": "21_1.mp4",
+    "project": "MERCI 4",
+    "hours": 4.611666666666666,
+    "score": 85,
+    "name": "21_18",
+    "error": null
+  },
+  {
+    "source": "3_1.mp4",
+    "project": "MERCI 4",
+    "hours": 4.6755555555555555,
+    "score": 85,
+    "name": "14_13.1",
+    "error": null
+  },
+  {
+    "source": "29_3 pt 1.mp4",
+    "project": "MERCI 4",
+    "hours": 0.21833333333333332,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "29_3 pt 2.mp4",
+    "project": "MERCI 4",
+    "hours": 0.7361111111111112,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "29_2.mp4",
+    "project": "MERCI 4",
+    "hours": 0.47194444444444444,
+    "score": 85,
+    "name": "29_26",
+    "error": null
+  },
+  {
+    "source": "2_3.mp4",
+    "project": "SALT 6",
+    "hours": 0.5380555555555555,
+    "score": 85,
+    "name": "20181015_222331_Fwd",
+    "error": null
+  },
+  {
+    "source": "2_5.mp4",
+    "project": "SALT 6",
+    "hours": 0.34805555555555556,
+    "score": 85,
+    "name": "20181017_024525_Fwd",
+    "error": null
+  },
+  {
+    "source": "2_4.mp4",
+    "project": "SALT 6",
+    "hours": 0.9763888888888889,
+    "score": 85,
+    "name": "20181018_224027_Fwd",
+    "error": null
+  },
+  {
+    "source": "4_3.mp4",
+    "project": "SALT 6",
+    "hours": 2.8619444444444446,
+    "score": 85,
+    "name": "20181018_043339_Fwd",
+    "error": null
+  },
+  {
+    "source": "4_2.mp4",
+    "project": "SALT 6",
+    "hours": 2.002222222222222,
+    "score": 85,
+    "name": "20181014_234552_Fwd",
+    "error": null
+  },
+  {
+    "source": "5_4.mp4",
+    "project": "SALT 6",
+    "hours": 1.8747222222222222,
+    "score": 85,
+    "name": "23_15.4",
+    "error": null
+  },
+  {
+    "source": "6_2.mp4",
+    "project": "SALT 6",
+    "hours": 1.2494444444444444,
+    "score": 100,
+    "name": "6_2",
+    "error": null
+  },
+  {
+    "source": "6_3.mp4",
+    "project": "SALT 6",
+    "hours": 1.2166666666666666,
+    "score": 100,
+    "name": "6_3",
+    "error": null
+  },
+  {
+    "source": "6_6.mp4",
+    "project": "SALT 6",
+    "hours": 1.7958333333333334,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "6_5.mp4",
+    "project": "SALT 6",
+    "hours": 1.5694444444444444,
+    "score": 85,
+    "name": "20181020_004655_Fwd",
+    "error": null
+  },
+  {
+    "source": "6_9.mp4",
+    "project": "SALT 6",
+    "hours": 1.741111111111111,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "6_9A.mp4",
+    "project": "SALT 6",
+    "hours": 0.27305555555555555,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "6_8.mp4",
+    "project": "SALT 6",
+    "hours": 1.0072222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "6_7.mp4",
+    "project": "SALT 6",
+    "hours": 1.0855555555555556,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "6_4.mp4",
+    "project": "SALT 6",
+    "hours": 0.9861111111111112,
+    "score": 85,
+    "name": "24_16.4",
+    "error": null
+  },
+  {
+    "source": "13_3.mp4",
+    "project": "SALT 6",
+    "hours": 5.05,
+    "score": 85,
+    "name": "20_13.3",
+    "error": null
+  },
+  {
+    "source": "13_2.mp4",
+    "project": "SALT 6",
+    "hours": 2.2030555555555558,
+    "score": 85,
+    "name": "20_13.2",
+    "error": null
+  },
+  {
+    "source": "13_4.mp4",
+    "project": "SALT 6",
+    "hours": 1.105,
+    "score": 85,
+    "name": "20251015_213443_Fwd",
+    "error": null
+  },
+  {
+    "source": "1_150.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.7152777777777778,
+    "score": 85,
+    "name": "20200701_150701_Fwd",
+    "error": null
+  },
+  {
+    "source": "1_100.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.8125,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "1_250.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.9138888888888889,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "2_450.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.7458333333333333,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "2_650.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.7305555555555555,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "2_550.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.7575,
+    "score": 85,
+    "name": "20181031_022550_Fwd",
+    "error": null
+  },
+  {
+    "source": "3_2.mp4",
+    "project": "MBNMS 2025",
+    "hours": 2.843888888888889,
+    "score": 85,
+    "name": "20_13.2",
+    "error": null
+  },
+  {
+    "source": "4_4.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.8033333333333333,
+    "score": 85,
+    "name": "20181012_074454_Fwd",
+    "error": null
+  },
+  {
+    "source": "4_5 Pt 1.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.22305555555555556,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "4_5 Pt 2.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.4097222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20250521_151824 Fwd.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.3472222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20250522_154848 Fwd.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.28805555555555556,
+    "score": 100,
+    "name": "20250522_154848 Fwd",
+    "error": null
+  },
+  {
+    "source": "20250522_181822 Fwd.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.07972222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20250523_163432 Fwd.mp4",
+    "project": "MBNMS 2025",
+    "hours": 0.25972222222222224,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "8_2.mp4",
+    "project": "SALT 7",
+    "hours": 0.5783333333333334,
+    "score": 85,
+    "name": "28_24",
+    "error": null
+  },
+  {
+    "source": "8_4.mp4",
+    "project": "SALT 7",
+    "hours": 0.6705555555555556,
+    "score": 100,
+    "name": "8_4",
+    "error": null
+  },
+  {
+    "source": "11_2.mp4",
+    "project": "SALT 7",
+    "hours": 0.25555555555555554,
+    "score": 85,
+    "name": "20181102_055112_Fwd",
+    "error": null
+  },
+  {
+    "source": "13_5.mp4",
+    "project": "SALT 7",
+    "hours": 0.12861111111111112,
+    "score": 85,
+    "name": "20211111_211355_Fwd",
+    "error": null
+  },
+  {
+    "source": "8_3.mp4",
+    "project": "SALT 7",
+    "hours": 0.5469444444444445,
+    "score": 100,
+    "name": "8_3",
+    "error": null
+  },
+  {
+    "source": "13_7.mp4",
+    "project": "SALT 7",
+    "hours": 0.1725,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "8_5.mp4",
+    "project": "SALT 7",
+    "hours": 0.2752777777777778,
+    "score": 85,
+    "name": "20181012_061855_Fwd",
+    "error": null
+  },
+  {
+    "source": "13_9.mp4",
+    "project": "SALT 7",
+    "hours": 0.18194444444444444,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "13_11.mp4",
+    "project": "SALT 7",
+    "hours": 0.15722222222222224,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "11_3.mp4",
+    "project": "SALT 7",
+    "hours": 0.2602777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "13_6.mp4",
+    "project": "SALT 7",
+    "hours": 0.09277777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "13_8.mp4",
+    "project": "SALT 7",
+    "hours": 0.16583333333333333,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "13_10.mp4",
+    "project": "SALT 7",
+    "hours": 0.13972222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "13_12.mp4",
+    "project": "SALT 7",
+    "hours": 0.12444444444444444,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "19_3.mp4",
+    "project": "SALT 7",
+    "hours": 0.6361111111111111,
+    "score": 85,
+    "name": "20200921_193342_Fwd",
+    "error": null
+  },
+  {
+    "source": "22_3.mp4",
+    "project": "SALT 7",
+    "hours": 2.1733333333333333,
+    "score": 85,
+    "name": "20181015_222331_Fwd",
+    "error": null
+  },
+  {
+    "source": "24_1.mp4",
+    "project": "SALT 7",
+    "hours": 1.8725,
+    "score": 85,
+    "name": "24_16",
+    "error": null
+  },
+  {
+    "source": "24_3.mp4",
+    "project": "SALT 7",
+    "hours": 0.6961111111111111,
+    "score": 85,
+    "name": "20160802-18-24-30_-_00000",
+    "error": null
+  },
+  {
+    "source": "52_2.mp4",
+    "project": "SALT 7",
+    "hours": 1.0130555555555556,
+    "score": 85,
+    "name": "20250522_152927 Fwd",
+    "error": null
+  },
+  {
+    "source": "53_1.mp4",
+    "project": "SALT 7",
+    "hours": 1.45,
+    "score": 85,
+    "name": "20160803-15-53-15_-_00000",
+    "error": null
+  },
+  {
+    "source": "52_1.mp4",
+    "project": "SALT 7",
+    "hours": 1.056111111111111,
+    "score": 85,
+    "name": "20181020_025211_Fwd",
+    "error": null
+  },
+  {
+    "source": "24_2.mp4",
+    "project": "SALT 7",
+    "hours": 1.2180555555555554,
+    "score": 85,
+    "name": "20190724_201221_Fwd",
+    "error": null
+  },
+  {
+    "source": "22_4.mp4",
+    "project": "SALT 7",
+    "hours": 1.4905555555555556,
+    "score": 85,
+    "name": "20181023_042224_Fwd",
+    "error": null
+  },
+  {
+    "source": "22_2.mp4",
+    "project": "SALT 7",
+    "hours": 1.1747222222222222,
+    "score": 85,
+    "name": "20190712_224202_Fwd",
+    "error": null
+  },
+  {
+    "source": "Transit 1.mp4",
+    "project": "SALT 7",
+    "hours": 0.19027777777777777,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "Transit 3.mp4",
+    "project": "SALT 7",
+    "hours": 0.13527777777777777,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "Transit 5.mp4",
+    "project": "SALT 7",
+    "hours": 0.295,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "Transit 7.mp4",
+    "project": "SALT 7",
+    "hours": 0.2461111111111111,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "Transit 2.mp4",
+    "project": "SALT 7",
+    "hours": 0.125,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "Transit 4.mp4",
+    "project": "SALT 7",
+    "hours": 0.3869444444444444,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "Transit 9.mp4",
+    "project": "SALT 7",
+    "hours": 0.20222222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "Transit 11.mp4",
+    "project": "SALT 7",
+    "hours": 0.10527777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "Transit 6.mp4",
+    "project": "SALT 7",
+    "hours": 0.24166666666666667,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "Transit 10.mp4",
+    "project": "SALT 7",
+    "hours": 0.04611111111111111,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "Transit 8.mp4",
+    "project": "SALT 7",
+    "hours": 0.11694444444444445,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "33_2.mp4",
+    "project": "MERCI 5",
+    "hours": 0.6944444444444444,
+    "score": 85,
+    "name": "20251020_233223_Fwd",
+    "error": null
+  },
+  {
+    "source": "35_1.mp4",
+    "project": "MERCI 5",
+    "hours": 0.9202777777777778,
+    "score": 85,
+    "name": "20240728_235115_Fwd",
+    "error": null
+  },
+  {
+    "source": "22_5.mp4",
+    "project": "MERCI 5",
+    "hours": 1.4377777777777778,
+    "score": 85,
+    "name": "20181017_052255_Fwd",
+    "error": null
+  },
+  {
+    "source": "27_1.mp4",
+    "project": "MERCI 5",
+    "hours": 1.3283333333333334,
+    "score": 85,
+    "name": "30_27.1",
+    "error": null
+  },
+  {
+    "source": "22_7.mp4",
+    "project": "MERCI 5",
+    "hours": 0.3225,
+    "score": 85,
+    "name": "20190805_222721_Fwd",
+    "error": null
+  },
+  {
+    "source": "23_2.mp4",
+    "project": "MERCI 5",
+    "hours": 1.1869444444444444,
+    "score": 85,
+    "name": "20181022_023221_Fwd",
+    "error": null
+  },
+  {
+    "source": "23_4.mp4",
+    "project": "MERCI 5",
+    "hours": 1.593888888888889,
+    "score": 85,
+    "name": "20200629_234420_Fwd",
+    "error": null
+  },
+  {
+    "source": "28_2.mp4",
+    "project": "MERCI 5",
+    "hours": 0.5502777777777778,
+    "score": 85,
+    "name": "28_24",
+    "error": null
+  },
+  {
+    "source": "32_1.mp4",
+    "project": "MERCI 5",
+    "hours": 0.4713888888888889,
+    "score": 85,
+    "name": "20181106_083211_Fwd",
+    "error": null
+  },
+  {
+    "source": "35_3.mp4",
+    "project": "MERCI 5",
+    "hours": 0.48583333333333334,
+    "score": 85,
+    "name": "20210703_203533_Fwd",
+    "error": null
+  },
+  {
+    "source": "35_2.mp4",
+    "project": "MERCI 5",
+    "hours": 0.5647222222222222,
+    "score": 85,
+    "name": "20240801_153522_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_213302 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 2.256666666666667,
+    "score": 100,
+    "name": "20251019_213302_Fwd",
+    "error": null
+  },
+  {
+    "source": "22_6.mp4",
+    "project": "MERCI 5",
+    "hours": 0.5544444444444444,
+    "score": 85,
+    "name": "20190717_222600_Fwd",
+    "error": null
+  },
+  {
+    "source": "23_3.mp4",
+    "project": "MERCI 5",
+    "hours": 1.065,
+    "score": 85,
+    "name": "20210703_233317_Fwd",
+    "error": null
+  },
+  {
+    "source": "33_1.mp4",
+    "project": "MERCI 5",
+    "hours": 0.26,
+    "score": 85,
+    "name": "20181102_033115_Fwd",
+    "error": null
+  },
+  {
+    "source": "33_3.mp4",
+    "project": "MERCI 5",
+    "hours": 0.5472222222222223,
+    "score": 85,
+    "name": "20260623_233339_Fwd",
+    "error": null
+  },
+  {
+    "source": "28_1.mp4",
+    "project": "MERCI 5",
+    "hours": 0.48,
+    "score": 85,
+    "name": "20200628_135830_Fwd",
+    "error": null
+  },
+  {
+    "source": "31_1.mp4",
+    "project": "MERCI 5",
+    "hours": 0.35,
+    "score": 85,
+    "name": "20190813_143111_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251007_234639 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 1.466388888888889,
+    "score": 100,
+    "name": "20251007_234639_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251007_164658 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.7986111111111112,
+    "score": 100,
+    "name": "20251007_164658_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251007_180800 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5319444444444444,
+    "score": 100,
+    "name": "20251007_180800_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251007_190807 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5661111111111111,
+    "score": 100,
+    "name": "20251007_190807 Fwd",
+    "error": null
+  },
+  {
+    "source": "20251008_171203 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.8580555555555556,
+    "score": 100,
+    "name": "20251008_171203_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251007_201359 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5547222222222222,
+    "score": 100,
+    "name": "20251007_201359_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251007_211206 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5755555555555556,
+    "score": 100,
+    "name": "20251007_211206_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251008_154117 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.9483333333333334,
+    "score": 100,
+    "name": "20251008_154117_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251008_223757 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5966666666666667,
+    "score": 100,
+    "name": "20251008_223757_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251008_234235 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6358333333333334,
+    "score": 100,
+    "name": "20251008_234235_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251013_200504 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 1.2805555555555554,
+    "score": 100,
+    "name": "20251013_200504_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251013_214946 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.48777777777777775,
+    "score": 100,
+    "name": "20251013_214946_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251013_230010 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5669444444444445,
+    "score": 100,
+    "name": "20251013_230010_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_154704 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.8236111111111111,
+    "score": 100,
+    "name": "20251014_154704_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_201941 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6477777777777778,
+    "score": 100,
+    "name": "20251014_201941_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_212516 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5669444444444445,
+    "score": 100,
+    "name": "20251014_212516_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251007_194334 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5886111111111111,
+    "score": 100,
+    "name": "20251007_194334 Fwd",
+    "error": null
+  },
+  {
+    "source": "20251007_173248 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.7002777777777778,
+    "score": 100,
+    "name": "20251007_173248_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_170407 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5741666666666667,
+    "score": 100,
+    "name": "20251014_170407_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_180935 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5747222222222222,
+    "score": 100,
+    "name": "20251014_180935_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251007_183819 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6561111111111111,
+    "score": 100,
+    "name": "20251007_183819_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_182908 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.40555555555555556,
+    "score": 100,
+    "name": "20251016_182908_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_233857 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4494444444444444,
+    "score": 100,
+    "name": "20251014_233857_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_145439 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5027777777777778,
+    "score": 100,
+    "name": "20251015_145439_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251007_205037 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.3636111111111111,
+    "score": 100,
+    "name": "20251007_205037_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_165047 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.58,
+    "score": 100,
+    "name": "20251015_165047_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_175521 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4052777777777778,
+    "score": 100,
+    "name": "20251015_175521_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251008_214327 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 1.2805555555555554,
+    "score": 100,
+    "name": "20251008_214327_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251008_163345 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.8316666666666667,
+    "score": 100,
+    "name": "20251008_163345_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_160050 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.3433333333333333,
+    "score": 100,
+    "name": "20251015_160050_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_184354 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.40055555555555555,
+    "score": 100,
+    "name": "20251015_184354_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_204139 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6230555555555556,
+    "score": 100,
+    "name": "20251015_204139_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_213443 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5869444444444445,
+    "score": 100,
+    "name": "20251015_213443_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251008_230451 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 1.093611111111111,
+    "score": 100,
+    "name": "20251008_230451_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_222740 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6333333333333333,
+    "score": 100,
+    "name": "20251015_222740_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_231526 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5386111111111112,
+    "score": 100,
+    "name": "20251015_231526_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_165413 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.44083333333333335,
+    "score": 100,
+    "name": "20251016_165413_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251013_211139 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.7725,
+    "score": 100,
+    "name": "20251013_211139_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251013_222157 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.8772222222222222,
+    "score": 100,
+    "name": "20251013_222157_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251017_205534 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.8666666666666667,
+    "score": 100,
+    "name": "20251017_205534_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251013_233820 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.7588888888888888,
+    "score": 100,
+    "name": "20251013_233820_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_150157 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.2827777777777778,
+    "score": 100,
+    "name": "20251016_150157_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251009_154101 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.18083333333333335,
+    "score": 100,
+    "name": "20251009_154101_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_155819 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.36916666666666664,
+    "score": 100,
+    "name": "20251016_155819_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_202015 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.3527777777777778,
+    "score": 100,
+    "name": "20251016_202015_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_173734 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.39944444444444444,
+    "score": 100,
+    "name": "20251014_173734_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_184318 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.39166666666666666,
+    "score": 100,
+    "name": "20251014_184318_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251018_202317 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 1.5202777777777778,
+    "score": 100,
+    "name": "20251018_202317_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_205105 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5247222222222222,
+    "score": 100,
+    "name": "20251014_205105_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251017_231517 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.7958333333333333,
+    "score": 100,
+    "name": "20251017_231517_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_162246 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6780555555555555,
+    "score": 100,
+    "name": "20251014_162246_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251018_222623 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 1.0280555555555555,
+    "score": 100,
+    "name": "20251018_222623_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251014_230136 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.705,
+    "score": 100,
+    "name": "20251014_230136_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_000751 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5213888888888889,
+    "score": 100,
+    "name": "20251015_000751_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_152728 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5491666666666667,
+    "score": 100,
+    "name": "20251015_152728_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_201148 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.8422222222222222,
+    "score": 100,
+    "name": "20251015_201148_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_210615 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.7152777777777778,
+    "score": 100,
+    "name": "20251015_210615_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_161747 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5322222222222223,
+    "score": 100,
+    "name": "20251019_161747_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_215956 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.7536111111111111,
+    "score": 100,
+    "name": "20251015_215956_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_162414 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5769444444444445,
+    "score": 100,
+    "name": "20251015_162414_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_172155 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.605,
+    "score": 100,
+    "name": "20251015_172155_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_191139 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6572222222222223,
+    "score": 100,
+    "name": "20251019_191139_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_181912 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.39444444444444443,
+    "score": 100,
+    "name": "20251015_181912_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_225215 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6252777777777778,
+    "score": 100,
+    "name": "20251015_225215_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251015_233741 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5005555555555555,
+    "score": 100,
+    "name": "20251015_233741_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_152717 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.40305555555555556,
+    "score": 100,
+    "name": "20251016_152717_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_224302 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5675,
+    "score": 100,
+    "name": "20251019_224302_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_162535 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4583333333333333,
+    "score": 100,
+    "name": "20251016_162535_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251020_180807 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.2063888888888889,
+    "score": 100,
+    "name": "20251020_180807_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251020_213118 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.43,
+    "score": 100,
+    "name": "20251020_213118_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_172441 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5508333333333333,
+    "score": 100,
+    "name": "20251016_172441_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_175806 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5038888888888889,
+    "score": 100,
+    "name": "20251016_175806_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_000435 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4866666666666667,
+    "score": 100,
+    "name": "20251021_000435_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_215631 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.44722222222222224,
+    "score": 100,
+    "name": "20251016_215631_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251017_223649 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.9461111111111111,
+    "score": 100,
+    "name": "20251017_223649_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_191226 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4913888888888889,
+    "score": 100,
+    "name": "20251021_191226_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_205229 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.3233333333333333,
+    "score": 100,
+    "name": "20251016_205229_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251016_185728 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.30666666666666664,
+    "score": 100,
+    "name": "20251016_185728_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251017_235018 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.77,
+    "score": 100,
+    "name": "20251017_235018_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_222710 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6794444444444444,
+    "score": 100,
+    "name": "20251021_222710_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251018_213039 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 1.0902777777777777,
+    "score": 100,
+    "name": "20251018_213039_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_150138 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6627777777777778,
+    "score": 100,
+    "name": "20251019_150138_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251020_151119 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.3811111111111111,
+    "score": 100,
+    "name": "20251020_151119_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251018_231450 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 1.2972222222222223,
+    "score": 100,
+    "name": "20251018_231450_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251022_165539 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6691666666666667,
+    "score": 100,
+    "name": "20251022_165539_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251023_001455 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.47305555555555556,
+    "score": 100,
+    "name": "20251023_001455_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_174028 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 1.2016666666666667,
+    "score": 100,
+    "name": "20251019_174028_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251022_193007 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4702777777777778,
+    "score": 100,
+    "name": "20251022_193007_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_154008 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5711111111111111,
+    "score": 100,
+    "name": "20251019_154008_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251023_211805 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5125,
+    "score": 100,
+    "name": "20251023_211805_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_181418 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.28555555555555556,
+    "score": 100,
+    "name": "20251019_181418_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_194340 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.8230555555555555,
+    "score": 100,
+    "name": "20251019_194340_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_220448 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6377777777777778,
+    "score": 100,
+    "name": "20251019_220448_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251020_184652 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.7283333333333334,
+    "score": 100,
+    "name": "20251020_184652_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251023_225401 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5086111111111111,
+    "score": 100,
+    "name": "20251023_225401_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251020_223536 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.33805555555555555,
+    "score": 100,
+    "name": "20251020_223536_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_153658 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6391666666666667,
+    "score": 100,
+    "name": "20251021_153658_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251020_230021 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4897222222222222,
+    "score": 100,
+    "name": "20251020_230021_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251020_205332 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4063888888888889,
+    "score": 100,
+    "name": "20251020_205332_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251020_233223 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4602777777777778,
+    "score": 100,
+    "name": "20251020_233223_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_165455 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.38,
+    "score": 100,
+    "name": "20251021_165455_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_193702 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4930555555555556,
+    "score": 100,
+    "name": "20251021_193702_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_200234 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.3202777777777778,
+    "score": 100,
+    "name": "20251021_200234_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_213037 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.46166666666666667,
+    "score": 100,
+    "name": "20251021_213037_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_225835 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.3383333333333333,
+    "score": 100,
+    "name": "20251021_225835_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251023_183325 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5661111111111111,
+    "score": 100,
+    "name": "20251023_183325_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251022_160503 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.7322222222222222,
+    "score": 100,
+    "name": "20251022_160503_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251022_180435 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.3219444444444444,
+    "score": 100,
+    "name": "20251022_180435_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251022_173135 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4930555555555556,
+    "score": 100,
+    "name": "20251022_173135_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251022_224528 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.33416666666666667,
+    "score": 100,
+    "name": "20251022_224528_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251022_183829 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4608333333333333,
+    "score": 100,
+    "name": "20251022_183829_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251022_212512 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5666666666666667,
+    "score": 100,
+    "name": "20251022_212512_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251023_175727 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6344444444444445,
+    "score": 100,
+    "name": "20251023_175727_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251022_234447 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4375,
+    "score": 100,
+    "name": "20251022_234447_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_201412 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.8138888888888889,
+    "score": 100,
+    "name": "20251019_201412_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_231001 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.425,
+    "score": 100,
+    "name": "20251019_231001_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_161643 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.39805555555555555,
+    "score": 100,
+    "name": "20251021_161643_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_234242 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5952777777777778,
+    "score": 100,
+    "name": "20251019_234242_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251021_185409 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.12194444444444444,
+    "score": 100,
+    "name": "20251021_185409_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251023_221412 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.6997222222222222,
+    "score": 100,
+    "name": "20251023_221412_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251023_203902 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 1.1969444444444444,
+    "score": 100,
+    "name": "20251023_203902_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251022_220507 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.18055555555555555,
+    "score": 100,
+    "name": "20251022_220507_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251020_182129 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.5036111111111111,
+    "score": 100,
+    "name": "20251020_182129_Fwd",
+    "error": null
+  },
+  {
+    "source": "20251019_165932 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.4897222222222222,
+    "score": 100,
+    "name": "20251019_165932_Fwd",
+    "error": null
+  },
+  {
+    "source": "5_5.mp4",
+    "project": "NF2603",
+    "hours": 0.5130555555555556,
+    "score": 85,
+    "name": "20181017_050556_Fwd",
+    "error": null
+  },
+  {
+    "source": "5_6.1.mp4",
+    "project": "NF2603",
+    "hours": 0.07972222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_8.mp4",
+    "project": "NF2603",
+    "hours": 0.3113888888888889,
+    "score": 85,
+    "name": "20190715_155854_Fwd",
+    "error": null
+  },
+  {
+    "source": "5_2.2.mp4",
+    "project": "NF2603",
+    "hours": 0.18861111111111112,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_2.1.mp4",
+    "project": "NF2603",
+    "hours": 0.7136111111111111,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_6.mp4",
+    "project": "NF2603",
+    "hours": 0.19777777777777777,
+    "score": 85,
+    "name": "20181013_055629_Fwd",
+    "error": null
+  },
+  {
+    "source": "5_7.mp4",
+    "project": "NF2603",
+    "hours": 0.23555555555555555,
+    "score": 85,
+    "name": "20181020_055754_Fwd",
+    "error": null
+  },
+  {
+    "source": "5_9.mp4",
+    "project": "NF2603",
+    "hours": 0.30194444444444446,
+    "score": 85,
+    "name": "20181030_051559_Fwd",
+    "error": null
+  },
+  {
+    "source": "6_11.mp4",
+    "project": "NF2603",
+    "hours": 0.4872222222222222,
+    "score": 85,
+    "name": "MB2_2016-11-04",
+    "error": null
+  },
+  {
+    "source": "6_17.mp4",
+    "project": "NF2603",
+    "hours": 0.8255555555555556,
+    "score": 85,
+    "name": "20190716_170050_Fwd",
+    "error": null
+  },
+  {
+    "source": "5_1 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.8808333333333334,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_2 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.06166666666666667,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_2.2 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.14972222222222223,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220728_133339 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.4777777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220728_203412 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.5561111111111111,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "9cee318285ad2b674154469202503977",
+    "project": "CAMPA 2026",
+    "hours": 2.6572222222222224,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20251016_212414 Fwd.mp4",
+    "project": "CAMPA-2025",
+    "hours": 0.40166666666666667,
+    "score": 100,
+    "name": "20251016_212414_Fwd",
+    "error": null
+  },
+  {
+    "source": "5_10.mp4",
+    "project": "NF2603",
+    "hours": 0.3663888888888889,
+    "score": 85,
+    "name": "20181020_035510_Fwd",
+    "error": null
+  },
+  {
+    "source": "6_12.mp4",
+    "project": "NF2603",
+    "hours": 0.6452777777777777,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "6_14.mp4",
+    "project": "NF2603",
+    "hours": 0.5780555555555555,
+    "score": 85,
+    "name": "16_14",
+    "error": null
+  },
+  {
+    "source": "6_16.mp4",
+    "project": "NF2603",
+    "hours": 0.45611111111111113,
+    "score": 85,
+    "name": "20190716_160212_Fwd",
+    "error": null
+  },
+  {
+    "source": "6_13.mp4",
+    "project": "NF2603",
+    "hours": 0.46111111111111114,
+    "score": 85,
+    "name": "20160808-00-06-13_-_00000",
+    "error": null
+  },
+  {
+    "source": "5_4 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.1238888888888889,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_6 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.11222222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_3 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.11861111111111111,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_2.1 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.8483333333333334,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_10 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.09055555555555556,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_8 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.11027777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260613_155223_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 2.0652777777777778,
+    "score": 100,
+    "name": "20260613_155223_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_174309_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 1.08,
+    "score": 100,
+    "name": "20260623_174309_Fwd",
+    "error": null
+  },
+  {
+    "source": "b191f2ddbcbffe462f312192ed7f34bd",
+    "project": "CAMPA 2026",
+    "hours": 1.635,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "http://47.208.203.78:8096/Videos/9cee318285ad2b674154469202503977/stream?static=true&api_key=211104ac3cc549faa15630f40be054d4",
+    "project": "CAMPA 2026",
+    "hours": 0.0005555555555555556,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260613_153224_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.4025,
+    "score": 100,
+    "name": "20260613_153224_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_180646_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.5436111111111112,
+    "score": 100,
+    "name": "20260613_180646_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_192457_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.4047222222222222,
+    "score": 100,
+    "name": "20260613_192457_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_182634_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.3163888888888889,
+    "score": 100,
+    "name": "20260613_182634_Fwd",
+    "error": null
+  },
+  {
+    "source": "6_18.mp4",
+    "project": "NF2603",
+    "hours": 1.0191666666666668,
+    "score": 85,
+    "name": "26_18",
+    "error": null
+  },
+  {
+    "source": "6_15.mp4",
+    "project": "NF2603",
+    "hours": 0.3011111111111111,
+    "score": 85,
+    "name": "20200626_151727_Fwd",
+    "error": null
+  },
+  {
+    "source": "5_7 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.11027777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_9 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.11944444444444445,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_5 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.11,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "5_6.1 Corrected.mp4",
+    "project": "NF2603",
+    "hours": 0.06166666666666667,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "fa270bbb9b5093a9b87d2a3e87086034",
+    "project": "CAMPA 2026",
+    "hours": 0.21833333333333332,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260613_222247_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.4891666666666667,
+    "score": 100,
+    "name": "20260613_222247_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260620_202210_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.39222222222222225,
+    "score": 100,
+    "name": "20260620_202210_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260620_215831_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.4483333333333333,
+    "score": 100,
+    "name": "20260620_215831_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_145439_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.22833333333333333,
+    "score": 100,
+    "name": "20260621_145439_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_161534_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.41638888888888886,
+    "score": 100,
+    "name": "20260621_161534_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_185028_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.30694444444444446,
+    "score": 100,
+    "name": "20260621_185028_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_230227_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.3877777777777778,
+    "score": 100,
+    "name": "20260613_230227_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_194745_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.5744444444444444,
+    "score": 100,
+    "name": "20260613_194745_Fwd",
+    "error": null
+  },
+  {
+    "source": "84bcbda67bd9c71dbf9ce3756db8f2ca",
+    "project": "CAMPA 2026",
+    "hours": 0.02666666666666667,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260613_224222_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.5816666666666667,
+    "score": 100,
+    "name": "20260613_224222_Fwd",
+    "error": null
+  },
+  {
+    "source": "1e78836e70711b0e3d484eb397c260d1",
+    "project": "CAMPA 2026",
+    "hours": 0.18138888888888888,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "7e74ab3a7592be1d24d4464bd0123096",
+    "project": "CAMPA 2026",
+    "hours": 0.10027777777777777,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "67f88196f7148e0545a59171b9c745f5",
+    "project": "CAMPA 2026",
+    "hours": 0.06722222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "2621a8fa9ee876ad59df951b26ea92b0",
+    "project": "CAMPA 2026",
+    "hours": 0.1461111111111111,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260620_212524_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.405,
+    "score": 100,
+    "name": "20260620_212524_Fwd",
+    "error": null
+  },
+  {
+    "source": "f59139fc040aa0fc8160bcd077f32c7c",
+    "project": "CAMPA 2026",
+    "hours": 0.18583333333333332,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "574bdb5c3d7b165de79a1a40e6dda063",
+    "project": "CAMPA 2026",
+    "hours": 0.0225,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "bf1ffc4625c46c1d76afaed7b95a2d5e",
+    "project": "CAMPA 2026",
+    "hours": 0.015277777777777777,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260620_204030_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.25805555555555554,
+    "score": 100,
+    "name": "20260620_204030_Fwd",
+    "error": null
+  },
+  {
+    "source": "d5a1726a3f36443e5397178f0f43dc2a",
+    "project": "CAMPA 2026",
+    "hours": 0.002777777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "870dac7fd7650d6db2e10eb4cee1c13b",
+    "project": "CAMPA 2026",
+    "hours": 0.3488888888888889,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260620_224329_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.5883333333333334,
+    "score": 100,
+    "name": "20260620_224329_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_211226_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.32166666666666666,
+    "score": 100,
+    "name": "20260621_211226_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_212607_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.2838888888888889,
+    "score": 100,
+    "name": "20260613_212607_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_184338_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.7716666666666666,
+    "score": 100,
+    "name": "20260613_184338_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_155813_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4577777777777778,
+    "score": 100,
+    "name": "20260621_155813_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_150021_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.6577777777777778,
+    "score": 100,
+    "name": "20260622_150021_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_225237_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4388888888888889,
+    "score": 100,
+    "name": "20260621_225237_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_160747_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.6427777777777778,
+    "score": 100,
+    "name": "20260622_160747_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_170753_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4261111111111111,
+    "score": 100,
+    "name": "20260622_170753_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260620_221229_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.31555555555555553,
+    "score": 100,
+    "name": "20260620_221229_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_154405_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.4330555555555556,
+    "score": 100,
+    "name": "20260621_154405_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_183733_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.215,
+    "score": 100,
+    "name": "20260622_183733_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_162238_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.1986111111111111,
+    "score": 100,
+    "name": "20260622_162238_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_211648_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.31722222222222224,
+    "score": 100,
+    "name": "20260622_211648_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_174954_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.32,
+    "score": 100,
+    "name": "20260622_174954_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_154851_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.6155555555555555,
+    "score": 100,
+    "name": "20260622_154851_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260620_230523_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5116666666666667,
+    "score": 100,
+    "name": "20260620_230523_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_220114_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5008333333333334,
+    "score": 100,
+    "name": "20260613_220114_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260626_223936_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.375,
+    "score": 100,
+    "name": "20260626_223936_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_150414_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3475,
+    "score": 100,
+    "name": "20260623_150414_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_214423_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2980555555555556,
+    "score": 100,
+    "name": "20260613_214423_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_161816_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.30777777777777776,
+    "score": 100,
+    "name": "20260623_161816_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_184855_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.39805555555555555,
+    "score": 100,
+    "name": "20260622_184855_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_223612_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5666666666666667,
+    "score": 100,
+    "name": "20260623_223612_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_165018_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3972222222222222,
+    "score": 100,
+    "name": "20260622_165018_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_152601_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.6452777777777777,
+    "score": 100,
+    "name": "20260622_152601_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_173917_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.38722222222222225,
+    "score": 100,
+    "name": "20260621_173917_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_182354_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.30583333333333335,
+    "score": 100,
+    "name": "20260622_182354_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_205738_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4141666666666667,
+    "score": 100,
+    "name": "20260621_205738_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_152734_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.4911111111111111,
+    "score": 100,
+    "name": "20260621_152734_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_172410_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.43083333333333335,
+    "score": 100,
+    "name": "20260623_172410_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_231921_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.36333333333333334,
+    "score": 100,
+    "name": "20260613_231921_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_173038_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5561111111111111,
+    "score": 100,
+    "name": "20260622_173038_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_220830_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.8569444444444444,
+    "score": 100,
+    "name": "20260623_220830_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_220147_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5572222222222222,
+    "score": 100,
+    "name": "20260622_220147_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260620_210051_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.6958333333333333,
+    "score": 100,
+    "name": "20260620_210051_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_234954_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4225,
+    "score": 100,
+    "name": "20260623_234954_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_190440_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.6094444444444445,
+    "score": 100,
+    "name": "20260621_190440_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_210116_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.24388888888888888,
+    "score": 100,
+    "name": "20260622_210116_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_144533_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.34055555555555556,
+    "score": 100,
+    "name": "20260623_144533_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_181916_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.22083333333333333,
+    "score": 100,
+    "name": "20260623_181916_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_205514_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3188888888888889,
+    "score": 100,
+    "name": "20260627_205514_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_180429_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4691666666666667,
+    "score": 100,
+    "name": "20260623_180429_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_225203_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 1.1394444444444445,
+    "score": 100,
+    "name": "20260623_225203_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260620_222219_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4527777777777778,
+    "score": 100,
+    "name": "20260620_222219_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_231615_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3377777777777778,
+    "score": 100,
+    "name": "20260627_231615_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_151918_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.46305555555555555,
+    "score": 100,
+    "name": "20260623_151918_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260626_225504_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3963888888888889,
+    "score": 100,
+    "name": "20260626_225504_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_161728_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.30944444444444447,
+    "score": 100,
+    "name": "20260627_161728_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_163402_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.48138888888888887,
+    "score": 100,
+    "name": "20260623_163402_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_185740_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.37833333333333335,
+    "score": 100,
+    "name": "20260627_185740_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_155822_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.42277777777777775,
+    "score": 100,
+    "name": "20260627_155822_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_163451_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5894444444444444,
+    "score": 100,
+    "name": "20260627_163451_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260628_204626_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5361111111111111,
+    "score": 100,
+    "name": "20260628_204626_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_151216_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.37416666666666665,
+    "score": 100,
+    "name": "20260621_151216_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260629_002728_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.8691666666666666,
+    "score": 100,
+    "name": "20260629_002728_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_170122_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2777777777777778,
+    "score": 100,
+    "name": "20260621_170122_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_192752_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.39611111111111114,
+    "score": 100,
+    "name": "20260627_192752_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_174815_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.7616666666666667,
+    "score": 100,
+    "name": "20260627_174815_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_203855_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3466666666666667,
+    "score": 100,
+    "name": "20260621_203855_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260626_231857_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4083333333333333,
+    "score": 100,
+    "name": "20260626_231857_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260629_205239_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3125,
+    "score": 100,
+    "name": "20260629_205239_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260630_160213_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.41638888888888886,
+    "score": 100,
+    "name": "20260630_160213_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_233540_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5733333333333334,
+    "score": 100,
+    "name": "20260613_233540_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_231720_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.44305555555555554,
+    "score": 100,
+    "name": "20260621_231720_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_203408_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2975,
+    "score": 100,
+    "name": "20260627_203408_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_163112_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.42694444444444446,
+    "score": 100,
+    "name": "20260622_163112_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_211945_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.515,
+    "score": 100,
+    "name": "20260627_211945_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_224929_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.46944444444444444,
+    "score": 100,
+    "name": "20260627_224929_Fwd",
+    "error": null
+  },
+  {
+    "source": "defa4dff3e5fcd3e6550ec794a001550",
+    "project": "CAMPA 2026",
+    "hours": 0.11833333333333333,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260622_224246_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.41444444444444445,
+    "score": 100,
+    "name": "20260622_224246_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_154933_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.24861111111111112,
+    "score": 100,
+    "name": "20260623_154933_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260628_220225_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.49666666666666665,
+    "score": 100,
+    "name": "20260628_220225_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_222158_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4888888888888889,
+    "score": 100,
+    "name": "20260622_222158_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260629_171029_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.43277777777777776,
+    "score": 100,
+    "name": "20260629_171029_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_165123_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.32805555555555554,
+    "score": 100,
+    "name": "20260623_165123_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_170737_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.34,
+    "score": 100,
+    "name": "20260623_170737_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_153507_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.29305555555555557,
+    "score": 100,
+    "name": "20260623_153507_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_195634_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5763888888888888,
+    "score": 100,
+    "name": "20260623_195634_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_232423_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3794444444444444,
+    "score": 100,
+    "name": "20260623_232423_Fwd",
+    "error": null
+  },
+  {
+    "source": "a7c5a9383b675244af19a6fc0fc99c1f",
+    "project": "CAMPA 2026",
+    "hours": 0.4083333333333333,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260627_153349_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.48583333333333334,
+    "score": 100,
+    "name": "20260627_153349_Fwd",
+    "error": null
+  },
+  {
+    "source": "3d3d26b0a0519ed6d42e09447ee648c8",
+    "project": "CAMPA 2026",
+    "hours": 0.05277777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260629_220424_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4525,
+    "score": 100,
+    "name": "20260629_220424_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_172200_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5755555555555556,
+    "score": 100,
+    "name": "20260627_172200_Fwd",
+    "error": null
+  },
+  {
+    "source": "11_9.mp4",
+    "project": "DEPR_2 Leg_1",
+    "hours": 1.1316666666666666,
+    "score": 100,
+    "name": "11_9",
+    "error": null
+  },
+  {
+    "source": "20260629_190229_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5541666666666667,
+    "score": 100,
+    "name": "20260629_190229_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_194910_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4311111111111111,
+    "score": 100,
+    "name": "20260627_194910_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_233825_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.31583333333333335,
+    "score": 100,
+    "name": "20260627_233825_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_180611_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.34194444444444444,
+    "score": 100,
+    "name": "20260622_180611_Fwd",
+    "error": null
+  },
+  {
+    "source": "3927a673b018df06d4c5c4d7e6a54366",
+    "project": "CAMPA 2026",
+    "hours": 0.04111111111111111,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260622_192849_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.29083333333333333,
+    "score": 100,
+    "name": "20260622_192849_Fwd",
+    "error": null
+  },
+  {
+    "source": "8260afa99badd4597bc1c8886b3d2a03",
+    "project": "CAMPA 2026",
+    "hours": 0.10888888888888888,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260621_171724_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.43722222222222223,
+    "score": 100,
+    "name": "20260621_171724_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260622_190913_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2961111111111111,
+    "score": 100,
+    "name": "20260622_190913_Fwd",
+    "error": null
+  },
+  {
+    "source": "d47fdb5653775380bf971371fa394386",
+    "project": "CAMPA 2026",
+    "hours": 0.11333333333333333,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260629_211342_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.34194444444444444,
+    "score": 100,
+    "name": "20260629_211342_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_201921_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4077777777777778,
+    "score": 100,
+    "name": "20260623_201921_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_233339_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4413888888888889,
+    "score": 100,
+    "name": "20260623_233339_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260630_190911_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.8097222222222222,
+    "score": 100,
+    "name": "20260630_190911_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260626_234354_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4236111111111111,
+    "score": 100,
+    "name": "20260626_234354_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_165622_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.12,
+    "score": 100,
+    "name": "20260627_165622_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260628_233013_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.6894444444444444,
+    "score": 100,
+    "name": "20260628_233013_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260628_171000_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.7366666666666667,
+    "score": 100,
+    "name": "20260628_171000_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_222600_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.395,
+    "score": 100,
+    "name": "20260627_222600_Fwd",
+    "error": null
+  },
+  {
+    "source": "cd0ca09550b371de01aa179bd4242652",
+    "project": "CAMPA 2026",
+    "hours": 0.26722222222222225,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260627_213732_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.04888888888888889,
+    "score": 100,
+    "name": "20260627_213732_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260627_201232_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.33555555555555555,
+    "score": 100,
+    "name": "20260627_201232_Fwd",
+    "error": null
+  },
+  {
+    "source": "ab22d68c4dcba58f4446f64ee280c951",
+    "project": "CAMPA 2026",
+    "hours": 0.018055555555555554,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260628_163041_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.9111111111111111,
+    "score": 100,
+    "name": "20260628_163041_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260629_000021_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.6458333333333334,
+    "score": 100,
+    "name": "20260629_000021_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260628_222935_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.1947222222222222,
+    "score": 100,
+    "name": "20260628_222935_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260629_173741_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4955555555555556,
+    "score": 100,
+    "name": "20260629_173741_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260630_154237_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.42388888888888887,
+    "score": 100,
+    "name": "20260630_154237_Fwd",
+    "error": null
+  },
+  {
+    "source": "b27b9b2cde0210655f8b8808aa087f98",
+    "project": "CAMPA 2026",
+    "hours": 0.27194444444444443,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "6fc2d83aff74374ed233bcc1bf423a59",
+    "project": "CAMPA 2026",
+    "hours": 0.36583333333333334,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260629_213937_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.36583333333333334,
+    "score": 100,
+    "name": "20260629_213937_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260601_190053_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.49472222222222223,
+    "score": 100,
+    "name": "20260601_190053_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_174635_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5233333333333333,
+    "score": 100,
+    "name": "20260610_174635_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_221645_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3938888888888889,
+    "score": 100,
+    "name": "20260610_221645_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_181417_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.39944444444444444,
+    "score": 100,
+    "name": "20260610_181417_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260613_190529_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5013888888888889,
+    "score": 100,
+    "name": "20260613_190529_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_183203_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.45361111111111113,
+    "score": 100,
+    "name": "20260621_183203_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_222609_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5269444444444444,
+    "score": 100,
+    "name": "20260621_222609_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260628_202402_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.425,
+    "score": 100,
+    "name": "20260628_202402_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260629_192808_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.17944444444444443,
+    "score": 100,
+    "name": "20260629_192808_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260630_194935_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.14833333333333334,
+    "score": 100,
+    "name": "20260630_194935_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260601_193156_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3525,
+    "score": 100,
+    "name": "20260601_193156_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_154333_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.27361111111111114,
+    "score": 100,
+    "name": "20260610_154333_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_143243_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.15,
+    "score": 100,
+    "name": "20260610_143243_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_152007_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.018055555555555554,
+    "score": 100,
+    "name": "20260610_152007_Fwd",
+    "error": null
+  },
+  {
+    "source": "69b1a00db618426cd1ad5080059a064f",
+    "project": "CAMPA 2026",
+    "hours": 0.1661111111111111,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "0f4534d10ece091fcf7d82e65fcb2de3",
+    "project": "CAMPA 2026",
+    "hours": 0.3502777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260610_161323_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3022222222222222,
+    "score": 100,
+    "name": "20260610_161323_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_145616_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.15833333333333333,
+    "score": 100,
+    "name": "20260610_145616_Fwd",
+    "error": null
+  },
+  {
+    "source": "1f75b4102c40b45a9d9b151c321ad46a",
+    "project": "CAMPA 2026",
+    "hours": 0.07444444444444444,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260610_205421_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2477777777777778,
+    "score": 100,
+    "name": "20260610_205421_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_163657_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3288888888888889,
+    "score": 100,
+    "name": "20260610_163657_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260615_142627_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4166666666666667,
+    "score": 100,
+    "name": "20260615_142627_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260611_231828_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.28055555555555556,
+    "score": 100,
+    "name": "20260611_231828_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260611_204240_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4311111111111111,
+    "score": 100,
+    "name": "20260611_204240_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260611_234128_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4558333333333333,
+    "score": 100,
+    "name": "20260611_234128_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260611_184929_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3988888888888889,
+    "score": 100,
+    "name": "20260611_184929_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260611_161158_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.31416666666666665,
+    "score": 100,
+    "name": "20260611_161158_Fwd",
+    "error": null
+  },
+  {
+    "source": "784549a208c788fb2e03fae5823ad164",
+    "project": "CAMPA 2026",
+    "hours": 0.11666666666666667,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260611_183541_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2861111111111111,
+    "score": 100,
+    "name": "20260611_183541_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_155131_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.33166666666666667,
+    "score": 100,
+    "name": "20260612_155131_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_153442_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.32805555555555554,
+    "score": 100,
+    "name": "20260612_153442_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260611_223854_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.32166666666666666,
+    "score": 100,
+    "name": "20260611_223854_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_164225_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.25277777777777777,
+    "score": 100,
+    "name": "20260612_164225_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_151451_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.6063888888888889,
+    "score": 100,
+    "name": "20260612_151451_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_193421_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2852777777777778,
+    "score": 100,
+    "name": "20260612_193421_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_210507_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5436111111111112,
+    "score": 100,
+    "name": "20260612_210507_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_203200_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.42333333333333334,
+    "score": 100,
+    "name": "20260614_203200_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260611_170034_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4077777777777778,
+    "score": 100,
+    "name": "20260611_170034_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_213448_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4688888888888889,
+    "score": 100,
+    "name": "20260610_213448_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_215610_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4116666666666667,
+    "score": 100,
+    "name": "20260610_215610_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260611_163844_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.1675,
+    "score": 100,
+    "name": "20260611_163844_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_211214_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.1852777777777778,
+    "score": 100,
+    "name": "20260610_211214_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_170006_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3363888888888889,
+    "score": 100,
+    "name": "20260612_170006_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_162658_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3011111111111111,
+    "score": 100,
+    "name": "20260612_162658_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_195335_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4266666666666667,
+    "score": 100,
+    "name": "20260612_195335_Fwd",
+    "error": null
+  },
+  {
+    "source": "ea3f109bd54028e94a7de561ef26eb81",
+    "project": "CAMPA 2026",
+    "hours": 0.005,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260612_212903_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4702777777777778,
+    "score": 100,
+    "name": "20260612_212903_Fwd",
+    "error": null
+  },
+  {
+    "source": "5ab85ddbaada82f31b9f126d2f77260e",
+    "project": "CAMPA 2026",
+    "hours": 0.2011111111111111,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260612_191009_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.6347222222222222,
+    "score": 100,
+    "name": "20260612_191009_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_155835_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.24972222222222223,
+    "score": 100,
+    "name": "20260614_155835_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_204019_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5641666666666667,
+    "score": 100,
+    "name": "20260612_204019_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_215138_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5766666666666667,
+    "score": 100,
+    "name": "20260612_215138_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_152246_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3211111111111111,
+    "score": 100,
+    "name": "20260614_152246_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_164322_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.30666666666666664,
+    "score": 100,
+    "name": "20260614_164322_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_191117_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3258333333333333,
+    "score": 100,
+    "name": "20260614_191117_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_195442_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3983333333333333,
+    "score": 100,
+    "name": "20260614_195442_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260618_151014_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.44555555555555554,
+    "score": 100,
+    "name": "20260618_151014_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260618_170525_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3913888888888889,
+    "score": 100,
+    "name": "20260618_170525_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260618_182833_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.36138888888888887,
+    "score": 100,
+    "name": "20260618_182833_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260618_194047_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.465,
+    "score": 100,
+    "name": "20260618_194047_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260619_150736_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.37416666666666665,
+    "score": 100,
+    "name": "20260619_150736_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_154122_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2727777777777778,
+    "score": 100,
+    "name": "20260614_154122_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260619_163216_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.28805555555555556,
+    "score": 100,
+    "name": "20260619_163216_Fwd",
+    "error": null
+  },
+  {
+    "source": "b6bcba696239f15a4179c1aaeb91f915",
+    "project": "CAMPA 2026",
+    "hours": 0.008333333333333333,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260614_221555_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2536111111111111,
+    "score": 100,
+    "name": "20260614_221555_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260619_173907_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4280555555555556,
+    "score": 100,
+    "name": "20260619_173907_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260617_224600_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.69,
+    "score": 100,
+    "name": "20260617_224600_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260625_180024_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5736111111111111,
+    "score": 100,
+    "name": "20260625_180024_Fwd",
+    "error": null
+  },
+  {
+    "source": "62b1a37cf50ae743455015632d88e464",
+    "project": "CAMPA 2026",
+    "hours": 0.04777777777777778,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "f427efc14e99850675bb09eb8fe7c8e5",
+    "project": "CAMPA 2026",
+    "hours": 0.02,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260614_224522_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.30527777777777776,
+    "score": 100,
+    "name": "20260614_224522_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260615_144352_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.25194444444444447,
+    "score": 100,
+    "name": "20260615_144352_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260617_161343_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4052777777777778,
+    "score": 100,
+    "name": "20260617_161343_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260617_212725_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.615,
+    "score": 100,
+    "name": "20260617_212725_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_183334_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4041666666666667,
+    "score": 100,
+    "name": "20260614_183334_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_181552_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2275,
+    "score": 100,
+    "name": "20260614_181552_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_231805_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.23583333333333334,
+    "score": 100,
+    "name": "20260614_231805_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260619_191005_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.36972222222222223,
+    "score": 100,
+    "name": "20260619_191005_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260619_201221_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2891666666666667,
+    "score": 100,
+    "name": "20260619_201221_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260617_151140_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5705555555555556,
+    "score": 100,
+    "name": "20260617_151140_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260617_171344_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.31277777777777777,
+    "score": 100,
+    "name": "20260617_171344_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260620_142830_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5430555555555555,
+    "score": 100,
+    "name": "20260620_142830_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260620_170746_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3641666666666667,
+    "score": 100,
+    "name": "20260620_170746_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260620_182350_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5325,
+    "score": 100,
+    "name": "20260620_182350_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260624_144644_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5591666666666667,
+    "score": 100,
+    "name": "20260624_144644_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260624_171602_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.41694444444444445,
+    "score": 100,
+    "name": "20260624_171602_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260624_210009_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.5138888888888888,
+    "score": 100,
+    "name": "20260624_210009_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260624_224547_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.26944444444444443,
+    "score": 100,
+    "name": "20260624_224547_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260625_161945_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3611111111111111,
+    "score": 100,
+    "name": "20260625_161945_Fwd",
+    "error": null
+  },
+  {
+    "source": "3a7919d8e173751aa0f0de4e1a4f598e",
+    "project": "CAMPA 2026",
+    "hours": 0.04583333333333333,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260613_155223_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4558333333333333,
+    "score": 100,
+    "name": "20260613_155223_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260618_174528_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3302777777777778,
+    "score": 100,
+    "name": "20260618_174528_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260618_190821_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2761111111111111,
+    "score": 100,
+    "name": "20260618_190821_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260618_201738_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.35583333333333333,
+    "score": 100,
+    "name": "20260618_201738_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260625_204317_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3202777777777778,
+    "score": 100,
+    "name": "20260625_204317_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260619_160125_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.21638888888888888,
+    "score": 100,
+    "name": "20260619_160125_Fwd",
+    "error": null
+  },
+  {
+    "source": "082fd0dcf5c1c569cc4f2ae849c27438",
+    "project": "CAMPA 2026",
+    "hours": 0.43277777777777776,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260626_185132_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.38,
+    "score": 100,
+    "name": "20260626_185132_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260623_174309_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 1.5969444444444445,
+    "score": 100,
+    "name": "20260623_174309_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260611_222117_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.44916666666666666,
+    "score": 100,
+    "name": "20260611_222117_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260626_204218_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4141666666666667,
+    "score": 100,
+    "name": "20260626_204218_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260618_160245_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 1.0958333333333334,
+    "score": 100,
+    "name": "20260618_160245_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_193234_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.38333333333333336,
+    "score": 100,
+    "name": "20260614_193234_Fwd",
+    "error": null
+  },
+  {
+    "source": "7_4.mp4",
+    "project": "DEPR_2 Leg_2",
+    "hours": 1.3244444444444445,
+    "score": 100,
+    "name": "7_4",
+    "error": null
+  },
+  {
+    "source": "20260625_233001_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.36944444444444446,
+    "score": 100,
+    "name": "20260625_233001_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260619_170934_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.24333333333333335,
+    "score": 100,
+    "name": "20260619_170934_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260619_183122_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.14805555555555555,
+    "score": 100,
+    "name": "20260619_183122_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_215630_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.41305555555555556,
+    "score": 100,
+    "name": "20260614_215630_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_185150_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2897222222222222,
+    "score": 100,
+    "name": "20260614_185150_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_222938_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3075,
+    "score": 100,
+    "name": "20260614_222938_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_230120_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.32555555555555554,
+    "score": 100,
+    "name": "20260614_230120_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260626_152239_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.21777777777777776,
+    "score": 100,
+    "name": "20260626_152239_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260611_181538_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.2833333333333333,
+    "score": 100,
+    "name": "20260611_181538_Fwd",
+    "error": null
+  },
+  {
+    "source": "2cfeda55532916a7699fad2e0c43191c",
+    "project": "CAMPA 2026",
+    "hours": 0.515,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260626_164454_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.27055555555555555,
+    "score": 100,
+    "name": "20260626_164454_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260615_145744_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3877777777777778,
+    "score": 100,
+    "name": "20260615_145744_Fwd",
+    "error": null
+  },
+  {
+    "source": "45daf003ca98b9c510f3136381158810",
+    "project": "CAMPA 2026",
+    "hours": 0.3591666666666667,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260612_161043_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3616666666666667,
+    "score": 100,
+    "name": "20260612_161043_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_172931_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4272222222222222,
+    "score": 100,
+    "name": "20260612_172931_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260612_201750_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.13722222222222222,
+    "score": 100,
+    "name": "20260612_201750_Fwd",
+    "error": null
+  },
+  {
+    "source": "1b8f61a11799164ce70f4d1ab4cefc8a",
+    "project": "CAMPA 2026",
+    "hours": 0.0030555555555555557,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260612_001021_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.29194444444444445,
+    "score": 100,
+    "name": "20260612_001021_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260610_223802_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.0925,
+    "score": 100,
+    "name": "20260610_223802_Fwd",
+    "error": null
+  },
+  {
+    "source": "bc2fdd94dc4fb484c45b880031f05139",
+    "project": "CAMPA 2026",
+    "hours": 0.4747222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260617_164527_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.37555555555555553,
+    "score": 100,
+    "name": "20260617_164527_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_192613_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.19972222222222222,
+    "score": 100,
+    "name": "20260621_192613_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260620_214046_Fwd",
+    "project": "CAMPA 2026",
+    "hours": 0.4022222222222222,
+    "score": 100,
+    "name": "20260620_214046_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260621_192613_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.08555555555555555,
+    "score": 100,
+    "name": "20260621_192613_Fwd",
+    "error": null
+  },
+  {
+    "source": "28acfd18bdb6d77677ac7b032200f517",
+    "project": "CAMPA 2026",
+    "hours": 0.016944444444444446,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "89bd12def18ea8137b6d434195e72241",
+    "project": "CAMPA 2026",
+    "hours": 0.042777777777777776,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260620_214046_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.049166666666666664,
+    "score": 100,
+    "name": "20260620_214046_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260617_154645_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.33055555555555555,
+    "score": 100,
+    "name": "20260617_154645_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260614_161458_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.4263888888888889,
+    "score": 100,
+    "name": "20260614_161458_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260617_234520_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.3883333333333333,
+    "score": 100,
+    "name": "20260617_234520_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260617_221103_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.1411111111111111,
+    "score": 100,
+    "name": "20260617_221103_Fwd",
+    "error": null
+  },
+  {
+    "source": "e9a5d58e10f612c16b57d8caf870c915",
+    "project": "CAMPA 2026",
+    "hours": 0.16833333333333333,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260618_153706_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.31194444444444447,
+    "score": 100,
+    "name": "20260618_153706_Fwd",
+    "error": null
+  },
+  {
+    "source": "20260617_174710_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0,
+    "score": 100,
+    "name": "20260617_174710_Fwd",
+    "error": null
+  },
+  {
+    "source": "10_3.mp4",
+    "project": "SALT 4",
+    "hours": 3.394722222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220725_165858 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.46694444444444444,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220726_144613 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.4230555555555556,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20260614_201709_Fwd.mp4",
+    "project": "CAMPA 2026",
+    "hours": 0.26722222222222225,
+    "score": 100,
+    "name": "20260614_201709_Fwd",
+    "error": null
+  },
+  {
+    "source": "df0e4a9b86c935e9fcb71e6dc7eec399",
+    "project": "CAMPA 2026",
+    "hours": 0.015277777777777777,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "d76de7c9caa72feb76de948ebce76412",
+    "project": "CAMPA 2026",
+    "hours": 0.11166666666666666,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220726_151359 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.28694444444444445,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220726_190248 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.5116666666666667,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220727_192847 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.6783333333333333,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220728_191141 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.5994444444444444,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220729_165618 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.5372222222222223,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "21_2.mp4",
+    "project": "SALT 4",
+    "hours": 0.9063888888888889,
+    "score": 85,
+    "name": "20200921_202613_Fwd",
+    "error": null
+  },
+  {
+    "source": "20_2.mp4",
+    "project": "SALT 4",
+    "hours": 0.16944444444444445,
+    "score": 85,
+    "name": "20190820_202647_Fwd",
+    "error": null
+  },
+  {
+    "source": "No File Selected...",
+    "project": "MERCI 3",
+    "hours": 0,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220726_135348 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.4797222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "16_2 Pt 1.mp4",
+    "project": "SALT 4",
+    "hours": 0.06722222222222222,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "16_2 Pt 2.mp4",
+    "project": "SALT 4",
+    "hours": 0.6966666666666667,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220726_200225 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.3175,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20220729_132214 Fwd.mp4",
+    "project": "MERCI 1",
+    "hours": 0.38083333333333336,
+    "score": 0,
+    "name": null,
+    "error": "No sufficiently confident Jellyfin match was found for this video source."
+  },
+  {
+    "source": "20_3.mp4",
+    "project": "SALT 4",
+    "hours": 0.7875,
+    "score": 85,
+    "name": "20190717_203355_Fwd",
+    "error": null
+  },
+  {
+    "source": "7_3.mp4",
+    "project": "SALT 4",
+    "hours": 0.31805555555555554,
+    "score": 85,
+    "name": "25_17.3",
+    "error": null
+  }
+]

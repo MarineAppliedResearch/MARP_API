@@ -1,0 +1,185 @@
+{
+  "settings": {
+    "arch": "convnext_tiny",
+    "data": "dataset_full.csv",
+    "crop": "full",
+    "overlay_rows_removed": 0.25,
+    "size": 224,
+    "head_epochs": 3,
+    "full_epochs": 6,
+    "frames": {
+      "train": 14244,
+      "val": 2191,
+      "test": 2698
+    }
+  },
+  "frozen_test": {
+    "Rock": {
+      "f1": 0.94,
+      "precision": 0.943,
+      "recall": 0.936,
+      "frames_present": 1794,
+      "always_present_f1": 0.799
+    },
+    "Mud": {
+      "f1": 0.453,
+      "precision": 0.301,
+      "recall": 0.913,
+      "frames_present": 516,
+      "always_present_f1": 0.321
+    },
+    "Sand": {
+      "f1": 0.407,
+      "precision": 0.712,
+      "recall": 0.285,
+      "frames_present": 780,
+      "always_present_f1": 0.449
+    },
+    "Cobble": {
+      "f1": 0.474,
+      "precision": 0.493,
+      "recall": 0.456,
+      "frames_present": 239,
+      "always_present_f1": 0.163
+    },
+    "Boulder": {
+      "f1": 0.518,
+      "precision": 0.414,
+      "recall": 0.691,
+      "frames_present": 288,
+      "always_present_f1": 0.193
+    },
+    "macro_f1": 0.558,
+    "macro_always_present_f1": 0.385,
+    "all_substrates_right": 0.371
+  },
+  "finetuned_test": {
+    "Rock": {
+      "f1": 0.955,
+      "precision": 0.954,
+      "recall": 0.955,
+      "frames_present": 1794,
+      "always_present_f1": 0.799
+    },
+    "Mud": {
+      "f1": 0.535,
+      "precision": 0.384,
+      "recall": 0.884,
+      "frames_present": 516,
+      "always_present_f1": 0.321
+    },
+    "Sand": {
+      "f1": 0.521,
+      "precision": 0.806,
+      "recall": 0.385,
+      "frames_present": 780,
+      "always_present_f1": 0.449
+    },
+    "Cobble": {
+      "f1": 0.546,
+      "precision": 0.437,
+      "recall": 0.728,
+      "frames_present": 239,
+      "always_present_f1": 0.163
+    },
+    "Boulder": {
+      "f1": 0.613,
+      "precision": 0.65,
+      "recall": 0.58,
+      "frames_present": 288,
+      "always_present_f1": 0.193
+    },
+    "macro_f1": 0.634,
+    "macro_always_present_f1": 0.385,
+    "all_substrates_right": 0.534
+  },
+  "thresholds": {
+    "Rock": 0.2,
+    "Mud": 0.3,
+    "Sand": 0.9,
+    "Cobble": 0.6,
+    "Boulder": 0.85
+  },
+  "finetuned_test_by_project": {
+    "CAMPA 2024": {
+      "Rock": {
+        "f1": 0.931,
+        "precision": 0.938,
+        "recall": 0.925,
+        "frames_present": 601,
+        "always_present_f1": 0.775
+      },
+      "Mud": {
+        "f1": 0.674,
+        "precision": 0.541,
+        "recall": 0.894,
+        "frames_present": 378,
+        "always_present_f1": 0.57
+      },
+      "Sand": {
+        "f1": 0.525,
+        "precision": 0.433,
+        "recall": 0.667,
+        "frames_present": 63,
+        "always_present_f1": 0.125
+      },
+      "Cobble": {
+        "f1": 0.527,
+        "precision": 0.453,
+        "recall": 0.63,
+        "frames_present": 100,
+        "always_present_f1": 0.191
+      },
+      "Boulder": {
+        "f1": 0.663,
+        "precision": 0.841,
+        "recall": 0.547,
+        "frames_present": 203,
+        "always_present_f1": 0.352
+      },
+      "macro_f1": 0.664,
+      "macro_always_present_f1": 0.403,
+      "all_substrates_right": 0.493
+    },
+    "CAMPA-2025": {
+      "Rock": {
+        "f1": 0.967,
+        "precision": 0.963,
+        "recall": 0.971,
+        "frames_present": 1193,
+        "always_present_f1": 0.811
+      },
+      "Mud": {
+        "f1": 0.337,
+        "precision": 0.21,
+        "recall": 0.855,
+        "frames_present": 138,
+        "always_present_f1": 0.146
+      },
+      "Sand": {
+        "f1": 0.52,
+        "precision": 0.938,
+        "recall": 0.36,
+        "frames_present": 717,
+        "always_present_f1": 0.582
+      },
+      "Cobble": {
+        "f1": 0.558,
+        "precision": 0.429,
+        "recall": 0.799,
+        "frames_present": 139,
+        "always_present_f1": 0.147
+      },
+      "Boulder": {
+        "f1": 0.533,
+        "precision": 0.448,
+        "recall": 0.659,
+        "frames_present": 85,
+        "always_present_f1": 0.093
+      },
+      "macro_f1": 0.583,
+      "macro_always_present_f1": 0.356,
+      "all_substrates_right": 0.556
+    }
+  }
+}
