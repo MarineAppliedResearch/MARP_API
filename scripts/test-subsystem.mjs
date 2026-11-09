@@ -104,6 +104,8 @@ const SUBSYSTEMS = {
             // and the row's reviewer ids. Same group as the query it rides beside --
             // both are the read path the mosaic client joins to.
             'mosaic-facets',
+            // #336: choosing one inference run, so runs are never counted together.
+            'mosaic-run-filter',
             // #104: the frame count the dataset builder sizes a training run against.
             // Here rather than with the dashboard's own suites, because it is the same
             // read path over the same filters as the query and the facets beside it.

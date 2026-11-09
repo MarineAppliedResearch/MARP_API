@@ -164,6 +164,15 @@ export const DIMENSIONS = [
     label: 'model', all: 'Any model', one: (v) => v,
     labelled: true, numeric: true,
   },
+  {
+    /* One inference run (#336), so a dive is reviewed run by run and the same model run
+       twice on a video is never mixed together. The id is a batch's, or `job-<id>` for a
+       run of one, and the label names the run, its model and when it was submitted. */
+    key: 'run', field: 'run_id',
+    source: 'gpu_jobs.batch_id via observations.gpu_job_id', kind: KIND.SET,
+    nestsUnder: 'model', label: 'run', all: 'Any run', one: (v) => v,
+    labelled: true,
+  },
 ];
 
 /** By key, for the many places that have one and want the rest. */

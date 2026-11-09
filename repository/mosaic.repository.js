@@ -570,6 +570,23 @@ function predicates(filters, bind, { status = true } = {}) {
     set('species', 'o.species_id', 'int[]');
     set('model', 'o.ml_model_id', 'int[]');
 
+    // #336: one inference run. Scientific data is read per run for each dive (Isaac,
+    // 2026-11-09), so the same model run twice on a video is never counted together. A
+    // run is one ML Dashboard submission -- `gpu_jobs.batch_id` -- and a job submitted on
+    // its own, with no batch, is a run of one, named `job-<id>`. Written as a subquery so
+    // no query that uses these predicates has to join `gpu_jobs` to be able to.
+    const runs = setValue(filters.run, 'run');
+    if (runs) {
+        if (runs.some((value) => typeof value !== 'string' || !RUN_ID.test(value))) {
+            throw new MosaicRequestError(
+                `filters.run takes run ids -- a batch id, or job-<id> for a run of one -- not ${JSON.stringify(runs[0])}`
+            );
+        }
+        const ids = bind.add(runs);
+        where.push(`(o.gpu_job_id IN (SELECT j.id FROM gpu_jobs j WHERE j.batch_id::text = ANY(${ids}::varchar[]))
+        OR ('job-' || o.gpu_job_id) = ANY(${ids}::varchar[]))`);
+    }
+
     if (isActive(filters.confidence)) {
         const from = rangeEnd(filters.confidence.from, 'filters.confidence.from');
         const to = rangeEnd(filters.confidence.to, 'filters.confidence.to');
@@ -904,6 +921,9 @@ SELECT count(*)::int AS n
  * @constant
  * @type {Object}
  */
+/** A run id: a batch's uuid, or `job-<id>` for a job submitted on its own (#336). */
+const RUN_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|job-[0-9]+)$/;
+
 const FACET_DIMENSIONS = {
     project: { value: 'p.name', label: 'p.name' },
     dive: { value: 's.dive', label: 's.dive' },
@@ -912,6 +932,17 @@ const FACET_DIMENSIONS = {
     session: { value: 'o.session_id', label: 'o.session_id::text' },
     species: { value: 'o.species_id', label: 'sp.comname', list: 'sp.species_list' },
     model: { value: 'o.ml_model_id', label: 'm.name', joins: '\n  LEFT JOIN ml_models m ON m.id = o.ml_model_id' },
+    // #336. Named by what it was given, its model and when, because names repeat: three
+    // runs submitted together on 2026-10-30 are all "Dive01_20261030". The label is taken
+    // across a run's pieces, so it is one per run, and the newest run comes first.
+    run: {
+        value: "coalesce(gj.batch_id::text, 'job-' || o.gpu_job_id)",
+        label: "coalesce(min(gj.name), 'Unnamed run') || ' · ' || coalesce(min(rm.name), 'unknown model')"
+            + " || ' · ' || to_char(min(gj.created_at), 'YYYY-MM-DD HH24:MI')",
+        aggregateLabel: true,
+        order: 'min(gj.created_at) DESC',
+        joins: '\n  LEFT JOIN gpu_jobs gj ON gj.id = o.gpu_job_id\n  LEFT JOIN ml_models rm ON rm.id = o.ml_model_id',
+    },
 };
 
 /**
@@ -963,8 +994,8 @@ SELECT ${dimension.value} AS value,
   LEFT JOIN observation_review_current rt
          ON rt.observation_id = o.observation_id AND rt.purpose = 'training'${dimension.joins || ''}
  ${where.length ? `WHERE ${where.join('\n   AND ')}\n   AND` : 'WHERE'} ${dimension.value} IS NOT NULL
- GROUP BY ${dimension.value}, ${dimension.label}
- ORDER BY ${dimension.label}`;
+ GROUP BY ${dimension.value}${dimension.aggregateLabel ? '' : `, ${dimension.label}`}
+ ORDER BY ${dimension.order || dimension.label}`;
 
     return { sql, bind: bind.values };
 }

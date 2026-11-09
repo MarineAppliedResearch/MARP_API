@@ -3187,6 +3187,7 @@ const buildOpenApiSpec = () => {
                             session: { type: 'array', items: { type: 'integer' }, example: [400], description: 'observations.session_id.' },
                             species: { type: 'array', items: { type: 'integer' }, example: [41], description: 'observations.species_id, and only species_id. It finds the organism; `comname` finds rows whose label text matches a name that may since have moved.' },
                             model: { type: 'array', items: { type: 'integer' }, example: [], description: 'observations.ml_model_id.' },
+                            run: { type: 'array', items: { type: 'string' }, example: ['job-21974'], description: 'One inference run each (#336): an ML Dashboard submission\'s `gpu_jobs.batch_id`, or `job-<id>` for a job submitted on its own. Scientific data is read per run, so the same model run twice on a video is never counted together. Observations no run made, such as hand annotation, match no run.' },
                             confidence: {
                                 type: 'object',
                                 nullable: true,
@@ -3553,7 +3554,7 @@ const buildOpenApiSpec = () => {
                         properties: {
                             facets: {
                                 type: 'object',
-                                description: 'Keyed by dimension name: project, dive, line, sessionType, session, species, model.',
+                                description: 'Keyed by dimension name: project, dive, line, sessionType, session, species, model, run. A run is labelled with its name, model and when it was submitted, newest first, because run names repeat.',
                                 additionalProperties: {
                                     type: 'array',
                                     items: {
