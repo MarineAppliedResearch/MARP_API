@@ -75,6 +75,12 @@ module.exports = (sequelize, DataTypes) => {
                 comment: 'Groups the pieces of one split video. Null for a job submitted on its own.',
             },
 
+            submission_id: {
+                type: DataTypes.UUID,
+                allowNull: true,
+                comment: 'The submission this job came from (#336): every video of one dive submitted together, for one model.',
+            },
+
             name: {
                 type: DataTypes.STRING(255),
                 allowNull: true,

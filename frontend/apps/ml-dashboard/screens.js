@@ -9986,6 +9986,21 @@ async function fillProjectPickers() {
 }
 
 /**
+ * A new submission id (#336), a uuid. `crypto.randomUUID` exists only on a secure page, and
+ * MARP is opened at a bare address, so this builds one from random bytes where it is missing.
+ *
+ * @returns {string} A version-4 uuid.
+ */
+function submissionId() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  const bytes = window.crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
  * The settings a model config asks for, under the names the worker reads.
  *
  * **Only what was changed is sent.** The worker records each setting with a `source` of
@@ -10349,6 +10364,17 @@ function wireInferenceForm() {
     sayRunStatus(`Queueing ${asked.bodies.length} run${asked.bodies.length === 1 ? '' : 's'}…`);
 
     const queued = [];
+
+    /* **One run per dive and model, however many videos** (#336). MARP is sent one request
+       per video, so they carry one submission id between them, and the Mosaic's run filter
+       offers the dive's whole submission as one choice. */
+    const submissions = new Map();
+    for (const body of asked.bodies) {
+      const session = body.spec.session || {};
+      const key = [session.project_id, session.dive, body.spec.model && body.spec.model.ml_model_id].join('|');
+      if (!submissions.has(key)) submissions.set(key, submissionId());
+      body.submission_id = submissions.get(key);
+    }
 
     try {
       /* One at a time, deliberately. Each submission creates its own session, and a

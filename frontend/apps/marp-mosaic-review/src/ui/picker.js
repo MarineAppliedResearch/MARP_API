@@ -249,7 +249,15 @@ export async function renderPicker() {
     ? correctionConsequence(correcting)
     : ['', `This note will be recorded with the ${decision} decision when you commit it.`];
   const label = decision.charAt(0).toUpperCase() + decision.slice(1);
-  const reasonControls = isException ? `<div class="chips">${m.reasons.map((r) =>
+  /* Reviewed, beside the flag reasons (Isaac, 2026-11-09): accepting one tile was only a
+     right-click, which nothing on screen says. The same pending accept mark a right-click
+     makes, so it waits for Commit Marked like everything else in this panel. */
+  const accepted = acceptedValue(state.mode);
+  const acceptControl = accepted
+    ? `<button class="chip accept" data-act="accept"
+        title="Record this as ${accepted} instead of ${m.mark.toLowerCase()} when you commit">${acceptIcon()}Mark ${accepted}</button>`
+    : '';
+  const reasonControls = isException ? `<div class="chips">${acceptControl}${m.reasons.map((r) =>
     `<button class="chip ${mark.reason === r ? 'on' : ''}" data-reason="${r}"
        title="Record this as the reason">${mark.reason === r ? ICON.tick : ''}${r}</button>`).join('')}
     <button class="chip change ${correcting ? 'on' : ''}" data-act="correct"
@@ -327,6 +335,8 @@ export async function renderPicker() {
   bindSpecies(panel, id);
   const correct = panel.querySelector('[data-act="correct"]');
   if (correct) correct.addEventListener('click', () => actions.toggleCorrecting(id));
+  const accept = panel.querySelector('[data-act="accept"]');
+  if (accept) accept.addEventListener('click', () => actions.acceptMark(id));
   const unmark = panel.querySelector('[data-act="unmark"]');
   if (unmark) unmark.addEventListener('click', () => actions.toggleMark(id));
   const replace = panel.querySelector('[data-act="replace-thumbnail"]');

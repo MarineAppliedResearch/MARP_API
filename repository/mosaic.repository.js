@@ -570,6 +570,23 @@ function predicates(filters, bind, { status = true } = {}) {
     set('species', 'o.species_id', 'int[]');
     set('model', 'o.ml_model_id', 'int[]');
 
+    // #336: one inference run. Scientific data is read per run for each dive (Isaac,
+    // 2026-11-09), so the same model run twice on a video is never counted together. **A
+    // run is one submission**: every video of a dive submitted together, for one model --
+    // `gpu_jobs.submission_id`. A job from before that existed and somehow left out of the
+    // backfill falls back to its batch, then to itself as `job-<id>`. A subquery, so no
+    // query that uses these predicates has to join `gpu_jobs` to be able to.
+    const runs = setValue(filters.run, 'run');
+    if (runs) {
+        if (runs.some((value) => typeof value !== 'string' || !RUN_ID.test(value))) {
+            throw new MosaicRequestError(
+                `filters.run takes run ids -- a submission's id, or job-<id> -- not ${JSON.stringify(runs[0])}`
+            );
+        }
+        where.push(`o.gpu_job_id IN (SELECT j.id FROM gpu_jobs j
+                     WHERE ${RUN_KEY('j', 'j.id')} = ANY(${bind.add(runs)}::varchar[]))`);
+    }
+
     if (isActive(filters.confidence)) {
         const from = rangeEnd(filters.confidence.from, 'filters.confidence.from');
         const to = rangeEnd(filters.confidence.to, 'filters.confidence.to');
@@ -904,6 +921,22 @@ SELECT count(*)::int AS n
  * @constant
  * @type {Object}
  */
+/** A run id: a submission's uuid, or `job-<id>` for a job with none (#336). */
+const RUN_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|job-[0-9]+)$/;
+
+/**
+ * The zone a run's time is told in: this server's own, which is where MARP is used. The
+ * database answers in UTC, so a run submitted at 21:19 read 04:19 the next day (Isaac,
+ * 2026-11-09). Inlined into SQL, so it is held to the characters a zone name has.
+ */
+const RUN_TIME_ZONE = (() => {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    return /^[A-Za-z0-9_+\-/]+$/.test(zone) ? zone : 'UTC';
+})();
+
+/** The run a job belongs to, as SQL: its submission, else its batch, else itself (#336). */
+const RUN_KEY = (job, jobId) => `coalesce(${job}.submission_id::text, ${job}.batch_id::text, 'job-' || ${jobId})`;
+
 const FACET_DIMENSIONS = {
     project: { value: 'p.name', label: 'p.name' },
     dive: { value: 's.dive', label: 's.dive' },
@@ -912,6 +945,18 @@ const FACET_DIMENSIONS = {
     session: { value: 'o.session_id', label: 'o.session_id::text' },
     species: { value: 'o.species_id', label: 'sp.comname', list: 'sp.species_list' },
     model: { value: 'o.ml_model_id', label: 'm.name', joins: '\n  LEFT JOIN ml_models m ON m.id = o.ml_model_id' },
+    // #336. Named by what it was given, its model, when, and how many videos it covers,
+    // because names repeat. The label is taken across a run's pieces and videos, so it is
+    // one per run, and the newest run comes first.
+    run: {
+        value: RUN_KEY('gj', 'o.gpu_job_id'),
+        label: "coalesce(min(gj.name), 'Unnamed run') || ' · ' || coalesce(min(rm.name), 'unknown model')"
+            + ` || ' · ' || to_char(min(gj.created_at) AT TIME ZONE '${RUN_TIME_ZONE}', 'YYYY-MM-DD HH24:MI')`
+            + " || ' · ' || count(DISTINCT o.video_source) || CASE WHEN count(DISTINCT o.video_source) = 1 THEN ' video' ELSE ' videos' END",
+        aggregateLabel: true,
+        order: 'min(gj.created_at) DESC',
+        joins: '\n  LEFT JOIN gpu_jobs gj ON gj.id = o.gpu_job_id\n  LEFT JOIN ml_models rm ON rm.id = o.ml_model_id',
+    },
 };
 
 /**
@@ -963,8 +1008,8 @@ SELECT ${dimension.value} AS value,
   LEFT JOIN observation_review_current rt
          ON rt.observation_id = o.observation_id AND rt.purpose = 'training'${dimension.joins || ''}
  ${where.length ? `WHERE ${where.join('\n   AND ')}\n   AND` : 'WHERE'} ${dimension.value} IS NOT NULL
- GROUP BY ${dimension.value}, ${dimension.label}
- ORDER BY ${dimension.label}`;
+ GROUP BY ${dimension.value}${dimension.aggregateLabel ? '' : `, ${dimension.label}`}
+ ORDER BY ${dimension.order || dimension.label}`;
 
     return { sql, bind: bind.values };
 }
