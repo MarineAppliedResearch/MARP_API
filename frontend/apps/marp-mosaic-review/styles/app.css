@@ -378,6 +378,9 @@ body.rail-collapsed .fcount { display: grid; }
 
 /* state treatments — always shape or pattern as well as hue */
 .b-flag { background: var(--amber-300); color: #241a02; }
+/* Mark reviewed in a tile's panel (2026-11-09): the accepted colour, apart from the reasons. */
+.chip.accept { border-color: var(--green-400); color: var(--green-400); }
+.chip.accept svg { width: 10px; height: 10px; }
 .b-chg  { background: var(--cyan-300);  color: #02181a; }
 .b-oth  { background: #414852;          color: #dfe6ec; }
 .b-del  { background: var(--red-400);   color: #2b0409; }
