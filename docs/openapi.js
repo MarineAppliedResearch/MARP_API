@@ -1634,6 +1634,13 @@ const buildOpenApiSpec = () => {
                                         example: 'ROV',
                                         description: 'Type or category of this session (e.g., survey platform or method).',
                                     },
+                                    timecode_rate: {
+                                        type: 'string',
+                                        enum: ['25', '29.97DF'],
+                                        nullable: true,
+                                        example: '29.97DF',
+                                        description: "How the video's burned-in timecode counts frames: '25', or '29.97DF' for 29.97 drop-frame. Null means 25. Any other value is not stored.",
+                                    },
                                 },
                             },
                         },

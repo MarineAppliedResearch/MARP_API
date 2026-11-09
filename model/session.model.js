@@ -169,6 +169,18 @@ module.exports = (sequelize, DataTypes) => {
             examples: ['ROV'],
         },
       },
+      // How the timecode burned into the video counts frames. Not in the file, so
+      // the GUI asks once per session. Null is 25, what older sessions used (VPG#221).
+      timecode_rate: {
+        type: DataTypes.STRING(16),
+        allowNull: true,
+        validate: { isIn: [['25', '29.97DF']] },
+        jsonSchema: {
+            schema: { type: 'string', enum: ['25', '29.97DF'], nullable: true },
+            description: "How the video's burned-in timecode counts frames: '25', or '29.97DF' for 29.97 drop-frame. Null means 25.",
+            examples: ['29.97DF'],
+        },
+      },
     },
     {
       sequelize,               // shared Sequelize connection instance
