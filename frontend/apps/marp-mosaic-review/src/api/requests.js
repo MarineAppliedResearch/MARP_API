@@ -216,7 +216,7 @@ export const countsBody = ({ filters }) => ({ filters: filtersBody(filters) });
  * here rather than reaching the endpoint, which would answer 400 — the 400 is the right
  * answer and a client that can build the request is a client with a latent bug.
  */
-export function commitBody({ rows = [], marks = new Map(), withdraw = [] } = {}) {
+export function commitBody({ rows = [], marks = new Map(), withdraw = [], seenInVideo = false } = {}) {
   const observations = rows.map((row) => {
     if (!Number.isInteger(row && row.observation_id)) {
       throw new TypeError(`a commit needs an observation_id, got ${JSON.stringify(row)}`);
@@ -257,6 +257,9 @@ export function commitBody({ rows = [], marks = new Map(), withdraw = [] } = {})
 
   const taken = idList(withdraw, 'withdraw').filter((id) => onPage.has(id));
   if (taken.length) body.withdraw = taken;
+
+  /* Decided on the video page (#337): an acceptance there needs no Mosaic picture. */
+  if (seenInVideo) body.seen_in_video = true;
 
   return body;
 }

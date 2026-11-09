@@ -625,7 +625,9 @@ async function recordReview(row, { kind, reason = null, takeBack = false }) {
       mode: 'scientific',
       rows: [{ observation_id: id, version: row.version }],
       marks: takeBack ? new Map() : new Map([[id, { kind, reason }]]),
-      withdraw: takeBack ? [id] : []
+      withdraw: takeBack ? [id] : [],
+      // Watched here, so marking it reviewed needs no Mosaic picture (Isaac, 2026-11-09).
+      seenInVideo: true
     });
     const mine = (list) => (list || []).find((entry) => entry.observation_id === id);
     if (mine(answer.conflicted)) {

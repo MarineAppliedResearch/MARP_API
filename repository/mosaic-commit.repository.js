@@ -768,6 +768,13 @@ async function commitReview(mode, request, principal, reviewerId) {
     const page = readPage(request.observations);
     const marks = readMarks(request.marks, page, mode);
     const withdraw = readWithdraw(request.withdraw, page, marks, mode);
+
+    // Decided while watching the observation in its video (#337, Isaac 2026-11-09), so
+    // an explicit acceptance needs no Mosaic picture: the reviewer saw the animal itself.
+    if (request.seen_in_video !== undefined && typeof request.seen_in_video !== 'boolean') {
+        throw new MosaicRequestError('seen_in_video must be true or false');
+    }
+    const seenInVideo = request.seen_in_video === true;
     const ids = [...page.keys()];
 
     const denied = deniedObservationIds(principal, ids, mode.purpose === 'training' ? 'training' : 'review');
@@ -818,7 +825,10 @@ async function commitReview(mode, request, principal, reviewerId) {
             // mark is an acceptance too, so it is skipped here for the same
             // reason an untouched tile is. The client refuses that mark at click
             // time (A4); this is the same rule at the end that has to hold.
-            if (!excepted(marks, id) && !withImagery.has(id)) {
+            // Waived only for an explicit accept mark made on the video page: an unmarked
+            // row in the same request is still a page sweep, and still needs its picture.
+            const acceptedInVideo = seenInVideo && marks.has(id) && !excepted(marks, id);
+            if (!excepted(marks, id) && !withImagery.has(id) && !acceptedInVideo) {
                 out.skip(id, SKIP_NO_IMAGERY);
 
                 continue;

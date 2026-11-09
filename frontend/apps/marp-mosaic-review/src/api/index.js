@@ -136,11 +136,11 @@ export const MarpApi = {
    * version }]` with the version mandatory, and the store was passing neither. A leak, and
    * it is counted rather than hidden inside an adapter.
    */
-  async commitPage({ mode, rows = [], marks = new Map(), withdraw = [], signal } = {}) {
+  async commitPage({ mode, rows = [], marks = new Map(), withdraw = [], seenInVideo = false, signal } = {}) {
     const path = COMMIT_PATH[mode];
     if (!path) throw new TypeError(`no commit route for mode ${JSON.stringify(mode)}`);
     /* Delete records no decision, so it takes no withdrawal -- the endpoint refuses one. */
-    const body = commitBody({ rows, marks, withdraw: mode === 'delete' ? [] : withdraw });
+    const body = commitBody({ rows, marks, withdraw: mode === 'delete' ? [] : withdraw, seenInVideo });
     return request(path, { method: 'POST', body, signal });
   },
 
