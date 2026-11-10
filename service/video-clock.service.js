@@ -140,6 +140,24 @@ class VideoClockService {
     }
 
     /**
+     * When an observation at `mediaPosition` in a video was seen, by its clock, or null when
+     * the video has none or the position does not parse. For a writer that has the row but
+     * not the moment -- the annotation GUI's create (#76).
+     *
+     * @async
+     * @param {string|null} videoSource
+     * @param {string|null} mediaPosition - `.NET TimeSpan` text.
+     * @param {Object} [transaction]
+     * @returns {Promise<Date|null>}
+     */
+    async observedAtFor(videoSource, mediaPosition, transaction) {
+        const mediaMs = parseTimeSpan(mediaPosition);
+        if (mediaMs === null) return null;
+        const start = await this.startOf(videoSource, transaction);
+        return start ? clockAt(start, mediaMs).observedAt : null;
+    }
+
+    /**
      * Set a video's clock and correct every observation in it.
      *
      * `start` is when the recording started. A reading off the picture is given instead as
@@ -176,7 +194,12 @@ class VideoClockService {
             start = new Date(clock.getTime() - at);
         }
 
-        const transaction = await db.sequelize.transaction();
+        // Repeatable read, so the guard's before and after counts come from one snapshot: at
+        // read committed, an observation somebody else deleted meanwhile read as this losing
+        // one, and the clock was refused.
+        const transaction = await db.sequelize.transaction({
+            isolationLevel: db.Sequelize.Transaction.ISOLATION_LEVELS.REPEATABLE_READ,
+        });
         try {
             const counts = await guardDataIntegrity({
                 sequelize: db.sequelize,

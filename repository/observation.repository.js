@@ -111,6 +111,7 @@ const moment = require('moment');
  * @type {Object}
  */
 const { Op, fn, col } = require('sequelize');
+const videoClockService = require('../service/video-clock.service');
 
 
 
@@ -626,6 +627,13 @@ class ObservationRepository {
 
             observation.obsID = (parseInt(maxOBSID)).toString();
             observation.PobsID = parseInt(maxPobsID + 1);
+
+            // The moment it was seen, from its video's clock (#76). The annotation GUI
+            // sends positions and clock times, not this, so it is worked out here.
+            if (observation.observed_at == null) {
+                observation.observed_at = await videoClockService.observedAtFor(
+                    observation.video_source, observation.mediaPosition);
+            }
 
             console.log("Models in DB:", Object.keys(this.db));
             console.log("Associations on observations:", Object.keys(this.db.observations.associations));

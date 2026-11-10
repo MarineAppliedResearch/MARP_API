@@ -180,6 +180,23 @@ describe('A video\'s clock', () => {
         expect(second.tc).toBe('1.01:00:00');
     });
 
+    it('gives an observation the annotation GUI creates the moment it was seen, by its video clock', async () => {
+        // The clock is 23:00:00 on the 14th, from the test above.
+        const res = await global.api.post('/api/v2/observation').send({ observation: {
+            session_id: sessionIds[0], comname: `Jest clock ${runId}`, video_source: VIDEO,
+            mediaPosition: '00:10:00.5000000', actualPosition: '23:10:00.5000000', tc: '23:10:00',
+        } });
+        expect(res.status).toBe(200);
+        expect(new Date((await stored(res.body.observation_id)).observed_at).toISOString()).toBe('2021-06-14T23:10:00.500Z');
+
+        // In a video with no clock there is no moment to give it.
+        const unclocked = await global.api.post('/api/v2/observation').send({ observation: {
+            session_id: sessionIds[0], comname: `Jest clock ${runId}`, video_source: OTHER, mediaPosition: '00:10:00.5000000',
+        } });
+        expect(unclocked.status).toBe(200);
+        expect((await stored(unclocked.body.observation_id)).observed_at).toBeNull();
+    });
+
     it('refuses a request it cannot act on, and writes nothing', async () => {
         const before = await stored(ids.first);
 
