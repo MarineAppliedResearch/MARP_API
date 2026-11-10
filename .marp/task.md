@@ -101,6 +101,15 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
   keyframes with the habitat crop, on the video's clock where it is set.
 - **R7** — Its tiles get pictures in the Mosaic without anything done by hand (needs R1).
 - **R8** — #342: habitat observations are shown and reviewed in the Mosaic as segments.
+- **R9** — The ML Dashboard carries the Mud and Sand rule as part of building a habitat model,
+  not only inside inference. Isaac, 2026-11-10: *"our ml dashboard will need to put a rule in
+  about mud and sand when it's building this dashboard"*; Mud, Sand and Gravel never overlap,
+  and no annotated frame has Mud with Sand (0 of 32,636). Today the rule exists only as a
+  stretch rule applied after the model (`exclusive` in `db/habitat-rules.js`, shown on the
+  Models screen as "Never together"). Where else it applies is A15-A18. Tested at the tier of
+  each place it is applied: the dataset build (API jest), the rules a trained model is
+  registered with (API jest), the stretches a run makes (worker pytest), and what the
+  dashboard shows (dashboard unit).
 
 ## Open assumptions
 
@@ -183,6 +192,24 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
   #342 says a wrong substrate is flagged by tapping it, and the flag lands on that substrate's
   stretch. When a segment is approved as is, is every stretch under it approved whole, even
   where a stretch runs past the segment? Only #342's piece waits on this.
+- [ ] **A15 · data-meaning · blocking** — **A dataset frame labelled both Mud and Sand.** None
+  is today, but a future annotation or a reviewed model stretch could make one. Proposed: the
+  frame is left out of the dataset and listed in the build report with its reason, as rejected
+  non-seabed frames are. Or the whole build is refused, or the frame goes in as labelled.
+- [ ] **A16 · scientific · blocking** — **Whether the model is taught the rule.** Today it is
+  only applied after the model: where both pass their cut-offs, the surer stays. Proposed:
+  keep it that way for the first trainer, which is the recipe that was measured. The other
+  way is training Mud and Sand as one choice of three (Mud, Sand, neither) so the model can
+  never answer both, which changes the model and needs its own measurement first.
+- [ ] **A17 · product/UI · blocking** — **How the rule shows in the dashboard, and who can
+  change it.** Proposed: the habitat dataset builder and the training form both state it
+  ("Mud and Sand are never together"), it is copied into each model's rules when the model is
+  registered and shown there as now, and it is not editable on screen at first. Or it is a
+  setting a person can change per dataset or per model.
+- [ ] **A18 · data-meaning · blocking** — **Gravel.** Isaac named Mud, Sand and Gravel as never
+  overlapping; the model has no Gravel class (the five are Rock, Mud, Sand, Cobble, Boulder).
+  Proposed: the rule is stored as one group, Mud, Sand and Gravel, applied to whichever of
+  them a model or dataset has, so Gravel is covered the day it is added. Or Mud and Sand only.
 - [ ] **A12 · behavioural · non-blocking** — A habitat run is per video, and sessions are made
   per run as inference runs are now (`session.per_run`, one submission per dive and model,
   #336). Followed, not asked.
@@ -221,7 +248,8 @@ Built in this order. Each step is merged only when Isaac says so.
 
 ## Status
 
-- **Gate:** implementing (G2). Every blocking assumption was answered by Isaac on 2026-11-10.
+- **Gate:** implementing (G2). A1-A11 were answered by Isaac on 2026-11-10; A15-A18, from R9
+  (added later the same day), are with him through the feasibility session.
 - **Also from the feasibility session, 2026-11-10:** one model on the habitat crop scored test
   F1 0.728 against 0.751 on the old crop; Boulder fell from 0.62 to 0.55. The crop stays
   settled, the numbers provisional. So the crop a model was trained on is stored with the model
