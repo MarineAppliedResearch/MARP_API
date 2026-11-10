@@ -392,6 +392,15 @@ const HABITAT_MODEL_TYPE = 'habitat';
  */
 const HABITAT_ENGINE = 'marp_habitat';
 
+/**
+ * The worker engine that trains a habitat model, and the only one that may (#287). It takes a
+ * habitat dataset and a habitat starting model; the species trainer takes neither.
+ *
+ * @constant
+ * @type {string}
+ */
+const HABITAT_TRAINING_ENGINE = 'marp_habitat_training';
+
 
 
 /**
@@ -550,6 +559,7 @@ module.exports = {
     ENGINE_DATA_TYPES,
     HABITAT_MODEL_TYPE,
     HABITAT_ENGINE,
+    HABITAT_TRAINING_ENGINE,
     JOB_STATES,
     TERMINAL_JOB_STATES,
     ATTEMPT_STATES,

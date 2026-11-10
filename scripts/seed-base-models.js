@@ -31,9 +31,15 @@
  *
  * Idempotent and dry-run by default, like its neighbours.
  *
+ * **DINOv2 ViT-B/14 is the habitat models' starting point** (#287, settled 2026-11-10:
+ * registered in MARP and served from it, so workers need no internet). Its file is timm's
+ * packaging at a pinned revision, the one `fetch_pretrained.py` on the habitat branch
+ * downloads and checks; it is a safetensors file, not a pickle, and is copied the same way.
+ *
  * Usage:
  *   node scripts/seed-base-models.js --from <directory>
  *   node scripts/seed-base-models.js --from <directory> --apply
+ *   node scripts/seed-base-models.js --from <directory> --only dinov2-vitb14 --apply
  *
  * @fileoverview Repeatable registration of the pretrained classification base models.
  * @author Isaac Travers
@@ -84,6 +90,20 @@ const BASE_MODELS = [
         sha256: '864010e833b46be542ed849b2eb0fdacf51e4679dc677c18dcc4505244d08ec1',
         notes: 'Pretrained YOLOv8-medium classifier, Ultralytics assets v8.4.0. '
             + 'The family rockfish5 belongs to. A starting point for training, never for inference.',
+    },
+    {
+        name: 'dinov2-vitb14',
+        file: 'model.safetensors',
+        modelType: 'habitat',
+        architecture: 'vit_base_patch14_dinov2.lvd142m',
+        engine: 'timm',
+        fileFormat: 'safetensors',
+        bytes: 346334872,
+        sha256: '55cbb5d887b336d430e649c277b85a1429e724871f9d02ac16203235886d8c7b',
+        source: 'https://huggingface.co/timm/vit_base_patch14_dinov2.lvd142m/resolve/'
+            + '4685c99dabffe5affac90bd99dbffd25801ae58d/model.safetensors',
+        notes: 'DINOv2 ViT-B/14 (timm vit_base_patch14_dinov2.lvd142m), self-supervised on 142M general '
+            + 'images. The starting point for habitat substrate models (#287); never run for inference.',
     },
 ];
 
@@ -143,7 +163,7 @@ async function seedOne(entry, sourceDir, apply) {
 
     if (!fs.existsSync(source)) {
         throw new Error(
-            `${entry.file} is not in ${sourceDir}. Download it from ${SOURCE_RELEASE}/${entry.file} `
+            `${entry.file} is not in ${sourceDir}. Download it from ${entry.source || `${SOURCE_RELEASE}/${entry.file}`} `
             + 'and nowhere else. This script will not register a model whose bytes are missing.'
         );
     }
@@ -202,6 +222,9 @@ async function seedOne(entry, sourceDir, apply) {
 
     const fields = {
         model_type: entry.modelType,
+        ...(entry.architecture ? { architecture_version: entry.architecture } : {}),
+        ...(entry.engine ? { engine: entry.engine } : {}),
+        ...(entry.fileFormat ? { file_format: entry.fileFormat } : {}),
         storage_path: storagePath,
         status: 'active',
         is_base: true,
@@ -236,7 +259,7 @@ async function seedOne(entry, sourceDir, apply) {
 }
 
 /**
- * Seed both base models.
+ * Seed the base models, or the one `--only` names.
  *
  * @async
  * @returns {Promise<void>} Resolves when done.
@@ -253,7 +276,14 @@ async function main() {
 
     const done = [];
 
-    for (const entry of BASE_MODELS) {
+    /* `--only` registers one, for a file kept in its own folder, as DINOv2's is. */
+    const only = argument('--only');
+    const entries = only ? BASE_MODELS.filter((entry) => entry.name === only) : BASE_MODELS;
+    if (!entries.length) {
+        throw new Error(`--only ${only} names no base model; known: ${BASE_MODELS.map((e) => e.name).join(', ')}`);
+    }
+
+    for (const entry of entries) {
         done.push(await seedOne(entry, sourceDir, apply));
     }
 

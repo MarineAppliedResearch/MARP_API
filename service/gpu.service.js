@@ -54,6 +54,7 @@ const {
     ENGINE_DATA_TYPES,
     HABITAT_MODEL_TYPE,
     HABITAT_ENGINE,
+    HABITAT_TRAINING_ENGINE,
     JOB_STATES,
     REPORTABLE_ATTEMPT_STATES,
     WORKER_EVENT_KINDS,
@@ -2683,6 +2684,8 @@ class GpuService {
             invalid('A training job carries a dataset, not a video and a range.');
         }
 
+        await this.refuseMismatchedHabitatTraining(spec, archive);
+
         const priority = optionalInteger(body.priority, 'priority', 0);
         const maxAttempts = optionalInteger(body.max_attempts, 'max_attempts', 3);
 
@@ -3389,6 +3392,38 @@ class GpuService {
         }
         if (isHabitat && !row.decision_rules) {
             invalid(`Model ${modelId} (${row.name}) has no decision rules, so its scores cannot be made into stretches.`);
+        }
+    }
+
+    /**
+     * The habitat trainer trains habitat models from habitat datasets, and nothing else does
+     * (#287).
+     *
+     * A habitat dataset is frames with a yes or no per substrate; the species trainer would
+     * read it as a folder per class and train something that is neither. The habitat trainer,
+     * given a species dataset or a species checkpoint, would build a model MARP cannot
+     * register as a habitat model.
+     *
+     * @async
+     * @param {Object} spec - The training spec as submitted.
+     * @param {Object} archive - The dataset row, with its `task`.
+     * @returns {Promise<void>} Resolves when engine, dataset and model belong together.
+     * @throws {ApiError} 400 when they do not.
+     */
+    async refuseMismatchedHabitatTraining(spec, archive) {
+        const row = await ingestRepository.getModel(spec.model.ml_model_id);
+        const habitatEngine = spec.engine === HABITAT_TRAINING_ENGINE;
+        const habitatDataset = archive.task === HABITAT_MODEL_TYPE;
+        const habitatModel = Boolean(row && row.model_type === HABITAT_MODEL_TYPE);
+
+        if (habitatEngine && !habitatDataset) {
+            invalid(`The ${HABITAT_TRAINING_ENGINE} engine trains on habitat datasets; dataset ${archive.id} (${archive.name}) is a ${archive.task} dataset.`);
+        }
+        if (habitatEngine && !habitatModel) {
+            invalid(`The ${HABITAT_TRAINING_ENGINE} engine starts from a habitat model such as dinov2-vitb14; model ${spec.model.ml_model_id} is ${row ? `a ${row.model_type} model` : 'not registered'}.`);
+        }
+        if (!habitatEngine && (habitatDataset || habitatModel)) {
+            invalid(`A habitat ${habitatDataset ? 'dataset' : 'model'} is trained by the ${HABITAT_TRAINING_ENGINE} engine, not ${spec.engine}.`);
         }
     }
 

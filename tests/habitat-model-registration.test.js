@@ -282,3 +282,53 @@ describe('changing a habitat model\'s never-together groups (R9)', () => {
         await global.api.put(route(2147483000)).send({ groups: [['Mud', 'Sand']] }).expect(404);
     });
 });
+
+describe('a habitat model is trained by the habitat trainer, from habitat data (#287)', () => {
+    const { HABITAT_TRAINING_ENGINE } = require('../config/gpu-orchestration');
+    const ingestRepository = require('../repository/observation-ingest.repository');
+    const withModel = (row) => jest.spyOn(ingestRepository, 'getModel').mockResolvedValue(row);
+    const dinov2 = { name: 'dinov2-vitb14', model_type: HABITAT_MODEL_TYPE, is_base: true };
+    const yolo = { name: 'yolo11m-cls', model_type: 'classification', is_base: true };
+    const habitatData = { id: 1, name: 'campa-habitat', task: 'habitat' };
+    const speciesData = { id: 2, name: 'rockfish5', task: 'detection' };
+    const spec = (engine) => ({ engine, model: { ml_model_id: 1 } });
+    afterEach(() => jest.restoreAllMocks());
+
+    test('the habitat trainer, a habitat dataset and DINOv2 pass', async () => {
+        withModel(dinov2);
+        await expect(gpuService.refuseMismatchedHabitatTraining(spec(HABITAT_TRAINING_ENGINE), habitatData)).resolves.toBeUndefined();
+    });
+
+    test('the habitat trainer refuses a species dataset, and a species checkpoint', async () => {
+        withModel(dinov2);
+        await expect(gpuService.refuseMismatchedHabitatTraining(spec(HABITAT_TRAINING_ENGINE), speciesData)).rejects.toThrow(/trains on habitat datasets/);
+        withModel(yolo);
+        await expect(gpuService.refuseMismatchedHabitatTraining(spec(HABITAT_TRAINING_ENGINE), habitatData)).rejects.toThrow(/starts from a habitat model/);
+    });
+
+    test('the species trainer refuses a habitat dataset and a habitat model, and keeps its own', async () => {
+        withModel(yolo);
+        await expect(gpuService.refuseMismatchedHabitatTraining(spec('marp_training'), habitatData)).rejects.toThrow(/habitat dataset is trained by/);
+        withModel(dinov2);
+        await expect(gpuService.refuseMismatchedHabitatTraining(spec('marp_training'), speciesData)).rejects.toThrow(/habitat model is trained by/);
+        withModel(yolo);
+        await expect(gpuService.refuseMismatchedHabitatTraining(spec('marp_training'), speciesData)).resolves.toBeUndefined();
+    });
+
+    test('a habitat run\'s scores are read into per-substrate rows', () => {
+        const { finalMetrics, isKnownFamily } = require('../db/final-metrics');
+        // As the worker's habitat engine publishes them.
+        const read = finalMetrics({
+            schema: 1, task: 'habitat', split: 'test',
+            metrics: [{ family: 'multilabel', overall: { f1: 0.728 }, per_class: [
+                { class: 'Boulder', f1: 0.55, precision: 0.5, recall: 0.61, support: 412, images: 6016 },
+            ] }],
+        });
+        expect(isKnownFamily('multilabel')).toBe(true);
+        expect(read.split).toBe('test');
+        expect(read.rows).toEqual([
+            expect.objectContaining({ metric_family: 'multilabel', class_name: null, f1_score: 0.728, map50: null }),
+            expect.objectContaining({ metric_family: 'multilabel', class_name: 'Boulder', f1_score: 0.55, precision: 0.5, recall: 0.61, support: 412, image_count: 6016 }),
+        ]);
+    });
+});

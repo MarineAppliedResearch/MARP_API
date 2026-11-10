@@ -691,7 +691,7 @@ class GpuRepository {
     async getDatasetArchiveById(datasetId) {
         try {
             const dataset = await this.db.datasets.findByPk(datasetId, {
-                attributes: ['id', 'name', 'archive_path', 'archive_sha256', 'archive_bytes'],
+                attributes: ['id', 'name', 'task', 'archive_path', 'archive_sha256', 'archive_bytes'],
             });
 
             return dataset ? dataset.get({ plain: true }) : null;
