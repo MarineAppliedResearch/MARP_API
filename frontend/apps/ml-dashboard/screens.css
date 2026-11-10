@@ -1987,6 +1987,11 @@ details.fold .fbody { padding: 4px 12px 14px; }
 .plan-target small { margin-top: 2px; color: var(--faint); font-size: 9px; }
 .plan-target .target-line { display: flex; align-items: center; gap: 5px; color: var(--faint); font-size: 9px; }
 .plan-target .target-line .inp { width: 52px; }
+/* #76: when the recording started, on its own row under the video's name. */
+.plan-target .target-clock { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; color: var(--faint); font-size: 9px; }
+.plan-target .target-clock .inp { width: 170px; }
+.plan-target .target-clock [data-clock-state] { margin: 0; }
+.plan-target .target-clock [data-clock-state].warn { color: var(--amber-300); }
 .model-config { border: 1px solid var(--hairline-2); border-radius: 5px; background: rgba(1, 6, 14, .34); }
 .model-config > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; cursor: pointer; list-style: none; padding: 8px; }
 .model-config > summary::-webkit-details-marker { display: none; }

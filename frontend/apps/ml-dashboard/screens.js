@@ -10053,6 +10053,8 @@ async function inferenceSubmissions() {
   const models = await loadRunnableModels();
   const bodies = [];
   const refusals = [];
+  /* Each video's clock, once however many groups it is in (#76). */
+  const clocks = new Map();
   const name = ($('#jobname') ? $('#jobname').value : '').trim() || defaultJobName();
 
   $$('[data-run-group]').forEach((group, index) => {
@@ -10079,6 +10081,14 @@ async function inferenceSubmissions() {
          card and saved; a dive comes from the Jellyfin hierarchy. */
       if (!dive) refusals.push(where + ': ' + label + ' has no dive, so its session cannot be placed.');
       if (!line) refusals.push(where + ': ' + label + ' has no line. Type it into the Line box on its card.');
+
+      const clock = targetClock(target);
+      const seen = clocks.get(target.dataset.videoId);
+      if (seen && seen.start !== clock.start) {
+        refusals.push(label + ' is in the plan twice with different start times. Make them agree.');
+      } else {
+        clocks.set(target.dataset.videoId, Object.assign({ label }, clock));
+      }
 
       configs.forEach((config) => {
         const pick = $('[data-model-pick]', config);
@@ -10152,7 +10162,78 @@ async function inferenceSubmissions() {
     });
   });
 
-  return refusals.length ? { refusals } : { bodies };
+  return refusals.length ? { refusals } : { bodies, clocks };
+}
+
+/**
+ * What a plan card says about its video's clock (#76).
+ *
+ * The box holds a UTC date and time with no zone, as `datetime-local` does, so `Z` is added
+ * here and nowhere else. `source` is `file-name` when the suggested start was left as it
+ * was offered, which is accepting it; anything typed is `entered`.
+ *
+ * @param {Element} target - A `[data-target]` card.
+ * @returns {{start: (string|null), stored: (string|null), source: string, changed: boolean}}
+ */
+function targetClock(target) {
+  const box = $('[data-target-start]', target);
+  const typed = box ? box.value.trim() : '';
+  const asIso = (value) => (value ? new Date(value.length === 16 ? value + ':00Z' : value + 'Z').toISOString() : null);
+  const start = typed ? asIso(typed) : null;
+  const stored = target.dataset.clockStored || null;
+  const suggested = target.dataset.clockSuggested || null;
+
+  return {
+    start,
+    stored,
+    source: start && start === suggested ? 'file-name' : 'entered',
+    changed: Boolean(start) && start !== stored,
+  };
+}
+
+/** `2021-06-14T16:40:41.000Z` as a `datetime-local` value, still UTC. */
+const clockBoxValue = (iso) => (iso ? String(iso).slice(0, 19) : '');
+
+/**
+ * Fill a new plan card's clock: the one already set, or else the file name's, or nothing.
+ *
+ * @async
+ * @param {Element} target - A `[data-target]` card.
+ * @returns {Promise<void>}
+ */
+async function fillTargetClock(target) {
+  const box = $('[data-target-start]', target);
+  const state = $('[data-clock-state]', target);
+  if (!box || !state) return;
+
+  try {
+    const clock = await window.MarpApi.getVideoClock(target.dataset.videoId);
+    target.dataset.clockStored = clock.recorded_start || '';
+    target.dataset.clockSuggested = clock.suggested_start || '';
+    if (!box.value) box.value = clockBoxValue(clock.recorded_start || clock.suggested_start);
+  } catch (error) {
+    // Unknown is not the same as unset; say so and let it be typed.
+    target.dataset.clockStored = '';
+    target.dataset.clockSuggested = '';
+  }
+  sayTargetClock(target);
+}
+
+/** The line under a card's clock box, saying where its value came from. */
+function sayTargetClock(target) {
+  const state = $('[data-clock-state]', target);
+  if (!state) return;
+  const clock = targetClock(target);
+  let text;
+
+  if (!clock.start && clock.stored) text = 'Clock already set; left as it is.';
+  else if (!clock.start) text = 'No clock: this run\u2019s times will be positions in the video.';
+  else if (!clock.changed) text = 'Clock already set for this video.';
+  else if (clock.source === 'file-name') text = 'From the file name. Check it against the video before running.';
+  else text = 'Entered. Running sets this video\u2019s clock.';
+
+  state.textContent = text;
+  state.classList.toggle('warn', !clock.start && !clock.stored);
 }
 
 function wireInferenceForm() {
@@ -10236,11 +10317,20 @@ function wireInferenceForm() {
     + ' data-target-line value="' + safe(parts.line || '') + '" placeholder="e.g. 4"'
     + ' aria-label="Line for ' + safe(parts.title) + '"></label>'
     + '<button class="btn sm icon" type="button" data-remove-target aria-label="Remove '
-    + safe(parts.title) + '">' + ico('x', 'sm') + '</button></article>';
+    + safe(parts.title) + '">' + ico('x', 'sm') + '</button>'
+    /* #76: when the recording started, so this run's observations carry the real time.
+       Filled once the card is on the page, from the clock already set or the file name. */
+    + '<label class="target-clock">Recording started (UTC)<input class="inp" type="datetime-local" step="1"'
+    + ' data-target-start aria-label="Recording start for ' + safe(parts.title) + '">'
+    + '<small data-clock-state>Looking up this video\u2019s clock\u2026</small></label></article>';
 
   /* A card's line is what its submission carries, so the box writes straight onto the
      card's dataset and the badge follows it. */
   document.addEventListener('input', (event) => {
+    if (event.target.matches('[data-target-start]')) {
+      sayTargetClock(event.target.closest('[data-target]'));
+      return;
+    }
     if (!event.target.matches('[data-target-line]')) return;
 
     const target = event.target.closest('[data-target]');
@@ -10304,6 +10394,7 @@ function wireInferenceForm() {
           const parts = choiceParts(choice);
           if (!$('[data-target][data-video-id="' + parts.id + '"]', activeGroup)) {
             list.insertAdjacentHTML('beforeend', targetMarkup(parts));
+            fillTargetClock(list.lastElementChild);
           }
         });
       refreshPlan();
@@ -10361,6 +10452,28 @@ function wireInferenceForm() {
     }
 
     run.disabled = true;
+
+    /* **Clocks first** (#76): a run's results are timed by its video's clock when they
+       arrive, so it has to be set before the run is queued, not after. */
+    const unclocked = [];
+    try {
+      for (const [videoId, clock] of asked.clocks) {
+        if (clock.changed) {
+          await window.MarpApi.setVideoClock({ jellyfin_item_id: videoId, start: clock.start, source: clock.source });
+        } else if (!clock.start && !clock.stored) {
+          unclocked.push(clock.label);
+        }
+      }
+    } catch (error) {
+      sayRunStatus(`Could not set a video\u2019s clock (${error.status || 'no answer'}). ${error.message || ''} Nothing was queued.`.trim(),
+        'warning');
+      run.disabled = false;
+      return;
+    }
+    const clockNote = unclocked.length
+      ? ` ${unclocked.length} video${unclocked.length === 1 ? ' has' : 's have'} no clock, so ${unclocked.length === 1 ? 'its' : 'their'} times will be positions in the video.`
+      : '';
+
     sayRunStatus(`Queueing ${asked.bodies.length} run${asked.bodies.length === 1 ? '' : 's'}…`);
 
     const queued = [];
@@ -10387,7 +10500,7 @@ function wireInferenceForm() {
       }
 
       sayRunStatus(`Queued ${queued.length} job${queued.length === 1 ? '' : 's'}: `
-        + `${queued.join(', ')}. They appear below, and on the Jobs screen.`, 'ok');
+        + `${queued.join(', ')}. They appear below, and on the Jobs screen.${clockNote}`, 'ok');
       renderInferenceScreen();
     } catch (error) {
       /* MARP's own message, which names the field that was wrong. Replacing it with
