@@ -228,6 +228,8 @@ class VideoClockService {
             { replacements: { videoSource }, type: QueryTypes.SELECT, transaction }
         );
         const counts = { observations: 0, unreadable: 0, tcLeftAlone: 0, frameLeftAlone: 0 };
+        // Column by column, for one UPDATE: the busiest video holds about 2,800 observations.
+        const set = { id: [], observedAt: [], actual: [], tc: [], frame: [], etc: [] };
 
         for (const row of rows) {
             const verdict = classifyRow(row);
@@ -240,23 +242,24 @@ class VideoClockService {
             if (!verdict.tcDerivable) counts.tcLeftAlone += 1;
             if (!verdict.frameDerivable) counts.frameLeftAlone += 1;
 
-            await db.sequelize.query(
-                `UPDATE observations
-                    SET observed_at = :observedAt, "actualPosition" = :actual, tc = :tc, frame = :frame, etc = :etc
-                  WHERE observation_id = :id`,
-                {
-                    replacements: {
-                        id: row.observation_id,
-                        observedAt,
-                        actual: formatTimeSpan(actualMs),
-                        tc: verdict.tcDerivable ? deriveTc(actualMs) : row.tc,
-                        frame: verdict.frameDerivable ? deriveFrame(actualMs) : row.frame,
-                        etc: shiftTruncated(row.etc, shiftMs),
-                    },
-                    transaction,
-                }
-            );
+            set.id.push(row.observation_id);
+            set.observedAt.push(observedAt.toISOString());
+            set.actual.push(formatTimeSpan(actualMs));
+            set.tc.push(verdict.tcDerivable ? deriveTc(actualMs) : row.tc);
+            set.frame.push(verdict.frameDerivable ? deriveFrame(actualMs) : (row.frame === null ? null : String(row.frame)));
+            set.etc.push(shiftTruncated(row.etc, shiftMs));
             counts.observations += 1;
+        }
+
+        if (set.id.length) {
+            await db.sequelize.query(
+                `UPDATE observations o
+                    SET observed_at = v.observed_at, "actualPosition" = v.actual, tc = v.tc, frame = v.frame, etc = v.etc
+                   FROM unnest($1::int[], $2::timestamptz[], $3::text[], $4::text[], $5::text[], $6::text[])
+                        AS v(id, observed_at, actual, tc, frame, etc)
+                  WHERE o.observation_id = v.id`,
+                { bind: [set.id, set.observedAt, set.actual, set.tc, set.frame, set.etc], transaction }
+            );
         }
         return counts;
     }
