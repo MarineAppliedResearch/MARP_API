@@ -169,6 +169,16 @@ async function enqueueMissing(observationIds, transaction) {
  * @param {Array<number>} observationIds - Observations to retry.
  * @returns {Promise<Array<Object>>} One row per requested observation that exists.
  */
+/**
+ * The permanent failure a keyframe answers (#347). Recorded by the extractor for an observation
+ * with no keyframes; the keyframe trigger (migration 20261110130000) and {@link requeue} know it
+ * by this message, so it is written once, here.
+ *
+ * @constant
+ * @type {string}
+ */
+const NO_KEYFRAMES_ERROR = 'The observation has no keyframes, so it has no bounding box and can never have a cropped picture.';
+
 async function requeue(observationIds) {
     const ids = (observationIds || []).filter((id) => Number.isInteger(id));
 
@@ -188,9 +198,12 @@ async function requeue(observationIds) {
             { bind: [ids], type: QueryTypes.INSERT, transaction }
         );
 
+        // A permanent failure stays refused, except one for having no keyframes when the
+        // observation has some now (#347): what made it permanent is no longer true.
         await db.sequelize.query(
             `UPDATE observation_thumbnails
                 SET status       = 'queued',
+                    permanent    = false,
                     request_priority = 1,
                     candidate_index = candidate_index
                         + CASE WHEN framenum IS NULL THEN 0 ELSE 1 END,
@@ -200,8 +213,11 @@ async function requeue(observationIds) {
                     updated_at   = NOW()
               WHERE observation_id = ANY($1::int[])
                 AND status         = 'failed'
-                AND permanent      = false`,
-            { bind: [ids], type: QueryTypes.UPDATE, transaction }
+                AND (permanent = false
+                     OR (last_error = $2
+                         AND EXISTS (SELECT 1 FROM keyframes k
+                                      WHERE k.observation_id = observation_thumbnails.observation_id)))`,
+            { bind: [ids, NO_KEYFRAMES_ERROR], type: QueryTypes.UPDATE, transaction }
         );
 
         return db.sequelize.query(
@@ -1016,6 +1032,7 @@ async function writeRunState(runState, userId, note = null) {
 }
 
 module.exports = {
+    NO_KEYFRAMES_ERROR,
     enqueueMissing,
     claimBatch,
     hasQueuedWork,

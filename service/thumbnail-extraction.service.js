@@ -68,6 +68,7 @@ const thumbnailRepository = require('../repository/observation-thumbnail.reposit
 const reviewImageryStorage = require('./review-imagery-storage.service');
 const { ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { parseTimeSpan, absoluteFrame, ASSUMED_FPS } = require('../db/timecode');
+const { NO_KEYFRAMES_ERROR } = require('../repository/observation-thumbnail.repository');
 const { thumbnailFilename } = require('../db/thumbnail-filename');
 const { cropRectangle, interpolateBox, thumbnailCandidates } = require('./thumbnail-geometry');
 
@@ -471,11 +472,12 @@ function planObservation(claim, keyframes, fps = ASSUMED_FPS) {
     if (!keyframes || keyframes.length === 0) {
         // F6: an observation can have no keyframes at all, which means no box,
         // which means no cropped tile, ever. This is the case that makes a
-        // permanent state necessary rather than tidy.
+        // permanent state necessary rather than tidy -- until a keyframe is written,
+        // which queues it again (#347).
         return {
             ok: false,
             permanent: true,
-            error: 'The observation has no keyframes, so it has no bounding box and can never have a cropped picture.',
+            error: NO_KEYFRAMES_ERROR,
         };
     }
 
