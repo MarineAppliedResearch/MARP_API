@@ -179,7 +179,7 @@ const SUBSYSTEMS = {
             'ml-model-registry',
             // #268: grouping, splitting and vocabulary for a dataset build. Pure
             // functions, so they cost a second and belong with the registry they feed.
-            'dataset-build-plan',
+            'dataset-build-plan', 'habitat-dataset-plan',
             // #268: the rest of the build path -- the route, the claim rule, the
             // runner, and what a cancelled, retried or failed build left behind. The
             // extractor is stubbed in all three, so they are seconds rather than
