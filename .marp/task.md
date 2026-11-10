@@ -191,7 +191,11 @@ Built in this order. Each step is merged only when Isaac says so.
 
 ## Status
 
-- **Gate:** design (G1). Blocking assumptions A1-A11 are with Isaac, through the feasibility
-  session.
-- **Notes:** step 1 (#347) and step 2 can be built now; nothing else starts before its
-  assumptions are answered.
+- **Gate:** design (G1). Blocking assumptions A1-A11 are with Isaac (on #287).
+- **Done, 2026-11-10:**
+  - Step 1, #347 (R1): the keyframe trigger re-queues a no-keyframes failure, and the retry
+    route accepts one once it has keyframes. `tests/thumbnails.test.js`; `test:mosaic` 366
+    passed.
+  - Step 2: the API frame planner (`service/habitat-dataset-plan.js`, 9 tests in `ml`), and
+    the worker's sampler and crop (`media/habitat_frames.py`, 8 tests).
+- **Waiting:** every later step waits on its blocking assumptions.
