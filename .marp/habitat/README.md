@@ -16,6 +16,10 @@ that answered that question, so the work can carry on on another machine.
   only — the LAN address was 16x faster than the public one here.
 - The inference worker's Python (torch, torchvision, OpenCV, Pillow).
   `HABITAT_PYTHON` overrides where `extract_full.js` looks for it.
+- For the BenthicNet and DINOv2 starting points, their weights: `python -I
+  experiment/fetch_pretrained.py` downloads them once per machine, checks them, and prints
+  where they are. They are kept outside every checkout, so all working copies and agent
+  workspaces share one copy, with a `README.md` beside them on how to load them.
 
 ## The pipeline
 
@@ -33,6 +37,9 @@ step 4. The frames, the trained weights and the logs are not: gigabytes, and reg
    frames, for a fair comparison).
 6. `python -I train.py convnext_tiny dataset_full.csv full 384` — arch, dataset,
    crop (`full` or `bottom_middle`), input size. Writes `runs/`.
+   Archs: `resnet50`, `convnext_tiny`, `convnext_small`, `vit_b16_swag` (ImageNet, from
+   torchvision), `benthicnet_rn50`, `benthicnet_vits` (seabed-trained) and `dinov2_vitb`
+   (the last three need `fetch_pretrained.py` first).
 
 ## Results so far
 

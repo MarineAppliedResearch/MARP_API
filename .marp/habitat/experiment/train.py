@@ -7,6 +7,7 @@
 #   ..\..\..\..\marp-inference-worker\.venv312\Scripts\python.exe -I train.py
 import csv
 import json
+import math
 import os
 import sys
 import time
@@ -26,6 +27,10 @@ OVERLAY_ROWS = 0.25
 HEAD_EPOCHS, FULL_EPOCHS = 3, 6  # validation peaked by epoch 2-4 for ResNet-50
 
 
+# Settings beyond the positional five come as key=value, and each one given is added to the
+# run's name so two runs never share a file: train.py dinov2_vitb data.csv full 384 1e-5 llrd=0.75
+OPTS = dict(a.split("=", 1) for a in sys.argv[1:] if "=" in a)
+sys.argv = [a for a in sys.argv if "=" not in a]
 ARCH = sys.argv[1] if len(sys.argv) > 1 else "resnet50"
 DATA = sys.argv[2] if len(sys.argv) > 2 else "dataset.csv"
 # "full": everything below the overlay. "bottom_middle": the seabed patch in front of the
@@ -34,13 +39,78 @@ CROP = sys.argv[3] if len(sys.argv) > 3 else "full"
 CROPS = {"full": (0.0, OVERLAY_ROWS, 1.0, 1.0), "bottom_middle": (0.2, 0.45, 0.8, 1.0)}
 # Input size. 224 shrinks a full frame's detail away; larger needs a smaller batch to fit 8 GB.
 SIZE = int(sys.argv[4]) if len(sys.argv) > 4 else 224
-BATCH = 64 if SIZE <= 224 else 24
+BATCH = int(OPTS.get("batch", 64 if SIZE <= 224 else 24))
 RUN = ARCH if (DATA, CROP) == ("dataset.csv", "full") else f"{ARCH}-{os.path.splitext(DATA)[0]}-{CROP}"
 RUN += "" if SIZE == 224 else f"-{SIZE}"
+# How fast the whole model adjusts once unfrozen. A tenth of the head's suits ConvNeXt;
+# DINOv2's ViT lost what it knew at that speed, so it is a setting.
+FULL_LR = float(sys.argv[5]) if len(sys.argv) > 5 else 1e-4
+RUN += "" if len(sys.argv) <= 5 else f"-lr{sys.argv[5]}"
+RUN += "".join(f"-{k}{v}" for k, v in OPTS.items())
+FULL_EPOCHS = int(OPTS.get("epochs", FULL_EPOCHS))
+HEAD_EPOCHS = int(OPTS.get("head_epochs", HEAD_EPOCHS))
+SEED = int(OPTS.get("seed", 287))
+# Warm-up passes, then a cosine slow-down stepped every batch; 0 keeps the original per-pass cosine.
+WARMUP = float(OPTS.get("warmup", 0))
+# Layer-wise speeds for a ViT: each block deeper than the top adjusts this much slower (MAE's recipe).
+LLRD = float(OPTS.get("llrd", 1.0))
+# Stochastic depth: randomly skip ViT blocks while training, so no one path is memorised.
+DROP_PATH = float(OPTS.get("drop_path", 0.0))
+# Score and keep a running average of the weights instead of the latest ones.
+EMA = float(OPTS.get("ema", 0.0))
+# "strong": random zoomed crops, a slight tilt and more colour change on top of the default flips.
+AUG = OPTS.get("aug", "default")
+
+
+def backbone(name):
+    """The encoder weights from a BenthicNet training checkpoint, without its training-only parts."""
+    sys.path.insert(0, HERE)  # -I leaves this folder off the path
+    import fetch_pretrained
+    path = fetch_pretrained.path(name)
+    if not os.path.exists(path):
+        raise SystemExit(f"{name} is not downloaded: python -I fetch_pretrained.py {name}")
+    state = torch.load(path, map_location="cpu", weights_only=True)["state_dict"]
+    return {k[len("backbone."):]: v for k, v in state.items() if k.startswith("backbone.")}
+
+
+def load(m, state, name):
+    # Only the new head may be missing; anything else means the checkpoint did not fit.
+    missing, unexpected = m.load_state_dict(state, strict=False)
+    missing = [k for k in missing if not k.startswith(("fc.", "head."))]
+    if missing or unexpected:
+        raise SystemExit(f"{name} does not fit: missing {missing[:5]}, unexpected {unexpected[:5]}")
 
 
 def build(arch):
-    # Every backbone here ships with torchvision; weights come from download.pytorch.org.
+    # The torchvision backbones' weights come from download.pytorch.org; the others are
+    # fetched by fetch_pretrained.py.
+    if arch == "benthicnet_rn50":
+        m = models.resnet50(weights=None)
+        load(m, backbone(arch), arch)
+        m.fc = nn.Linear(m.fc.in_features, len(CLASSES))
+        return m, m.fc
+    if arch in ("benthicnet_vits", "dinov2_vitb"):
+        import timm
+        from timm.layers import resample_abs_pos_embed
+        if arch == "benthicnet_vits":
+            m = timm.create_model("vit_small_patch16_224", pretrained=False, num_classes=len(CLASSES), img_size=SIZE)
+            state = backbone(arch)
+            # Trained at 224 px: stretch its position grid to this input size.
+            state["pos_embed"] = resample_abs_pos_embed(state["pos_embed"], m.patch_embed.grid_size, num_prefix_tokens=1)
+            load(m, state, arch)
+        else:
+            sys.path.insert(0, HERE)
+            import fetch_pretrained
+            # Patches are 14 px, so the input is padded up to a whole number of them and the
+            # position grid is fitted to the padded size.
+            m = timm.create_model("vit_base_patch14_dinov2.lvd142m", pretrained=True, num_classes=len(CLASSES),
+                                  img_size=SIZE, dynamic_img_pad=True, dynamic_img_size=True, drop_path_rate=DROP_PATH,
+                                  pretrained_cfg_overlay={"file": fetch_pretrained.path(arch)})
+        return m, m.head
+    if arch == "convnext_small":
+        m = models.convnext_small(weights=models.ConvNeXt_Small_Weights.IMAGENET1K_V1)
+        m.classifier[2] = nn.Linear(m.classifier[2].in_features, len(CLASSES))
+        return m, m.classifier[2]
     if arch == "resnet50":
         m = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
         m.fc = nn.Linear(m.fc.in_features, len(CLASSES))
@@ -66,8 +136,14 @@ class Frames(Dataset):
     def __init__(self, rows, train):
         self.rows = rows
         aug = [transforms.RandomHorizontalFlip(), transforms.ColorJitter(0.2, 0.2, 0.1)] if train else []
+        size = [transforms.Resize((SIZE, SIZE))]
+        if train and AUG == "strong":
+            # Crops keep a wide shape, as the frames are; the tilt stays small so up stays up.
+            size = [transforms.RandomResizedCrop((SIZE, SIZE), scale=(0.5, 1.0), ratio=(1.5, 3.0))]
+            aug = [transforms.RandomHorizontalFlip(), transforms.RandomRotation(5),
+                   transforms.ColorJitter(0.3, 0.3, 0.2, 0.02)]
         self.tf = transforms.Compose([
-            transforms.Resize((SIZE, SIZE)),
+            *size,
             *aug,
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
@@ -81,7 +157,8 @@ class Frames(Dataset):
         img = Image.open(os.path.join(HERE, r["image"]))
         # Decode a 1080p frame at half size: still well over SIZE after any crop, and
         # it keeps the loaders from starving the GPU. A thumbnail is left alone.
-        if img.width > 1000:
+        # Only when the cropped half-size frame is still taller than SIZE, or 518 px loses detail.
+        if img.width > 1000 and img.height // 2 * (CROPS[CROP][3] - CROPS[CROP][1]) >= SIZE:
             img.draft("RGB", (img.width // 2, img.height // 2))
         img = img.convert("RGB")
         w, h = img.size
@@ -132,12 +209,43 @@ def scores(p, y, thresholds):
     return per
 
 
-def run_epochs(model, params, lr, epochs, train_dl, val_dl, pos_weight, device, label, log):
+def layer_groups(model):
+    """The whole model's parameters, in groups with their own speed when LLRD is set."""
+    if LLRD == 1.0:
+        return model.parameters()
+    if not hasattr(model, "blocks"):
+        raise SystemExit("llrd needs a ViT")
+    top = len(model.blocks) + 1
+    depth = lambda n: (int(n.split(".")[1]) + 1 if n.startswith("blocks.")
+                       else 0 if n.startswith(("patch_embed", "cls_token", "pos_embed", "reg_token")) else top)
+    groups = {}
+    for n, p_ in model.named_parameters():
+        groups.setdefault(depth(n), []).append(p_)
+    # Each group starts at its own speed; the schedule then scales them all alike.
+    return [{"params": ps, "lr": FULL_LR * LLRD ** (top - d)} for d, ps in sorted(groups.items())]
+
+
+def run_epochs(model, params, lr, epochs, train_dl, val_dl, pos_weight, device, label, log, start=(-1, None, None)):
+    # Returns the best (score, weights, thresholds) seen, `start` included: a stage that
+    # never beats the one before it leaves the model as that one left it.
     opt = torch.optim.AdamW(params, lr=lr, weight_decay=1e-4)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs)
+    steps, warm = epochs * len(train_dl), WARMUP * len(train_dl)
+    per_batch = WARMUP > 0 and label == "fine-tune"
+    if per_batch:
+        def factor(i):
+            if i < warm:
+                return (i + 1) / warm
+            return 0.5 * (1 + math.cos(math.pi * (i - warm) / max(steps - warm, 1)))
+        sched = torch.optim.lr_scheduler.LambdaLR(opt, factor)
+    else:
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs)
+    avg = None
+    if EMA and label == "fine-tune":
+        from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+        avg = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(EMA), use_buffers=True)
     loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight.to(device))
     scaler = torch.amp.GradScaler()
-    best = (-1, None, None)
+    best = start
     for epoch in range(epochs):
         model.train()
         t0, total = time.time(), 0.0
@@ -148,21 +256,27 @@ def run_epochs(model, params, lr, epochs, train_dl, val_dl, pos_weight, device, 
             scaler.scale(loss).backward()
             scaler.step(opt)
             scaler.update()
+            if per_batch:
+                sched.step()
+            if avg is not None:
+                avg.update_parameters(model)
             total += loss.item() * len(x)
-        sched.step()
-        p, y = predict(model, val_dl, device)
+        if not per_batch:
+            sched.step()
+        scored = model if avg is None else avg.module
+        p, y = predict(scored, val_dl, device)
         th = best_thresholds(p, y)
         s = scores(p, y, th)
         log(f"{label} epoch {epoch + 1}/{epochs}: loss {total / len(train_dl.dataset):.4f}, "
             f"val macro F1 {s['macro_f1']} ({time.time() - t0:.0f}s)")
         if s["macro_f1"] > best[0]:
-            best = (s["macro_f1"], {k: v.detach().clone() for k, v in model.state_dict().items()}, th)
+            best = (s["macro_f1"], {k: v.detach().clone() for k, v in scored.state_dict().items()}, th)
     model.load_state_dict(best[1])
-    return best[2]
+    return best
 
 
 def main():
-    torch.manual_seed(287)
+    torch.manual_seed(SEED)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rows = read_rows()
     split = {s: [r for r in rows if r["split"] == s] for s in ("train", "val", "test")}
@@ -189,22 +303,29 @@ def main():
     model, head = build(ARCH)
     model.to(device)
     results = {"settings": {"arch": ARCH, "data": DATA, "crop": CROP, "overlay_rows_removed": OVERLAY_ROWS, "size": SIZE, "head_epochs": HEAD_EPOCHS,
-                            "full_epochs": FULL_EPOCHS, "frames": {k: len(v) for k, v in split.items()}}}
+                            "full_epochs": FULL_EPOCHS, "full_lr": FULL_LR, "options": OPTS, "frames": {k: len(v) for k, v in split.items()}}}
 
     # Stage 1: frozen backbone, last layer only. This is also the "frozen features" result.
     for p_ in model.parameters():
         p_.requires_grad = False
     for p_ in head.parameters():
         p_.requires_grad = True
-    th = run_epochs(model, head.parameters(), 1e-3, HEAD_EPOCHS, train_dl, val_dl, pos_weight, device, "frozen", log)
+    frozen = run_epochs(model, head.parameters(), 1e-3, HEAD_EPOCHS, train_dl, val_dl, pos_weight, device, "frozen", log)
+    th = frozen[2]
     p, yt = predict(model, test_dl, device)
     results["frozen_test"] = scores(p, yt, th)
     log(f"frozen backbone, test: macro F1 {results['frozen_test']['macro_f1']}")
 
-    # Stage 2: unfreeze everything at a tenth of the learning rate.
+    # Stage 2: unfreeze everything, more slowly (FULL_LR).
     for p_ in model.parameters():
         p_.requires_grad = True
-    th = run_epochs(model, model.parameters(), 1e-4, FULL_EPOCHS, train_dl, val_dl, pos_weight, device, "fine-tune", log)
+    best = run_epochs(model, layer_groups(model), FULL_LR, FULL_EPOCHS, train_dl, val_dl, pos_weight, device, "fine-tune", log,
+                      start=frozen)
+    results["best_val_macro_f1"] = best[0]
+    th = best[2]
+    results["kept"] = "frozen" if best is frozen else "fine-tuned"
+    if best is frozen:
+        log("fine-tuning never beat the frozen backbone on the tuning dives; kept the frozen one")
     p, yt = predict(model, test_dl, device)
     results["finetuned_test"] = scores(p, yt, th)
     results["thresholds"] = dict(zip(CLASSES, th))
@@ -216,10 +337,14 @@ def main():
         by_project[proj] = scores(p[idx], yt[idx], th)
     results["finetuned_test_by_project"] = by_project
     np.save(os.path.join(HERE, "runs", f"{RUN}_test_scores.npy"), p)
+    # The tuning dives' answers too, so models can be averaged with cut-offs picked on them.
+    np.save(os.path.join(HERE, "runs", f"{RUN}_val_scores.npy"), predict(model, val_dl, device)[0])
     torch.save(model.state_dict(), os.path.join(HERE, "runs", f"{RUN}.pt"))
     with open(os.path.join(HERE, "runs", f"{RUN}_results.json"), "w") as f:
         json.dump(results, f, indent=2)
     log(f"fine-tuned, test: macro F1 {results['finetuned_test']['macro_f1']}")
+    if device.type == "cuda":
+        log(f"peak GPU memory {torch.cuda.max_memory_allocated() / 2**30:.1f} GB")
     log(json.dumps(results["finetuned_test"], indent=2))
 
 

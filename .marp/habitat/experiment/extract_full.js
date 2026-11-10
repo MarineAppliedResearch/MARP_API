@@ -2,7 +2,8 @@
 // Jellyfin's LAN address can be far faster than its public one (9 Mbit/s against 144 on
 // one machine), so HABITAT_JELLYFIN_URL overrides .env's for this script only.
 // A few videos at a time; resumable.
-// Run from MARP_API: node .marp/habitat/experiment/extract_full.js [maxFiles]
+// Run from MARP_API: node .marp/habitat/experiment/extract_full.js [maxFiles] [project]
+// A project ("CAMPA 2026") limits it to that year, for a short trial run before the long one.
 'use strict';
 
 require('dotenv').config();
@@ -18,11 +19,13 @@ const HERE = __dirname;
 const PYTHON = process.env.HABITAT_PYTHON || path.resolve(HERE, '../../../../marp-inference-worker/.venv312/Scripts/python.exe');
 const PARALLEL = 6;
 const maxFiles = Number(process.argv[2]) || Infinity;
+const project = process.argv[3];
 
 // The same picture name as the thumbnail, under frames_full/.
 const inDataset = new Set(fs.readFileSync(path.join(HERE, 'dataset.csv'), 'utf8')
     .split(/\r?\n/).slice(1).map((line) => line.split(',')[0]).filter(Boolean));
 const rows = JSON.parse(fs.readFileSync(path.join(HERE, 'plan.json'), 'utf8')).frames
+    .filter((f) => !project || f.project === project)
     .map((f) => ({ image: `frames/${f.split}/${f.session}_${Math.round(f.position * 1000)}.jpg`, video: f.file, position: f.position }))
     .filter((f) => inDataset.has(f.image))
     .map((f) => ({ out: path.join(HERE, f.image.replace(/^frames\//, 'frames_full/')), video: f.video, position: f.position }));
