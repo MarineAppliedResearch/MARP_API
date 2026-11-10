@@ -35,6 +35,7 @@ const extraction = require('./thumbnail-extraction.service');
 const edits = require('./mosaic-video-edit.service');
 const { sessionsInVideo } = require('./mosaic-video.service');
 const { formatTimeSpan, deriveTc, deriveFrame, ASSUMED_FPS } = require('../db/timecode');
+const videoClock = require('./video-clock.service');
 
 const { boxOf, rateOf, asSeconds, invalid, notFound, KEYFRAME_COLUMNS } = edits;
 
@@ -102,6 +103,10 @@ async function createObservation(body = {}, userId = null) {
             { projectId: session.project_id, type: session.type }, transaction
         );
         const observationId = await keys.nextObservationId(transaction);
+        // On the video's clock where it has one, as a run's results are (#76).
+        const start = await videoClock.startOf(opened.video_source, transaction);
+        const clock = start ? videoClock.clockAt(start, milliseconds) : null;
+        const clockMs = clock ? clock.actualMs : milliseconds;
         await keys.insertObservation({
             observation_id: observationId,
             obsID,
@@ -109,15 +114,16 @@ async function createObservation(body = {}, userId = null) {
             project_id: session.project_id,
             session_id: sessionId,
             user_id: userId,
-            tc: deriveTc(milliseconds),
-            frame: deriveFrame(milliseconds),
+            tc: deriveTc(clockMs),
+            frame: deriveFrame(clockMs),
             taxserial: species.taxserial,
             species_id: species.id,
             comname: species.comname,
             count: 1,
             video_source: opened.video_source,
             mediaPosition: position,
-            actualPosition: position,
+            actualPosition: formatTimeSpan(clockMs),
+            observed_at: clock ? clock.observedAt : null,
         }, transaction);
         await keys.insertKeyframes(observationId, [{
             subset: NEW_SUBSET, comname: species.comname, type: 'start', framenum, ...box,

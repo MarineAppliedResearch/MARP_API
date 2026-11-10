@@ -73,7 +73,7 @@ const OBSERVATION_COLUMNS = [
     'tc', 'frame', 'taxserial', 'species_id', 'comname', 'count',
     'video_source', 'videoLocation', 'mediaPosition', 'actualPosition',
     'confidence', 'ml_model_id', 'gpu_job_id', 'gpu_attempt_id', 'jellyfin_item_id',
-    'createdAt', 'updatedAt',
+    'observed_at', 'createdAt', 'updatedAt',
 ];
 
 
