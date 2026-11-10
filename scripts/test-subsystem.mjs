@@ -149,7 +149,7 @@ const SUBSYSTEMS = {
     },
     observations: {
         describe: 'observations, keyframes, and the timecode columns',
-        suites: ['observations', 'observations-readonly', 'keyframes', 'timecode', 'timecode-resync'],
+        suites: ['observations', 'observations-readonly', 'keyframes', 'timecode', 'timecode-resync', 'video-clock'],
     },
     ml: {
         describe: 'the ML domain: datasets, training runs, epochs, metrics, models',

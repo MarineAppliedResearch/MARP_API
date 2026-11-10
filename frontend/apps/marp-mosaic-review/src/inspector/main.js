@@ -26,6 +26,7 @@ import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '..
 import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
 import { labelScale } from '../model/box-style.js';
 import { drawBox } from './draw-boxes.js';
+import { clockLine, positionText, readingOffered, readingBody } from '../model/video-clock.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -318,6 +319,7 @@ async function show(request) {
   $('inspectTitle').textContent = `${comname || 'Observation'} · ${request.observationId}`;
   openedTitle = $('inspectTitle').textContent;
   $('inspectDetail').textContent = video.video_source || '';
+  showClock(video.video_source, mine);
 
   if (!video.jellyfin_item_id) {
     status(video.unresolved_reason || 'This observation was not found.');
@@ -769,6 +771,71 @@ function updatePanel() {
   });
 }
 
+/* The video's clock (#76): read when a video is shown, set from a reading off the picture. */
+let clock = null;
+let clockVideo = null;
+
+function sayClock() {
+  const line = clockLine(clock);
+  $('clockState').textContent = clockVideo ? line.text : '';
+  $('clockState').classList.toggle('unset', Boolean(clockVideo) && line.unset);
+  $('setClock').hidden = !clockVideo || !canAnnotate;
+}
+
+async function showClock(videoSource, mine) {
+  clockVideo = videoSource || null;
+  clock = null;
+  $('clockForm').hidden = true;
+  sayClock();
+  if (!clockVideo) return;
+  try {
+    const read = await MarpApi.videoClock(clockVideo);
+    if (mine !== latest) return;
+    clock = read;
+  } catch {
+    // Unknown, and said so: clockLine(null).
+  }
+  sayClock();
+}
+
+/* Where the picture is, for a reading: the frame on screen. */
+const pictureAt = () => shownAt ?? (player.engine ? player.engine.currentTime : 0);
+
+$('setClock').addEventListener('click', () => {
+  if (player.engine) player.engine.pause();
+  const at = pictureAt();
+  $('clockAt').textContent = `At ${positionText(at)} in the video,`;
+  $('clockReading').value = readingOffered(clock, at);
+  $('clockForm').dataset.at = String(at);
+  $('clockForm').hidden = false;
+  $('clockReading').focus();
+});
+
+$('clockCancel').addEventListener('click', () => {
+  $('clockForm').hidden = true;
+  returnKeyboard();
+});
+
+$('clockForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const body = readingBody($('clockReading').value, Number($('clockForm').dataset.at), clock);
+  if (!body || !clockVideo) {
+    status('Type the date and time the clock in the picture shows.');
+    return;
+  }
+  status('Setting the clock…');
+  try {
+    const answer = await MarpApi.setVideoClock({ video_source: clockVideo, ...body });
+    clock = answer;
+    $('clockForm').hidden = true;
+    sayClock();
+    status(`Clock set. ${answer.observations} observation${answer.observations === 1 ? '' : 's'} in this video now carry the time ${answer.observations === 1 ? 'it was' : 'they were'} seen.`);
+    returnKeyboard();
+  } catch (error) {
+    status(`The clock could not be set: ${error.message}`);
+  }
+});
+
 MarpApi.whoami().then((user) => {
   const permissions = (user && user.permissions) || [];
   canReview = permissions.includes('observations:write');
@@ -777,6 +844,7 @@ MarpApi.whoami().then((user) => {
     canDelete = canAnnotate;
     editor.enable({ deleteObservations: canDelete });
   }
+  sayClock();
 }).catch(() => {
   // Not signed in to MARP, or it could not say: the boxes are shown and not edited.
 });
@@ -800,7 +868,8 @@ window.MARP_VIDEO = {
   get drawMs() { return drawMs; },
   get scale() { return drawnNow.area ? labelScale(drawnNow.area.height) : null; },
   get paused() { return player.engine ? player.engine.paused : null; },
-  get boxCount() { return drawnNow.rects.length; }
+  get boxCount() { return drawnNow.rects.length; },
+  get clock() { return clock; }
 };
 
 /* A hidden window stops fetching video for nobody. */

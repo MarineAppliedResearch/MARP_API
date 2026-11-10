@@ -1428,6 +1428,29 @@
   }
 
   /**
+   * `GET /api/v2/videos/clock` -- when a video's recording started, if anyone has set it,
+   * and the start its file name suggests (#76).
+   *
+   * @param {string} jellyfinItemId - The video.
+   * @returns {Promise<Object>} `{recorded_start, start_source, suggested_start, ...}`.
+   */
+  function getVideoClock(jellyfinItemId) {
+    return serve('videos', () => request('/videos/clock', { query: { jellyfin_item_id: jellyfinItemId } }),
+      () => ({ recorded_start: null, start_source: null, suggested_start: null }));
+  }
+
+  /**
+   * `PUT /api/v2/videos/clock` -- set a video's clock, which times every observation in it
+   * (#76).
+   *
+   * @param {Object} body - `{jellyfin_item_id, start, source}`.
+   * @returns {Promise<Object>} The clock as set, and how many observations it timed.
+   */
+  function setVideoClock(body) {
+    return request('/videos/clock', { method: 'PUT', body });
+  }
+
+  /**
    * `POST /api/v2/model/upload` -- register a model from its weights (#321).
    *
    * @param {FormData} form - `weights`, `name`, and optionally `version_label`, `notes`,
@@ -2080,6 +2103,8 @@
     retryJobs,
     moveJob,
     updateModel,
+    getVideoClock,
+    setVideoClock,
     uploadModel,
     clearWorkerDatasetCache,
     ApiError,

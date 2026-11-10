@@ -570,6 +570,19 @@ module.exports = (sequelize, DataTypes) => {
                 },
             },
 
+            // When it was seen, in UTC: its video's clock plus its position in the video (#76).
+            observed_at: {
+                type: DataTypes.DATE,
+                allowNull: true,
+                defaultValue: null,
+                jsonSchema: {
+                    description: 'When the observation was seen, UTC: its video\'s recorded start plus its '
+                        + 'position in the video. Null where the video has no clock set, in which case '
+                        + 'tc and actualPosition are the position in the video rather than clock time.',
+                    examples: ['2021-06-14T16:45:39.400Z'],
+                },
+            },
+
             // The Jellyfin item the observation was made in, where there is one.
             jellyfin_item_id: {
                 type: DataTypes.STRING(255),

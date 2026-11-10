@@ -14,6 +14,17 @@
 <header class="inspect-head">
   <strong id="inspectTitle">Source video</strong>
   <span id="inspectDetail" class="inspect-detail"></span>
+  <!-- When the recording started, or that it has none (#76). -->
+  <span id="clockState" class="inspect-clock"></span>
+  <button id="setClock" class="inspect-clock-button" type="button" hidden>Set clock</button>
+  <form id="clockForm" class="inspect-clock-form" hidden>
+    <span id="clockAt"></span>
+    <label>the clock in the picture reads
+      <input id="clockReading" name="reading" type="datetime-local" step="0.001" required></label>
+    <span>UTC</span>
+    <button type="submit">Set</button>
+    <button id="clockCancel" type="button">Cancel</button>
+  </form>
 </header>
 <main class="inspect-stage">
   <div id="player" class="inspect-player"></div>

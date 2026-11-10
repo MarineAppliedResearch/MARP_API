@@ -755,6 +755,59 @@ describe('The timecode columns', () => {
 });
 
 /**
+ * #76 -- a run's results on its video's clock.
+ *
+ * The worker knows only frames, so its results are checked in position terms and then,
+ * where the video's clock is set, written as the moment each was seen. A video of its
+ * own here, so no other test's ingest picks up this clock.
+ */
+describe('A video whose clock is set (#76)', () => {
+    const clockedVideo = `20240730_171520_Jest${runId}.mp4`;
+    const start = new Date('2024-07-30T17:15:20Z');
+    const onClockedVideo = () => REAL_RESULT.map((row) => ({ ...row, video_source: clockedVideo }));
+
+    afterAll(async () => {
+        await db.videos.destroy({ where: { video_source: clockedVideo } });
+    });
+
+    it('writes no moment, and keeps position times, while the video has no clock', async () => {
+        const { job } = await runJob(onClockedVideo());
+        const rows = await observationsForJob(job.id);
+
+        expect(rows.length).toBe(REAL_RESULT.length);
+        for (const row of rows) {
+            expect(row.observed_at).toBeNull();
+            expect(row.actualPosition).toBe(row.mediaPosition);
+        }
+    });
+
+    it('writes each result at the moment it was seen once the clock is set', async () => {
+        await db.videos.create({ video_source: clockedVideo, recorded_start: start, start_source: 'entered' });
+
+        const { job } = await runJob(onClockedVideo());
+        const rows = await observationsForJob(job.id);
+
+        expect(rows.length).toBe(REAL_RESULT.length);
+        for (let index = 0; index < rows.length; index += 1) {
+            const positionMs = parseTimeSpan(rows[index].mediaPosition);
+            const clockMs = (17 * 3600 + 15 * 60 + 20) * 1000 + positionMs;
+
+            // Still the frame the worker named: the position never moves.
+            expect(absoluteFrame(positionMs)).toBe(REAL_RESULT[index].observation_frame);
+            expect(new Date(rows[index].observed_at).getTime()).toBe(start.getTime() + positionMs);
+            expect(rows[index].tc).toBe(deriveTc(clockMs));
+            expect(rows[index].frame).toBe(deriveFrame(clockMs));
+
+            // The same arithmetic setting the clock afterwards uses, so a resync
+            // recognises these as its own.
+            const verdict = classifyRow(rows[index]);
+            expect(verdict.tcDerivable).toBe(true);
+            expect(verdict.frameDerivable).toBe(true);
+        }
+    });
+});
+
+/**
  * R2 -- a job that found nothing.
  */
 describe('A job that detected nothing', () => {

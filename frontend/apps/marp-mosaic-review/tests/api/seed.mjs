@@ -436,3 +436,53 @@ export async function removeObservations(ids) {
     await client.end();
   }
 }
+
+/**
+ * Hold a video's clock so a check may set it (#76), and put everything back exactly.
+ *
+ * Setting a clock rewrites the time columns of every observation in the video, so those
+ * are read first, with the video's own row, and `restore()` writes them back and checks.
+ * The clock is cleared for the check, so it always starts from a video with none.
+ *
+ * @param {string} videoSource - The file, as observations name it.
+ * @returns {Promise<Object>} `{restore}`.
+ */
+export async function holdVideoClock(videoSource) {
+  const client = await connect();
+  const read = async () => (await client.query(
+    `SELECT observation_id, "actualPosition", tc, frame, etc, observed_at FROM observations
+      WHERE video_source = $1 ORDER BY observation_id`, [videoSource])).rows;
+  const before = await read();
+  const video = (await client.query('SELECT * FROM videos WHERE video_source = $1', [videoSource])).rows[0] || null;
+  await client.query('DELETE FROM videos WHERE video_source = $1', [videoSource]);
+  return {
+    async restore() {
+      try {
+        await client.query('BEGIN');
+        for (const o of before) {
+          await client.query(
+            `UPDATE observations SET "actualPosition" = $2, tc = $3, frame = $4, etc = $5, observed_at = $6
+              WHERE observation_id = $1`,
+            [o.observation_id, o.actualPosition, o.tc, o.frame, o.etc, o.observed_at]);
+        }
+        await client.query('DELETE FROM videos WHERE video_source = $1', [videoSource]);
+        if (video) {
+          await client.query(
+            `INSERT INTO videos (id, video_source, jellyfin_item_id, recorded_start, start_source, start_set_by,
+                                 start_set_at, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [video.id, video.video_source, video.jellyfin_item_id, video.recorded_start, video.start_source,
+              video.start_set_by, video.start_set_at, video.created_at, video.updated_at]);
+        }
+        await client.query('COMMIT');
+        // A restore that quietly did not apply is worse than none: the next run inherits it.
+        const after = await read();
+        if (JSON.stringify(after) !== JSON.stringify(before)) {
+          throw new Error(`${videoSource}'s observation times were not put back`);
+        }
+      } finally {
+        await client.end();
+      }
+    }
+  };
+}

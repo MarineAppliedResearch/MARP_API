@@ -63,6 +63,8 @@ const {
     deriveTc,
     deriveFrame,
 } = require('../db/timecode');
+const videoClockService = require('./video-clock.service');
+const { clockAt } = require('./video-clock.service');
 
 /**
  * The artifact role that holds reduced observations.
@@ -219,6 +221,8 @@ class ObservationIngestService {
 
         const built = [];
         const speciesByName = new Map();
+        // Each video's clock, looked up once (#76).
+        const clocks = new Map();
 
         for (let index = 0; index < rows.length; index += 1) {
             built.push(
@@ -228,6 +232,7 @@ class ObservationIngestService {
                     sessionRow,
                     speciesByName,
                     frameRate,
+                    clocks,
                 })
             );
         }
@@ -748,7 +753,7 @@ class ObservationIngestService {
      * @returns {Promise<Object>} `{row, keyframes}` ready to write.
      * @throws {ApiError} 409 when the line cannot be reconciled.
      */
-    async buildObservation(row, index, { job, model, sessionRow, speciesByName, frameRate }) {
+    async buildObservation(row, index, { job, model, sessionRow, speciesByName, frameRate, clocks = new Map() }) {
         const where = `line ${index + 1} of job ${job.id}'s result file`;
 
         if (!Number.isInteger(row.observation_frame)) {
@@ -769,7 +774,13 @@ class ObservationIngestService {
             );
         }
 
-        const timecodes = this.deriveTimecodes(row, where, frameRate ? frameRate.fps : ASSUMED_FPS);
+        const fps = frameRate ? frameRate.fps : ASSUMED_FPS;
+        const videoSource = typeof row.video_source === 'string' ? row.video_source : null;
+        const timecodes = this.timeByClock(
+            this.deriveTimecodes(row, where, fps),
+            await this.clockFor(videoSource, clocks),
+            fps
+        );
         const confidence = this.readConfidence(row, where);
 
         return {
@@ -793,6 +804,7 @@ class ObservationIngestService {
                 confidence,
                 ml_model_id: model.id,
                 jellyfin_item_id: typeof row.jellyfin_item_id === 'string' ? row.jellyfin_item_id : null,
+                observed_at: timecodes.observedAt,
             },
             keyframes: this.buildKeyframes(row, species, where),
         };
@@ -813,7 +825,7 @@ class ObservationIngestService {
      * @param {Object} row - One parsed result line.
      * @param {string} where - Where it came from, for messages.
      * @param {number} [fps] - The video's frame rate. Defaults to 25.
-     * @returns {Object} `{tc, frame, mediaPosition, actualPosition}`.
+     * @returns {Object} `{tc, frame, mediaPosition, actualPosition, positionMs}`.
      * @throws {ApiError} 409 when the derivation disagrees with the worker.
      */
     deriveTimecodes(row, where, fps = ASSUMED_FPS) {
@@ -843,11 +855,53 @@ class ObservationIngestService {
         return {
             tc,
             frame,
-            // Both, and equal. The annotation GUI distinguishes them when a
-            // recording's media clock and its real clock have been synced apart;
-            // nothing has shifted a machine-written row, so they start equal.
+            // Both, and equal, as positions. `timeByClock` moves actualPosition onto
+            // the recording's clock when the video has one (#76).
             mediaPosition: position,
             actualPosition: position,
+            positionMs: milliseconds,
+        };
+    }
+
+    /**
+     * The clock a video's results are timed by, or null when none is set (#76).
+     *
+     * @async
+     * @param {string|null} videoSource
+     * @param {Map} clocks - Per-ingest cache.
+     * @returns {Promise<Date|null>}
+     */
+    async clockFor(videoSource, clocks) {
+        if (!videoSource) return null;
+        if (!clocks.has(videoSource)) clocks.set(videoSource, await videoClockService.startOf(videoSource));
+        return clocks.get(videoSource);
+    }
+
+    /**
+     * Move derived timecodes onto the video's clock, where it has one (#76).
+     *
+     * Checked against the worker first, by `deriveTimecodes`, in position terms -- the
+     * worker knows nothing of clocks. Then, with a clock, `tc`, `frame` and
+     * `actualPosition` become the time of day the frame was recorded and `observed_at`
+     * the moment, exactly as setting the clock afterwards would make them. Without one
+     * they stay the position in the video and `observed_at` stays null, which is how the
+     * Mosaic knows to say so.
+     *
+     * @param {Object} timecodes - From `deriveTimecodes`.
+     * @param {Date|null} start - The video's recorded start.
+     * @param {number} fps
+     * @returns {Object} `{tc, frame, mediaPosition, actualPosition, observedAt}`.
+     */
+    timeByClock(timecodes, start, fps) {
+        const { positionMs, ...columns } = timecodes;
+        if (!start) return { ...columns, observedAt: null };
+        const { actualMs, observedAt } = clockAt(start, positionMs);
+        return {
+            ...columns,
+            tc: deriveTc(actualMs),
+            frame: deriveFrame(actualMs, fps),
+            actualPosition: formatTimeSpan(actualMs),
+            observedAt,
         };
     }
 

@@ -926,53 +926,36 @@ test('R4: an ordinary window does not wrap', () => {
 });
 
 /**
- * A17: the `date` range compares `tc` as **a point in time**, not as a date.
+ * #76: the `date` range is the UTC day an observation was seen, from `observed_at`.
  *
- * Answered by the human — *"if there is no date, it'll just default to the time. And if
- * there is a date, then the date will also work."* The old assertions were the other
- * reading, comparing `dateOf(tc)` against `YYYY-MM-DD` bounds: no `tc` carries a date, so
- * the filter answered zero rows always, which is why the endpoint refused it outright
- * rather than serving it.
- *
- * `carriesDate` and `dateOf` are still correct functions and are still tested below; what
- * changed is that they no longer drive this dimension.
+ * Under A17 it read `tc` as a moment, because nothing held a date. Now `observed_at` does,
+ * once a video's clock is set (Isaac, 2026-11-09), and time of day is `timeOfDay`'s alone.
  */
-test('A17: a date range reads the recorded time, inclusive, and does not wrap', () => {
+test('#76: a date range is whole UTC days of observed_at, inclusive at both ends', () => {
   const d = dimensions.DIMENSION.date;
-  const value = { from: '09:00', to: '17:00' };
+  const value = { from: '2021-06-14', to: '2021-06-14' };
 
-  assert.equal(match.matchesDimension(d, value, { tc: '12:00:00' }), true);
-  assert.equal(match.matchesDimension(d, value, { tc: '09:00:00' }), true, 'inclusive');
-  assert.equal(match.matchesDimension(d, value, { tc: '17:00:00' }), true, 'both ends');
-  assert.equal(match.matchesDimension(d, value, { tc: '22:00:00' }), false);
-
-  /* The whole difference from `timeOfDay`, which is a window and *does* wrap. A range
-     written with the wrapping rule would turn an empty question into a night. */
-  const backwards = { from: '22:00', to: '02:00' };
-  assert.equal(match.matchesDimension(d, backwards, { tc: '23:00:00' }), false,
-    'a range does not wrap, however the window beside it behaves');
-  assert.equal(
-    match.withinWindow(match.timeOfDayMs('23:00:00'),
-      match.clockMs('22:00'), match.clockMs('02:00')),
-    true, 'and the window does, which is why they are two controls');
+  assert.equal(match.matchesDimension(d, value, { observed_at: '2021-06-14T12:00:00.000Z' }), true);
+  assert.equal(match.matchesDimension(d, value, { observed_at: '2021-06-14T00:00:00.000Z' }), true, 'from the first instant');
+  assert.equal(match.matchesDimension(d, value, { observed_at: '2021-06-14T23:59:59.999Z' }), true, 'to the last');
+  assert.equal(match.matchesDimension(d, value, { observed_at: '2021-06-15T00:00:00.000Z' }), false);
+  assert.equal(match.matchesDimension(d, { from: '2021-06-15', to: null }, { observed_at: '2021-07-01T00:00:00.000Z' }), true, 'open-ended');
+  // Time of day is not what this reads any more.
+  assert.equal(match.matchesDimension(d, value, { tc: '12:00:00', observed_at: null }), false);
 });
 
-test('A17: a row whose tc carries no readable clock cannot answer, and is counted', () => {
+test('#76: a row with no date -- its video has no clock -- cannot answer, and is counted', () => {
   const d = dimensions.DIMENSION.date;
-  const value = { from: '09:00', to: '17:00' };
-  assert.equal(match.matchesDimension(d, value, { tc: null }), false,
+  const value = { from: '2021-06-14', to: '2021-06-14' };
+  assert.equal(match.matchesDimension(d, value, { observed_at: null }), false,
     'excluded rather than guessed at');
-  assert.equal(match.matchesDimension(d, value, { tc: 'not a time' }), false);
 
-  /* #76 built this reporting so a date filter could never silently omit, and until A17 it
-     had nothing to report -- the filter was refused. A number the reviewer can see is the
-     difference between a filter and a lie. */
   const rows = [
-    { tc: '12:00:00' }, { tc: '1.10:00:00' },
-    { tc: null }, { tc: '' }, { tc: 'nonsense' },
+    { observed_at: '2021-06-14T12:00:00.000Z' }, { observed_at: '2021-08-01T10:00:00.000Z' },
+    { observed_at: null }, { observed_at: null }, { tc: '10:00:00' },
   ];
-  assert.equal(match.unanswerable(value ? { date: value } : {}, rows), 3,
-    'three rows carry no readable clock and the reviewer has to be told');
+  assert.equal(match.unanswerable({ date: value }, rows), 3,
+    'three rows have no date and the reviewer has to be told');
   assert.equal(match.unanswerable({ date: null }, rows), 0,
     'nothing is excluded when the dimension is not filtering');
 });

@@ -116,32 +116,20 @@ export const DIMENSIONS = [
   },
   {
     /**
-     * A range over `tc` **as a point in time** (A17, answered by the human).
+     * The UTC day an observation was seen, from `observed_at` (#76, Isaac 2026-11-09).
      *
-     * *"If there is no date, it'll just default to the time. And if there is a date, then
-     * the date will also work."* So the reviewer is asking about a moment, `tc` is the
-     * moment MARP records, and the control answers with whatever `tc` can discriminate:
-     * time of day today, and dates as well once #76 gives an observation a real one — with
-     * no change to the control when that happens.
+     * Under A17 this read `tc` as a moment, because nothing held a date. Now
+     * `observed_at` does, once a video's clock is set, and time of day is `timeOfDay`'s.
      *
-     * **It does not wrap, and that is the whole difference from `timeOfDay`.** A time
-     * *window* of 22:00 to 02:00 is one night; a *range* from later to earlier is empty.
-     * The two are adjacent rather than duplicates, and they stop being adjacent at all the
-     * moment `tc` carries a date.
+     * `days: true` says the ends are `YYYY-MM-DD`, so the rail draws date inputs and
+     * `matchesDimension` compares days. Whole days, inclusive at both ends.
      *
-     * `clock: true` is what says the ends are times rather than numbers, so the rail draws
-     * text inputs (a native `<input type="time">` renders from the browser locale and no
-     * attribute overrides it — #81 B3) and `matchesDimension` compares clocks. It used to
-     * be `<input type="date">` validated as `YYYY-MM-DD`, which is reading (i) and is the
-     * one the human ruled out.
-     *
-     * `reportsExclusions` stays, and it finally has something to report: a row whose `tc`
-     * carries no readable clock cannot answer, so it is excluded **and counted**. That
-     * reporting is what #76 built so a date filter could never silently omit.
+     * `reportsExclusions`: a row whose video has no clock has no date, cannot answer, and
+     * is excluded **and counted**, so the filter never silently omits.
      */
-    key: 'date', field: 'tc',
-    source: 'observations.tc -- as a moment. Time of day today; dates when #76 lands', kind: KIND.RANGE,
-    label: 'date', all: 'Any date', reportsExclusions: true, clock: true,
+    key: 'date', field: 'observed_at',
+    source: 'observations.observed_at -- the UTC day it was seen (#76)', kind: KIND.RANGE,
+    label: 'date', all: 'Any date', reportsExclusions: true, days: true,
   },
 
   {

@@ -112,8 +112,7 @@ function spanPanel(dimension) {
       </div>
       <div class="mnote">${wraps
         ? '24-hour. A start later than the end is a window across midnight.'
-        : `24-hour. <b>${dimension.label}</b> reads the recorded time; it will read dates too
-           once observations carry one.`}</div>`;
+        : `24-hour. <b>${dimension.label}</b> reads the recorded time.`}</div>`;
   }
 
   return `
@@ -122,7 +121,9 @@ function spanPanel(dimension) {
       <input type="date" data-end="from" value="${from}" aria-label="${dimension.label} from">
       <span class="dash">&ndash;</span>
       <input type="date" data-end="to" value="${to}" aria-label="${dimension.label} to">
-    </div>`;
+    </div>${dimension.days
+      ? `<div class="mnote">UTC. An observation has a date once its video's clock is set.</div>`
+      : ''}`;
 }
 
 export function renderRail() {

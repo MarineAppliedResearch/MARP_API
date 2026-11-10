@@ -111,6 +111,16 @@ export function matchesDimension(dimension, value, row) {
    * This compared `dateOf(raw)` against `YYYY-MM-DD` bounds, which is the reading the
    * human ruled out: no `tc` carries a date, so it answered zero rows.
    */
+  /* A `days` range: the UTC day the row was seen (#76). No date, no answer -- excluded,
+     and counted by `unanswerable`. */
+  if (dimension.days) {
+    const day = raw == null ? null : new Date(raw).toISOString().slice(0, 10);
+    if (day == null) return false;
+    if (value.from != null && day < value.from) return false;
+    if (value.to != null && day > value.to) return false;
+    return true;
+  }
+
   if (dimension.clock) {
     const ms = timeOfDayMs(raw);
     if (ms == null) return false;
@@ -144,11 +154,8 @@ export function matchesFilters(filters, row) {
 export function unanswerable(filters, rows) {
   const d = DIMENSION.date;
   if (!isActive(d, filters.date)) return 0;
-  /* A row that cannot answer is one whose `tc` carries no readable clock (A17). It was
-     one whose `tc` carried no *date*, which was every row -- so the count was the whole
-     result and the note said so, which is why the filter had to be refused rather than
-     served. */
-  return rows.filter((r) => timeOfDayMs(r[d.field]) == null).length;
+  /* A row that cannot answer is one with no date: its video has no clock set (#76). */
+  return rows.filter((r) => r[d.field] == null).length;
 }
 
 /**

@@ -268,15 +268,11 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
   test('R5: the date filter says how many observations it could not see',
     async ({ page, request }) => {
       /**
-       * **The unreadable rows are made, because every `tc` in this corpus is readable.**
+       * **Undated rows are made, so the rule always has something to report** (#76).
        *
-       * `toBe(2)` was the fixture's two deliberately unreadable rows, put there because a
-       * rule with nothing to report is a rule nothing watches. A corpus built from
-       * inference derives `tc` for every row it ingests, so it has none -- and asserting
-       * "the note stayed hidden" would be a check that passes while the reporting is
-       * entirely broken. Two seeded rows whose `tc` is not a clock put the rule back in
-       * the position it exists for; the count is still read from the endpoint rather than
-       * assumed to be two, which is a stronger statement than the literal ever was.
+       * A row has a date once its video's clock is set. Two seeded rows with none put the
+       * rule in the position it exists for, whatever clocks the corpus has been given; the
+       * count is still read from the endpoint rather than assumed.
        */
       const seeded = await seedPage({ count: 2, thumbnail: 'ready', tc: 'n/a' });
 
@@ -300,7 +296,7 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
    * @returns {Promise<void>} Resolves when the note has been checked.
    */
   async function theDateNote(page, request, seeded) {
-      const unanswerable = await unanswerableForDate(request, { date: { from: '00:00', to: null } });
+      const unanswerable = await unanswerableForDate(request, { date: { from: '2000-01-01', to: null } });
 
       await page.goto('./');
       await expectRealBacking(page);
@@ -311,29 +307,17 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
       await expect(note).toBeHidden();          // nothing to say until a date is asked for
 
       /**
-       * **A17 changed what this filter compares, and so what it can fail to answer.**
-       *
-       * It used to compare the *date component* of `tc`, which no observation carries — so
-       * the filter excluded everything and the note reported the whole result. That is why
-       * the endpoint refused it outright. Answered differently by the human: the range
-       * compares `tc` as a **point in time**, so a row answers whenever its `tc` carries a
-       * readable clock.
-       *
-       * Which leaves the note with something narrower and truer to say: the rows whose
-       * `tc` says nothing at all. The fixture carried two, deliberately, because a rule
-       * with nothing to report is a rule nothing watches — and this line is still the ONLY
-       * thing standing between the reviewer and a result they cannot explain.
-       *
-       * The ends are times now, not dates. That is the control keeping its shape while
-       * what it can discriminate grows, which is what A14 meant.
+       * **#76: the filter is the day each observation was seen**, from `observed_at`. A row
+       * whose video has no clock set has no date and cannot answer, and this note is the
+       * only thing standing between the reviewer and a result they cannot explain.
        */
-      await setSpan(page, 'date', 'from', '00:00');
+      await setSpan(page, 'date', 'from', '2000-01-01');
 
       /* Loud rather than green. A corpus where every `tc` is readable leaves the rule with
          nothing to report, and asserting "the note stayed hidden" would be a check that
          passes while the reporting is entirely broken -- which is the one thing this line
          exists to prevent. So it fails, and says what is missing. */
-      expect(unanswerable, `the ${seeded.ids.length} rows seeded with an unreadable \`tc\` `
+      expect(unanswerable, `the ${seeded.ids.length} rows seeded with no date `
         + 'did not reach the endpoint\'s count of what the date filter could not answer '
         + 'for, so either the seeding or the counting is wrong. It fails rather than '
         + 'skipping: a skipped branch looks green, and this note is the only thing between '

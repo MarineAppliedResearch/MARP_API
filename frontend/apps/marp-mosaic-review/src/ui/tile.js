@@ -14,6 +14,7 @@ import { currentSpeciesName, initialsOfUsername } from '../model/row.js';
 import { isDestroyed } from '../model/page.js';
 import { MarpBackend } from '../backend.js';
 import { ICON } from './dom.js';
+import { clockText } from '../model/video-clock.js';
 
 export const markIcon = (mode = state.mode) =>
   ({ scientific: ICON.flag, training: ICON.exc, delete: ICON.del }[mode]);
@@ -322,6 +323,12 @@ export function tile(row) {
     : changed ? `<span class="badge b-chg">${ICON.tick}CHANGED</span>`
     : '';
 
+  /* When it was seen (#76): the date and time where its video's clock is set, and
+     otherwise its position in the video, said as such so it is not read as a clock. */
+  const seenAt = (r) => (r.observed_at
+    ? clockText(r.observed_at)
+    : `${r.tc} into the video (no clock set)`);
+
   /* The **current** species, not the annotator's frozen label (F6). `row.comname` here
      showed the old animal for ever on any observation that had been corrected, while the
      species filter -- which is `species_id` -- matched the new one. */
@@ -334,7 +341,7 @@ export function tile(row) {
       ? `${name} · no image, and retrying cannot help${row.thumbnail_reason ? ' — ' + row.thumbnail_reason : ''}`
       : noImage
         ? `${name} · no image — markable, but excluded from the page commit`
-        : `${name} · ${row.confidence} · ${row.dive} line ${row.line} · ${row.tc}`;
+        : `${name} · ${row.confidence} · ${row.dive} line ${row.line} · ${seenAt(row)}`;
 
   /* Its own slot, never the badge's (A4, A6). A refusal is an acknowledgement that a
      gesture did not take, not a state the tile is in, and letting it reach `.badge` is

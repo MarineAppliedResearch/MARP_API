@@ -45,9 +45,8 @@ test('R1: mode, filters, sort and page all survive the round trip', () => {
     species: [41, 43],
     confidence: { from: 0.5, to: 0.8 },
     timeOfDay: { from: '22:00', to: '02:00' },
-    /* A17: the date range carries times. It was `YYYY-MM-DD`, which is the reading the
-       human ruled out. */
-    date: { from: '09:00', to: '17:00' }
+    /* #76: the date range carries days again, now that observed_at holds one. */
+    date: { from: '2021-06-14', to: '2021-06-15' }
   };
   q.sort = { field: 'obsID', dir: 'asc', then: null };
   q.page = 7;
@@ -60,7 +59,7 @@ test('R1: mode, filters, sort and page all survive the round trip', () => {
   assert.deepEqual(back.filters.species, [41, 43]);
   assert.deepEqual(back.filters.confidence, { from: 0.5, to: 0.8 });
   assert.deepEqual(back.filters.timeOfDay, { from: '22:00', to: '02:00' });
-  assert.deepEqual(back.filters.date, { from: '09:00', to: '17:00' });
+  assert.deepEqual(back.filters.date, { from: '2021-06-14', to: '2021-06-15' });
 });
 
 test('R6: every declared dimension can be written and read back', () => {
@@ -70,11 +69,13 @@ test('R6: every declared dimension can be written and read back', () => {
     const q = base();
     /* A `numeric` set dimension filters on an integer key, so `['alpha','beta']` is not a
        value it can carry -- it would be discarded on the way back in, which is R3 working
-       rather than a round-trip failure. A `clock` range carries times (A17). */
+       rather than a round-trip failure. A `clock` range carries times (A17), a `days`
+       range days (#76). */
     if (dimension.kind === KIND.SET) {
       q.filters[dimension.key] = dimension.numeric ? [41, 43] : ['alpha', 'beta'];
     } else if (dimension.kind === KIND.WINDOW) q.filters[dimension.key] = { from: '01:15', to: '03:45' };
     else if (dimension.clock) q.filters[dimension.key] = { from: '02:02', to: null };
+    else if (dimension.days) q.filters[dimension.key] = { from: '2021-06-14', to: null };
     else {
       const [lo, hi] = dimension.bounds;
       q.filters[dimension.key] = { from: lo, to: hi };
@@ -289,14 +290,13 @@ test('the address stays readable: colons survive, commas do not become separator
 });
 
 test('an open-ended range keeps which end was open', () => {
-  /* Times rather than dates (A17). The property is which end was open, not which
-     vocabulary the ends are written in. */
+  /* The property is which end was open, not which vocabulary the ends are written in. */
   const q = base();
-  q.filters.date = { from: null, to: '17:00' };
-  assert.deepEqual(round(q).filters.date, { from: null, to: '17:00' });
+  q.filters.date = { from: null, to: '2021-06-15' };
+  assert.deepEqual(round(q).filters.date, { from: null, to: '2021-06-15' });
 
-  q.filters.date = { from: '09:00', to: null };
-  assert.deepEqual(round(q).filters.date, { from: '09:00', to: null });
+  q.filters.date = { from: '2021-06-14', to: null };
+  assert.deepEqual(round(q).filters.date, { from: '2021-06-14', to: null });
 });
 
 test('a dimension that nests keeps its dependents, because the address is not a gesture', () => {

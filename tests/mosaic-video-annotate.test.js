@@ -122,12 +122,32 @@ describe('annotating from the video page (#181)', () => {
             session_id: seeded.sessionIds[1], project_id: seeded.projectId, species_id: seeded.speciesIds[1],
             comname: species.comname, taxserial: species.taxserial, count: 1, video_source: VIDEO,
             gpu_job_id: null, mediaPosition: '00:00:12.4800000', actualPosition: '00:00:12.4800000', tc: '00:00:12',
+            // No clock set for this video, so no moment and position times (#76).
+            observed_at: null,
         });
         expect(created.obsID).toBe((before[0].m || 0) + 1);
         expect(created.user_id).not.toBeNull();
         // 12.48 s at 25 is frame 312: a start, and no end until one is set (A4).
         expect((await track(id)).map((k) => [k.framenum, k.type, k.comname])).toEqual([[312, 'start', species.comname]]);
         expect(response.body.keyframes[0]).toMatchObject({ type: 'start', t: 12.48, x: 0.3 });
+    });
+
+    it('adds an observation on the video clock once one is set (#76)', async () => {
+        const opened = await addObservation({ sessionIndex: 0, keyframes: [[250, 'start']] });
+        await db.videos.create({ video_source: VIDEO, recorded_start: new Date('2021-06-14T16:40:41Z'), start_source: 'entered' });
+        try {
+            const response = await global.api.post(ROUTE).send({
+                observation_id: opened, session_id: seeded.sessionIds[0], species_id: seeded.speciesIds[0],
+                t: 12.48, x: 0.3, y: 0.4, width: 0.1, height: 0.2,
+            });
+            expect(response.status).toBe(200);
+            const created = await row(response.body.observation.observation_id);
+            // The position stays the position; the clock time is the moment it was seen.
+            expect(created).toMatchObject({ mediaPosition: '00:00:12.4800000', actualPosition: '16:40:53.4800000', tc: '16:40:53' });
+            expect(new Date(created.observed_at).toISOString()).toBe('2021-06-14T16:40:53.480Z');
+        } finally {
+            await db.videos.destroy({ where: { video_source: VIDEO } });
+        }
     });
 
     it('refuses a session with nothing in this video, and a species that does not exist', async () => {
