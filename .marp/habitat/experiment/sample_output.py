@@ -18,7 +18,9 @@
 #   one_soft=1   at most one of Mud and Sand at a time (Isaac, 2026-11-10: Mud, Sand and Gravel
 #                never overlap; annotators never label Mud with Sand). Where both pass their
 #                cut-off, the one the model is surer of stays. The model has no Gravel.
-#   tag=v2       names report_v2.json and the CSVs
+#   runs=a,b     which trained runs to average (names under runs/); default the five 518 px seeds
+#   crop=habitat which of train.py's CROPS to cut each frame to; default "full", as those were trained
+#   tag=v2       names report_v2.json and the CSVs (and, with runs=, the cached answers)
 import csv
 import json
 import os
@@ -33,6 +35,7 @@ from torchvision import transforms
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLASSES = ["Rock", "Mud", "Sand", "Cobble", "Boulder"]
 RUNS = [f"dinov2_vitb-dataset_full-full-518-lr3e-5-llrd0.75-warmup1-epochs10-batch16-seed{i}" for i in range(1, 6)]
+CROP_BOX = None  # set from train.py's CROPS once it is loaded
 SIZE, OVERLAY_ROWS = 518, 0.25
 MARGIN_S = 2
 GAPS = [0, 2, 4, 6, 8, 10, 15]
@@ -44,13 +47,18 @@ SMOOTH_S = float(OPT.get("smooth", 0))
 RAISE = float(OPT.get("raise", 0))
 MIN_S = float(OPT.get("min", 2))
 TAG = OPT.get("tag", "")
+if "runs" in OPT:
+    RUNS = OPT["runs"].split(",")
+CROP = OPT.get("crop", "full")
 ONE_SOFT = OPT.get("one_soft") == "1"
 
 
 class Seconds(Dataset):
     # The same picture train.py's evaluation sees: overlay cut off, resized, normalised.
-    def __init__(self, paths):
-        self.paths = paths
+    def __init__(self, paths, box):
+        # The box travels with the dataset: Windows loader workers start fresh and do not
+        # see a global set in the main process.
+        self.paths, self.box = paths, box
         self.tf = transforms.Compose([transforms.Resize((SIZE, SIZE)), transforms.ToTensor(),
                                       transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
 
@@ -60,7 +68,8 @@ class Seconds(Dataset):
     def __getitem__(self, i):
         img = Image.open(self.paths[i]).convert("RGB")
         w, h = img.size
-        return self.tf(img.crop((0, int(h * OVERLAY_ROWS), w, h)))
+        x0, y0, x1, y1 = self.box
+        return self.tf(img.crop((int(w * x0), int(h * y0), int(w * x1), int(h * y1))))
 
 
 def models():
@@ -78,6 +87,8 @@ def models():
 def answers(ref, line, T, nets):
     # Per second of video: clock ms and the averaged probability of each substrate.
     cache = os.path.join(OUT, f"{ref}_answers.npz" if FRAMES == "frames_1s" else f"{ref}_answers_{FRAMES}.npz")
+    if "runs" in OPT:
+        cache = cache.replace(".npz", f"_{TAG}.npz")
     if os.path.exists(cache):
         z = np.load(cache)
         return z["clock"], z["p"]
@@ -87,7 +98,7 @@ def answers(ref, line, T, nets):
         for name in sorted(os.listdir(d), key=lambda n: int(n[:-4])):
             paths.append(os.path.join(d, name))
             clock.append(int(name[:-4]) + f["offset"])
-    dl = DataLoader(Seconds(paths), batch_size=32, num_workers=6)
+    dl = DataLoader(Seconds(paths, CROP_BOX), batch_size=32, num_workers=6)
     ps = []
     with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16):
         for x in dl:
@@ -187,8 +198,10 @@ def clock_text(ms):
 
 
 def main():
+    global CROP_BOX
     lines = json.load(open(os.path.join(OUT, "lines.json")))
     T, nets = models()
+    CROP_BOX = T["CROPS"][CROP]
     # The ensemble's cut-offs, picked on the full dataset's tuning dives as overnight.py did.
     rows = list(csv.DictReader(open(os.path.join(HERE, "dataset_full.csv"))))
     yv = np.array([[float(r[c]) for c in CLASSES] for r in rows if r["split"] == "val"])
