@@ -3179,7 +3179,7 @@ const buildOpenApiSpec = () => {
                     MosaicQueryFilters: {
                         type: 'object',
                         description:
-                            'The mosaic rail, as a query. **An absent or empty value means not filtering**, never "apply the reviewing mode\'s default" -- both status dimensions are sent on every query and both may be empty. `date` is rejected rather than served: no column holds the date an observation was made, and a filter that silently omits is worse than no filter. See #76.',
+                            'The mosaic rail, as a query. **An absent or empty value means not filtering**, never "apply the reviewing mode\'s default" -- both status dimensions are sent on every query and both may be empty. `date` filters on the UTC day an observation was seen (`observed_at`, #76); one whose video has no clock set has no date, and is excluded and counted in `excludedForNoDate`.',
                         properties: {
                             project: { type: 'array', items: { type: 'string' }, example: ['Deep Reef Survey 2025'], description: 'projects.name, reached through observations.project_id.' },
                             dive: { type: 'array', items: { type: 'string' }, example: ['D04'], description: 'sessions.dive.' },
@@ -3194,6 +3194,12 @@ const buildOpenApiSpec = () => {
                                 nullable: true,
                                 description: 'observations.confidence, inclusive at both ends. Either end may be null.',
                                 properties: { from: { type: 'number', nullable: true, example: 0 }, to: { type: 'number', nullable: true, example: 0.8 } },
+                            },
+                            date: {
+                                type: 'object',
+                                nullable: true,
+                                description: 'The UTC day an observation was seen, from observations.observed_at, whole days inclusive at both ends (#76). An observation whose video has no clock set has no date and is excluded, and counted in `excludedForNoDate`.',
+                                properties: { from: { type: 'string', format: 'date', nullable: true, example: '2021-06-14' }, to: { type: 'string', format: 'date', nullable: true, example: '2021-06-15' } },
                             },
                             timeOfDay: {
                                 type: 'object',
@@ -3226,7 +3232,8 @@ const buildOpenApiSpec = () => {
                             confidence: { type: 'number', nullable: true, example: 0.42, description: 'Nullable. Nulls sort last ascending, so unscored rows land on the last pages of the default question.' },
                             comname: { type: 'string', nullable: true, example: 'Bat Star', description: 'What the species entry was called when the observation was recorded. Never dropped and never rewritten, including by a species correction: it is what makes the drift from species_id auditable.' },
                             species_comname: { type: 'string', nullable: true, example: 'Ochre Star', description: 'The **current** common name of the species the observation is now classified as, joined from species. Distinct from comname, which stays the annotator own choice: a species correction changes species_id and never the label the annotator saw, so without this field a corrected tile would render the old animal for ever while the species filter matched the new one. The pair is also what the "was Bat Star" indicator draws from. Null where the observation has no species -- about 4% of rows legitimately do not.' },
-                            tc: { type: 'string', nullable: true, example: '21:57:22', description: 'Recorded clock time, as .NET TimeSpan text.' },
+                            tc: { type: 'string', nullable: true, example: '21:57:22', description: 'Recorded clock time, as .NET TimeSpan text. The position in the video instead where `observed_at` is null.' },
+                            observed_at: { type: 'string', format: 'date-time', nullable: true, example: '2021-06-14T16:45:39.400Z', description: 'When the observation was seen, UTC (#76). Null where its video has no clock set, and then `tc` is a position in the video rather than a clock time.' },
                             dive: { type: 'string', nullable: true, example: 'D04' },
                             line: { type: 'string', nullable: true, example: '1' },
                             session_type: { type: 'string', nullable: true, example: 'Fish' },
@@ -3374,7 +3381,7 @@ const buildOpenApiSpec = () => {
                                     },
                                 },
                             },
-                            excludedForNoDate: { type: 'integer', example: 0, description: 'How many observations a date filter could not answer for. Always 0 while the date dimension is rejected rather than served.' },
+                            excludedForNoDate: { type: 'integer', example: 0, description: 'How many observations a date filter could not answer for: those with no date because their video has no clock set (#76). 0 while the date filter is not active.' },
                             servedAt: { type: 'string', format: 'date-time', example: '2026-09-09T11:04:22.113Z', description: 'Diagnostic. Nothing depends on it.' },
                         },
                     },

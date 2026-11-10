@@ -187,6 +187,16 @@ export const MarpApi = {
     });
   },
 
+  /* A video's clock (#76): when its recording started, and the file name's suggestion. */
+  async videoClock(videoSource, { signal } = {}) {
+    return request(`/videos/clock?video_source=${encodeURIComponent(videoSource)}`, { signal });
+  },
+
+  /* Set it from a reading off the picture, which times every observation in the video (#76). */
+  async setVideoClock(body, { signal } = {}) {
+    return request('/videos/clock', { method: 'PUT', body, signal });
+  },
+
   /* The video page (#181): every observation in a video the query matches, once. */
   async videoObservations({ observationId, filters }, { signal } = {}) {
     return request('/mosaic/video/observations', {

@@ -37,6 +37,36 @@ body {
   font-size: 0.9em;
 }
 
+/* #76: the video's clock. No clock is a warning, because its times are not clock times. */
+.inspect-head {
+  flex-wrap: wrap;
+}
+
+.inspect-clock {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.inspect-clock.unset {
+  color: var(--amber-300);
+}
+
+.inspect-clock-button,
+.inspect-clock-form button {
+  font: inherit;
+  font-size: 0.9em;
+}
+
+.inspect-clock-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
 /* The player and the boxes over it share one box, so the boxes can line up. */
 .inspect-stage {
   position: relative;

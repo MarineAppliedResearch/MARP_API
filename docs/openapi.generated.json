@@ -4562,7 +4562,7 @@
       },
       "MosaicQueryFilters": {
         "type": "object",
-        "description": "The mosaic rail, as a query. **An absent or empty value means not filtering**, never \"apply the reviewing mode's default\" -- both status dimensions are sent on every query and both may be empty. `date` is rejected rather than served: no column holds the date an observation was made, and a filter that silently omits is worse than no filter. See #76.",
+        "description": "The mosaic rail, as a query. **An absent or empty value means not filtering**, never \"apply the reviewing mode's default\" -- both status dimensions are sent on every query and both may be empty. `date` filters on the UTC day an observation was seen (`observed_at`, #76); one whose video has no clock set has no date, and is excluded and counted in `excludedForNoDate`.",
         "properties": {
           "project": {
             "type": "array",
@@ -4659,6 +4659,25 @@
               }
             }
           },
+          "date": {
+            "type": "object",
+            "nullable": true,
+            "description": "The UTC day an observation was seen, from observations.observed_at, whole days inclusive at both ends (#76). An observation whose video has no clock set has no date and is excluded, and counted in `excludedForNoDate`.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date",
+                "nullable": true,
+                "example": "2021-06-14"
+              },
+              "to": {
+                "type": "string",
+                "format": "date",
+                "nullable": true,
+                "example": "2021-06-15"
+              }
+            }
+          },
           "timeOfDay": {
             "type": "object",
             "nullable": true,
@@ -4748,7 +4767,14 @@
             "type": "string",
             "nullable": true,
             "example": "21:57:22",
-            "description": "Recorded clock time, as .NET TimeSpan text."
+            "description": "Recorded clock time, as .NET TimeSpan text. The position in the video instead where `observed_at` is null."
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2021-06-14T16:45:39.400Z",
+            "description": "When the observation was seen, UTC (#76). Null where its video has no clock set, and then `tc` is a position in the video rather than a clock time."
           },
           "dive": {
             "type": "string",
@@ -5227,7 +5253,7 @@
           "excludedForNoDate": {
             "type": "integer",
             "example": 0,
-            "description": "How many observations a date filter could not answer for. Always 0 while the date dimension is rejected rather than served."
+            "description": "How many observations a date filter could not answer for: those with no date because their video has no clock set (#76). 0 while the date filter is not active."
           },
           "servedAt": {
             "type": "string",
@@ -7789,6 +7815,14 @@
             "description": "Identifier of the GPU job whose result produced the observation. Re-running inference produces a second set of observations rather than replacing the first, so this is what tells the sets apart.",
             "example": 1256
           },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "default": null,
+            "description": "When the observation was seen, UTC: its video's recorded start plus its position in the video. Null where the video has no clock set, in which case tc and actualPosition are the position in the video rather than clock time.",
+            "example": "2021-06-14T16:45:39.400Z"
+          },
           "jellyfin_item_id": {
             "type": "string",
             "maxLength": 255,
@@ -7837,6 +7871,7 @@
           "substrate_shell_hash",
           "substrate_shell_rubble",
           "substrate_algal",
+          "observed_at",
           "jellyfin_item_id",
           "createdAt",
           "updatedAt"
@@ -15356,6 +15391,239 @@
           },
           "403": {
             "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
+    "/v2/videos/clock": {
+      "get": {
+        "summary": "Read a video's clock, and the start its file name suggests",
+        "description": "Name the video by `video_source` or `jellyfin_item_id`. Requires `observations:read`.",
+        "tags": [
+          "V2 · Video clock"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "video_source",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The file name, as observations record it."
+          },
+          {
+            "in": "query",
+            "name": "jellyfin_item_id",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Or the Jellyfin item."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The clock, set or not.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "video_source": {
+                      "type": "string",
+                      "example": "20210614_164041_Fwd.mp4",
+                      "description": "The file, as observations name it."
+                    },
+                    "recorded_start": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "description": "When the recording started, UTC. Null when no clock is set, in which case its observations' times are positions in the video."
+                    },
+                    "start_source": {
+                      "type": "string",
+                      "enum": [
+                        "file-name",
+                        "entered",
+                        "synced"
+                      ],
+                      "nullable": true,
+                      "description": "How the start was learned."
+                    },
+                    "start_set_by": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "Who set it."
+                    },
+                    "start_set_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "suggested_start": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "description": "The start the file name states (`YYYYMMDD_HHMMSS`, taken as UTC), or null. A suggestion only."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Set a video's clock, and time every observation in it",
+        "description": "Give the start directly, or a reading off the picture: `clock`, the date and time the burnt-in clock shows, with `at_media_position`, the position of that frame. Every observation in the video, in every session, gets `observed_at` = start + its position, and its clock time (`actualPosition`; `tc`, `frame` and `etc` where they still follow from it) moved to that moment. Positions in the video are never changed, and a value the derivation does not reproduce is left as found. Setting it again corrects it. Requires `observations:write`.",
+        "tags": [
+          "V2 · Video clock"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "video_source": {
+                    "type": "string",
+                    "example": "20210614_164041_Fwd.mp4"
+                  },
+                  "jellyfin_item_id": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2021-06-14T16:40:41Z",
+                    "description": "When the recording started, UTC."
+                  },
+                  "clock": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2021-06-14T16:45:39Z",
+                    "description": "Or: the date and time shown in a frame, UTC."
+                  },
+                  "at_media_position": {
+                    "type": "string",
+                    "example": "00:04:58.000",
+                    "description": "That frame's position in the video."
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "file-name",
+                      "entered",
+                      "synced"
+                    ],
+                    "description": "file-name when the suggested start was accepted, entered when typed, synced when read off a frame."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Clock set and observations timed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "video_source": {
+                          "type": "string",
+                          "example": "20210614_164041_Fwd.mp4",
+                          "description": "The file, as observations name it."
+                        },
+                        "recorded_start": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true,
+                          "description": "When the recording started, UTC. Null when no clock is set, in which case its observations' times are positions in the video."
+                        },
+                        "start_source": {
+                          "type": "string",
+                          "enum": [
+                            "file-name",
+                            "entered",
+                            "synced"
+                          ],
+                          "nullable": true,
+                          "description": "How the start was learned."
+                        },
+                        "start_set_by": {
+                          "type": "integer",
+                          "nullable": true,
+                          "description": "Who set it."
+                        },
+                        "start_set_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "suggested_start": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true,
+                          "description": "The start the file name states (`YYYYMMDD_HHMMSS`, taken as UTC), or null. A suggestion only."
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "observations": {
+                          "type": "integer",
+                          "description": "Observations timed by the clock."
+                        },
+                        "unreadable": {
+                          "type": "integer",
+                          "description": "Observations left alone because their recorded positions do not parse."
+                        },
+                        "tcLeftAlone": {
+                          "type": "integer",
+                          "description": "Of those timed, how many kept a `tc` something else wrote."
+                        },
+                        "frameLeftAlone": {
+                          "type": "integer",
+                          "description": "Of those timed, how many kept a `frame` something else wrote."
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
           }
         }
       }

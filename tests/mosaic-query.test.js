@@ -962,74 +962,71 @@ describe('the mosaic query (#105)', () => {
     describe('the date and time-of-day dimensions (A3)', () => {
 
         /**
-         * **This asserted the opposite until #124's A17, and the reversal is the point.**
+         * **A real date, since #76** (Isaac, 2026-11-09). Under A17 this read `tc` as a
+         * moment because nothing held a date; now `observed_at` does -- the moment an
+         * observation was seen, once its video's clock is set -- and time of day is
+         * `timeOfDay`'s alone.
          *
-         * Phase 4 read `date` as unanswerable -- nothing holds the date an observation was
-         * made -- and refusing was more honest than a control that excluded everything.
-         * A17 was answered differently by the human: *"if there is no date, it'll just
-         * default to the time. And if there is a date, then the date will also work."* The
-         * reviewer is asking about a **moment**, `tc` is the moment MARP records, and
-         * answering with what `tc` can discriminate beats refusing.
-         *
-         * So the range is served, over the same clock expression `timeOfDay` uses, and it
-         * **does not wrap** -- which is now the whole difference between the two controls.
+         * Three of the six tied rows are given a moment here, two on one day and one on
+         * the next; the other three have none, as a video with no clock leaves them.
          */
-        it('serves an active date filter as a range over tc (A17)', async () => {
-            // **Scoped, and `...tiedQuestion()` cannot do it**: a spread whose `filters`
-            // is overwritten loses the session scope, and the question then matches every
-            // row in a shared database. The first draft of this check did exactly that and
-            // asserted 6 against 14.
-            const scoped = (date) => ({
-                filters: { session: [seeded.sessions.tied], date }, pageSize: 45, pages: [1],
-            });
+        const dated = async () => {
+            const [a, b, c] = seeded.observations.tied;
+            await q(`UPDATE observations SET observed_at = CASE observation_id
+                       WHEN :a THEN '2021-06-14T00:00:00Z'::timestamptz
+                       WHEN :b THEN '2021-06-14T23:59:59.999Z'::timestamptz
+                       WHEN :c THEN '2021-06-15T00:00:00Z'::timestamptz END
+                      WHERE observation_id IN (:a, :b, :c)`, { a, b, c });
+        };
+        const undated = () => q('UPDATE observations SET observed_at = NULL WHERE observation_id IN (:ids)',
+            { ids: seeded.observations.tied });
 
-            const res = await global.api.post(PAGES).send(scoped({ from: '00:00', to: '23:59' }));
-
-            expect(res.status).toBe(200);
-            // Every seeded row in this group carries tc 10:00:00.
-            expect(res.body.pages[0].rowCount).toBe(6);
-
-            const outside = await global.api.post(PAGES).send(scoped({ from: '11:00', to: '12:00' }));
-
-            expect(outside.status).toBe(200);
-            expect(outside.body.pages[0].rowCount).toBe(0);
+        // **Scoped, and `...tiedQuestion()` cannot do it**: a spread whose `filters` is
+        // overwritten loses the session scope, and the question then matches every row in
+        // a shared database.
+        const scoped = (date) => ({
+            filters: { session: [seeded.sessions.tied], date }, pageSize: 45, pages: [1],
         });
 
-        it('does not wrap a date range, where a time window does (A17)', async () => {
-            // 22:00 to 02:00 is one night as a *window* and an empty question as a
-            // *range*. Writing the range with the wrapping rule would silently turn the
-            // second into the first.
-            const asRange = await global.api.post(PAGES).send({
-                filters: {
-                    session: [seeded.sessions.tied], date: { from: '22:00', to: '02:00' },
-                },
-                pageSize: 45, pages: [1],
-            });
+        it('serves an active date filter over the day each observation was seen, in UTC (#76)', async () => {
+            await dated();
+            try {
+                const day = await global.api.post(PAGES).send(scoped({ from: '2021-06-14', to: '2021-06-14' }));
+                expect(day.status).toBe(200);
+                // Both ends of the 14th, and not the first instant of the 15th.
+                expect(day.body.pages[0].rowCount).toBe(2);
 
-            expect(asRange.status).toBe(200);
-            expect(asRange.body.pages[0].rowCount).toBe(0);
+                const both = await global.api.post(PAGES).send(scoped({ from: '2021-06-14', to: '2021-06-15' }));
+                expect(both.body.pages[0].rowCount).toBe(3);
+
+                const after = await global.api.post(PAGES).send(scoped({ from: '2021-06-15', to: null }));
+                expect(after.body.pages[0].rowCount).toBe(1);
+
+                const before = await global.api.post(PAGES).send(scoped({ from: null, to: '2021-06-13' }));
+                expect(before.body.pages[0].rowCount).toBe(0);
+            } finally {
+                await undated();
+            }
         });
 
-        it('reports the rows a date filter could not answer for (#76)', async () => {
-            // What #76 built the reporting for, and it had nothing to report while the
-            // filter was refused. A row whose `tc` carries no readable clock cannot answer,
-            // so it is excluded *and counted* -- a number the reviewer can see is the
-            // difference between a filter and a lie.
-            const [nulls] = await q(
-                `SELECT count(*)::int AS n FROM observations o
-                  WHERE o.ml_model_id = :modelId
-                    AND substring(o.tc from '^-?(?:[0-9]+\.)?([0-9]{1,2}:[0-9]{2}:[0-9]{2})') IS NULL`,
-                { modelId: seeded.modelId }
-            );
+        it('reports the rows a date filter could not answer for: those with no date (#76)', async () => {
+            await dated();
+            try {
+                const res = await global.api.post(PAGES).send(scoped({ from: '2021-06-14', to: '2021-06-14' }));
+                expect(res.status).toBe(200);
+                // The three whose video has no clock, and not the one outside the range.
+                expect(res.body.excludedForNoDate).toBe(3);
+            } finally {
+                await undated();
+            }
+        });
 
-            const res = await global.api.post(PAGES).send({
-                filters: { model: [seeded.modelId], date: { from: '00:00', to: '23:59' } },
-                pageSize: 45, pages: [1],
-            });
-
-            expect(res.status).toBe(200);
-            expect(res.body.excludedForNoDate).toBe(nulls.n);
-            expect(nulls.n).toBeGreaterThan(0);
+        it('refuses a date end that is not a day, rather than guessing at it (#76)', async () => {
+            for (const date of [{ from: '10:00', to: null }, { from: '2021-02-30', to: null }, { from: null, to: '14/06/2021' }]) {
+                const res = await global.api.post(PAGES).send(scoped(date));
+                expect(res.status).toBe(400);
+                expect(res.body.error.message).toContain('YYYY-MM-DD');
+            }
         });
 
         it('reports zero when the date dimension is not filtering, and costs nothing', async () => {
@@ -1146,6 +1143,8 @@ describe('the mosaic query (#105)', () => {
                 'line',
                 'obsID',
                 'observation_id',
+                // #76: when it was seen, UTC; null where its video has no clock.
+                'observed_at',
                 'project_name',
                 'review_decision',
                 'review_note',

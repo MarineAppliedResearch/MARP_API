@@ -187,6 +187,16 @@ function readValue(dimension, raw) {
     return { from: from || null, to: to || null };
   }
 
+  /* A `days` range carries `YYYY-MM-DD` days (#76). Out of order is discarded, as a
+     range does not wrap. */
+  if (dimension.days) {
+    const day = /^\d{4}-\d{2}-\d{2}$/;
+    if (from !== '' && !day.test(from)) return null;
+    if (to !== '' && !day.test(to)) return null;
+    if (from && to && from > to) return null;
+    return { from: from || null, to: to || null };
+  }
+
   /* A `clock` range carries times, not dates (A17). The pattern is the same one the
      window above uses; what differs is that an out-of-order pair is discarded here rather
      than read as a wrap, because a range does not wrap. */

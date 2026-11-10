@@ -252,6 +252,7 @@ const ROW_COLUMNS = `
         o.comname,
         sp.comname AS species_comname,
         o.tc,
+        o.observed_at,
         s.dive,
         s.line,
         s.type AS session_type,
@@ -392,6 +393,31 @@ function clockEnd(value, label) {
         text: `${String(hh).padStart(2, '0')}:${m[2]}:${String(ss).padStart(2, '0')}`,
         seconds: (hh * 3600) + (mm * 60) + ss,
     };
+}
+
+/**
+ * `YYYY-MM-DD`, a day in UTC, for the date filter (#76).
+ *
+ * @param {*} value - One end of a date range.
+ * @param {string} label - What to call it in an error.
+ * @returns {string|null} The day, or null when open.
+ * @throws {MosaicRequestError} If the end is present and is not a real day.
+ */
+function dayEnd(value, label) {
+    if (value == null || value === '') {
+        return null;
+    }
+
+    const text = String(value).trim();
+
+    // Round-tripped, so 2021-02-30 is refused rather than read as 2 March.
+    const at = /^\d{4}-\d{2}-\d{2}$/.test(text) ? Date.parse(`${text}T00:00:00Z`) : NaN;
+
+    if (!Number.isFinite(at) || new Date(at).toISOString().slice(0, 10) !== text) {
+        throw new MosaicRequestError(`${label} must be a date as YYYY-MM-DD`);
+    }
+
+    return text;
 }
 
 /**
@@ -600,32 +626,23 @@ function predicates(filters, bind, { status = true } = {}) {
         }
     }
 
-    // A17 (#124), answered by the human: **`date` compares `tc` as a point in
-    // time.** "If there is no date, it'll just default to the time. And if there is
-    // a date, then the date will also work." So it discriminates time of day today
-    // and starts discriminating dates the moment #76 gives an observation a real
-    // one, without the control changing shape.
+    // #76 (Isaac, 2026-11-09): **`date` is a real date**, the UTC day an observation
+    // was seen, from `observed_at`. Under A17 it read `tc` as a moment because nothing
+    // held a date; now something does, and time of day is `timeOfDay`'s job.
     //
-    // This used to throw a 400 naming #76, on the earlier reading that nothing
-    // holds the date an observation was made. That is still true of the *date*, and
-    // it is not a reason to refuse the filter: the reviewer is asking about a
-    // moment, `tc` is the moment MARP records, and answering with what `tc` can
-    // discriminate is more useful than refusing.
-    //
-    // **It does not wrap, and `timeOfDay` does.** That is the whole difference
-    // between the two controls now and it is deliberate: a time *window* of 22:00
-    // to 02:00 is one night, where a range from later to earlier is empty. Writing
-    // this one as a wrap would silently turn an empty question into a night.
+    // Whole days, inclusive at both ends. A row whose video has no clock set has no
+    // date, cannot answer, and is excluded -- and counted, by
+    // `countUnanswerableForDate`, so the filter never silently omits.
     if (isActive(filters.date)) {
-        const from = clockEnd(filters.date.from, 'filters.date.from');
-        const to = clockEnd(filters.date.to, 'filters.date.to');
+        const from = dayEnd(filters.date.from, 'filters.date.from');
+        const to = dayEnd(filters.date.to, 'filters.date.to');
 
         if (from) {
-            where.push(`${TIME_OF_DAY} >= ${bind.add(from.text)}::interval`);
+            where.push(`o.observed_at >= ${bind.add(from)}::date::timestamp AT TIME ZONE 'UTC'`);
         }
 
         if (to) {
-            where.push(`${TIME_OF_DAY} <= ${bind.add(to.text)}::interval`);
+            where.push(`o.observed_at < (${bind.add(to)}::date + 1)::timestamp AT TIME ZONE 'UTC'`);
         }
     }
 
@@ -855,11 +872,10 @@ SELECT t.total,
 /**
  * How many rows the date filter **could not answer for**, for one question.
  *
- * #76 built this reporting so a date filter could never silently omit, and until A17 it had
- * nothing to report: the filter was refused rather than served. Under A17 a row is
- * unanswerable when its `tc` carries no readable clock — `TIME_OF_DAY` is anchored, so a
- * `tc` that is null, empty or not a clock yields null and is excluded by the predicate
- * above. A number the reviewer can see is the difference between a filter and a lie.
+ * #76 built this reporting so a date filter could never silently omit. A row is
+ * unanswerable when it has no `observed_at` -- its video has no clock set -- and is
+ * excluded by the predicate above. A number the reviewer can see is the difference
+ * between a filter and a lie.
  *
  * **Computed only while the date filter is active**, because it is a second pass over the
  * matching set and the answer is zero by definition when nothing is filtering on it.
@@ -870,7 +886,7 @@ SELECT t.total,
  *
  * @async
  * @param {Object} filters - The request's `filters`.
- * @returns {Promise<number>} How many matching rows have no readable clock.
+ * @returns {Promise<number>} How many matching rows have no date.
  */
 async function countUnanswerableForDate(filters) {
     if (!isActive(filters.date)) {
@@ -889,7 +905,7 @@ SELECT count(*)::int AS n
          ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
   LEFT JOIN observation_review_current rt
          ON rt.observation_id = o.observation_id AND rt.purpose = 'training'
- ${where.length ? `WHERE ${where.join('\n   AND ')}\n   AND` : 'WHERE'} ${TIME_OF_DAY} IS NULL`;
+ ${where.length ? `WHERE ${where.join('\n   AND ')}\n   AND` : 'WHERE'} o.observed_at IS NULL`;
 
     const [row] = await db.sequelize.query(sql, {
         bind: bind.values,
@@ -1369,9 +1385,9 @@ async function queryPages(request = {}) {
             ? { total, pageCount: Math.max(1, Math.ceil(total / pageSize)) }
             : {}),
         pages: pages.map((page) => ({ page, rows: byPage.get(page), rowCount: byPage.get(page).length })),
-        // A17: the date filter is served now, so this finally reports something --
-        // the matching rows whose `tc` carries no readable clock, which the filter
-        // had to leave out. Zero, and free, whenever the filter is not active.
+        // #76: the matching rows with no date -- no clock set for their video --
+        // which the date filter had to leave out. Zero, and free, whenever the
+        // filter is not active.
         excludedForNoDate: await countUnanswerableForDate(request.filters || {}),
         // Diagnostic. Nothing depends on it.
         servedAt: new Date().toISOString(),
