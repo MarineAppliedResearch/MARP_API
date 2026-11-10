@@ -127,6 +127,32 @@ function rulesForRun(rules) {
     return { ...rules, exclusive, cut_offs: effectiveCutOffs(rules) };
 }
 
+/**
+ * A model's rules with its never-together groups replaced, as a person sets them on the
+ * Models screen (#287, R9; Isaac, 2026-11-10: editable, per model).
+ *
+ * A group names two or more substrates of which at most one may be present at a moment. A
+ * name may be one of the model's substrates or one the settled groups know of that the model
+ * lacks (Gravel), so a group can be stored whole before the model can see all of it.
+ *
+ * @param {Object} rules - Stored rules.
+ * @param {Array<Array<string>>} groups - The groups to store; an empty list means none.
+ * @returns {Object} The rules with `exclusive` replaced.
+ * @throws {HabitatRulesError} When a group is not two or more distinct known names.
+ */
+function withExclusive(rules, groups) {
+    if (!Array.isArray(groups)) refuse('the never-together groups must be a list of lists of substrates');
+    const known = new Set([...rules.substrates, ...SETTLED.exclusive.flat()]);
+    const clean = groups.map((group) => {
+        if (!Array.isArray(group) || group.length < 2) refuse(`a never-together group needs two or more substrates, not ${JSON.stringify(group)}`);
+        const unknown = group.filter((name) => !known.has(name));
+        if (unknown.length) refuse(`${unknown.join(', ')} is not a substrate this model or the settled groups know`);
+        if (new Set(group).size !== group.length) refuse(`a substrate appears twice in ${JSON.stringify(group)}`);
+        return [...group];
+    });
+    return { ...rules, exclusive: clean };
+}
+
 module.exports = {
     RULES_VERSION,
     RULES_ROLE,
@@ -136,4 +162,5 @@ module.exports = {
     rulesForModel,
     effectiveCutOffs,
     rulesForRun,
+    withExclusive,
 };

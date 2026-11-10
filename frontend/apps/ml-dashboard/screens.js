@@ -6016,13 +6016,24 @@ function habitatRulesSection(view) {
   }).join('');
   const crop = rules.crop || {};
   const listed = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(''));
-  const exclusive = (rules.exclusive || []).map((group) => listed(group.map(escapeHtml))).join('; ');
+  const groups = rules.exclusive || [];
+  const exclusive = groups.map((group) => listed(group.map(escapeHtml))).join('; ');
+
+  /* **Editable, per model** (Isaac, 2026-11-10, R9): one group of substrates never reported
+     together. Offered: the model's substrates and Gravel, which the settled group names
+     though no model has it yet. A model given several groups through the API keeps them, and
+     shows them rather than offering a box that would replace them with one. */
+  const offered = [...new Set([...rules.substrates, 'Gravel', ...groups.flat()])];
+  const editor = groups.length > 1 ? '' : '<div class="never-together">'
+    + offered.map((name) => `<label><input type="checkbox" data-never-together="${view.model.id}" value="${escapeHtml(name)}"`
+      + `${(groups[0] || []).includes(name) ? ' checked' : ''}> ${escapeHtml(name)}</label>`).join(' ')
+    + ` <button class="btn sm" type="button" data-never-together-save="${view.model.id}">Save</button></div>`;
 
   return '<div class="sect" data-habitat-rules><h3>Decision rules</h3>'
     + '<p class="hint">A substrate counts as present on a frame when its score is at or above its cut-off.</p>'
     + `<dl class="kv">${cutOffs}`
     + `<dt>Looks at</dt><dd>${escapeHtml(String(rules.samples_per_second))} frames a second, scores averaged over ${escapeHtml(String(rules.average_s))} s</dd>`
-    + `<dt>Never together</dt><dd>${exclusive ? `${exclusive}: the surer one stays` : 'None'}</dd>`
+    + `<dt>Never together</dt><dd>${exclusive ? `${exclusive}: the surer one stays` : 'None'}${editor}</dd>`
     + `<dt>Stretches</dt><dd>At least ${escapeHtml(String(rules.min_stretch_s))} s; breaks of ${escapeHtml(String(rules.bridge_s))} s or less bridged</dd>`
     + `<dt>Crop</dt><dd>x ${fixed(crop.x0)}&ndash;${fixed(crop.x1)}, y ${fixed(crop.y0)}&ndash;${fixed(crop.y1)} of the frame, at ${escapeHtml(String(rules.input_size))} px</dd>`
     + '</dl></div>';
@@ -6080,6 +6091,23 @@ function wireModelActions() {
   table.addEventListener('click', async (event) => {
     const save = event.target.closest('[data-model-label-save]');
     const status = event.target.closest('[data-model-status]');
+    const neverTogether = event.target.closest('[data-never-together-save]');
+
+    if (neverTogether) {
+      const id = Number(neverTogether.dataset.neverTogetherSave);
+      const chosen = $$(`[data-never-together="${id}"]`, table).filter((box) => box.checked).map((box) => box.value);
+      // One substrate alone constrains nothing, so it is saved as no group.
+      const groups = chosen.length > 1 ? [chosen] : [];
+      neverTogether.disabled = true;
+      try {
+        await window.MarpApi.setNeverTogether(id, groups);
+        await refresh();
+      } catch (error) {
+        neverTogether.disabled = false;
+        window.alert(`Could not save which substrates are never together: ${error.message || error}`);
+      }
+      return;
+    }
     const opened = event.target.closest('.exbtn, tr.runrow-head');
 
     if (save) {

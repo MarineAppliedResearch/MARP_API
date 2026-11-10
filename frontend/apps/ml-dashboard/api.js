@@ -1428,6 +1428,18 @@
   }
 
   /**
+   * `PUT /api/v2/model/:id/never-together` -- which substrates a habitat model never reports
+   * together (#287, R9).
+   *
+   * @param {number} id - The habitat model.
+   * @param {Array<Array<string>>} groups - e.g. `[['Mud', 'Sand', 'Gravel']]`; `[]` for none.
+   * @returns {Promise<Object>} The model.
+   */
+  function setNeverTogether(id, groups) {
+    return request(`/model/${encodeURIComponent(id)}/never-together`, { method: 'PUT', body: { groups } });
+  }
+
+  /**
    * `GET /api/v2/videos/clock` -- when a video's recording started, if anyone has set it,
    * and the start its file name suggests (#76).
    *
@@ -2105,6 +2117,7 @@
     updateModel,
     getVideoClock,
     setVideoClock,
+    setNeverTogether,
     uploadModel,
     clearWorkerDatasetCache,
     ApiError,

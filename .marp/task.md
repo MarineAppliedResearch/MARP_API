@@ -214,8 +214,9 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
   overlapping; the model has no Gravel class (the five are Rock, Mud, Sand, Cobble, Boulder).
   Proposed: the rule is stored as one group, Mud, Sand and Gravel, applied to whichever of
   them a model or dataset has, so Gravel is covered the day it is added. Or Mud and Sand only.
-- [ ] **A19 · database/schema · blocking** — **Where the editable Mud/Sand/Gravel setting
-  lives: per model, per dataset, or both.** With A15 and A16 answered, the rule changes nothing
+- [x] **A19 · database/schema · blocking** — answered 2026-11-10 by Isaac: per model, kept in
+  each model's rules and editable on the Models screen. — **Where the editable Mud/Sand/Gravel
+  setting lives: per model, per dataset, or both.** With A15 and A16 answered, the rule changes nothing
   in a dataset or in training; it acts only when a model's scores become stretches. Proposed:
   **per model**. It is already stored in each model's rules (no new column), editing it on the
   Models screen changes that model's later runs, and runs already made keep what they were made
@@ -259,8 +260,7 @@ Built in this order. Each step is merged only when Isaac says so.
 
 ## Status
 
-- **Gate:** implementing (G2). A1-A11 and A15-A18 answered by Isaac on 2026-11-10; A19 is with
-  him. Only R9's setting waits on it.
+- **Gate:** implementing (G2). Every blocking assumption answered by Isaac on 2026-11-10.
 - **Also from the feasibility session, 2026-11-10:** one model on the habitat crop scored test
   F1 0.728 against 0.751 on the old crop; Boulder fell from 0.62 to 0.55. The crop stays
   settled, the numbers provisional. So the crop a model was trained on is stored with the model
@@ -280,4 +280,8 @@ Built in this order. Each step is merged only when Isaac says so.
     Models screen shows the rules; the species Inference picker leaves habitat models out.
     `tests/habitat-model-registration.test.js` 11 passed; `test:gpu` 435 passed; dashboard
     unit 242 passed plus the picker test (shown failing without its filter).
+  - R9's setting (A17-A19): Mud, Sand and Gravel are one stored group, narrowed to the
+    model's substrates for a run; `PUT /api/v2/model/:id/never-together` changes a habitat
+    model's groups and nothing else in its rules; the Models screen edits it with a box per
+    substrate and Gravel. 15 passed in `habitat-model-registration`; dashboard unit passed.
 - **Next:** step 4, the trainer on the worker, and registering DINOv2 as a base model.

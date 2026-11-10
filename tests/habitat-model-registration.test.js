@@ -230,3 +230,55 @@ describe('a habitat model runs on the habitat engine, and nothing else does', ()
         expect(spec.model.decision_rules.cut_offs.Mud).toBe(0.7);
     });
 });
+
+describe('changing a habitat model\'s never-together groups (R9)', () => {
+    let habitatId;
+    let detectorId;
+    const route = (id) => `/api/v2/model/${id}/never-together`;
+
+    beforeAll(async () => {
+        const insert = async (name, type, rules) => (await db.sequelize.query(
+            `INSERT INTO ml_models (name, model_type, status, decision_rules, created_at, updated_at)
+             VALUES (:name, :type, 'active', CAST(:rules AS jsonb), now(), now()) RETURNING id`,
+            { replacements: { name, type, rules: rules ? JSON.stringify(rules) : null }, type: QueryTypes.SELECT }
+        ))[0].id;
+        habitatId = await insert(`jest-habitat-rules-${runId}`, HABITAT_MODEL_TYPE, habitatRules.rulesForModel(PUBLISHED, SUBSTRATES));
+        detectorId = await insert(`jest-detector-rules-${runId}`, 'detection', null);
+    });
+
+    afterAll(async () => {
+        await db.sequelize.query('DELETE FROM ml_models WHERE id IN (:ids)', { replacements: { ids: [habitatId, detectorId] } });
+    });
+
+    const stored = async () => (await db.sequelize.query(
+        'SELECT decision_rules FROM ml_models WHERE id = :id', { replacements: { id: habitatId }, type: QueryTypes.SELECT }
+    ))[0].decision_rules;
+
+    test('replaces the groups and nothing else in the rules', async () => {
+        const res = await global.api.put(route(habitatId)).send({ groups: [['Mud', 'Sand'], ['Cobble', 'Boulder']] });
+        expect(res.status).toBe(200);
+        const rules = await stored();
+        expect(rules.exclusive).toEqual([['Mud', 'Sand'], ['Cobble', 'Boulder']]);
+        expect(rules.tuned_cut_offs).toEqual(PUBLISHED.cut_offs);
+
+        // Gravel, though this model has none, and an empty list meaning none.
+        await global.api.put(route(habitatId)).send({ groups: [['Mud', 'Sand', 'Gravel']] }).expect(200);
+        expect((await stored()).exclusive).toEqual([['Mud', 'Sand', 'Gravel']]);
+        await global.api.put(route(habitatId)).send({ groups: [] }).expect(200);
+        expect((await stored()).exclusive).toEqual([]);
+    });
+
+    test('refuses a group it cannot apply, and changes nothing', async () => {
+        await global.api.put(route(habitatId)).send({ groups: [['Mud', 'Sand', 'Gravel']] }).expect(200);
+        for (const groups of [[['Mud']], [['Mud', 'Kelp']], [['Mud', 'Mud']], 'Mud, Sand', undefined]) {
+            const res = await global.api.put(route(habitatId)).send({ groups });
+            expect(res.status).toBe(400);
+        }
+        expect((await stored()).exclusive).toEqual([['Mud', 'Sand', 'Gravel']]);
+    });
+
+    test('refuses a model that is not a habitat model, and one that does not exist', async () => {
+        await global.api.put(route(detectorId)).send({ groups: [['Mud', 'Sand']] }).expect(400);
+        await global.api.put(route(2147483000)).send({ groups: [['Mud', 'Sand']] }).expect(404);
+    });
+});

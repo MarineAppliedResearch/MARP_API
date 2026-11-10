@@ -182,3 +182,38 @@ test('a habitat model shows its decision rules, and a species model none', async
 
   assert.equal(row(screen.document, 412).nextElementSibling.querySelector('[data-habitat-rules]'), null);
 });
+
+/* #287 R9 (Isaac, 2026-11-10): the never-together group is a setting a person changes per model. */
+test('a habitat model\'s never-together group is edited on its detail and saved', async (t) => {
+  const saved = [];
+  const rules = {
+    version: 1,
+    substrates: ['Rock', 'Mud', 'Sand', 'Cobble', 'Boulder'],
+    tuned_cut_offs: { Rock: 0.45, Mud: 0.5, Sand: 0.4, Cobble: 0.35, Boulder: 0.3 },
+    raise: { Mud: 0.2 },
+    crop: { x0: 0.25, y0: 0.5, x1: 0.75, y1: 1 },
+    input_size: 518,
+    samples_per_second: 3,
+    average_s: 1,
+    exclusive: [['Mud', 'Sand', 'Gravel']],
+    min_stretch_s: 2,
+    bridge_s: 2,
+  };
+  const screen = await draw({
+    listModels: async () => [model(500, 'campa-habitat-2026-11-10', { model_type: 'habitat', decision_rules: rules })],
+    setNeverTogether: async (id, groups) => { saved.push(JSON.parse(JSON.stringify([id, groups]))); return {}; },
+  });
+  t.after(screen.close);
+
+  const detail = row(screen.document, 500).nextElementSibling;
+  const boxes = [...detail.querySelectorAll('[data-never-together="500"]')];
+  assert.deepEqual(boxes.map((b) => b.value), ['Rock', 'Mud', 'Sand', 'Cobble', 'Boulder', 'Gravel'], 'the five, and Gravel');
+  assert.deepEqual(boxes.filter((b) => b.checked).map((b) => b.value), ['Mud', 'Sand', 'Gravel']);
+
+  // Gravel off, Cobble on, saved.
+  boxes.find((b) => b.value === 'Gravel').checked = false;
+  boxes.find((b) => b.value === 'Cobble').checked = true;
+  detail.querySelector('[data-never-together-save="500"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(saved, [[500, [['Mud', 'Sand', 'Cobble']]]]);
+});

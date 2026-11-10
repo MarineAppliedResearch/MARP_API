@@ -1452,6 +1452,9 @@ body:not([data-can-control]) [data-control] { display: none !important; }
       gap: 9px 18px; font-size: 12.5px; align-items: baseline; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; color: var(--white); min-width: 0; overflow-wrap: anywhere; }
+/* #287 R9: a habitat model's never-together group, edited in place. */
+.never-together { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 4px; color: var(--muted); }
+.never-together label { display: inline-flex; align-items: center; gap: 4px; }
 
 /* ============================================================== the drawer */
 
