@@ -11,8 +11,8 @@
  *   cut-off for each picked on the tuning dives, the crop it was trained on and its input size.
  *   The crop is kept because a later change of the habitat crop must not break an older model.
  * - **The stretch rules**, settled on the feasibility runs and kept here as defaults: 3 frames
- *   a second, scores averaged over 1 s, Mud's cut-off raised by 0.2, at most one of Mud and
- *   Sand at a time, stretches at least 2 s, breaks of 2 s or less bridged.
+ *   a second, scores averaged over 1 s, Mud's cut-off raised by 0.2, at most one of Mud, Sand
+ *   and Gravel at a time, stretches at least 2 s, breaks of 2 s or less bridged.
  *
  * Pure: no database. The registry stores what `rulesForModel` returns; a lease sends what
  * `rulesForRun` returns.
@@ -31,7 +31,9 @@ const SETTLED = Object.freeze({
     samples_per_second: 3,
     average_s: 1,
     raise: Object.freeze({ Mud: 0.2 }),
-    exclusive: Object.freeze([Object.freeze(['Mud', 'Sand'])]),
+    // Mud, Sand and Gravel never overlap (Isaac, 2026-11-10, A18): one group, applied to
+    // whichever of them a model has.
+    exclusive: Object.freeze([Object.freeze(['Mud', 'Sand', 'Gravel'])]),
     min_stretch_s: 2,
     bridge_s: 2,
 });
@@ -89,7 +91,7 @@ function rulesForModel(published, classNames) {
         samples_per_second: SETTLED.samples_per_second,
         average_s: SETTLED.average_s,
         raise: { ...SETTLED.raise },
-        exclusive: SETTLED.exclusive.map((pair) => [...pair]),
+        exclusive: SETTLED.exclusive.map((group) => [...group]),
         min_stretch_s: SETTLED.min_stretch_s,
         bridge_s: SETTLED.bridge_s,
     };
@@ -117,7 +119,12 @@ function effectiveCutOffs(rules) {
  * @returns {Object} The rules plus `cut_offs`.
  */
 function rulesForRun(rules) {
-    return { ...rules, cut_offs: effectiveCutOffs(rules) };
+    // A group is stored whole (Mud, Sand, Gravel) and applied to whichever of them the model
+    // has, so a run is sent only those; a group left with one member constrains nothing.
+    const exclusive = (rules.exclusive || [])
+        .map((group) => group.filter((name) => rules.substrates.includes(name)))
+        .filter((group) => group.length > 1);
+    return { ...rules, exclusive, cut_offs: effectiveCutOffs(rules) };
 }
 
 module.exports = {

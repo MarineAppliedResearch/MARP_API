@@ -129,7 +129,8 @@ describe('a habitat model\'s decision rules (db/habitat-rules.js)', () => {
             samples_per_second: 3,
             average_s: 1,
             raise: { Mud: 0.2 },
-            exclusive: [['Mud', 'Sand']],
+            // Stored whole (A18): Gravel too, though this model has none.
+            exclusive: [['Mud', 'Sand', 'Gravel']],
             min_stretch_s: 2,
             bridge_s: 2,
         });
@@ -141,6 +142,11 @@ describe('a habitat model\'s decision rules (db/habitat-rules.js)', () => {
         ));
         expect(run.cut_offs).toEqual({ Rock: 0.45, Mud: 0.95, Sand: 0.4, Cobble: 0.35, Boulder: 0.3 });
         expect(habitatRules.effectiveCutOffs(habitatRules.rulesForModel(PUBLISHED, SUBSTRATES)).Mud).toBe(0.7);
+    });
+
+    test('sends a run the never-together group narrowed to the substrates the model has', () => {
+        const run = habitatRules.rulesForRun(habitatRules.rulesForModel(PUBLISHED, SUBSTRATES));
+        expect(run.exclusive).toEqual([['Mud', 'Sand']]);
     });
 
     test('refuses rules that do not describe the model', () => {

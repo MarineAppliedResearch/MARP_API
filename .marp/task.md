@@ -192,24 +192,35 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
   #342 says a wrong substrate is flagged by tapping it, and the flag lands on that substrate's
   stretch. When a segment is approved as is, is every stretch under it approved whole, even
   where a stretch runs past the segment? Only #342's piece waits on this.
-- [ ] **A15 · data-meaning · blocking** — **A dataset frame labelled both Mud and Sand.** None
+- [x] **A15 · data-meaning · blocking** — answered 2026-11-10 by Isaac: let it through, as
+  labelled. — **A dataset frame labelled both Mud and Sand.** None
   is today, but a future annotation or a reviewed model stretch could make one. Proposed: the
   frame is left out of the dataset and listed in the build report with its reason, as rejected
   non-seabed frames are. Or the whole build is refused, or the frame goes in as labelled.
-- [ ] **A16 · scientific · blocking** — **Whether the model is taught the rule.** Today it is
+- [x] **A16 · scientific · blocking** — answered 2026-11-10 by Isaac: not yet; keep applying it
+  after the model, the surer one stays. — **Whether the model is taught the rule.** Today it is
   only applied after the model: where both pass their cut-offs, the surer stays. Proposed:
   keep it that way for the first trainer, which is the recipe that was measured. The other
   way is training Mud and Sand as one choice of three (Mud, Sand, neither) so the model can
   never answer both, which changes the model and needs its own measurement first.
-- [ ] **A17 · product/UI · blocking** — **How the rule shows in the dashboard, and who can
-  change it.** Proposed: the habitat dataset builder and the training form both state it
+- [x] **A17 · product/UI · blocking** — answered 2026-11-10 by Isaac: an editable setting a
+  person can change, not a fixed one. At which level is A19. — **How the rule shows in the
+  dashboard, and who can change it.** Proposed: the habitat dataset builder and the training form both state it
   ("Mud and Sand are never together"), it is copied into each model's rules when the model is
   registered and shown there as now, and it is not editable on screen at first. Or it is a
   setting a person can change per dataset or per model.
-- [ ] **A18 · data-meaning · blocking** — **Gravel.** Isaac named Mud, Sand and Gravel as never
+- [x] **A18 · data-meaning · blocking** — answered 2026-11-10 by Isaac: one group, Mud + Sand +
+  Gravel, applied to whichever of them a model or dataset has. — **Gravel.** Isaac named Mud, Sand and Gravel as never
   overlapping; the model has no Gravel class (the five are Rock, Mud, Sand, Cobble, Boulder).
   Proposed: the rule is stored as one group, Mud, Sand and Gravel, applied to whichever of
   them a model or dataset has, so Gravel is covered the day it is added. Or Mud and Sand only.
+- [ ] **A19 · database/schema · blocking** — **Where the editable Mud/Sand/Gravel setting
+  lives: per model, per dataset, or both.** With A15 and A16 answered, the rule changes nothing
+  in a dataset or in training; it acts only when a model's scores become stretches. Proposed:
+  **per model**. It is already stored in each model's rules (no new column), editing it on the
+  Models screen changes that model's later runs, and runs already made keep what they were made
+  with. Per dataset would need a new column on `datasets` that is only copied into the model at
+  registration; both would mean a dataset default that the model can then override.
 - [ ] **A12 · behavioural · non-blocking** — A habitat run is per video, and sessions are made
   per run as inference runs are now (`session.per_run`, one submission per dive and model,
   #336). Followed, not asked.
@@ -248,8 +259,8 @@ Built in this order. Each step is merged only when Isaac says so.
 
 ## Status
 
-- **Gate:** implementing (G2). A1-A11 were answered by Isaac on 2026-11-10; A15-A18, from R9
-  (added later the same day), are with him through the feasibility session.
+- **Gate:** implementing (G2). A1-A11 and A15-A18 answered by Isaac on 2026-11-10; A19 is with
+  him. Only R9's setting waits on it.
 - **Also from the feasibility session, 2026-11-10:** one model on the habitat crop scored test
   F1 0.728 against 0.751 on the old crop; Boulder fell from 0.62 to 0.55. The crop stays
   settled, the numbers provisional. So the crop a model was trained on is stored with the model

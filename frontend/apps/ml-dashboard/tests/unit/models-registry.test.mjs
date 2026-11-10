@@ -159,7 +159,7 @@ test('a habitat model shows its decision rules, and a species model none', async
     input_size: 518,
     samples_per_second: 3,
     average_s: 1,
-    exclusive: [['Mud', 'Sand']],
+    exclusive: [['Mud', 'Sand', 'Gravel']],
     min_stretch_s: 2,
     bridge_s: 2,
   };
@@ -176,7 +176,7 @@ test('a habitat model shows its decision rules, and a species model none', async
   assert.match(said, /Mud\s*0\.50 tuned, raised by 0\.20 to 0\.70/);
   assert.match(said, /Rock\s*0\.45/);
   assert.match(said, /3 frames a second, scores averaged over 1 s/);
-  assert.match(said, /Mud and Sand: the surer one stays/);
+  assert.match(said, /Mud, Sand and Gravel: the surer one stays/);
   assert.match(said, /At least 2 s; breaks of 2 s or less bridged/);
   assert.match(said, /x 0\.25–0\.75, y 0\.50–1\.00 of the frame, at 518 px/);
 

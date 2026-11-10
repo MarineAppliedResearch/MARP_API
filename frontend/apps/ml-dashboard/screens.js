@@ -6015,7 +6015,8 @@ function habitatRulesSection(view) {
     return `<dt>${escapeHtml(name)}</dt><dd>${raise[name] ? `${fixed(tuned[name])} tuned, raised by ${fixed(raise[name])} to <b>${fixed(applied)}</b>` : `<b>${fixed(tuned[name])}</b>`}</dd>`;
   }).join('');
   const crop = rules.crop || {};
-  const exclusive = (rules.exclusive || []).map((pair) => pair.map(escapeHtml).join(' and ')).join('; ');
+  const listed = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(''));
+  const exclusive = (rules.exclusive || []).map((group) => listed(group.map(escapeHtml))).join('; ');
 
   return '<div class="sect" data-habitat-rules><h3>Decision rules</h3>'
     + '<p class="hint">A substrate counts as present on a frame when its score is at or above its cut-off.</p>'
