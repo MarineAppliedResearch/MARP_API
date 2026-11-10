@@ -284,4 +284,23 @@ Built in this order. Each step is merged only when Isaac says so.
     model's substrates for a run; `PUT /api/v2/model/:id/never-together` changes a habitat
     model's groups and nothing else in its rules; the Models screen edits it with a box per
     substrate and Gravel. 15 passed in `habitat-model-registration`; dashboard unit passed.
-- **Next:** step 4, the trainer on the worker, and registering DINOv2 as a base model.
+  - Step 4 (R3), built and tested on a CPU; the GPU run is not done:
+    - worker: `timm` 1.0.30 and `safetensors` 0.8.0 added, pinned, all five locks regenerated;
+      `training/habitat_training.py` (archive reader, scoring, the two-stage recipe) and the
+      `marp_habitat_training` engine, which publishes `weights`, `decision_rules` and a
+      `multilabel` `final_metrics`; job processes keep Hugging Face offline. 13 new tests;
+      the contract, registry, import and status tests pass with it (56).
+    - API: the habitat trainer takes only a habitat dataset and a habitat starting model, the
+      species trainer neither; `multilabel` is a known final-metrics family;
+      `seed-base-models.js --only dinov2-vitb14` registers DINOv2 (dry run checked; not
+      applied). `test:gpu` 454 passed.
+    - The habitat dataset archive the trainer reads: `classes.json` (substrates in label
+      order), and `train/`, `val/`, `test/`, each with `labels.csv` (`image`, then a 0/1
+      column per substrate) and its images. Whole frames; the trainer cuts the crop. The
+      dataset build (step 8) writes this.
+    - Not done: resuming a stopped habitat training from a checkpoint; a stop is a
+      cancellation and the run starts again.
+- **Found, left alone:** `tests/dataset-build-resume.test.js` fails about two runs in three on
+  `develop` as well (a resumed build's archive checksum differs from the reference).
+- **Next:** the GPU run of the trainer (`scripts/verify_habitat_training.py` in the worker),
+  then step 5.
