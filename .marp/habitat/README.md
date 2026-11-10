@@ -110,6 +110,48 @@ five seeds and averaged them.
 
 `experiment/results/` holds every run's full scores, per substrate and per year.
 
+### 2026-11-10: the model on whole lines, as habitat records
+
+`audit/agreement.js` scores two annotators against each other the way the model is scored.
+On the 7 CAMPA lines several people annotated, people agree at average F1 0.81 (Rock 0.94,
+Sand 0.90, Cobble 0.75, Mud 0.75, Boulder 0.72); Mud in 2025 only 0.64. The habitat
+protocols (Protocol_Habitat 02.2024, MARE Substrate Annotation) define Mud and Sand by how the
+sediment behaves when disturbed, which a still frame often cannot show.
+
+The sample-output scripts run the final model over whole lines and turn its answers into
+stretches the way the protocol has annotators record them (each substrate a layer, a minimum
+length, short breaks bridged), then compare them with every annotator of the line:
+
+1. `sample_lines.js`: the lines, every annotator's stretches, and frames from Jellyfin
+   (`grab_every.py` reads each video straight through). Leaves out automated sessions, so a
+   model session posted earlier is never counted as an annotator.
+2. `sample_output.py`: the model on every frame, stretches, scores. Settings as `key=value`
+   (frame rate, running average, cut-off raises, minimum length, Mud/Sand never together).
+3. `sample_sheet.py`: each line's timeline, people above model, in `sheets/sample-output/`.
+4. `post_sample.js`: the stretches into MARP through the API as automated Habitat sessions
+   (owned by MARP Inference), beside the annotators' sessions, for the GUI's Compare Habitat.
+5. `keyframe_sample.js`: a start and end keyframe per stretch with the fixed habitat crop,
+   so the Mosaic can cut a picture.
+
+Lines: 3 tuning lines set the rules; 5 test lines are scored, two of them annotated by several
+people (CAMPA-2025 dive 23 line 2180 by 3, CAMPA 2026 dive 13 line 2100 by 7). F1 against
+the annotators, second by second:
+
+| Run | Rules | L2180 | L2100 | L600 | L1890 | L570 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1 frame/s, tuned cut-offs, min 2 s | 0.65 | 0.61 | 0.62 | 0.52 | 0.94 |
+| 2 | 3 frames/s, 2 s average, every cut-off +0.1, min 4 s, Mud/Sand exclusive | 0.68 | 0.56 | 0.48 | 0.32 | 0.86 |
+| **3** | 3 frames/s, 1 s average, Mud cut-off +0.2 only, min 2 s, Mud/Sand exclusive | **0.78** | **0.61** | 0.61 | 0.54 | **0.95** |
+| people | each annotator against the others | 0.80 | 0.77 | | | |
+
+Run 3's rules were chosen on the tuning lines. Raising every cut-off (run 2) loses the short
+Cobble and Boulder patches; the false alarms were Mud's alone. Annotators never label Mud and
+Sand on the same frame (0 of 32,636), so the model is now told so after the fact. Full
+results in `results/sample-output/`.
+
+`results/sample-output/` and the three runs' sessions in the restored production copy are
+evidence for review, not product: the GUI review used this workspace's own API and database.
+
 ## Where it stands
 
 - Every frame is downloaded and `dataset_full.csv` covers all three years.
@@ -118,7 +160,12 @@ five seeds and averaged them.
   DINOv2 (+0.015). Model settings did not, within run-to-run noise.
 - Weakest: Mud (many false alarms; precision 0.50) and the CAMPA-2025 dives, which look
   like inconsistent Mud/Sand labelling rather than the model.
-- Not yet measured: how often two annotators agree on the same stretch (26 lines are
-  double-annotated), which would say how high a model can realistically score.
-- Open, on #287: how frame-by-frame answers become habitat records (stretches with a start
-  and an end), and where a model's output goes.
+- Annotators agree at 0.81 on the lines several of them annotated; run 3 reaches 0.78
+  against them on one such line (people 0.80) and 0.61 on the other (people 0.77).
+- **Next, decided by Isaac: rebuild and retrain on the fixed habitat crop, the bottom-middle
+  box.** Every model above was trained on the full width below the overlay, while the habitat
+  crop and the Mosaic's pictures use the bottom-middle box. The dataset keeps whole frames, so
+  this is `train.py ... bottom_middle`, no new download.
+- The model could learn that Mud and Sand never occur together, instead of being told after.
+- How habitat is queried and reviewed in the Mosaic is decided on #342 (segments of one
+  combination of substrates, reviewed by tapping the wrong substrate).

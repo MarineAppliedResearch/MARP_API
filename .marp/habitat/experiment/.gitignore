@@ -11,3 +11,6 @@ imgstats.csv
 frame-labels.csv
 labels.csv
 __pycache__/
+sample/
+frames_1s/
+frames_3fps/

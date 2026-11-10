@@ -1,0 +1,4252 @@
+{
+ "settings": {},
+ "cut_offs": {
+  "Rock": 0.39999999999999997,
+  "Mud": 0.25,
+  "Sand": 0.65,
+  "Cobble": 0.75,
+  "Boulder": 0.7999999999999999
+ },
+ "gap_s": 2,
+ "gap_scores": {
+  "0": 0.8806747561385551,
+  "2": 0.8914573671799575,
+  "4": 0.8861077009594972,
+  "6": 0.8874801352601278,
+  "8": 0.8760417822754526,
+  "10": 0.8753339908972484,
+  "15": 0.8505566542124512
+ },
+ "lines": {
+  "1545": {
+   "split": "test",
+   "line": "CAMPA 2024 dive 12 line 600",
+   "annotators": 1,
+   "model_stretches": 71,
+   "annotator_stretches": 55.0,
+   "model_median_s": 8.0,
+   "annotator_median_s": 10.0,
+   "model_vs_people": [
+    0.6190411825726141,
+    [
+     0.9605809128630706,
+     0.790625,
+     0.0,
+     0.64,
+     0.704
+    ],
+    0.6460176991150443
+   ],
+   "people_vs_people": null,
+   "model": [
+    {
+     "name": "Rock",
+     "a": 59951747,
+     "b": 59960746,
+     "confidence": 0.749
+    },
+    {
+     "name": "Rock",
+     "a": 60003747,
+     "b": 60336746,
+     "confidence": 0.962
+    },
+    {
+     "name": "Rock",
+     "a": 60343747,
+     "b": 60501746,
+     "confidence": 0.934
+    },
+    {
+     "name": "Rock",
+     "a": 60507747,
+     "b": 60694746,
+     "confidence": 0.937
+    },
+    {
+     "name": "Rock",
+     "a": 60702747,
+     "b": 60718746,
+     "confidence": 0.759
+    },
+    {
+     "name": "Rock",
+     "a": 60722747,
+     "b": 60754746,
+     "confidence": 0.931
+    },
+    {
+     "name": "Rock",
+     "a": 60820747,
+     "b": 60842746,
+     "confidence": 0.816
+    },
+    {
+     "name": "Rock",
+     "a": 60851747,
+     "b": 60856746,
+     "confidence": 0.704
+    },
+    {
+     "name": "Rock",
+     "a": 60864747,
+     "b": 60886746,
+     "confidence": 0.794
+    },
+    {
+     "name": "Rock",
+     "a": 60890747,
+     "b": 60990746,
+     "confidence": 0.9
+    },
+    {
+     "name": "Mud",
+     "a": 59921747,
+     "b": 60023746,
+     "confidence": 0.932
+    },
+    {
+     "name": "Mud",
+     "a": 60031747,
+     "b": 60063746,
+     "confidence": 0.608
+    },
+    {
+     "name": "Mud",
+     "a": 60069747,
+     "b": 60130746,
+     "confidence": 0.438
+    },
+    {
+     "name": "Mud",
+     "a": 60138747,
+     "b": 60141746,
+     "confidence": 0.281
+    },
+    {
+     "name": "Mud",
+     "a": 60167747,
+     "b": 60169746,
+     "confidence": 0.281
+    },
+    {
+     "name": "Mud",
+     "a": 60312747,
+     "b": 60322746,
+     "confidence": 0.314
+    },
+    {
+     "name": "Mud",
+     "a": 60332747,
+     "b": 60366746,
+     "confidence": 0.375
+    },
+    {
+     "name": "Mud",
+     "a": 60410747,
+     "b": 60415746,
+     "confidence": 0.308
+    },
+    {
+     "name": "Mud",
+     "a": 60486747,
+     "b": 60508746,
+     "confidence": 0.606
+    },
+    {
+     "name": "Mud",
+     "a": 60520747,
+     "b": 60539746,
+     "confidence": 0.406
+    },
+    {
+     "name": "Mud",
+     "a": 60547747,
+     "b": 60555746,
+     "confidence": 0.335
+    },
+    {
+     "name": "Mud",
+     "a": 60596747,
+     "b": 60607746,
+     "confidence": 0.291
+    },
+    {
+     "name": "Mud",
+     "a": 60651747,
+     "b": 60653746,
+     "confidence": 0.273
+    },
+    {
+     "name": "Mud",
+     "a": 60657747,
+     "b": 60663746,
+     "confidence": 0.245
+    },
+    {
+     "name": "Mud",
+     "a": 60680747,
+     "b": 60726746,
+     "confidence": 0.376
+    },
+    {
+     "name": "Mud",
+     "a": 60730747,
+     "b": 60959746,
+     "confidence": 0.746
+    },
+    {
+     "name": "Mud",
+     "a": 60962747,
+     "b": 61035746,
+     "confidence": 0.9
+    },
+    {
+     "name": "Sand",
+     "a": 60337747,
+     "b": 60350746,
+     "confidence": 0.705
+    },
+    {
+     "name": "Sand",
+     "a": 60431747,
+     "b": 60436746,
+     "confidence": 0.858
+    },
+    {
+     "name": "Sand",
+     "a": 60539747,
+     "b": 60543746,
+     "confidence": 0.732
+    },
+    {
+     "name": "Sand",
+     "a": 60547747,
+     "b": 60552746,
+     "confidence": 0.74
+    },
+    {
+     "name": "Sand",
+     "a": 60650747,
+     "b": 60653746,
+     "confidence": 0.737
+    },
+    {
+     "name": "Sand",
+     "a": 60659747,
+     "b": 60679746,
+     "confidence": 0.753
+    },
+    {
+     "name": "Sand",
+     "a": 60698747,
+     "b": 60720746,
+     "confidence": 0.719
+    },
+    {
+     "name": "Sand",
+     "a": 60762747,
+     "b": 60768746,
+     "confidence": 0.692
+    },
+    {
+     "name": "Sand",
+     "a": 60773747,
+     "b": 60775746,
+     "confidence": 0.717
+    },
+    {
+     "name": "Cobble",
+     "a": 60006747,
+     "b": 60020746,
+     "confidence": 0.933
+    },
+    {
+     "name": "Cobble",
+     "a": 60051747,
+     "b": 60059746,
+     "confidence": 0.752
+    },
+    {
+     "name": "Cobble",
+     "a": 60084747,
+     "b": 60097746,
+     "confidence": 0.771
+    },
+    {
+     "name": "Cobble",
+     "a": 60101747,
+     "b": 60108746,
+     "confidence": 0.848
+    },
+    {
+     "name": "Cobble",
+     "a": 60119747,
+     "b": 60132746,
+     "confidence": 0.842
+    },
+    {
+     "name": "Cobble",
+     "a": 60137747,
+     "b": 60141746,
+     "confidence": 0.931
+    },
+    {
+     "name": "Cobble",
+     "a": 60144747,
+     "b": 60161746,
+     "confidence": 0.905
+    },
+    {
+     "name": "Cobble",
+     "a": 60168747,
+     "b": 60181746,
+     "confidence": 0.818
+    },
+    {
+     "name": "Cobble",
+     "a": 60522747,
+     "b": 60524746,
+     "confidence": 0.835
+    },
+    {
+     "name": "Cobble",
+     "a": 60621747,
+     "b": 60625746,
+     "confidence": 0.872
+    },
+    {
+     "name": "Cobble",
+     "a": 60640747,
+     "b": 60646746,
+     "confidence": 0.914
+    },
+    {
+     "name": "Cobble",
+     "a": 60704747,
+     "b": 60707746,
+     "confidence": 0.702
+    },
+    {
+     "name": "Cobble",
+     "a": 60711747,
+     "b": 60714746,
+     "confidence": 0.897
+    },
+    {
+     "name": "Cobble",
+     "a": 60733747,
+     "b": 60738746,
+     "confidence": 0.724
+    },
+    {
+     "name": "Cobble",
+     "a": 60908747,
+     "b": 60912746,
+     "confidence": 0.924
+    },
+    {
+     "name": "Cobble",
+     "a": 60915747,
+     "b": 60918746,
+     "confidence": 0.927
+    },
+    {
+     "name": "Boulder",
+     "a": 60008747,
+     "b": 60020746,
+     "confidence": 0.931
+    },
+    {
+     "name": "Boulder",
+     "a": 60051747,
+     "b": 60058746,
+     "confidence": 0.868
+    },
+    {
+     "name": "Boulder",
+     "a": 60072747,
+     "b": 60075746,
+     "confidence": 0.77
+    },
+    {
+     "name": "Boulder",
+     "a": 60100747,
+     "b": 60107746,
+     "confidence": 0.897
+    },
+    {
+     "name": "Boulder",
+     "a": 60120747,
+     "b": 60160746,
+     "confidence": 0.877
+    },
+    {
+     "name": "Boulder",
+     "a": 60165747,
+     "b": 60181746,
+     "confidence": 0.917
+    },
+    {
+     "name": "Boulder",
+     "a": 60442747,
+     "b": 60444746,
+     "confidence": 0.833
+    },
+    {
+     "name": "Boulder",
+     "a": 60462747,
+     "b": 60467746,
+     "confidence": 0.896
+    },
+    {
+     "name": "Boulder",
+     "a": 60534747,
+     "b": 60539746,
+     "confidence": 0.857
+    },
+    {
+     "name": "Boulder",
+     "a": 60549747,
+     "b": 60553746,
+     "confidence": 0.808
+    },
+    {
+     "name": "Boulder",
+     "a": 60556747,
+     "b": 60558746,
+     "confidence": 0.866
+    },
+    {
+     "name": "Boulder",
+     "a": 60576747,
+     "b": 60581746,
+     "confidence": 0.855
+    },
+    {
+     "name": "Boulder",
+     "a": 60586747,
+     "b": 60606746,
+     "confidence": 0.872
+    },
+    {
+     "name": "Boulder",
+     "a": 60610747,
+     "b": 60650746,
+     "confidence": 0.891
+    },
+    {
+     "name": "Boulder",
+     "a": 60711747,
+     "b": 60715746,
+     "confidence": 0.881
+    },
+    {
+     "name": "Boulder",
+     "a": 60732747,
+     "b": 60747746,
+     "confidence": 0.857
+    },
+    {
+     "name": "Boulder",
+     "a": 60750747,
+     "b": 60752746,
+     "confidence": 0.848
+    },
+    {
+     "name": "Boulder",
+     "a": 60909747,
+     "b": 60911746,
+     "confidence": 0.854
+    },
+    {
+     "name": "Boulder",
+     "a": 60916747,
+     "b": 60918746,
+     "confidence": 0.867
+    }
+   ]
+  },
+  "1572": {
+   "split": "val",
+   "line": "CAMPA 2024 dive 16 line 190",
+   "annotators": 1,
+   "model_stretches": 98,
+   "annotator_stretches": 79.0,
+   "model_median_s": 8.0,
+   "annotator_median_s": 11.0,
+   "model_vs_people": [
+    0.817553789844108,
+    [
+     0.9768137621540763,
+     0.7847533632286996,
+     null,
+     0.7331378299120235,
+     0.7755102040816326
+    ],
+    0.7072829131652661
+   ],
+   "people_vs_people": null,
+   "model": [
+    {
+     "name": "Rock",
+     "a": 73306912,
+     "b": 73308911,
+     "confidence": 0.427
+    },
+    {
+     "name": "Rock",
+     "a": 73316912,
+     "b": 73319911,
+     "confidence": 0.556
+    },
+    {
+     "name": "Rock",
+     "a": 73325912,
+     "b": 73564911,
+     "confidence": 0.901
+    },
+    {
+     "name": "Rock",
+     "a": 73568912,
+     "b": 73676911,
+     "confidence": 0.939
+    },
+    {
+     "name": "Rock",
+     "a": 73681912,
+     "b": 73777911,
+     "confidence": 0.914
+    },
+    {
+     "name": "Rock",
+     "a": 73781912,
+     "b": 73794911,
+     "confidence": 0.751
+    },
+    {
+     "name": "Rock",
+     "a": 73798912,
+     "b": 73869911,
+     "confidence": 0.95
+    },
+    {
+     "name": "Rock",
+     "a": 73879912,
+     "b": 74144911,
+     "confidence": 0.927
+    },
+    {
+     "name": "Rock",
+     "a": 74152912,
+     "b": 74308911,
+     "confidence": 0.942
+    },
+    {
+     "name": "Rock",
+     "a": 74315912,
+     "b": 74343911,
+     "confidence": 0.77
+    },
+    {
+     "name": "Rock",
+     "a": 74346912,
+     "b": 74354911,
+     "confidence": 0.767
+    },
+    {
+     "name": "Rock",
+     "a": 74368912,
+     "b": 74371911,
+     "confidence": 0.492
+    },
+    {
+     "name": "Rock",
+     "a": 74377912,
+     "b": 74476911,
+     "confidence": 0.73
+    },
+    {
+     "name": "Rock",
+     "a": 74480912,
+     "b": 74584911,
+     "confidence": 0.747
+    },
+    {
+     "name": "Mud",
+     "a": 73306912,
+     "b": 73362911,
+     "confidence": 0.568
+    },
+    {
+     "name": "Mud",
+     "a": 73431912,
+     "b": 73439911,
+     "confidence": 0.312
+    },
+    {
+     "name": "Mud",
+     "a": 73451912,
+     "b": 73454911,
+     "confidence": 0.286
+    },
+    {
+     "name": "Mud",
+     "a": 73461912,
+     "b": 73470911,
+     "confidence": 0.467
+    },
+    {
+     "name": "Mud",
+     "a": 73541912,
+     "b": 73545911,
+     "confidence": 0.278
+    },
+    {
+     "name": "Mud",
+     "a": 73557912,
+     "b": 73572911,
+     "confidence": 0.649
+    },
+    {
+     "name": "Mud",
+     "a": 73660912,
+     "b": 73709911,
+     "confidence": 0.552
+    },
+    {
+     "name": "Mud",
+     "a": 73723912,
+     "b": 73735911,
+     "confidence": 0.308
+    },
+    {
+     "name": "Mud",
+     "a": 73771912,
+     "b": 73800911,
+     "confidence": 0.531
+    },
+    {
+     "name": "Mud",
+     "a": 73863912,
+     "b": 73898911,
+     "confidence": 0.616
+    },
+    {
+     "name": "Mud",
+     "a": 73909912,
+     "b": 73913911,
+     "confidence": 0.342
+    },
+    {
+     "name": "Mud",
+     "a": 73929912,
+     "b": 73938911,
+     "confidence": 0.344
+    },
+    {
+     "name": "Mud",
+     "a": 73978912,
+     "b": 74000911,
+     "confidence": 0.39
+    },
+    {
+     "name": "Mud",
+     "a": 74003912,
+     "b": 74012911,
+     "confidence": 0.391
+    },
+    {
+     "name": "Mud",
+     "a": 74015912,
+     "b": 74018911,
+     "confidence": 0.35
+    },
+    {
+     "name": "Mud",
+     "a": 74021912,
+     "b": 74024911,
+     "confidence": 0.359
+    },
+    {
+     "name": "Mud",
+     "a": 74028912,
+     "b": 74030911,
+     "confidence": 0.335
+    },
+    {
+     "name": "Mud",
+     "a": 74055912,
+     "b": 74060911,
+     "confidence": 0.448
+    },
+    {
+     "name": "Mud",
+     "a": 74063912,
+     "b": 74086911,
+     "confidence": 0.537
+    },
+    {
+     "name": "Mud",
+     "a": 74096912,
+     "b": 74106911,
+     "confidence": 0.616
+    },
+    {
+     "name": "Mud",
+     "a": 74112912,
+     "b": 74121911,
+     "confidence": 0.424
+    },
+    {
+     "name": "Mud",
+     "a": 74135912,
+     "b": 74138911,
+     "confidence": 0.413
+    },
+    {
+     "name": "Mud",
+     "a": 74141912,
+     "b": 74154911,
+     "confidence": 0.819
+    },
+    {
+     "name": "Mud",
+     "a": 74166912,
+     "b": 74169911,
+     "confidence": 0.332
+    },
+    {
+     "name": "Mud",
+     "a": 74183912,
+     "b": 74203911,
+     "confidence": 0.566
+    },
+    {
+     "name": "Mud",
+     "a": 74218912,
+     "b": 74221911,
+     "confidence": 0.453
+    },
+    {
+     "name": "Mud",
+     "a": 74244912,
+     "b": 74255911,
+     "confidence": 0.36
+    },
+    {
+     "name": "Mud",
+     "a": 74292912,
+     "b": 74336911,
+     "confidence": 0.675
+    },
+    {
+     "name": "Mud",
+     "a": 74340912,
+     "b": 74384911,
+     "confidence": 0.86
+    },
+    {
+     "name": "Mud",
+     "a": 74398912,
+     "b": 74432911,
+     "confidence": 0.848
+    },
+    {
+     "name": "Mud",
+     "a": 74435912,
+     "b": 74488911,
+     "confidence": 0.744
+    },
+    {
+     "name": "Mud",
+     "a": 74492912,
+     "b": 74518911,
+     "confidence": 0.401
+    },
+    {
+     "name": "Mud",
+     "a": 74521912,
+     "b": 74584911,
+     "confidence": 0.721
+    },
+    {
+     "name": "Sand",
+     "a": 73448912,
+     "b": 73450911,
+     "confidence": 0.735
+    },
+    {
+     "name": "Cobble",
+     "a": 73315912,
+     "b": 73319911,
+     "confidence": 0.881
+    },
+    {
+     "name": "Cobble",
+     "a": 73331912,
+     "b": 73362911,
+     "confidence": 0.945
+    },
+    {
+     "name": "Cobble",
+     "a": 73445912,
+     "b": 73453911,
+     "confidence": 0.963
+    },
+    {
+     "name": "Cobble",
+     "a": 73462912,
+     "b": 73468911,
+     "confidence": 0.92
+    },
+    {
+     "name": "Cobble",
+     "a": 73558912,
+     "b": 73561911,
+     "confidence": 0.802
+    },
+    {
+     "name": "Cobble",
+     "a": 73571912,
+     "b": 73577911,
+     "confidence": 0.938
+    },
+    {
+     "name": "Cobble",
+     "a": 73665912,
+     "b": 73675911,
+     "confidence": 0.877
+    },
+    {
+     "name": "Cobble",
+     "a": 73680912,
+     "b": 73682911,
+     "confidence": 0.905
+    },
+    {
+     "name": "Cobble",
+     "a": 73686912,
+     "b": 73690911,
+     "confidence": 0.921
+    },
+    {
+     "name": "Cobble",
+     "a": 73694912,
+     "b": 73701911,
+     "confidence": 0.918
+    },
+    {
+     "name": "Cobble",
+     "a": 73705912,
+     "b": 73708911,
+     "confidence": 0.849
+    },
+    {
+     "name": "Cobble",
+     "a": 73723912,
+     "b": 73730911,
+     "confidence": 0.86
+    },
+    {
+     "name": "Cobble",
+     "a": 73873912,
+     "b": 73948911,
+     "confidence": 0.944
+    },
+    {
+     "name": "Cobble",
+     "a": 73977912,
+     "b": 74016911,
+     "confidence": 0.955
+    },
+    {
+     "name": "Cobble",
+     "a": 74065912,
+     "b": 74078911,
+     "confidence": 0.807
+    },
+    {
+     "name": "Cobble",
+     "a": 74081912,
+     "b": 74086911,
+     "confidence": 0.81
+    },
+    {
+     "name": "Cobble",
+     "a": 74115912,
+     "b": 74122911,
+     "confidence": 0.916
+    },
+    {
+     "name": "Cobble",
+     "a": 74142912,
+     "b": 74144911,
+     "confidence": 0.872
+    },
+    {
+     "name": "Cobble",
+     "a": 74156912,
+     "b": 74173911,
+     "confidence": 0.88
+    },
+    {
+     "name": "Cobble",
+     "a": 74184912,
+     "b": 74187911,
+     "confidence": 0.896
+    },
+    {
+     "name": "Cobble",
+     "a": 74193912,
+     "b": 74201911,
+     "confidence": 0.833
+    },
+    {
+     "name": "Cobble",
+     "a": 74218912,
+     "b": 74221911,
+     "confidence": 0.831
+    },
+    {
+     "name": "Cobble",
+     "a": 74248912,
+     "b": 74251911,
+     "confidence": 0.699
+    },
+    {
+     "name": "Cobble",
+     "a": 74301912,
+     "b": 74308911,
+     "confidence": 0.704
+    },
+    {
+     "name": "Cobble",
+     "a": 74315912,
+     "b": 74318911,
+     "confidence": 0.871
+    },
+    {
+     "name": "Cobble",
+     "a": 74325912,
+     "b": 74329911,
+     "confidence": 0.904
+    },
+    {
+     "name": "Cobble",
+     "a": 74426912,
+     "b": 74432911,
+     "confidence": 0.78
+    },
+    {
+     "name": "Cobble",
+     "a": 74446912,
+     "b": 74463911,
+     "confidence": 0.809
+    },
+    {
+     "name": "Cobble",
+     "a": 74466912,
+     "b": 74486911,
+     "confidence": 0.907
+    },
+    {
+     "name": "Cobble",
+     "a": 74524912,
+     "b": 74526911,
+     "confidence": 0.819
+    },
+    {
+     "name": "Cobble",
+     "a": 74535912,
+     "b": 74539911,
+     "confidence": 0.634
+    },
+    {
+     "name": "Cobble",
+     "a": 74547912,
+     "b": 74549911,
+     "confidence": 0.782
+    },
+    {
+     "name": "Cobble",
+     "a": 74564912,
+     "b": 74581911,
+     "confidence": 0.876
+    },
+    {
+     "name": "Boulder",
+     "a": 73342912,
+     "b": 73363911,
+     "confidence": 0.944
+    },
+    {
+     "name": "Boulder",
+     "a": 73445912,
+     "b": 73453911,
+     "confidence": 0.962
+    },
+    {
+     "name": "Boulder",
+     "a": 73463912,
+     "b": 73467911,
+     "confidence": 0.904
+    },
+    {
+     "name": "Boulder",
+     "a": 73571912,
+     "b": 73577911,
+     "confidence": 0.964
+    },
+    {
+     "name": "Boulder",
+     "a": 73698912,
+     "b": 73701911,
+     "confidence": 0.93
+    },
+    {
+     "name": "Boulder",
+     "a": 73705912,
+     "b": 73707911,
+     "confidence": 0.819
+    },
+    {
+     "name": "Boulder",
+     "a": 73723912,
+     "b": 73727911,
+     "confidence": 0.788
+    },
+    {
+     "name": "Boulder",
+     "a": 73896912,
+     "b": 73948911,
+     "confidence": 0.938
+    },
+    {
+     "name": "Boulder",
+     "a": 73980912,
+     "b": 74009911,
+     "confidence": 0.864
+    },
+    {
+     "name": "Boulder",
+     "a": 74012912,
+     "b": 74015911,
+     "confidence": 0.87
+    },
+    {
+     "name": "Boulder",
+     "a": 74117912,
+     "b": 74122911,
+     "confidence": 0.916
+    },
+    {
+     "name": "Boulder",
+     "a": 74162912,
+     "b": 74171911,
+     "confidence": 0.924
+    },
+    {
+     "name": "Boulder",
+     "a": 74217912,
+     "b": 74221911,
+     "confidence": 0.911
+    },
+    {
+     "name": "Boulder",
+     "a": 74248912,
+     "b": 74251911,
+     "confidence": 0.733
+    },
+    {
+     "name": "Boulder",
+     "a": 74429912,
+     "b": 74432911,
+     "confidence": 0.863
+    },
+    {
+     "name": "Boulder",
+     "a": 74435912,
+     "b": 74438911,
+     "confidence": 0.921
+    },
+    {
+     "name": "Boulder",
+     "a": 74565912,
+     "b": 74569911,
+     "confidence": 0.864
+    }
+   ]
+  },
+  "2949": {
+   "split": "test",
+   "line": "CAMPA-2025 dive 23 line 2180",
+   "annotators": 3,
+   "model_stretches": 142,
+   "annotator_stretches": 118.3,
+   "model_median_s": 7.0,
+   "annotator_median_s": 10.0,
+   "model_vs_people": [
+    0.6533599952897012,
+    [
+     0.9779766001376462,
+     0.0,
+     0.7034339229968782,
+     0.8974358974358975,
+     0.6879535558780842
+    ],
+    0.6614810205351587
+   ],
+   "people_vs_people": [
+    0.7993286242271489,
+    [
+     0.9568253968253968,
+     null,
+     0.7280927835051546,
+     0.8504577822990844,
+     0.6619385342789598
+    ],
+    0.5694748358862144
+   ],
+   "model": [
+    {
+     "name": "Rock",
+     "a": 77593856,
+     "b": 77693855,
+     "confidence": 0.976
+    },
+    {
+     "name": "Rock",
+     "a": 77730856,
+     "b": 77739855,
+     "confidence": 0.886
+    },
+    {
+     "name": "Rock",
+     "a": 77742856,
+     "b": 77943855,
+     "confidence": 0.949
+    },
+    {
+     "name": "Rock",
+     "a": 77947856,
+     "b": 77953855,
+     "confidence": 0.626
+    },
+    {
+     "name": "Rock",
+     "a": 77960856,
+     "b": 78841855,
+     "confidence": 0.943
+    },
+    {
+     "name": "Rock",
+     "a": 78845856,
+     "b": 78909855,
+     "confidence": 0.888
+    },
+    {
+     "name": "Rock",
+     "a": 78915856,
+     "b": 78917855,
+     "confidence": 0.689
+    },
+    {
+     "name": "Mud",
+     "a": 77597856,
+     "b": 77599855,
+     "confidence": 0.324
+    },
+    {
+     "name": "Mud",
+     "a": 77650856,
+     "b": 77653855,
+     "confidence": 0.251
+    },
+    {
+     "name": "Mud",
+     "a": 77770856,
+     "b": 77772855,
+     "confidence": 0.276
+    },
+    {
+     "name": "Mud",
+     "a": 77837856,
+     "b": 77847855,
+     "confidence": 0.298
+    },
+    {
+     "name": "Mud",
+     "a": 77878856,
+     "b": 77884855,
+     "confidence": 0.263
+    },
+    {
+     "name": "Mud",
+     "a": 77974856,
+     "b": 77981855,
+     "confidence": 0.272
+    },
+    {
+     "name": "Mud",
+     "a": 77996856,
+     "b": 77999855,
+     "confidence": 0.246
+    },
+    {
+     "name": "Mud",
+     "a": 78078856,
+     "b": 78083855,
+     "confidence": 0.267
+    },
+    {
+     "name": "Mud",
+     "a": 78148856,
+     "b": 78151855,
+     "confidence": 0.407
+    },
+    {
+     "name": "Mud",
+     "a": 78289856,
+     "b": 78294855,
+     "confidence": 0.275
+    },
+    {
+     "name": "Mud",
+     "a": 78394856,
+     "b": 78396855,
+     "confidence": 0.455
+    },
+    {
+     "name": "Mud",
+     "a": 78420856,
+     "b": 78424855,
+     "confidence": 0.234
+    },
+    {
+     "name": "Mud",
+     "a": 78483856,
+     "b": 78486855,
+     "confidence": 0.298
+    },
+    {
+     "name": "Mud",
+     "a": 78753856,
+     "b": 78762855,
+     "confidence": 0.244
+    },
+    {
+     "name": "Mud",
+     "a": 78846856,
+     "b": 78851855,
+     "confidence": 0.452
+    },
+    {
+     "name": "Mud",
+     "a": 78862856,
+     "b": 78865855,
+     "confidence": 0.318
+    },
+    {
+     "name": "Mud",
+     "a": 78905856,
+     "b": 78918855,
+     "confidence": 0.313
+    },
+    {
+     "name": "Sand",
+     "a": 77603856,
+     "b": 77607855,
+     "confidence": 0.746
+    },
+    {
+     "name": "Sand",
+     "a": 77694856,
+     "b": 77749855,
+     "confidence": 0.93
+    },
+    {
+     "name": "Sand",
+     "a": 77774856,
+     "b": 77777855,
+     "confidence": 0.853
+    },
+    {
+     "name": "Sand",
+     "a": 77801856,
+     "b": 77805855,
+     "confidence": 0.731
+    },
+    {
+     "name": "Sand",
+     "a": 77809856,
+     "b": 77829855,
+     "confidence": 0.676
+    },
+    {
+     "name": "Sand",
+     "a": 77871856,
+     "b": 77878855,
+     "confidence": 0.617
+    },
+    {
+     "name": "Sand",
+     "a": 77929856,
+     "b": 77965855,
+     "confidence": 0.957
+    },
+    {
+     "name": "Sand",
+     "a": 77974856,
+     "b": 77985855,
+     "confidence": 0.868
+    },
+    {
+     "name": "Sand",
+     "a": 78025856,
+     "b": 78041855,
+     "confidence": 0.784
+    },
+    {
+     "name": "Sand",
+     "a": 78076856,
+     "b": 78078855,
+     "confidence": 0.724
+    },
+    {
+     "name": "Sand",
+     "a": 78109856,
+     "b": 78113855,
+     "confidence": 0.802
+    },
+    {
+     "name": "Sand",
+     "a": 78128856,
+     "b": 78131855,
+     "confidence": 0.733
+    },
+    {
+     "name": "Sand",
+     "a": 78136856,
+     "b": 78144855,
+     "confidence": 0.834
+    },
+    {
+     "name": "Sand",
+     "a": 78276856,
+     "b": 78288855,
+     "confidence": 0.886
+    },
+    {
+     "name": "Sand",
+     "a": 78355856,
+     "b": 78357855,
+     "confidence": 0.716
+    },
+    {
+     "name": "Sand",
+     "a": 78375856,
+     "b": 78378855,
+     "confidence": 0.787
+    },
+    {
+     "name": "Sand",
+     "a": 78388856,
+     "b": 78411855,
+     "confidence": 0.824
+    },
+    {
+     "name": "Sand",
+     "a": 78498856,
+     "b": 78500855,
+     "confidence": 0.86
+    },
+    {
+     "name": "Sand",
+     "a": 78515856,
+     "b": 78563855,
+     "confidence": 0.953
+    },
+    {
+     "name": "Sand",
+     "a": 78566856,
+     "b": 78570855,
+     "confidence": 0.889
+    },
+    {
+     "name": "Sand",
+     "a": 78577856,
+     "b": 78580855,
+     "confidence": 0.736
+    },
+    {
+     "name": "Sand",
+     "a": 78644856,
+     "b": 78656855,
+     "confidence": 0.866
+    },
+    {
+     "name": "Sand",
+     "a": 78776856,
+     "b": 78780855,
+     "confidence": 0.678
+    },
+    {
+     "name": "Sand",
+     "a": 78785856,
+     "b": 78787855,
+     "confidence": 0.668
+    },
+    {
+     "name": "Sand",
+     "a": 78840856,
+     "b": 78848855,
+     "confidence": 0.951
+    },
+    {
+     "name": "Sand",
+     "a": 78859856,
+     "b": 78861855,
+     "confidence": 0.722
+    },
+    {
+     "name": "Sand",
+     "a": 78867856,
+     "b": 78870855,
+     "confidence": 0.805
+    },
+    {
+     "name": "Sand",
+     "a": 78874856,
+     "b": 78884855,
+     "confidence": 0.794
+    },
+    {
+     "name": "Sand",
+     "a": 78901856,
+     "b": 78903855,
+     "confidence": 0.855
+    },
+    {
+     "name": "Sand",
+     "a": 78906856,
+     "b": 78919855,
+     "confidence": 0.686
+    },
+    {
+     "name": "Cobble",
+     "a": 77602856,
+     "b": 77613855,
+     "confidence": 0.953
+    },
+    {
+     "name": "Cobble",
+     "a": 77616856,
+     "b": 77619855,
+     "confidence": 0.961
+    },
+    {
+     "name": "Cobble",
+     "a": 77646856,
+     "b": 77652855,
+     "confidence": 0.919
+    },
+    {
+     "name": "Cobble",
+     "a": 77743856,
+     "b": 77750855,
+     "confidence": 0.935
+    },
+    {
+     "name": "Cobble",
+     "a": 77773856,
+     "b": 77777855,
+     "confidence": 0.964
+    },
+    {
+     "name": "Cobble",
+     "a": 77795856,
+     "b": 77832855,
+     "confidence": 0.955
+    },
+    {
+     "name": "Cobble",
+     "a": 77836856,
+     "b": 77848855,
+     "confidence": 0.978
+    },
+    {
+     "name": "Cobble",
+     "a": 77866856,
+     "b": 77889855,
+     "confidence": 0.862
+    },
+    {
+     "name": "Cobble",
+     "a": 77929856,
+     "b": 77935855,
+     "confidence": 0.942
+    },
+    {
+     "name": "Cobble",
+     "a": 77961856,
+     "b": 77966855,
+     "confidence": 0.97
+    },
+    {
+     "name": "Cobble",
+     "a": 77970856,
+     "b": 77986855,
+     "confidence": 0.905
+    },
+    {
+     "name": "Cobble",
+     "a": 77989856,
+     "b": 78005855,
+     "confidence": 0.816
+    },
+    {
+     "name": "Cobble",
+     "a": 78027856,
+     "b": 78052855,
+     "confidence": 0.945
+    },
+    {
+     "name": "Cobble",
+     "a": 78056856,
+     "b": 78058855,
+     "confidence": 0.86
+    },
+    {
+     "name": "Cobble",
+     "a": 78093856,
+     "b": 78096855,
+     "confidence": 0.811
+    },
+    {
+     "name": "Cobble",
+     "a": 78100856,
+     "b": 78102855,
+     "confidence": 0.911
+    },
+    {
+     "name": "Cobble",
+     "a": 78105856,
+     "b": 78132855,
+     "confidence": 0.978
+    },
+    {
+     "name": "Cobble",
+     "a": 78136856,
+     "b": 78155855,
+     "confidence": 0.927
+    },
+    {
+     "name": "Cobble",
+     "a": 78168856,
+     "b": 78179855,
+     "confidence": 0.982
+    },
+    {
+     "name": "Cobble",
+     "a": 78191856,
+     "b": 78194855,
+     "confidence": 0.895
+    },
+    {
+     "name": "Cobble",
+     "a": 78247856,
+     "b": 78249855,
+     "confidence": 0.904
+    },
+    {
+     "name": "Cobble",
+     "a": 78277856,
+     "b": 78288855,
+     "confidence": 0.972
+    },
+    {
+     "name": "Cobble",
+     "a": 78292856,
+     "b": 78299855,
+     "confidence": 0.936
+    },
+    {
+     "name": "Cobble",
+     "a": 78388856,
+     "b": 78394855,
+     "confidence": 0.956
+    },
+    {
+     "name": "Cobble",
+     "a": 78398856,
+     "b": 78427855,
+     "confidence": 0.869
+    },
+    {
+     "name": "Cobble",
+     "a": 78430856,
+     "b": 78442855,
+     "confidence": 0.869
+    },
+    {
+     "name": "Cobble",
+     "a": 78449856,
+     "b": 78453855,
+     "confidence": 0.925
+    },
+    {
+     "name": "Cobble",
+     "a": 78469856,
+     "b": 78477855,
+     "confidence": 0.917
+    },
+    {
+     "name": "Cobble",
+     "a": 78481856,
+     "b": 78494855,
+     "confidence": 0.905
+    },
+    {
+     "name": "Cobble",
+     "a": 78498856,
+     "b": 78500855,
+     "confidence": 0.875
+    },
+    {
+     "name": "Cobble",
+     "a": 78521856,
+     "b": 78523855,
+     "confidence": 0.844
+    },
+    {
+     "name": "Cobble",
+     "a": 78564856,
+     "b": 78591855,
+     "confidence": 0.839
+    },
+    {
+     "name": "Cobble",
+     "a": 78611856,
+     "b": 78613855,
+     "confidence": 0.883
+    },
+    {
+     "name": "Cobble",
+     "a": 78640856,
+     "b": 78660855,
+     "confidence": 0.845
+    },
+    {
+     "name": "Cobble",
+     "a": 78733856,
+     "b": 78735855,
+     "confidence": 0.819
+    },
+    {
+     "name": "Cobble",
+     "a": 78750856,
+     "b": 78766855,
+     "confidence": 0.824
+    },
+    {
+     "name": "Cobble",
+     "a": 78774856,
+     "b": 78780855,
+     "confidence": 0.944
+    },
+    {
+     "name": "Cobble",
+     "a": 78784856,
+     "b": 78786855,
+     "confidence": 0.88
+    },
+    {
+     "name": "Cobble",
+     "a": 78857856,
+     "b": 78861855,
+     "confidence": 0.851
+    },
+    {
+     "name": "Cobble",
+     "a": 78866856,
+     "b": 78870855,
+     "confidence": 0.917
+    },
+    {
+     "name": "Cobble",
+     "a": 78874856,
+     "b": 78887855,
+     "confidence": 0.959
+    },
+    {
+     "name": "Boulder",
+     "a": 77599856,
+     "b": 77620855,
+     "confidence": 0.885
+    },
+    {
+     "name": "Boulder",
+     "a": 77642856,
+     "b": 77652855,
+     "confidence": 0.938
+    },
+    {
+     "name": "Boulder",
+     "a": 77745856,
+     "b": 77750855,
+     "confidence": 0.871
+    },
+    {
+     "name": "Boulder",
+     "a": 77773856,
+     "b": 77785855,
+     "confidence": 0.805
+    },
+    {
+     "name": "Boulder",
+     "a": 77788856,
+     "b": 77790855,
+     "confidence": 0.839
+    },
+    {
+     "name": "Boulder",
+     "a": 77795856,
+     "b": 77799855,
+     "confidence": 0.962
+    },
+    {
+     "name": "Boulder",
+     "a": 77802856,
+     "b": 77833855,
+     "confidence": 0.959
+    },
+    {
+     "name": "Boulder",
+     "a": 77836856,
+     "b": 77848855,
+     "confidence": 0.983
+    },
+    {
+     "name": "Boulder",
+     "a": 77865856,
+     "b": 77875855,
+     "confidence": 0.902
+    },
+    {
+     "name": "Boulder",
+     "a": 77878856,
+     "b": 77891855,
+     "confidence": 0.907
+    },
+    {
+     "name": "Boulder",
+     "a": 77901856,
+     "b": 77903855,
+     "confidence": 0.916
+    },
+    {
+     "name": "Boulder",
+     "a": 77930856,
+     "b": 77934855,
+     "confidence": 0.852
+    },
+    {
+     "name": "Boulder",
+     "a": 77961856,
+     "b": 77981855,
+     "confidence": 0.929
+    },
+    {
+     "name": "Boulder",
+     "a": 77985856,
+     "b": 78005855,
+     "confidence": 0.858
+    },
+    {
+     "name": "Boulder",
+     "a": 78012856,
+     "b": 78015855,
+     "confidence": 0.848
+    },
+    {
+     "name": "Boulder",
+     "a": 78028856,
+     "b": 78062855,
+     "confidence": 0.899
+    },
+    {
+     "name": "Boulder",
+     "a": 78070856,
+     "b": 78072855,
+     "confidence": 0.89
+    },
+    {
+     "name": "Boulder",
+     "a": 78093856,
+     "b": 78103855,
+     "confidence": 0.906
+    },
+    {
+     "name": "Boulder",
+     "a": 78106856,
+     "b": 78133855,
+     "confidence": 0.94
+    },
+    {
+     "name": "Boulder",
+     "a": 78137856,
+     "b": 78160855,
+     "confidence": 0.875
+    },
+    {
+     "name": "Boulder",
+     "a": 78168856,
+     "b": 78179855,
+     "confidence": 0.938
+    },
+    {
+     "name": "Boulder",
+     "a": 78189856,
+     "b": 78194855,
+     "confidence": 0.847
+    },
+    {
+     "name": "Boulder",
+     "a": 78201856,
+     "b": 78209855,
+     "confidence": 0.884
+    },
+    {
+     "name": "Boulder",
+     "a": 78246856,
+     "b": 78249855,
+     "confidence": 0.894
+    },
+    {
+     "name": "Boulder",
+     "a": 78277856,
+     "b": 78284855,
+     "confidence": 0.846
+    },
+    {
+     "name": "Boulder",
+     "a": 78288856,
+     "b": 78299855,
+     "confidence": 0.876
+    },
+    {
+     "name": "Boulder",
+     "a": 78388856,
+     "b": 78396855,
+     "confidence": 0.876
+    },
+    {
+     "name": "Boulder",
+     "a": 78399856,
+     "b": 78445855,
+     "confidence": 0.9
+    },
+    {
+     "name": "Boulder",
+     "a": 78448856,
+     "b": 78452855,
+     "confidence": 0.913
+    },
+    {
+     "name": "Boulder",
+     "a": 78457856,
+     "b": 78459855,
+     "confidence": 0.838
+    },
+    {
+     "name": "Boulder",
+     "a": 78464856,
+     "b": 78477855,
+     "confidence": 0.906
+    },
+    {
+     "name": "Boulder",
+     "a": 78480856,
+     "b": 78494855,
+     "confidence": 0.878
+    },
+    {
+     "name": "Boulder",
+     "a": 78527856,
+     "b": 78530855,
+     "confidence": 0.871
+    },
+    {
+     "name": "Boulder",
+     "a": 78564856,
+     "b": 78577855,
+     "confidence": 0.888
+    },
+    {
+     "name": "Boulder",
+     "a": 78580856,
+     "b": 78591855,
+     "confidence": 0.884
+    },
+    {
+     "name": "Boulder",
+     "a": 78594856,
+     "b": 78598855,
+     "confidence": 0.92
+    },
+    {
+     "name": "Boulder",
+     "a": 78611856,
+     "b": 78613855,
+     "confidence": 0.897
+    },
+    {
+     "name": "Boulder",
+     "a": 78626856,
+     "b": 78628855,
+     "confidence": 0.941
+    },
+    {
+     "name": "Boulder",
+     "a": 78640856,
+     "b": 78646855,
+     "confidence": 0.915
+    },
+    {
+     "name": "Boulder",
+     "a": 78651856,
+     "b": 78661855,
+     "confidence": 0.892
+    },
+    {
+     "name": "Boulder",
+     "a": 78750856,
+     "b": 78766855,
+     "confidence": 0.909
+    },
+    {
+     "name": "Boulder",
+     "a": 78773856,
+     "b": 78780855,
+     "confidence": 0.887
+    },
+    {
+     "name": "Boulder",
+     "a": 78796856,
+     "b": 78798855,
+     "confidence": 0.855
+    },
+    {
+     "name": "Boulder",
+     "a": 78852856,
+     "b": 78861855,
+     "confidence": 0.89
+    },
+    {
+     "name": "Boulder",
+     "a": 78867856,
+     "b": 78870855,
+     "confidence": 0.921
+    },
+    {
+     "name": "Boulder",
+     "a": 78874856,
+     "b": 78877855,
+     "confidence": 0.869
+    },
+    {
+     "name": "Boulder",
+     "a": 78881856,
+     "b": 78892855,
+     "confidence": 0.834
+    }
+   ]
+  },
+  "3138": {
+   "split": "test",
+   "line": "CAMPA-2025 dive 14 line 1890",
+   "annotators": 1,
+   "model_stretches": 67,
+   "annotator_stretches": 29.0,
+   "model_median_s": 7.0,
+   "annotator_median_s": 14.0,
+   "model_vs_people": [
+    0.5151129294119338,
+    [
+     0.9180327868852459,
+     0.0,
+     0.2852760736196319,
+     0.8571428571428571,
+     null
+    ],
+    0.13500784929356358
+   ],
+   "people_vs_people": null,
+   "model": [
+    {
+     "name": "Rock",
+     "a": 75506070,
+     "b": 75523069,
+     "confidence": 0.935
+    },
+    {
+     "name": "Rock",
+     "a": 75542070,
+     "b": 75582069,
+     "confidence": 0.88
+    },
+    {
+     "name": "Rock",
+     "a": 75589070,
+     "b": 75599069,
+     "confidence": 0.845
+    },
+    {
+     "name": "Rock",
+     "a": 75603070,
+     "b": 75611069,
+     "confidence": 0.746
+    },
+    {
+     "name": "Rock",
+     "a": 75619070,
+     "b": 75621069,
+     "confidence": 0.684
+    },
+    {
+     "name": "Rock",
+     "a": 75628070,
+     "b": 75631069,
+     "confidence": 0.736
+    },
+    {
+     "name": "Rock",
+     "a": 75638070,
+     "b": 75640069,
+     "confidence": 0.642
+    },
+    {
+     "name": "Rock",
+     "a": 75645070,
+     "b": 75773069,
+     "confidence": 0.881
+    },
+    {
+     "name": "Rock",
+     "a": 75776070,
+     "b": 75778069,
+     "confidence": 0.47
+    },
+    {
+     "name": "Rock",
+     "a": 75783070,
+     "b": 75795069,
+     "confidence": 0.812
+    },
+    {
+     "name": "Rock",
+     "a": 75931070,
+     "b": 75985069,
+     "confidence": 0.753
+    },
+    {
+     "name": "Rock",
+     "a": 75988070,
+     "b": 75994069,
+     "confidence": 0.713
+    },
+    {
+     "name": "Rock",
+     "a": 75998070,
+     "b": 76007069,
+     "confidence": 0.916
+    },
+    {
+     "name": "Rock",
+     "a": 76036070,
+     "b": 76038069,
+     "confidence": 0.595
+    },
+    {
+     "name": "Rock",
+     "a": 76041070,
+     "b": 76068069,
+     "confidence": 0.933
+    },
+    {
+     "name": "Rock",
+     "a": 76074070,
+     "b": 76083069,
+     "confidence": 0.933
+    },
+    {
+     "name": "Rock",
+     "a": 76088070,
+     "b": 76090069,
+     "confidence": 0.668
+    },
+    {
+     "name": "Rock",
+     "a": 76122070,
+     "b": 76129069,
+     "confidence": 0.629
+    },
+    {
+     "name": "Rock",
+     "a": 76170070,
+     "b": 76174069,
+     "confidence": 0.334
+    },
+    {
+     "name": "Rock",
+     "a": 76179070,
+     "b": 76181069,
+     "confidence": 0.431
+    },
+    {
+     "name": "Mud",
+     "a": 75164070,
+     "b": 75169069,
+     "confidence": 0.401
+    },
+    {
+     "name": "Mud",
+     "a": 75176070,
+     "b": 75183069,
+     "confidence": 0.266
+    },
+    {
+     "name": "Mud",
+     "a": 75192070,
+     "b": 75197069,
+     "confidence": 0.361
+    },
+    {
+     "name": "Mud",
+     "a": 75201070,
+     "b": 75223069,
+     "confidence": 0.323
+    },
+    {
+     "name": "Mud",
+     "a": 75229070,
+     "b": 75257069,
+     "confidence": 0.481
+    },
+    {
+     "name": "Mud",
+     "a": 75263070,
+     "b": 75483069,
+     "confidence": 0.659
+    },
+    {
+     "name": "Mud",
+     "a": 75486070,
+     "b": 75505069,
+     "confidence": 0.533
+    },
+    {
+     "name": "Mud",
+     "a": 75520070,
+     "b": 75551069,
+     "confidence": 0.562
+    },
+    {
+     "name": "Mud",
+     "a": 75570070,
+     "b": 75573069,
+     "confidence": 0.226
+    },
+    {
+     "name": "Mud",
+     "a": 75578070,
+     "b": 75593069,
+     "confidence": 0.532
+    },
+    {
+     "name": "Mud",
+     "a": 75598070,
+     "b": 75663069,
+     "confidence": 0.659
+    },
+    {
+     "name": "Mud",
+     "a": 75683070,
+     "b": 75719069,
+     "confidence": 0.706
+    },
+    {
+     "name": "Mud",
+     "a": 75739070,
+     "b": 75753069,
+     "confidence": 0.648
+    },
+    {
+     "name": "Mud",
+     "a": 75757070,
+     "b": 75760069,
+     "confidence": 0.251
+    },
+    {
+     "name": "Mud",
+     "a": 75768070,
+     "b": 75785069,
+     "confidence": 0.726
+    },
+    {
+     "name": "Mud",
+     "a": 75789070,
+     "b": 75960069,
+     "confidence": 0.897
+    },
+    {
+     "name": "Mud",
+     "a": 75964070,
+     "b": 76038069,
+     "confidence": 0.769
+    },
+    {
+     "name": "Mud",
+     "a": 76042070,
+     "b": 76053069,
+     "confidence": 0.434
+    },
+    {
+     "name": "Mud",
+     "a": 76057070,
+     "b": 76077069,
+     "confidence": 0.549
+    },
+    {
+     "name": "Mud",
+     "a": 76081070,
+     "b": 76191069,
+     "confidence": 0.667
+    },
+    {
+     "name": "Sand",
+     "a": 75161070,
+     "b": 75239069,
+     "confidence": 0.816
+    },
+    {
+     "name": "Sand",
+     "a": 75251070,
+     "b": 75266069,
+     "confidence": 0.799
+    },
+    {
+     "name": "Sand",
+     "a": 75269070,
+     "b": 75275069,
+     "confidence": 0.741
+    },
+    {
+     "name": "Sand",
+     "a": 75285070,
+     "b": 75287069,
+     "confidence": 0.765
+    },
+    {
+     "name": "Sand",
+     "a": 75294070,
+     "b": 75298069,
+     "confidence": 0.748
+    },
+    {
+     "name": "Sand",
+     "a": 75315070,
+     "b": 75322069,
+     "confidence": 0.754
+    },
+    {
+     "name": "Sand",
+     "a": 75326070,
+     "b": 75329069,
+     "confidence": 0.593
+    },
+    {
+     "name": "Sand",
+     "a": 75420070,
+     "b": 75431069,
+     "confidence": 0.691
+    },
+    {
+     "name": "Sand",
+     "a": 75455070,
+     "b": 75458069,
+     "confidence": 0.641
+    },
+    {
+     "name": "Sand",
+     "a": 75461070,
+     "b": 75467069,
+     "confidence": 0.709
+    },
+    {
+     "name": "Sand",
+     "a": 75471070,
+     "b": 75487069,
+     "confidence": 0.752
+    },
+    {
+     "name": "Sand",
+     "a": 75500070,
+     "b": 75502069,
+     "confidence": 0.71
+    },
+    {
+     "name": "Sand",
+     "a": 75587070,
+     "b": 75590069,
+     "confidence": 0.753
+    },
+    {
+     "name": "Sand",
+     "a": 75952070,
+     "b": 75958069,
+     "confidence": 0.701
+    },
+    {
+     "name": "Sand",
+     "a": 76036070,
+     "b": 76042069,
+     "confidence": 0.857
+    },
+    {
+     "name": "Sand",
+     "a": 76094070,
+     "b": 76100069,
+     "confidence": 0.781
+    },
+    {
+     "name": "Sand",
+     "a": 76106070,
+     "b": 76119069,
+     "confidence": 0.695
+    },
+    {
+     "name": "Sand",
+     "a": 76165070,
+     "b": 76171069,
+     "confidence": 0.676
+    },
+    {
+     "name": "Sand",
+     "a": 76186070,
+     "b": 76190069,
+     "confidence": 0.701
+    },
+    {
+     "name": "Cobble",
+     "a": 75700070,
+     "b": 75704069,
+     "confidence": 0.78
+    },
+    {
+     "name": "Cobble",
+     "a": 75912070,
+     "b": 75915069,
+     "confidence": 0.892
+    },
+    {
+     "name": "Cobble",
+     "a": 75934070,
+     "b": 75955069,
+     "confidence": 0.81
+    },
+    {
+     "name": "Cobble",
+     "a": 76036070,
+     "b": 76042069,
+     "confidence": 0.925
+    },
+    {
+     "name": "Cobble",
+     "a": 76097070,
+     "b": 76100069,
+     "confidence": 0.826
+    },
+    {
+     "name": "Cobble",
+     "a": 76117070,
+     "b": 76119069,
+     "confidence": 0.816
+    },
+    {
+     "name": "Cobble",
+     "a": 76141070,
+     "b": 76145069,
+     "confidence": 0.8
+    },
+    {
+     "name": "Cobble",
+     "a": 76164070,
+     "b": 76171069,
+     "confidence": 0.754
+    }
+   ]
+  },
+  "3167": {
+   "split": "val",
+   "line": "CAMPA-2025 dive 22 line 1100",
+   "annotators": 1,
+   "model_stretches": 67,
+   "annotator_stretches": 42.0,
+   "model_median_s": 8.0,
+   "annotator_median_s": 25.0,
+   "model_vs_people": [
+    0.962138916003986,
+    [
+     0.9798994974874372,
+     null,
+     0.974025974025974,
+     0.9888551165146909,
+     0.9057750759878419
+    ],
+    0.825944170771757
+   ],
+   "people_vs_people": null,
+   "model": [
+    {
+     "name": "Rock",
+     "a": 71030910,
+     "b": 71952909,
+     "confidence": 0.873
+    },
+    {
+     "name": "Rock",
+     "a": 71955910,
+     "b": 72050909,
+     "confidence": 0.756
+    },
+    {
+     "name": "Mud",
+     "a": 71548910,
+     "b": 71551909,
+     "confidence": 0.255
+    },
+    {
+     "name": "Sand",
+     "a": 71030910,
+     "b": 71032909,
+     "confidence": 0.86
+    },
+    {
+     "name": "Sand",
+     "a": 71037910,
+     "b": 71054909,
+     "confidence": 0.885
+    },
+    {
+     "name": "Sand",
+     "a": 71070910,
+     "b": 71130909,
+     "confidence": 0.789
+    },
+    {
+     "name": "Sand",
+     "a": 71133910,
+     "b": 71144909,
+     "confidence": 0.829
+    },
+    {
+     "name": "Sand",
+     "a": 71148910,
+     "b": 71201909,
+     "confidence": 0.908
+    },
+    {
+     "name": "Sand",
+     "a": 71204910,
+     "b": 71310909,
+     "confidence": 0.899
+    },
+    {
+     "name": "Sand",
+     "a": 71569910,
+     "b": 71580909,
+     "confidence": 0.761
+    },
+    {
+     "name": "Sand",
+     "a": 71590910,
+     "b": 71597909,
+     "confidence": 0.754
+    },
+    {
+     "name": "Sand",
+     "a": 71603910,
+     "b": 71634909,
+     "confidence": 0.842
+    },
+    {
+     "name": "Sand",
+     "a": 71742910,
+     "b": 71752909,
+     "confidence": 0.783
+    },
+    {
+     "name": "Sand",
+     "a": 71756910,
+     "b": 71758909,
+     "confidence": 0.718
+    },
+    {
+     "name": "Sand",
+     "a": 71796910,
+     "b": 71798909,
+     "confidence": 0.667
+    },
+    {
+     "name": "Sand",
+     "a": 71801910,
+     "b": 72048909,
+     "confidence": 0.924
+    },
+    {
+     "name": "Cobble",
+     "a": 71030910,
+     "b": 71054909,
+     "confidence": 0.962
+    },
+    {
+     "name": "Cobble",
+     "a": 71060910,
+     "b": 71064909,
+     "confidence": 0.897
+    },
+    {
+     "name": "Cobble",
+     "a": 71069910,
+     "b": 71144909,
+     "confidence": 0.98
+    },
+    {
+     "name": "Cobble",
+     "a": 71147910,
+     "b": 71374909,
+     "confidence": 0.976
+    },
+    {
+     "name": "Cobble",
+     "a": 71402910,
+     "b": 71411909,
+     "confidence": 0.869
+    },
+    {
+     "name": "Cobble",
+     "a": 71415910,
+     "b": 71418909,
+     "confidence": 0.912
+    },
+    {
+     "name": "Cobble",
+     "a": 71421910,
+     "b": 71428909,
+     "confidence": 0.907
+    },
+    {
+     "name": "Cobble",
+     "a": 71436910,
+     "b": 71454909,
+     "confidence": 0.861
+    },
+    {
+     "name": "Cobble",
+     "a": 71550910,
+     "b": 71634909,
+     "confidence": 0.977
+    },
+    {
+     "name": "Cobble",
+     "a": 71642910,
+     "b": 71648909,
+     "confidence": 0.88
+    },
+    {
+     "name": "Cobble",
+     "a": 71654910,
+     "b": 71656909,
+     "confidence": 0.918
+    },
+    {
+     "name": "Cobble",
+     "a": 71663910,
+     "b": 71667909,
+     "confidence": 0.926
+    },
+    {
+     "name": "Cobble",
+     "a": 71670910,
+     "b": 71672909,
+     "confidence": 0.909
+    },
+    {
+     "name": "Cobble",
+     "a": 71695910,
+     "b": 71699909,
+     "confidence": 0.821
+    },
+    {
+     "name": "Cobble",
+     "a": 71702910,
+     "b": 71704909,
+     "confidence": 0.851
+    },
+    {
+     "name": "Cobble",
+     "a": 71722910,
+     "b": 71725909,
+     "confidence": 0.756
+    },
+    {
+     "name": "Cobble",
+     "a": 71738910,
+     "b": 71773909,
+     "confidence": 0.896
+    },
+    {
+     "name": "Cobble",
+     "a": 71776910,
+     "b": 72047909,
+     "confidence": 0.977
+    },
+    {
+     "name": "Boulder",
+     "a": 71030910,
+     "b": 71037909,
+     "confidence": 0.831
+    },
+    {
+     "name": "Boulder",
+     "a": 71040910,
+     "b": 71055909,
+     "confidence": 0.928
+    },
+    {
+     "name": "Boulder",
+     "a": 71060910,
+     "b": 71064909,
+     "confidence": 0.837
+    },
+    {
+     "name": "Boulder",
+     "a": 71073910,
+     "b": 71100909,
+     "confidence": 0.911
+    },
+    {
+     "name": "Boulder",
+     "a": 71109910,
+     "b": 71143909,
+     "confidence": 0.878
+    },
+    {
+     "name": "Boulder",
+     "a": 71147910,
+     "b": 71150909,
+     "confidence": 0.886
+    },
+    {
+     "name": "Boulder",
+     "a": 71176910,
+     "b": 71180909,
+     "confidence": 0.882
+    },
+    {
+     "name": "Boulder",
+     "a": 71183910,
+     "b": 71195909,
+     "confidence": 0.857
+    },
+    {
+     "name": "Boulder",
+     "a": 71198910,
+     "b": 71250909,
+     "confidence": 0.948
+    },
+    {
+     "name": "Boulder",
+     "a": 71254910,
+     "b": 71258909,
+     "confidence": 0.881
+    },
+    {
+     "name": "Boulder",
+     "a": 71261910,
+     "b": 71265909,
+     "confidence": 0.879
+    },
+    {
+     "name": "Boulder",
+     "a": 71268910,
+     "b": 71293909,
+     "confidence": 0.896
+    },
+    {
+     "name": "Boulder",
+     "a": 71296910,
+     "b": 71375909,
+     "confidence": 0.968
+    },
+    {
+     "name": "Boulder",
+     "a": 71397910,
+     "b": 71430909,
+     "confidence": 0.944
+    },
+    {
+     "name": "Boulder",
+     "a": 71438910,
+     "b": 71460909,
+     "confidence": 0.9
+    },
+    {
+     "name": "Boulder",
+     "a": 71474910,
+     "b": 71486909,
+     "confidence": 0.907
+    },
+    {
+     "name": "Boulder",
+     "a": 71533910,
+     "b": 71535909,
+     "confidence": 0.91
+    },
+    {
+     "name": "Boulder",
+     "a": 71549910,
+     "b": 71631909,
+     "confidence": 0.932
+    },
+    {
+     "name": "Boulder",
+     "a": 71642910,
+     "b": 71649909,
+     "confidence": 0.93
+    },
+    {
+     "name": "Boulder",
+     "a": 71654910,
+     "b": 71657909,
+     "confidence": 0.908
+    },
+    {
+     "name": "Boulder",
+     "a": 71669910,
+     "b": 71672909,
+     "confidence": 0.811
+    },
+    {
+     "name": "Boulder",
+     "a": 71694910,
+     "b": 71699909,
+     "confidence": 0.971
+    },
+    {
+     "name": "Boulder",
+     "a": 71702910,
+     "b": 71707909,
+     "confidence": 0.908
+    },
+    {
+     "name": "Boulder",
+     "a": 71716910,
+     "b": 71725909,
+     "confidence": 0.812
+    },
+    {
+     "name": "Boulder",
+     "a": 71737910,
+     "b": 71740909,
+     "confidence": 0.917
+    },
+    {
+     "name": "Boulder",
+     "a": 71744910,
+     "b": 71811909,
+     "confidence": 0.909
+    },
+    {
+     "name": "Boulder",
+     "a": 71863910,
+     "b": 71867909,
+     "confidence": 0.964
+    },
+    {
+     "name": "Boulder",
+     "a": 71879910,
+     "b": 71881909,
+     "confidence": 0.876
+    },
+    {
+     "name": "Boulder",
+     "a": 71893910,
+     "b": 71901909,
+     "confidence": 0.77
+    },
+    {
+     "name": "Boulder",
+     "a": 71984910,
+     "b": 71986909,
+     "confidence": 0.92
+    },
+    {
+     "name": "Boulder",
+     "a": 71989910,
+     "b": 71997909,
+     "confidence": 0.869
+    },
+    {
+     "name": "Boulder",
+     "a": 72023910,
+     "b": 72025909,
+     "confidence": 0.817
+    },
+    {
+     "name": "Boulder",
+     "a": 72029910,
+     "b": 72038909,
+     "confidence": 0.868
+    }
+   ]
+  },
+  "4065": {
+   "split": "test",
+   "line": "CAMPA 2026 dive 13 line 2100",
+   "annotators": 7,
+   "model_stretches": 109,
+   "annotator_stretches": 88.7,
+   "model_median_s": 8.0,
+   "annotator_median_s": 11.0,
+   "model_vs_people": [
+    0.6129372656173887,
+    [
+     0.9193985703721962,
+     0.0,
+     0.9597457627118644,
+     0.6676356589147286,
+     0.5179063360881543
+    ],
+    0.543301258327165
+   ],
+   "people_vs_people": [
+    0.7716731011086864,
+    [
+     0.8782715042804728,
+     null,
+     0.9357583631049042,
+     0.6595621003681457,
+     0.6131004366812227
+    ],
+    0.5301917808219178
+   ],
+   "model": [
+    {
+     "name": "Rock",
+     "a": 57154640,
+     "b": 57160639,
+     "confidence": 0.722
+    },
+    {
+     "name": "Rock",
+     "a": 57164640,
+     "b": 57214639,
+     "confidence": 0.849
+    },
+    {
+     "name": "Rock",
+     "a": 57225640,
+     "b": 57228639,
+     "confidence": 0.501
+    },
+    {
+     "name": "Rock",
+     "a": 57235640,
+     "b": 57281639,
+     "confidence": 0.948
+    },
+    {
+     "name": "Rock",
+     "a": 57285640,
+     "b": 57288639,
+     "confidence": 0.417
+    },
+    {
+     "name": "Rock",
+     "a": 57296640,
+     "b": 57338639,
+     "confidence": 0.795
+    },
+    {
+     "name": "Rock",
+     "a": 57343640,
+     "b": 57442639,
+     "confidence": 0.913
+    },
+    {
+     "name": "Rock",
+     "a": 57445640,
+     "b": 57447639,
+     "confidence": 0.429
+    },
+    {
+     "name": "Rock",
+     "a": 57458640,
+     "b": 57578639,
+     "confidence": 0.88
+    },
+    {
+     "name": "Rock",
+     "a": 57581640,
+     "b": 57585639,
+     "confidence": 0.581
+    },
+    {
+     "name": "Rock",
+     "a": 57588640,
+     "b": 57590639,
+     "confidence": 0.459
+    },
+    {
+     "name": "Rock",
+     "a": 57595640,
+     "b": 57616639,
+     "confidence": 0.767
+    },
+    {
+     "name": "Rock",
+     "a": 57639640,
+     "b": 57657639,
+     "confidence": 0.693
+    },
+    {
+     "name": "Rock",
+     "a": 57664640,
+     "b": 57672639,
+     "confidence": 0.502
+    },
+    {
+     "name": "Rock",
+     "a": 57676640,
+     "b": 57716639,
+     "confidence": 0.841
+    },
+    {
+     "name": "Rock",
+     "a": 57721640,
+     "b": 57728639,
+     "confidence": 0.538
+    },
+    {
+     "name": "Rock",
+     "a": 57733640,
+     "b": 57809639,
+     "confidence": 0.761
+    },
+    {
+     "name": "Rock",
+     "a": 57814640,
+     "b": 57828639,
+     "confidence": 0.768
+    },
+    {
+     "name": "Rock",
+     "a": 57831640,
+     "b": 57838639,
+     "confidence": 0.598
+    },
+    {
+     "name": "Rock",
+     "a": 57841640,
+     "b": 57876639,
+     "confidence": 0.791
+    },
+    {
+     "name": "Rock",
+     "a": 57900640,
+     "b": 57902639,
+     "confidence": 0.441
+    },
+    {
+     "name": "Rock",
+     "a": 57917640,
+     "b": 58055639,
+     "confidence": 0.871
+    },
+    {
+     "name": "Rock",
+     "a": 58060640,
+     "b": 58089639,
+     "confidence": 0.836
+    },
+    {
+     "name": "Rock",
+     "a": 58094640,
+     "b": 58192639,
+     "confidence": 0.843
+    },
+    {
+     "name": "Mud",
+     "a": 57735640,
+     "b": 57739639,
+     "confidence": 0.534
+    },
+    {
+     "name": "Mud",
+     "a": 57745640,
+     "b": 57753639,
+     "confidence": 0.384
+    },
+    {
+     "name": "Mud",
+     "a": 57781640,
+     "b": 57785639,
+     "confidence": 0.438
+    },
+    {
+     "name": "Mud",
+     "a": 57809640,
+     "b": 57815639,
+     "confidence": 0.819
+    },
+    {
+     "name": "Mud",
+     "a": 57825640,
+     "b": 57831639,
+     "confidence": 0.379
+    },
+    {
+     "name": "Sand",
+     "a": 57154640,
+     "b": 57196639,
+     "confidence": 0.975
+    },
+    {
+     "name": "Sand",
+     "a": 57202640,
+     "b": 57245639,
+     "confidence": 0.979
+    },
+    {
+     "name": "Sand",
+     "a": 57258640,
+     "b": 57365639,
+     "confidence": 0.961
+    },
+    {
+     "name": "Sand",
+     "a": 57378640,
+     "b": 57391639,
+     "confidence": 0.713
+    },
+    {
+     "name": "Sand",
+     "a": 57396640,
+     "b": 57471639,
+     "confidence": 0.926
+    },
+    {
+     "name": "Sand",
+     "a": 57479640,
+     "b": 57694639,
+     "confidence": 0.967
+    },
+    {
+     "name": "Sand",
+     "a": 57707640,
+     "b": 57735639,
+     "confidence": 0.959
+    },
+    {
+     "name": "Sand",
+     "a": 57739640,
+     "b": 57745639,
+     "confidence": 0.763
+    },
+    {
+     "name": "Sand",
+     "a": 57758640,
+     "b": 57770639,
+     "confidence": 0.95
+    },
+    {
+     "name": "Sand",
+     "a": 57774640,
+     "b": 57779639,
+     "confidence": 0.819
+    },
+    {
+     "name": "Sand",
+     "a": 57785640,
+     "b": 57809639,
+     "confidence": 0.939
+    },
+    {
+     "name": "Sand",
+     "a": 57815640,
+     "b": 57824639,
+     "confidence": 0.949
+    },
+    {
+     "name": "Sand",
+     "a": 57831640,
+     "b": 57849639,
+     "confidence": 0.967
+    },
+    {
+     "name": "Sand",
+     "a": 57852640,
+     "b": 57926639,
+     "confidence": 0.985
+    },
+    {
+     "name": "Sand",
+     "a": 57935640,
+     "b": 57946639,
+     "confidence": 0.743
+    },
+    {
+     "name": "Sand",
+     "a": 57950640,
+     "b": 58015639,
+     "confidence": 0.921
+    },
+    {
+     "name": "Sand",
+     "a": 58023640,
+     "b": 58167639,
+     "confidence": 0.887
+    },
+    {
+     "name": "Sand",
+     "a": 58177640,
+     "b": 58192639,
+     "confidence": 0.94
+    },
+    {
+     "name": "Cobble",
+     "a": 57154640,
+     "b": 57156639,
+     "confidence": 0.923
+    },
+    {
+     "name": "Cobble",
+     "a": 57167640,
+     "b": 57185639,
+     "confidence": 0.828
+    },
+    {
+     "name": "Cobble",
+     "a": 57194640,
+     "b": 57198639,
+     "confidence": 0.811
+    },
+    {
+     "name": "Cobble",
+     "a": 57201640,
+     "b": 57215639,
+     "confidence": 0.941
+    },
+    {
+     "name": "Cobble",
+     "a": 57225640,
+     "b": 57227639,
+     "confidence": 0.822
+    },
+    {
+     "name": "Cobble",
+     "a": 57235640,
+     "b": 57244639,
+     "confidence": 0.936
+    },
+    {
+     "name": "Cobble",
+     "a": 57258640,
+     "b": 57313639,
+     "confidence": 0.948
+    },
+    {
+     "name": "Cobble",
+     "a": 57319640,
+     "b": 57323639,
+     "confidence": 0.881
+    },
+    {
+     "name": "Cobble",
+     "a": 57326640,
+     "b": 57330639,
+     "confidence": 0.801
+    },
+    {
+     "name": "Cobble",
+     "a": 57339640,
+     "b": 57366639,
+     "confidence": 0.9
+    },
+    {
+     "name": "Cobble",
+     "a": 57379640,
+     "b": 57382639,
+     "confidence": 0.83
+    },
+    {
+     "name": "Cobble",
+     "a": 57386640,
+     "b": 57391639,
+     "confidence": 0.76
+    },
+    {
+     "name": "Cobble",
+     "a": 57402640,
+     "b": 57410639,
+     "confidence": 0.768
+    },
+    {
+     "name": "Cobble",
+     "a": 57437640,
+     "b": 57442639,
+     "confidence": 0.727
+    },
+    {
+     "name": "Cobble",
+     "a": 57457640,
+     "b": 57470639,
+     "confidence": 0.921
+    },
+    {
+     "name": "Cobble",
+     "a": 57479640,
+     "b": 57495639,
+     "confidence": 0.908
+    },
+    {
+     "name": "Cobble",
+     "a": 57506640,
+     "b": 57577639,
+     "confidence": 0.926
+    },
+    {
+     "name": "Cobble",
+     "a": 57580640,
+     "b": 57584639,
+     "confidence": 0.865
+    },
+    {
+     "name": "Cobble",
+     "a": 57587640,
+     "b": 57592639,
+     "confidence": 0.808
+    },
+    {
+     "name": "Cobble",
+     "a": 57607640,
+     "b": 57617639,
+     "confidence": 0.835
+    },
+    {
+     "name": "Cobble",
+     "a": 57650640,
+     "b": 57652639,
+     "confidence": 0.796
+    },
+    {
+     "name": "Cobble",
+     "a": 57674640,
+     "b": 57692639,
+     "confidence": 0.914
+    },
+    {
+     "name": "Cobble",
+     "a": 57712640,
+     "b": 57716639,
+     "confidence": 0.794
+    },
+    {
+     "name": "Cobble",
+     "a": 57722640,
+     "b": 57734639,
+     "confidence": 0.917
+    },
+    {
+     "name": "Cobble",
+     "a": 57790640,
+     "b": 57809639,
+     "confidence": 0.881
+    },
+    {
+     "name": "Cobble",
+     "a": 57815640,
+     "b": 57821639,
+     "confidence": 0.894
+    },
+    {
+     "name": "Cobble",
+     "a": 57846640,
+     "b": 57848639,
+     "confidence": 0.811
+    },
+    {
+     "name": "Cobble",
+     "a": 57860640,
+     "b": 57876639,
+     "confidence": 0.801
+    },
+    {
+     "name": "Cobble",
+     "a": 57936640,
+     "b": 57939639,
+     "confidence": 0.828
+    },
+    {
+     "name": "Cobble",
+     "a": 57962640,
+     "b": 57975639,
+     "confidence": 0.832
+    },
+    {
+     "name": "Cobble",
+     "a": 57983640,
+     "b": 58004639,
+     "confidence": 0.841
+    },
+    {
+     "name": "Cobble",
+     "a": 58007640,
+     "b": 58009639,
+     "confidence": 0.847
+    },
+    {
+     "name": "Cobble",
+     "a": 58022640,
+     "b": 58024639,
+     "confidence": 0.861
+    },
+    {
+     "name": "Cobble",
+     "a": 58027640,
+     "b": 58031639,
+     "confidence": 0.863
+    },
+    {
+     "name": "Cobble",
+     "a": 58036640,
+     "b": 58052639,
+     "confidence": 0.927
+    },
+    {
+     "name": "Cobble",
+     "a": 58060640,
+     "b": 58088639,
+     "confidence": 0.911
+    },
+    {
+     "name": "Cobble",
+     "a": 58101640,
+     "b": 58137639,
+     "confidence": 0.883
+    },
+    {
+     "name": "Cobble",
+     "a": 58146640,
+     "b": 58169639,
+     "confidence": 0.845
+    },
+    {
+     "name": "Cobble",
+     "a": 58177640,
+     "b": 58192639,
+     "confidence": 0.922
+    },
+    {
+     "name": "Boulder",
+     "a": 57180640,
+     "b": 57184639,
+     "confidence": 0.913
+    },
+    {
+     "name": "Boulder",
+     "a": 57196640,
+     "b": 57210639,
+     "confidence": 0.879
+    },
+    {
+     "name": "Boulder",
+     "a": 57238640,
+     "b": 57241639,
+     "confidence": 0.807
+    },
+    {
+     "name": "Boulder",
+     "a": 57260640,
+     "b": 57273639,
+     "confidence": 0.878
+    },
+    {
+     "name": "Boulder",
+     "a": 57300640,
+     "b": 57306639,
+     "confidence": 0.868
+    },
+    {
+     "name": "Boulder",
+     "a": 57309640,
+     "b": 57312639,
+     "confidence": 0.795
+    },
+    {
+     "name": "Boulder",
+     "a": 57353640,
+     "b": 57365639,
+     "confidence": 0.892
+    },
+    {
+     "name": "Boulder",
+     "a": 57465640,
+     "b": 57470639,
+     "confidence": 0.911
+    },
+    {
+     "name": "Boulder",
+     "a": 57479640,
+     "b": 57494639,
+     "confidence": 0.919
+    },
+    {
+     "name": "Boulder",
+     "a": 57542640,
+     "b": 57544639,
+     "confidence": 0.891
+    },
+    {
+     "name": "Boulder",
+     "a": 57550640,
+     "b": 57558639,
+     "confidence": 0.805
+    },
+    {
+     "name": "Boulder",
+     "a": 57688640,
+     "b": 57692639,
+     "confidence": 0.889
+    },
+    {
+     "name": "Boulder",
+     "a": 57793640,
+     "b": 57798639,
+     "confidence": 0.909
+    },
+    {
+     "name": "Boulder",
+     "a": 57963640,
+     "b": 57966639,
+     "confidence": 0.895
+    },
+    {
+     "name": "Boulder",
+     "a": 58001640,
+     "b": 58007639,
+     "confidence": 0.874
+    },
+    {
+     "name": "Boulder",
+     "a": 58019640,
+     "b": 58024639,
+     "confidence": 0.855
+    },
+    {
+     "name": "Boulder",
+     "a": 58028640,
+     "b": 58031639,
+     "confidence": 0.928
+    },
+    {
+     "name": "Boulder",
+     "a": 58048640,
+     "b": 58050639,
+     "confidence": 0.859
+    },
+    {
+     "name": "Boulder",
+     "a": 58079640,
+     "b": 58085639,
+     "confidence": 0.927
+    },
+    {
+     "name": "Boulder",
+     "a": 58118640,
+     "b": 58126639,
+     "confidence": 0.895
+    },
+    {
+     "name": "Boulder",
+     "a": 58157640,
+     "b": 58159639,
+     "confidence": 0.889
+    },
+    {
+     "name": "Boulder",
+     "a": 58165640,
+     "b": 58169639,
+     "confidence": 0.859
+    },
+    {
+     "name": "Boulder",
+     "a": 58177640,
+     "b": 58182639,
+     "confidence": 0.896
+    }
+   ]
+  },
+  "4101": {
+   "split": "test",
+   "line": "CAMPA 2026 dive 29 line 570",
+   "annotators": 1,
+   "model_stretches": 32,
+   "annotator_stretches": 20.0,
+   "model_median_s": 16.0,
+   "annotator_median_s": 50.0,
+   "model_vs_people": [
+    0.9443593236220198,
+    [
+     0.9762202753441802,
+     null,
+     0.9793103448275862,
+     0.92904953145917,
+     0.8928571428571429
+    ],
+    0.7867803837953091
+   ],
+   "people_vs_people": null,
+   "model": [
+    {
+     "name": "Rock",
+     "a": 55725080,
+     "b": 55773079,
+     "confidence": 0.868
+    },
+    {
+     "name": "Rock",
+     "a": 55779080,
+     "b": 55820079,
+     "confidence": 0.66
+    },
+    {
+     "name": "Rock",
+     "a": 55823080,
+     "b": 55907079,
+     "confidence": 0.578
+    },
+    {
+     "name": "Rock",
+     "a": 55955080,
+     "b": 56056079,
+     "confidence": 0.651
+    },
+    {
+     "name": "Rock",
+     "a": 56060080,
+     "b": 56349079,
+     "confidence": 0.934
+    },
+    {
+     "name": "Sand",
+     "a": 55662080,
+     "b": 55754079,
+     "confidence": 0.958
+    },
+    {
+     "name": "Sand",
+     "a": 55760080,
+     "b": 55763079,
+     "confidence": 0.76
+    },
+    {
+     "name": "Sand",
+     "a": 55770080,
+     "b": 55835079,
+     "confidence": 0.959
+    },
+    {
+     "name": "Sand",
+     "a": 55845080,
+     "b": 56154079,
+     "confidence": 0.972
+    },
+    {
+     "name": "Sand",
+     "a": 56158080,
+     "b": 56245079,
+     "confidence": 0.923
+    },
+    {
+     "name": "Sand",
+     "a": 56249080,
+     "b": 56270079,
+     "confidence": 0.758
+    },
+    {
+     "name": "Sand",
+     "a": 56294080,
+     "b": 56339079,
+     "confidence": 0.85
+    },
+    {
+     "name": "Sand",
+     "a": 56342080,
+     "b": 56348079,
+     "confidence": 0.832
+    },
+    {
+     "name": "Cobble",
+     "a": 55662080,
+     "b": 55666079,
+     "confidence": 0.796
+    },
+    {
+     "name": "Cobble",
+     "a": 55672080,
+     "b": 55674079,
+     "confidence": 0.886
+    },
+    {
+     "name": "Cobble",
+     "a": 55690080,
+     "b": 55695079,
+     "confidence": 0.805
+    },
+    {
+     "name": "Cobble",
+     "a": 55705080,
+     "b": 55708079,
+     "confidence": 0.815
+    },
+    {
+     "name": "Cobble",
+     "a": 55717080,
+     "b": 55738079,
+     "confidence": 0.945
+    },
+    {
+     "name": "Cobble",
+     "a": 55748080,
+     "b": 55752079,
+     "confidence": 0.783
+    },
+    {
+     "name": "Cobble",
+     "a": 55759080,
+     "b": 55763079,
+     "confidence": 0.87
+    },
+    {
+     "name": "Cobble",
+     "a": 55770080,
+     "b": 55836079,
+     "confidence": 0.941
+    },
+    {
+     "name": "Cobble",
+     "a": 55851080,
+     "b": 56226079,
+     "confidence": 0.971
+    },
+    {
+     "name": "Cobble",
+     "a": 56235080,
+     "b": 56245079,
+     "confidence": 0.869
+    },
+    {
+     "name": "Cobble",
+     "a": 56260080,
+     "b": 56264079,
+     "confidence": 0.886
+    },
+    {
+     "name": "Cobble",
+     "a": 56295080,
+     "b": 56299079,
+     "confidence": 0.783
+    },
+    {
+     "name": "Cobble",
+     "a": 56303080,
+     "b": 56338079,
+     "confidence": 0.84
+    },
+    {
+     "name": "Cobble",
+     "a": 56341080,
+     "b": 56345079,
+     "confidence": 0.831
+    },
+    {
+     "name": "Boulder",
+     "a": 55797080,
+     "b": 55808079,
+     "confidence": 0.923
+    },
+    {
+     "name": "Boulder",
+     "a": 56110080,
+     "b": 56186079,
+     "confidence": 0.893
+    },
+    {
+     "name": "Boulder",
+     "a": 56189080,
+     "b": 56191079,
+     "confidence": 0.803
+    },
+    {
+     "name": "Boulder",
+     "a": 56194080,
+     "b": 56198079,
+     "confidence": 0.755
+    },
+    {
+     "name": "Boulder",
+     "a": 56309080,
+     "b": 56315079,
+     "confidence": 0.895
+    }
+   ]
+  },
+  "4250": {
+   "split": "val",
+   "line": "CAMPA 2026 dive 11 line 2040",
+   "annotators": 1,
+   "model_stretches": 85,
+   "annotator_stretches": 46.0,
+   "model_median_s": 11.0,
+   "annotator_median_s": 19.5,
+   "model_vs_people": [
+    0.69958153902762,
+    [
+     0.9876543209876543,
+     0.0,
+     0.8611111111111112,
+     0.8551724137931035,
+     0.7939698492462312
+    ],
+    0.6696230598669624
+   ],
+   "people_vs_people": null,
+   "model": [
+    {
+     "name": "Rock",
+     "a": 54901560,
+     "b": 54913559,
+     "confidence": 0.928
+    },
+    {
+     "name": "Rock",
+     "a": 54916560,
+     "b": 54941559,
+     "confidence": 0.676
+    },
+    {
+     "name": "Rock",
+     "a": 54944560,
+     "b": 54949559,
+     "confidence": 0.827
+    },
+    {
+     "name": "Rock",
+     "a": 54952560,
+     "b": 54993559,
+     "confidence": 0.954
+    },
+    {
+     "name": "Rock",
+     "a": 54999560,
+     "b": 55062559,
+     "confidence": 0.89
+    },
+    {
+     "name": "Rock",
+     "a": 55072560,
+     "b": 55340559,
+     "confidence": 0.921
+    },
+    {
+     "name": "Rock",
+     "a": 55344560,
+     "b": 55501559,
+     "confidence": 0.95
+    },
+    {
+     "name": "Rock",
+     "a": 55518560,
+     "b": 55520559,
+     "confidence": 0.492
+    },
+    {
+     "name": "Rock",
+     "a": 55538560,
+     "b": 55543559,
+     "confidence": 0.706
+    },
+    {
+     "name": "Rock",
+     "a": 55554560,
+     "b": 55598559,
+     "confidence": 0.893
+    },
+    {
+     "name": "Rock",
+     "a": 55625560,
+     "b": 55851559,
+     "confidence": 0.967
+    },
+    {
+     "name": "Mud",
+     "a": 54990560,
+     "b": 54992559,
+     "confidence": 0.277
+    },
+    {
+     "name": "Mud",
+     "a": 55004560,
+     "b": 55011559,
+     "confidence": 0.311
+    },
+    {
+     "name": "Mud",
+     "a": 55116560,
+     "b": 55119559,
+     "confidence": 0.255
+    },
+    {
+     "name": "Mud",
+     "a": 55125560,
+     "b": 55129559,
+     "confidence": 0.261
+    },
+    {
+     "name": "Mud",
+     "a": 55138560,
+     "b": 55141559,
+     "confidence": 0.227
+    },
+    {
+     "name": "Mud",
+     "a": 55160560,
+     "b": 55163559,
+     "confidence": 0.303
+    },
+    {
+     "name": "Mud",
+     "a": 55167560,
+     "b": 55169559,
+     "confidence": 0.351
+    },
+    {
+     "name": "Mud",
+     "a": 55190560,
+     "b": 55196559,
+     "confidence": 0.438
+    },
+    {
+     "name": "Mud",
+     "a": 55219560,
+     "b": 55225559,
+     "confidence": 0.389
+    },
+    {
+     "name": "Mud",
+     "a": 55397560,
+     "b": 55400559,
+     "confidence": 0.414
+    },
+    {
+     "name": "Mud",
+     "a": 55614560,
+     "b": 55620559,
+     "confidence": 0.44
+    },
+    {
+     "name": "Sand",
+     "a": 54901560,
+     "b": 54973559,
+     "confidence": 0.92
+    },
+    {
+     "name": "Sand",
+     "a": 54988560,
+     "b": 55008559,
+     "confidence": 0.883
+    },
+    {
+     "name": "Sand",
+     "a": 55021560,
+     "b": 55029559,
+     "confidence": 0.807
+    },
+    {
+     "name": "Sand",
+     "a": 55054560,
+     "b": 55097559,
+     "confidence": 0.932
+    },
+    {
+     "name": "Sand",
+     "a": 55119560,
+     "b": 55136559,
+     "confidence": 0.771
+    },
+    {
+     "name": "Sand",
+     "a": 55162560,
+     "b": 55169559,
+     "confidence": 0.738
+    },
+    {
+     "name": "Sand",
+     "a": 55193560,
+     "b": 55208559,
+     "confidence": 0.756
+    },
+    {
+     "name": "Sand",
+     "a": 55230560,
+     "b": 55234559,
+     "confidence": 0.619
+    },
+    {
+     "name": "Sand",
+     "a": 55247560,
+     "b": 55253559,
+     "confidence": 0.701
+    },
+    {
+     "name": "Sand",
+     "a": 55256560,
+     "b": 55262559,
+     "confidence": 0.776
+    },
+    {
+     "name": "Sand",
+     "a": 55325560,
+     "b": 55356559,
+     "confidence": 0.96
+    },
+    {
+     "name": "Sand",
+     "a": 55367560,
+     "b": 55378559,
+     "confidence": 0.769
+    },
+    {
+     "name": "Sand",
+     "a": 55404560,
+     "b": 55429559,
+     "confidence": 0.822
+    },
+    {
+     "name": "Sand",
+     "a": 55479560,
+     "b": 55490559,
+     "confidence": 0.735
+    },
+    {
+     "name": "Sand",
+     "a": 55495560,
+     "b": 55586559,
+     "confidence": 0.948
+    },
+    {
+     "name": "Sand",
+     "a": 55593560,
+     "b": 55630559,
+     "confidence": 0.927
+    },
+    {
+     "name": "Sand",
+     "a": 55634560,
+     "b": 55645559,
+     "confidence": 0.83
+    },
+    {
+     "name": "Sand",
+     "a": 55648560,
+     "b": 55694559,
+     "confidence": 0.884
+    },
+    {
+     "name": "Sand",
+     "a": 55734560,
+     "b": 55767559,
+     "confidence": 0.806
+    },
+    {
+     "name": "Sand",
+     "a": 55810560,
+     "b": 55816559,
+     "confidence": 0.748
+    },
+    {
+     "name": "Sand",
+     "a": 55819560,
+     "b": 55850559,
+     "confidence": 0.814
+    },
+    {
+     "name": "Cobble",
+     "a": 54924560,
+     "b": 54928559,
+     "confidence": 0.846
+    },
+    {
+     "name": "Cobble",
+     "a": 54944560,
+     "b": 54946559,
+     "confidence": 0.819
+    },
+    {
+     "name": "Cobble",
+     "a": 55022560,
+     "b": 55031559,
+     "confidence": 0.927
+    },
+    {
+     "name": "Cobble",
+     "a": 55072560,
+     "b": 55074559,
+     "confidence": 0.82
+    },
+    {
+     "name": "Cobble",
+     "a": 55112560,
+     "b": 55144559,
+     "confidence": 0.967
+    },
+    {
+     "name": "Cobble",
+     "a": 55150560,
+     "b": 55169559,
+     "confidence": 0.922
+    },
+    {
+     "name": "Cobble",
+     "a": 55195560,
+     "b": 55206559,
+     "confidence": 0.95
+    },
+    {
+     "name": "Cobble",
+     "a": 55245560,
+     "b": 55275559,
+     "confidence": 0.909
+    },
+    {
+     "name": "Cobble",
+     "a": 55279560,
+     "b": 55288559,
+     "confidence": 0.793
+    },
+    {
+     "name": "Cobble",
+     "a": 55303560,
+     "b": 55305559,
+     "confidence": 0.779
+    },
+    {
+     "name": "Cobble",
+     "a": 55346560,
+     "b": 55348559,
+     "confidence": 0.855
+    },
+    {
+     "name": "Cobble",
+     "a": 55367560,
+     "b": 55382559,
+     "confidence": 0.91
+    },
+    {
+     "name": "Cobble",
+     "a": 55405560,
+     "b": 55434559,
+     "confidence": 0.958
+    },
+    {
+     "name": "Cobble",
+     "a": 55437560,
+     "b": 55449559,
+     "confidence": 0.976
+    },
+    {
+     "name": "Cobble",
+     "a": 55480560,
+     "b": 55489559,
+     "confidence": 0.88
+    },
+    {
+     "name": "Cobble",
+     "a": 55541560,
+     "b": 55543559,
+     "confidence": 0.817
+    },
+    {
+     "name": "Cobble",
+     "a": 55572560,
+     "b": 55584559,
+     "confidence": 0.851
+    },
+    {
+     "name": "Cobble",
+     "a": 55625560,
+     "b": 55629559,
+     "confidence": 0.909
+    },
+    {
+     "name": "Cobble",
+     "a": 55637560,
+     "b": 55641559,
+     "confidence": 0.79
+    },
+    {
+     "name": "Cobble",
+     "a": 55654560,
+     "b": 55679559,
+     "confidence": 0.894
+    },
+    {
+     "name": "Cobble",
+     "a": 55683560,
+     "b": 55697559,
+     "confidence": 0.91
+    },
+    {
+     "name": "Cobble",
+     "a": 55724560,
+     "b": 55726559,
+     "confidence": 0.792
+    },
+    {
+     "name": "Cobble",
+     "a": 55733560,
+     "b": 55754559,
+     "confidence": 0.938
+    },
+    {
+     "name": "Cobble",
+     "a": 55758560,
+     "b": 55767559,
+     "confidence": 0.84
+    },
+    {
+     "name": "Cobble",
+     "a": 55780560,
+     "b": 55799559,
+     "confidence": 0.826
+    },
+    {
+     "name": "Cobble",
+     "a": 55814560,
+     "b": 55843559,
+     "confidence": 0.905
+    },
+    {
+     "name": "Boulder",
+     "a": 55024560,
+     "b": 55030559,
+     "confidence": 0.863
+    },
+    {
+     "name": "Boulder",
+     "a": 55111560,
+     "b": 55144559,
+     "confidence": 0.944
+    },
+    {
+     "name": "Boulder",
+     "a": 55151560,
+     "b": 55170559,
+     "confidence": 0.924
+    },
+    {
+     "name": "Boulder",
+     "a": 55200560,
+     "b": 55204559,
+     "confidence": 0.901
+    },
+    {
+     "name": "Boulder",
+     "a": 55245560,
+     "b": 55306559,
+     "confidence": 0.946
+    },
+    {
+     "name": "Boulder",
+     "a": 55367560,
+     "b": 55382559,
+     "confidence": 0.877
+    },
+    {
+     "name": "Boulder",
+     "a": 55415560,
+     "b": 55458559,
+     "confidence": 0.937
+    },
+    {
+     "name": "Boulder",
+     "a": 55475560,
+     "b": 55477559,
+     "confidence": 0.85
+    },
+    {
+     "name": "Boulder",
+     "a": 55481560,
+     "b": 55484559,
+     "confidence": 0.839
+    },
+    {
+     "name": "Boulder",
+     "a": 55576560,
+     "b": 55583559,
+     "confidence": 0.786
+    },
+    {
+     "name": "Boulder",
+     "a": 55654560,
+     "b": 55656559,
+     "confidence": 0.831
+    },
+    {
+     "name": "Boulder",
+     "a": 55665560,
+     "b": 55667559,
+     "confidence": 0.828
+    },
+    {
+     "name": "Boulder",
+     "a": 55686560,
+     "b": 55697559,
+     "confidence": 0.879
+    },
+    {
+     "name": "Boulder",
+     "a": 55732560,
+     "b": 55751559,
+     "confidence": 0.884
+    },
+    {
+     "name": "Boulder",
+     "a": 55765560,
+     "b": 55799559,
+     "confidence": 0.911
+    },
+    {
+     "name": "Boulder",
+     "a": 55830560,
+     "b": 55840559,
+     "confidence": 0.85
+    }
+   ]
+  }
+ }
+}
