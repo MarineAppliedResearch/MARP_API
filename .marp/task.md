@@ -103,53 +103,82 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
 
 ## Open assumptions
 
-- [ ] **A1 · architectural · blocking** — **Who writes the habitat session.** The settled
+- [x] **A1 · architectural · blocking** — answered 2026-11-10 by Isaac: the API writes it. The
+  worker sends its result and the API's ingest writes the session, observations and keyframes
+  as the ordinary endpoints do, in one transaction. — **Who writes the habitat session.** The settled
   output says "through the ordinary session and observation endpoints". In the product the
   worker never calls them: it publishes a result file and the API's ingest writes the rows,
   which keeps a worker's token to "report a job". Proposed: the ingest gets a habitat path
   that writes exactly what the ordinary endpoints write (session, observations with `etc`,
   keyframes), in one transaction. Or should the worker post to the ordinary endpoints itself?
-- [ ] **A2 · architectural · blocking** — **Where frame scores become stretches.** Proposed:
+- [x] **A2 · architectural · blocking** — answered 2026-11-10 by Isaac: on the worker, which
+  sends the stretches and every frame's raw scores beside them. — **Where frame scores become
+  stretches.** Proposed:
   on the worker, as a registered reduction rule (`habitat_stretches`, version 1), which also
   publishes every frame's scores, so new cut-offs could be re-applied later without the GPU.
   The other way is the worker sending only scores and the API making stretches.
-- [ ] **A3 · database/schema · blocking** — **Where a model's cut-offs and stretch rules
-  live.** They are chosen per model on its tuning dives, and inference needs them. Proposed: a
+- [x] **A3 · database/schema · blocking** — answered 2026-11-10 by Isaac: stored with the
+  model in MARP, shown on the Models screen, sent to the worker with each run. — **Where a
+  model's cut-offs and stretch rules live.** They are chosen per model on its tuning dives, and inference needs them. Proposed: a
   JSON column on `ml_models` (`decision_rules`: per-substrate cut-off, Mud raise, averaging,
   minimum, bridging, one of Mud/Sand), filled from a file the trainer publishes, and handed to
   the worker in the job spec. Or kept inside the weights file only.
-- [ ] **A4 · database/schema · blocking** — **What a habitat model is called.**
+- [x] **A4 · database/schema · blocking** — answered 2026-11-10 by Isaac: a new model type,
+  `habitat`. — **What a habitat model is called.**
   `ml_models.model_type` is `detection` or `classification` today. Proposed: a new value
   `habitat` (multi-label substrate classifier), so every screen and check that filters by type
   keeps working and habitat models stay out of species inference. Or `classification` with a
   multi-label flag.
-- [ ] **A5 · environment · blocking** — **Adding `timm` (and `safetensors`) to the worker.**
+- [x] **A5 · environment · blocking** — answered 2026-11-10 by Isaac: approved, add `timm`
+  and `safetensors`. — **Adding `timm` (and `safetensors`) to the worker.**
   The settled model is timm's. Adding a dependency is Isaac's approval, and it means the five
   packaging lock files and the installer. Approve?
-- [ ] **A6 · architectural · blocking** — **How the DINOv2 starting weights reach a worker.**
+- [x] **A6 · architectural · blocking** — answered 2026-11-10 by Isaac: registered in MARP as
+  a base model with its checksum and served from MARP; workers need no internet. — **How the
+  DINOv2 starting weights reach a worker.**
   Proposed: registered in MARP as a base model, served from MARP with its sha256 like the
   classification base models, so workers stay offline. Or downloaded from Hugging Face by the
   worker (the pinned revision and checksum `fetch_pretrained.py` uses).
-- [ ] **A7 · behavioural · blocking** — **One trained model, or five averaged.** Five seeds
+- [x] **A7 · behavioural · blocking** — answered 2026-11-10 by Isaac: one training job trains
+  one model; averaging several comes later. — **One trained model, or five averaged.** Five seeds
   averaged scored best (0.755 against about 0.74 for one), and costs five trainings and five
   times the inference. Proposed: one training job trains one seed and registers one model;
   averaging is a later step. Or one job trains five and the model is the five.
-- [ ] **A8 · data-meaning · blocking** — **Which habitat sessions a dataset learns from.**
+- [x] **A8 · data-meaning · blocking** — answered 2026-11-10 by Isaac: *"just like our current
+  dataset builder, we'll be able to build and query datasets"*. The person chooses the
+  stretches with a query in the dashboard, as species builds are chosen, including which
+  annotators and sessions. As there, what goes in is what the query selects and is promoted for
+  training, so a model's habitat stretches can be used once reviewed and promoted. One automatic
+  check stays: a session whose clock-to-video gap moves by more than 2 s within one file is left
+  out and listed in the build report. — **Which habitat sessions a dataset learns from.**
   Proposed, as the feasibility plan did: never automated sessions; where several people
   annotated a line, the first session only (so a line is not counted twice); a session whose
   video files' offsets disagree by more than 2 s is left out.
-- [ ] **A9 · data-meaning · blocking** — **How non-seabed frames are recognised.** The
+- [x] **A9 · data-meaning · blocking** — answered 2026-11-10 by Isaac: the feasibility rule,
+  with the example screens kept in the repository and every rejected frame listed on the
+  dataset with its reason, *"then the biologist will be able to review it in the mosaic viewer
+  as well"*: a habitat dataset's frames are reviewable in the Mosaic, as #342's first comment
+  says (thumbnails saved to the file server and served through the same pipeline). — **How
+  non-seabed frames are recognised.** The
   feasibility build compared each frame, shrunk to 32 x 18, against two example screens picked
   by eye from CAMPA video ("Device Unplugged", the End Line card), and treated a nearly flat
   frame as blank. Proposed: the same rule with the example screens checked into the repository
   as data, and every rejection listed on the dataset. Is that right for the product?
-- [ ] **A10 · database/schema · blocking** — **Where a habitat frame's labels are recorded.**
+- [x] **A10 · database/schema · blocking** — answered 2026-11-10 by Isaac: the same workflow
+  as the Mosaic and species builds, no new table. A habitat dataset is chosen from Mosaic
+  habitat segments (#342), reviewed and promoted; frames are cut every 10 s inside each
+  segment, 2 s from its ends, and a frame's labels are its segment's combination of substrates.
+  The stretches used are recorded in `dataset_observations`, and the frames go in the archive.
+  So the dataset build comes after #342's segments. — **Where a habitat frame's labels are
+  recorded.**
   A species dataset records observations; a habitat frame is a moment covered by several
   stretches with five yes/no labels. Proposed: a new `dataset_frames` table (dataset, split,
   video_source, position, project, dive, line, the five labels as an array in the dataset's
   class order, the stretches that covered it), and `dataset_observations` rows for the
   stretches used.
-- [ ] **A11 · product/UI · blocking** — **Habitat review in the Mosaic, approving a segment.**
+- [x] **A11 · product/UI · blocking** — answered 2026-11-10 by Isaac: approving a segment
+  approves every stretch under it whole, as a flag lands on a whole stretch; reviews stay per
+  observation. — **Habitat review in the Mosaic, approving a segment.**
   #342 says a wrong substrate is flagged by tapping it, and the flag lands on that substrate's
   stretch. When a segment is approved as is, is every stretch under it approved whole, even
   where a stretch runs past the segment? Only #342's piece waits on this.
@@ -174,9 +203,9 @@ Built in this order. Each step is merged only when Isaac says so.
 4. **Trainer engine** (A5, A6, A7, R3), with a GPU run recorded in `.marp/verification.md`.
 5. **Inference engine and stretches** (A2, R5).
 6. **Habitat ingest** (A1, R6), then the Mosaic pictures end to end (R7).
-7. **Dataset build from the dashboard** (A8, A9, A10, R2).
-8. **Dashboard screens**: build, train, run, read a habitat model.
-9. **#342 Mosaic segments** (A11, R8).
+7. **#342 Mosaic segments** (A11, R8). Before the dataset build, which is chosen from them (A10).
+8. **Dataset build from the dashboard** (A8, A9, A10, R2).
+9. **Dashboard screens**: build, train, run, read a habitat model.
 
 ## Test plan (draft; reviewed at G3 before anything slow runs)
 
@@ -191,7 +220,11 @@ Built in this order. Each step is merged only when Isaac says so.
 
 ## Status
 
-- **Gate:** design (G1). Blocking assumptions A1-A11 are with Isaac (on #287).
+- **Gate:** implementing (G2). Every blocking assumption was answered by Isaac on 2026-11-10.
+- **Also from the feasibility session, 2026-11-10:** one model on the habitat crop scored test
+  F1 0.728 against 0.751 on the old crop; Boulder fell from 0.62 to 0.55. The crop stays
+  settled, the numbers provisional. So the crop a model was trained on is stored with the model
+  beside its cut-offs (A3), and a later change of crop cannot break an older model.
 - **Done, 2026-11-10:**
   - Step 1, #347 (R1): the keyframe trigger re-queues a no-keyframes failure, and the retry
     route accepts one once it has keyframes. `tests/thumbnails.test.js`; `test:mosaic` 366
