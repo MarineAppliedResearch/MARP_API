@@ -10,3 +10,4 @@ dataset_full_thumbs.csv
 imgstats.csv
 frame-labels.csv
 labels.csv
+__pycache__/

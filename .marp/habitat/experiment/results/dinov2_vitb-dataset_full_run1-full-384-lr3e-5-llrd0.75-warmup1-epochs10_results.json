@@ -1,0 +1,193 @@
+{
+  "settings": {
+    "arch": "dinov2_vitb",
+    "data": "dataset_full_run1.csv",
+    "crop": "full",
+    "overlay_rows_removed": 0.25,
+    "size": 384,
+    "head_epochs": 3,
+    "full_epochs": 10,
+    "full_lr": 3e-05,
+    "options": {
+      "llrd": "0.75",
+      "warmup": "1",
+      "epochs": "10"
+    },
+    "frames": {
+      "train": 20735,
+      "val": 2191,
+      "test": 2698
+    }
+  },
+  "frozen_test": {
+    "Rock": {
+      "f1": 0.942,
+      "precision": 0.955,
+      "recall": 0.93,
+      "frames_present": 1794,
+      "always_present_f1": 0.799
+    },
+    "Mud": {
+      "f1": 0.465,
+      "precision": 0.315,
+      "recall": 0.891,
+      "frames_present": 516,
+      "always_present_f1": 0.321
+    },
+    "Sand": {
+      "f1": 0.396,
+      "precision": 0.884,
+      "recall": 0.255,
+      "frames_present": 780,
+      "always_present_f1": 0.449
+    },
+    "Cobble": {
+      "f1": 0.52,
+      "precision": 0.438,
+      "recall": 0.64,
+      "frames_present": 239,
+      "always_present_f1": 0.163
+    },
+    "Boulder": {
+      "f1": 0.586,
+      "precision": 0.519,
+      "recall": 0.674,
+      "frames_present": 288,
+      "always_present_f1": 0.193
+    },
+    "macro_f1": 0.582,
+    "macro_always_present_f1": 0.385,
+    "all_substrates_right": 0.429
+  },
+  "best_val_macro_f1": 0.81,
+  "kept": "fine-tuned",
+  "finetuned_test": {
+    "Rock": {
+      "f1": 0.975,
+      "precision": 0.971,
+      "recall": 0.979,
+      "frames_present": 1794,
+      "always_present_f1": 0.799
+    },
+    "Mud": {
+      "f1": 0.545,
+      "precision": 0.386,
+      "recall": 0.924,
+      "frames_present": 516,
+      "always_present_f1": 0.321
+    },
+    "Sand": {
+      "f1": 0.58,
+      "precision": 0.874,
+      "recall": 0.435,
+      "frames_present": 780,
+      "always_present_f1": 0.449
+    },
+    "Cobble": {
+      "f1": 0.628,
+      "precision": 0.504,
+      "recall": 0.833,
+      "frames_present": 239,
+      "always_present_f1": 0.163
+    },
+    "Boulder": {
+      "f1": 0.677,
+      "precision": 0.622,
+      "recall": 0.743,
+      "frames_present": 288,
+      "always_present_f1": 0.193
+    },
+    "macro_f1": 0.681,
+    "macro_always_present_f1": 0.385,
+    "all_substrates_right": 0.555
+  },
+  "thresholds": {
+    "Rock": 0.25,
+    "Mud": 0.1,
+    "Sand": 0.85,
+    "Cobble": 0.3,
+    "Boulder": 0.65
+  },
+  "finetuned_test_by_project": {
+    "CAMPA 2024": {
+      "Rock": {
+        "f1": 0.953,
+        "precision": 0.944,
+        "recall": 0.962,
+        "frames_present": 601,
+        "always_present_f1": 0.775
+      },
+      "Mud": {
+        "f1": 0.696,
+        "precision": 0.548,
+        "recall": 0.955,
+        "frames_present": 378,
+        "always_present_f1": 0.57
+      },
+      "Sand": {
+        "f1": 0.488,
+        "precision": 0.5,
+        "recall": 0.476,
+        "frames_present": 63,
+        "always_present_f1": 0.125
+      },
+      "Cobble": {
+        "f1": 0.639,
+        "precision": 0.515,
+        "recall": 0.84,
+        "frames_present": 100,
+        "always_present_f1": 0.191
+      },
+      "Boulder": {
+        "f1": 0.756,
+        "precision": 0.78,
+        "recall": 0.734,
+        "frames_present": 203,
+        "always_present_f1": 0.352
+      },
+      "macro_f1": 0.706,
+      "macro_always_present_f1": 0.403,
+      "all_substrates_right": 0.534
+    },
+    "CAMPA-2025": {
+      "Rock": {
+        "f1": 0.987,
+        "precision": 0.985,
+        "recall": 0.988,
+        "frames_present": 1193,
+        "always_present_f1": 0.811
+      },
+      "Mud": {
+        "f1": 0.325,
+        "precision": 0.201,
+        "recall": 0.841,
+        "frames_present": 138,
+        "always_present_f1": 0.146
+      },
+      "Sand": {
+        "f1": 0.591,
+        "precision": 0.942,
+        "recall": 0.431,
+        "frames_present": 717,
+        "always_present_f1": 0.582
+      },
+      "Cobble": {
+        "f1": 0.62,
+        "precision": 0.496,
+        "recall": 0.827,
+        "frames_present": 139,
+        "always_present_f1": 0.147
+      },
+      "Boulder": {
+        "f1": 0.546,
+        "precision": 0.425,
+        "recall": 0.765,
+        "frames_present": 85,
+        "always_present_f1": 0.093
+      },
+      "macro_f1": 0.614,
+      "macro_always_present_f1": 0.356,
+      "all_substrates_right": 0.567
+    }
+  }
+}

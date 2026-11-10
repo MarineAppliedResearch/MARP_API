@@ -1,0 +1,185 @@
+{
+  "settings": {
+    "arch": "benthicnet_vits",
+    "data": "dataset_full_run1.csv",
+    "crop": "full",
+    "overlay_rows_removed": 0.25,
+    "size": 384,
+    "head_epochs": 3,
+    "full_epochs": 6,
+    "frames": {
+      "train": 20735,
+      "val": 2191,
+      "test": 2698
+    }
+  },
+  "frozen_test": {
+    "Rock": {
+      "f1": 0.929,
+      "precision": 0.883,
+      "recall": 0.98,
+      "frames_present": 1794,
+      "always_present_f1": 0.799
+    },
+    "Mud": {
+      "f1": 0.499,
+      "precision": 0.36,
+      "recall": 0.816,
+      "frames_present": 516,
+      "always_present_f1": 0.321
+    },
+    "Sand": {
+      "f1": 0.106,
+      "precision": 0.88,
+      "recall": 0.056,
+      "frames_present": 780,
+      "always_present_f1": 0.449
+    },
+    "Cobble": {
+      "f1": 0.219,
+      "precision": 0.253,
+      "recall": 0.192,
+      "frames_present": 239,
+      "always_present_f1": 0.163
+    },
+    "Boulder": {
+      "f1": 0.193,
+      "precision": 0.107,
+      "recall": 1.0,
+      "frames_present": 288,
+      "always_present_f1": 0.193
+    },
+    "macro_f1": 0.389,
+    "macro_always_present_f1": 0.385,
+    "all_substrates_right": 0.042
+  },
+  "finetuned_test": {
+    "Rock": {
+      "f1": 0.957,
+      "precision": 0.948,
+      "recall": 0.966,
+      "frames_present": 1794,
+      "always_present_f1": 0.799
+    },
+    "Mud": {
+      "f1": 0.47,
+      "precision": 0.322,
+      "recall": 0.868,
+      "frames_present": 516,
+      "always_present_f1": 0.321
+    },
+    "Sand": {
+      "f1": 0.432,
+      "precision": 0.725,
+      "recall": 0.308,
+      "frames_present": 780,
+      "always_present_f1": 0.449
+    },
+    "Cobble": {
+      "f1": 0.493,
+      "precision": 0.388,
+      "recall": 0.678,
+      "frames_present": 239,
+      "always_present_f1": 0.163
+    },
+    "Boulder": {
+      "f1": 0.562,
+      "precision": 0.521,
+      "recall": 0.611,
+      "frames_present": 288,
+      "always_present_f1": 0.193
+    },
+    "macro_f1": 0.583,
+    "macro_always_present_f1": 0.385,
+    "all_substrates_right": 0.47
+  },
+  "thresholds": {
+    "Rock": 0.44999999999999996,
+    "Mud": 0.15,
+    "Sand": 0.7999999999999999,
+    "Cobble": 0.7,
+    "Boulder": 0.75
+  },
+  "finetuned_test_by_project": {
+    "CAMPA 2024": {
+      "Rock": {
+        "f1": 0.937,
+        "precision": 0.94,
+        "recall": 0.933,
+        "frames_present": 601,
+        "always_present_f1": 0.775
+      },
+      "Mud": {
+        "f1": 0.632,
+        "precision": 0.494,
+        "recall": 0.876,
+        "frames_present": 378,
+        "always_present_f1": 0.57
+      },
+      "Sand": {
+        "f1": 0.397,
+        "precision": 0.333,
+        "recall": 0.492,
+        "frames_present": 63,
+        "always_present_f1": 0.125
+      },
+      "Cobble": {
+        "f1": 0.512,
+        "precision": 0.437,
+        "recall": 0.62,
+        "frames_present": 100,
+        "always_present_f1": 0.191
+      },
+      "Boulder": {
+        "f1": 0.66,
+        "precision": 0.692,
+        "recall": 0.631,
+        "frames_present": 203,
+        "always_present_f1": 0.352
+      },
+      "macro_f1": 0.628,
+      "macro_always_present_f1": 0.403,
+      "all_substrates_right": 0.439
+    },
+    "CAMPA-2025": {
+      "Rock": {
+        "f1": 0.967,
+        "precision": 0.951,
+        "recall": 0.982,
+        "frames_present": 1193,
+        "always_present_f1": 0.811
+      },
+      "Mud": {
+        "f1": 0.272,
+        "precision": 0.162,
+        "recall": 0.848,
+        "frames_present": 138,
+        "always_present_f1": 0.146
+      },
+      "Sand": {
+        "f1": 0.438,
+        "precision": 0.878,
+        "recall": 0.291,
+        "frames_present": 717,
+        "always_present_f1": 0.582
+      },
+      "Cobble": {
+        "f1": 0.482,
+        "precision": 0.362,
+        "recall": 0.719,
+        "frames_present": 139,
+        "always_present_f1": 0.147
+      },
+      "Boulder": {
+        "f1": 0.403,
+        "precision": 0.314,
+        "recall": 0.565,
+        "frames_present": 85,
+        "always_present_f1": 0.093
+      },
+      "macro_f1": 0.512,
+      "macro_always_present_f1": 0.356,
+      "all_substrates_right": 0.486
+    }
+  }
+}

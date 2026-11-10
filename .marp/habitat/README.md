@@ -67,13 +67,58 @@ test dives are 2024 and 2025 only, so these do not compare with the table above)
 | full frames, bottom-middle crop, 224 px | 0.634 | 0.96 | 0.49 | 0.50 | 0.57 | 0.64 |
 | **full frames, 384 px** | **0.671** | 0.97 | 0.53 | 0.61 | 0.59 | 0.66 |
 
+### 2026-11-09/10: every frame downloaded, then other models
+
+All 489 videos downloaded at full resolution, 30,711 frames, none failed (Jellyfin's LAN
+address gave ~230 Mbit/s). `dataset_full_run1.csv` is the dataset at the point training
+began: everything except CAMPA 2026's tuning and test dives. Its test dives are exactly the
+2,698 of the table above, so these compare with it.
+
+| Model, 384 px unless said | Average F1 | Rock | Mud | Sand | Cobble | Boulder |
+| --- | --- | --- | --- | --- | --- | --- |
+| ConvNeXt-Tiny, with 2026's training dives added | 0.692 | 0.97 | 0.53 | 0.68 | 0.62 | 0.67 |
+| BenthicNet ResNet-50 (seabed-trained) | 0.628 | 0.96 | 0.47 | 0.65 | 0.48 | 0.58 |
+| BenthicNet ViT-S (seabed-trained) | 0.583 | 0.96 | 0.47 | 0.43 | 0.49 | 0.56 |
+| DINOv2 ViT-B, whole model at `1e-5` | 0.707 | 0.97 | 0.59 | 0.68 | 0.60 | 0.69 |
+| **DINOv2, 518 px, five seeds averaged** (below) | **0.718** | 0.97 | 0.58 | 0.66 | 0.70 | 0.68 |
+
+- **The seabed-trained BenthicNet models did worse** than everyday-photo ones, at least
+  with this recipe. Their images are mostly downward stills; ours is forward-looking video.
+- **DINOv2 needs a gentle second stage.** At the default `1e-4` it lost what it knew (tuning
+  F1 fell from 0.74 to 0.55); at `1e-5` it became the best model.
+- **Labels are not shifted in time** in either year (`diag_lag_by_year.py`: both fit best at
+  no shift). **Mud in 2025 is a Mud-vs-Sand question:** whole 2025 lines labelled Sand are
+  called Mud by the model (dive 11 line 920, dive 14 line 1890), next to lines labelled Mud
+  that it gets right (dive 14 line 2200). Annotators' Mud rates range 8-39% in 2024 and
+  2025 and are all near 30% in 2026. Needs a person to look; not settled.
+- **Smoothing along the video hurts** at 10 s spacing (`smooth.py`: 0.707 alone, 0.691 over
+  3 frames, 0.650 over 7). Stretches are often shorter than 20 s.
+
+**The overnight queue** (`overnight.py`, full tables in `results/overnight-summary.md`)
+tried five settings at 384 px, then trained the winner at 518 px on the full dataset with
+five seeds and averaged them.
+
+- **Settings could not be told apart.** Tuning F1 ranged 0.792-0.810 and test F1 0.664-0.714,
+  and the two orderings disagreed: the tuning winner (layer-wise speeds) was below the
+  baseline on test. The tuning dives (8) are too few to separate settings this close.
+- **Seed alone moves a run's test F1 by 0.02** (0.733-0.755 at 518 px on the full dataset).
+  Differences smaller than that are not evidence.
+- **Final model: five DINOv2 runs averaged, 518 px, full dataset.** Test F1 **0.755 over all
+  three years** (6,016 frames; 2024 0.72, 2025 0.67, 2026 0.77) and **0.718 on the earlier
+  2024+2025 test dives**. Rock 0.95, Mud 0.65, Sand 0.85, Cobble 0.70, Boulder 0.63 over all
+  three. Averaging two seeds scored 0.764; five were planned beforehand, so 0.755 is the result.
+
 `experiment/results/` holds every run's full scores, per substrate and per year.
 
 ## Where it stands
 
-- **206 CAMPA 2026 videos still need their full frames** (~13,500 frames). Jellyfin was
-  serving ~3 Mbit/s to the machine this started on. Re-run step 4; it skips what exists.
-- The bottom-middle crop at 384 px had not finished.
-- Every run peaks after one or two fine-tuning epochs and then memorises: more data and
-  more detail help, longer training does not.
-- Weakest: Mud and Sand, and the CAMPA-2025 dives.
+- Every frame is downloaded and `dataset_full.csv` covers all three years.
+- **Best: five DINOv2 ViT-B runs at 518 px, averaged: 0.755 on all three years' test dives.**
+- What moved the score: label timing (+0.06), picture size (+0.04), more data (+0.02),
+  DINOv2 (+0.015). Model settings did not, within run-to-run noise.
+- Weakest: Mud (many false alarms; precision 0.50) and the CAMPA-2025 dives, which look
+  like inconsistent Mud/Sand labelling rather than the model.
+- Not yet measured: how often two annotators agree on the same stretch (26 lines are
+  double-annotated), which would say how high a model can realistically score.
+- Open, on #287: how frame-by-frame answers become habitat records (stretches with a start
+  and an end), and where a model's output goes.
