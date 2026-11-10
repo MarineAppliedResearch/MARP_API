@@ -36,7 +36,10 @@ DATA = sys.argv[2] if len(sys.argv) > 2 else "dataset.csv"
 # "full": everything below the overlay. "bottom_middle": the seabed patch in front of the
 # ROV, away from the dark edges and the water column at the top.
 CROP = sys.argv[3] if len(sys.argv) > 3 else "full"
-CROPS = {"full": (0.0, OVERLAY_ROWS, 1.0, 1.0), "bottom_middle": (0.2, 0.45, 0.8, 1.0)}
+# "habitat": the bottom half, middle half of the width -- the patch of seabed a habitat call
+# is made on (Isaac, 2026-11-10). Mosaic keyframes and the dataset viewer use the same box.
+CROPS = {"full": (0.0, OVERLAY_ROWS, 1.0, 1.0), "bottom_middle": (0.2, 0.45, 0.8, 1.0),
+         "habitat": (0.25, 0.5, 0.75, 1.0)}
 # Input size. 224 shrinks a full frame's detail away; larger needs a smaller batch to fit 8 GB.
 SIZE = int(sys.argv[4]) if len(sys.argv) > 4 else 224
 BATCH = int(OPTS.get("batch", 64 if SIZE <= 224 else 24))

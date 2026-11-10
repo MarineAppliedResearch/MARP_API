@@ -1,7 +1,7 @@
 // Sample model output, step 5: give each posted habitat stretch a box, so the Mosaic can
 // cut a picture for it. A stretch has no box of its own; habitat uses one fixed crop, the
-// bottom-middle patch of seabed (train.py's CROPS["bottom_middle"], the box the dataset
-// viewer outlines). Each observation gets a start keyframe at the stretch's first frame and
+// bottom half of the screen, middle half of its width (train.py's CROPS["habitat"], the
+// box the dataset viewer outlines). Each observation gets a start keyframe at the stretch's first frame and
 // an end keyframe at its last, both with that box.
 //
 // Frame numbers use the video's real frame rate as Jellyfin reports it; the thumbnail maker
@@ -25,7 +25,7 @@ const API = process.env.HABITAT_API_URL;
 const TOKEN = fs.readFileSync(process.env.HABITAT_API_TOKEN_FILE, 'utf8').trim();
 const TAGS = process.argv.length > 2 ? process.argv.slice(2).map((t) => (t === '-' ? '' : t)) : ['', 'v2', 'v3d'];
 // x0, y0, x1, y1 as fractions of the frame, as in train.py; keyframes are centre-origin.
-const CROP = [0.2, 0.45, 0.8, 1.0];
+const CROP = [0.25, 0.5, 0.75, 1.0];
 const BOX = { x: (CROP[0] + CROP[2]) / 2, y: (CROP[1] + CROP[3]) / 2, width: CROP[2] - CROP[0], height: CROP[3] - CROP[1] };
 const IDENTITY = { name: 'MARP habitat keyframes' };
 
