@@ -40,7 +40,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const { ARTIFACT_DIRECTORY } = require('../config/gpu-orchestration');
+const { ARTIFACT_DIRECTORY, HABITAT_MODEL_TYPE } = require('../config/gpu-orchestration');
+const { RULES_ROLE, rulesForModel } = require('../db/habitat-rules');
 // `storageRoot` is a path helper rather than business logic, and this is the one place
 // it is defined. Duplicating the `MODEL_STORAGE_ROOT` default here is what would
 // eventually let the route and the writer disagree about where models live.
@@ -175,8 +176,24 @@ async function registerTrainedModel({ db, job, transaction }) {
     }
 
     const dataset = spec.dataset || {};
-    const classNames = await datasetClassNames(db, dataset.dataset_id, transaction);
-    const speciesIds = await resolveSpecies(db, classNames, transaction);
+    const parent = spec.model && spec.model.ml_model_id ? Number(spec.model.ml_model_id) : null;
+    const modelType = await deriveModelType(db, { parent, datasetId: dataset.dataset_id, transaction });
+
+    /* A habitat model (#287) is told its substrates by the dataset's own species ids rather
+       than by name, because "Sand" is not unique across the catalogue, and it brings the
+       cut-offs its trainer picked. Every other model resolves its names as before. */
+    let speciesIds;
+    let decisionRules = null;
+    if (modelType === HABITAT_MODEL_TYPE) {
+        const classes = await habitatClasses(db, dataset.dataset_id, transaction);
+        speciesIds = classes.map((c) => c.species_id);
+        decisionRules = rulesForModel(
+            await publishedRules(db, job.id, transaction), classes.map((c) => c.comname)
+        );
+    } else {
+        const classNames = await datasetClassNames(db, dataset.dataset_id, transaction);
+        speciesIds = await resolveSpecies(db, classNames, transaction);
+    }
 
     // A name nobody else has. The suffix is a counter rather than a timestamp, because two
     // runs over one dataset on one day is the case this exists for and `-2` says that
@@ -193,9 +210,6 @@ async function registerTrainedModel({ db, job, transaction }) {
     const partial = `${destination}.partial`;
     fs.copyFileSync(source, partial);
     fs.renameSync(partial, destination);
-
-    const parent = spec.model && spec.model.ml_model_id ? Number(spec.model.ml_model_id) : null;
-    const modelType = await deriveModelType(db, { parent, datasetId: dataset.dataset_id, transaction });
 
     /* **What the weights say they are** (#321), read from the file just copied: the
        architecture used to be the starting checkpoint's name, which is not one. A file
@@ -220,10 +234,10 @@ async function registerTrainedModel({ db, job, transaction }) {
         `INSERT INTO ml_models (name, parent_model_id, model_type, architecture_version,
                                 engine, file_format,
                                 storage_path, artifact_sha256, status, preferred, notes,
-                                training_run_id, created_at, updated_at)
+                                decision_rules, training_run_id, created_at, updated_at)
          VALUES (:name, :parent, :modelType, :architecture, :engine, :fileFormat,
                  :storagePath, :sha256, 'active',
-                 false, :notes,
+                 false, :notes, CAST(:rules AS jsonb),
                  (SELECT id FROM training_runs WHERE job_id = :jobId ORDER BY id DESC LIMIT 1),
                  now(), now())
          RETURNING id`,
@@ -239,6 +253,7 @@ async function registerTrainedModel({ db, job, transaction }) {
                 sha256: String(artifact.hash).toLowerCase(),
                 /* The sentence stays as the human-readable provenance. */
                 notes: `Weights ${artifact.hash} trained by GPU job ${job.id}.`,
+                rules: decisionRules ? JSON.stringify(decisionRules) : null,
                 jobId: job.id,
             },
             type: db.Sequelize.QueryTypes.INSERT,
@@ -361,6 +376,73 @@ async function datasetClassNames(db, datasetId, transaction) {
     }
 
     return rows.map((row) => String(row.comname));
+}
+
+
+/**
+ * A habitat dataset's substrates, as species rows in class order (#287).
+ *
+ * **By id, never by name**: the dataset recorded which species each class is, and "Sand" is
+ * also a species on another list. Each has to be on the Habitat list -- a habitat model
+ * trained on anything else is not one this platform knows how to write.
+ *
+ * @async
+ * @param {Object} db - The models object.
+ * @param {number} datasetId - `datasets.id`.
+ * @param {Object} transaction - The open transaction.
+ * @returns {Promise<Array<{species_id: number, comname: string}>>} In class order.
+ * @throws {Error} When the dataset has no classes, or one is not on the Habitat list.
+ */
+async function habitatClasses(db, datasetId, transaction) {
+    const rows = await db.sequelize.query(
+        `SELECT dc.species_id, s.comname, s.species_list
+           FROM dataset_classes dc
+           JOIN species s ON s.id = dc.species_id
+          WHERE dc.dataset_id = :id
+          ORDER BY dc.class_index`,
+        { replacements: { id: datasetId }, type: db.Sequelize.QueryTypes.SELECT, transaction, logging: false }
+    );
+
+    if (!rows.length) {
+        throw new Error(`habitat dataset ${datasetId} has no recorded classes, so the model cannot say what it knows`);
+    }
+    const stray = rows.filter((r) => r.species_list !== 'Habitat');
+    if (stray.length) {
+        throw new Error(`habitat dataset ${datasetId} has classes off the Habitat list: `
+            + stray.map((r) => `${r.comname} (${r.species_list})`).join(', '));
+    }
+
+    return rows.map((r) => ({ species_id: Number(r.species_id), comname: String(r.comname) }));
+}
+
+/**
+ * The decision rules a habitat training job published, as the trainer wrote them (#287).
+ *
+ * @async
+ * @param {Object} db - The models object.
+ * @param {number} jobId - The training job.
+ * @param {Object} transaction - The open transaction.
+ * @returns {Promise<Object>} The parsed file.
+ * @throws {Error} When none was published or it is not JSON: a habitat model without cut-offs
+ *   cannot be run, so it is not registered.
+ */
+async function publishedRules(db, jobId, transaction) {
+    const [artifact] = await db.sequelize.query(
+        `SELECT hash FROM artifacts
+          WHERE job_id = :jobId AND artifact_type = :role
+          ORDER BY id DESC LIMIT 1`,
+        { replacements: { jobId, role: RULES_ROLE }, type: db.Sequelize.QueryTypes.SELECT, transaction, logging: false }
+    );
+
+    if (!artifact || !artifact.hash) {
+        throw new Error(`habitat training job ${jobId} published no ${RULES_ROLE}, so its cut-offs are unknown`);
+    }
+    const file = path.join(ARTIFACT_DIRECTORY, artifact.hash);
+    try {
+        return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (error) {
+        throw new Error(`habitat training job ${jobId}'s ${RULES_ROLE} cannot be read: ${error.message}`);
+    }
 }
 
 

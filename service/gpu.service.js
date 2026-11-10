@@ -52,6 +52,8 @@ const {
     JOB_KINDS,
     INGESTIBLE_JOB_KINDS,
     ENGINE_DATA_TYPES,
+    HABITAT_MODEL_TYPE,
+    HABITAT_ENGINE,
     JOB_STATES,
     REPORTABLE_ATTEMPT_STATES,
     WORKER_EVENT_KINDS,
@@ -70,6 +72,7 @@ const {
  * are recorded at.
  */
 const { ASSUMED_FPS } = require('../db/timecode');
+const habitatRules = require('../db/habitat-rules');
 const { systemReading } = require('../db/worker-telemetry');
 
 /**
@@ -1042,6 +1045,8 @@ class GpuService {
                     ...spec.model,
                     ...(model.architecture_version ? { architecture: model.architecture_version } : {}),
                     ...(model.model_type ? { task: model.model_type } : {}),
+                    // A habitat model's rules (#287), with the cut-offs the worker applies.
+                    ...(model.decision_rules ? { decision_rules: habitatRules.rulesForRun(model.decision_rules) } : {}),
                 },
             };
         } catch {
@@ -2433,6 +2438,7 @@ class GpuService {
         this.validateSubmittedVideo(spec.video);
         this.validateSubmittedModel(spec.model);
         await this.refuseBaseModelForInference(spec.model);
+        await this.refuseMismatchedHabitatModel(spec);
         this.validateSubmittedReduction(spec.reduction);
 
         // Turns the per-run form into the descriptive one, so every check below --
@@ -3351,6 +3357,38 @@ class GpuService {
                 + 'output would be resolved against the species catalogue and written into observations. '
                 + 'Train from it first, and run inference with the model that comes out.'
             );
+        }
+    }
+
+    /**
+     * A habitat model runs on the habitat engine, and the habitat engine runs nothing else
+     * (#287).
+     *
+     * A habitat model answers yes or no per substrate for a whole frame; the species engine
+     * would read those outputs as detections and write them into a species session. The
+     * other way round, the habitat engine has no stretch rules for a species model. A habitat
+     * model with no stored rules cannot be run at all: its cut-offs are what turn scores into
+     * stretches.
+     *
+     * @async
+     * @param {Object} spec - The inference spec as submitted.
+     * @returns {Promise<void>} Resolves when engine and model belong together.
+     * @throws {ApiError} 400 when they do not.
+     */
+    async refuseMismatchedHabitatModel(spec) {
+        const modelId = spec.model && spec.model.ml_model_id;
+        const row = modelId ? await ingestRepository.getModel(modelId) : null;
+        const isHabitat = Boolean(row && row.model_type === HABITAT_MODEL_TYPE);
+
+        if (spec.engine === HABITAT_ENGINE && !isHabitat) {
+            invalid(`The ${HABITAT_ENGINE} engine runs habitat models only; name one by spec.model.ml_model_id.`);
+        }
+        if (isHabitat && spec.engine !== HABITAT_ENGINE) {
+            invalid(`Model ${modelId} (${row.name}) is a habitat model and runs on the ${HABITAT_ENGINE} engine, `
+                + `not ${spec.engine}.`);
+        }
+        if (isHabitat && !row.decision_rules) {
+            invalid(`Model ${modelId} (${row.name}) has no decision rules, so its scores cannot be made into stretches.`);
         }
     }
 

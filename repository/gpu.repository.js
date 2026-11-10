@@ -483,7 +483,7 @@ class GpuRepository {
      */
     async modelForLease(modelId) {
         const [model] = await this.db.sequelize.query(
-            'SELECT model_type, architecture_version FROM ml_models WHERE id = :modelId',
+            'SELECT model_type, architecture_version, decision_rules FROM ml_models WHERE id = :modelId',
             { replacements: { modelId }, type: QueryTypes.SELECT }
         );
 

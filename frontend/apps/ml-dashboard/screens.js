@@ -5952,6 +5952,7 @@ function modelRows(view, byId) {
     + `<span class="wid mono" title="Model id as the registry reports it">ml_${model.id}</span></div>`
     + '<div class="grid" data-cols="2">'
     + modelRegistrySection(view)
+    + habitatRulesSection(view)
     + modelLineageSection(view, byId)
     + '</div></div></td></tr>';
 
@@ -5990,6 +5991,40 @@ function modelRegistrySection(view) {
     + `<dt>Updated</dt><dd>${sinceText(model.updated_at)}</dd>`
     + '</dl>'
     + `<div class="wdacts">${action}</div></div>`;
+}
+
+/**
+ * A habitat model's decision rules (#287): how its scores become habitat stretches.
+ *
+ * Stored with the model and sent with every run, so what is shown here is what a run applies:
+ * each substrate's cut-off as tuned on the model's tuning dives and as applied once its raise is
+ * added, the crop and size it was trained on, and the stretch rules.
+ *
+ * @param {Object} view - From `modelView`.
+ * @returns {string} HTML, or '' for any model without rules.
+ */
+function habitatRulesSection(view) {
+  const rules = view.model.decision_rules;
+  if (!rules || !Array.isArray(rules.substrates)) return '';
+
+  const raise = rules.raise || {};
+  const tuned = rules.tuned_cut_offs || {};
+  const fixed = (v) => (typeof v === 'number' ? v.toFixed(2) : NOT_REPORTED);
+  const cutOffs = rules.substrates.map((name) => {
+    const applied = Math.min((tuned[name] || 0) + (raise[name] || 0), 0.95);
+    return `<dt>${escapeHtml(name)}</dt><dd>${raise[name] ? `${fixed(tuned[name])} tuned, raised by ${fixed(raise[name])} to <b>${fixed(applied)}</b>` : `<b>${fixed(tuned[name])}</b>`}</dd>`;
+  }).join('');
+  const crop = rules.crop || {};
+  const exclusive = (rules.exclusive || []).map((pair) => pair.map(escapeHtml).join(' and ')).join('; ');
+
+  return '<div class="sect" data-habitat-rules><h3>Decision rules</h3>'
+    + '<p class="hint">A substrate counts as present on a frame when its score is at or above its cut-off.</p>'
+    + `<dl class="kv">${cutOffs}`
+    + `<dt>Looks at</dt><dd>${escapeHtml(String(rules.samples_per_second))} frames a second, scores averaged over ${escapeHtml(String(rules.average_s))} s</dd>`
+    + `<dt>Never together</dt><dd>${exclusive ? `${exclusive}: the surer one stays` : 'None'}</dd>`
+    + `<dt>Stretches</dt><dd>At least ${escapeHtml(String(rules.min_stretch_s))} s; breaks of ${escapeHtml(String(rules.bridge_s))} s or less bridged</dd>`
+    + `<dt>Crop</dt><dd>x ${fixed(crop.x0)}&ndash;${fixed(crop.x1)}, y ${fixed(crop.y0)}&ndash;${fixed(crop.y1)} of the frame, at ${escapeHtml(String(rules.input_size))} px</dd>`
+    + '</dl></div>';
 }
 
 /**
@@ -9676,8 +9711,10 @@ function loadRunnableModels() {
          has no weights worth sending and an archived one is retired. The thirteen
          real models here are active, and the two that are not are leftovers from a
          test run that did not clean up after itself. */
+      /* **Not habitat models** (#287): this form runs the species pipeline, and the API
+         refuses a habitat model on it. They get a pipeline of their own. */
       .then((rows) => (rows || [])
-        .filter((m) => m.name && m.id !== undefined && m.status === 'active')
+        .filter((m) => m.name && m.id !== undefined && m.status === 'active' && m.model_type !== 'habitat')
         .sort((a, b) => a.name.localeCompare(b.name)))
       .catch(() => []);
   }

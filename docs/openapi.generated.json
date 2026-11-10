@@ -7109,6 +7109,31 @@
             "default": false,
             "description": "True when this is a pretrained starting point for training rather than a model MARP trained. Never selectable for inference."
           },
+          "decision_rules": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "description": "A habitat model's decision rules (#287): its substrates in output order, the cut-off for each picked on its tuning dives (`tuned_cut_offs`) and the raise applied on top (`raise`), the crop and input size it was trained on, and the stretch rules (`samples_per_second`, `average_s`, `exclusive`, `min_stretch_s`, `bridge_s`). Null on any other kind of model.",
+            "example": null
+          },
           "training_run_id": {
             "type": "integer",
             "nullable": true,

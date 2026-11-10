@@ -28,8 +28,9 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
   output per substrate: Rock, Mud, Sand, Cobble, Boulder, several at once. A frozen-backbone
   stage, then the whole model with layer-wise speeds (3e-5, decay 0.75, 1 warm-up pass, 10
   passes), keeping the best on the tuning dives. Five seeds averaged is the best so far.
-- **Crop:** the habitat crop, x 0.25-0.75, y 0.5-1.0 of the frame. A retrain on it is running
-  in the feasibility session; it may move the numbers, not the design.
+- **Crop:** the habitat crop, x 0.25-0.75, y 0.5-1.0 of the frame. Kept by Isaac on 2026-11-10
+  after the retrain on it: one model, test F1 0.728 (0.751 on the old crop), Boulder 0.55
+  (0.62). Recorded on #287.
 - **Dataset:** a frame every 10 s inside annotated Habitat stretches, at least 2 s from any
   change of substrate. Whole dives split 70/15/15 within each project. Blank, "Device
   Unplugged" and "End Line" frames rejected. Labels are a yes/no per substrate. CAMPA 2024-2026
@@ -231,4 +232,13 @@ Built in this order. Each step is merged only when Isaac says so.
     passed.
   - Step 2: the API frame planner (`service/habitat-dataset-plan.js`, 9 tests in `ml`), and
     the worker's sampler and crop (`media/habitat_frames.py`, 8 tests).
-- **Waiting:** every later step waits on its blocking assumptions.
+  - Step 3 (R4): `model_type = 'habitat'`; `ml_models.decision_rules` and a `habitat` dataset
+    task (migration 20261110140000); `db/habitat-rules.js` holds the settled stretch rules and
+    validates what a trainer publishes (artifact role `decision_rules`: substrates, cut-offs,
+    crop, input size); registration takes a habitat model's substrates by species id from the
+    Habitat list and stores its rules; a lease sends them with the cut-offs to apply; a habitat
+    model runs only on the `marp_habitat` engine and that engine only runs habitat models; the
+    Models screen shows the rules; the species Inference picker leaves habitat models out.
+    `tests/habitat-model-registration.test.js` 11 passed; `test:gpu` 435 passed; dashboard
+    unit 242 passed plus the picker test (shown failing without its filter).
+- **Next:** step 4, the trainer on the worker, and registering DINOv2 as a base model.
