@@ -14358,14 +14358,20 @@ function wireDatasetBuilder() {
     try {
       const subsets = subsetsFromList();
 
+      /* A habitat build (#287) chooses its own frames and splits whole dives itself, so it
+         takes the queries and nothing about splits or frames per object. */
+      const habitat = Boolean($('#dshabitat')?.checked);
+
       const queued = await window.MarpApi.queueDatasetBuild({
         name,
         description: $('#dsdesc')?.value.trim() || null,
         subsets,
-        /* Sent as well as the per-subset splits, because a build with one subset and no
-           split named still has to divide into something. */
-        splits: { train: 0.8, eval: 0.2 },
-        sampling: samplingSetting(),
+        ...(habitat ? { task: 'habitat' } : {
+          /* Sent as well as the per-subset splits, because a build with one subset and no
+             split named still has to divide into something. */
+          splits: { train: 0.8, eval: 0.2 },
+          sampling: samplingSetting(),
+        }),
       });
 
       setStatus(`Build queued as job ${queued.job.id}. It cuts the frames, writes the labels and `
@@ -14385,6 +14391,17 @@ function wireDatasetBuilder() {
   };
 
   $('[data-queue-build]')?.addEventListener('click', queueBuild);
+
+  /* Habitat substrates (#287): frames per object and its estimate are about tracks of
+     animals, so they give way to what a habitat build takes instead. */
+  $('#dshabitat')?.addEventListener('change', (event) => {
+    const habitat = event.target.checked;
+    const sampling = $('.build-sampling');
+    const hint = $('[data-habitat-hint]');
+
+    if (sampling) sampling.hidden = habitat;
+    if (hint) hint.hidden = !habitat;
+  });
 
   /* Divide-across versus all-to-one. The shares and the destination buttons are the two
      halves of one question, so only the one being asked is on screen. */
