@@ -200,7 +200,7 @@ function registerDatasetRoutes(app) {
                             },
                             task: {
                                 type: 'string',
-                                enum: ['detection', 'classification'],
+                                enum: ['detection', 'classification', 'habitat'],
                                 example: 'detection',
                                 description:
                                     'Which kind of model this dataset is for. Omitted means `detection`, which is what every '
@@ -215,7 +215,11 @@ function registerDatasetRoutes(app) {
                                     + 'case alone does not distinguish two directories on Windows; `classes.json` beside the splits '
                                     + 'maps every folder back to its species and its exact common name. A classification build with '
                                     + 'no train split is refused, because Ultralytics would otherwise split what it finds 80/20 at '
-                                    + 'random and report an accuracy that means nothing.',
+                                    + 'random and report an accuracy that means nothing. **A habitat archive** (#287) holds a frame '
+                                    + 'every 10 s inside promoted habitat stretches, whole dives to train, val and test 70/15/15, '
+                                    + 'each split an `images/` folder and a `labels.csv` of a 0/1 column per substrate; the filters '
+                                    + 'choose sessions, `splits` and `sampling` are ignored, and non-seabed frames and sessions whose '
+                                    + 'times drift are left out and listed in `habitat-report.json`.',
                             },
 
                             sampling: {

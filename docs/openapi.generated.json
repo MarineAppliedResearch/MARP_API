@@ -10841,10 +10841,11 @@
                     "type": "string",
                     "enum": [
                       "detection",
-                      "classification"
+                      "classification",
+                      "habitat"
                     ],
                     "example": "detection",
-                    "description": "Which kind of model this dataset is for. Omitted means `detection`, which is what every dataset built before this existed is. The two produce different archives and are not interchangeable: a detection archive holds whole frames with YOLO label files and a `data.yaml`; a classification archive holds one picture per annotated box in a folder named for its class, with no `data.yaml` at all, because Ultralytics classify reads the class vocabulary from the folder names. **The pictures are the mosaic tiles a reviewer sees** -- the box plus 10% padding, squared, 320x320 -- and the dataset row records `crop_source` so nothing downstream has to assume which pixels were taken. Folder names are `<species_id>_<slug>` rather than species names, because 37 names in the catalogue contain a path separator and case alone does not distinguish two directories on Windows; `classes.json` beside the splits maps every folder back to its species and its exact common name. A classification build with no train split is refused, because Ultralytics would otherwise split what it finds 80/20 at random and report an accuracy that means nothing."
+                    "description": "Which kind of model this dataset is for. Omitted means `detection`, which is what every dataset built before this existed is. The two produce different archives and are not interchangeable: a detection archive holds whole frames with YOLO label files and a `data.yaml`; a classification archive holds one picture per annotated box in a folder named for its class, with no `data.yaml` at all, because Ultralytics classify reads the class vocabulary from the folder names. **The pictures are the mosaic tiles a reviewer sees** -- the box plus 10% padding, squared, 320x320 -- and the dataset row records `crop_source` so nothing downstream has to assume which pixels were taken. Folder names are `<species_id>_<slug>` rather than species names, because 37 names in the catalogue contain a path separator and case alone does not distinguish two directories on Windows; `classes.json` beside the splits maps every folder back to its species and its exact common name. A classification build with no train split is refused, because Ultralytics would otherwise split what it finds 80/20 at random and report an accuracy that means nothing. **A habitat archive** (#287) holds a frame every 10 s inside promoted habitat stretches, whole dives to train, val and test 70/15/15, each split an `images/` folder and a `labels.csv` of a 0/1 column per substrate; the filters choose sessions, `splits` and `sampling` are ignored, and non-seabed frames and sessions whose times drift are left out and listed in `habitat-report.json`."
                   },
                   "sampling": {
                     "type": "object",
@@ -20901,6 +20902,201 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/habitat/segments": {
+      "post": {
+        "summary": "Fetch a page of habitat segments",
+        "description": "Cuts each selected Habitat session's stretches wherever any substrate starts or stops, so each segment has one combination of substrates, and returns the segments the question selects. Worked out when the query runs; segments under 2 s are left out. `filters` are the Mosaic's (project, dive, line, session, model, run); `substrates` with `mode` match a segment's combination: `all` (includes all of these), `exactly` (only these: \"Mud alone\" is exactly Mud) or `any`. `review` keeps segments in the given states, worked out from their stretches: `flagged` when any stretch is, `reviewed` when all are, otherwise `unreviewed`. Each segment carries its stretches with their `version`, so approving it is the review route called with every one of them, and flagging a substrate is that route called with that substrate's stretch. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  },
+                  "substrates": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "example": [
+                      "Mud",
+                      "Boulder"
+                    ]
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "exactly",
+                      "any"
+                    ],
+                    "default": "all"
+                  },
+                  "review": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "unreviewed",
+                        "flagged",
+                        "reviewed"
+                      ]
+                    },
+                    "example": [
+                      "unreviewed"
+                    ]
+                  },
+                  "page": {
+                    "type": "integer",
+                    "example": 1
+                  },
+                  "pageSize": {
+                    "type": "integer",
+                    "example": 60
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One page of segments, with the total the question selects.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "pageSize": {
+                      "type": "integer"
+                    },
+                    "segments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "session_id": {
+                            "type": "integer"
+                          },
+                          "project_name": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "dive": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "line": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "substrates": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "label": {
+                            "type": "string",
+                            "example": "Mud + Boulder"
+                          },
+                          "start_ms": {
+                            "type": "integer",
+                            "description": "On the session's clock."
+                          },
+                          "end_ms": {
+                            "type": "integer"
+                          },
+                          "length_ms": {
+                            "type": "integer"
+                          },
+                          "stretch_ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer"
+                            }
+                          },
+                          "middle": {
+                            "type": "object",
+                            "description": "Where the segment's middle frame is: the picture is cut there, with the habitat crop.",
+                            "properties": {
+                              "video_source": {
+                                "type": "string",
+                                "nullable": true
+                              },
+                              "media_ms": {
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "review": {
+                            "type": "string",
+                            "enum": [
+                              "unreviewed",
+                              "flagged",
+                              "reviewed"
+                            ]
+                          },
+                          "stretches": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "observation_id": {
+                                  "type": "integer"
+                                },
+                                "substrate": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "integer"
+                                },
+                                "decision": {
+                                  "type": "string",
+                                  "nullable": true
+                                },
+                                "training_decision": {
+                                  "type": "string",
+                                  "nullable": true
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
