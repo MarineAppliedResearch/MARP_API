@@ -14,6 +14,7 @@
 
 const db = require('../model');
 const { formatTimeSpan, deriveTc } = require('../db/timecode');
+const substrates = require('./fixtures/habitat-substrates');
 
 const runId = Date.now();
 const { QueryTypes } = db.Sequelize;
@@ -21,7 +22,7 @@ const q = (sql, replacements) => db.sequelize.query(sql, { replacements, type: Q
 const ROUTE = '/api/v2/mosaic/habitat/segments';
 const REVIEW = '/api/v2/mosaic/observations/review';
 
-const seeded = { projectId: null, sessionId: null, ids: {} };
+const seeded = { substrates: null, projectId: null, sessionId: null, ids: {} };
 
 /** A habitat stretch, clock start and end in seconds, as an annotator's. */
 async function stretch(name, startS, endS) {
@@ -43,6 +44,8 @@ async function stretch(name, startS, endS) {
 const ask = (body) => global.api.post(ROUTE).send({ filters: { session: [seeded.sessionId] }, ...body });
 
 beforeAll(async () => {
+    // A database built from the baseline has no substrates on the Habitat list.
+    seeded.substrates = await substrates.ensureSubstrates();
     const [project] = await q(
         'INSERT INTO projects (name, "createdAt", "updatedAt") VALUES (:name, now(), now()) RETURNING project_id',
         { name: `Jest Habitat Segments ${runId}` }
@@ -78,6 +81,7 @@ afterAll(async () => {
     await q('DELETE FROM observations WHERE observation_id IN (:ids) RETURNING 1', { ids });
     await q('DELETE FROM sessions WHERE session_id = :s RETURNING 1', { s: seeded.sessionId });
     await q('DELETE FROM projects WHERE project_id = :p RETURNING 1', { p: seeded.projectId });
+    await substrates.removeSubstrates(seeded.substrates);
 });
 
 describe('habitat segments in the Mosaic (#342)', () => {

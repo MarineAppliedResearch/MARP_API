@@ -70,6 +70,48 @@ async function habitatStretches(filters = {}) {
 }
 
 /**
+ * The stretches a build's queries select, each once (#287).
+ *
+ * A build from the dashboard is a list of queries; their split is ignored, since a habitat
+ * build splits whole dives itself.
+ *
+ * @async
+ * @param {Object} spec - The build's spec: `subsets`, or `filters`.
+ * @returns {Promise<Array<Object>>} From `habitatStretches`, without repeats.
+ */
+async function stretchesForBuild(spec) {
+    const queries = Array.isArray(spec.subsets) && spec.subsets.length
+        ? spec.subsets.map((s) => s.filters || {})
+        : [spec.filters || {}];
+    const seen = new Map();
+    for (const filters of queries) {
+        for (const row of await habitatStretches(filters)) seen.set(row.observation_id, row);
+    }
+    return [...seen.values()];
+}
+
+/**
+ * The Habitat list's rows for the substrates a build labels, in label order.
+ *
+ * Looked up on the Habitat list alone: "Sand" is on another list too.
+ *
+ * @async
+ * @param {Array<string>} names - Substrate names.
+ * @returns {Promise<Array<{species_id: number, comname: string, class_index: number}>>}
+ * @throws {Error} When one is not on the Habitat list.
+ */
+async function habitatClassesFor(names) {
+    const rows = await db.sequelize.query(
+        `SELECT id, comname FROM species WHERE species_list = :list AND comname IN (:names)`,
+        { replacements: { list: HABITAT_TYPE, names }, type: db.Sequelize.QueryTypes.SELECT }
+    );
+    const byName = new Map(rows.map((r) => [r.comname, Number(r.id)]));
+    const missing = names.filter((n) => !byName.has(n));
+    if (missing.length) throw new Error(`Not on the Habitat list: ${missing.join(', ')}.`);
+    return names.map((comname, classIndex) => ({ species_id: byName.get(comname), comname, class_index: classIndex }));
+}
+
+/**
  * A habitat build's frames, by the settled rules.
  *
  * @param {Array<Object>} rows - From `habitatStretches`.
@@ -141,4 +183,7 @@ async function rejectionFor(file) {
     return null;
 }
 
-module.exports = { HABITAT_TYPE, PROMOTED, BLANK_SPREAD, MAX_DIFF, habitatStretches, selectFrames, rejectionFor };
+module.exports = {
+    HABITAT_TYPE, PROMOTED, BLANK_SPREAD, MAX_DIFF,
+    habitatStretches, stretchesForBuild, habitatClassesFor, selectFrames, rejectionFor,
+};

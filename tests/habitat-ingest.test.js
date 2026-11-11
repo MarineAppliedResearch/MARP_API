@@ -21,6 +21,7 @@ const db = require('../model');
 const { ARTIFACT_DIRECTORY, HABITAT_ENGINE } = require('../config/gpu-orchestration');
 const ingestService = require('../service/observation-ingest.service');
 const habitatRules = require('../db/habitat-rules');
+const substrates = require('./fixtures/habitat-substrates');
 
 const runId = Date.now();
 const { QueryTypes } = db.Sequelize;
@@ -30,7 +31,7 @@ const SUBSTRATES = ['Rock', 'Mud', 'Sand', 'Cobble', 'Boulder'];
 const CLOCKED = `20240730_171520_JestHabitat${runId}.mp4`;
 const UNCLOCKED = `JestHabitatNoClock${runId}.mp4`;
 
-const seeded = { projectId: null, sessionIds: [], modelId: null, jobIds: [], files: [] };
+const seeded = { substrates: null, projectId: null, sessionIds: [], modelId: null, jobIds: [], files: [] };
 
 /** One stretch, as the worker writes it. */
 const stretch = (substrate, startMs, endMs, video, extra = {}) => ({
@@ -79,6 +80,8 @@ const keyframesOf = (observationId) => q(
 );
 
 beforeAll(async () => {
+    // A database built from the baseline has no substrates on the Habitat list.
+    seeded.substrates = await substrates.ensureSubstrates();
     const [project] = await q(
         'INSERT INTO projects (name, "createdAt", "updatedAt") VALUES (:name, now(), now()) RETURNING project_id',
         { name: `Jest Habitat Ingest ${runId}` }
@@ -131,6 +134,7 @@ afterAll(async () => {
     await q('DELETE FROM sessions WHERE session_id IN (:ids) RETURNING 1', { ids: seeded.sessionIds });
     await q('DELETE FROM projects WHERE project_id = :p RETURNING 1', { p: seeded.projectId });
     for (const file of seeded.files) fs.rmSync(file, { force: true });
+    await substrates.removeSubstrates(seeded.substrates);
 });
 
 describe('ingesting a habitat run (#287)', () => {

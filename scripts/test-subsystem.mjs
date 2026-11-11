@@ -185,12 +185,15 @@ const SUBSYSTEMS = {
             // functions, so they cost a second and belong with the registry they feed.
             'dataset-build-plan',
             'habitat-dataset-plan',
+            'habitat-dataset-select',
             // #268: the rest of the build path -- the route, the claim rule, the
             // runner, and what a cancelled, retried or failed build left behind. The
             // extractor is stubbed in all three, so they are seconds rather than
             // minutes; the real build is `datasets` below.
             'dataset-build-queue',
             'dataset-build-runner',
+            // #287: a habitat build -- frames, labels, throwing out, the archive.
+            'habitat-dataset-build',
             'dataset-build-lifecycle',
             /* #268: the classification archive -- class folders, no data.yaml, and the
                refusals that stop one being built that trains on a random split. Opens

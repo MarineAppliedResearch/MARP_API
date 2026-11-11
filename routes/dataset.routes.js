@@ -331,7 +331,8 @@ function registerDatasetRoutes(app) {
                is not sampled -- one picture per observation already. */
             let sampled = null;
 
-            if (task !== 'classification') {
+            // A habitat build takes a frame every 10 s and is not sampled either (#287).
+            if (task !== 'classification' && task !== 'habitat') {
                 try {
                     sampled = samplingSettings(sampling);
                 } catch (error) {
