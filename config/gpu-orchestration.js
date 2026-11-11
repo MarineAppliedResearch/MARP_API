@@ -401,6 +401,23 @@ const HABITAT_ENGINE = 'marp_habitat';
  */
 const HABITAT_TRAINING_ENGINE = 'marp_habitat_training';
 
+/**
+ * The rule a habitat run turns its frame scores into stretches by (#287), the worker's
+ * `habitat_stretches` version 1.
+ *
+ * @constant
+ * @type {{name: string, version: string}}
+ */
+const HABITAT_REDUCTION = Object.freeze({ name: 'habitat_stretches', version: '1' });
+
+/**
+ * The session type a habitat run writes (#287), whose species list holds the substrates.
+ *
+ * @constant
+ * @type {string}
+ */
+const HABITAT_SESSION_TYPE = 'Habitat';
+
 
 
 /**
@@ -560,6 +577,8 @@ module.exports = {
     HABITAT_MODEL_TYPE,
     HABITAT_ENGINE,
     HABITAT_TRAINING_ENGINE,
+    HABITAT_REDUCTION,
+    HABITAT_SESSION_TYPE,
     JOB_STATES,
     TERMINAL_JOB_STATES,
     ATTEMPT_STATES,

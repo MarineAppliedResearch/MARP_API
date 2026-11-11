@@ -55,6 +55,8 @@ const {
     HABITAT_MODEL_TYPE,
     HABITAT_ENGINE,
     HABITAT_TRAINING_ENGINE,
+    HABITAT_REDUCTION,
+    HABITAT_SESSION_TYPE,
     JOB_STATES,
     REPORTABLE_ATTEMPT_STATES,
     WORKER_EVENT_KINDS,
@@ -1213,7 +1215,8 @@ class GpuService {
      * the engine has no counting rule for.
      */
     async resolveDataTypeForLease(spec) {
-        if (this.submittedDataType(spec) !== null) {
+        // A habitat run (#287) chooses no counting rule; the habitat engine makes stretches.
+        if (spec.engine === HABITAT_ENGINE || this.submittedDataType(spec) !== null) {
             return spec;
         }
 
@@ -3244,6 +3247,16 @@ class GpuService {
 
         observationIngestService.validateSpecModel(spec.model);
 
+        // A habitat run (#287) has no counting rule to choose; its observations are stretches,
+        // and they belong in a Habitat session.
+        if (spec.engine === HABITAT_ENGINE) {
+            const type = await observationIngestService.sessionTypeForSpec(session);
+            if (type !== null && type !== HABITAT_SESSION_TYPE) {
+                invalid(`A habitat run writes a ${HABITAT_SESSION_TYPE} session, not a ${type} one.`);
+            }
+            return;
+        }
+
         // A submitter who set `data_type` themselves means it, and it is theirs
         // to get right -- the same reasoning that keeps a bare `video.url` from
         // being second-guessed.
@@ -3392,6 +3405,16 @@ class GpuService {
         }
         if (isHabitat && !row.decision_rules) {
             invalid(`Model ${modelId} (${row.name}) has no decision rules, so its scores cannot be made into stretches.`);
+        }
+
+        // The stretch rule belongs to the habitat engine, and the keyframe rules to the others.
+        const reduction = spec.reduction || {};
+        const habitatRule = String(reduction.name) === HABITAT_REDUCTION.name && String(reduction.version) === HABITAT_REDUCTION.version;
+        if (spec.engine === HABITAT_ENGINE && !habitatRule) {
+            invalid(`The ${HABITAT_ENGINE} engine applies ${HABITAT_REDUCTION.name} version ${HABITAT_REDUCTION.version}.`);
+        }
+        if (spec.engine !== HABITAT_ENGINE && habitatRule) {
+            invalid(`${HABITAT_REDUCTION.name} is the ${HABITAT_ENGINE} engine's rule, not ${spec.engine}'s.`);
         }
     }
 

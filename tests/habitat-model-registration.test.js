@@ -207,11 +207,22 @@ describe('a habitat model runs on the habitat engine, and nothing else does', ()
             .rejects.toThrow(/no decision rules/);
     });
 
+    const STRETCHES = { name: 'habitat_stretches', version: '1' };
+
     test('each on its own engine passes', async () => {
         withModel(habitatModel);
-        await expect(gpuService.refuseMismatchedHabitatModel({ engine: HABITAT_ENGINE, model: { ml_model_id: 1 } })).resolves.toBeUndefined();
+        await expect(gpuService.refuseMismatchedHabitatModel({ engine: HABITAT_ENGINE, model: { ml_model_id: 1 }, reduction: STRETCHES })).resolves.toBeUndefined();
         withModel(speciesModel);
         await expect(gpuService.refuseMismatchedHabitatModel({ engine: 'marp_tracking', model: { ml_model_id: 1 } })).resolves.toBeUndefined();
+    });
+
+    test('the stretch rule goes with the habitat engine, and only with it', async () => {
+        withModel(habitatModel);
+        await expect(gpuService.refuseMismatchedHabitatModel({ engine: HABITAT_ENGINE, model: { ml_model_id: 1 }, reduction: { name: 'v3_dirpad', version: '1' } }))
+            .rejects.toThrow(/applies habitat_stretches version 1/);
+        withModel(speciesModel);
+        await expect(gpuService.refuseMismatchedHabitatModel({ engine: 'marp_tracking', model: { ml_model_id: 1 }, reduction: STRETCHES }))
+            .rejects.toThrow(/habitat engine's rule/);
     });
 
     test('a habitat model\'s lease carries its rules with the cut-offs to apply', async () => {

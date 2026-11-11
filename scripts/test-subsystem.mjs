@@ -79,6 +79,7 @@ const SUBSYSTEMS = {
             'gpu-training-job-name',
             'gpu-trained-model-registration',
             'habitat-model-registration',
+            'habitat-ingest',
             /* #268: what the training panel reads back -- the per-epoch metric names the
                ingest was getting wrong, and the pace series nothing served. */
             'training-run-pace',
