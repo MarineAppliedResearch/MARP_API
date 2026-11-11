@@ -222,6 +222,21 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
   Models screen changes that model's later runs, and runs already made keep what they were made
   with. Per dataset would need a new column on `datasets` that is only copied into the model at
   registration; both would mean a dataset default that the model can then override.
+- [ ] **A20 · product/UI · blocking** — **Approving a segment whose stretches have no picture.**
+  Found 2026-11-10 while building #342. The Mosaic's review route records an approval only for
+  an observation with a ready picture (a reviewer may not approve what they were not shown); it
+  waives that for an approval made on the video page. A model's stretches get pictures from
+  their keyframes, but an annotator's habitat stretches have no keyframes and never will. So
+  approving an annotated segment is refused as `no-imagery`. Proposed: the segment's own
+  picture counts, as the video page does -- an approval sent from a segment that showed one is
+  accepted for every stretch under it. Flagging needs no picture and works now. Only approving
+  annotated segments waits on this, and on A21.
+- [ ] **A21 · architectural · blocking** — **Where a segment's picture comes from.** #342 says
+  the segment's middle frame with the habitat crop. A segment is worked out when the query runs
+  and has no row, so its picture cannot be an observation thumbnail. Proposed: cut on request
+  from the middle frame (the segment query already says which video and how far in), stored by
+  video, position and crop, and served like a thumbnail. Or the first stretch's own picture,
+  which annotated stretches do not have.
 - [ ] **A12 · behavioural · non-blocking** — A habitat run is per video, and sessions are made
   per run as inference runs are now (`session.per_run`, one submission per dive and model,
   #336). Followed, not asked.
@@ -260,7 +275,8 @@ Built in this order. Each step is merged only when Isaac says so.
 
 ## Status
 
-- **Gate:** implementing (G2). Every blocking assumption answered by Isaac on 2026-11-10.
+- **Gate:** implementing (G2). A1-A19 answered by Isaac on 2026-11-10; A20 and A21, found that
+  night building #342, are open.
 - **Also from the feasibility session, 2026-11-10:** one model on the habitat crop scored test
   F1 0.728 against 0.751 on the old crop; Boulder fell from 0.62 to 0.55. The crop stays
   settled, the numbers provisional. So the crop a model was trained on is stored with the model
