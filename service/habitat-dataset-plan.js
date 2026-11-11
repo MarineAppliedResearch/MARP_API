@@ -96,8 +96,8 @@ function splitDives(lines, { shares = DIVE_SHARES, seed = SPLIT_SEED } = {}) {
  *
  * @param {Array<Object>} stretches - One session's habitat stretches.
  * @param {Object} [options] - `{ stepMs, marginMs, substrates }`.
- * @returns {Array<{file: string, positionMs: number, labels: Array<number>}>} In file, then
- *   position order.
+ * @returns {Array<{file: string, positionMs: number, labels: Array<number>, covering: Array}>}
+ *   In file, then position order; `covering` is the `id` of each stretch over the frame.
  */
 function framesForSession(stretches, { stepMs = STEP_MS, marginMs = MARGIN_MS, substrates = SUBSTRATES } = {}) {
     const known = stretches.filter((s) => substrates.includes(s.name) && s.endMs >= s.startMs);
@@ -121,13 +121,37 @@ function framesForSession(stretches, { stepMs = STEP_MS, marginMs = MARGIN_MS, s
                 file,
                 positionMs: p,
                 labels: substrates.map((n) => (covering.some((s) => s.name === n) ? 1 : 0)),
+                covering: covering.map((s) => s.id),
             });
         }
     }
     return frames;
 }
 
+/**
+ * Whether a session's times hold steady within each video file (#287, A8).
+ *
+ * A file's offset is its clock time less its position, the same for every stretch in it
+ * while the sync held. Where it moves by more than `toleranceMs` the sync changed partway,
+ * and frames would be cut at the wrong moment, so the session is left out of a build and
+ * listed in its report.
+ *
+ * @param {Array<Object>} stretches - One session's stretches, with `file` and `offsetMs`.
+ * @param {number} [toleranceMs]
+ * @returns {Array<{file: string, spreadMs: number}>} The files that drift; empty when none do.
+ */
+function driftingFiles(stretches, toleranceMs = MARGIN_MS) {
+    const byFile = new Map();
+    for (const s of stretches) {
+        if (!byFile.has(s.file)) byFile.set(s.file, []);
+        byFile.get(s.file).push(s.offsetMs);
+    }
+    return [...byFile].map(([file, offsets]) => ({ file, spreadMs: Math.max(...offsets) - Math.min(...offsets) }))
+        .filter((f) => f.spreadMs > toleranceMs);
+}
+
 module.exports = {
+    driftingFiles,
     SUBSTRATES,
     STEP_MS,
     MARGIN_MS,
