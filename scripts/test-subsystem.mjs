@@ -100,6 +100,8 @@ const SUBSYSTEMS = {
         describe: 'the picture mosaic reviewer: query, commit, correction, thumbnails',
         suites: [
             'mosaic-query',
+            'habitat-segments',
+            'habitat-segments-route',
             'mosaic-commit',
             'mosaic-correction',
             // Phase 8 (#124): the facets route the rail's option lists come from,
