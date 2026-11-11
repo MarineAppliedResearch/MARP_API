@@ -4181,6 +4181,7 @@ const BASE_MODEL_TASKS = {
   'base-det': 'detection',
   'base-cls': 'classification',
   'base-seg': 'segmentation',
+  'base-hab': 'habitat',
 };
 
 /**
@@ -4278,10 +4279,15 @@ function fillTrainingChoices(models, datasets) {
      value"*. So these three are independent controls over one catalogue rather than three
      filtered views, and a reader choosing wrongly is refused at submission by
      `modelDoesTask`, which is where that can actually be caught. */
-  const datasetOptions = datasets.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`);
+  const datasetOptions = datasets.filter((d) => d.task !== 'habitat')
+    .map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`);
   for (const id of ['dataset-det', 'dataset-cls', 'dataset-seg']) {
     put(id, datasetOptions, 'No dataset saved in MARP');
   }
+  /* A habitat dataset does record its task, and the habitat trainer takes nothing else
+     (#287), so this one list is filtered -- and habitat datasets are kept out of the others. */
+  put('dataset-hab', datasets.filter((d) => d.task === 'habitat')
+    .map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`), 'No habitat dataset saved in MARP');
 
   trainingModels = models;
   trainingDatasets = datasets;
@@ -4417,6 +4423,10 @@ function trainingSubmission(root) {
     return element ? element.value : null;
   };
 
+  /* The Habitat tab trains a habitat model on the habitat trainer (#287). */
+  const task = where.querySelector('[data-switch="task"] .on');
+  if (task && task.dataset.view === 'hab') return habitatTrainingSubmission(value);
+
   const modelId = Number(value('base-det'));
 
   if (!Number.isInteger(modelId) || modelId <= 0) {
@@ -4483,6 +4493,56 @@ function trainingSubmission(root) {
         // The id alone; the server fills in the locator and the archive hash.
         dataset: { dataset_id: datasetId },
         params: trainingParams(where),
+      },
+    },
+  };
+}
+
+/**
+ * The habitat run the Habitat tab describes, or why it cannot be queued (#287).
+ *
+ * A habitat model is trained by the habitat trainer from a habitat starting model (DINOv2) on a
+ * habitat dataset; the API refuses any other pairing, and this says so first. Only the pass
+ * counts and the seed are offered: the rest of the recipe is the one the feasibility runs
+ * settled, and the trainer holds it.
+ *
+ * @param {Function} value - Reads a field by id.
+ * @returns {{body: Object}|{refusal: string}}
+ */
+function habitatTrainingSubmission(value) {
+  const model = registeredModels.get(Number(value('base-hab')));
+  if (!model || !modelDoesTask(model, 'habitat')) {
+    return { refusal: 'Choose a habitat starting model, such as dinov2-vitb14. If none is listed, run scripts/seed-base-models.js --only dinov2-vitb14 where MARP keeps its models.' };
+  }
+  if (!model.artifact_sha256) {
+    return { refusal: `${model.name} has no recorded checksum, so a worker would have nothing to verify its weights against.` };
+  }
+  const datasetId = Number(value('dataset-hab'));
+  if (!Number.isInteger(datasetId) || datasetId <= 0) {
+    return { refusal: 'Choose a habitat dataset to train on.' };
+  }
+
+  const whole = (id) => { const raw = String(value(id) || '').trim(); const n = Number(raw); return raw !== '' && Number.isInteger(n) ? n : null; };
+  const params = {};
+  if (whole('hab-head') !== null) params.head_epochs = whole('hab-head');
+  if (whole('hab-epochs') !== null) params.epochs = whole('hab-epochs');
+  if (whole('hab-seed') !== null) params.seed = whole('hab-seed');
+  const name = (value('trname') || '').trim();
+
+  return {
+    body: {
+      kind: 'training',
+      ...(name ? { name } : {}),
+      spec: {
+        engine: 'marp_habitat_training',
+        model: {
+          ml_model_id: model.id,
+          name: model.name,
+          url: `/api/v2/model/${model.id}/artifact`,
+          sha256: String(model.artifact_sha256).toLowerCase(),
+        },
+        dataset: { dataset_id: datasetId },
+        params,
       },
     },
   };
@@ -9740,15 +9800,27 @@ function loadRunnableModels() {
          has no weights worth sending and an archived one is retired. The thirteen
          real models here are active, and the two that are not are leftovers from a
          test run that did not clean up after itself. */
-      /* **Not habitat models** (#287): this form runs the species pipeline, and the API
-         refuses a habitat model on it. They get a pipeline of their own. */
+      /* **Each pipeline offers its own models** (#287): the species pipeline never a
+         habitat model, which the API refuses on it, and the habitat pipeline only those. */
       .then((rows) => (rows || [])
-        .filter((m) => m.name && m.id !== undefined && m.status === 'active' && m.model_type !== 'habitat')
+        .filter((m) => m.name && m.id !== undefined && m.status === 'active')
         .sort((a, b) => a.name.localeCompare(b.name)))
       .catch(() => []);
   }
 
-  return registryAsked;
+  // Filtered on every read, so switching pipeline changes what is offered.
+  return registryAsked.then((rows) => rows.filter((m) => (m.model_type === 'habitat') === habitatPipeline()));
+}
+
+/**
+ * Whether the form is set to the habitat pipeline (#287): habitat models, the habitat engine,
+ * stretches of each substrate written to a Habitat session.
+ *
+ * @returns {boolean}
+ */
+function habitatPipeline() {
+  const pick = document.getElementById('pipeline');
+  return Boolean(pick && pick.value === 'habitat');
 }
 
 /**
@@ -9997,6 +10069,11 @@ const INFERENCE_ENGINE = 'marp_tracking';
  */
 const INFERENCE_REDUCTION = Object.freeze({ name: 'v3_dirpad', version: '1' });
 
+/* The habitat pipeline's engine and stretch rule (#287), as MARP's HABITAT_ENGINE and
+   HABITAT_REDUCTION name them. */
+const HABITAT_INFERENCE_ENGINE = 'marp_habitat';
+const HABITAT_REDUCTION = Object.freeze({ name: 'habitat_stretches', version: '1' });
+
 /**
  * Say how a submission went, where somebody about to click again will see it.
  *
@@ -10117,6 +10194,7 @@ function inferenceParams(config) {
  */
 async function inferenceSubmissions() {
   const models = await loadRunnableModels();
+  const habitat = habitatPipeline();
   const bodies = [];
   const refusals = [];
   /* Each video's clock, once however many groups it is in (#76). */
@@ -10178,13 +10256,15 @@ async function inferenceSubmissions() {
         }
 
         const piece = $('[data-setting="piece_minutes"]', config);
-        const pieceMinutes = Number(piece ? piece.value : NaN);
-        const params = inferenceParams(config);
+        /* A habitat run (#287) takes none of the species settings, and is not split into
+           pieces: a piece boundary would cut a stretch in two. */
+        const pieceMinutes = habitat ? NaN : Number(piece ? piece.value : NaN);
+        const params = habitat ? {} : inferenceParams(config);
         const body = {
           kind: 'inference',
           name,
           spec: {
-            engine: INFERENCE_ENGINE,
+            engine: habitat ? HABITAT_INFERENCE_ENGINE : INFERENCE_ENGINE,
             /* An item id, never a URL: MARP resolves it to something playable when the
                job is leased, and the Jellyfin item supplies `source_name`. */
             video: { jellyfin_item_id: target.dataset.videoId },
@@ -10196,7 +10276,7 @@ async function inferenceSubmissions() {
               url: '/api/v2/model/' + model.id + '/artifact',
               sha256: String(model.artifact_sha256).toLowerCase(),
             },
-            reduction: Object.assign({}, INFERENCE_REDUCTION),
+            reduction: Object.assign({}, habitat ? HABITAT_REDUCTION : INFERENCE_REDUCTION),
             /* **A session per run, under the dive**, and `type` left out so MARP derives
                it from the model's species list -- the screen has no business restating
                something the registry already knows. No `range`: MARP works the frame
@@ -10411,6 +10491,15 @@ function wireInferenceForm() {
   });
 
   document.addEventListener('change', (event) => {
+    /* A different pipeline offers different models (#287): every picker is refilled. */
+    if (event.target.matches('#pipeline')) {
+      $$('[data-model-config]').forEach((config) => {
+        const pick = $('[data-model-pick]', config);
+        if (pick) pick.innerHTML = '';
+        refreshModelConfig(config);
+      });
+      return;
+    }
     const choice = event.target.closest('[data-video-choice]');
     if (choice && event.target.matches('input[type="checkbox"]')) refreshSelected();
     if (event.target.matches('[data-select-videos]')) {
