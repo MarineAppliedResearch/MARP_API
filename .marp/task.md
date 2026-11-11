@@ -276,7 +276,7 @@ Built in this order. Each step is merged only when Isaac says so.
 ## Status
 
 - **Gate:** implementing (G2). A1-A19 answered by Isaac on 2026-11-10; A20 and A21, found that
-  night building #342, are open.
+  night building #342, are open and are what the rest waits on.
 - **Also from the feasibility session, 2026-11-10:** one model on the habitat crop scored test
   F1 0.728 against 0.751 on the old crop; Boulder fell from 0.62 to 0.55. The crop stays
   settled, the numbers provisional. So the crop a model was trained on is stored with the model
@@ -316,7 +316,48 @@ Built in this order. Each step is merged only when Isaac says so.
       dataset build (step 8) writes this.
     - Not done: resuming a stopped habitat training from a checkpoint; a stop is a
       cancellation and the run starts again.
+    - **GPU run, 2026-11-10** (worker `.marp/verification.md`): on the feasibility session's
+      own frames, packed read-only into a habitat archive, test macro F1 **0.734** against the
+      feasibility run's 0.728 on the same crop and seed; Boulder 0.556 against 0.55. The kept
+      weights are the best tuning pass's (pass 4 of 10).
+  - Step 5 (R5): the worker's `marp_habitat` engine scores 3 frames a second on the model's
+    crop and turns the scores into stretches by the settled rules (`habitat_stretches`,
+    checked against the feasibility `sample_output.py`); it publishes the stretches and the
+    raw scores (A2). Not yet run over real video on a GPU.
+  - Step 6 (R6): ingest writes a habitat run's stretches into its Habitat session: one
+    observation per stretch with `tc` and `etc` on the video's clock where it is set, start
+    and end keyframes with a box from the model's crop. `tests/habitat-ingest.test.js`.
+    R7 follows from the keyframes (the thumbnail extractor picks them up); not checked in a
+    browser.
+  - Step 7 (R8, API half): `POST /api/v2/mosaic/habitat/segments` cuts a session's stretches
+    into segments of one combination each, with the Mosaic's filters, "alone" or "with"
+    matching, and each segment's review state; reviewing a segment through the existing
+    review route lands on every stretch under it (A11). **The Mosaic screen for segments is
+    not built**: it needs a picture per segment (A21), and approving an annotated segment
+    waits on A20.
+  - Step 8 (R2): a habitat dataset build, `task: 'habitat'` on `POST /dataset/build`, and a
+    *Habitat substrates* tick box on the Datasets screen. It takes the queries' habitat
+    sessions, cuts a frame every 10 s where every stretch over it is promoted, splits whole
+    dives 70/15/15, throws out blank screens and the two stored example screens
+    (`db/habitat-reject-screens.json`, cut from real video; on 301 real seabed frames none
+    was thrown out), leaves out sessions whose times drift by more than 2 s within a file,
+    and lists both in `habitat-report.json` in the archive. Only substrates some frame holds
+    become classes. `tests/habitat-dataset-select.test.js`, `tests/habitat-dataset-build.test.js`
+    (the archive unpacked and read), dashboard `build-habitat.test.mjs`.
+  - Step 9 (dashboard): a Habitat tab on Training, a habitat pipeline on Inference, the rules
+    and the never-together editor on Models, and the Datasets tick box.
+  - The habitat tests seed Rock, Mud, Sand, Cobble and Boulder on the Habitat list where a
+    database lacks them (`tests/fixtures/habitat-substrates.js`): a baseline database has
+    none, so on CI the segments and ingest tests would otherwise have found nothing.
+- **Last run, 2026-11-10:** `test:gpu` 459 passed; `test:mosaic` 381 passed; `test:ml` 437
+  passed and 1 failed, `dataset-build-resume` (below); dashboard unit 249 passed; worker
+  habitat tests 31 passed, contract and import tests 45 passed.
 - **Found, left alone:** `tests/dataset-build-resume.test.js` fails about two runs in three on
   `develop` as well (a resumed build's archive checksum differs from the reference).
-- **Next:** the GPU run of the trainer (`scripts/verify_habitat_training.py` in the worker),
-  then step 5.
+- **Not done, and why:**
+  - The Mosaic segments screen (R8's second half): waits on A20 and A21.
+  - A habitat run over real video on a GPU, and the Mosaic showing its stretches (R5-R7 end
+    to end): needs a trained model registered through MARP and a video to run on.
+  - A habitat build from real annotations: annotated stretches can be flagged now, but
+    promoting them by their segment waits on A20, so a build from annotations today selects
+    only stretches promoted some other way.
