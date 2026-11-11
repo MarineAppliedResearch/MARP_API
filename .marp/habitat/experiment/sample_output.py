@@ -88,7 +88,11 @@ def answers(ref, line, T, nets):
     # Per second of video: clock ms and the averaged probability of each substrate.
     cache = os.path.join(OUT, f"{ref}_answers.npz" if FRAMES == "frames_1s" else f"{ref}_answers_{FRAMES}.npz")
     if "runs" in OPT:
-        cache = cache.replace(".npz", f"_{TAG}.npz")
+        # Keyed by which models and crop made the answers, not the run's tag, so rule
+        # variants over the same models reuse them.
+        import hashlib
+        key = hashlib.md5(f"{OPT['runs']}|{CROP}".encode()).hexdigest()[:10]
+        cache = cache.replace(".npz", f"_{key}.npz")
     if os.path.exists(cache):
         z = np.load(cache)
         return z["clock"], z["p"]
