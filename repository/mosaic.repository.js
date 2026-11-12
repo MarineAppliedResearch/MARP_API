@@ -253,6 +253,7 @@ const ROW_COLUMNS = `
         o.comname,
         sp.comname AS species_comname,
         o.tc,
+        o.etc,
         o.observed_at,
         s.dive,
         s.line,
@@ -278,7 +279,8 @@ const ROW_COLUMNS = `
         th.full_frame_framenum,
         th.full_frame_width,
         th.full_frame_height,
-        th.full_frame_box`;
+        th.full_frame_box,
+        hab.overlaps AS habitat_overlaps`;
 
 /**
  * Time of day, in `interval`, from the `tc` a row carries.
@@ -877,6 +879,17 @@ SELECT t.total,
   LEFT JOIN users training_user ON training_user.user_id = rt.reviewer_id
   LEFT JOIN observation_thumbnails th ON th.observation_id = o.observation_id
   ${keyframeLateral}k ON true
+  -- What else a habitat stretch's line recorded while it ran (#287), so a reviewer judging
+  -- "is this Rock?" sees that Cobble lies on top. Per returned row only. tc and etc are
+  -- written as hh:mm:ss, so comparing them as text compares them as times.
+  LEFT JOIN LATERAL (
+        SELECT array_agg(DISTINCT o2.comname ORDER BY o2.comname) AS overlaps
+          FROM observations o2
+         WHERE s.type = '${HABITAT_SESSION_TYPE}'
+           AND o2.session_id = o.session_id
+           AND o2.observation_id <> o.observation_id
+           AND o2.comname IS DISTINCT FROM o.comname
+           AND o2.tc < o.etc AND o2.etc > o.tc) hab ON true
  ORDER BY m.rn`;
 
     return { sql, bind: bind.values };

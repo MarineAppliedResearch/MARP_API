@@ -4791,6 +4791,23 @@
             "nullable": true,
             "example": "Fish"
           },
+          "etc": {
+            "type": "string",
+            "nullable": true,
+            "example": "16:06:00",
+            "description": "Where an observation ends, as .NET TimeSpan text on the same clock as `tc`. A habitat stretch carries one; most observations do not."
+          },
+          "habitat_overlaps": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Cobble"
+            ],
+            "description": "For a habitat stretch, the other substrates its line recorded at any time while it ran; null otherwise and where there are none (#287)."
+          },
           "species_list": {
             "type": "string",
             "nullable": true,

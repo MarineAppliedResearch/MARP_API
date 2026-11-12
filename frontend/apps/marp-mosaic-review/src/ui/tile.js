@@ -10,7 +10,7 @@ import {
   existingState, existingNote, reviewerInitialsFor, pendingTakeBack, borrowedTags,
   acceptedValue, markKind, MARK_ACCEPT
 } from '../model/modes.js';
-import { currentSpeciesName, initialsOfUsername } from '../model/row.js';
+import { currentSpeciesName, habitatDetail, initialsOfUsername } from '../model/row.js';
 import { isDestroyed } from '../model/page.js';
 import { MarpBackend } from '../backend.js';
 import { ICON } from './dom.js';
@@ -333,6 +333,13 @@ export function tile(row) {
      showed the old animal for ever on any observation that had been corrected, while the
      species filter -- which is `species_id` -- matched the new one. */
   const name = currentSpeciesName(row);
+  /* A habitat stretch says how long it ran and what lay with it (#287): "Rock · 2 min 30 s
+     · with Cobble". The caption may cut it short; the tooltip has it whole. */
+  const habitat = habitatDetail(row);
+  const caption = habitat
+    ? [name, habitat.length, habitat.overlaps.length ? `with ${habitat.overlaps.join(', ')}` : null]
+      .filter(Boolean).join(' · ')
+    : name;
   /* Why the clicks do nothing, which is the reviewer's actual question. DELETED states
      the fact; this states the consequence (#138). */
   const tip = gone
@@ -341,7 +348,7 @@ export function tile(row) {
       ? `${name} · no image, and retrying cannot help${row.thumbnail_reason ? ' — ' + row.thumbnail_reason : ''}`
       : noImage
         ? `${name} · no image — markable, but excluded from the page commit`
-        : `${name} · ${row.confidence} · ${row.dive} line ${row.line} · ${seenAt(row)}`;
+        : `${caption} · ${row.confidence} · ${row.dive} line ${row.line} · ${seenAt(row)}`;
 
   /* Its own slot, never the badge's (A4, A6). A refusal is an acknowledgement that a
      gesture did not take, not a state the tile is in, and letting it reach `.badge` is
@@ -363,5 +370,5 @@ export function tile(row) {
      rather than something the browser swallows before the app sees it. */
   return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}"${gone ? ' aria-disabled="true"' : ''}>
       ${body(row)}${badge}${corner(row, id, { marked, changed, existing, outcome })}
-      ${refusal}${borrowed(row)}${confidenceChip(row)}${video}<span class="cap">${name}</span></button>`;
+      ${refusal}${borrowed(row)}${confidenceChip(row)}${video}<span class="cap">${caption}</span></button>`;
 }

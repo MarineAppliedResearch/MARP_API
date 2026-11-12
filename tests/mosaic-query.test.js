@@ -1129,6 +1129,8 @@ describe('the mosaic query (#105)', () => {
                 'comname',
                 'confidence',
                 'dive',
+                // #287: where a habitat stretch ends, for its length on the tile.
+                'etc',
                 'exclusion_reason',
                 'first_framenum',
                 'flag_reason',
@@ -1139,6 +1141,8 @@ describe('the mosaic query (#105)', () => {
                 'full_frame_reason',
                 'full_frame_status',
                 'full_frame_width',
+                // #287: what else a habitat stretch's line recorded while it ran.
+                'habitat_overlaps',
                 'keyframe_count',
                 'line',
                 'obsID',

@@ -27,13 +27,13 @@ const runId = Date.now();
 const seeded = { projectId: null, sessionIds: [], ids: [] };
 
 /** An observation in a session of the given type, starting `startS` into its file. */
-async function stretch(sessionId, startS, endS) {
+async function stretch(sessionId, startS, endS, name = 'Mud') {
     const [row] = await q(
         `INSERT INTO observations (project_id, session_id, "obsID", comname, count, tc, etc,
                                    "actualPosition", "mediaPosition", video_source, "createdAt", "updatedAt")
-         VALUES (:p, :s, :obs, 'Mud', 1, :tc, :etc, :at, :at, :video, now(), now()) RETURNING observation_id`,
+         VALUES (:p, :s, :obs, :name, 1, :tc, :etc, :at, :at, :video, now(), now()) RETURNING observation_id`,
         {
-            p: seeded.projectId, s: sessionId, obs: seeded.ids.length + 1,
+            p: seeded.projectId, s: sessionId, obs: seeded.ids.length + 1, name,
             tc: deriveTc(10 * 3600000 + startS * 1000), etc: deriveTc(10 * 3600000 + endS * 1000),
             at: formatTimeSpan(startS * 1000), video: `jest-habitat-keyframes-${runId}.mp4`,
         }
@@ -141,6 +141,22 @@ describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)'
             const row = res.body.pages[0].rows.find((r) => r.observation_id === habitat);
             expect(row.keyframe_count).toBe(2);
         }
+    });
+
+    test('a tile says when the stretch ended and what else its line recorded meanwhile', async () => {
+        // Rock 0-150 s, Cobble on top 60-90 s, Sand after it 150-200 s: touching, not overlapping.
+        const id = await session('Habitat');
+        const rock = await stretch(id, 0, 150, 'Rock');
+        const cobble = await stretch(id, 60, 90, 'Cobble');
+        const sand = await stretch(id, 150, 200, 'Sand');
+        const res = await global.api.post('/api/v2/mosaic/observations/pages').send({
+            filters: { session: [id], reviewStatus: ['unreviewed', 'flagged', 'reviewed'] }, pages: [1], pageSize: 10,
+        });
+        expect(res.status).toBe(200);
+        const byId = new Map(res.body.pages[0].rows.map((r) => [r.observation_id, r]));
+        expect(byId.get(rock)).toMatchObject({ tc: '10:00:00', etc: '10:02:30', habitat_overlaps: ['Cobble'] });
+        expect(byId.get(cobble).habitat_overlaps).toEqual(['Rock']);
+        expect(byId.get(sand).habitat_overlaps).toBeNull();
     });
 
     describe('on the Mosaic\'s video page', () => {
