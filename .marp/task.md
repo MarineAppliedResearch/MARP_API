@@ -222,7 +222,7 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
   Models screen changes that model's later runs, and runs already made keep what they were made
   with. Per dataset would need a new column on `datasets` that is only copied into the model at
   registration; both would mean a dataset default that the model can then override.
-- [ ] **A20 · product/UI · blocking** — **Approving a segment whose stretches have no picture.**
+- [x] **A20 · product/UI · blocking** — **Approving a segment whose stretches have no picture.**
   Found 2026-11-10 while building #342. The Mosaic's review route records an approval only for
   an observation with a ready picture (a reviewer may not approve what they were not shown); it
   waives that for an approval made on the video page. A model's stretches get pictures from
@@ -231,12 +231,29 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
   picture counts, as the video page does -- an approval sent from a segment that showed one is
   accepted for every stretch under it. Flagging needs no picture and works now. Only approving
   annotated segments waits on this, and on A21.
-- [ ] **A21 · architectural · blocking** — **Where a segment's picture comes from.** #342 says
+  **Answered by Isaac on 2026-11-12, relayed by the feasibility session** -- not the proposal:
+  *"the mosaic needs to be adapted to understand a first and last keyframe of each habitat
+  observation. since we know the size of the boxes were using, we should use that for the
+  mosaic."* So every habitat observation, an annotator's as well as a model's, has a first
+  keyframe at its start and a last at its end, with the habitat crop (x 0.25-0.75,
+  y 0.5-1.0) as the box; an annotator's stretch then has a picture and is approved like any
+  other. A model's stretches already get these two keyframes at ingest. How an annotator's
+  get them is A22.
+- [x] **A21 · architectural · blocking** — **Where a segment's picture comes from.** #342 says
   the segment's middle frame with the habitat crop. A segment is worked out when the query runs
   and has no row, so its picture cannot be an observation thumbnail. Proposed: cut on request
   from the middle frame (the segment query already says which video and how far in), stored by
   video, position and crop, and served like a thumbnail. Or the first stretch's own picture,
   which annotated stretches do not have.
+  **Answered by Isaac on 2026-11-12, relayed by the feasibility session:** as proposed -- cut
+  on request from the segment's middle frame with the habitat crop, kept like a thumbnail.
+- [ ] **A22 · database/schema · blocking** — **How an annotator's habitat stretch gets its two
+  keyframes** (from A20). Either (a) **written** into `keyframes`, as ingest already does for a
+  model's: a migration adds them to every existing habitat observation without keyframes, and
+  anything that saves a habitat observation later adds them too -- the data changes, and
+  production would get them when it is promoted; or (b) **derived** when the Mosaic asks: no
+  rows are written, and the Mosaic and the thumbnail extractor treat a habitat observation
+  with no keyframes as having those two. Asked of Isaac 2026-11-12.
 - [ ] **A12 · behavioural · non-blocking** — A habitat run is per video, and sessions are made
   per run as inference runs are now (`session.per_run`, one submission per dive and model,
   #336). Followed, not asked.
