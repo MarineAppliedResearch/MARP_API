@@ -15,14 +15,14 @@ const stretch = (fields) => ({ session_type: 'Habitat', comname: 'Rock', ...fiel
 
 test('a habitat stretch says how long it ran and what lay with it', () => {
   assert.deepEqual(habitatDetail(stretch({ tc: '16:00:30', etc: '16:03:00', habitat_overlaps: ['Cobble'] })),
-    { length: '2 min 30 s', overlaps: ['Cobble'] });
+    { length: '2m 30s', overlaps: ['Cobble'] });
   assert.deepEqual(habitatDetail(stretch({ tc: '16:00:00', etc: '16:03:00', habitat_overlaps: null })),
-    { length: '3 min', overlaps: [] });
-  assert.equal(habitatDetail(stretch({ tc: '19:10:03', etc: '19:10:05' })).length, '2 s');
+    { length: '3m', overlaps: [] });
+  assert.equal(habitatDetail(stretch({ tc: '19:10:03', etc: '19:10:05' })).length, '2s');
 });
 
 test('a stretch across midnight is not negative, and one with no end has no length', () => {
-  assert.equal(habitatDetail(stretch({ tc: '23:59:30', etc: '00:01:00' })).length, '1 min 30 s');
+  assert.equal(habitatDetail(stretch({ tc: '23:59:30', etc: '00:01:00' })).length, '1m 30s');
   assert.equal(habitatDetail(stretch({ tc: '16:00:00', etc: null })).length, null);
 });
 

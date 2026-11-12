@@ -333,12 +333,13 @@ export function tile(row) {
      showed the old animal for ever on any observation that had been corrected, while the
      species filter -- which is `species_id` -- matched the new one. */
   const name = currentSpeciesName(row);
-  /* A habitat stretch says how long it ran and what lay with it (#287): "Rock · 2 min 30 s
-     · with Cobble". The caption may cut it short; the tooltip has it whole. */
+  /* A habitat stretch says how long it ran and what lay with it (#287): "Rock · 2m 30s",
+     and "with Cobble" on a line of its own, since on one line it was the part cut off. */
   const habitat = habitatDetail(row);
-  const caption = habitat
-    ? [name, habitat.length, habitat.overlaps.length ? `with ${habitat.overlaps.join(', ')}` : null]
-      .filter(Boolean).join(' · ')
+  const withText = habitat && habitat.overlaps.length ? `with ${habitat.overlaps.join(', ')}` : null;
+  const caption = habitat ? [name, habitat.length, withText].filter(Boolean).join(' · ') : name;
+  const capHtml = habitat
+    ? `${[name, habitat.length].filter(Boolean).join(' · ')}${withText ? `<span class="cap-with">${withText}</span>` : ''}`
     : name;
   /* Why the clicks do nothing, which is the reviewer's actual question. DELETED states
      the fact; this states the consequence (#138). */
@@ -370,5 +371,5 @@ export function tile(row) {
      rather than something the browser swallows before the app sees it. */
   return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}"${gone ? ' aria-disabled="true"' : ''}>
       ${body(row)}${badge}${corner(row, id, { marked, changed, existing, outcome })}
-      ${refusal}${borrowed(row)}${confidenceChip(row)}${video}<span class="cap">${caption}</span></button>`;
+      ${refusal}${borrowed(row)}${confidenceChip(row)}${video}<span class="cap">${capHtml}</span></button>`;
 }

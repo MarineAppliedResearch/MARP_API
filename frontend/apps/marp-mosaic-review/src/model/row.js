@@ -98,7 +98,8 @@ export function habitatDetail(row) {
     // A stretch across midnight ends on a smaller clock than it started.
     const seconds = Math.round(((end - start + 86400000) % 86400000) / 1000);
     const minutes = Math.floor(seconds / 60);
-    length = minutes ? `${minutes} min${seconds % 60 ? ` ${seconds % 60} s` : ''}` : `${seconds} s`;
+    // Short, because a tile's caption is a few words wide.
+    length = minutes ? `${minutes}m${seconds % 60 ? ` ${seconds % 60}s` : ''}` : `${seconds}s`;
   }
   return { length, overlaps: Array.isArray(row.habitat_overlaps) ? row.habitat_overlaps : [] };
 }
