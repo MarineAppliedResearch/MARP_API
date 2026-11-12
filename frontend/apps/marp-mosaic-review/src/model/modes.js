@@ -36,7 +36,6 @@ export const MODES = {
     accepts: 'reviewed',
     /** What a marked tile becomes when the page is committed. */
     marks: 'flagged',
-    note: 'Commit accepts unflagged tiles for scientific use',
     /** The dimension this mode acts on. What it may *filter* on is `statusDimensions`. */
     statusKey: 'reviewStatus',
     /** Flagged work is still open work, so it stays in the default view. */
