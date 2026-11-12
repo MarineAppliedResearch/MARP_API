@@ -4,8 +4,9 @@
  * A20 and A22, settled with Isaac on 2026-11-12: every habitat observation has a first
  * keyframe at its start and a last at its end with the habitat crop as the box, and an
  * annotator's are derived rather than stored. These check the rule itself, that the thumbnail
- * extractor's keyframe read, the retry route and the Mosaic's video page all see the two,
- * that nothing is written to `keyframes`, and that the video page sends them as not editable. The migration that queues those already failed changes rows a test did not
+ * extractor's keyframe read, the retry route, the Mosaic's grid and its video page all see
+ * the two, that nothing is written to `keyframes`, and that the video page sends them as not
+ * editable. The migration that queues those already failed changes rows a test did not
  * create, so it is checked by running it, not here.
  *
  * @fileoverview Tests for db/habitat-keyframes.js and where the thumbnail path uses it.
@@ -114,6 +115,20 @@ describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)'
 
         const [row] = await thumbnailRepository.requeue([habitat]);
         expect(row).toMatchObject({ status: 'queued', permanent: false });
+    });
+
+    test('the grid counts its two keyframes, for the tile and the Track length sort', async () => {
+        const id = await session('Habitat');
+        const habitat = await stretch(id, 400, 430);
+        for (const sort of [undefined, [{ field: 'keyframe_count', direction: 'desc' }]]) {
+            const res = await global.api.post('/api/v2/mosaic/observations/pages').send({
+                filters: { session: [id], reviewStatus: ['unreviewed', 'flagged', 'reviewed'] },
+                pages: [1], pageSize: 10, ...(sort ? { sort } : {}),
+            });
+            expect(res.status).toBe(200);
+            const row = res.body.pages[0].rows.find((r) => r.observation_id === habitat);
+            expect(row.keyframe_count).toBe(2);
+        }
     });
 
     describe('on the Mosaic\'s video page', () => {

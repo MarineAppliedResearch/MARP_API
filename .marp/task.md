@@ -44,7 +44,8 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
 - **Stretch rules:** 3 frames a second, scores averaged over 1 s, per-substrate cut-offs
   picked on the tuning dives with Mud's raised by 0.2, at most one of Mud and Sand at a time
   (the surer one stays), stretches at least 2 s, breaks of 2 s or less bridged.
-- **Mosaic (#342, 2026-11-10):** a habitat tile is a segment of one combination of substrates,
+- **Mosaic (#342, 2026-11-10) -- superseded on 2026-11-12, see R8:** a habitat tile is a
+  segment of one combination of substrates,
   worked out when the query runs. Segments under 2 s are left out. The picture is the
   segment's middle frame with the habitat crop. Review: approve as is, or tap the wrong
   substrate and the flag lands on that substrate's stretch. Filters: includes all, exactly,
@@ -100,7 +101,12 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
   Inference, with an observation per stretch as specified under Output, start and end
   keyframes with the habitat crop, on the video's clock where it is set.
 - **R7** — Its tiles get pictures in the Mosaic without anything done by hand (needs R1).
-- **R8** — #342: habitat observations are shown and reviewed in the Mosaic as segments.
+- **R8** — Habitat observations are shown and reviewed in the Mosaic like any other
+  observation, found by filtering on the Habitat session type. Isaac, 2026-11-12, correcting
+  the segment design below: *"the mosaic shows us observations, the habitat is just another
+  type of observation, there is literally nothing different about it other than the type we
+  will filter by"*. Each stretch is its own tile, with its picture from its start keyframe
+  (A20, A22), reviewed and promoted with the Mosaic's own modes and commit.
 - **R9** — The ML Dashboard carries the Mud and Sand rule as part of building a habitat model,
   not only inside inference. Isaac, 2026-11-10: *"our ml dashboard will need to put a rule in
   about mud and sand when it's building this dashboard"*; Mud, Sand and Gravel never overlap,
@@ -373,10 +379,23 @@ Built in this order. Each step is merged only when Isaac says so.
   habitat tests 31 passed, contract and import tests 45 passed.
 - **Found, left alone:** `tests/dataset-build-resume.test.js` fails about two runs in three on
   `develop` as well (a resumed build's archive checksum differs from the reference).
+- **2026-11-12, after A20-A22 and R8's correction:**
+  - An annotated habitat stretch has its start and end keyframes worked out from its times
+    with the habitat crop (`db/habitat-keyframes.js`), never written. The thumbnail
+    extractor, the retry route, the Mosaic grid's keyframe count and the video page use them;
+    the video page will not edit them. A migration queued the habitat stretches already
+    failed for having none. On the development database 9 of the 20 annotated stretches then
+    got real pictures from Jellyfin; 10 name no video and cannot have one, and 1 is the
+    extractor's ordinary missing-frame retry. `tests/habitat-keyframes.test.js`.
+  - So R8 is met by the Mosaic as it is: filtering on the Habitat type shows every habitat
+    stretch as a tile, with a picture where its video is known, reviewed and promoted like
+    any other. Checked against the development database through the pages route.
+  - Built before R8 was corrected, and now used by nothing: the segments route
+    (`POST /mosaic/habitat/segments`) and the segment picture (A21: `GET
+    /mosaic/habitat/segment-picture`, `habitat_segment_pictures`). Whether to keep them is
+    Isaac's call.
 - **Not done, and why:**
-  - The Mosaic segments screen (R8's second half): waits on A20 and A21.
   - A habitat run over real video on a GPU, and the Mosaic showing its stretches (R5-R7 end
     to end): needs a trained model registered through MARP and a video to run on.
-  - A habitat build from real annotations: annotated stretches can be flagged now, but
-    promoting them by their segment waits on A20, so a build from annotations today selects
-    only stretches promoted some other way.
+  - A habitat build from real annotations has not been run: annotated stretches can now be
+    promoted in the Mosaic, but none has been yet.

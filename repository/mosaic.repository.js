@@ -821,8 +821,16 @@ function buildPageSetQuery({ filters = {}, sort, pageSize, pages, exclude, inclu
     // "Track length" sort, and it is one sort option of four.
     const sortsOnKeyframes = terms.some((t) => t.field === 'keyframe_count');
 
+    /* A habitat stretch with no keyframes stored is counted with the start and end worked
+       out from its times (#287, A20 and A22): one when it has no later end. Both places
+       this runs have the session joined as `s`. The type is a constant, written in rather
+       than bound, so a query with no filters still binds only its page bounds. */
     const keyframeLateral = `LEFT JOIN LATERAL (
-            SELECT count(*)::int AS keyframe_count, min(framenum) AS first_framenum
+            SELECT CASE WHEN count(*) = 0 AND s.type = '${HABITAT_SESSION_TYPE}'
+                             AND o."mediaPosition" IS NOT NULL
+                        THEN CASE WHEN o.etc > o.tc THEN 2 ELSE 1 END
+                        ELSE count(*)::int END AS keyframe_count,
+                   min(framenum) AS first_framenum
               FROM keyframes
              WHERE observation_id = o.observation_id) `;
 
