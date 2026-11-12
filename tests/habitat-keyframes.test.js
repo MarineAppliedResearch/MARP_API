@@ -1,0 +1,117 @@
+/**
+ * An annotated habitat stretch's start and end keyframes, worked out and never written (#287).
+ *
+ * A20 and A22, settled with Isaac on 2026-11-12: every habitat observation has a first
+ * keyframe at its start and a last at its end with the habitat crop as the box, and an
+ * annotator's are derived rather than stored. These check the rule itself, that the thumbnail
+ * extractor's keyframe read and the retry route both see the two, and that nothing is written
+ * to `keyframes`. The migration that queues those already failed changes rows a test did not
+ * create, so it is checked by running it, not here.
+ *
+ * @fileoverview Tests for db/habitat-keyframes.js and where the thumbnail path uses it.
+ * @module tests/habitat-keyframes
+ */
+
+const db = require('../model');
+const { formatTimeSpan, deriveTc } = require('../db/timecode');
+const { HABITAT_BOX, derivedKeyframes } = require('../db/habitat-keyframes');
+const thumbnailRepository = require('../repository/observation-thumbnail.repository');
+
+const { QueryTypes } = db.Sequelize;
+const q = (sql, replacements = {}) => db.sequelize.query(sql, { replacements, type: QueryTypes.SELECT, logging: false });
+
+const runId = Date.now();
+const seeded = { projectId: null, sessionIds: [], ids: [] };
+
+/** An observation in a session of the given type, starting `startS` into its file. */
+async function stretch(sessionId, startS, endS) {
+    const [row] = await q(
+        `INSERT INTO observations (project_id, session_id, "obsID", comname, count, tc, etc,
+                                   "actualPosition", "mediaPosition", video_source, "createdAt", "updatedAt")
+         VALUES (:p, :s, :obs, 'Mud', 1, :tc, :etc, :at, :at, :video, now(), now()) RETURNING observation_id`,
+        {
+            p: seeded.projectId, s: sessionId, obs: seeded.ids.length + 1,
+            tc: deriveTc(10 * 3600000 + startS * 1000), etc: deriveTc(10 * 3600000 + endS * 1000),
+            at: formatTimeSpan(startS * 1000), video: `jest-habitat-keyframes-${runId}.mp4`,
+        }
+    );
+    seeded.ids.push(row.observation_id);
+    return row.observation_id;
+}
+
+/** Fail a stretch's picture for having no keyframes, as the extractor did before. */
+async function failedForNoKeyframes(id) {
+    await q(
+        `INSERT INTO observation_thumbnails (observation_id, status, permanent, generation, attempts, last_error,
+                                             requested_at, created_at, updated_at)
+         VALUES (:id, 'failed', true, 1, 1, :error, now(), now(), now())
+         ON CONFLICT (observation_id) DO UPDATE SET status = 'failed', permanent = true, last_error = :error
+         RETURNING observation_id`,
+        { id, error: thumbnailRepository.NO_KEYFRAMES_ERROR }
+    );
+}
+
+const session = async (type) => {
+    const [row] = await q(
+        `INSERT INTO sessions (project_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+         VALUES (:p, 'HK1', 'L1', :line, :type, now(), now()) RETURNING session_id`,
+        { p: seeded.projectId, line: `LID-HK-${type}-${runId}`, type }
+    );
+    seeded.sessionIds.push(row.session_id);
+    return row.session_id;
+};
+
+beforeAll(async () => {
+    const [project] = await q(
+        'INSERT INTO projects (name, "createdAt", "updatedAt") VALUES (:name, now(), now()) RETURNING project_id',
+        { name: `Jest Habitat Keyframes ${runId}` }
+    );
+    seeded.projectId = project.project_id;
+});
+
+afterAll(async () => {
+    if (seeded.ids.length) {
+        await q('DELETE FROM observation_thumbnails WHERE observation_id IN (:ids) RETURNING 1', { ids: seeded.ids });
+        await q('DELETE FROM observations WHERE observation_id IN (:ids) RETURNING 1', { ids: seeded.ids });
+    }
+    if (seeded.sessionIds.length) await q('DELETE FROM sessions WHERE session_id IN (:ids) RETURNING 1', { ids: seeded.sessionIds });
+    await q('DELETE FROM projects WHERE project_id = :p RETURNING 1', { p: seeded.projectId });
+});
+
+describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)', () => {
+    test('a start and an end, at 25 a second, with the habitat crop as the box', () => {
+        const [start, end] = derivedKeyframes({
+            observation_id: 7, comname: 'Sand', mediaPosition: '00:01:40.0000000', tc: '16:03:00', etc: '16:06:00',
+        });
+        expect(start).toMatchObject({ type: 'start', framenum: 2500, subset: '1', comname: 'Sand', derived: true });
+        expect(end).toMatchObject({ type: 'end', framenum: 2500 + 180 * 25 });
+        expect(start).toMatchObject(HABITAT_BOX);
+        expect(HABITAT_BOX).toEqual({ x: 0.5, y: 0.75, width: 0.5, height: 0.5 });
+    });
+
+    test('only a start without a usable end, and nothing without a position', () => {
+        expect(derivedKeyframes({ mediaPosition: '00:00:10.0000000', tc: '16:00:00', etc: null }).map((k) => k.type)).toEqual(['start']);
+        expect(derivedKeyframes({ mediaPosition: null, tc: '16:00:00', etc: '16:01:00' })).toEqual([]);
+    });
+
+    test('the extractor reads them for a habitat stretch, and writes none', async () => {
+        const habitat = await stretch(await session('Habitat'), 60, 90);
+        const transect = await stretch(await session('transect'), 60, 90);
+
+        const read = await thumbnailRepository.keyframesFor([habitat, transect]);
+        expect(read.get(habitat).map((k) => [k.type, k.framenum])).toEqual([['start', 1500], ['end', 2250]]);
+        // Another kind of session with no keyframes still has none.
+        expect(read.get(transect)).toEqual([]);
+
+        const [written] = await q('SELECT count(*)::int AS n FROM keyframes WHERE observation_id = :id', { id: habitat });
+        expect(written.n).toBe(0);
+    });
+
+    test('retry takes a habitat stretch failed for having no keyframes', async () => {
+        const habitat = await stretch(await session('Habitat'), 10, 40);
+        await failedForNoKeyframes(habitat);
+
+        const [row] = await thumbnailRepository.requeue([habitat]);
+        expect(row).toMatchObject({ status: 'queued', permanent: false });
+    });
+});

@@ -102,6 +102,8 @@ const SUBSYSTEMS = {
             'mosaic-query',
             'habitat-segments',
             'habitat-segments-route',
+            // #287 A20: an annotated habitat stretch's derived keyframes, and its picture.
+            'habitat-keyframes',
             'mosaic-commit',
             'mosaic-correction',
             // Phase 8 (#124): the facets route the rail's option lists come from,

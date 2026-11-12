@@ -32,6 +32,7 @@ const {
     SWEEP_BACKOFF_BASE_MINUTES,
     SWEEP_BACKOFF_MAX_MINUTES,
 } = require('../config/thumbnails');
+const { HABITAT_SESSION_TYPE, derivedKeyframes } = require('../db/habitat-keyframes');
 
 const { QueryTypes } = db.Sequelize;
 
@@ -199,7 +200,8 @@ async function requeue(observationIds) {
         );
 
         // A permanent failure stays refused, except one for having no keyframes when the
-        // observation has some now (#347): what made it permanent is no longer true.
+        // observation has some now (#347): what made it permanent is no longer true. A
+        // habitat stretch always has its two, worked out from its times (#287, A22).
         await db.sequelize.query(
             `UPDATE observation_thumbnails
                 SET status       = 'queued',
@@ -215,9 +217,13 @@ async function requeue(observationIds) {
                 AND status         = 'failed'
                 AND (permanent = false
                      OR (last_error = $2
-                         AND EXISTS (SELECT 1 FROM keyframes k
-                                      WHERE k.observation_id = observation_thumbnails.observation_id)))`,
-            { bind: [ids, NO_KEYFRAMES_ERROR], type: QueryTypes.UPDATE, transaction }
+                         AND (EXISTS (SELECT 1 FROM keyframes k
+                                       WHERE k.observation_id = observation_thumbnails.observation_id)
+                              OR EXISTS (SELECT 1 FROM observations o
+                                           JOIN sessions s ON s.session_id = o.session_id
+                                          WHERE o.observation_id = observation_thumbnails.observation_id
+                                            AND s.type = $3))))`,
+            { bind: [ids, NO_KEYFRAMES_ERROR, HABITAT_SESSION_TYPE], type: QueryTypes.UPDATE, transaction }
         );
 
         return db.sequelize.query(
@@ -620,6 +626,23 @@ async function keyframesFor(observationIds) {
 
     for (const row of rows) {
         byObservation.get(row.observation_id).push(row);
+    }
+
+    /* **An annotated habitat stretch has a start and an end keyframe, worked out here**
+       (#287, A20 and A22): the habitat crop at its start and its end. None is written, so
+       one without keyframes in the table is given these two. */
+    const bare = ids.filter((id) => byObservation.get(id).length === 0);
+
+    if (bare.length) {
+        const habitat = await db.sequelize.query(
+            `SELECT o.observation_id, o.comname, o."mediaPosition", o.tc, o.etc
+               FROM observations o
+               JOIN sessions s ON s.session_id = o.session_id
+              WHERE o.observation_id = ANY($1::int[]) AND s.type = $2`,
+            { bind: [bare, HABITAT_SESSION_TYPE], type: QueryTypes.SELECT }
+        );
+
+        for (const row of habitat) byObservation.set(row.observation_id, derivedKeyframes(row));
     }
 
     return byObservation;
