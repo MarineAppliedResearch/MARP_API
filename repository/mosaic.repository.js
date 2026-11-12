@@ -273,6 +273,11 @@ const ROW_COLUMNS = `
         k.keyframe_count,
         k.first_framenum,
         coalesce(th.status, 'queued') AS thumbnail_status,
+        -- The media server has no such video (#287): the tile says so rather than "no image".
+        coalesce(th.status = 'failed' AND th.permanent
+                 AND (th.last_error LIKE '${thumbnailRepository.NO_VIDEO_ERRORS.noMatch}%'
+                      OR th.last_error LIKE '${thumbnailRepository.NO_VIDEO_ERRORS.weakMatch}%'), false)
+            AS thumbnail_no_video,
         th.full_frame_status,
         coalesce(th.full_frame_permanent, false) AS full_frame_permanent,
         th.full_frame_last_error AS full_frame_reason,

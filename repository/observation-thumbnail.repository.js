@@ -194,6 +194,22 @@ async function enqueueMissing(observationIds, transaction) {
  */
 const NO_KEYFRAMES_ERROR = 'The observation has no keyframes, so it has no bounding box and can never have a cropped picture.';
 
+/**
+ * How the two failures that mean "the media server has no such video" begin (#287).
+ *
+ * The extractor writes them, the Mosaic says "No video available" for them, and
+ * `scripts/report-missing-videos.js` lists their videos -- three readers of one wording, so
+ * it is kept here. Both are permanent: nothing in the library matched, or the best match
+ * scored below the exact-match bar.
+ *
+ * @constant
+ * @type {{noMatch: string, weakMatch: string}}
+ */
+const NO_VIDEO_ERRORS = Object.freeze({
+    noMatch: 'No Jellyfin video matched video_source',
+    weakMatch: 'Best Jellyfin match for video_source',
+});
+
 async function requeue(observationIds) {
     const ids = (observationIds || []).filter((id) => Number.isInteger(id));
 
@@ -1138,6 +1154,7 @@ async function writeRunState(runState, userId, note = null) {
 
 module.exports = {
     NO_KEYFRAMES_ERROR,
+    NO_VIDEO_ERRORS,
     enqueueMissing,
     claimBatch,
     claimCompanions,

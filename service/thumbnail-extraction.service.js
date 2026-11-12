@@ -68,7 +68,7 @@ const thumbnailRepository = require('../repository/observation-thumbnail.reposit
 const reviewImageryStorage = require('./review-imagery-storage.service');
 const { ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { parseTimeSpan, absoluteFrame, ASSUMED_FPS } = require('../db/timecode');
-const { NO_KEYFRAMES_ERROR } = require('../repository/observation-thumbnail.repository');
+const { NO_KEYFRAMES_ERROR, NO_VIDEO_ERRORS } = require('../repository/observation-thumbnail.repository');
 const { thumbnailFilename } = require('../db/thumbnail-filename');
 const { HABITAT_SESSION_TYPE } = require('../db/habitat-keyframes');
 const { cropRectangle, interpolateBox, thumbnailCandidates } = require('./thumbnail-geometry');
@@ -701,7 +701,7 @@ async function extractVideoGroup(videoSource, claims) {
         // because no video matched, and saying so sent the next reader looking for
         // a missing file that was there all along.
         const reason = permanent
-            ? `No Jellyfin video matched video_source ${JSON.stringify(videoSource)}: ${elideToken(error.message)}`
+            ? `${NO_VIDEO_ERRORS.noMatch} ${JSON.stringify(videoSource)}: ${elideToken(error.message)}`
             : `Could not ask Jellyfin about video_source ${JSON.stringify(videoSource)}: ${elideToken(error.message)}`;
 
         for (const id of ids) {
@@ -723,7 +723,7 @@ async function extractVideoGroup(videoSource, claims) {
             const claim = claims.find((item) => item.observation_id === id);
             await recordClaimFailure(
                 claim,
-                `Best Jellyfin match for video_source ${JSON.stringify(videoSource)} scored ${resolved.score}, `
+                `${NO_VIDEO_ERRORS.weakMatch} ${JSON.stringify(videoSource)} scored ${resolved.score}, `
                 + `below the ${MIN_MATCH_SCORE} exact-match threshold. A weaker match can attach a picture of the wrong dive.`,
                 true
             );

@@ -210,6 +210,12 @@ function body(row) {
    * until now. The reason is the endpoint's own, e.g. "the observation has no keyframes,
    * so it has no bounding box and can never have a cropped picture".
    */
+  /* The media server has no such video (#287), which is a different thing to fix from a
+     picture that would not cut: somebody has to put the video on the server. */
+  if (row.thumbnail_no_video) {
+    return `<span class="fallback"><span style="font-size:20px;color:#c07d85">&#9888;</span>
+      <span class="na-t">NO VIDEO AVAILABLE</span></span>`;
+  }
   if (row.thumbnail_permanent) {
     return `<span class="fallback"><span style="font-size:20px;color:#c07d85">&#9888;</span>
       <span class="na-t">NO IMAGE &middot; PERMANENT</span></span>`;

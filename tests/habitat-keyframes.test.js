@@ -202,6 +202,25 @@ describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)'
         expect(byId.get(sand).habitat_overlaps).toBeNull();
     });
 
+    test('a tile says when the media server has no such video, and only then', async () => {
+        const id = await session('Habitat');
+        const [missing, weak, other] = [await stretch(id, 0, 10), await stretch(id, 20, 30), await stretch(id, 40, 50)];
+        const fail = (obs, error) => q(
+            `INSERT INTO observation_thumbnails (observation_id, status, permanent, generation, attempts, last_error,
+                                                 requested_at, created_at, updated_at)
+             VALUES (:obs, 'failed', true, 1, 1, :error, now(), now(), now()) RETURNING observation_id`,
+            { obs, error }
+        );
+        await fail(missing, `${thumbnailRepository.NO_VIDEO_ERRORS.noMatch} "x.mp4": nothing found.`);
+        await fail(weak, `${thumbnailRepository.NO_VIDEO_ERRORS.weakMatch} "9_1.mp4" scored 85, below the 96 exact-match threshold.`);
+        await fail(other, 'ffmpeg exited 1');
+        const res = await global.api.post('/api/v2/mosaic/observations/pages').send({
+            filters: { session: [id], reviewStatus: ['unreviewed', 'flagged', 'reviewed'] }, pages: [1], pageSize: 10,
+        });
+        const byId = new Map(res.body.pages[0].rows.map((r) => [r.observation_id, r.thumbnail_no_video]));
+        expect([byId.get(missing), byId.get(weak), byId.get(other)]).toEqual([true, true, false]);
+    });
+
     describe('on the Mosaic\'s video page', () => {
         beforeEach(() => {
             jest.spyOn(jellyfinRepository, 'resolveVideoSource').mockResolvedValue({ item: { id: `jest-item-${runId}` }, score: 100 });

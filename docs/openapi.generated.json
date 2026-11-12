@@ -4797,6 +4797,11 @@
             "example": "16:06:00",
             "description": "Where an observation ends, as .NET TimeSpan text on the same clock as `tc`. A habitat stretch carries one; most observations do not."
           },
+          "thumbnail_no_video": {
+            "type": "boolean",
+            "example": false,
+            "description": "True when the picture failed because the media server has no such video -- nothing matched, or the best match was too weak to trust -- so the tile can say so (#287)."
+          },
           "habitat_overlaps": {
             "type": "array",
             "nullable": true,
