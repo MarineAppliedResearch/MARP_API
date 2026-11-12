@@ -390,10 +390,19 @@ Built in this order. Each step is merged only when Isaac says so.
   - So R8 is met by the Mosaic as it is: filtering on the Habitat type shows every habitat
     stretch as a tile, with a picture where its video is known, reviewed and promoted like
     any other. Checked against the development database through the pages route.
-  - Built before R8 was corrected, and now used by nothing: the segments route
-    (`POST /mosaic/habitat/segments`) and the segment picture (A21: `GET
-    /mosaic/habitat/segment-picture`, `habitat_segment_pictures`). Whether to keep them is
-    Isaac's call.
+  - **How a reviewer checks them**, settled with Isaac the same day: one substrate at a
+    time -- Habitat type, species "Rock" -- one tile per stretch, approved or flagged like any
+    observation. Overlaps do not get in the way, since each stretch is right or wrong on its
+    own; whether a line's description is complete is the video page's job.
+    - **The picture is the middle of the stretch**, not its start: the start is where the
+      substrate changes. The extractor cuts a habitat stretch midway between its first and
+      last keyframe, and a migration re-cut the pictures already made (8 on development,
+      checked by frame number and by eye).
+    - **The caption says how long it ran and what lay with it**: "Rock · 2m 30s", and "with
+      Cobble" on a second line. Rows carry `etc` and `habitat_overlaps` (the other things the
+      line recorded while it ran). Seen in the Mosaic on the development database.
+  - The segment view built before R8 was corrected -- its route, the segment pictures (A21)
+    and their table -- was removed, with Isaac's agreement. A21's answer no longer applies.
 - **Not done, and why:**
   - A habitat run over real video on a GPU, and the Mosaic showing its stretches (R5-R7 end
     to end): needs a trained model registered through MARP and a video to run on.
