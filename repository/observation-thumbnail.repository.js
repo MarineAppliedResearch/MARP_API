@@ -614,6 +614,71 @@ async function claimBatch(limit = CLAIM_BATCH_SIZE) {
 }
 
 /**
+ * Claims the other waiting pictures in the videos a batch already opens (#287).
+ *
+ * Measured on 2026-11-12 against the media server: the first frame cut from a video took
+ * 11 s and a second from the same video, ten minutes further in, 1 s -- the cost is the
+ * server opening the file, not the frame. A batch is chosen by priority and age, so it
+ * spreads across dozens of videos and nearly every picture paid the 11 s: thirteen a
+ * minute. Taking each opened video's other queued pictures with it pays it once per video.
+ *
+ * Thumbnails only, at most `limit` of them, in the same shape `claimBatch` returns.
+ *
+ * @async
+ * @param {Array<Object>} claims - What `claimBatch` returned.
+ * @param {number} [limit] - At most this many more.
+ * @returns {Promise<Array<Object>>} The rows claimed.
+ */
+async function claimCompanions(claims, limit = COMPANION_LIMIT) {
+    const videos = [...new Set(claims.map((claim) => claim.video_source).filter(Boolean))];
+    if (!videos.length || limit < 1) return [];
+
+    return db.sequelize.query(
+        `WITH chosen AS (
+             SELECT t.observation_thumbnail_id
+               FROM observation_thumbnails t
+               JOIN observations o ON o.observation_id = t.observation_id
+              WHERE t.status = 'queued'
+                AND (t.claimed_at IS NULL OR t.claimed_at < NOW() - make_interval(secs => $3::int))
+                AND o.video_source = ANY($1::text[])
+              ORDER BY t.request_priority DESC, t.requested_at NULLS FIRST, t.observation_id
+              LIMIT $2
+                FOR UPDATE OF t SKIP LOCKED
+         ), claimed AS (
+             UPDATE observation_thumbnails t
+                SET claimed_at = NOW(), attempts = t.attempts + 1, updated_at = NOW()
+               FROM chosen c
+              WHERE t.observation_thumbnail_id = c.observation_thumbnail_id
+              RETURNING t.observation_thumbnail_id, t.observation_id, t.attempts
+         )
+         SELECT c.observation_thumbnail_id,
+                c.observation_id,
+                c.attempts,
+                'thumbnail'::text AS artifact_kind,
+                t.request_priority,
+                t.candidate_index,
+                t.filename AS thumbnail_filename,
+                t.full_frame_framenum,
+                t.full_frame_subset,
+                t.full_frame_filename,
+                o.video_source,
+                o."mediaPosition",
+                o.gpu_job_id,
+                s.type AS session_type
+           FROM claimed c
+           JOIN observation_thumbnails t
+             ON t.observation_thumbnail_id = c.observation_thumbnail_id
+           JOIN observations o ON o.observation_id = c.observation_id
+           LEFT JOIN sessions s ON s.session_id = o.session_id
+          ORDER BY c.observation_id`,
+        { bind: [videos, limit, CLAIM_TIMEOUT_SECONDS], type: QueryTypes.SELECT }
+    );
+}
+
+/** How many more pictures a batch may take from the videos it opens. */
+const COMPANION_LIMIT = 200;
+
+/**
  * Reads every keyframe of a set of observations, for the box choice.
  *
  * One statement for the whole batch rather than one per observation: a page is 45
@@ -1075,6 +1140,7 @@ module.exports = {
     NO_KEYFRAMES_ERROR,
     enqueueMissing,
     claimBatch,
+    claimCompanions,
     hasQueuedWork,
     sweep,
     sweepBackfill,

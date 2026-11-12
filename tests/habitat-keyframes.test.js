@@ -142,6 +142,28 @@ describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)'
         expect(row).toMatchObject({ status: 'queued', request_priority: 1 });
     });
 
+    test('a batch takes the other pictures waiting in the videos it opens, and none from others', async () => {
+        const id = await session('Habitat');
+        const [a, b] = [await stretch(id, 600, 630), await stretch(id, 700, 730)];
+        const elsewhere = await stretch(id, 600, 630);
+        // Videos of this test's own: earlier tests leave pictures queued in the shared one.
+        const video = `jest-companions-${runId}.mp4`;
+        await q('UPDATE observations SET video_source = :v WHERE observation_id IN (:ids) RETURNING 1', { v: video, ids: [a, b] });
+        await q('UPDATE observations SET video_source = :v WHERE observation_id = :id RETURNING 1', { v: `jest-elsewhere-${runId}.mp4`, id: elsewhere });
+        for (const obs of [b, elsewhere]) {
+            await q(
+                `INSERT INTO observation_thumbnails (observation_id, status, permanent, generation, attempts, request_priority,
+                                                     requested_at, created_at, updated_at)
+                 VALUES (:obs, 'queued', false, 1, 0, 0, now(), now(), now()) RETURNING observation_id`,
+                { obs }
+            );
+        }
+        const opened = [{ observation_id: a, video_source: video }];
+        const more = await thumbnailRepository.claimCompanions(opened);
+        expect(more.map((row) => row.observation_id)).toEqual([b]);
+        expect(more[0]).toMatchObject({ artifact_kind: 'thumbnail', session_type: 'Habitat' });
+    });
+
     test('retry takes a habitat stretch failed for having no keyframes', async () => {
         const habitat = await stretch(await session('Habitat'), 10, 40);
         await failedForNoKeyframes(habitat);

@@ -1089,7 +1089,9 @@ async function drainOnce(limit = CLAIM_BATCH_SIZE) {
         return summary;
     }
 
-    const claims = await thumbnailRepository.claimBatch(limit);
+    const batch = await thumbnailRepository.claimBatch(limit);
+    // And the rest of what waits in the same videos, cut while each video is open (#287).
+    const claims = batch.concat(await thumbnailRepository.claimCompanions(batch));
 
     summary.claimed = claims.length;
 
