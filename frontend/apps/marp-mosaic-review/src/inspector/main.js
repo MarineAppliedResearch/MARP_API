@@ -210,7 +210,9 @@ function rebuildDrawable() {
   for (const keyframes of held.values()) {
     for (const keyframe of keyframes) {
       if (!byObservation.has(keyframe.observation_id)) byObservation.set(keyframe.observation_id, new Map());
-      byObservation.get(keyframe.observation_id).set(keyframe.keyframe_id, keyframe);
+      // A habitat stretch's two are worked out, not stored, and have no id (#287).
+      const key = keyframe.keyframe_id ?? `${keyframe.subset}:${keyframe.type}:${keyframe.t}`;
+      byObservation.get(keyframe.observation_id).set(key, keyframe);
     }
   }
   drawable = [...byObservation].map(([id, keyframes]) => {

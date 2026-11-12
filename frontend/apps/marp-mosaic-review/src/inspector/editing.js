@@ -124,6 +124,16 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
     return { t, keyframe: keyframeShown(entry.box.keyframes, t, host.frameRate()) };
   }
 
+  /* A habitat stretch's box is the habitat crop at its start and end, worked out from its
+     times and stored nowhere (#287, A20 and A22), so there is nothing here to move, pin or
+     end: changing the stretch is changing its times. */
+  function fixed(entry) {
+    if (!entry || !(entry.box.keyframes || []).some((keyframe) => keyframe.derived)) return false;
+    host.status('A habitat stretch\'s box is the habitat crop at its start and end; it is not edited here.');
+    host.redraw();
+    return true;
+  }
+
   function addAt(entry, t, box) {
     return MarpApi.addKeyframe({ observationId: entry.box.observation_id, subset: entry.box.subset, t, box });
   }
@@ -131,6 +141,10 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   /* Releasing a move or a resize: the keyframe on the picture is moved, or an in-between
      box becomes a middle keyframe here. */
   function commitDrag(entry, rect, area) {
+    if (fixed(entry)) {
+      preview = null;
+      return null;
+    }
     const box = toRecord(rect, area);
     const { t, keyframe } = boxHere(entry);
     return save(() => (keyframe ? MarpApi.moveKeyframe(keyframe.keyframe_id, box) : addAt(entry, t, box)));
@@ -138,6 +152,7 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
 
   /* Double click: pin an in-between box, or take a keyframe away. */
   function toggleKeyframe(entry) {
+    if (fixed(entry)) return null;
     const { t, keyframe } = boxHere(entry);
     return save(() => (keyframe ? MarpApi.deleteKeyframe(keyframe.keyframe_id) : addAt(entry, t, entry.box)));
   }
@@ -145,6 +160,7 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   function act(action, entry) {
     host.focusPlayer();
     const { t, keyframe } = boxHere(entry);
+    if (['pin', 'end', 'deleteKeyframe'].includes(action) && fixed(entry)) return null;
     if (action === 'pin') return save(() => addAt(entry, t, entry.box));
     if (action === 'end') {
       return save(async () => {

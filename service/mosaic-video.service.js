@@ -26,6 +26,7 @@ const mosaicRepository = require('../repository/mosaic.repository');
 const { resolveVideo } = require('./mosaic-video-context.service');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { ASSUMED_FPS, parseTimeSpan } = require('../db/timecode');
+const { HABITAT_SESSION_TYPE, derivedKeyframes } = require('../db/habitat-keyframes');
 const { PROXY_PATH } = require('../middleware/jellyfin-proxy.middleware');
 
 /** Observations one video's answer may hold: three times the busiest video today. */
@@ -137,6 +138,14 @@ async function videoObservations(body = {}) {
     answer.sessions = opened.video_source ? await sessionsInVideo(opened.video_source) : [];
     answer.observations = rows.slice(0, MAX_VIDEO_OBSERVATIONS).map((row) => {
         const rate = row.machine ? nominal : ASSUMED_FPS;
+        /* An annotated habitat stretch has no keyframes in the table and is drawn from the
+           two worked out from its times (#287, A20 and A22). */
+        if (Number(row.keyframe_rows) === 0) {
+            const derived = derivedKeyframes({ ...row, mediaPosition: row.media_position });
+            row.first_framenum = derived.length ? derived[0].framenum : null;
+            row.last_framenum = derived.length ? derived[derived.length - 1].framenum : null;
+            row.has_end = derived.some((k) => k.type === 'end');
+        }
         return {
             observation_id: row.observation_id,
             species_id: row.species_id,
@@ -210,7 +219,7 @@ async function videoKeyframes(body = {}) {
         highs.push(Math.ceil(to * rate));
     }
 
-    const keyframes = await db.sequelize.query(
+    const stored = await db.sequelize.query(
         `WITH w(observation_id, lo, hi) AS (SELECT * FROM unnest($1::int[], $2::int[], $3::int[]))
          SELECT k.keyframe_id, k.observation_id, k.subset, k.type, k.framenum, k.x, k.y, k.width, k.height
            FROM keyframes k JOIN w USING (observation_id)
@@ -232,6 +241,25 @@ async function videoKeyframes(body = {}) {
         { bind: [windowIds, lows, highs], type: QueryTypes.SELECT }
     );
 
+    /* An annotated habitat stretch has its start and end keyframe worked out from its times
+       (#287, A20 and A22). Both are sent: two boxes are the whole track, so they are what
+       interpolates across any window. They have no `keyframe_id`: nothing is stored to edit. */
+    const withStored = new Set(stored.map((k) => k.observation_id));
+    const bare = ids.filter((obsId) => !withStored.has(obsId));
+    const keyframes = stored;
+    if (bare.length) {
+        const habitat = await db.sequelize.query(
+            `SELECT o.observation_id, o.comname, o."mediaPosition", o.tc, o.etc
+               FROM observations o JOIN sessions s ON s.session_id = o.session_id
+              WHERE o.observation_id IN (:bare) AND s.type = :type
+                AND NOT EXISTS (SELECT 1 FROM keyframes k WHERE k.observation_id = o.observation_id)`,
+            { replacements: { bare, type: HABITAT_SESSION_TYPE }, type: QueryTypes.SELECT }
+        );
+        for (const row of habitat) {
+            for (const k of derivedKeyframes(row)) keyframes.push({ keyframe_id: null, ...k });
+        }
+    }
+
     return {
         frame_rate: video.frame_rate,
         keyframes: keyframes
@@ -248,6 +276,8 @@ async function videoKeyframes(body = {}) {
                 y: round(Number(row.y), 4),
                 width: round(Number(row.width), 4),
                 height: round(Number(row.height), 4),
+                // Worked out from a habitat stretch's times, not stored: shown, never edited.
+                ...(row.derived ? { derived: true } : {}),
             }))
             .sort((a, b) => a.observation_id - b.observation_id
                 || String(a.subset).localeCompare(String(b.subset))

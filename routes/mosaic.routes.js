@@ -408,7 +408,9 @@ function registerMosaicRoutes(app) {
             + 'drawn only when the query matches it, like any other (2026-10-14). Each carries the span its keyframes cover **in seconds**, which tells the page which are on screen '
             + 'when; the keyframes themselves come from `/mosaic/video/keyframes`, a window at a time. Times follow the rule '
             + '`/mosaic/observations/video-context` states: an annotation-GUI row counts at 25, a GPU row at the video\'s nominal '
-            + 'rate. Observations with no keyframes are never in the Mosaic, and are not here.',
+            + 'rate. Observations with no keyframes are never in the Mosaic, and are not here -- except a habitat stretch, which has a '
+            + 'start and an end keyframe worked out from its times with the habitat crop as the box (#287). `/mosaic/video/keyframes` '
+            + 'sends those two with `keyframe_id` null and `derived: true`: nothing is stored, so there is nothing to edit.',
         tags: [TAG],
         requestBody: {
             required: true,

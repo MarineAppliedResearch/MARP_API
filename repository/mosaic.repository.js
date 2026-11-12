@@ -42,6 +42,7 @@
 
 const db = require('../model');
 const { SESSION_TYPE_TO_SPECIES_LIST } = require('../db/species-lists');
+const { HABITAT_SESSION_TYPE } = require('../db/habitat-keyframes');
 const thumbnailRepository = require('./observation-thumbnail.repository');
 
 /**
@@ -428,6 +429,8 @@ function dayEnd(value, label) {
  * exactly what it means on the page. Status filters included: what the reviewer is looking
  * at is the question. `exclude` is not applied -- it is the grid's paging bookkeeping, not
  * part of the question. An observation with no keyframes is never in the Mosaic, and is not
+ * here either -- except a habitat stretch, which has a start and an end keyframe worked out
+ * from its times (#287, A20 and A22): it comes back with `keyframe_rows` 0 and its times.
  * **The opened observation gets no exemption** (Isaac, 2026-10-14). It used to be answered
  * whatever the filters said, so the reviewer could still work on the one they came for; the
  * cost was a drawing that did not match the question, and that is the half that matters. A
@@ -450,7 +453,8 @@ function buildVideoObservationsQuery({ filters = {}, videoSource, include, limit
     const sql = `
 SELECT o.observation_id, o.species_id, coalesce(sp.comname, o.comname) AS comname,
        o."obsID" AS obs_id, o.version, o.count, o.session_id, (o.gpu_job_id IS NOT NULL) AS machine, o."mediaPosition" AS media_position,
-       ks.first_framenum, ks.last_framenum, ks.has_end,
+       ks.first_framenum, ks.last_framenum, ks.has_end, ks.n AS keyframe_rows,
+       s.type AS session_type, o.tc, o.etc,
        rc.decision AS review_decision, rc.reason AS flag_reason
   FROM observations o
   LEFT JOIN sessions s ON s.session_id = o.session_id
@@ -462,8 +466,9 @@ SELECT o.observation_id, o.species_id, coalesce(sp.comname, o.comname) AS comnam
         SELECT min(framenum) AS first_framenum, max(framenum) AS last_framenum, count(*) AS n,
                bool_or(type = 'end') AS has_end
           FROM keyframes
-         WHERE observation_id = o.observation_id) ks ON ks.n > 0
+         WHERE observation_id = o.observation_id) ks ON true
  WHERE o.video_source = ${video}
+   AND (ks.n > 0 OR s.type = ${bind.add(HABITAT_SESSION_TYPE)})
    AND ${matching}
  ORDER BY o.observation_id
  LIMIT ${bind.add(limit + 1)}`;

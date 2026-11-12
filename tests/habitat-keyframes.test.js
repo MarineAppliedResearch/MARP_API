@@ -4,8 +4,8 @@
  * A20 and A22, settled with Isaac on 2026-11-12: every habitat observation has a first
  * keyframe at its start and a last at its end with the habitat crop as the box, and an
  * annotator's are derived rather than stored. These check the rule itself, that the thumbnail
- * extractor's keyframe read and the retry route both see the two, and that nothing is written
- * to `keyframes`. The migration that queues those already failed changes rows a test did not
+ * extractor's keyframe read, the retry route and the Mosaic's video page all see the two,
+ * that nothing is written to `keyframes`, and that the video page sends them as not editable. The migration that queues those already failed changes rows a test did not
  * create, so it is checked by running it, not here.
  *
  * @fileoverview Tests for db/habitat-keyframes.js and where the thumbnail path uses it.
@@ -16,6 +16,7 @@ const db = require('../model');
 const { formatTimeSpan, deriveTc } = require('../db/timecode');
 const { HABITAT_BOX, derivedKeyframes } = require('../db/habitat-keyframes');
 const thumbnailRepository = require('../repository/observation-thumbnail.repository');
+const jellyfinRepository = require('../repository/jellyfin.repository');
 
 const { QueryTypes } = db.Sequelize;
 const q = (sql, replacements = {}) => db.sequelize.query(sql, { replacements, type: QueryTypes.SELECT, logging: false });
@@ -113,5 +114,31 @@ describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)'
 
         const [row] = await thumbnailRepository.requeue([habitat]);
         expect(row).toMatchObject({ status: 'queued', permanent: false });
+    });
+
+    describe('on the Mosaic\'s video page', () => {
+        beforeEach(() => {
+            jest.spyOn(jellyfinRepository, 'resolveVideoSource').mockResolvedValue({ item: { id: `jest-item-${runId}` }, score: 100 });
+            jest.spyOn(jellyfinRepository, 'getVideoFrameRate').mockResolvedValue({ averageFrameRate: 25, realFrameRate: 25 });
+        });
+        afterEach(() => jest.restoreAllMocks());
+
+        test('a habitat stretch is drawn from its start to its end', async () => {
+            const habitat = await stretch(await session('Habitat'), 200, 260);
+            const res = await global.api.post('/api/v2/mosaic/video/observations').send({ observation_id: habitat, filters: {} });
+            expect(res.status).toBe(200);
+            expect(res.body.observations.find((o) => o.observation_id === habitat))
+                .toMatchObject({ start_s: 200, end_s: 260, open_ended: false });
+        });
+
+        test('its two keyframes are the habitat crop, sent as worked out rather than stored', async () => {
+            const habitat = await stretch(await session('Habitat'), 300, 330);
+            const res = await global.api.post('/api/v2/mosaic/video/keyframes').send({ observation_ids: [habitat], from_s: 305, to_s: 310 });
+            expect(res.status).toBe(200);
+            expect(res.body.keyframes).toEqual([
+                { keyframe_id: null, observation_id: habitat, subset: '1', type: 'start', t: 300, ...HABITAT_BOX, derived: true },
+                { keyframe_id: null, observation_id: habitat, subset: '1', type: 'end', t: 330, ...HABITAT_BOX, derived: true },
+            ]);
+        });
     });
 });
