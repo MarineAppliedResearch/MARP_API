@@ -247,13 +247,15 @@ Mosaic can show, so a person can review it in the Mosaic as #342 decided.
   which annotated stretches do not have.
   **Answered by Isaac on 2026-11-12, relayed by the feasibility session:** as proposed -- cut
   on request from the segment's middle frame with the habitat crop, kept like a thumbnail.
-- [ ] **A22 · database/schema · blocking** — **How an annotator's habitat stretch gets its two
+- [x] **A22 · database/schema · blocking** — **How an annotator's habitat stretch gets its two
   keyframes** (from A20). Either (a) **written** into `keyframes`, as ingest already does for a
   model's: a migration adds them to every existing habitat observation without keyframes, and
   anything that saves a habitat observation later adds them too -- the data changes, and
   production would get them when it is promoted; or (b) **derived** when the Mosaic asks: no
   rows are written, and the Mosaic and the thumbnail extractor treat a habitat observation
   with no keyframes as having those two. Asked of Isaac 2026-11-12.
+  **Answered by Isaac in this session, 2026-11-12: (b), derived.** Nothing is written to
+  `keyframes` for an annotator's stretch.
 - [ ] **A12 · behavioural · non-blocking** — A habitat run is per video, and sessions are made
   per run as inference runs are now (`session.per_run`, one submission per dive and model,
   #336). Followed, not asked.
