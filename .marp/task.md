@@ -1,688 +1,410 @@
-# Build training datasets from the ML Dashboard
+---
+task: MarineAppliedResearch/MARP_API#287
+repos: [MARP_API, marp-inference-worker]
+status: design
+needs: []
+---
 
-Issue: MarineAppliedResearch/MARP_API#268
-Branch: `104-dashboard-reads-marp`
-Related: #104 (the dashboard's design), #265 (registering a trained model), #120 (the
-file server), `MarineAppliedResearch/marp-inference-worker#68` (the training half, merged)
+# Habitat substrate model in MARP: train it and run it from the ML Dashboard
+
+Issue: MarineAppliedResearch/MARP_API#287. Related: #342 (habitat in the Mosaic), #347
+(thumbnails after keyframes are added), the #268 work-stream checklist ("Later": habitat
+datasets from the dashboard), #76 (observations carry the moment they were seen).
+Branches: `287-habitat-model` in MARP_API and in marp-inference-worker, both from `develop`.
+The feasibility work is on `287-habitat-classification` (`.marp/habitat/`): evidence and
+settled numbers, not code to copy.
 
 ## Goal
 
-Build a training dataset out of MARP's own observations, from the ML Dashboard, ending in
-an archive the API can already serve to a worker — and **record what it is made of**, which
-is the part nothing has ever done.
+A biologist can build a habitat dataset from the ML Dashboard out of the habitat stretches
+annotators recorded, train a substrate model on a GPU worker, and run it over a dive's video.
+The run produces an automated Habitat session that looks like an annotator's: one
+observation per stretch of each substrate, on the video's clock, each with a picture the
+Mosaic can show, so a person can review it in the Mosaic as #342 decided.
 
-`dataset_observations` holds 0 rows for 0 datasets. Every dataset in MARP today says how
-many classes it has and nothing about which, and cannot say which observations it came
-from. #265 works around that by resolving packaged class names against `species.comname`,
-which happens to work for `rockfish5` and is not a design.
+## Settled (relayed from Isaac on 2026-11-10; not reopened here)
+
+- **Model:** DINOv2 ViT-B/14 (timm `vit_base_patch14_dinov2.lvd142m`), 518 px, one yes/no
+  output per substrate: Rock, Mud, Sand, Cobble, Boulder, several at once. A frozen-backbone
+  stage, then the whole model with layer-wise speeds (3e-5, decay 0.75, 1 warm-up pass, 10
+  passes), keeping the best on the tuning dives. Five seeds averaged is the best so far.
+- **Crop:** the habitat crop, x 0.25-0.75, y 0.5-1.0 of the frame. Kept by Isaac on 2026-11-10
+  after the retrain on it: one model, test F1 0.728 (0.751 on the old crop), Boulder 0.55
+  (0.62). Recorded on #287.
+- **Dataset:** a frame every 10 s inside annotated Habitat stretches, at least 2 s from any
+  change of substrate. Whole dives split 70/15/15 within each project. Blank, "Device
+  Unplugged" and "End Line" frames rejected. Labels are a yes/no per substrate. CAMPA 2024-2026
+  only so far. Annotators never label Mud with Sand.
+- **Output:** one automated Habitat session per run, owned by the "MARP Inference" user,
+  written as the ordinary session and observation endpoints write them. The GPU ingest refuses
+  Habitat and writes no `etc` today. Each observation carries the substrate (comname and its
+  species row), tc and etc on the clock, actual and media positions, video_source and
+  confidence, plus a start and an end keyframe whose box is the habitat crop (centre-origin,
+  normalised).
+- **Stretch rules:** 3 frames a second, scores averaged over 1 s, per-substrate cut-offs
+  picked on the tuning dives with Mud's raised by 0.2, at most one of Mud and Sand at a time
+  (the surer one stays), stretches at least 2 s, breaks of 2 s or less bridged.
+- **Mosaic (#342, 2026-11-10) -- superseded on 2026-11-12, see R8:** a habitat tile is a
+  segment of one combination of substrates,
+  worked out when the query runs. Segments under 2 s are left out. The picture is the
+  segment's middle frame with the habitat crop. Review: approve as is, or tap the wrong
+  substrate and the flag lands on that substrate's stretch. Filters: includes all, exactly,
+  or any of the chosen substrates, with the protocol's habitat types as presets.
+- **Clock (#76, merged in #348):** machine-made observations carry clock time where their
+  video's clock is set, and position time with no `observed_at` where it is not.
+
+## Where each piece lives
+
+| Piece | Repository | Where |
+| --- | --- | --- |
+| Choosing frames from habitat stretches, splitting by dive | MARP_API | a habitat planner beside `service/dataset-build-plan.js`. Builds run on the API, not a worker (#268 A1) |
+| Cutting the frames, rejecting non-seabed ones, packaging the archive | MARP_API | `service/dataset-build.service.js`, a habitat branch beside `runOne` (detection, which already cuts frames from Jellyfin with `extraction.extractFrames`) and `runClassificationBuild` (Mosaic tiles). A new `task` value: the `datasets.task` check (migration `20261027160000`) and `BUILD_TASKS` in `routes/dataset.routes.js` |
+| Recording what a habitat dataset holds | MARP_API | `recordBuild` in `repository/dataset-build.repository.js`: `datasets`, `dataset_classes`, `dataset_observations`, `dataset_splits`; per-frame labels need a home (A10) |
+| The multi-label DINOv2 trainer | worker | a new `BaseEngine` in `engines/`, registered in `engines/engine_registry.py`; the loop in `training/`. The dataset arrives as now (`training/dataset.py`, content-addressed cache) |
+| Recording a habitat training run | MARP_API | epochs through `db/epoch-metrics.js`; end-of-run scores through `db/final-metrics.js`, which has `box`, `seg` and `classify` families and needs a multi-label one (per-substrate F1, precision, recall) |
+| Registering a trained habitat model | MARP_API | `registerTrainedModel` in `repository/trained-model.repository.js`: `model_type` from the dataset's task (`deriveModelType`), substrates from `dataset_classes` by exact name. Plus the cut-offs (A3, A4) |
+| The habitat inference engine: 3 frames/s, crop, batched scoring | worker | a new `BaseEngine`; the sampler in `media/` beside `frame_range_reader.py`, which reads every frame and has no stride or batching |
+| Frame scores to stretches | worker or MARP_API (A2) | a new rule in `reduction/` (every inference spec names a registered reduction; only `v3_dirpad` exists), or the ingest |
+| Submitting a habitat run | MARP_API | `submitJobs` in `service/gpu.service.js`. Habitat is refused at submit (`validateSubmittedObservationTarget`) and at lease (`resolveDataTypeForLease`) by `ENGINE_DATA_TYPES`, because the species engine has no rule for when a habitat observation happens; a habitat engine is exempt from that check, not the check removed |
+| Writing the habitat session, observations and keyframes | MARP_API | `service/observation-ingest.service.js` and its repository, a habitat path that writes `etc` (A1). Per-run sessions as now (`service/inference-session.service.js`), owned by MARP Inference |
+| Thumbnails once keyframes exist (#347) | MARP_API | `repository/observation-thumbnail.repository.js` (`requeue`, `requestRefresh`), the keyframe insert trigger, `routes/thumbnail.routes.js` retry |
+| Habitat segments in the Mosaic (#342) | MARP_API | `repository/mosaic.repository.js`: a tile is one observation row today and the species filter is `species_id = ANY`, so segments need their own query |
+| Dashboard: build, train, run, read a habitat model | MARP_API | `frontend/apps/ml-dashboard`: the Datasets builder sends no `task` today; Training wires detection only; Inference offers only "Detection + ByteTrack" |
+
+**Found while mapping, and changing the plan:**
+
+- **A dataset build only takes observations that have keyframes** (`buildSelectionQuery`). Hand-entered habitat stretches have none, so a habitat build selects stretches its own way rather than through the Mosaic selection.
+- **"Sand" is not unique in the catalogue.** The five substrates are on the Habitat list
+  (Rock 666001, Boulder 666002, Cobble 666003, Sand 666004, Mud 666005), and the development
+  database also has a "Sand" on `MBARI_315k`. Model registration matches class names across
+  the whole catalogue and requires exactly one, so a habitat model would be refused. A14 covers
+  it: substrates are resolved within the Habitat list.
+- **A worker's downloaded models are cached per installed version**, so an upgrade fetches the DINOv2 weights again. Noted, not changed here.
 
 ## Requirements
 
-- **R1 — A build is a job, not a request.** `rockfish5` is 11,845 images and 4.9 GB;
-  `CAMPA_STAR_TEST3` is 20 GB. A build gets a `gpu_jobs` row so it has progress somebody
-  can watch, cancellation, retry, and a record of what it produced — and so the Jobs and
-  History screens show it with no new rendering.
-- **R2 — The API runs it, not a worker.** Settled by the human on 2026-10-20: *"It doesn't
-  really make sense to be streaming the video over to a worker and then to re-download the
-  entire thing when it can just be a background thread on the API."* `POST /gpu/poll` never
-  offers `dataset_build` to a worker.
-- **R3 — Membership is recorded.** Every observation that went in gets a
-  `dataset_observations` row naming its split.
-- **R4 — The vocabulary is recorded, in order.** A class index in a YOLO label file is
-  meaningless without the ordered list it indexes. `datasets.num_classes` cannot carry it.
-- **R5 — Frames come from the video, with YOLO labels.** A keyframe is a box at a frame
-  number; the frames between two keyframes are interpolated and are trained on as well
-  (settled 2026-10-20, and the reason `/mosaic/observations/frames` counts the span).
-- **R6 — The archive is the shape `scripts/package-dataset.js` already produces**:
-  `train/images`, `train/labels`, `eval/images`, `eval/labels` and a `data.yaml` carrying
-  `names`, `nc`, `train: train/images`, `val: eval/images`. Content-addressed by SHA-256,
-  recorded on `datasets.archive_path` / `archive_sha256` / `archive_bytes`.
-- **R7 — No frame leaks across splits.** The Datasets screen states the rule: *"An
-  observation or connected frame group keeps its first split assignment."* Two observations
-  that share any frame are one group and go to one split.
-- **R8 — A failed or cancelled build leaves nothing half-served.** The archive may be
-  gigabytes by the time it fails. The dataset ends `failed`, with no `archive_*` set and no
-  partial file left behind.
+- **R1** — #347: adding a keyframe to an observation whose thumbnail failed for having no
+  keyframes makes that thumbnail requestable again, through the API's keyframe routes and the
+  Mosaic's. The retry route accepts it once it has keyframes and still refuses it without.
+  Other permanent failures are unchanged.
+- **R2** — A habitat dataset is built from the dashboard: frames from the chosen projects'
+  habitat stretches by the settled rule, whole dives per split, non-seabed frames rejected,
+  and every frame's yes/no labels recorded.
+- **R3** — A worker trains the settled DINOv2 multi-label model on such a dataset, reporting
+  progress, per-pass losses and per-substrate scores as training jobs do now, and publishes the
+  weights with the cut-offs chosen on the tuning dives.
+- **R4** — The trained model is registered as a habitat model with its five substrates and its
+  cut-offs, and shows on the Models screen with its per-substrate scores.
+- **R5** — A worker runs a habitat model over a video at 3 frames a second on the habitat
+  crop, and its result becomes stretches by the settled rules.
+- **R6** — A habitat run's result becomes one automated Habitat session owned by MARP
+  Inference, with an observation per stretch as specified under Output, start and end
+  keyframes with the habitat crop, on the video's clock where it is set.
+- **R7** — Its tiles get pictures in the Mosaic without anything done by hand (needs R1).
+- **R8** — Habitat observations are shown and reviewed in the Mosaic like any other
+  observation, found by filtering on the Habitat session type. Isaac, 2026-11-12, correcting
+  the segment design below: *"the mosaic shows us observations, the habitat is just another
+  type of observation, there is literally nothing different about it other than the type we
+  will filter by"*. Each stretch is its own tile, with its picture from its start keyframe
+  (A20, A22), reviewed and promoted with the Mosaic's own modes and commit.
+- **R9** — The ML Dashboard carries the Mud and Sand rule as part of building a habitat model,
+  not only inside inference. Isaac, 2026-11-10: *"our ml dashboard will need to put a rule in
+  about mud and sand when it's building this dashboard"*; Mud, Sand and Gravel never overlap,
+  and no annotated frame has Mud with Sand (0 of 32,636). Today the rule exists only as a
+  stretch rule applied after the model (`exclusive` in `db/habitat-rules.js`, shown on the
+  Models screen as "Never together"). Where else it applies is A15-A18. Tested at the tier of
+  each place it is applied: the dataset build (API jest), the rules a trained model is
+  registered with (API jest), the stretches a run makes (worker pytest), and what the
+  dashboard shows (dashboard unit).
 
 ## Open assumptions
 
-- [x] **A1 · architectural · blocking** — **Who executes a build.** Answered by the human
-  2026-10-20: the API, as a background runner. Not a GPU worker, and the worker-side framing
-  in #268 was the other agent's presupposition rather than his intent. A `gpu_jobs` row is
-  still the record, because progress, cancel, retry and the dashboard already work on one.
-- [x] **A2 · database/schema · blocking** — **Where the ordered vocabulary lives.** A new
-  `dataset_classes` table: `dataset_id`, `class_index`, `species_id`. A table rather than a
-  JSONB column because #265 needs to resolve a model's species *by join*, which is the whole
-  reason the gap was noticed. Decided, not asked: `datasets` has no column that could carry
-  an ordered list and inventing a delimited string in `notes` is the alternative.
-- [x] **A3 · data-meaning · non-blocking** — **What `dataset_observations.inclusion_type`
-  means.** Nothing has ever written the column, so there is no existing meaning to preserve
-  and nothing downstream to break. Defined here as the split: `train` or `eval`.
-  `selection_method` records how the observation was chosen, which for a dashboard build is
-  the saved query.
-- [ ] **A4 · product/UI · non-blocking** — **Whether a built dataset is immutable.** #104
-  describes saved datasets as immutable with a fingerprint, and the archive is already
-  content-addressed, so this implementation does not edit in place: a rebuild produces a new
-  archive. Flagged rather than asked because nothing here depends on the answer; it matters
-  the first time somebody wants to add observations to a dataset that exists.
-- [ ] **A5 · performance · non-blocking** — **Extraction concurrency.** The thumbnail
-  extractor has a measured ceiling that exists to protect Jellyfin (`task-118`, R20). A
-  build is a second consumer of the same media server and should share that ceiling rather
-  than set its own. Not blocking: one build at a time, inside the existing limit, is
-  correct and is what this implements.
-- [ ] **A6 · environment · non-blocking** — **Eviction.** Built archives accumulate on the
-  API host and nothing removes them. Same shape as #65 for job workspaces. Out of scope
-  here, and named so it is not mistaken for finished.
-
-## Decisions
-
-- **2026-10-20 · A `gpu_jobs` row for work no GPU touches.** The table is named for its
-  first use, not its only one. What a build needs — a queue, a state machine, attempts,
-  progress, cancel, and a row the Jobs screen can draw — is exactly what `gpu_jobs` is, and
-  the alternative was a second table carrying all of it again plus new rendering.
-  `dataset_build` is excluded from what `poll` offers, the way `INGESTIBLE_JOB_KINDS`
-  already subsets kinds for a different reason.
-- **2026-10-20 · The build reuses `service/thumbnail-extraction.service.js`.** It already
-  cuts a set of frames from one video in a single ffmpeg pass, already talks to Jellyfin,
-  and already interpolates a box between two keyframes. #268 predicted a dataset build
-  would be a second consumer of that capability; it is.
+- [x] **A1 · architectural · blocking** — answered 2026-11-10 by Isaac: the API writes it. The
+  worker sends its result and the API's ingest writes the session, observations and keyframes
+  as the ordinary endpoints do, in one transaction. — **Who writes the habitat session.** The settled
+  output says "through the ordinary session and observation endpoints". In the product the
+  worker never calls them: it publishes a result file and the API's ingest writes the rows,
+  which keeps a worker's token to "report a job". Proposed: the ingest gets a habitat path
+  that writes exactly what the ordinary endpoints write (session, observations with `etc`,
+  keyframes), in one transaction. Or should the worker post to the ordinary endpoints itself?
+- [x] **A2 · architectural · blocking** — answered 2026-11-10 by Isaac: on the worker, which
+  sends the stretches and every frame's raw scores beside them. — **Where frame scores become
+  stretches.** Proposed:
+  on the worker, as a registered reduction rule (`habitat_stretches`, version 1), which also
+  publishes every frame's scores, so new cut-offs could be re-applied later without the GPU.
+  The other way is the worker sending only scores and the API making stretches.
+- [x] **A3 · database/schema · blocking** — answered 2026-11-10 by Isaac: stored with the
+  model in MARP, shown on the Models screen, sent to the worker with each run. — **Where a
+  model's cut-offs and stretch rules live.** They are chosen per model on its tuning dives, and inference needs them. Proposed: a
+  JSON column on `ml_models` (`decision_rules`: per-substrate cut-off, Mud raise, averaging,
+  minimum, bridging, one of Mud/Sand), filled from a file the trainer publishes, and handed to
+  the worker in the job spec. Or kept inside the weights file only.
+- [x] **A4 · database/schema · blocking** — answered 2026-11-10 by Isaac: a new model type,
+  `habitat`. — **What a habitat model is called.**
+  `ml_models.model_type` is `detection` or `classification` today. Proposed: a new value
+  `habitat` (multi-label substrate classifier), so every screen and check that filters by type
+  keeps working and habitat models stay out of species inference. Or `classification` with a
+  multi-label flag.
+- [x] **A5 · environment · blocking** — answered 2026-11-10 by Isaac: approved, add `timm`
+  and `safetensors`. — **Adding `timm` (and `safetensors`) to the worker.**
+  The settled model is timm's. Adding a dependency is Isaac's approval, and it means the five
+  packaging lock files and the installer. Approve?
+- [x] **A6 · architectural · blocking** — answered 2026-11-10 by Isaac: registered in MARP as
+  a base model with its checksum and served from MARP; workers need no internet. — **How the
+  DINOv2 starting weights reach a worker.**
+  Proposed: registered in MARP as a base model, served from MARP with its sha256 like the
+  classification base models, so workers stay offline. Or downloaded from Hugging Face by the
+  worker (the pinned revision and checksum `fetch_pretrained.py` uses).
+- [x] **A7 · behavioural · blocking** — answered 2026-11-10 by Isaac: one training job trains
+  one model; averaging several comes later. — **One trained model, or five averaged.** Five seeds
+  averaged scored best (0.755 against about 0.74 for one), and costs five trainings and five
+  times the inference. Proposed: one training job trains one seed and registers one model;
+  averaging is a later step. Or one job trains five and the model is the five.
+- [x] **A8 · data-meaning · blocking** — answered 2026-11-10 by Isaac: *"just like our current
+  dataset builder, we'll be able to build and query datasets"*. The person chooses the
+  stretches with a query in the dashboard, as species builds are chosen, including which
+  annotators and sessions. As there, what goes in is what the query selects and is promoted for
+  training, so a model's habitat stretches can be used once reviewed and promoted. One automatic
+  check stays: a session whose clock-to-video gap moves by more than 2 s within one file is left
+  out and listed in the build report. — **Which habitat sessions a dataset learns from.**
+  Proposed, as the feasibility plan did: never automated sessions; where several people
+  annotated a line, the first session only (so a line is not counted twice); a session whose
+  video files' offsets disagree by more than 2 s is left out.
+- [x] **A9 · data-meaning · blocking** — answered 2026-11-10 by Isaac: the feasibility rule,
+  with the example screens kept in the repository and every rejected frame listed on the
+  dataset with its reason, *"then the biologist will be able to review it in the mosaic viewer
+  as well"*: a habitat dataset's frames are reviewable in the Mosaic, as #342's first comment
+  says (thumbnails saved to the file server and served through the same pipeline). — **How
+  non-seabed frames are recognised.** The
+  feasibility build compared each frame, shrunk to 32 x 18, against two example screens picked
+  by eye from CAMPA video ("Device Unplugged", the End Line card), and treated a nearly flat
+  frame as blank. Proposed: the same rule with the example screens checked into the repository
+  as data, and every rejection listed on the dataset. Is that right for the product?
+- [x] **A10 · database/schema · blocking** — answered 2026-11-10 by Isaac: the same workflow
+  as the Mosaic and species builds, no new table. A habitat dataset is chosen from Mosaic
+  habitat segments (#342), reviewed and promoted; frames are cut every 10 s inside each
+  segment, 2 s from its ends, and a frame's labels are its segment's combination of substrates.
+  The stretches used are recorded in `dataset_observations`, and the frames go in the archive.
+  So the dataset build comes after #342's segments. — **Where a habitat frame's labels are
+  recorded.**
+  A species dataset records observations; a habitat frame is a moment covered by several
+  stretches with five yes/no labels. Proposed: a new `dataset_frames` table (dataset, split,
+  video_source, position, project, dive, line, the five labels as an array in the dataset's
+  class order, the stretches that covered it), and `dataset_observations` rows for the
+  stretches used.
+- [x] **A11 · product/UI · blocking** — answered 2026-11-10 by Isaac: approving a segment
+  approves every stretch under it whole, as a flag lands on a whole stretch; reviews stay per
+  observation. — **Habitat review in the Mosaic, approving a segment.**
+  #342 says a wrong substrate is flagged by tapping it, and the flag lands on that substrate's
+  stretch. When a segment is approved as is, is every stretch under it approved whole, even
+  where a stretch runs past the segment? Only #342's piece waits on this.
+- [x] **A15 · data-meaning · blocking** — answered 2026-11-10 by Isaac: let it through, as
+  labelled. — **A dataset frame labelled both Mud and Sand.** None
+  is today, but a future annotation or a reviewed model stretch could make one. Proposed: the
+  frame is left out of the dataset and listed in the build report with its reason, as rejected
+  non-seabed frames are. Or the whole build is refused, or the frame goes in as labelled.
+- [x] **A16 · scientific · blocking** — answered 2026-11-10 by Isaac: not yet; keep applying it
+  after the model, the surer one stays. — **Whether the model is taught the rule.** Today it is
+  only applied after the model: where both pass their cut-offs, the surer stays. Proposed:
+  keep it that way for the first trainer, which is the recipe that was measured. The other
+  way is training Mud and Sand as one choice of three (Mud, Sand, neither) so the model can
+  never answer both, which changes the model and needs its own measurement first.
+- [x] **A17 · product/UI · blocking** — answered 2026-11-10 by Isaac: an editable setting a
+  person can change, not a fixed one. At which level is A19. — **How the rule shows in the
+  dashboard, and who can change it.** Proposed: the habitat dataset builder and the training form both state it
+  ("Mud and Sand are never together"), it is copied into each model's rules when the model is
+  registered and shown there as now, and it is not editable on screen at first. Or it is a
+  setting a person can change per dataset or per model.
+- [x] **A18 · data-meaning · blocking** — answered 2026-11-10 by Isaac: one group, Mud + Sand +
+  Gravel, applied to whichever of them a model or dataset has. — **Gravel.** Isaac named Mud, Sand and Gravel as never
+  overlapping; the model has no Gravel class (the five are Rock, Mud, Sand, Cobble, Boulder).
+  Proposed: the rule is stored as one group, Mud, Sand and Gravel, applied to whichever of
+  them a model or dataset has, so Gravel is covered the day it is added. Or Mud and Sand only.
+- [x] **A19 · database/schema · blocking** — answered 2026-11-10 by Isaac: per model, kept in
+  each model's rules and editable on the Models screen. — **Where the editable Mud/Sand/Gravel
+  setting lives: per model, per dataset, or both.** With A15 and A16 answered, the rule changes nothing
+  in a dataset or in training; it acts only when a model's scores become stretches. Proposed:
+  **per model**. It is already stored in each model's rules (no new column), editing it on the
+  Models screen changes that model's later runs, and runs already made keep what they were made
+  with. Per dataset would need a new column on `datasets` that is only copied into the model at
+  registration; both would mean a dataset default that the model can then override.
+- [x] **A20 · product/UI · blocking** — **Approving a segment whose stretches have no picture.**
+  Found 2026-11-10 while building #342. The Mosaic's review route records an approval only for
+  an observation with a ready picture (a reviewer may not approve what they were not shown); it
+  waives that for an approval made on the video page. A model's stretches get pictures from
+  their keyframes, but an annotator's habitat stretches have no keyframes and never will. So
+  approving an annotated segment is refused as `no-imagery`. Proposed: the segment's own
+  picture counts, as the video page does -- an approval sent from a segment that showed one is
+  accepted for every stretch under it. Flagging needs no picture and works now. Only approving
+  annotated segments waits on this, and on A21.
+  **Answered by Isaac on 2026-11-12, relayed by the feasibility session** -- not the proposal:
+  *"the mosaic needs to be adapted to understand a first and last keyframe of each habitat
+  observation. since we know the size of the boxes were using, we should use that for the
+  mosaic."* So every habitat observation, an annotator's as well as a model's, has a first
+  keyframe at its start and a last at its end, with the habitat crop (x 0.25-0.75,
+  y 0.5-1.0) as the box; an annotator's stretch then has a picture and is approved like any
+  other. A model's stretches already get these two keyframes at ingest. How an annotator's
+  get them is A22.
+- [x] **A21 · architectural · blocking** — **Where a segment's picture comes from.** #342 says
+  the segment's middle frame with the habitat crop. A segment is worked out when the query runs
+  and has no row, so its picture cannot be an observation thumbnail. Proposed: cut on request
+  from the middle frame (the segment query already says which video and how far in), stored by
+  video, position and crop, and served like a thumbnail. Or the first stretch's own picture,
+  which annotated stretches do not have.
+  **Answered by Isaac on 2026-11-12, relayed by the feasibility session:** as proposed -- cut
+  on request from the segment's middle frame with the habitat crop, kept like a thumbnail.
+- [x] **A22 · database/schema · blocking** — **How an annotator's habitat stretch gets its two
+  keyframes** (from A20). Either (a) **written** into `keyframes`, as ingest already does for a
+  model's: a migration adds them to every existing habitat observation without keyframes, and
+  anything that saves a habitat observation later adds them too -- the data changes, and
+  production would get them when it is promoted; or (b) **derived** when the Mosaic asks: no
+  rows are written, and the Mosaic and the thumbnail extractor treat a habitat observation
+  with no keyframes as having those two. Asked of Isaac 2026-11-12.
+  **Answered by Isaac in this session, 2026-11-12: (b), derived.** Nothing is written to
+  `keyframes` for an annotator's stretch.
+- [ ] **A12 · behavioural · non-blocking** — A habitat run is per video, and sessions are made
+  per run as inference runs are now (`session.per_run`, one submission per dive and model,
+  #336). Followed, not asked.
+- [ ] **A13 · behavioural · non-blocking** — 3 frames a second is taken by time (one frame
+  each 1/3 s, nearest decoded frame), at any video frame rate.
+- [ ] **A14 · data-meaning · non-blocking** — A substrate's species row is the Habitat list's
+  row of that name, at registration and at ingest, and a name matching none or several there
+  is refused, as the species ingest does. Needed because "Sand" also exists on `MBARI_315k`.
 
 ## Plan
 
-1. Migration: `dataset_classes`, and `dataset_build` accepted as a job kind.
-2. `repository/dataset-build.repository.js` — selection, membership, vocabulary.
-3. `service/dataset-build.service.js` — the runner: select, extract, label, split, package.
-4. Route: queue a build from a saved query; the existing job routes do the rest.
-5. The Datasets screen's *Queue dataset build* button calls it.
+Built in this order. Each step is merged only when Isaac says so.
 
-## Acceptance criteria
+1. **#347** (R1). Independent, small, needed before any automatic picture.
+2. **Pure pieces nothing blocks.** In the worker: a frame sampler by time and the habitat crop
+   (A13). In MARP_API: choosing frames from a set of stretches by the settled rule, with the
+   seeded whole-dive split. Both tested in the fast tier.
+3. **Model type, registration and cut-offs** (A3, A4, R4).
+4. **Trainer engine** (A5, A6, A7, R3), with a GPU run recorded in `.marp/verification.md`.
+5. **Inference engine and stretches** (A2, R5).
+6. **Habitat ingest** (A1, R6), then the Mosaic pictures end to end (R7).
+7. **#342 Mosaic segments** (A11, R8). Before the dataset build, which is chosen from them (A10).
+8. **Dataset build from the dashboard** (A8, A9, A10, R2).
+9. **Dashboard screens**: build, train, run, read a habitat model.
 
-- A build queued from the dashboard produces an archive `GET /gpu/datasets/:id/archive`
-  serves, which the worker's existing verification accepts.
-- `dataset_observations` has one row per included observation, naming its split.
-- `dataset_classes` gives the ordered vocabulary, and its order matches `data.yaml`'s
-  `names`.
-- Two observations sharing a frame are in the same split, always.
-- A cancelled build leaves `status = 'failed'`, no `archive_*`, and no partial file.
+## Test plan (draft; reviewed at G3 before anything slow runs)
 
-## Test plan
-
-Written in full at G3, before anything is run. Tiers that can see this: the repository and
-service against a seeded database (fast), and one end-to-end build over a short real video.
-
-## Status
-
-G1 — spec written, A1 and A2 settled. Not yet implemented.
-
----
-
-# 1.2 — Progress on the Datasets screen
-
-Issue: MarineAppliedResearch/MARP_API#268, planning comment of 2026-10-21, item 1.2.
-Branch: `claude/268-dataset-build-progress-261a94`, cut from `104-dashboard-reads-marp`.
-
-## Goal
-
-A build's progress is only on the Jobs screen. The Datasets screen — the one place somebody
-watching a four-hour build actually looks — shows `—` in FRAMES for a build in flight, and
-draws its *Building now* and *Queued builds* cards from six fixture rows typed into
-`screens.js`. Join each building dataset to its `dataset_build` job and show what it is doing.
-
-## Requirements
-
-- **P1 — A building row says frames done against total.** `42,816 / 63,200`, from the
-  latest attempt's `progress_done` / `progress_total`, not a percentage alone.
-- **P2 — And the phase.** `selecting`, `extracting`, `packaging` — because a build sits at
-  `0` for minutes during `selecting`, and a reader who sees `0 / 0` with no phase concludes
-  it is stuck.
-- **P3 — Queued is distinct from building.** `datasets.status` is `building` from the
-  instant the build is queued, so the dataset alone cannot say whether anything has started.
-  The job's state can: `queued` draws *Queued*, `leased` draws the phase.
-- **P4 — Poll while anything is building, and stop when nothing is.** No timer running on a
-  screen with nothing in flight.
-- **P5 — The cards and the donut count what MARP holds**, not fixtures. The six fixture
-  build rows in `screens.js` go; they would otherwise sit above the real rows showing invented
-  progress, and the cards would count them.
-- **P6 — Nothing invented.** A build's elapsed time is derivable and is shown; its archive
-  size so far, its fingerprint and a remaining-time estimate are not recorded anywhere and
-  say so, the way every other unbacked field on this screen does.
-
-## The join, and what was rejected
-
-**`GET /api/v2/dataset/builds`** — one request, every `dataset_build` job that is `queued`
-or `leased`, with its latest attempt's progress, at most one row per dataset.
-
-Three reasons it is a route of its own rather than a field on the dataset:
-
-1. **`Dataset`'s schema is generated from the Sequelize model.** `docs/openapi.js` derives
-   it in `GENERATED_SCHEMAS`, so a `build` object hung on the row is a field the published
-   contract cannot describe without a hand-maintained parallel schema — a document that
-   promises to stay in sync with code it cannot observe, which `AGENTS.md` names by name.
-2. **Progress is not a property of a dataset.** It belongs to the latest attempt of the job
-   building it. What the dataset itself records is `status`, and `num_samples` once the
-   build finishes.
-3. **Polling.** `GET /api/v2/dataset` is unpaged and grows without bound; polling it every
-   few seconds to watch one row move re-fetches every saved dataset. This route answers
-   only about work in flight, and answers `[]` — at which point the screen stops polling.
-
-**Rejected — a `build` field on `GET /api/v2/dataset`.** One request rather than two, and
-the completion transition (`status` → `ready`, `num_samples` filled) would arrive in the
-same payload as the last progress report. Rejected for 1 and 3 above.
-
-**Rejected — asking the existing jobs route.** `GET /api/v2/gpu/jobs` carries no progress
-at all: it is on the attempt, and only `GET /api/v2/gpu/jobs/:id` returns attempts. That is
-one detail request per building row, which is the request-per-row-to-draw-one-page this app
-rejected on the Models screen for the same reason.
-
-## Open assumptions
-
-- [x] **P-A1 · product/UI · non-blocking** — **The Status pill shows the phase while a
-  build runs**, rather than a generic *Building* with the phase elsewhere. The filter still
-  keys on `building`, so filtering is unchanged. Taken because the pill is the row's one
-  piece of prose and *Extracting* is strictly more useful there than *Building*.
-- [x] **P-A2 · product/UI · non-blocking** — **Five seconds between polls.** Progress is
-  reported once per video, and a video is minutes; a faster poll would redraw a table that
-  has not changed.
-
-## Acceptance criteria
-
-- A dataset whose build is `leased` shows `done / total` and the phase; one whose build is
-  `queued` shows neither and says *Queued*.
-- With nothing building, no timer is running and the cards read nothing building / nothing
-  waiting.
-- `node frontend/apps/ml-dashboard/tools/markup-check.mjs` reports no more than the 129 it
-  reported before.
+| Tier | What | Covers |
+| --- | --- | --- |
+| API jest, `test:observations` / thumbnails | a keyframe added after a no-keyframes failure lets the thumbnail be made; the retry route refuses an observation still without keyframes | R1 |
+| API jest | the frame planner: 10 s grid, 2 s margin, gaps unlabelled, whole dives per split, seeded | R2 |
+| API jest, `test:gpu` | registering a habitat model with cut-offs; an inference spec for one; ingest of a habitat result into a session with `etc`, keyframes and the clock | R4, R6 |
+| worker pytest | sampler and crop; stretch rules (averaging, cut-offs, Mud/Sand, minimum, bridging) on fixed score arrays; the engine contract and registry; trainer with the model faked | R3, R5 |
+| GPU, manual, recorded | a short training run on a small habitat dataset; a habitat run over one real video; scores against the feasibility numbers | R3, R5 |
+| Mosaic browser | habitat tiles get pictures; segments, filters and review | R7, R8 |
 
 ## Status
 
-G1 — written, both assumptions answered as non-blocking.
-
----
-
-# YOLO's training output: the confusion matrix, per-class AP and the plots
-
-Issue: MarineAppliedResearch/MARP_API#268, the training half.
-Branch: `268-yolo-training-output`, stacked on `104-dashboard-reads-marp`.
-Cross-repository: `marp-inference-worker` emits the two artifacts this reads.
-
-## Goal
-
-A person looking at a finished training run in the ML Dashboard can see everything YOLO
-itself produced about it: the confusion matrix, per-class precision/recall/AP, and the
-curve and sample images Ultralytics writes to every run directory — the PR, F1, P and R
-curves, the label distribution and correlogram, and the validation prediction samples.
-None of it is computed by MARP. All of it is carried from the worker, stored, and served.
-Where MARP has nothing, the screen shows a gap rather than a number.
-
-## Requirements
-
-- **R1** — Every file a training attempt hands over is stored by content, addressable,
-  and identifiable by what it is rather than being an anonymous `result`.
-- **R2** — A training run's files can be listed and fetched by a browser through the API,
-  including a file type MARP has never seen before.
-- **R3** — Per-class quality — precision, recall, F1, AP50, AP50-95 — is recorded per
-  class per split, and the all-classes aggregate is distinguishable from a per-class row.
-- **R4** — A class the model reported that MARP cannot resolve to a species is recorded
-  under the name the model used, not dropped and not merged into the aggregate.
-- **R5** — The confusion matrix is stored as numbers as well as the rendered image, with
-  its class order and its orientation recorded, so it can be read, compared and
-  re-bucketed rather than only looked at. *(Conditional on A2.)*
-- **R6** — Nothing is synthesised. A run that reported no confusion matrix and no
-  per-class metrics serves nothing, and an absent measurement is served as null, never
-  as zero.
-- **R7** — `results.csv` is stored as the file the trainer wrote and does not produce a
-  second set of epoch rows; `epochs` stays fed by the live metric events.
-- **R8** — The record says which task's vocabulary a metric row is in, so a future
-  classification or segmentation run is not misread as a detection run that failed to
-  measure its mAP.
-- **R9** — Precision, recall and F1 are stored at every confidence threshold the trainer
-  evaluated, per class, so the PR curve can be drawn from numbers rather than only looked
-  at as a white-background image.
-
-## Open assumptions
-
-- [x] **A1 · environment · blocking** — answered 2026-10-26: branch from
-  `104-dashboard-reads-marp`, not `develop`. The brief was wrong, and it also matches a
-  standing rule — **one branch per repository per work stream**, open until the stream is
-  finished. `develop` carries neither `db/epoch-metrics.js` nor the epoch loss/duration/
-  offset columns, so building on it would have reproduced the stale-ingest defect this
-  stream just spent a day fixing. Rebased onto `55e82e82`.
-- [x] **A2 · cross-repository · blocking** — answered 2026-10-26 by the worker session,
-  read off Ultralytics 8.4.145 rather than recalled. Yes to numbers.
-  `trainer.validator.confusion_matrix.matrix` is `(nc+1)²` for detect/segment/obb and
-  `nc²` for classify/semantic. `metrics.py:400` is `self.matrix[p][t] += 1`, so **row =
-  predicted, column = true** — the transpose of how a reader reads one, as suspected.
-  Background is index `nc` on both axes: `matrix[nc][j]` is false negatives of true class
-  *j*, `matrix[i][nc]` is false positives of predicted class *i*, and `matrix[nc][nc]` is
-  never incremented. It travels self-describing, with its own `orientation` string. R5
-  stands.
-- [x] **A3 · cross-repository · blocking** — answered 2026-10-26: yes, per-class AP keyed
-  by class name is a zip of `ap_class_index` against `names` and trivial on the worker's
-  side. **With one gap that changes R4: `ap_class_index` contains only classes that
-  appeared in the validation set.** A class with no validation instances gets no row at
-  all, so a missing class means *never evaluated*, not *scored zero* — and on a species
-  list where the rare classes are the point, conflating those is the worst available
-  error. R3 and R4 stand, with D6 below.
-- [x] **A4 · environment · non-blocking** — answered 2026-10-26: resolved, and it was never Isaac's to resolve. Retagged, because it was
-  mis-tagged: whether this workspace has a database is an environment prerequisite, not a
-  question whose different answer changes the behaviour, schema, interface or data. It is
-  **still open and still real**: `npm ci` is done, but `agent.mjs adopt` refuses this
-  worktree (`yolo-training-output-f030ed` does not start with a registry directory name,
-  so it cannot tell which repository it is — the directory was made by the desktop app,
-  not by the harness). Reported rather than improvised around. **Nothing here is verified
-  until it is resolved**, and that limit is stated again under Status rather than left to
-  be inferred from a green-looking spec.
-- [ ] **A5 · scientific / data-meaning · non-blocking** — when a reported class name resolves to more
-  than one species, or to none, R4 records it under the reported name with a null
-  `species_id`. Confirming that is the wanted behaviour rather than a refusal. (#265
-  resolves 11 of 11 for rockfish5 against `species.comname`, which is one dataset's good
-  luck rather than a guarantee; `Red sea urchin` is already known to be on two lists.)
-  Not blocking: recording more than MARP can resolve loses nothing either way.
-- [ ] **A6 · database/schema · non-blocking** — `metrics_summary`'s eight `*_path` columns are left
-  unwritten and commented as superseded rather than dropped. Dropping a published column
-  on a scientific record is the human's call. Not blocking.
-- [x] **A7 · product/UI · non-blocking** — answered 2026-10-26: **in scope, build it.**
-  `metrics_curves` existing, empty and shaped exactly for per-threshold precision, recall
-  and F1 is the table for this rather than a coincidence to work around, and an
-  interactive curve beats a white-background PNG that cannot be read on a dark page. Two
-  conditions attached: the image is kept as well, and the **real** row count and byte size
-  are reported once measured rather than estimated — if it is far worse than ~20k rows
-  the work stops and it becomes Isaac's call. Cheap on the worker's side: one property
-  access, no computation.
-- [x] **A8 · scientific / data-meaning · non-blocking** — answered 2026-10-27: **columns,
-  not `details`.** A classification run writes one aggregate row with detection's metric
-  columns null and its accuracies in `accuracy_top1` / `accuracy_top5`.
-  `ClassifyMetrics` has no per-class array and no precision, recall or AP at all, so it
-  cannot fill these columns; the rule is recorded and **nothing is built for it**, since
-  this engine declares detection. Confirm the shape when classification is actually the
-  task rather than designing it now against a model nobody has trained.
-
-## Decisions
-
-- **2026-10-26 · the plots do not go in `metrics_summary`'s path columns.** They go in
-  `artifacts`, content-addressed, served by a new read route. Three reasons, in order of
-  force. Ultralytics writes three `val_batch*_pred.jpg` files and there is **no column
-  for any of them**, so a closed set of eight columns is structurally the wrong shape for
-  an open set of files — it can only drop what it has no column for, and the frontend has
-  asked for an open array keyed by the real filename stem precisely so an unanticipated
-  plot appears instead of disappearing. A path is not a hash, and
-  `ml_models.artifact_sha256` (2026-10-23) is this platform having already decided that
-  immutable bytes are addressed by content; a second pathing scheme beside the weights'
-  would be exactly the drift that decision avoided. And `artifacts`' own table comment
-  already claims this job — "files and outputs produced during a training run, including
-  weights, logs, and result visualizations".
-
-  The alternatives considered and rejected: writing the eight columns (cannot hold the
-  prediction samples, cannot hold an unknown plot); a new `training_run_plots` table
-  (a second copy of `artifacts` with nothing to justify it).
-
-- **2026-10-26 · the numbers do go in `metrics_summary`, plus two columns.** The catch
-  the handoff note named is real — `map50`, `map5095`, `box_*` are detection's
-  vocabulary and classification and segmentation are the next two tasks — but it is
-  narrower than it looks: **`precision`, `recall`, `f1_score` and `fitness` are
-  task-neutral; all three tasks report them.** Only the two mAP columns are not. And
-  Ultralytics hands over the discriminator itself — `(B)` for box, `(M)` for mask, the
-  same four metric names otherwise — so a segmentation run does not need new metric
-  columns at all. It needs a second *row*.
-
-  So: add **`metric_family`** (`box` | `mask` | `classify`) and **`class_name`**.
-  Detection writes `box`. Segmentation will write a `box` row and a `mask` row per class,
-  using the same four columns, because that is literally what it reports. Classification
-  will write `classify`, leave the two mAP columns null, and carry top-1/top-5 in
-  `details` until there is real data to justify columns for them.
-
-  `metric_family` is not decoration. Without it, a classification row with a null `map50`
-  is indistinguishable from a detection row that failed to measure one — the same
-  "a gap that reads as a measurement" failure this stream has already fixed once, in a
-  new place. `class_name` exists because `species_id` is nullable and already means "the
-  all-classes aggregate"; an unresolved class landing as a second kind of null would make
-  the aggregate ambiguous. With both columns: `class_name` null is the aggregate,
-  `class_name` set with `species_id` null is a class MARP could not resolve, and that is
-  a fact worth keeping.
-
-  One migration today, none for segmentation, a small one or none for classification.
-  Rejected: new per-task tables (speculative, for tasks nobody has trained, and #68's
-  history is a record of what building to a line nobody decided costs); a metric
-  name/value row shape (survives anything, but discards columns that already exist and
-  are already right for the only task being trained, and makes every read a pivot).
-
-- **2026-10-26 · `results.csv` is a file, not a second ingest.** `epochs` is fed from the
-  live metric events, which is what makes a chart move while a run is going. The CSV is
-  kept because it is what the trainer wrote; it is not re-read into epoch rows.
-
-- **2026-10-26 · the existing hand-off is reused rather than extended.** Artifacts already
-  reach `artifacts` rows with their sha256, size and content type through
-  `POST /api/v2/gpu/artifacts/check` and `/upload/:sha256` — `recordJobArtifacts` runs for
-  every attempt whatever the job kind, and `role` is validated as a non-empty string with
-  no allow-list to extend. So no new event kind and no new upload route. The link to the
-  run is the existing `training_runs.job_id` join (`20261020120000`), so
-  `artifacts.training_run_id` staying null needs no backfill.
-
-- **2026-10-26 · the numbers arrive as one JSON artifact, not as events.** The worker's
-  recommendation, taken. A matrix is not a metric scalar and does not belong in the
-  per-epoch stream; one self-describing file published at `on_train_end` is a single
-  round trip and scales to a hundred classes without bloating an event. Role
-  `final_metrics`, carrying the class vocabulary once, the confusion matrix with its own
-  `orientation` string, and a metrics block per family with `overall` and `per_class`.
-  Six fields were added to the worker's sketch, each because the alternative was MARP
-  deriving a number: the family stated rather than inferred from the `(B)`/`(M)` suffix;
-  `overall` explicitly, because mAP50 over all classes is not the mean of the per-class
-  AP50s when support differs; `f1` from Ultralytics, because its `metrics.box.f1` is
-  taken at the max-F1 confidence and is **not** `2PR/(P+R)` of the reported P and R, so a
-  derived F1 would look like YOLO's and not be it; the split stated rather than assumed
-  to be `val`; the task, which is what says whether a background index should exist at
-  all; and a schema version, so a later change is detectable rather than silent.
-
-- **2026-10-26 · the confusion matrix gets its own small table, and that is the one new
-  table.** It has no home in `metrics_summary`: it is an N² measurement per run per
-  split, not a scalar per class, and a `confusion_matrix jsonb` column would be
-  meaningful on one row in N and null on the rest. Putting it in `details` would make a
-  documented structure undocumented. Rejected also: serving the stored JSON artifact
-  directly and keeping no column — tempting at zero schema cost, but it would make the
-  worker's wire format MARP's public API contract, which is the one thing the API layer
-  exists to prevent, and nothing could then be queried across runs.
-
-  **Stored verbatim, in the trainer's own orientation, with the `orientation` string
-  beside it.** Transposed once at the serving boundary, in a named function with a test,
-  because the reader-facing contract is rows=true/cols=predicted and the trainer's array
-  is the transpose. Storing it rotated would mean that if the worker ever changes
-  orientation, everything already stored becomes a silent lie; storing it as sent with
-  its own label means it stays interpretable either way.
-
-- **2026-10-26 · a class the validator did not evaluate gets no row.** Not a row of
-  zeros, not a row of nulls. `ap_class_index` omits any class with no validation
-  instances (A3), so absence there means *never evaluated* — and a row of nulls would
-  claim MARP looked and found nothing. The dashboard renders what it is given.
-
-- **2026-10-26 · there is no backfill, and that is a fact about the world rather than a
-  choice.** A job workspace is removed once MARP has the result (#65), and the worker
-  confirmed nothing survives under `state/jobs` from the runs this machine has already
-  done. Anything not published inside the attempt is gone permanently. So every training
-  run completed before this lands has no confusion matrix, no per-class AP and no plots,
-  and never will. A **stopped** run likewise produces none of it: the engine unwinds out
-  of `model.train()` by exception, so `final_eval()` and `on_train_end` never execute.
-  Both are absence, and neither is an error.
-
-- **2026-10-26 · five corrections from the worker, read out of the library rather than
-  recalled, and one of them was mine to own.**
-
-  **I was wrong about F1.** I had written that deriving per-class F1 from the reported
-  precision and recall would give a different number from Ultralytics'. It would not:
-  `p`, `r` and `f1` are all sliced at the same index, so `f1[c]` is exactly
-  `2·p[c]·r[c]/(p[c]+r[c])` for the very values being reported. The real subtlety is
-  more useful and is now in the column comment and the route description: **that index
-  is chosen to maximise F1 averaged across classes**, so every class is reported at one
-  shared confidence threshold and a class whose own optimum lies elsewhere is reported
-  off its peak. Comparing two classes here compares them at one operating point.
-
-  **The segmentation family is `seg`, not `mask`.** `SegmentMetrics.seg` is the library's
-  own attribute; `(M)` is only the metric-key suffix, which is where the wrong guess came
-  from. Settled before either side built anything, because a string two halves disagree
-  about is a silent bug six weeks later.
-
-  **`fitness` is `map5095` exactly**, under weights `[0, 0, 0, 1]` in 8.4.145, so those
-  two columns will always agree. Both kept, with the reason in the column comment:
-  fitness is a different concept — what checkpoints are ranked by — and the weights are
-  Ultralytics' to change, so a history holding only one could not be read afterwards.
-
-  **There is no overall F1**, and the aggregate row's `f1_score` stays null.
-  `mean_results()` returns `[mp, mr, map50, map]` and nothing else. `2·mp·mr/(mp+mr)` is
-  a mean of ratios rather than a ratio of means — a third quantity the trainer never
-  computes, which would sit in a column whose other rows hold a real measurement.
-
-  **"Overall" means over the classes that were evaluated**, not over the species list:
-  `mp` and `mr` are means over the arrays indexed by `ap_class_index`. A vocabulary whose
-  rare classes never appeared in validation has an aggregate that does not describe it.
-
-- **2026-10-26 · the curves are a second artifact, and the trainer's PR curve is not
-  stored.** Separate role `metrics_curves` on the worker's advice: a consumer wanting
-  only the headline numbers should not parse a megabyte to skip one. The three
-  confidence-indexed curves share one x axis, so one row holds a class's precision,
-  recall and F1 at a single threshold — a third of the rows for the same measurements.
-
-  Ultralytics' fourth curve interpolates precision onto a fixed **recall** grid, and
-  `metrics_curves.confidence_threshold` is NOT NULL and means confidence. Writing a
-  recall value into it would make every row of that table unreadable without knowing
-  which curve it came from — a column meaning two things, which is the defect this
-  project keeps having to undo. Nothing is lost: a PR curve is the stored precision
-  plotted against the stored recall, which is two measurements against each other rather
-  than a derivation, and the rendering is kept as an image.
-
-- **2026-10-26 · `support` and `image_count` are columns, and the worker resolves them
-  rather than MARP joining them.** Without them the per-class metrics cannot be judged: a
-  precision of 1.0 over three instances and over three thousand are not the same claim,
-  and on a species list whose rare classes are the whole point that is the difference
-  between a useful number and a misleading one. `image_count` is the second question —
-  142 instances across 37 frames is a different survey from 142 across 140, which on
-  transect video separates a shoal from a scatter.
-
-  **The reason they arrive pre-attached is a trap the worker found and absorbed.**
-  Ultralytics indexes `nt_per_class` by *class id* while the per-class metrics beside it
-  are indexed by *evaluated position*, and its own validator reads both in one loop. They
-  agree only while every class was evaluated. So zipping a raw top-level array against
-  the metrics would silently attribute one species' instance count to another precisely
-  when the evaluated set is smaller than the vocabulary — the rare-species case — and it
-  would not throw. They come keyed by class name instead, and nothing on this side ever
-  touches that dual index. Written into the column comments as well as here, because the
-  obvious future "simplification" is to take the array.
-
-- **2026-10-26 · a flat row of zeros in a curve is a measurement and is stored.** A class
-  with labels but no predictions leaves its precision and recall at zero across every
-  threshold. That is correct — nothing was predicted, so recall really is zero everywhere
-  — and the array is full length, so it does not trip the short-curve refusal and must
-  not. Discarding it would throw away the record of a class the model missed completely,
-  which is among the more important things a reader can learn. The general rule in this
-  work is that a gap must not read as a zero; this is the one place the converse needed
-  saying, and it has its own test.
-
-- **2026-10-26 · three curves, not four, and the worker confirmed why from the source.**
-  `self.px` does double duty: `r_curve` and `p_curve` interpolate against confidence,
-  while `prec_values` interpolates against recall, and `curves_results` labels them
-  honestly ("Recall" on the first, "Confidence" on the other three). So a `prec_values`
-  row in `confidence_threshold` would record a recall as a confidence. Curve rows are
-  also indexed by evaluated class, not by the vocabulary — the same order as
-  `ap_class_index` — and everything here matches by name, so the two cannot drift.
-
-- **2026-10-27 · the confusion matrix carries its own class list, and there is no shared
-  one.** The worker caught this before either side shipped, and it is the same shape as
-  the `nt_per_class` trap: **`ConfusionMatrix.names` is the model's FULL vocabulary while
-  `ap_class_index` is the evaluated classes only**, and the two differ exactly when a
-  species had no instances in the validation split. A single top-level `classes` array
-  made those look like one list. Labelling the matrix axes from the evaluated list would
-  shift every label from the missing species onward and attribute confusions to the wrong
-  animal — silently, and only in the rare-species case these metrics exist to serve.
-
-  So each array is labelled where it is used: `confusion_matrix.classes` (vocabulary,
-  axis labels), `per_class` rows which name themselves, and the curves artifact's own
-  `classes` (evaluated, parallel to its arrays). The top-level list is gone.
-  `background_index` is now exactly `classes.length`, which makes it checkable rather
-  than taken on trust, and absent rather than null for classification.
-
-  **What the old code would have done is worth recording**: the length check refused the
-  matrix outright rather than mislabelling it, because the vocabulary no longer accounted
-  for every index. A silent gap rather than a silent lie — better, and still wrong.
-
-- **2026-10-27 · top-1 and top-5 are columns, and they are floats.** `details` jsonb
-  would have been right for something incidental; for a classification model these two
-  *are* the headline, the way mAP is for detection. The dashboard exists so models can be
-  compared, and a number that cannot be sorted on, filtered by or charted across runs is
-  not available for comparison — only for reading one run at a time.
-
-  **They are `double precision`, not integers.** They are accuracies — fractions in
-  [0, 1] — not counts. `support` and `image_count` are this table's integers; storing
-  0.873 in an integer column would round it to 1 and report a perfect classifier.
-
-  **A second migration rather than an edit to the first.** `20261026160000` has been
-  applied — only to a disposable workspace database, but applied — and Sequelize records
-  a migration by name once it has run. Amending it would leave any database that already
-  holds it silently without these columns, which surfaces later as a column that exists
-  on one machine and not another with nothing to explain it.
-
-## Plan
-
-1. Settle A1–A4. Nothing below starts while A1 and A4 are open.
-2. Migration: `metrics_summary` gains `metric_family` and `class_name`, both nullable,
-   both commented. Confusion-matrix storage added per A2's answer.
-3. A shared mapping module for the final-metrics names, beside `db/epoch-metrics.js` and
-   for the same reason — one copy, because two would drift.
-4. Ingest: read the worker's end-of-run report into `metrics_summary` rows and the
-   confusion matrix, inside the existing result transaction.
-5. Role convention for the handed-over files, keyed off the real filename stem.
-6. Read routes on the training run: its metrics, its confusion matrix, its artifact list,
-   and one serving an artifact's bytes. `permission: 'models:read'`, following
-   `/training_run/:id/epochs`.
-7. Decision record for the two decisions above, since both constrain what classification
-   and segmentation do next.
-
-## Acceptance criteria
-
-- A training attempt that hands over the eleven Ultralytics files produces eleven
-  `artifacts` rows with distinguishable roles, and the dashboard can list and fetch every
-  one of them, including one whose stem this code has never seen.
-- Per-class rows exist for each class the run reported, the aggregate is tellable from
-  them, and a class MARP cannot resolve is present under its reported name.
-- A run that reported no confusion matrix serves no confusion matrix, and the endpoint
-  says nothing rather than zero.
-- No metric column is written from a value MARP computed.
-- Every fixture in the new tests is built from a real stored event payload, not from this
-  document.
-
-## Test plan
-
-Filled at G3.
-
-## Status
-
-- **Gate:** done — merged, and confirmed against a real run on the live server.
-- **Notes:** Merged into `104-dashboard-reads-marp`; the server has run on it since
-  2026-10-27 11:30. **Job 21787 is the first real artifact run and the whole chain
-  worked**: 20 artifacts handed over, 2 `metrics_summary` rows, 1 confusion matrix,
-  1,000 curve rows, the one class resolved to a species with none unresolved.
-
-  **The orientation is proved by arithmetic rather than by reading the source.** The
-  served matrix's first row sums to 710, exactly the `support` on the per-class row
-  beside it; transposed it would sum to 922 and contradict its own response. That is the
-  one thing no fixture could ever have settled.
-
-  **The open set earned its keep on the first run.** Four plot stems are `Box`-prefixed
-  (`BoxPR_curve`, `BoxF1_curve`, `BoxP_curve`, `BoxR_curve`) and four more arrived that
-  nobody had named — 20 files, not the 12 documented. A closed allow-list would have
-  dropped eight of them silently.
-
-  **Measured on real output:** ~1,000 curve rows, ~91 kB stored and ~0.029 MB served per
-  class. The row count matched the synthetic estimate exactly; the wire size did not, and
-  the served form is smaller than either.
-
-  **Getting there cost two mistakes worth keeping.** The endpoint suite failed 19 of 19
-  on its first execution and all three causes were fixture faults, not code — a test
-  nobody has run is a draft. And resolving a rebase with `git add -A` staged the whole
-  working tree at every step, reverting 645 lines of another session's work and deleting
-  a test file; it would have read as a deliberate revert with no conflict to warn anyone.
-  The check that now runs after every rebase is any file where this branch *deletes*
-  stream lines.
-
-  **Left undone deliberately, and not ours:** every artifact is served
-  `application/octet-stream`, including a file whose first bytes are a PNG signature. The
-  upload route records what the uploader declares and documents that it does, so the
-  `Content-Type` is the worker's to set. Reported, not worked around.
-
-  **Still unproved:** no classification run has happened, so `classify`, `accuracy_top1`
-  and `accuracy_top5` are exercised only against fixtures; and this run was single-class,
-  so the unresolved-class path and a second metric family have not met real data.
-
----
-
-# The ML Dashboard made whole: inference, live training, classification, and every screen current
-
-Refs MarineAppliedResearch/MARP_API#104, #268. Branch `268-every-screen-standard` in the
-serving checkout, which every session's work this round was merged into. Worker side is
-MarineAppliedResearch/marp-inference-worker on `268-training-params-and-provenance`.
-
-Written after the work, on 2026-10-28, because this round was built without a spec: the
-G1 and G3 gates were skipped and this section is the record catching up. Scope is frozen
-at what is on the branch; nothing new is added under it.
-
-## Goal
-
-Somebody can run a model over a video from the Inference tab and review what it found;
-train a detection or a classification model and watch it while it trains; read every
-screen knowing how fresh it is; and see which code the server is running.
-
-## Requirements
-
-- **R1 — Inference submits.** The Inference tab's Run button submits a real job: model by
-  id with checksum, video, a line, an optional frame range, and the confidence the run
-  will actually use (0.15 by default). Base models are never offered.
-- **R2 — One automated session per run.** Each inference run creates its own session under
-  the dive, with `is_automated` true and `created_by` the person who submitted it. Its type
-  is derived from the model's species list, not asked for.
-- **R3 — A finished inference job says what it found.** Observation count and species
-  breakdown by the corrected species, and a Review link into the mosaic on exactly those.
-- **R4 — Every screen is current.** Each screen shows when its data was last read and when
-  it failed; anything that changes while watched updates in place without closing an open
-  row; rows that change carry an Updated column.
-- **R5 — Workers report what the machine is doing.** GPU, VRAM, temperature, power, CPU,
-  memory and disk, live; seven charts per worker over 1h/24h/7d/30d; a reading more than
-  five sample intervals old is shown as stale, not current; machines unheard for over two
-  days fold behind a toggle.
-- **R6 — Live training charts.** Running losses, GPU memory, throughput and ETA per batch,
-  validation progress, and phase markers, drawn from what the worker sends; every sample
-  the worker sends is stored.
-- **R7 — Classification trains end to end.** A classification dataset is built from mosaic
-  tiles; a classification run records per-epoch training and validation loss and top-1 /
-  top-5; its confusion matrix is labelled in species names; the model it produces is
-  registered as classification.
-- **R8 — Every registered model is reachable.** All models with files resolve through one
-  model store and download with their recorded checksum.
-- **R9 — The server says what it is running.** The top bar shows when the API started and,
-  on hover, the commit.
-- **R10 — Species names are consistently capitalised.** Case-differing pairs on different
-  lists are capitalised and kept separate; the one same-list duplicate is merged and
-  retired; model output names still resolve.
-- **R11 — No screen explains away an unbuilt feature.** Notes describing a gap are either
-  built or rewritten as plain facts.
-
-## Open assumptions
-
-- [x] **A1 · product/UI · blocking** — answered 2026-10-27, Isaac: *"one dive can have
-  individual sessions, so this would just be a session for that dive. and we'd record it
-  was the automated and who ran it."* Then, asked to choose: **one session per run**.
-- [x] **A2 · data-meaning · blocking** — answered 2026-10-27, Isaac: existing sessions are
-  **not** backfilled as automated ("None, new runs only"). `is_automated` false means "not
-  recorded as automated", not "made by a person".
-- [x] **A3 · scientific · blocking** — answered 2026-10-27, Isaac: classification images
-  are crops from the mosaic tiles; no background class. Per-crop versus per-frame left open
-  for later model types.
-- [x] **A4 · data-meaning · blocking** — answered 2026-10-27, Isaac: case-duplicate species
-  *"should probably share the same capitalization"*. Eight pairs are on different lists and
-  are different things, so they are capitalised, not merged.
-- [x] **A5 · scientific · non-blocking** — answered 2026-10-27: inference confidence stays
-  0.15, the documented preference — reviewers reject false positives cheaply; a missed
-  animal costs re-reviewing video.
-- [ ] **A6 · data-meaning · non-blocking** — MarineDebris holds two same-list duplicate
-  pairs (805/817 "Accessory item", 816/832 "Mechanical/electrical item"). Left alone.
-
-## Decisions
-
-- **2026-10-27** — classification class folders are `<species_id>_<slug>` with a
-  `classes.json`, because 37 species names contain a slash; labels are translated back to
-  species at ingest.
-- **2026-10-27** — classification image size defaults to 224 (the pretrained weights'
-  size); 320 is one selection away.
-- **2026-10-27** — base models are flagged `is_base` and refused for inference.
-- **2026-10-28** — a training sample is keyed by the event it came from, so markers and
-  samples sharing a step are all kept.
-
-## Acceptance criteria
-
-Each requirement R1–R11 is shown working against the server on port 3000 and the
-development database, and the named test groups that cover the changed code pass. The
-results, including what failed, are in `.marp/verification.md` under this round's heading.
-
-## Test plan
-
-`.marp/verification.md`, section "The ML Dashboard made whole".
-
-## Status
-
-Built and merged into the serving branch. Verification in progress.
+- **Gate:** implementing (G2). A1-A19 answered by Isaac on 2026-11-10; A20 and A21, found that
+  night building #342, are open and are what the rest waits on.
+- **Also from the feasibility session, 2026-11-10:** one model on the habitat crop scored test
+  F1 0.728 against 0.751 on the old crop; Boulder fell from 0.62 to 0.55. The crop stays
+  settled, the numbers provisional. So the crop a model was trained on is stored with the model
+  beside its cut-offs (A3), and a later change of crop cannot break an older model.
+- **Done, 2026-11-10:**
+  - Step 1, #347 (R1): the keyframe trigger re-queues a no-keyframes failure, and the retry
+    route accepts one once it has keyframes. `tests/thumbnails.test.js`; `test:mosaic` 366
+    passed.
+  - Step 2: the API frame planner (`service/habitat-dataset-plan.js`, 9 tests in `ml`), and
+    the worker's sampler and crop (`media/habitat_frames.py`, 8 tests).
+  - Step 3 (R4): `model_type = 'habitat'`; `ml_models.decision_rules` and a `habitat` dataset
+    task (migration 20261110140000); `db/habitat-rules.js` holds the settled stretch rules and
+    validates what a trainer publishes (artifact role `decision_rules`: substrates, cut-offs,
+    crop, input size); registration takes a habitat model's substrates by species id from the
+    Habitat list and stores its rules; a lease sends them with the cut-offs to apply; a habitat
+    model runs only on the `marp_habitat` engine and that engine only runs habitat models; the
+    Models screen shows the rules; the species Inference picker leaves habitat models out.
+    `tests/habitat-model-registration.test.js` 11 passed; `test:gpu` 435 passed; dashboard
+    unit 242 passed plus the picker test (shown failing without its filter).
+  - R9's setting (A17-A19): Mud, Sand and Gravel are one stored group, narrowed to the
+    model's substrates for a run; `PUT /api/v2/model/:id/never-together` changes a habitat
+    model's groups and nothing else in its rules; the Models screen edits it with a box per
+    substrate and Gravel. 15 passed in `habitat-model-registration`; dashboard unit passed.
+  - Step 4 (R3), built and tested on a CPU; the GPU run is not done:
+    - worker: `timm` 1.0.30 and `safetensors` 0.8.0 added, pinned, all five locks regenerated;
+      `training/habitat_training.py` (archive reader, scoring, the two-stage recipe) and the
+      `marp_habitat_training` engine, which publishes `weights`, `decision_rules` and a
+      `multilabel` `final_metrics`; job processes keep Hugging Face offline. 13 new tests;
+      the contract, registry, import and status tests pass with it (56).
+    - API: the habitat trainer takes only a habitat dataset and a habitat starting model, the
+      species trainer neither; `multilabel` is a known final-metrics family;
+      `seed-base-models.js --only dinov2-vitb14` registers DINOv2 (dry run checked; not
+      applied). `test:gpu` 454 passed.
+    - The habitat dataset archive the trainer reads: `classes.json` (substrates in label
+      order), and `train/`, `val/`, `test/`, each with `labels.csv` (`image`, then a 0/1
+      column per substrate) and its images. Whole frames; the trainer cuts the crop. The
+      dataset build (step 8) writes this.
+    - Not done: resuming a stopped habitat training from a checkpoint; a stop is a
+      cancellation and the run starts again.
+    - **GPU run, 2026-11-10** (worker `.marp/verification.md`): on the feasibility session's
+      own frames, packed read-only into a habitat archive, test macro F1 **0.734** against the
+      feasibility run's 0.728 on the same crop and seed; Boulder 0.556 against 0.55. The kept
+      weights are the best tuning pass's (pass 4 of 10).
+  - Step 5 (R5): the worker's `marp_habitat` engine scores 3 frames a second on the model's
+    crop and turns the scores into stretches by the settled rules (`habitat_stretches`,
+    checked against the feasibility `sample_output.py`); it publishes the stretches and the
+    raw scores (A2). Not yet run over real video on a GPU.
+  - Step 6 (R6): ingest writes a habitat run's stretches into its Habitat session: one
+    observation per stretch with `tc` and `etc` on the video's clock where it is set, start
+    and end keyframes with a box from the model's crop. `tests/habitat-ingest.test.js`.
+    R7 follows from the keyframes (the thumbnail extractor picks them up); not checked in a
+    browser.
+  - Step 7 (R8, API half): `POST /api/v2/mosaic/habitat/segments` cuts a session's stretches
+    into segments of one combination each, with the Mosaic's filters, "alone" or "with"
+    matching, and each segment's review state; reviewing a segment through the existing
+    review route lands on every stretch under it (A11). **The Mosaic screen for segments is
+    not built**: it needs a picture per segment (A21), and approving an annotated segment
+    waits on A20.
+  - Step 8 (R2): a habitat dataset build, `task: 'habitat'` on `POST /dataset/build`, and a
+    *Habitat substrates* tick box on the Datasets screen. It takes the queries' habitat
+    sessions, cuts a frame every 10 s where every stretch over it is promoted, splits whole
+    dives 70/15/15, throws out blank screens and the two stored example screens
+    (`db/habitat-reject-screens.json`, cut from real video; on 301 real seabed frames none
+    was thrown out), leaves out sessions whose times drift by more than 2 s within a file,
+    and lists both in `habitat-report.json` in the archive. Only substrates some frame holds
+    become classes. `tests/habitat-dataset-select.test.js`, `tests/habitat-dataset-build.test.js`
+    (the archive unpacked and read), dashboard `build-habitat.test.mjs`.
+  - Step 9 (dashboard): a Habitat tab on Training, a habitat pipeline on Inference, the rules
+    and the never-together editor on Models, and the Datasets tick box.
+  - The habitat tests seed Rock, Mud, Sand, Cobble and Boulder on the Habitat list where a
+    database lacks them (`tests/fixtures/habitat-substrates.js`): a baseline database has
+    none, so on CI the segments and ingest tests would otherwise have found nothing.
+- **Last run, 2026-11-10:** `test:gpu` 459 passed; `test:mosaic` 381 passed; `test:ml` 437
+  passed and 1 failed, `dataset-build-resume` (below); dashboard unit 249 passed; worker
+  habitat tests 31 passed, contract and import tests 45 passed.
+- **Found, left alone:** `tests/dataset-build-resume.test.js` fails about two runs in three on
+  `develop` as well (a resumed build's archive checksum differs from the reference).
+- **2026-11-12, after A20-A22 and R8's correction:**
+  - An annotated habitat stretch has its start and end keyframes worked out from its times
+    with the habitat crop (`db/habitat-keyframes.js`), never written. The thumbnail
+    extractor, the retry route, the Mosaic grid's keyframe count and the video page use them;
+    the video page will not edit them. A migration queued the habitat stretches already
+    failed for having none. On the development database 9 of the 20 annotated stretches then
+    got real pictures from Jellyfin; 10 name no video and cannot have one, and 1 is the
+    extractor's ordinary missing-frame retry. `tests/habitat-keyframes.test.js`.
+  - So R8 is met by the Mosaic as it is: filtering on the Habitat type shows every habitat
+    stretch as a tile, with a picture where its video is known, reviewed and promoted like
+    any other. Checked against the development database through the pages route.
+  - **How a reviewer checks them**, settled with Isaac the same day: one substrate at a
+    time -- Habitat type, species "Rock" -- one tile per stretch, approved or flagged like any
+    observation. Overlaps do not get in the way, since each stretch is right or wrong on its
+    own; whether a line's description is complete is the video page's job.
+    - **The picture is the middle of the stretch**, not its start: the start is where the
+      substrate changes. The extractor cuts a habitat stretch midway between its first and
+      last keyframe, and a migration re-cut the pictures already made (8 on development,
+      checked by frame number and by eye).
+    - **The caption says how long it ran and what lay with it**: "Rock · 2m 30s", and "with
+      Cobble" on a second line. Rows carry `etc` and `habitat_overlaps` (the other things the
+      line recorded while it ran). Seen in the Mosaic on the development database.
+  - The segment view built before R8 was corrected -- its route, the segment pictures (A21)
+    and their table -- was removed, with Isaac's agreement. A21's answer no longer applies.
+- **Not done, and why:**
+  - A habitat run over real video on a GPU, and the Mosaic showing its stretches (R5-R7 end
+    to end): needs a trained model registered through MARP and a video to run on.
+  - A habitat build from real annotations has not been run: annotated stretches can now be
+    promoted in the Mosaic, but none has been yet.

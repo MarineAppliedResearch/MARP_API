@@ -55,6 +55,7 @@ const {
     ARTIFACT_DIRECTORY,
     INGESTIBLE_JOB_KINDS,
     ENGINE_DATA_TYPES,
+    HABITAT_ENGINE,
 } = require('../config/gpu-orchestration');
 const { speciesListForSessionType } = require('../db/species-lists');
 const {
@@ -73,6 +74,16 @@ const { clockAt } = require('./video-clock.service');
  * @type {string}
  */
 const OBSERVATIONS_ROLE = 'observations';
+
+/**
+ * The artifact role a habitat run publishes its stretches under (#287): one JSON line per
+ * stretch, which the ingest writes as a habitat observation with an end time. The frame scores
+ * travel beside it as `habitat_scores` and are kept, not ingested.
+ *
+ * @constant
+ * @type {string}
+ */
+const HABITAT_STRETCHES_ROLE = 'habitat_stretches';
 
 /**
  * Refuse an ingest because the data does not make sense.
@@ -202,7 +213,9 @@ class ObservationIngestService {
             }
         }
 
-        const rows = this.readObservationArtifact(job);
+        // A habitat run (#287) publishes stretches rather than tracked observations.
+        const habitat = spec.engine === HABITAT_ENGINE;
+        const rows = habitat ? this.readHabitatArtifact(job) : this.readObservationArtifact(job);
 
         const model = await ingestRepository.getModel(mlModelId);
 
@@ -225,8 +238,9 @@ class ObservationIngestService {
         const clocks = new Map();
 
         for (let index = 0; index < rows.length; index += 1) {
+            const build = habitat ? this.buildHabitatObservation : this.buildObservation;
             built.push(
-                await this.buildObservation(rows[index], index, {
+                await build.call(this, rows[index], index, {
                     job,
                     model,
                     sessionRow,
@@ -381,6 +395,111 @@ class ObservationIngestService {
 
             return row;
         });
+    }
+
+    /**
+     * Read and parse a habitat run's stretches (#287): `habitat_stretches`, one JSON line per
+     * stretch, `{substrate, start_ms, end_ms, start_frame, end_frame, confidence, video_source,
+     * jellyfin_item_id}`. An empty file is a run that found no stretch, which is valid.
+     *
+     * @param {Object} job - The job row, with its artifacts.
+     * @returns {Array<Object>} One stretch per line, in file order.
+     * @throws {ApiError} 409 when the artifact is missing or a line is not a stretch.
+     */
+    readHabitatArtifact(job) {
+        const artifact = job.artifacts
+            ? job.artifacts.find((row) => row.artifact_type === HABITAT_STRETCHES_ROLE)
+            : null;
+
+        if (!artifact) {
+            unreconcilable(`Job ${job.id} is a habitat run with no ${HABITAT_STRETCHES_ROLE} artifact, so there is nothing to read.`);
+        }
+
+        const file = path.join(ARTIFACT_DIRECTORY, artifact.hash);
+        if (!fs.existsSync(file)) {
+            unreconcilable(`Job ${job.id}'s ${HABITAT_STRETCHES_ROLE} artifact ${artifact.hash} is recorded but its bytes are not on disk.`);
+        }
+
+        const lines = fs.readFileSync(file, 'utf8').split('\n').map((line) => line.trim()).filter((line) => line !== '');
+        return lines.map((line, index) => {
+            let row;
+            try {
+                row = JSON.parse(line);
+            } catch (error) {
+                unreconcilable(`Job ${job.id}'s stretches are not readable: line ${index + 1} is not JSON.`);
+            }
+            const whole = (v) => Number.isInteger(v) && v >= 0;
+            if (!row || typeof row.substrate !== 'string' || !whole(row.start_ms) || !whole(row.end_ms)
+                || row.end_ms <= row.start_ms || !whole(row.start_frame) || !whole(row.end_frame)) {
+                unreconcilable(`Job ${job.id}'s stretch on line ${index + 1} is not a stretch: it needs a substrate, `
+                    + 'whole start_ms < end_ms and whole start_frame and end_frame.');
+            }
+            return row;
+        });
+    }
+
+    /**
+     * Build one habitat observation and its two keyframes from one stretch (#287).
+     *
+     * As an annotator records a habitat stretch: the substrate, `tc` and `etc` on the clock --
+     * the video's clock where it is set (#76), its position otherwise -- the positions, the
+     * video, and the model's confidence. Its start and end keyframes carry the crop the model
+     * looked at, as the model's decision rules state it, so the Mosaic cuts its picture from
+     * the same patch.
+     *
+     * @async
+     * @param {Object} row - One stretch.
+     * @param {number} index - Its line, for messages.
+     * @param {Object} context - As `buildObservation` takes it.
+     * @returns {Promise<Object>} `{row, keyframes}` ready to write.
+     * @throws {ApiError} 409 when the stretch cannot be reconciled.
+     */
+    async buildHabitatObservation(row, index, { job, model, speciesByName, frameRate, clocks = new Map() }) {
+        const where = `line ${index + 1} of job ${job.id}'s stretches`;
+        const species = await this.resolveSpecies(row.substrate, model, speciesByName);
+        const confidence = this.readConfidence(row, where);
+        const fps = frameRate ? frameRate.fps : ASSUMED_FPS;
+        const videoSource = typeof row.video_source === 'string' ? row.video_source : null;
+
+        // Positions in the video, then the clock where the video has one.
+        const mediaMs = row.start_ms;
+        const lengthMs = row.end_ms - row.start_ms;
+        const start = await this.clockFor(videoSource, clocks);
+        const timed = start ? clockAt(start, mediaMs) : { actualMs: mediaMs, observedAt: null };
+
+        const crop = (model.decision_rules && model.decision_rules.crop) || null;
+        if (!crop) {
+            unreconcilable(`Model ${model.id} has no crop in its decision rules, so ${where} cannot be given a box.`);
+        }
+        const box = {
+            x: (crop.x0 + crop.x1) / 2, y: (crop.y0 + crop.y1) / 2,
+            width: crop.x1 - crop.x0, height: crop.y1 - crop.y0,
+        };
+        const keyframe = (type, framenum) => ({
+            subset: '1', comname: species.comname, type, framenum, ...box, confidence: null,
+        });
+
+        return {
+            row: {
+                user_id: job.created_by === undefined ? null : job.created_by,
+                tc: deriveTc(timed.actualMs),
+                etc: deriveTc(timed.actualMs + lengthMs),
+                frame: deriveFrame(timed.actualMs, fps),
+                taxserial: species.taxserial,
+                species_id: species.id,
+                comname: species.comname,
+                count: 1,
+                video_source: videoSource,
+                videoLocation: videoSource,
+                mediaPosition: formatTimeSpan(mediaMs),
+                actualPosition: formatTimeSpan(timed.actualMs),
+                confidence,
+                ml_model_id: model.id,
+                jellyfin_item_id: typeof row.jellyfin_item_id === 'string' ? row.jellyfin_item_id : null,
+                observed_at: timed.observedAt,
+            },
+            keyframes: [keyframe('start', row.start_frame), keyframe('end', row.end_frame)],
+        };
     }
 
     /**

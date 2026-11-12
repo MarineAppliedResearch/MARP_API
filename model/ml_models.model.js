@@ -237,6 +237,19 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      decision_rules: {
+        /* A habitat model's cut-offs and stretch rules (#287), stored with it so they can
+           be read and changed without retraining. Shape: db/habitat-rules.js. */
+        type: DataTypes.JSONB,
+        allowNull: true,
+        comment:
+          "A habitat model's decision rules: substrates in output order, tuned cut-offs, crop, input size and stretch rules. Null on any other kind of model.",
+        jsonSchema: {
+            description: "A habitat model's decision rules (#287): its substrates in output order, the cut-off for each picked on its tuning dives (`tuned_cut_offs`) and the raise applied on top (`raise`), the crop and input size it was trained on, and the stretch rules (`samples_per_second`, `average_s`, `exclusive`, `min_stretch_s`, `bridge_s`). Null on any other kind of model.",
+            examples: [null],
+        },
+      },
+
       training_run_id: {
         /* **The run that produced this model, not the one it started from.** Those are
            different facts and reading one as the other made three cells on two screens

@@ -105,6 +105,7 @@ const registerTokensRoutes = require('./routes/v2_tokens.routes');
 const registerJellyfinRoutes = require('./routes/jellyfin.routes');
 const registerTimecodeSyncRoutes = require('./routes/timecode_sync.routes');
 const registerVideoClockRoutes = require('./routes/video-clock.routes');
+const registerHabitatModelRoutes = require('./routes/habitat-model.routes');
 
 // GPU orchestration (V2) has the same freedom of require position as Jellyfin:
 // its repository owns only the five orchestration tables and touches none of the
@@ -356,6 +357,7 @@ registerObservationRoutes(app);
 registerJellyfinRoutes(app);
 registerTimecodeSyncRoutes(app);
 registerVideoClockRoutes(app);
+registerHabitatModelRoutes(app);
 registerAuthRoutes(app);
 registerUsersRoutes(app);
 registerTokensRoutes(app);

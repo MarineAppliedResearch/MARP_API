@@ -37,7 +37,8 @@ export function renderChrome() {
   window.MarpAccountMenu?.show($('#userBtn')?.closest('[data-account]'), state.me);
 
   const m = MODES[state.mode];
-  $('#modeNote').textContent = m.note;
+  // Scientific review has no note: Isaac, 2026-11-12, "the mosaic viewer shouldn't say this".
+  $('#modeNote').textContent = m.note || '';
   document.querySelectorAll('.seg button').forEach((b) =>
     b.classList.toggle('on', b.dataset.mode === state.mode));
 

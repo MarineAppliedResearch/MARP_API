@@ -127,10 +127,15 @@ const SERVED_ORIENTATION = ORIENTATIONS.ROWS_TRUE;
  * those columns do not apply here, rather than reading a null mAP as a detection run
  * that failed to measure one.
  *
+ * **`multilabel` is a habitat model's** (#287): a yes or no per substrate, several at once.
+ * Its overall row carries the plain average of the substrates' F1, and each substrate's row
+ * its F1, precision and recall at its own cut-off (chosen on the tuning dives, unlike
+ * detection's one shared threshold), with `support` the test frames that had it. No mAP.
+ *
  * @constant
  * @type {Object<string, string>}
  */
-const METRIC_FAMILIES = { BOX: 'box', SEG: 'seg', CLASSIFY: 'classify' };
+const METRIC_FAMILIES = { BOX: 'box', SEG: 'seg', CLASSIFY: 'classify', MULTILABEL: 'multilabel' };
 
 /**
  * Whether a family is one MARP recognises.

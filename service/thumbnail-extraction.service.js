@@ -68,7 +68,9 @@ const thumbnailRepository = require('../repository/observation-thumbnail.reposit
 const reviewImageryStorage = require('./review-imagery-storage.service');
 const { ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { parseTimeSpan, absoluteFrame, ASSUMED_FPS } = require('../db/timecode');
+const { NO_KEYFRAMES_ERROR, NO_VIDEO_ERRORS } = require('../repository/observation-thumbnail.repository');
 const { thumbnailFilename } = require('../db/thumbnail-filename');
+const { HABITAT_SESSION_TYPE } = require('../db/habitat-keyframes');
 const { cropRectangle, interpolateBox, thumbnailCandidates } = require('./thumbnail-geometry');
 
 const {
@@ -455,6 +457,24 @@ function frameRateFor(claim, fps) {
 }
 
 /**
+ * The frame a habitat stretch is pictured at: midway between its first and last keyframe.
+ *
+ * Isaac, 2026-11-12: a stretch's tile is how a reviewer tells whether its substrate is right.
+ * Its start is the worst moment to show -- it is where the substrate changes, so the picture
+ * is half the one before -- and a stretch can run for minutes. The middle is the moment most
+ * like the rest of it.
+ *
+ * @param {Array<Object>} keyframes - The stretch's keyframes, stored or worked out.
+ * @param {number} positionFrame - Its start, used when it has one keyframe.
+ * @returns {number} The frame to cut.
+ */
+function habitatMiddle(keyframes, positionFrame) {
+    const frames = keyframes.map((k) => Number(k.framenum)).filter(Number.isFinite);
+    if (frames.length < 2) return positionFrame;
+    return Math.round((Math.min(...frames) + Math.max(...frames)) / 2);
+}
+
+/**
  * Works out which frame and which box one claimed observation wants.
  *
  * Everything that can be decided without touching Jellyfin is decided here, so an
@@ -471,11 +491,12 @@ function planObservation(claim, keyframes, fps = ASSUMED_FPS) {
     if (!keyframes || keyframes.length === 0) {
         // F6: an observation can have no keyframes at all, which means no box,
         // which means no cropped tile, ever. This is the case that makes a
-        // permanent state necessary rather than tidy.
+        // permanent state necessary rather than tidy -- until a keyframe is written,
+        // which queues it again (#347).
         return {
             ok: false,
             permanent: true,
-            error: 'The observation has no keyframes, so it has no bounding box and can never have a cropped picture.',
+            error: NO_KEYFRAMES_ERROR,
         };
     }
 
@@ -492,9 +513,12 @@ function planObservation(claim, keyframes, fps = ASSUMED_FPS) {
     // A GPU row's position is its frame's start, truncated to the millisecond by the
     // ingest, so the frame is the one that position rounds up to. Flooring it lands
     // one frame early at a rate where frames do not start on a whole millisecond.
-    const observationFrame = claim.gpu_job_id != null
+    const positionFrame = claim.gpu_job_id != null
         ? Math.ceil((mediaMs * fps) / 1000 - 1e-6)
         : absoluteFrame(mediaMs, fps);
+    const observationFrame = claim.session_type === HABITAT_SESSION_TYPE
+        ? habitatMiddle(keyframes, positionFrame)
+        : positionFrame;
     const candidates = thumbnailCandidates(keyframes, observationFrame);
     const candidateIndex = Number.isInteger(Number(claim.candidate_index))
         ? Number(claim.candidate_index) : 0;
@@ -677,7 +701,7 @@ async function extractVideoGroup(videoSource, claims) {
         // because no video matched, and saying so sent the next reader looking for
         // a missing file that was there all along.
         const reason = permanent
-            ? `No Jellyfin video matched video_source ${JSON.stringify(videoSource)}: ${elideToken(error.message)}`
+            ? `${NO_VIDEO_ERRORS.noMatch} ${JSON.stringify(videoSource)}: ${elideToken(error.message)}`
             : `Could not ask Jellyfin about video_source ${JSON.stringify(videoSource)}: ${elideToken(error.message)}`;
 
         for (const id of ids) {
@@ -699,7 +723,7 @@ async function extractVideoGroup(videoSource, claims) {
             const claim = claims.find((item) => item.observation_id === id);
             await recordClaimFailure(
                 claim,
-                `Best Jellyfin match for video_source ${JSON.stringify(videoSource)} scored ${resolved.score}, `
+                `${NO_VIDEO_ERRORS.weakMatch} ${JSON.stringify(videoSource)} scored ${resolved.score}, `
                 + `below the ${MIN_MATCH_SCORE} exact-match threshold. A weaker match can attach a picture of the wrong dive.`,
                 true
             );
@@ -781,19 +805,40 @@ async function extractVideoGroup(videoSource, claims) {
     wanted.sort((a, b) => a.plan.frame - b.plan.frame);
 
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'marp-thumbnail-'));
+    outcome.seconds = 0;
 
     try {
+        /* **One pass per run of nearby frames, not one per video** (#287). A pass decodes
+           everything from its first frame to its last, which is nothing for a video's species,
+           clustered where the animals were -- and twenty minutes of streamed video for its
+           habitat stretches, which cover the whole of it. Those passes ran past the 120 s
+           limit and failed every picture in them. Frames far apart now get passes of their
+           own, each seeking to its start. */
+        for (const [pass, run] of passesOf(wanted).entries()) {
+            await extractRun(run, path.join(workDir, String(pass)));
+        }
+    } finally {
+        fs.rmSync(workDir, { recursive: true, force: true });
+    }
+
+    await reviewImageryStorage.enforceLimit();
+    return outcome;
+
+    /** Cut one run of frames in one ffmpeg pass, and record what each became. */
+    async function extractRun(run, runDir) {
+      fs.mkdirSync(runDir, { recursive: true });
+      try {
         const extraction = await extractFrames(
             streamUrl,
-            wanted.map((entry) => entry.plan.frame),
+            run.map((entry) => entry.plan.frame),
             probe.fps,
-            workDir
+            runDir
         );
 
-        outcome.seconds = extraction.seconds;
+        outcome.seconds += extraction.seconds;
 
-        for (let index = 0; index < wanted.length; index += 1) {
-            const { claim, plan } = wanted[index];
+        for (let index = 0; index < run.length; index += 1) {
+            const { claim, plan } = run[index];
             const framePath = extraction.files[index];
 
             if (!framePath) {
@@ -801,7 +846,7 @@ async function extractVideoGroup(videoSource, claims) {
                 // this retryable; the final candidate makes exhaustion explicit.
                 await recordClaimFailure(
                     claim,
-                    `ffmpeg returned ${extraction.files.length} frames for ${wanted.length} asked for, `
+                    `ffmpeg returned ${extraction.files.length} frames for ${run.length} asked for, `
                     + `so frame ${plan.frame} did not arrive.`,
                     !plan.hasNext,
                     plan
@@ -853,9 +898,9 @@ async function extractVideoGroup(videoSource, claims) {
                 outcome.failed += 1;
             }
         }
-    } catch (error) {
-        // The whole pass failed, so nothing in this group got a picture.
-        for (const entry of wanted) {
+      } catch (error) {
+        // The whole pass failed, so nothing in this run got a picture.
+        for (const entry of run) {
             await recordClaimFailure(
                 entry.claim,
                 elideToken(error.message),
@@ -864,13 +909,35 @@ async function extractVideoGroup(videoSource, claims) {
             );
         }
 
-        outcome.failed += wanted.length;
-    } finally {
-        fs.rmSync(workDir, { recursive: true, force: true });
+        outcome.failed += run.length;
+      }
     }
+}
 
-    await reviewImageryStorage.enforceLimit();
-    return outcome;
+/**
+ * Frames more than this far from the last one in a pass start a pass of their own.
+ *
+ * Ten seconds at 25 frames a second: decoding that is about what seeking afresh costs over
+ * the media server, so closer frames are cheaper decoded and further ones cheaper sought.
+ * The dataset builder draws the same line for the same reason (`SEEK_RATHER_THAN_DECODE`).
+ */
+const PASS_GAP_FRAMES = 250;
+
+/**
+ * Split a video's wanted frames, in frame order, into runs cut one ffmpeg pass each.
+ *
+ * @param {Array<{plan: {frame: number}}>} wanted - Sorted by frame.
+ * @param {number} [gap] - See {@link PASS_GAP_FRAMES}.
+ * @returns {Array<Array<Object>>} The runs, in order.
+ */
+function passesOf(wanted, gap = PASS_GAP_FRAMES) {
+    const runs = [];
+    for (const entry of wanted) {
+        const run = runs[runs.length - 1];
+        if (run && entry.plan.frame - run[run.length - 1].plan.frame <= gap) run.push(entry);
+        else runs.push([entry]);
+    }
+    return runs;
 }
 
 /**
@@ -1022,7 +1089,9 @@ async function drainOnce(limit = CLAIM_BATCH_SIZE) {
         return summary;
     }
 
-    const claims = await thumbnailRepository.claimBatch(limit);
+    const batch = await thumbnailRepository.claimBatch(limit);
+    // And the rest of what waits in the same videos, cut while each video is open (#287).
+    const claims = batch.concat(await thumbnailRepository.claimCompanions(batch));
 
     summary.claimed = claims.length;
 
@@ -1405,6 +1474,7 @@ module.exports = {
     frameRateFor,
     fullFramePlan,
     groupByVideo,
+    passesOf,
     planObservation,
     probeStream,
     start,

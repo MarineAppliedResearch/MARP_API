@@ -52,6 +52,11 @@ const {
     JOB_KINDS,
     INGESTIBLE_JOB_KINDS,
     ENGINE_DATA_TYPES,
+    HABITAT_MODEL_TYPE,
+    HABITAT_ENGINE,
+    HABITAT_TRAINING_ENGINE,
+    HABITAT_REDUCTION,
+    HABITAT_SESSION_TYPE,
     JOB_STATES,
     REPORTABLE_ATTEMPT_STATES,
     WORKER_EVENT_KINDS,
@@ -70,6 +75,7 @@ const {
  * are recorded at.
  */
 const { ASSUMED_FPS } = require('../db/timecode');
+const habitatRules = require('../db/habitat-rules');
 const { systemReading } = require('../db/worker-telemetry');
 
 /**
@@ -1042,6 +1048,8 @@ class GpuService {
                     ...spec.model,
                     ...(model.architecture_version ? { architecture: model.architecture_version } : {}),
                     ...(model.model_type ? { task: model.model_type } : {}),
+                    // A habitat model's rules (#287), with the cut-offs the worker applies.
+                    ...(model.decision_rules ? { decision_rules: habitatRules.rulesForRun(model.decision_rules) } : {}),
                 },
             };
         } catch {
@@ -1207,7 +1215,8 @@ class GpuService {
      * the engine has no counting rule for.
      */
     async resolveDataTypeForLease(spec) {
-        if (this.submittedDataType(spec) !== null) {
+        // A habitat run (#287) chooses no counting rule; the habitat engine makes stretches.
+        if (spec.engine === HABITAT_ENGINE || this.submittedDataType(spec) !== null) {
             return spec;
         }
 
@@ -2433,6 +2442,7 @@ class GpuService {
         this.validateSubmittedVideo(spec.video);
         this.validateSubmittedModel(spec.model);
         await this.refuseBaseModelForInference(spec.model);
+        await this.refuseMismatchedHabitatModel(spec);
         this.validateSubmittedReduction(spec.reduction);
 
         // Turns the per-run form into the descriptive one, so every check below --
@@ -2676,6 +2686,8 @@ class GpuService {
         if (spec.video || spec.range) {
             invalid('A training job carries a dataset, not a video and a range.');
         }
+
+        await this.refuseMismatchedHabitatTraining(spec, archive);
 
         const priority = optionalInteger(body.priority, 'priority', 0);
         const maxAttempts = optionalInteger(body.max_attempts, 'max_attempts', 3);
@@ -3235,6 +3247,16 @@ class GpuService {
 
         observationIngestService.validateSpecModel(spec.model);
 
+        // A habitat run (#287) has no counting rule to choose; its observations are stretches,
+        // and they belong in a Habitat session.
+        if (spec.engine === HABITAT_ENGINE) {
+            const type = await observationIngestService.sessionTypeForSpec(session);
+            if (type !== null && type !== HABITAT_SESSION_TYPE) {
+                invalid(`A habitat run writes a ${HABITAT_SESSION_TYPE} session, not a ${type} one.`);
+            }
+            return;
+        }
+
         // A submitter who set `data_type` themselves means it, and it is theirs
         // to get right -- the same reasoning that keeps a bare `video.url` from
         // being second-guessed.
@@ -3351,6 +3373,80 @@ class GpuService {
                 + 'output would be resolved against the species catalogue and written into observations. '
                 + 'Train from it first, and run inference with the model that comes out.'
             );
+        }
+    }
+
+    /**
+     * A habitat model runs on the habitat engine, and the habitat engine runs nothing else
+     * (#287).
+     *
+     * A habitat model answers yes or no per substrate for a whole frame; the species engine
+     * would read those outputs as detections and write them into a species session. The
+     * other way round, the habitat engine has no stretch rules for a species model. A habitat
+     * model with no stored rules cannot be run at all: its cut-offs are what turn scores into
+     * stretches.
+     *
+     * @async
+     * @param {Object} spec - The inference spec as submitted.
+     * @returns {Promise<void>} Resolves when engine and model belong together.
+     * @throws {ApiError} 400 when they do not.
+     */
+    async refuseMismatchedHabitatModel(spec) {
+        const modelId = spec.model && spec.model.ml_model_id;
+        const row = modelId ? await ingestRepository.getModel(modelId) : null;
+        const isHabitat = Boolean(row && row.model_type === HABITAT_MODEL_TYPE);
+
+        if (spec.engine === HABITAT_ENGINE && !isHabitat) {
+            invalid(`The ${HABITAT_ENGINE} engine runs habitat models only; name one by spec.model.ml_model_id.`);
+        }
+        if (isHabitat && spec.engine !== HABITAT_ENGINE) {
+            invalid(`Model ${modelId} (${row.name}) is a habitat model and runs on the ${HABITAT_ENGINE} engine, `
+                + `not ${spec.engine}.`);
+        }
+        if (isHabitat && !row.decision_rules) {
+            invalid(`Model ${modelId} (${row.name}) has no decision rules, so its scores cannot be made into stretches.`);
+        }
+
+        // The stretch rule belongs to the habitat engine, and the keyframe rules to the others.
+        const reduction = spec.reduction || {};
+        const habitatRule = String(reduction.name) === HABITAT_REDUCTION.name && String(reduction.version) === HABITAT_REDUCTION.version;
+        if (spec.engine === HABITAT_ENGINE && !habitatRule) {
+            invalid(`The ${HABITAT_ENGINE} engine applies ${HABITAT_REDUCTION.name} version ${HABITAT_REDUCTION.version}.`);
+        }
+        if (spec.engine !== HABITAT_ENGINE && habitatRule) {
+            invalid(`${HABITAT_REDUCTION.name} is the ${HABITAT_ENGINE} engine's rule, not ${spec.engine}'s.`);
+        }
+    }
+
+    /**
+     * The habitat trainer trains habitat models from habitat datasets, and nothing else does
+     * (#287).
+     *
+     * A habitat dataset is frames with a yes or no per substrate; the species trainer would
+     * read it as a folder per class and train something that is neither. The habitat trainer,
+     * given a species dataset or a species checkpoint, would build a model MARP cannot
+     * register as a habitat model.
+     *
+     * @async
+     * @param {Object} spec - The training spec as submitted.
+     * @param {Object} archive - The dataset row, with its `task`.
+     * @returns {Promise<void>} Resolves when engine, dataset and model belong together.
+     * @throws {ApiError} 400 when they do not.
+     */
+    async refuseMismatchedHabitatTraining(spec, archive) {
+        const row = await ingestRepository.getModel(spec.model.ml_model_id);
+        const habitatEngine = spec.engine === HABITAT_TRAINING_ENGINE;
+        const habitatDataset = archive.task === HABITAT_MODEL_TYPE;
+        const habitatModel = Boolean(row && row.model_type === HABITAT_MODEL_TYPE);
+
+        if (habitatEngine && !habitatDataset) {
+            invalid(`The ${HABITAT_TRAINING_ENGINE} engine trains on habitat datasets; dataset ${archive.id} (${archive.name}) is a ${archive.task} dataset.`);
+        }
+        if (habitatEngine && !habitatModel) {
+            invalid(`The ${HABITAT_TRAINING_ENGINE} engine starts from a habitat model such as dinov2-vitb14; model ${spec.model.ml_model_id} is ${row ? `a ${row.model_type} model` : 'not registered'}.`);
+        }
+        if (!habitatEngine && (habitatDataset || habitatModel)) {
+            invalid(`A habitat ${habitatDataset ? 'dataset' : 'model'} is trained by the ${HABITAT_TRAINING_ENGINE} engine, not ${spec.engine}.`);
         }
     }
 

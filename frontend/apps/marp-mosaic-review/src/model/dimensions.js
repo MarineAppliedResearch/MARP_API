@@ -161,6 +161,14 @@ export const DIMENSIONS = [
     nestsUnder: 'model', label: 'run', all: 'Any run', one: (v) => v,
     labelled: true,
   },
+  {
+    /* Where each tile's picture stands (#287). Isaac, 2026-11-12: "the mosaic viewer needs
+       a way to filter by only images that are actually available" -- choose Available. */
+    key: 'picture', field: 'picture_state',
+    source: 'observation_thumbnails.status and last_error', kind: KIND.SET,
+    label: 'picture', all: 'Any picture',
+    one: (v) => ({ available: 'Available', preparing: 'Preparing', 'no video': 'No video available', 'no image': 'No image' }[v] || v),
+  },
 ];
 
 /** By key, for the many places that have one and want the rest. */

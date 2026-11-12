@@ -483,7 +483,7 @@ class GpuRepository {
      */
     async modelForLease(modelId) {
         const [model] = await this.db.sequelize.query(
-            'SELECT model_type, architecture_version FROM ml_models WHERE id = :modelId',
+            'SELECT model_type, architecture_version, decision_rules FROM ml_models WHERE id = :modelId',
             { replacements: { modelId }, type: QueryTypes.SELECT }
         );
 
@@ -691,7 +691,7 @@ class GpuRepository {
     async getDatasetArchiveById(datasetId) {
         try {
             const dataset = await this.db.datasets.findByPk(datasetId, {
-                attributes: ['id', 'name', 'archive_path', 'archive_sha256', 'archive_bytes'],
+                attributes: ['id', 'name', 'task', 'archive_path', 'archive_sha256', 'archive_bytes'],
             });
 
             return dataset ? dataset.get({ plain: true }) : null;

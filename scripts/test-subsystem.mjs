@@ -78,6 +78,8 @@ const SUBSYSTEMS = {
             /* #268: the name a training job gets when nobody typed one. */
             'gpu-training-job-name',
             'gpu-trained-model-registration',
+            'habitat-model-registration',
+            'habitat-ingest',
             /* #268: what the training panel reads back -- the per-epoch metric names the
                ingest was getting wrong, and the pace series nothing served. */
             'training-run-pace',
@@ -98,6 +100,8 @@ const SUBSYSTEMS = {
         describe: 'the picture mosaic reviewer: query, commit, correction, thumbnails',
         suites: [
             'mosaic-query',
+            // #287 A20: an annotated habitat stretch's derived keyframes, and its picture.
+            'habitat-keyframes',
             'mosaic-commit',
             'mosaic-correction',
             // Phase 8 (#124): the facets route the rail's option lists come from,
@@ -180,12 +184,16 @@ const SUBSYSTEMS = {
             // #268: grouping, splitting and vocabulary for a dataset build. Pure
             // functions, so they cost a second and belong with the registry they feed.
             'dataset-build-plan',
+            'habitat-dataset-plan',
+            'habitat-dataset-select',
             // #268: the rest of the build path -- the route, the claim rule, the
             // runner, and what a cancelled, retried or failed build left behind. The
             // extractor is stubbed in all three, so they are seconds rather than
             // minutes; the real build is `datasets` below.
             'dataset-build-queue',
             'dataset-build-runner',
+            // #287: a habitat build -- frames, labels, throwing out, the archive.
+            'habitat-dataset-build',
             'dataset-build-lifecycle',
             /* #268: the classification archive -- class folders, no data.yaml, and the
                refusals that stop one being built that trains on a random split. Opens

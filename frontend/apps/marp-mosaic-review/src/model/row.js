@@ -6,6 +6,8 @@
  * rather than being written out at each of the four places that needs it.
  */
 
+import { timeOfDayMs } from './match.js';
+
 /**
  * The species the observation **is now**.
  *
@@ -75,3 +77,29 @@ export const annotatorSpeciesName = (row) => (row && row.comname) || null;
  */
 export const hasDrifted = (row) =>
   Boolean(row && row.species_comname && row.comname && row.species_comname !== row.comname);
+
+/**
+ * What a habitat stretch's caption adds to its substrate: how long it ran, and what else its
+ * line recorded meanwhile (#287).
+ *
+ * Isaac, 2026-11-12: a reviewer judging "is this Rock?" should see at a glance that it lasted
+ * two and a half minutes and that Cobble lay on top for some of it. Null for anything that is
+ * not a habitat stretch.
+ *
+ * @param {Object} row - A mosaic row.
+ * @returns {?{length: ?string, overlaps: Array<string>}}
+ */
+export function habitatDetail(row) {
+  if (!row || row.session_type !== 'Habitat') return null;
+  const start = timeOfDayMs(row.tc);
+  const end = timeOfDayMs(row.etc);
+  let length = null;
+  if (start !== null && end !== null) {
+    // A stretch across midnight ends on a smaller clock than it started.
+    const seconds = Math.round(((end - start + 86400000) % 86400000) / 1000);
+    const minutes = Math.floor(seconds / 60);
+    // Short, because a tile's caption is a few words wide.
+    length = minutes ? `${minutes}m${seconds % 60 ? ` ${seconds % 60}s` : ''}` : `${seconds}s`;
+  }
+  return { length, overlaps: Array.isArray(row.habitat_overlaps) ? row.habitat_overlaps : [] };
+}

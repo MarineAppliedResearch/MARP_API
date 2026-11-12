@@ -42,6 +42,7 @@
 
 const db = require('../model');
 const { SESSION_TYPE_TO_SPECIES_LIST } = require('../db/species-lists');
+const { HABITAT_SESSION_TYPE } = require('../db/habitat-keyframes');
 const thumbnailRepository = require('./observation-thumbnail.repository');
 
 /**
@@ -244,6 +245,33 @@ const SPECIES_LIST_CASE = [
  * @constant
  * @type {string}
  */
+/**
+ * Where an observation's picture stands, as one word: the Picture filter, its counts and the
+ * tile all read this one expression (#287).
+ *
+ * Isaac, 2026-11-12: "the mosaic viewer needs a way to filter by only images that are
+ * actually available". `available` is a picture to look at; `preparing` is queued or never
+ * asked for; `no video` is the media server having no such video (nothing matched, or the
+ * match was too weak to trust); `no image` is any other failure, some of which are retried.
+ * A scalar subquery rather than a join, so a predicate can use it in any statement.
+ *
+ * @constant
+ * @type {string}
+ */
+const PICTURE_STATE = `coalesce((
+        SELECT CASE WHEN pt.status = 'ready' THEN 'available'
+                    WHEN pt.status = 'failed' AND pt.permanent
+                         AND (pt.last_error LIKE '${thumbnailRepository.NO_VIDEO_ERRORS.noMatch}%'
+                              OR pt.last_error LIKE '${thumbnailRepository.NO_VIDEO_ERRORS.weakMatch}%')
+                         THEN 'no video'
+                    WHEN pt.status = 'failed' THEN 'no image'
+                    ELSE 'preparing' END
+          FROM observation_thumbnails pt
+         WHERE pt.observation_id = o.observation_id), 'preparing')`;
+
+/** The values `PICTURE_STATE` takes, which are all a Picture filter may ask for. */
+const PICTURE_STATES = ['available', 'preparing', 'no video', 'no image'];
+
 const ROW_COLUMNS = `
         o.observation_id,
         o.version,
@@ -252,6 +280,7 @@ const ROW_COLUMNS = `
         o.comname,
         sp.comname AS species_comname,
         o.tc,
+        o.etc,
         o.observed_at,
         s.dive,
         s.line,
@@ -271,13 +300,16 @@ const ROW_COLUMNS = `
         k.keyframe_count,
         k.first_framenum,
         coalesce(th.status, 'queued') AS thumbnail_status,
+        -- #287: available, preparing, no video or no image, as the Picture filter reads it.
+        ${PICTURE_STATE} AS picture_state,
         th.full_frame_status,
         coalesce(th.full_frame_permanent, false) AS full_frame_permanent,
         th.full_frame_last_error AS full_frame_reason,
         th.full_frame_framenum,
         th.full_frame_width,
         th.full_frame_height,
-        th.full_frame_box`;
+        th.full_frame_box,
+        hab.overlaps AS habitat_overlaps`;
 
 /**
  * Time of day, in `interval`, from the `tc` a row carries.
@@ -428,6 +460,8 @@ function dayEnd(value, label) {
  * exactly what it means on the page. Status filters included: what the reviewer is looking
  * at is the question. `exclude` is not applied -- it is the grid's paging bookkeeping, not
  * part of the question. An observation with no keyframes is never in the Mosaic, and is not
+ * here either -- except a habitat stretch, which has a start and an end keyframe worked out
+ * from its times (#287, A20 and A22): it comes back with `keyframe_rows` 0 and its times.
  * **The opened observation gets no exemption** (Isaac, 2026-10-14). It used to be answered
  * whatever the filters said, so the reviewer could still work on the one they came for; the
  * cost was a drawing that did not match the question, and that is the half that matters. A
@@ -450,7 +484,8 @@ function buildVideoObservationsQuery({ filters = {}, videoSource, include, limit
     const sql = `
 SELECT o.observation_id, o.species_id, coalesce(sp.comname, o.comname) AS comname,
        o."obsID" AS obs_id, o.version, o.count, o.session_id, (o.gpu_job_id IS NOT NULL) AS machine, o."mediaPosition" AS media_position,
-       ks.first_framenum, ks.last_framenum, ks.has_end,
+       ks.first_framenum, ks.last_framenum, ks.has_end, ks.n AS keyframe_rows,
+       s.type AS session_type, o.tc, o.etc,
        rc.decision AS review_decision, rc.reason AS flag_reason
   FROM observations o
   LEFT JOIN sessions s ON s.session_id = o.session_id
@@ -462,8 +497,9 @@ SELECT o.observation_id, o.species_id, coalesce(sp.comname, o.comname) AS comnam
         SELECT min(framenum) AS first_framenum, max(framenum) AS last_framenum, count(*) AS n,
                bool_or(type = 'end') AS has_end
           FROM keyframes
-         WHERE observation_id = o.observation_id) ks ON ks.n > 0
+         WHERE observation_id = o.observation_id) ks ON true
  WHERE o.video_source = ${video}
+   AND (ks.n > 0 OR s.type = ${bind.add(HABITAT_SESSION_TYPE)})
    AND ${matching}
  ORDER BY o.observation_id
  LIMIT ${bind.add(limit + 1)}`;
@@ -595,6 +631,16 @@ function predicates(filters, bind, { status = true } = {}) {
     // were made. The client still sends a name; that rename is Phase 8's.
     set('species', 'o.species_id', 'int[]');
     set('model', 'o.ml_model_id', 'int[]');
+
+    // #287: only tiles whose picture is in a given state -- "only images actually available".
+    const pictures = setValue(filters.picture, 'picture');
+    if (pictures) {
+        const unknown = pictures.find((value) => !PICTURE_STATES.includes(value));
+        if (unknown !== undefined) {
+            throw new MosaicRequestError(`filters.picture takes ${PICTURE_STATES.join(', ')}, not ${JSON.stringify(unknown)}`);
+        }
+        where.push(`${PICTURE_STATE} = ANY(${bind.add(pictures)}::varchar[])`);
+    }
 
     // #336: one inference run. Scientific data is read per run for each dive (Isaac,
     // 2026-11-09), so the same model run twice on a video is never counted together. **A
@@ -816,8 +862,16 @@ function buildPageSetQuery({ filters = {}, sort, pageSize, pages, exclude, inclu
     // "Track length" sort, and it is one sort option of four.
     const sortsOnKeyframes = terms.some((t) => t.field === 'keyframe_count');
 
+    /* A habitat stretch with no keyframes stored is counted with the start and end worked
+       out from its times (#287, A20 and A22): one when it has no later end. Both places
+       this runs have the session joined as `s`. The type is a constant, written in rather
+       than bound, so a query with no filters still binds only its page bounds. */
     const keyframeLateral = `LEFT JOIN LATERAL (
-            SELECT count(*)::int AS keyframe_count, min(framenum) AS first_framenum
+            SELECT CASE WHEN count(*) = 0 AND s.type = '${HABITAT_SESSION_TYPE}'
+                             AND o."mediaPosition" IS NOT NULL
+                        THEN CASE WHEN o.etc > o.tc THEN 2 ELSE 1 END
+                        ELSE count(*)::int END AS keyframe_count,
+                   min(framenum) AS first_framenum
               FROM keyframes
              WHERE observation_id = o.observation_id) `;
 
@@ -864,6 +918,17 @@ SELECT t.total,
   LEFT JOIN users training_user ON training_user.user_id = rt.reviewer_id
   LEFT JOIN observation_thumbnails th ON th.observation_id = o.observation_id
   ${keyframeLateral}k ON true
+  -- What else a habitat stretch's line recorded while it ran (#287), so a reviewer judging
+  -- "is this Rock?" sees that Cobble lies on top. Per returned row only. tc and etc are
+  -- written as hh:mm:ss, so comparing them as text compares them as times.
+  LEFT JOIN LATERAL (
+        SELECT array_agg(DISTINCT o2.comname ORDER BY o2.comname) AS overlaps
+          FROM observations o2
+         WHERE s.type = '${HABITAT_SESSION_TYPE}'
+           AND o2.session_id = o.session_id
+           AND o2.observation_id <> o.observation_id
+           AND o2.comname IS DISTINCT FROM o.comname
+           AND o2.tc < o.etc AND o2.etc > o.tc) hab ON true
  ORDER BY m.rn`;
 
     return { sql, bind: bind.values };
@@ -959,6 +1024,8 @@ const FACET_DIMENSIONS = {
     line: { value: 's.line', label: 's.line' },
     sessionType: { value: 's.type', label: 's.type' },
     session: { value: 'o.session_id', label: 'o.session_id::text' },
+    // #287: where each tile's picture stands. The client words each value.
+    picture: { value: PICTURE_STATE, label: PICTURE_STATE },
     species: { value: 'o.species_id', label: 'sp.comname', list: 'sp.species_list' },
     model: { value: 'o.ml_model_id', label: 'm.name', joins: '\n  LEFT JOIN ml_models m ON m.id = o.ml_model_id' },
     // #336. Named by what it was given, its model, when, and how many videos it covers,
@@ -1436,4 +1503,7 @@ module.exports = {
     frames,
     queryPages,
     selectForBuild,
+    // For the habitat dataset build (#287), which chooses sessions as tiles are filtered.
+    binder,
+    predicates,
 };

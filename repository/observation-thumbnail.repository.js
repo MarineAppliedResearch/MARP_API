@@ -32,6 +32,7 @@ const {
     SWEEP_BACKOFF_BASE_MINUTES,
     SWEEP_BACKOFF_MAX_MINUTES,
 } = require('../config/thumbnails');
+const { HABITAT_SESSION_TYPE, derivedKeyframes } = require('../db/habitat-keyframes');
 
 const { QueryTypes } = db.Sequelize;
 
@@ -149,6 +150,20 @@ async function enqueueMissing(observationIds, transaction) {
         { bind: [ids], type: QueryTypes.UPDATE, transaction }
     );
 
+    /* **What somebody is looking at is cut first** (#287). Everything else queued waits at
+       ordinary priority, oldest first, so a page of a database whose pictures were never
+       made -- 44,000 habitat stretches on a production copy -- sat behind four thousand
+       older requests and showed PREPARING for hours. A page in front of a reviewer is a
+       reviewer asking, which is what priority 1 means elsewhere. */
+    await db.sequelize.query(
+        `UPDATE observation_thumbnails
+            SET request_priority = 1, updated_at = NOW()
+          WHERE observation_id = ANY($1::int[])
+            AND status = 'queued'
+            AND request_priority < 1`,
+        { bind: [ids], type: QueryTypes.UPDATE, transaction }
+    );
+
     return inserted.length;
 }
 
@@ -169,6 +184,32 @@ async function enqueueMissing(observationIds, transaction) {
  * @param {Array<number>} observationIds - Observations to retry.
  * @returns {Promise<Array<Object>>} One row per requested observation that exists.
  */
+/**
+ * The permanent failure a keyframe answers (#347). Recorded by the extractor for an observation
+ * with no keyframes; the keyframe trigger (migration 20261110130000) and {@link requeue} know it
+ * by this message, so it is written once, here.
+ *
+ * @constant
+ * @type {string}
+ */
+const NO_KEYFRAMES_ERROR = 'The observation has no keyframes, so it has no bounding box and can never have a cropped picture.';
+
+/**
+ * How the two failures that mean "the media server has no such video" begin (#287).
+ *
+ * The extractor writes them, the Mosaic says "No video available" for them, and
+ * `scripts/report-missing-videos.js` lists their videos -- three readers of one wording, so
+ * it is kept here. Both are permanent: nothing in the library matched, or the best match
+ * scored below the exact-match bar.
+ *
+ * @constant
+ * @type {{noMatch: string, weakMatch: string}}
+ */
+const NO_VIDEO_ERRORS = Object.freeze({
+    noMatch: 'No Jellyfin video matched video_source',
+    weakMatch: 'Best Jellyfin match for video_source',
+});
+
 async function requeue(observationIds) {
     const ids = (observationIds || []).filter((id) => Number.isInteger(id));
 
@@ -188,9 +229,13 @@ async function requeue(observationIds) {
             { bind: [ids], type: QueryTypes.INSERT, transaction }
         );
 
+        // A permanent failure stays refused, except one for having no keyframes when the
+        // observation has some now (#347): what made it permanent is no longer true. A
+        // habitat stretch always has its two, worked out from its times (#287, A22).
         await db.sequelize.query(
             `UPDATE observation_thumbnails
                 SET status       = 'queued',
+                    permanent    = false,
                     request_priority = 1,
                     candidate_index = candidate_index
                         + CASE WHEN framenum IS NULL THEN 0 ELSE 1 END,
@@ -200,8 +245,15 @@ async function requeue(observationIds) {
                     updated_at   = NOW()
               WHERE observation_id = ANY($1::int[])
                 AND status         = 'failed'
-                AND permanent      = false`,
-            { bind: [ids], type: QueryTypes.UPDATE, transaction }
+                AND (permanent = false
+                     OR (last_error = $2
+                         AND (EXISTS (SELECT 1 FROM keyframes k
+                                       WHERE k.observation_id = observation_thumbnails.observation_id)
+                              OR EXISTS (SELECT 1 FROM observations o
+                                           JOIN sessions s ON s.session_id = o.session_id
+                                          WHERE o.observation_id = observation_thumbnails.observation_id
+                                            AND s.type = $3))))`,
+            { bind: [ids, NO_KEYFRAMES_ERROR, HABITAT_SESSION_TYPE], type: QueryTypes.UPDATE, transaction }
         );
 
         return db.sequelize.query(
@@ -564,15 +616,83 @@ async function claimBatch(limit = CLAIM_BATCH_SIZE) {
                 o.video_source,
                 o."mediaPosition",
                 -- Who wrote the row decides what its frame numbers mean (#231).
-                o.gpu_job_id
+                o.gpu_job_id,
+                -- A habitat stretch is pictured at its middle, not its start (#287).
+                s.type AS session_type
            FROM claimed c
            JOIN observation_thumbnails t
              ON t.observation_thumbnail_id = c.observation_thumbnail_id
            JOIN observations o ON o.observation_id = c.observation_id
+           LEFT JOIN sessions s ON s.session_id = o.session_id
           ORDER BY c.priority DESC, c.requested_at NULLS FIRST, c.observation_id`,
         { bind: [limit, CLAIM_TIMEOUT_SECONDS], type: QueryTypes.SELECT }
     );
 }
+
+/**
+ * Claims the other waiting pictures in the videos a batch already opens (#287).
+ *
+ * Measured on 2026-11-12 against the media server: the first frame cut from a video took
+ * 11 s and a second from the same video, ten minutes further in, 1 s -- the cost is the
+ * server opening the file, not the frame. A batch is chosen by priority and age, so it
+ * spreads across dozens of videos and nearly every picture paid the 11 s: thirteen a
+ * minute. Taking each opened video's other queued pictures with it pays it once per video.
+ *
+ * Thumbnails only, at most `limit` of them, in the same shape `claimBatch` returns.
+ *
+ * @async
+ * @param {Array<Object>} claims - What `claimBatch` returned.
+ * @param {number} [limit] - At most this many more.
+ * @returns {Promise<Array<Object>>} The rows claimed.
+ */
+async function claimCompanions(claims, limit = COMPANION_LIMIT) {
+    const videos = [...new Set(claims.map((claim) => claim.video_source).filter(Boolean))];
+    if (!videos.length || limit < 1) return [];
+
+    return db.sequelize.query(
+        `WITH chosen AS (
+             SELECT t.observation_thumbnail_id
+               FROM observation_thumbnails t
+               JOIN observations o ON o.observation_id = t.observation_id
+              WHERE t.status = 'queued'
+                AND (t.claimed_at IS NULL OR t.claimed_at < NOW() - make_interval(secs => $3::int))
+                AND o.video_source = ANY($1::text[])
+              ORDER BY t.request_priority DESC, t.requested_at NULLS FIRST, t.observation_id
+              LIMIT $2
+                FOR UPDATE OF t SKIP LOCKED
+         ), claimed AS (
+             UPDATE observation_thumbnails t
+                SET claimed_at = NOW(), attempts = t.attempts + 1, updated_at = NOW()
+               FROM chosen c
+              WHERE t.observation_thumbnail_id = c.observation_thumbnail_id
+              RETURNING t.observation_thumbnail_id, t.observation_id, t.attempts
+         )
+         SELECT c.observation_thumbnail_id,
+                c.observation_id,
+                c.attempts,
+                'thumbnail'::text AS artifact_kind,
+                t.request_priority,
+                t.candidate_index,
+                t.filename AS thumbnail_filename,
+                t.full_frame_framenum,
+                t.full_frame_subset,
+                t.full_frame_filename,
+                o.video_source,
+                o."mediaPosition",
+                o.gpu_job_id,
+                s.type AS session_type
+           FROM claimed c
+           JOIN observation_thumbnails t
+             ON t.observation_thumbnail_id = c.observation_thumbnail_id
+           JOIN observations o ON o.observation_id = c.observation_id
+           LEFT JOIN sessions s ON s.session_id = o.session_id
+          ORDER BY c.observation_id`,
+        { bind: [videos, limit, CLAIM_TIMEOUT_SECONDS], type: QueryTypes.SELECT }
+    );
+}
+
+/** How many more pictures a batch may take from the videos it opens. */
+const COMPANION_LIMIT = 200;
 
 /**
  * Reads every keyframe of a set of observations, for the box choice.
@@ -604,6 +724,23 @@ async function keyframesFor(observationIds) {
 
     for (const row of rows) {
         byObservation.get(row.observation_id).push(row);
+    }
+
+    /* **An annotated habitat stretch has a start and an end keyframe, worked out here**
+       (#287, A20 and A22): the habitat crop at its start and its end. None is written, so
+       one without keyframes in the table is given these two. */
+    const bare = ids.filter((id) => byObservation.get(id).length === 0);
+
+    if (bare.length) {
+        const habitat = await db.sequelize.query(
+            `SELECT o.observation_id, o.comname, o."mediaPosition", o.tc, o.etc
+               FROM observations o
+               JOIN sessions s ON s.session_id = o.session_id
+              WHERE o.observation_id = ANY($1::int[]) AND s.type = $2`,
+            { bind: [bare, HABITAT_SESSION_TYPE], type: QueryTypes.SELECT }
+        );
+
+        for (const row of habitat) byObservation.set(row.observation_id, derivedKeyframes(row));
     }
 
     return byObservation;
@@ -1016,8 +1153,11 @@ async function writeRunState(runState, userId, note = null) {
 }
 
 module.exports = {
+    NO_KEYFRAMES_ERROR,
+    NO_VIDEO_ERRORS,
     enqueueMissing,
     claimBatch,
+    claimCompanions,
     hasQueuedWork,
     sweep,
     sweepBackfill,

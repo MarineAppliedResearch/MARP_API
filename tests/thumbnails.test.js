@@ -752,6 +752,33 @@ describe('observation thumbnails (#118)', () => {
             expect(record.generation).toBe(3);
         });
 
+        /**
+         * #347. Posted first and boxed after is how the habitat model's stretches arrive
+         * (#287), and 275 of them sat failed for ever. The failure is recorded through the
+         * extractor's own plan, so a change to its message fails here rather than quietly
+         * leaving the trigger matching nothing.
+         */
+        it('queues again a thumbnail that failed for having no keyframes, when one is posted (#347)', async () => {
+            const [a] = await addObservations(1);
+            const failed = extraction.planObservation({ mediaPosition: '00:00:10.0000000' }, []);
+            expect(failed).toMatchObject({ ok: false, permanent: true });
+            await setThumbnail(a, { status: 'failed', permanent: true, lastError: failed.error });
+
+            const posted = await global.api.post('/api/v2/keyframe').send([{
+                observation_id: a, subset: '1', comname: `Jest Thumbnail ${runId}`, type: 'start',
+                framenum: 250, x: 0.5, y: 0.75, width: 0.5, height: 0.5,
+            }]);
+            expect(posted.status).toBe(200);
+
+            const record = await thumbnailRepository.findByObservationId(a);
+            expect(record.status).toBe('queued');
+            expect(record.permanent).toBe(false);
+
+            // And this time the extractor has a box to cut.
+            const keyframes = await q('SELECT subset, type, framenum, x, y, width, height FROM keyframes WHERE observation_id = :a', { a });
+            expect(extraction.planObservation({ mediaPosition: '00:00:10.0000000' }, keyframes).ok).toBe(true);
+        });
+
         it('never re-queues a permanent failure when a later keyframe arrives', async () => {
             const [a] = await addObservations(1);
 
@@ -1144,6 +1171,25 @@ describe('observation thumbnails (#118)', () => {
 
             // A picture that already arrived is left alone.
             expect(byId.get(c).status).toBe('ready');
+        });
+
+        it('accepts a no-keyframes failure once the observation has keyframes, and not before (#347)', async () => {
+            const [boxed, bare] = await addObservations(2);
+            const error = thumbnailRepository.NO_KEYFRAMES_ERROR;
+
+            // Failed, then boxed by a write that does not fire the trigger's reset: a row
+            // stuck before #347 looks like this.
+            await addKeyframes(boxed, [300]);
+            await setThumbnail(boxed, { status: 'failed', permanent: true, lastError: error });
+            await setThumbnail(bare, { status: 'failed', permanent: true, lastError: error });
+
+            const res = await reader.post(RETRY).send({ observationIds: [boxed, bare] });
+            expect(res.status).toBe(200);
+            const byId = new Map(res.body.thumbnails.map((entry) => [entry.observation_id, entry]));
+
+            expect(byId.get(boxed)).toMatchObject({ status: 'queued', permanent: false });
+            // Still no box, so still refused.
+            expect(byId.get(bare)).toMatchObject({ status: 'failed', permanent: true });
         });
 
         it('answers for every id it was given, found by observation_id and not by position', async () => {

@@ -47,6 +47,8 @@ const extraction = require('./thumbnail-extraction.service');
    is the one place that decides which directory this process is looking at. */
 const { STORAGE_DIR: THUMBNAIL_DIR } = require('../config/thumbnails');
 const plan = require('./dataset-build-plan');
+const habitatSelect = require('./habitat-dataset-select');
+const { SUBSTRATES } = require('./habitat-dataset-plan');
 
 /*
  * Where packaged archives live, and what the row says about them.
@@ -162,7 +164,7 @@ const DEFAULT_IMAGE = { format: 'jpeg', quality: 95 };
  * @constant
  * @type {Array<string>}
  */
-const BUILD_TASKS = ['detection', 'classification'];
+const BUILD_TASKS = ['detection', 'classification', 'habitat'];
 
 const CROP_SOURCE = 'mosaic_thumbnail';
 
@@ -804,6 +806,8 @@ function packageArchive(staging) {
         ...Object.values(plan.CLASSIFICATION_DIRECTORIES),
         'data.yaml',
         'classes.json',
+        // A habitat build's list of what it left out and why (#287).
+        'habitat-report.json',
     ])];
 
     const present = candidates.filter((name) => fs.existsSync(path.join(staging, name)));
@@ -990,6 +994,175 @@ async function runClassificationBuild({ job, attempt, datasetId, staging, splits
 }
 
 /**
+ * Build a habitat dataset: frames every 10 s inside promoted habitat stretches (#287).
+ *
+ * The frames, labels and dive splits are `habitat-dataset-select.js`'s; this cuts them.
+ * The archive is what the habitat trainer reads: `classes.json`, a list of substrate names,
+ * and per split `images/` beside a `labels.csv` of image then a 0/1 column per substrate.
+ *
+ * **Non-seabed frames are cut, looked at and thrown out**, and listed in
+ * `habitat-report.json` with their reason, beside the sessions left out because their
+ * times drift within a file. The list travels in the archive so whoever trains on it can
+ * see what is not there.
+ *
+ * **Each frame is named for its session as well as its video**: two sessions of one dive
+ * can name the same moment, each with its own labels.
+ *
+ * @async
+ * @param {Object} options - The claimed job: `{job, attempt, datasetId, staging, image, spec}`.
+ * @param {Function} release - Hands the build back for a shutdown.
+ * @returns {Promise<Object>} What `runOne` returns for a finished or cancelled build.
+ */
+async function runHabitatBuild({ job, attempt, datasetId, staging, image, spec }, release) {
+    const rows = await habitatSelect.stretchesForBuild(spec);
+    const { frames, members, drifting } = habitatSelect.selectFrames(rows);
+
+    if (!frames.length) {
+        throw new Error('Those filters match no promoted habitat stretch long enough to take a frame from.');
+    }
+
+    // Only the substrates some frame holds: a class with no examples cannot be learned.
+    const used = SUBSTRATES.filter((name, i) => frames.some((f) => f.labels[i]));
+    const columns = used.map((name) => SUBSTRATES.indexOf(name));
+    const classes = await habitatSelect.habitatClassesFor(used);
+
+    await buildRepository.recordSelection({ datasetId, observations: members.size, classes: classes.length });
+
+    const byVideo = new Map();
+    for (const frame of frames) {
+        if (!byVideo.has(frame.video)) byVideo.set(frame.video, []);
+        byVideo.get(frame.video).push(frame);
+    }
+
+    const total = frames.length;
+    const stemOf = (frame, number) => `${frame.session_id}_${path.parse(frame.video).name}_${String(number).padStart(8, '0')}`;
+    const kept = [];
+    const rejected = [];
+    let missing = 0;
+    let at = 0;
+
+    const stop = async (where) => {
+        if (live.stopping && !await buildRepository.isCancelled(job.id)) return release();
+        await buildRepository.failBuild({
+            jobId: job.id, attemptId: attempt.id, datasetId, reason: `Cancelled while ${where}.`, cancelled: true,
+        });
+        return { cancelled: true, jobId: job.id };
+    };
+    const stopping = async () => live.stopping || buildRepository.isCancelled(job.id);
+
+    for (const [video, wanted] of byVideo) {
+        at += 1;
+        const phase = `extracting ${at}/${byVideo.size}`;
+        await buildRepository.reportProgress(attempt.id, { phase, done: kept.length + rejected.length, total, unit: 'frames' });
+        if (await stopping()) return stop('extracting');
+
+        // Opened first: a frame's number needs the video's frame rate.
+        const opened = await openVideo(video);
+
+        /* A frame already in staging from a run handed back for a shutdown is kept (#292);
+           one thrown out last time is cut and thrown out again. */
+        const pending = [];
+        for (const frame of wanted) {
+            const split = path.join(staging, frame.split, 'images');
+            fs.mkdirSync(split, { recursive: true });
+            const number = Math.round((frame.positionMs * opened.probe.fps) / 1000);
+            const item = { frame, number, file: path.join(split, `${stemOf(frame, number)}.${image.extension}`) };
+            if (fs.existsSync(item.file)) kept.push(item);
+            else pending.push(item);
+        }
+        if (!pending.length) continue;
+
+        const byNumber = new Map();
+        for (const item of pending) {
+            if (!byNumber.has(item.number)) byNumber.set(item.number, []);
+            byNumber.get(item.number).push(item);
+        }
+
+        const cut = fs.mkdtempSync(path.join(os.tmpdir(), 'marp-habitat-'));
+        try {
+            for (const batch of passes([...byNumber.keys()].sort((a, b) => a - b))) {
+                const batchDir = path.join(cut, String(batch[0]));
+                fs.mkdirSync(batchDir, { recursive: true });
+                await cutPass(opened.streamUrl, batch, opened.probe.fps, batchDir, image, video);
+
+                for (let i = 0; i < batch.length; i += 1) {
+                    const produced = path.join(batchDir, `frame-${String(i + 1).padStart(4, '0')}.${image.extension}`);
+                    const items = byNumber.get(batch[i]);
+                    if (!fs.existsSync(produced)) {
+                        missing += items.length;
+                        continue;
+                    }
+
+                    const reason = await habitatSelect.rejectionFor(produced);
+                    for (const item of items) {
+                        if (reason) {
+                            rejected.push({ session_id: item.frame.session_id, video, position_ms: item.frame.positionMs, reason });
+                        } else {
+                            fs.copyFileSync(produced, item.file);
+                            kept.push(item);
+                        }
+                    }
+                }
+                fs.rmSync(batchDir, { recursive: true, force: true });
+
+                await buildRepository.reportProgress(attempt.id, { phase, done: kept.length + rejected.length, total, unit: 'frames' });
+                if (await stopping()) return stop('extracting');
+            }
+        } finally {
+            fs.rmSync(cut, { recursive: true, force: true });
+        }
+    }
+
+    if (!kept.length) {
+        throw new Error('No seabed frame could be cut from any of the videos these stretches name.');
+    }
+
+    await buildRepository.reportProgress(attempt.id, { phase: 'packaging', done: kept.length, total, unit: 'frames' });
+
+    const splitImages = new Map();
+    const splitClassImages = new Map();
+    const csv = new Map();
+    for (const { frame, file } of kept) {
+        const labels = columns.map((c) => frame.labels[c]);
+        if (!csv.has(frame.split)) csv.set(frame.split, [['image', ...used].join(',')]);
+        csv.get(frame.split).push([`images/${path.basename(file)}`, ...labels].join(','));
+
+        splitImages.set(frame.split, (splitImages.get(frame.split) || 0) + 1);
+        if (!splitClassImages.has(frame.split)) splitClassImages.set(frame.split, new Map());
+        const into = splitClassImages.get(frame.split);
+        labels.forEach((on, k) => { if (on) into.set(k, (into.get(k) || 0) + 1); });
+    }
+    for (const [split, lines] of csv) {
+        fs.writeFileSync(path.join(staging, split, 'labels.csv'), `${lines.join('\n')}\n`, 'utf8');
+    }
+    fs.writeFileSync(path.join(staging, 'classes.json'), `${JSON.stringify(used)}\n`, 'utf8');
+    fs.writeFileSync(path.join(staging, 'habitat-report.json'), `${JSON.stringify({
+        frames: kept.length, rejected, drifting_sessions: drifting, not_cut: missing,
+    }, null, 2)}\n`, 'utf8');
+
+    const archive = packageArchive(staging);
+
+    await buildRepository.recordBuild({
+        jobId: job.id,
+        attemptId: attempt.id,
+        datasetId,
+        members: [...members].map(([observation_id, split]) => ({ observation_id, split })),
+        classes,
+        archive,
+        frames: kept.length,
+        observations: members.size,
+        splitImages,
+        splitClassImages,
+        task: 'habitat',
+    });
+
+    logger.info(`Habitat dataset ${datasetId} built: ${kept.length} frames, ${rejected.length} thrown out, `
+        + `${drifting.length} sessions left out for drifting times, ${archive.sha256.slice(0, 12)}`);
+
+    return { jobId: job.id, datasetId, images: kept.length, rejected: rejected.length, drifting: drifting.length, missing, archive };
+}
+
+/**
  * The observations a build selects, placed in their splits.
  *
  * Pulled out of {@link runOne} so the estimate on the build flow runs the same selection
@@ -1117,6 +1290,11 @@ async function runOne() {
         const image = imageSettings(spec.image);
 
         await buildRepository.reportProgress(attempt.id, { phase: 'selecting', unit: 'frames' });
+
+        // A habitat build chooses its own frames and splits from habitat stretches (#287).
+        if (spec.task === 'habitat') {
+            return await runHabitatBuild({ job, attempt, datasetId, staging, image, spec }, release);
+        }
 
         const { rows, splits } = await selectSplits(spec);
 

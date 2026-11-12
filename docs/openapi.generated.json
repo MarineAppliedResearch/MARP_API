@@ -4632,6 +4632,22 @@
             "example": [],
             "description": "observations.ml_model_id."
           },
+          "picture": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "available",
+                "preparing",
+                "no video",
+                "no image"
+              ]
+            },
+            "example": [
+              "available"
+            ],
+            "description": "Where each tile's picture stands (#287), as the row's `picture_state`: `[\"available\"]` is only tiles with a picture to look at."
+          },
           "run": {
             "type": "array",
             "items": {
@@ -4790,6 +4806,34 @@
             "type": "string",
             "nullable": true,
             "example": "Fish"
+          },
+          "etc": {
+            "type": "string",
+            "nullable": true,
+            "example": "16:06:00",
+            "description": "Where an observation ends, as .NET TimeSpan text on the same clock as `tc`. A habitat stretch carries one; most observations do not."
+          },
+          "picture_state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "preparing",
+              "no video",
+              "no image"
+            ],
+            "example": "available",
+            "description": "Where the tile's picture stands (#287): a picture to look at; queued or not yet asked for; the media server has no such video (nothing matched, or too weak a match to trust); or another failure, some of which are retried. What the `picture` filter matches."
+          },
+          "habitat_overlaps": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Cobble"
+            ],
+            "description": "For a habitat stretch, the other substrates its line recorded at any time while it ran; null otherwise and where there are none (#287)."
           },
           "species_list": {
             "type": "string",
@@ -7108,6 +7152,31 @@
             "type": "boolean",
             "default": false,
             "description": "True when this is a pretrained starting point for training rather than a model MARP trained. Never selectable for inference."
+          },
+          "decision_rules": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "array"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "nullable": true,
+            "description": "A habitat model's decision rules (#287): its substrates in output order, the cut-off for each picked on its tuning dives (`tuned_cut_offs`) and the raise applied on top (`raise`), the crop and input size it was trained on, and the stretch rules (`samples_per_second`, `average_s`, `exclusive`, `min_stretch_s`, `bridge_s`). Null on any other kind of model.",
+            "example": null
           },
           "training_run_id": {
             "type": "integer",
@@ -10816,10 +10885,11 @@
                     "type": "string",
                     "enum": [
                       "detection",
-                      "classification"
+                      "classification",
+                      "habitat"
                     ],
                     "example": "detection",
-                    "description": "Which kind of model this dataset is for. Omitted means `detection`, which is what every dataset built before this existed is. The two produce different archives and are not interchangeable: a detection archive holds whole frames with YOLO label files and a `data.yaml`; a classification archive holds one picture per annotated box in a folder named for its class, with no `data.yaml` at all, because Ultralytics classify reads the class vocabulary from the folder names. **The pictures are the mosaic tiles a reviewer sees** -- the box plus 10% padding, squared, 320x320 -- and the dataset row records `crop_source` so nothing downstream has to assume which pixels were taken. Folder names are `<species_id>_<slug>` rather than species names, because 37 names in the catalogue contain a path separator and case alone does not distinguish two directories on Windows; `classes.json` beside the splits maps every folder back to its species and its exact common name. A classification build with no train split is refused, because Ultralytics would otherwise split what it finds 80/20 at random and report an accuracy that means nothing."
+                    "description": "Which kind of model this dataset is for. Omitted means `detection`, which is what every dataset built before this existed is. The two produce different archives and are not interchangeable: a detection archive holds whole frames with YOLO label files and a `data.yaml`; a classification archive holds one picture per annotated box in a folder named for its class, with no `data.yaml` at all, because Ultralytics classify reads the class vocabulary from the folder names. **The pictures are the mosaic tiles a reviewer sees** -- the box plus 10% padding, squared, 320x320 -- and the dataset row records `crop_source` so nothing downstream has to assume which pixels were taken. Folder names are `<species_id>_<slug>` rather than species names, because 37 names in the catalogue contain a path separator and case alone does not distinguish two directories on Windows; `classes.json` beside the splits maps every folder back to its species and its exact common name. A classification build with no train split is refused, because Ultralytics would otherwise split what it finds 80/20 at random and report an accuracy that means nothing. **A habitat archive** (#287) holds a frame every 10 s inside promoted habitat stretches, whole dives to train, val and test 70/15/15, each split an `images/` folder and a `labels.csv` of a 0/1 column per substrate; the filters choose sessions, `splits` and `sampling` are ignored, and non-seabed frames and sessions whose times drift are left out and listed in `habitat-report.json`."
                   },
                   "sampling": {
                     "type": "object",
@@ -15628,6 +15698,82 @@
         }
       }
     },
+    "/v2/model/{id}/never-together": {
+      "put": {
+        "summary": "Set which substrates a habitat model never reports together",
+        "description": "Replaces a habitat model's never-together groups, e.g. `[[\"Mud\", \"Sand\", \"Gravel\"]]`. A group is two or more substrates, each one the model has or one the settled groups know of (Gravel). Where a run finds two of a group above their cut-offs at one moment, the one the model is surer of stays. Later runs use the new groups; runs already made keep what they were made with. An empty list means none. Requires `models:write`.",
+        "tags": [
+          "V2 · Habitat models"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The habitat model."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "groups"
+                ],
+                "properties": {
+                  "groups": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "minItems": 2
+                    },
+                    "example": [
+                      [
+                        "Mud",
+                        "Sand",
+                        "Gravel"
+                      ]
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The model, with its rules as now stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlModel"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          }
+        }
+      }
+    },
     "/v2/auth/login": {
       "post": {
         "security": [],
@@ -19427,6 +19573,7 @@
                         "line",
                         "sessionType",
                         "session",
+                        "picture",
                         "species",
                         "model",
                         "run"
@@ -19613,7 +19760,7 @@
     "/v2/mosaic/video/observations": {
       "post": {
         "summary": "Every observation in an observation's video that the Mosaic's query matches, for the video page",
-        "description": "The video the named observation is in, and every observation in that video that `filters` -- the Mosaic's own filters body, the one `/mosaic/observations/pages` takes -- matches, across all pages (#181). The named one is drawn only when the query matches it, like any other (2026-10-14). Each carries the span its keyframes cover **in seconds**, which tells the page which are on screen when; the keyframes themselves come from `/mosaic/video/keyframes`, a window at a time. Times follow the rule `/mosaic/observations/video-context` states: an annotation-GUI row counts at 25, a GPU row at the video's nominal rate. Observations with no keyframes are never in the Mosaic, and are not here. Requires the `observations:read` permission.",
+        "description": "The video the named observation is in, and every observation in that video that `filters` -- the Mosaic's own filters body, the one `/mosaic/observations/pages` takes -- matches, across all pages (#181). The named one is drawn only when the query matches it, like any other (2026-10-14). Each carries the span its keyframes cover **in seconds**, which tells the page which are on screen when; the keyframes themselves come from `/mosaic/video/keyframes`, a window at a time. Times follow the rule `/mosaic/observations/video-context` states: an annotation-GUI row counts at 25, a GPU row at the video's nominal rate. Observations with no keyframes are never in the Mosaic, and are not here -- except a habitat stretch, which has a start and an end keyframe worked out from its times with the habitat crop as the box (#287). `/mosaic/video/keyframes` sends those two with `keyframe_id` null and `derived: true`: nothing is stored, so there is nothing to edit. Requires the `observations:read` permission.",
         "tags": [
           "V2 · Mosaic"
         ],

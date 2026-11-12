@@ -131,6 +131,7 @@
                   <button type="button" class="on" data-view="det" title="Train bounding-box location and class predictions">Detection</button>
                   <button type="button" data-view="cls" title="Train one class prediction for each complete image">Classification</button>
                   <button type="button" data-view="seg" title="Train per-instance masks plus bounding boxes and classes">Segmentation</button>
+                  <button type="button" data-view="hab" title="Train a yes or no for each substrate on every frame (#287)">Habitat</button>
                 </nav>
               </div>
 
@@ -158,6 +159,17 @@
                   <div class="field"><label for="cls-size">Image size</label><select class="sel wide" id="cls-size" data-choices><option>224</option><option>384</option><option>512</option></select></div>
                   <div class="field"><label for="cls-drop" title="Probability of dropping classification-head activations during training">Head dropout</label><input class="inp wide" type="number" min="0" max="1" step="0.05" id="cls-drop" value="0.0"></div>
                 </div>
+              </div>
+
+              <div data-viewof="task" data-view="hab" class="task-settings" hidden>
+                <div class="task-callout"><b>Habitat</b><span>A yes or no for each substrate on every frame, several at once, from the habitat crop</span></div>
+                <div class="field req"><label for="base-hab">Habitat starting model</label><select data-rendered data-fills="base-hab" class="sel wide" id="base-hab"><option value="">Loading&hellip;</option></select></div>
+                <div class="fieldrow">
+                  <div class="field"><label for="hab-head" title="Passes with only the last layer learning, the backbone frozen">Head-only passes</label><input class="inp wide" type="number" min="0" id="hab-head" value="3"></div>
+                  <div class="field"><label for="hab-epochs" title="Passes over the whole model, deeper layers learning more slowly">Whole-model passes</label><input class="inp wide" type="number" min="1" id="hab-epochs" value="10"></div>
+                  <div class="field"><label for="hab-seed">Random seed</label><input class="inp wide" type="number" id="hab-seed" value="1"></div>
+                </div>
+                <span class="hint">The recipe the habitat feasibility runs settled: 518 px, the bottom half of the frame and the middle half of its width, learning rate 3e-5 with each layer below 0.75 times slower, the pass that scores best on the tuning dives kept, and each substrate&rsquo;s cut-off chosen there.</span>
               </div>
 
               <div data-viewof="task" data-view="seg" class="task-settings" hidden>
@@ -258,6 +270,10 @@
               <div data-viewof="task" data-view="cls" class="task-dataset" hidden>
                 <div class="field req"><label for="dataset-cls">Classification dataset</label><select data-rendered data-fills="dataset-cls" class="sel wide" id="dataset-cls"><option value="">Loading…</option></select></div>
                 <div class="dataset-contract"><b>Classification-compatible</b><span>Every image has one whole-image class label.</span></div>
+              </div>
+              <div data-viewof="task" data-view="hab" class="task-dataset" hidden>
+                <div class="field req"><label for="dataset-hab">Habitat dataset</label><select data-rendered data-fills="dataset-hab" class="sel wide" id="dataset-hab"><option value="">Loading&hellip;</option></select></div>
+                <div class="dataset-contract"><b>Habitat-compatible</b><span>Every frame has a yes or no for each substrate; whole dives in each split.</span></div>
               </div>
               <div data-viewof="task" data-view="seg" class="task-dataset" hidden>
                 <div class="field req"><label for="dataset-seg">Segmentation dataset</label><select data-rendered data-fills="dataset-seg" class="sel wide" id="dataset-seg"><option value="">Loading…</option></select></div>

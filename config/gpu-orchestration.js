@@ -373,6 +373,51 @@ const INGESTIBLE_JOB_KINDS = ['inference', 'tracking'];
  */
 const ENGINE_DATA_TYPES = ['Fish', 'GULF_Fish', 'Invert', 'GULF_Inverts'];
 
+/**
+ * A habitat model's `ml_models.model_type` (#287, settled 2026-11-10): a multi-label substrate
+ * classifier, its own kind so no species check or picker mistakes it for a species model.
+ *
+ * @constant
+ * @type {string}
+ */
+const HABITAT_MODEL_TYPE = 'habitat';
+
+/**
+ * The worker engine that runs a habitat model over video, and the only one that may (#287).
+ * A habitat model given to the species engine, or another model to this one, is refused at
+ * submission.
+ *
+ * @constant
+ * @type {string}
+ */
+const HABITAT_ENGINE = 'marp_habitat';
+
+/**
+ * The worker engine that trains a habitat model, and the only one that may (#287). It takes a
+ * habitat dataset and a habitat starting model; the species trainer takes neither.
+ *
+ * @constant
+ * @type {string}
+ */
+const HABITAT_TRAINING_ENGINE = 'marp_habitat_training';
+
+/**
+ * The rule a habitat run turns its frame scores into stretches by (#287), the worker's
+ * `habitat_stretches` version 1.
+ *
+ * @constant
+ * @type {{name: string, version: string}}
+ */
+const HABITAT_REDUCTION = Object.freeze({ name: 'habitat_stretches', version: '1' });
+
+/**
+ * The session type a habitat run writes (#287), whose species list holds the substrates.
+ *
+ * @constant
+ * @type {string}
+ */
+const HABITAT_SESSION_TYPE = 'Habitat';
+
 
 
 /**
@@ -529,6 +574,11 @@ module.exports = {
     LEASABLE_JOB_KINDS,
     INGESTIBLE_JOB_KINDS,
     ENGINE_DATA_TYPES,
+    HABITAT_MODEL_TYPE,
+    HABITAT_ENGINE,
+    HABITAT_TRAINING_ENGINE,
+    HABITAT_REDUCTION,
+    HABITAT_SESSION_TYPE,
     JOB_STATES,
     TERMINAL_JOB_STATES,
     ATTEMPT_STATES,

@@ -4181,6 +4181,7 @@ const BASE_MODEL_TASKS = {
   'base-det': 'detection',
   'base-cls': 'classification',
   'base-seg': 'segmentation',
+  'base-hab': 'habitat',
 };
 
 /**
@@ -4278,10 +4279,15 @@ function fillTrainingChoices(models, datasets) {
      value"*. So these three are independent controls over one catalogue rather than three
      filtered views, and a reader choosing wrongly is refused at submission by
      `modelDoesTask`, which is where that can actually be caught. */
-  const datasetOptions = datasets.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`);
+  const datasetOptions = datasets.filter((d) => d.task !== 'habitat')
+    .map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`);
   for (const id of ['dataset-det', 'dataset-cls', 'dataset-seg']) {
     put(id, datasetOptions, 'No dataset saved in MARP');
   }
+  /* A habitat dataset does record its task, and the habitat trainer takes nothing else
+     (#287), so this one list is filtered -- and habitat datasets are kept out of the others. */
+  put('dataset-hab', datasets.filter((d) => d.task === 'habitat')
+    .map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`), 'No habitat dataset saved in MARP');
 
   trainingModels = models;
   trainingDatasets = datasets;
@@ -4417,6 +4423,10 @@ function trainingSubmission(root) {
     return element ? element.value : null;
   };
 
+  /* The Habitat tab trains a habitat model on the habitat trainer (#287). */
+  const task = where.querySelector('[data-switch="task"] .on');
+  if (task && task.dataset.view === 'hab') return habitatTrainingSubmission(value);
+
   const modelId = Number(value('base-det'));
 
   if (!Number.isInteger(modelId) || modelId <= 0) {
@@ -4483,6 +4493,56 @@ function trainingSubmission(root) {
         // The id alone; the server fills in the locator and the archive hash.
         dataset: { dataset_id: datasetId },
         params: trainingParams(where),
+      },
+    },
+  };
+}
+
+/**
+ * The habitat run the Habitat tab describes, or why it cannot be queued (#287).
+ *
+ * A habitat model is trained by the habitat trainer from a habitat starting model (DINOv2) on a
+ * habitat dataset; the API refuses any other pairing, and this says so first. Only the pass
+ * counts and the seed are offered: the rest of the recipe is the one the feasibility runs
+ * settled, and the trainer holds it.
+ *
+ * @param {Function} value - Reads a field by id.
+ * @returns {{body: Object}|{refusal: string}}
+ */
+function habitatTrainingSubmission(value) {
+  const model = registeredModels.get(Number(value('base-hab')));
+  if (!model || !modelDoesTask(model, 'habitat')) {
+    return { refusal: 'Choose a habitat starting model, such as dinov2-vitb14. If none is listed, run scripts/seed-base-models.js --only dinov2-vitb14 where MARP keeps its models.' };
+  }
+  if (!model.artifact_sha256) {
+    return { refusal: `${model.name} has no recorded checksum, so a worker would have nothing to verify its weights against.` };
+  }
+  const datasetId = Number(value('dataset-hab'));
+  if (!Number.isInteger(datasetId) || datasetId <= 0) {
+    return { refusal: 'Choose a habitat dataset to train on.' };
+  }
+
+  const whole = (id) => { const raw = String(value(id) || '').trim(); const n = Number(raw); return raw !== '' && Number.isInteger(n) ? n : null; };
+  const params = {};
+  if (whole('hab-head') !== null) params.head_epochs = whole('hab-head');
+  if (whole('hab-epochs') !== null) params.epochs = whole('hab-epochs');
+  if (whole('hab-seed') !== null) params.seed = whole('hab-seed');
+  const name = (value('trname') || '').trim();
+
+  return {
+    body: {
+      kind: 'training',
+      ...(name ? { name } : {}),
+      spec: {
+        engine: 'marp_habitat_training',
+        model: {
+          ml_model_id: model.id,
+          name: model.name,
+          url: `/api/v2/model/${model.id}/artifact`,
+          sha256: String(model.artifact_sha256).toLowerCase(),
+        },
+        dataset: { dataset_id: datasetId },
+        params,
       },
     },
   };
@@ -5952,6 +6012,7 @@ function modelRows(view, byId) {
     + `<span class="wid mono" title="Model id as the registry reports it">ml_${model.id}</span></div>`
     + '<div class="grid" data-cols="2">'
     + modelRegistrySection(view)
+    + habitatRulesSection(view)
     + modelLineageSection(view, byId)
     + '</div></div></td></tr>';
 
@@ -5990,6 +6051,52 @@ function modelRegistrySection(view) {
     + `<dt>Updated</dt><dd>${sinceText(model.updated_at)}</dd>`
     + '</dl>'
     + `<div class="wdacts">${action}</div></div>`;
+}
+
+/**
+ * A habitat model's decision rules (#287): how its scores become habitat stretches.
+ *
+ * Stored with the model and sent with every run, so what is shown here is what a run applies:
+ * each substrate's cut-off as tuned on the model's tuning dives and as applied once its raise is
+ * added, the crop and size it was trained on, and the stretch rules.
+ *
+ * @param {Object} view - From `modelView`.
+ * @returns {string} HTML, or '' for any model without rules.
+ */
+function habitatRulesSection(view) {
+  const rules = view.model.decision_rules;
+  if (!rules || !Array.isArray(rules.substrates)) return '';
+
+  const raise = rules.raise || {};
+  const tuned = rules.tuned_cut_offs || {};
+  const fixed = (v) => (typeof v === 'number' ? v.toFixed(2) : NOT_REPORTED);
+  const cutOffs = rules.substrates.map((name) => {
+    const applied = Math.min((tuned[name] || 0) + (raise[name] || 0), 0.95);
+    return `<dt>${escapeHtml(name)}</dt><dd>${raise[name] ? `${fixed(tuned[name])} tuned, raised by ${fixed(raise[name])} to <b>${fixed(applied)}</b>` : `<b>${fixed(tuned[name])}</b>`}</dd>`;
+  }).join('');
+  const crop = rules.crop || {};
+  const listed = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join(''));
+  const groups = rules.exclusive || [];
+  const exclusive = groups.map((group) => listed(group.map(escapeHtml))).join('; ');
+
+  /* **Editable, per model** (Isaac, 2026-11-10, R9): one group of substrates never reported
+     together. Offered: the model's substrates and Gravel, which the settled group names
+     though no model has it yet. A model given several groups through the API keeps them, and
+     shows them rather than offering a box that would replace them with one. */
+  const offered = [...new Set([...rules.substrates, 'Gravel', ...groups.flat()])];
+  const editor = groups.length > 1 ? '' : '<div class="never-together">'
+    + offered.map((name) => `<label><input type="checkbox" data-never-together="${view.model.id}" value="${escapeHtml(name)}"`
+      + `${(groups[0] || []).includes(name) ? ' checked' : ''}> ${escapeHtml(name)}</label>`).join(' ')
+    + ` <button class="btn sm" type="button" data-never-together-save="${view.model.id}">Save</button></div>`;
+
+  return '<div class="sect" data-habitat-rules><h3>Decision rules</h3>'
+    + '<p class="hint">A substrate counts as present on a frame when its score is at or above its cut-off.</p>'
+    + `<dl class="kv">${cutOffs}`
+    + `<dt>Looks at</dt><dd>${escapeHtml(String(rules.samples_per_second))} frames a second, scores averaged over ${escapeHtml(String(rules.average_s))} s</dd>`
+    + `<dt>Never together</dt><dd>${exclusive ? `${exclusive}: the surer one stays` : 'None'}${editor}</dd>`
+    + `<dt>Stretches</dt><dd>At least ${escapeHtml(String(rules.min_stretch_s))} s; breaks of ${escapeHtml(String(rules.bridge_s))} s or less bridged</dd>`
+    + `<dt>Crop</dt><dd>x ${fixed(crop.x0)}&ndash;${fixed(crop.x1)}, y ${fixed(crop.y0)}&ndash;${fixed(crop.y1)} of the frame, at ${escapeHtml(String(rules.input_size))} px</dd>`
+    + '</dl></div>';
 }
 
 /**
@@ -6044,6 +6151,23 @@ function wireModelActions() {
   table.addEventListener('click', async (event) => {
     const save = event.target.closest('[data-model-label-save]');
     const status = event.target.closest('[data-model-status]');
+    const neverTogether = event.target.closest('[data-never-together-save]');
+
+    if (neverTogether) {
+      const id = Number(neverTogether.dataset.neverTogetherSave);
+      const chosen = $$(`[data-never-together="${id}"]`, table).filter((box) => box.checked).map((box) => box.value);
+      // One substrate alone constrains nothing, so it is saved as no group.
+      const groups = chosen.length > 1 ? [chosen] : [];
+      neverTogether.disabled = true;
+      try {
+        await window.MarpApi.setNeverTogether(id, groups);
+        await refresh();
+      } catch (error) {
+        neverTogether.disabled = false;
+        window.alert(`Could not save which substrates are never together: ${error.message || error}`);
+      }
+      return;
+    }
     const opened = event.target.closest('.exbtn, tr.runrow-head');
 
     if (save) {
@@ -9676,13 +9800,27 @@ function loadRunnableModels() {
          has no weights worth sending and an archived one is retired. The thirteen
          real models here are active, and the two that are not are leftovers from a
          test run that did not clean up after itself. */
+      /* **Each pipeline offers its own models** (#287): the species pipeline never a
+         habitat model, which the API refuses on it, and the habitat pipeline only those. */
       .then((rows) => (rows || [])
         .filter((m) => m.name && m.id !== undefined && m.status === 'active')
         .sort((a, b) => a.name.localeCompare(b.name)))
       .catch(() => []);
   }
 
-  return registryAsked;
+  // Filtered on every read, so switching pipeline changes what is offered.
+  return registryAsked.then((rows) => rows.filter((m) => (m.model_type === 'habitat') === habitatPipeline()));
+}
+
+/**
+ * Whether the form is set to the habitat pipeline (#287): habitat models, the habitat engine,
+ * stretches of each substrate written to a Habitat session.
+ *
+ * @returns {boolean}
+ */
+function habitatPipeline() {
+  const pick = document.getElementById('pipeline');
+  return Boolean(pick && pick.value === 'habitat');
 }
 
 /**
@@ -9931,6 +10069,11 @@ const INFERENCE_ENGINE = 'marp_tracking';
  */
 const INFERENCE_REDUCTION = Object.freeze({ name: 'v3_dirpad', version: '1' });
 
+/* The habitat pipeline's engine and stretch rule (#287), as MARP's HABITAT_ENGINE and
+   HABITAT_REDUCTION name them. */
+const HABITAT_INFERENCE_ENGINE = 'marp_habitat';
+const HABITAT_REDUCTION = Object.freeze({ name: 'habitat_stretches', version: '1' });
+
 /**
  * Say how a submission went, where somebody about to click again will see it.
  *
@@ -10051,6 +10194,7 @@ function inferenceParams(config) {
  */
 async function inferenceSubmissions() {
   const models = await loadRunnableModels();
+  const habitat = habitatPipeline();
   const bodies = [];
   const refusals = [];
   /* Each video's clock, once however many groups it is in (#76). */
@@ -10112,13 +10256,15 @@ async function inferenceSubmissions() {
         }
 
         const piece = $('[data-setting="piece_minutes"]', config);
-        const pieceMinutes = Number(piece ? piece.value : NaN);
-        const params = inferenceParams(config);
+        /* A habitat run (#287) takes none of the species settings, and is not split into
+           pieces: a piece boundary would cut a stretch in two. */
+        const pieceMinutes = habitat ? NaN : Number(piece ? piece.value : NaN);
+        const params = habitat ? {} : inferenceParams(config);
         const body = {
           kind: 'inference',
           name,
           spec: {
-            engine: INFERENCE_ENGINE,
+            engine: habitat ? HABITAT_INFERENCE_ENGINE : INFERENCE_ENGINE,
             /* An item id, never a URL: MARP resolves it to something playable when the
                job is leased, and the Jellyfin item supplies `source_name`. */
             video: { jellyfin_item_id: target.dataset.videoId },
@@ -10130,7 +10276,7 @@ async function inferenceSubmissions() {
               url: '/api/v2/model/' + model.id + '/artifact',
               sha256: String(model.artifact_sha256).toLowerCase(),
             },
-            reduction: Object.assign({}, INFERENCE_REDUCTION),
+            reduction: Object.assign({}, habitat ? HABITAT_REDUCTION : INFERENCE_REDUCTION),
             /* **A session per run, under the dive**, and `type` left out so MARP derives
                it from the model's species list -- the screen has no business restating
                something the registry already knows. No `range`: MARP works the frame
@@ -10345,6 +10491,15 @@ function wireInferenceForm() {
   });
 
   document.addEventListener('change', (event) => {
+    /* A different pipeline offers different models (#287): every picker is refilled. */
+    if (event.target.matches('#pipeline')) {
+      $$('[data-model-config]').forEach((config) => {
+        const pick = $('[data-model-pick]', config);
+        if (pick) pick.innerHTML = '';
+        refreshModelConfig(config);
+      });
+      return;
+    }
     const choice = event.target.closest('[data-video-choice]');
     if (choice && event.target.matches('input[type="checkbox"]')) refreshSelected();
     if (event.target.matches('[data-select-videos]')) {
@@ -14203,14 +14358,20 @@ function wireDatasetBuilder() {
     try {
       const subsets = subsetsFromList();
 
+      /* A habitat build (#287) chooses its own frames and splits whole dives itself, so it
+         takes the queries and nothing about splits or frames per object. */
+      const habitat = Boolean($('#dshabitat')?.checked);
+
       const queued = await window.MarpApi.queueDatasetBuild({
         name,
         description: $('#dsdesc')?.value.trim() || null,
         subsets,
-        /* Sent as well as the per-subset splits, because a build with one subset and no
-           split named still has to divide into something. */
-        splits: { train: 0.8, eval: 0.2 },
-        sampling: samplingSetting(),
+        ...(habitat ? { task: 'habitat' } : {
+          /* Sent as well as the per-subset splits, because a build with one subset and no
+             split named still has to divide into something. */
+          splits: { train: 0.8, eval: 0.2 },
+          sampling: samplingSetting(),
+        }),
       });
 
       setStatus(`Build queued as job ${queued.job.id}. It cuts the frames, writes the labels and `
@@ -14230,6 +14391,17 @@ function wireDatasetBuilder() {
   };
 
   $('[data-queue-build]')?.addEventListener('click', queueBuild);
+
+  /* Habitat substrates (#287): frames per object and its estimate are about tracks of
+     animals, so they give way to what a habitat build takes instead. */
+  $('#dshabitat')?.addEventListener('change', (event) => {
+    const habitat = event.target.checked;
+    const sampling = $('.build-sampling');
+    const hint = $('[data-habitat-hint]');
+
+    if (sampling) sampling.hidden = habitat;
+    if (hint) hint.hidden = !habitat;
+  });
 
   /* Divide-across versus all-to-one. The shares and the destination buttons are the two
      halves of one question, so only the one being asked is on screen. */

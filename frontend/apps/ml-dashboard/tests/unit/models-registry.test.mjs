@@ -145,3 +145,75 @@ test('Register uploads the weights and says which classes matched no species', a
   assert.match(status, /Registered uploaded: detection, yolo11n, 1 of 2 classes matched to species/);
   assert.match(status, /No species for trash: detections of these cannot become observations/);
 });
+
+/* #287: a habitat model's rules are stored with it and sent with every run, so the Models
+   screen shows what a run applies -- Mud's cut-off with its raise added -- and a species
+   model shows no such section. */
+test('a habitat model shows its decision rules, and a species model none', async (t) => {
+  const rules = {
+    version: 1,
+    substrates: ['Rock', 'Mud', 'Sand', 'Cobble', 'Boulder'],
+    tuned_cut_offs: { Rock: 0.45, Mud: 0.5, Sand: 0.4, Cobble: 0.35, Boulder: 0.3 },
+    raise: { Mud: 0.2 },
+    crop: { x0: 0.25, y0: 0.5, x1: 0.75, y1: 1 },
+    input_size: 518,
+    samples_per_second: 3,
+    average_s: 1,
+    exclusive: [['Mud', 'Sand', 'Gravel']],
+    min_stretch_s: 2,
+    bridge_s: 2,
+  };
+  const screen = await draw({
+    listModels: async () => [...REGISTRY, model(500, 'campa-habitat-2026-11-10', {
+      model_type: 'habitat', architecture_version: 'vit_base_patch14_dinov2', decision_rules: rules,
+    })],
+  });
+  t.after(screen.close);
+
+  const section = row(screen.document, 500).nextElementSibling.querySelector('[data-habitat-rules]');
+  assert.ok(section, 'the habitat model has a Decision rules section');
+  const said = text(section);
+  assert.match(said, /Mud\s*0\.50 tuned, raised by 0\.20 to 0\.70/);
+  assert.match(said, /Rock\s*0\.45/);
+  assert.match(said, /3 frames a second, scores averaged over 1 s/);
+  assert.match(said, /Mud, Sand and Gravel: the surer one stays/);
+  assert.match(said, /At least 2 s; breaks of 2 s or less bridged/);
+  assert.match(said, /x 0\.25–0\.75, y 0\.50–1\.00 of the frame, at 518 px/);
+
+  assert.equal(row(screen.document, 412).nextElementSibling.querySelector('[data-habitat-rules]'), null);
+});
+
+/* #287 R9 (Isaac, 2026-11-10): the never-together group is a setting a person changes per model. */
+test('a habitat model\'s never-together group is edited on its detail and saved', async (t) => {
+  const saved = [];
+  const rules = {
+    version: 1,
+    substrates: ['Rock', 'Mud', 'Sand', 'Cobble', 'Boulder'],
+    tuned_cut_offs: { Rock: 0.45, Mud: 0.5, Sand: 0.4, Cobble: 0.35, Boulder: 0.3 },
+    raise: { Mud: 0.2 },
+    crop: { x0: 0.25, y0: 0.5, x1: 0.75, y1: 1 },
+    input_size: 518,
+    samples_per_second: 3,
+    average_s: 1,
+    exclusive: [['Mud', 'Sand', 'Gravel']],
+    min_stretch_s: 2,
+    bridge_s: 2,
+  };
+  const screen = await draw({
+    listModels: async () => [model(500, 'campa-habitat-2026-11-10', { model_type: 'habitat', decision_rules: rules })],
+    setNeverTogether: async (id, groups) => { saved.push(JSON.parse(JSON.stringify([id, groups]))); return {}; },
+  });
+  t.after(screen.close);
+
+  const detail = row(screen.document, 500).nextElementSibling;
+  const boxes = [...detail.querySelectorAll('[data-never-together="500"]')];
+  assert.deepEqual(boxes.map((b) => b.value), ['Rock', 'Mud', 'Sand', 'Cobble', 'Boulder', 'Gravel'], 'the five, and Gravel');
+  assert.deepEqual(boxes.filter((b) => b.checked).map((b) => b.value), ['Mud', 'Sand', 'Gravel']);
+
+  // Gravel off, Cobble on, saved.
+  boxes.find((b) => b.value === 'Gravel').checked = false;
+  boxes.find((b) => b.value === 'Cobble').checked = true;
+  detail.querySelector('[data-never-together-save="500"]').click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(saved, [[500, [['Mud', 'Sand', 'Cobble']]]]);
+});
