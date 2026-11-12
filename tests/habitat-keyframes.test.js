@@ -17,6 +17,7 @@ const db = require('../model');
 const { formatTimeSpan, deriveTc } = require('../db/timecode');
 const { HABITAT_BOX, derivedKeyframes } = require('../db/habitat-keyframes');
 const thumbnailRepository = require('../repository/observation-thumbnail.repository');
+const extraction = require('../service/thumbnail-extraction.service');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 
 const { QueryTypes } = db.Sequelize;
@@ -107,6 +108,17 @@ describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)'
 
         const [written] = await q('SELECT count(*)::int AS n FROM keyframes WHERE observation_id = :id', { id: habitat });
         expect(written.n).toBe(0);
+    });
+
+    test('its picture is cut at its middle, not its start, with the habitat crop', () => {
+        // 100 s to 280 s: the middle is 190 s, frame 4750 at 25 a second.
+        const keyframes = derivedKeyframes({ mediaPosition: '00:01:40.0000000', tc: '16:03:00', etc: '16:06:00' });
+        const plan = extraction.planObservation({ mediaPosition: '00:01:40.0000000', session_type: 'Habitat' }, keyframes);
+        expect(plan).toMatchObject({ ok: true, frame: 4750 });
+        expect(plan.box).toMatchObject(HABITAT_BOX);
+
+        // Anything else is still cut where it was recorded.
+        expect(extraction.planObservation({ mediaPosition: '00:01:40.0000000', session_type: 'transect' }, keyframes).frame).toBe(2500);
     });
 
     test('retry takes a habitat stretch failed for having no keyframes', async () => {

@@ -70,6 +70,7 @@ const { ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { parseTimeSpan, absoluteFrame, ASSUMED_FPS } = require('../db/timecode');
 const { NO_KEYFRAMES_ERROR } = require('../repository/observation-thumbnail.repository');
 const { thumbnailFilename } = require('../db/thumbnail-filename');
+const { HABITAT_SESSION_TYPE } = require('../db/habitat-keyframes');
 const { cropRectangle, interpolateBox, thumbnailCandidates } = require('./thumbnail-geometry');
 
 const {
@@ -456,6 +457,24 @@ function frameRateFor(claim, fps) {
 }
 
 /**
+ * The frame a habitat stretch is pictured at: midway between its first and last keyframe.
+ *
+ * Isaac, 2026-11-12: a stretch's tile is how a reviewer tells whether its substrate is right.
+ * Its start is the worst moment to show -- it is where the substrate changes, so the picture
+ * is half the one before -- and a stretch can run for minutes. The middle is the moment most
+ * like the rest of it.
+ *
+ * @param {Array<Object>} keyframes - The stretch's keyframes, stored or worked out.
+ * @param {number} positionFrame - Its start, used when it has one keyframe.
+ * @returns {number} The frame to cut.
+ */
+function habitatMiddle(keyframes, positionFrame) {
+    const frames = keyframes.map((k) => Number(k.framenum)).filter(Number.isFinite);
+    if (frames.length < 2) return positionFrame;
+    return Math.round((Math.min(...frames) + Math.max(...frames)) / 2);
+}
+
+/**
  * Works out which frame and which box one claimed observation wants.
  *
  * Everything that can be decided without touching Jellyfin is decided here, so an
@@ -494,9 +513,12 @@ function planObservation(claim, keyframes, fps = ASSUMED_FPS) {
     // A GPU row's position is its frame's start, truncated to the millisecond by the
     // ingest, so the frame is the one that position rounds up to. Flooring it lands
     // one frame early at a rate where frames do not start on a whole millisecond.
-    const observationFrame = claim.gpu_job_id != null
+    const positionFrame = claim.gpu_job_id != null
         ? Math.ceil((mediaMs * fps) / 1000 - 1e-6)
         : absoluteFrame(mediaMs, fps);
+    const observationFrame = claim.session_type === HABITAT_SESSION_TYPE
+        ? habitatMiddle(keyframes, positionFrame)
+        : positionFrame;
     const candidates = thumbnailCandidates(keyframes, observationFrame);
     const candidateIndex = Number.isInteger(Number(claim.candidate_index))
         ? Number(claim.candidate_index) : 0;

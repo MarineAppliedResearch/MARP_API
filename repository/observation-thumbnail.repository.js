@@ -586,11 +586,14 @@ async function claimBatch(limit = CLAIM_BATCH_SIZE) {
                 o.video_source,
                 o."mediaPosition",
                 -- Who wrote the row decides what its frame numbers mean (#231).
-                o.gpu_job_id
+                o.gpu_job_id,
+                -- A habitat stretch is pictured at its middle, not its start (#287).
+                s.type AS session_type
            FROM claimed c
            JOIN observation_thumbnails t
              ON t.observation_thumbnail_id = c.observation_thumbnail_id
            JOIN observations o ON o.observation_id = c.observation_id
+           LEFT JOIN sessions s ON s.session_id = o.session_id
           ORDER BY c.priority DESC, c.requested_at NULLS FIRST, c.observation_id`,
         { bind: [limit, CLAIM_TIMEOUT_SECONDS], type: QueryTypes.SELECT }
     );
