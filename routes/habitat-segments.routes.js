@@ -13,6 +13,7 @@
  */
 
 const segmentsRepository = require('../repository/habitat-segments.repository');
+const segmentPictures = require('../service/habitat-segment-picture.service');
 const { MosaicRequestError } = require('../repository/mosaic.repository');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
@@ -124,6 +125,53 @@ function registerHabitatSegmentRoutes(app) {
                 if (error instanceof MosaicRequestError) throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, error.message);
                 throw error;
             }
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: PERMISSION,
+        path: '/api/mosaic/habitat/segment-picture',
+        summary: 'Fetch a habitat segment\'s picture',
+        description:
+            'A segment\'s picture: the frame at its middle with the habitat crop (x 0.25-0.75, y 0.5-1.0 of the frame), squared and '
+            + 'padded as observation thumbnails are (#287, A21). Asked for by the `middle` each segment carries. **Cut the first time '
+            + 'it is asked for and kept**, so the first request waits for the media server and later ones do not; at most two are '
+            + 'cut at once. A picture that could not be cut answers 404 with the reason, and is not tried again for ten minutes.',
+        tags: [TAG],
+        parameters: [
+            { in: 'query', name: 'video_source', required: true, schema: { type: 'string' }, description: 'The segment\'s `middle.video_source`.' },
+            { in: 'query', name: 'media_ms', required: true, schema: { type: 'integer' }, description: 'The segment\'s `middle.media_ms`.' },
+        ],
+        responses: {
+            200: { description: 'The picture.', content: { 'image/jpeg': { schema: { type: 'string', format: 'binary' } } } },
+            304: { description: 'Not modified; the client\'s cached copy is current.' },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const videoSource = String(req.query.video_source || '').trim();
+            const mediaMs = Number(req.query.media_ms);
+            if (!videoSource || !Number.isFinite(mediaMs) || mediaMs < 0) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'video_source and a media_ms of 0 or more are required.');
+            }
+
+            const picture = await segmentPictures.segmentPicture(videoSource, mediaMs);
+            if (!picture.path) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `No picture for that moment: ${picture.error}`);
+            }
+
+            // Named for its bytes, and a moment's picture is never recut once kept.
+            const etag = `"${picture.filename}"`;
+            res.type('image/jpeg');
+            res.setHeader('Cache-Control', 'private, max-age=86400');
+            res.setHeader('ETag', etag);
+            if (req.headers['if-none-match'] === etag) {
+                res.status(304).end();
+                return;
+            }
+            res.sendFile(picture.path);
         }),
     });
 }

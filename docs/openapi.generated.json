@@ -21104,6 +21104,66 @@
         }
       }
     },
+    "/v2/mosaic/habitat/segment-picture": {
+      "get": {
+        "summary": "Fetch a habitat segment's picture",
+        "description": "A segment's picture: the frame at its middle with the habitat crop (x 0.25-0.75, y 0.5-1.0 of the frame), squared and padded as observation thumbnails are (#287, A21). Asked for by the `middle` each segment carries. **Cut the first time it is asked for and kept**, so the first request waits for the media server and later ones do not; at most two are cut at once. A picture that could not be cut answers 404 with the reason, and is not tried again for ten minutes. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "video_source",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The segment's `middle.video_source`."
+          },
+          {
+            "in": "query",
+            "name": "media_ms",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The segment's `middle.media_ms`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The picture.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; the client's cached copy is current."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/mosaic/observations/review": {
       "post": {
         "summary": "Commit a page of scientific review decisions",

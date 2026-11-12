@@ -104,6 +104,8 @@ const SUBSYSTEMS = {
             'habitat-segments-route',
             // #287 A20: an annotated habitat stretch's derived keyframes, and its picture.
             'habitat-keyframes',
+            // #287 A21: a segment's picture, cut from its middle frame and kept.
+            'habitat-segment-picture',
             'mosaic-commit',
             'mosaic-correction',
             // Phase 8 (#124): the facets route the rail's option lists come from,
