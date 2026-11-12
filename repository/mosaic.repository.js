@@ -1449,7 +1449,7 @@ module.exports = {
     frames,
     queryPages,
     selectForBuild,
-    // For the habitat segment query (#342), which filters stretches as tiles are filtered.
+    // For the habitat dataset build (#287), which chooses sessions as tiles are filtered.
     binder,
     predicates,
 };

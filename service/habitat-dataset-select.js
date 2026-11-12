@@ -4,11 +4,11 @@
  * Settled with Isaac on 2026-11-10 (#287, questions 8 to 10):
  *
  * - **Chosen like any build**: the Mosaic's filters pick the sessions, and a frame goes in when
- *   the stretches over it are promoted for training -- which is what promoting its segment in the
- *   Mosaic does. A model's habitat stretches can go in once reviewed and promoted, like anyone's.
+ *   every stretch over it is promoted for training in the Mosaic, where each stretch is its own
+ *   tile. A model's habitat stretches can go in once reviewed and promoted, like anyone's.
  * - **Frames as the feasibility plan took them** (`habitat-dataset-plan.js`): every 10 s inside
  *   the stretches, 2 s clear of any change of substrate; a frame's labels are the substrates over
- *   it -- its segment's combination. A frame labelled Mud and Sand goes in as labelled.
+ *   it. A frame labelled Mud and Sand goes in as labelled.
  * - **Whole dives per split**, 70/15/15 within each project, the feasibility shuffle.
  * - **A session whose times drift within a file is left out** and listed, since its frames would
  *   be cut at the wrong moment.
@@ -150,7 +150,7 @@ function selectFrames(rows) {
         const split = splitOf.get(`${session.project}|${session.dive}`);
         const byId = new Map(session.stretches.map((s) => [s.id, s]));
         for (const frame of plan.framesForSession(session.stretches)) {
-            // Only where every stretch over it is promoted: its segment was promoted.
+            // Only where every stretch over it is promoted, so every label on it was checked.
             if (!frame.covering.every((id) => byId.get(id).promoted)) continue;
             frames.push({ split, project: session.project, dive: session.dive, session_id: sessionId,
                 video: frame.file, positionMs: frame.positionMs, labels: frame.labels });
