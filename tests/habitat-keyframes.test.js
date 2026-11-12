@@ -121,6 +121,14 @@ describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)'
         expect(extraction.planObservation({ mediaPosition: '00:01:40.0000000', session_type: 'transect' }, keyframes).frame).toBe(2500);
     });
 
+    test('frames far apart in a video are cut in passes of their own, not one long decode', () => {
+        // A video's habitat stretches cover the whole of it: one pass from the first middle to
+        // the last decoded minutes of streamed video and timed out.
+        const wanted = [10, 20, 300, 900, 905, 2000].map((frame) => ({ plan: { frame } }));
+        expect(extraction.passesOf(wanted).map((run) => run.map((e) => e.plan.frame)))
+            .toEqual([[10, 20], [300], [900, 905], [2000]]);
+    });
+
     test('retry takes a habitat stretch failed for having no keyframes', async () => {
         const habitat = await stretch(await session('Habitat'), 10, 40);
         await failedForNoKeyframes(habitat);

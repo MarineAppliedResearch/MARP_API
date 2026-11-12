@@ -805,19 +805,40 @@ async function extractVideoGroup(videoSource, claims) {
     wanted.sort((a, b) => a.plan.frame - b.plan.frame);
 
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'marp-thumbnail-'));
+    outcome.seconds = 0;
 
     try {
+        /* **One pass per run of nearby frames, not one per video** (#287). A pass decodes
+           everything from its first frame to its last, which is nothing for a video's species,
+           clustered where the animals were -- and twenty minutes of streamed video for its
+           habitat stretches, which cover the whole of it. Those passes ran past the 120 s
+           limit and failed every picture in them. Frames far apart now get passes of their
+           own, each seeking to its start. */
+        for (const [pass, run] of passesOf(wanted).entries()) {
+            await extractRun(run, path.join(workDir, String(pass)));
+        }
+    } finally {
+        fs.rmSync(workDir, { recursive: true, force: true });
+    }
+
+    await reviewImageryStorage.enforceLimit();
+    return outcome;
+
+    /** Cut one run of frames in one ffmpeg pass, and record what each became. */
+    async function extractRun(run, runDir) {
+      fs.mkdirSync(runDir, { recursive: true });
+      try {
         const extraction = await extractFrames(
             streamUrl,
-            wanted.map((entry) => entry.plan.frame),
+            run.map((entry) => entry.plan.frame),
             probe.fps,
-            workDir
+            runDir
         );
 
-        outcome.seconds = extraction.seconds;
+        outcome.seconds += extraction.seconds;
 
-        for (let index = 0; index < wanted.length; index += 1) {
-            const { claim, plan } = wanted[index];
+        for (let index = 0; index < run.length; index += 1) {
+            const { claim, plan } = run[index];
             const framePath = extraction.files[index];
 
             if (!framePath) {
@@ -825,7 +846,7 @@ async function extractVideoGroup(videoSource, claims) {
                 // this retryable; the final candidate makes exhaustion explicit.
                 await recordClaimFailure(
                     claim,
-                    `ffmpeg returned ${extraction.files.length} frames for ${wanted.length} asked for, `
+                    `ffmpeg returned ${extraction.files.length} frames for ${run.length} asked for, `
                     + `so frame ${plan.frame} did not arrive.`,
                     !plan.hasNext,
                     plan
@@ -877,9 +898,9 @@ async function extractVideoGroup(videoSource, claims) {
                 outcome.failed += 1;
             }
         }
-    } catch (error) {
-        // The whole pass failed, so nothing in this group got a picture.
-        for (const entry of wanted) {
+      } catch (error) {
+        // The whole pass failed, so nothing in this run got a picture.
+        for (const entry of run) {
             await recordClaimFailure(
                 entry.claim,
                 elideToken(error.message),
@@ -888,13 +909,35 @@ async function extractVideoGroup(videoSource, claims) {
             );
         }
 
-        outcome.failed += wanted.length;
-    } finally {
-        fs.rmSync(workDir, { recursive: true, force: true });
+        outcome.failed += run.length;
+      }
     }
+}
 
-    await reviewImageryStorage.enforceLimit();
-    return outcome;
+/**
+ * Frames more than this far from the last one in a pass start a pass of their own.
+ *
+ * Ten seconds at 25 frames a second: decoding that is about what seeking afresh costs over
+ * the media server, so closer frames are cheaper decoded and further ones cheaper sought.
+ * The dataset builder draws the same line for the same reason (`SEEK_RATHER_THAN_DECODE`).
+ */
+const PASS_GAP_FRAMES = 250;
+
+/**
+ * Split a video's wanted frames, in frame order, into runs cut one ffmpeg pass each.
+ *
+ * @param {Array<{plan: {frame: number}}>} wanted - Sorted by frame.
+ * @param {number} [gap] - See {@link PASS_GAP_FRAMES}.
+ * @returns {Array<Array<Object>>} The runs, in order.
+ */
+function passesOf(wanted, gap = PASS_GAP_FRAMES) {
+    const runs = [];
+    for (const entry of wanted) {
+        const run = runs[runs.length - 1];
+        if (run && entry.plan.frame - run[run.length - 1].plan.frame <= gap) run.push(entry);
+        else runs.push([entry]);
+    }
+    return runs;
 }
 
 /**
@@ -1429,6 +1472,7 @@ module.exports = {
     frameRateFor,
     fullFramePlan,
     groupByVideo,
+    passesOf,
     planObservation,
     probeStream,
     start,
