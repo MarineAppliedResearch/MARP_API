@@ -72,7 +72,7 @@ export function filtersBody(filters = {}) {
      list. Left out of this list, the rail kept a chosen run in the address and never sent
      it, so choosing one changed nothing. */
   const keys = [
-    'project', 'dive', 'line', 'sessionType', 'run',
+    'project', 'dive', 'line', 'sessionType', 'run', 'picture',
     'confidence', 'timeOfDay', 'date', 'reviewStatus', 'trainingDisposition'
   ];
 

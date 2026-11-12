@@ -1149,6 +1149,8 @@ describe('the mosaic query (#105)', () => {
                 'observation_id',
                 // #76: when it was seen, UTC; null where its video has no clock.
                 'observed_at',
+                // #287: available, preparing, no video or no image -- the Picture filter.
+                'picture_state',
                 'project_name',
                 'review_decision',
                 'review_note',
@@ -1187,8 +1189,6 @@ describe('the mosaic query (#105)', () => {
                 // is the tripwire, and relaxing it would disable the tripwire
                 // permanently to admit one field. The picture's address is
                 // derivable from observation_id, so no `thumb` joins it.
-                // #287: the media server has no such video.
-                'thumbnail_no_video',
                 'thumbnail_status',
                 'training_decision',
                 'training_note',

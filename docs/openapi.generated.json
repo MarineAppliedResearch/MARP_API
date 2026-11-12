@@ -4632,6 +4632,22 @@
             "example": [],
             "description": "observations.ml_model_id."
           },
+          "picture": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "available",
+                "preparing",
+                "no video",
+                "no image"
+              ]
+            },
+            "example": [
+              "available"
+            ],
+            "description": "Where each tile's picture stands (#287), as the row's `picture_state`: `[\"available\"]` is only tiles with a picture to look at."
+          },
           "run": {
             "type": "array",
             "items": {
@@ -4797,10 +4813,16 @@
             "example": "16:06:00",
             "description": "Where an observation ends, as .NET TimeSpan text on the same clock as `tc`. A habitat stretch carries one; most observations do not."
           },
-          "thumbnail_no_video": {
-            "type": "boolean",
-            "example": false,
-            "description": "True when the picture failed because the media server has no such video -- nothing matched, or the best match was too weak to trust -- so the tile can say so (#287)."
+          "picture_state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "preparing",
+              "no video",
+              "no image"
+            ],
+            "example": "available",
+            "description": "Where the tile's picture stands (#287): a picture to look at; queued or not yet asked for; the media server has no such video (nothing matched, or too weak a match to trust); or another failure, some of which are retried. What the `picture` filter matches."
           },
           "habitat_overlaps": {
             "type": "array",
@@ -19551,6 +19573,7 @@
                         "line",
                         "sessionType",
                         "session",
+                        "picture",
                         "species",
                         "model",
                         "run"

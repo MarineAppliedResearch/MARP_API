@@ -202,7 +202,7 @@ describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)'
         expect(byId.get(sand).habitat_overlaps).toBeNull();
     });
 
-    test('a tile says when the media server has no such video, and only then', async () => {
+    test('a tile says where its picture stands, and the Picture filter keeps only those asked for', async () => {
         const id = await session('Habitat');
         const [missing, weak, other] = [await stretch(id, 0, 10), await stretch(id, 20, 30), await stretch(id, 40, 50)];
         const fail = (obs, error) => q(
@@ -214,11 +214,31 @@ describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)'
         await fail(missing, `${thumbnailRepository.NO_VIDEO_ERRORS.noMatch} "x.mp4": nothing found.`);
         await fail(weak, `${thumbnailRepository.NO_VIDEO_ERRORS.weakMatch} "9_1.mp4" scored 85, below the 96 exact-match threshold.`);
         await fail(other, 'ffmpeg exited 1');
-        const res = await global.api.post('/api/v2/mosaic/observations/pages').send({
-            filters: { session: [id], reviewStatus: ['unreviewed', 'flagged', 'reviewed'] }, pages: [1], pageSize: 10,
+        const ready = await stretch(id, 60, 70);
+        await q(
+            `INSERT INTO observation_thumbnails (observation_id, status, permanent, generation, attempts, filename,
+                                                 requested_at, completed_at, created_at, updated_at)
+             VALUES (:obs, 'ready', false, 1, 1, :file, now(), now(), now(), now()) RETURNING observation_id`,
+            { obs: ready, file: `jest-picture-${runId}.jpg` }
+        );
+        const waiting = await stretch(id, 80, 90);
+        const ask = (picture) => global.api.post('/api/v2/mosaic/observations/pages').send({
+            filters: { session: [id], reviewStatus: ['unreviewed', 'flagged', 'reviewed'], ...(picture ? { picture } : {}) },
+            pages: [1], pageSize: 10,
         });
-        const byId = new Map(res.body.pages[0].rows.map((r) => [r.observation_id, r.thumbnail_no_video]));
-        expect([byId.get(missing), byId.get(weak), byId.get(other)]).toEqual([true, true, false]);
+
+        const all = new Map((await ask()).body.pages[0].rows.map((r) => [r.observation_id, r.picture_state]));
+        expect([missing, weak, other, ready, waiting].map((obs) => all.get(obs)))
+            .toEqual(['no video', 'no video', 'no image', 'available', 'preparing']);
+
+        const available = await ask(['available']);
+        expect(available.body.pages[0].rows.map((r) => r.observation_id)).toEqual([ready]);
+        expect((await ask(['nonsense'])).status).toBe(400);
+
+        const facets = await global.api.post('/api/v2/mosaic/observations/facets')
+            .send({ filters: { session: [id] }, dimensions: ['picture'] });
+        expect(Object.fromEntries(facets.body.facets.picture.map((f) => [f.value, f.count])))
+            .toEqual({ available: 1, preparing: 1, 'no video': 2, 'no image': 1 });
     });
 
     describe('on the Mosaic\'s video page', () => {

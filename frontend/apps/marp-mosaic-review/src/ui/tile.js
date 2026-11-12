@@ -212,7 +212,7 @@ function body(row) {
    */
   /* The media server has no such video (#287), which is a different thing to fix from a
      picture that would not cut: somebody has to put the video on the server. */
-  if (row.thumbnail_no_video) {
+  if (row.picture_state === 'no video') {
     return `<span class="fallback"><span style="font-size:20px;color:#c07d85">&#9888;</span>
       <span class="na-t">NO VIDEO AVAILABLE</span></span>`;
   }

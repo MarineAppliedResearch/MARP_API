@@ -245,6 +245,33 @@ const SPECIES_LIST_CASE = [
  * @constant
  * @type {string}
  */
+/**
+ * Where an observation's picture stands, as one word: the Picture filter, its counts and the
+ * tile all read this one expression (#287).
+ *
+ * Isaac, 2026-11-12: "the mosaic viewer needs a way to filter by only images that are
+ * actually available". `available` is a picture to look at; `preparing` is queued or never
+ * asked for; `no video` is the media server having no such video (nothing matched, or the
+ * match was too weak to trust); `no image` is any other failure, some of which are retried.
+ * A scalar subquery rather than a join, so a predicate can use it in any statement.
+ *
+ * @constant
+ * @type {string}
+ */
+const PICTURE_STATE = `coalesce((
+        SELECT CASE WHEN pt.status = 'ready' THEN 'available'
+                    WHEN pt.status = 'failed' AND pt.permanent
+                         AND (pt.last_error LIKE '${thumbnailRepository.NO_VIDEO_ERRORS.noMatch}%'
+                              OR pt.last_error LIKE '${thumbnailRepository.NO_VIDEO_ERRORS.weakMatch}%')
+                         THEN 'no video'
+                    WHEN pt.status = 'failed' THEN 'no image'
+                    ELSE 'preparing' END
+          FROM observation_thumbnails pt
+         WHERE pt.observation_id = o.observation_id), 'preparing')`;
+
+/** The values `PICTURE_STATE` takes, which are all a Picture filter may ask for. */
+const PICTURE_STATES = ['available', 'preparing', 'no video', 'no image'];
+
 const ROW_COLUMNS = `
         o.observation_id,
         o.version,
@@ -273,11 +300,8 @@ const ROW_COLUMNS = `
         k.keyframe_count,
         k.first_framenum,
         coalesce(th.status, 'queued') AS thumbnail_status,
-        -- The media server has no such video (#287): the tile says so rather than "no image".
-        coalesce(th.status = 'failed' AND th.permanent
-                 AND (th.last_error LIKE '${thumbnailRepository.NO_VIDEO_ERRORS.noMatch}%'
-                      OR th.last_error LIKE '${thumbnailRepository.NO_VIDEO_ERRORS.weakMatch}%'), false)
-            AS thumbnail_no_video,
+        -- #287: available, preparing, no video or no image, as the Picture filter reads it.
+        ${PICTURE_STATE} AS picture_state,
         th.full_frame_status,
         coalesce(th.full_frame_permanent, false) AS full_frame_permanent,
         th.full_frame_last_error AS full_frame_reason,
@@ -607,6 +631,16 @@ function predicates(filters, bind, { status = true } = {}) {
     // were made. The client still sends a name; that rename is Phase 8's.
     set('species', 'o.species_id', 'int[]');
     set('model', 'o.ml_model_id', 'int[]');
+
+    // #287: only tiles whose picture is in a given state -- "only images actually available".
+    const pictures = setValue(filters.picture, 'picture');
+    if (pictures) {
+        const unknown = pictures.find((value) => !PICTURE_STATES.includes(value));
+        if (unknown !== undefined) {
+            throw new MosaicRequestError(`filters.picture takes ${PICTURE_STATES.join(', ')}, not ${JSON.stringify(unknown)}`);
+        }
+        where.push(`${PICTURE_STATE} = ANY(${bind.add(pictures)}::varchar[])`);
+    }
 
     // #336: one inference run. Scientific data is read per run for each dive (Isaac,
     // 2026-11-09), so the same model run twice on a video is never counted together. **A
@@ -990,6 +1024,8 @@ const FACET_DIMENSIONS = {
     line: { value: 's.line', label: 's.line' },
     sessionType: { value: 's.type', label: 's.type' },
     session: { value: 'o.session_id', label: 'o.session_id::text' },
+    // #287: where each tile's picture stands. The client words each value.
+    picture: { value: PICTURE_STATE, label: PICTURE_STATE },
     species: { value: 'o.species_id', label: 'sp.comname', list: 'sp.species_list' },
     model: { value: 'o.ml_model_id', label: 'm.name', joins: '\n  LEFT JOIN ml_models m ON m.id = o.ml_model_id' },
     // #336. Named by what it was given, its model, when, and how many videos it covers,
