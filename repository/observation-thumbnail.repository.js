@@ -150,6 +150,20 @@ async function enqueueMissing(observationIds, transaction) {
         { bind: [ids], type: QueryTypes.UPDATE, transaction }
     );
 
+    /* **What somebody is looking at is cut first** (#287). Everything else queued waits at
+       ordinary priority, oldest first, so a page of a database whose pictures were never
+       made -- 44,000 habitat stretches on a production copy -- sat behind four thousand
+       older requests and showed PREPARING for hours. A page in front of a reviewer is a
+       reviewer asking, which is what priority 1 means elsewhere. */
+    await db.sequelize.query(
+        `UPDATE observation_thumbnails
+            SET request_priority = 1, updated_at = NOW()
+          WHERE observation_id = ANY($1::int[])
+            AND status = 'queued'
+            AND request_priority < 1`,
+        { bind: [ids], type: QueryTypes.UPDATE, transaction }
+    );
+
     return inserted.length;
 }
 

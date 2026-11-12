@@ -129,6 +129,19 @@ describe('the two keyframes of an annotated habitat stretch (#287, A20 and A22)'
             .toEqual([[10, 20], [300], [900, 905], [2000]]);
     });
 
+    test('a page in front of a reviewer has its pictures cut before the rest of the queue', async () => {
+        const habitat = await stretch(await session('Habitat'), 500, 530);
+        await q(
+            `INSERT INTO observation_thumbnails (observation_id, status, permanent, generation, attempts, request_priority,
+                                                 requested_at, created_at, updated_at)
+             VALUES (:id, 'queued', false, 1, 0, 0, now(), now(), now()) RETURNING observation_id`,
+            { id: habitat }
+        );
+        await thumbnailRepository.enqueueMissing([habitat]);
+        const [row] = await q('SELECT status, request_priority FROM observation_thumbnails WHERE observation_id = :id', { id: habitat });
+        expect(row).toMatchObject({ status: 'queued', request_priority: 1 });
+    });
+
     test('retry takes a habitat stretch failed for having no keyframes', async () => {
         const habitat = await stretch(await session('Habitat'), 10, 40);
         await failedForNoKeyframes(habitat);
