@@ -103,3 +103,9 @@ make them take up less of the screen"*.
   (`marp-video-player`), not restyled on this page, so the GUI's WebView2 copy changes with it.
   Its contract -- `MarpVideoEngine`, the `postMessage` protocol, `player.html`'s parameters --
   does not change; only how big the controls are.
+- **A7** (answered 2026-11-20, after using it) -- **the boxes and the timeline show the same
+  stretches.** A1 had the strip show the whole session while the boxes followed the Mosaic's
+  filter, whose default hides reviewed stretches -- so a reviewed stretch was on the strip with
+  no box, and clicking it said so. Isaac: *"All the data we should show should be cohesive."*
+  On a habitat video the page draws every stretch of the opened session, plus whatever else in
+  the video the filter matches.

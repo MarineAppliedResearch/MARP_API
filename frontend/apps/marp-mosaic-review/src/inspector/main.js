@@ -19,7 +19,9 @@
  */
 import { MarpApi } from '../api/index.js';
 import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
-import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW } from '../model/video-review.js';
+import {
+  windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW, withSession
+} from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
 import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '../model/box-edit.js';
@@ -310,6 +312,8 @@ function watch(engine) {
 /* The observations the query matches in the opened one's video. */
 async function readObservations(observationId, filters) {
   const answer = await MarpApi.videoObservations({ observationId, filters });
+  // On a habitat video, the whole session as well: the boxes and the timeline agree (A7).
+  answer.observations = withSession(answer.observations, answer.habitat);
   return {
     answer,
     rows: new Map(answer.observations.map((row) => [row.observation_id, row]))
@@ -524,9 +528,8 @@ const strip = createHabitatStrip($('habitatStrip'), {
     player.engine.currentTime = t;
   },
   select(id) {
-    // Its box is drawn, and so can be selected, only when the Mosaic's query matches it.
+    // Every stretch on the timeline is drawn as a box too (A7).
     if (showing && showing.rows.has(id)) editor.select(`${id}_1`);
-    else status('That stretch is outside what the Mosaic is filtered to, so its box is not drawn here.');
   },
   canDrag: () => canAnnotate,
   async save(bar, span, merging) {
