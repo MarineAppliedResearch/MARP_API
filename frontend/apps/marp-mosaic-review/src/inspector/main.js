@@ -24,9 +24,9 @@ import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
 import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '../model/box-edit.js';
 import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
-import { labelScale } from '../model/box-style.js';
-import { drawBox } from './draw-boxes.js';
-import { clockLine, positionText, readingOffered, readingBody } from '../model/video-clock.js';
+import { labelScale, sharedTabShifts } from '../model/box-style.js';
+import { drawBox, tabWidths } from './draw-boxes.js';
+import { clockAt, clockLine, positionText, readingOffered, readingBody } from '../model/video-clock.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -173,7 +173,10 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
     }
   }
 
-  for (const entry of entries) {
+  // Boxes drawn in one place -- habitat stretches all share the habitat crop -- lay their
+  // labels side by side, so each one can be read (#352).
+  const shifts = sharedTabShifts(entries.map((entry) => ({ rect: entry.rect, widths: tabWidths(context, entry, scale) })), scale);
+  entries.forEach((entry, index) => {
     const keyframe = keyframeShown(entry.box.keyframes, t, rate);
     const reviewed = showing.rows.get(entry.box.observation_id);
     drawBox(context, entry, {
@@ -181,9 +184,10 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
       type: keyframe ? keyframe.type : 'interpolated',
       selected: entry.key === editor.selectedKey,
       pressed: editor.pressFor(entry.key),
-      scale
+      scale,
+      shift: shifts[index]
     });
-  }
+  });
   const draft = editor.draftRect();
   if (draft) {
     context.save();
@@ -199,8 +203,12 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
 
 function redraw() {
   if (!showing || !player.engine) return;
+  const t = shownAt ?? player.engine.currentTime;
   const canvas = $('player').querySelector('.marp-canvas');
-  if (canvas) drawBoxes($('boxes'), canvas, canvas.width, canvas.height, shownAt ?? player.engine.currentTime);
+  if (canvas) drawBoxes($('boxes'), canvas, canvas.width, canvas.height, t);
+  // This frame's clock time, beside when the recording started (#351).
+  const now = clockAt(clock, t);
+  $('clockNow').textContent = now ? `This frame: ${now}` : '';
 }
 
 /* The held windows' keyframes, gathered per observation. A keyframe held by two windows

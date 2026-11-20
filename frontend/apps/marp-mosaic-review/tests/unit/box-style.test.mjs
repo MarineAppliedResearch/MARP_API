@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { labelScale, markerFor, identifierText, tabLayout, GUI } from '../../src/model/box-style.js';
+import { labelScale, markerFor, identifierText, tabLayout, sharedTabShifts, GUI } from '../../src/model/box-style.js';
 
 test('labels are the GUI\'s size on a 600-pixel picture, and follow the picture within limits', () => {
   assert.equal(labelScale(600), 1);
@@ -41,4 +41,27 @@ test('the species tab sits on the box\'s top left corner and the identifier tab 
   const at15 = tabLayout(rect, 1.5, { top: 75, bottom: 60 });
   close(at15.top.top, 200 - 25 * 1.5);
   assert.ok(Math.abs(at15.top.height - at1.top.height * 1.5) < 1e-9);
+});
+
+test('#352: boxes drawn in one place lay their labels side by side, so every substrate shows', () => {
+  // Three habitat stretches at one moment share the habitat crop's box; a fourth box is elsewhere.
+  const crop = { left: 100, top: 200, width: 300, height: 150 };
+  const shifts = sharedTabShifts([
+    { rect: crop, widths: { top: 40, bottom: 30 } },
+    { rect: { ...crop }, widths: { top: 50, bottom: 20 } },
+    { rect: { left: 10, top: 10, width: 50, height: 50 }, widths: { top: 60, bottom: 60 } },
+    { rect: { ...crop, left: 100.2 }, widths: { top: 45, bottom: 25 } },
+  ], 1);
+  assert.deepEqual(shifts[0], { top: 0, bottom: 0 }, 'the first keeps its place');
+  assert.deepEqual(shifts[1], { top: 44, bottom: 34 }, 'the second starts past the first, with a gap');
+  assert.deepEqual(shifts[2], { top: 0, bottom: 0 }, 'a box alone is untouched');
+  assert.deepEqual(shifts[3], { top: 98, bottom: 58 }, 'the third past both, matched to the pixel');
+
+  // And the shift reaches where the tabs are drawn, top and bottom separately.
+  const plain = tabLayout(crop, 1, { top: 40, bottom: 30 });
+  const moved = tabLayout(crop, 1, { top: 40, bottom: 30 }, shifts[1]);
+  assert.equal(moved.top.left - plain.top.left, 44);
+  assert.equal(moved.top.textLeft - plain.top.textLeft, 44);
+  assert.equal(moved.bottom.left - plain.bottom.left, 34);
+  assert.equal(moved.bottom.textLeft - plain.bottom.textLeft, 34);
 });

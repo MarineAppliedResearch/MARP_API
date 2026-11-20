@@ -83,10 +83,11 @@ export function identifierText({ obs_id: obsId, observation_id: id, subset }) {
  * @returns {{top: Object, bottom: Object}} Each tab's `left, top, width, height`, and for
  *   the top tab where its marker and text start.
  */
-export function tabLayout(rect, scale, textWidths) {
+export function tabLayout(rect, scale, textWidths, shift = { top: 0, bottom: 0 }) {
   const [tl, tt, tr, tb] = GUI.topPadding.map((p) => p * scale);
   const [bl, bt, br, bb] = GUI.bottomPadding.map((p) => p * scale);
-  const left = rect.left + GUI.tabLeft * scale;
+  const left = rect.left + GUI.tabLeft * scale + shift.top;
+  const bottomLeft = rect.left + GUI.tabLeft * scale + shift.bottom;
 
   // A line of text is about 1.33 of its font size, as WPF lays one out.
   const topLine = GUI.topFont * scale * 1.33;
@@ -106,12 +107,42 @@ export function tabLayout(rect, scale, textWidths) {
   const bottomHeight = bt + GUI.bottomFont * scale * 1.33 + bb;
   const bottomEdge = rect.top + rect.height + GUI.bottomBelow * scale;
   const bottom = {
-    left,
+    left: bottomLeft,
     top: bottomEdge - bottomHeight,
     width: bl + textWidths.bottom + br,
     height: bottomHeight,
-    textLeft: left + bl,
+    textLeft: bottomLeft + bl,
     middle: bottomEdge - bottomHeight / 2
   };
   return { top, bottom };
+}
+
+/** The space between two tabs laid side by side, before scaling. */
+const TAB_GAP = 4;
+
+/**
+ * Where each box's tabs start along its edge, so boxes drawn in one place each show their
+ * labels (#352).
+ *
+ * Every habitat stretch is drawn with the same box -- the habitat crop -- so a moment with
+ * Mud, Cobble and Boulder drew three labels at one corner and only the top one could be
+ * read. Boxes in the same place (to the pixel) have their tabs laid side by side, in drawing
+ * order; a box alone keeps its tabs where they always were.
+ *
+ * @param {Array<{rect: Object, widths: {top: number, bottom: number}}>} boxes - In drawing
+ *   order: each box on screen and its two tabs' full widths.
+ * @param {number} scale - From `labelScale`.
+ * @returns {Array<{top: number, bottom: number}>} Each box's shift along its edge.
+ */
+export function sharedTabShifts(boxes, scale) {
+  const placed = new Map();
+  return boxes.map(({ rect, widths }) => {
+    const key = [rect.left, rect.top, rect.width, rect.height].map(Math.round).join(',');
+    const used = placed.get(key) || { top: 0, bottom: 0 };
+    placed.set(key, {
+      top: used.top + widths.top + TAB_GAP * scale,
+      bottom: used.bottom + widths.bottom + TAB_GAP * scale,
+    });
+    return { top: used.top, bottom: used.bottom };
+  });
 }

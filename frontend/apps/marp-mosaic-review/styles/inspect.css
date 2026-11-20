@@ -51,6 +51,12 @@ body {
   color: var(--amber-300);
 }
 
+/* #351: the clock time of the frame on screen, to hold against the time in the picture. */
+.inspect-clock-now {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9em;
+}
+
 .inspect-clock-button,
 .inspect-clock-form button {
   font: inherit;

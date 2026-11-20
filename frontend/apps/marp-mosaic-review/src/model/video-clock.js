@@ -80,3 +80,18 @@ export function readingBody(typed, seconds, clock) {
     source: at === offered ? 'file-name' : 'synced'
   };
 }
+
+/**
+ * The clock time of the frame on screen (#351), `19:01:14 UTC`, or null when the video has
+ * no clock. Shown beside the picture so it can be held up against the time stamped on it,
+ * which is how anyone can see whether the clock is right.
+ *
+ * @param {Object|null} clock - `GET /videos/clock`'s answer.
+ * @param {number} seconds - Where the picture is in the video.
+ * @returns {?string}
+ */
+export function clockAt(clock, seconds) {
+  if (!clock || !clock.recorded_start || !Number.isFinite(seconds)) return null;
+  const iso = new Date(Date.parse(clock.recorded_start) + Math.round(seconds * 1000)).toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
+}
