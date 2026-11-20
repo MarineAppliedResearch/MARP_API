@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   laneOf, colourOf, reviewOf, stripLayout, dragTo, mergesInto, edgeAt,
-  wholeView, zoomView, panView, followView, isWhole, stretchMenu
+  wholeView, zoomView, panView, followView, isWhole, stretchMenu, snapToPlayhead
 } from '../../src/model/habitat-timeline.js';
 
 /** A stretch as the video read gives one. */
@@ -131,4 +131,10 @@ test('#353: a bar\'s menu names the stretch, then goes to its start or its end',
   ]);
   const [open] = stripLayout([stretch(2, 'Mud', 3, NaN, { open_ended: true })]).bars;
   assert.deepEqual(stretchMenu(open).map((item) => item.label), ['Mud', 'Go to start'], 'no end yet: nowhere to go but the start');
+});
+
+test('#355: a dragged end near the playhead lands exactly on it', () => {
+  assert.equal(snapToPlayhead(101.3, 101.68, 0.5), 101.68, 'within reach: the playhead');
+  assert.equal(snapToPlayhead(99, 101.68, 0.5), 99, 'out of reach: where the pointer is');
+  assert.equal(snapToPlayhead(99, NaN, 5), 99, 'no playhead yet: where the pointer is');
 });

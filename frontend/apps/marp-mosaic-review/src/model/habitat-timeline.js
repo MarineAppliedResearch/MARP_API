@@ -226,3 +226,17 @@ export function stretchMenu(bar) {
   if (bar.draggable) items.push({ label: 'Go to end', t: bar.end });
   return items;
 }
+
+/**
+ * A dragged end caught by the playhead (#355). A biologist puts the video on the exact frame
+ * a stretch should start or end at, then drags that end to it; within `tolerance` of the
+ * playhead the end lands on it exactly, rather than a pixel's worth of seconds either side.
+ *
+ * @param {number} t - Where the pointer has the end, in seconds.
+ * @param {number} playhead - Where the video is, in seconds; NaN when unknown.
+ * @param {number} tolerance - How near counts, in seconds.
+ * @returns {number}
+ */
+export function snapToPlayhead(t, playhead, tolerance) {
+  return Number.isFinite(playhead) && Math.abs(t - playhead) <= tolerance ? playhead : t;
+}

@@ -6,9 +6,11 @@
  * - **Each bar shows its review** (R4): an outline until it is reviewed, solid once it is,
  *   solid and striped amber when flagged, with the reason on hover. The review used to be a
  *   fade and a thin line, which could not be told apart at a glance (Isaac, 2026-11-20).
- * - **Drag an end** (R5) to change when the stretch starts or ends. The video follows the end
- *   being dragged, so the frame it will land on is on screen; a stretch of the same substrate
- *   the drag reaches is outlined, because letting go merges it in (A4). Escape cancels.
+ * - **Drag an end** (R5) to change when the stretch starts or ends. **The video stays where it
+ *   is** (#355): a biologist puts it on the frame the stretch should start or end at and drags
+ *   the end to it, and an end near the playhead lands exactly on it. It used to follow the end
+ *   being dragged, which lost the frame they had chosen. A stretch of the same substrate the
+ *   drag reaches is outlined, because letting go merges it in (A4). Escape cancels.
  * - **Zoom** (R6): the wheel zooms around the pointer, a pinch on a touch screen; dragging an
  *   empty part pans; a double click on an empty part shows the whole video. Zoomed in, a thin
  *   track above the lanes shows which part of the video is on screen.
@@ -18,7 +20,8 @@
  */
 
 import {
-  stripLayout, dragTo, mergesInto, edgeAt, wholeView, zoomView, panView, followView, isWhole, stretchMenu
+  stripLayout, dragTo, mergesInto, edgeAt, wholeView, zoomView, panView, followView, isWhole, stretchMenu,
+  snapToPlayhead
 } from '../model/habitat-timeline.js';
 
 /* Pixels either side of a bar's end that pick it up: more for a finger than a mouse. */
@@ -26,8 +29,8 @@ const GRAB_MOUSE = 6;
 const GRAB_TOUCH = 14;
 /* A press that moves less than this is a click, not a drag. */
 const DRAG_PIXELS = 3;
-/* At most one seek this often while dragging, so the player is not asked faster than it decodes. */
-const PREVIEW_MS = 120;
+/* Pixels either side of the playhead that catch a dragged end (#355). */
+const SNAP_PIXELS = 8;
 /* How far one notch of the wheel zooms: about a fifth. */
 const WHEEL_ZOOM = 0.0015;
 
@@ -50,7 +53,6 @@ export function createHabitatStrip(root, host) {
   let selectedId = null;
   let playheadAt = NaN;
   let drag = null;
-  let lastPreview = 0;
   // Every pointer down on the strip, for a pinch.
   const pointers = new Map();
   let pinch = null;
@@ -150,13 +152,6 @@ export function createHabitatStrip(root, host) {
 
   function grabOf(event) {
     return event.pointerType === 'touch' ? GRAB_TOUCH : GRAB_MOUSE;
-  }
-
-  function preview(t) {
-    const now = performance.now();
-    if (now - lastPreview < PREVIEW_MS) return;
-    lastPreview = now;
-    host.seek(t);
   }
 
   function showDrag() {
@@ -296,9 +291,11 @@ export function createHabitatStrip(root, host) {
       return;
     }
     lanes.classList.add('dragging');
-    drag.span = dragTo(drag.bar, drag.edge, timeAt(event.clientX), duration());
+    // Caught by the playhead when near it; the video itself is not touched (#355).
+    const secondsPerPixel = (view.to - view.from) / lanes.getBoundingClientRect().width;
+    const t = snapToPlayhead(timeAt(event.clientX), playheadAt, SNAP_PIXELS * secondsPerPixel);
+    drag.span = dragTo(drag.bar, drag.edge, t, duration());
     showDrag();
-    preview(drag.edge === 'start' ? drag.span.start : drag.span.end);
   });
 
   async function release(event) {
@@ -323,7 +320,6 @@ export function createHabitatStrip(root, host) {
     }
     // A pan has already done what it does.
     if (!edge) return;
-    host.seek(edge === 'start' ? span.start : span.end);
     if (span.start === bar.start && span.end === bar.end) return;
     try {
       await host.save(bar, span, merging);
