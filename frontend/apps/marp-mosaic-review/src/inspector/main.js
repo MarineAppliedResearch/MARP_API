@@ -224,7 +224,12 @@ function redraw() {
   const canvas = $('player').querySelector('.marp-canvas');
   if (canvas) drawBoxes($('boxes'), canvas, canvas.width, canvas.height, t);
   strip.playhead(t);
-  // This frame's clock time, beside when the recording started (#351).
+  sayFrameClock(t);
+}
+
+/* This frame's clock time, beside when the recording started (#351): every frame the video
+   shows, not only on a redraw -- it stood still through playback (#367). */
+function sayFrameClock(t) {
   const now = clockAt(clock, t);
   $('clockNow').textContent = now ? `This frame: ${now}` : '';
 }
@@ -312,6 +317,7 @@ function watch(engine) {
     }
     followPlayhead(shownAt);
     strip.playhead(shownAt);
+    sayFrameClock(shownAt);
     drawBoxes($('boxes'), canvas, canvas.width, canvas.height, shownAt);
     if (showing && Math.abs(shownAt - showing.moment) < 0.25) status('');
     engine.requestVideoFrameCallback(onFrame);
@@ -980,6 +986,8 @@ let clockVideo = null;
 
 function sayClock() {
   const line = clockLine(clock);
+  // And this frame's time on it: a clock just set or read changes it too (#367).
+  sayFrameClock(shownAt ?? (player.engine ? player.engine.currentTime : NaN));
   $('clockState').textContent = clockVideo ? line.text : '';
   $('clockState').classList.toggle('unset', Boolean(clockVideo) && line.unset);
   $('setClock').hidden = !clockVideo || !canAnnotate;

@@ -63,3 +63,34 @@ test('#76: a video with no clock says so, and a reading off a frame sets it', as
     await held.restore();
   }
 });
+
+/* #367, Isaac 2026-11-20: "while the video runs the real time clock up here is never updating".
+   It was written only on a redraw, which a frame the video paints does not make. */
+test('#367: the frame\'s clock time follows the video, frame by frame', async ({ page, request }) => {
+  test.setTimeout(240_000);
+  const id = await editableObservation(request);
+  const read = await (await request.post('/api/v2/mosaic/video/observations', {
+    data: { observation_id: id, filters: {} }
+  })).json();
+  const held = await holdVideoClock(read.video.video_source);
+  try {
+    await openAndPlay(page, id);
+    await page.locator('#setClock').click();
+    await page.locator('#clockReading').fill('2021-06-14T16:45:39.123');
+    const put = page.waitForResponse(isClockPut);
+    await page.locator('#clockForm button[type=submit]').click();
+    expect((await put).ok()).toBeTruthy();
+    await expect(page.locator('#clockNow')).toContainText('This frame:');
+
+    // Each step forward is a new frame 40 ms on, and the readout says so.
+    for (let step = 0; step < 3; step += 1) {
+      const before = await page.locator('#clockNow').textContent();
+      const time = await page.evaluate(() => window.MARP_VIDEO.time);
+      await page.locator('.marp-step-forward').click();
+      await expect.poll(() => page.evaluate(() => window.MARP_VIDEO.time)).toBeGreaterThan(time);
+      await expect(page.locator('#clockNow')).not.toHaveText(before);
+    }
+  } finally {
+    await held.restore();
+  }
+});
