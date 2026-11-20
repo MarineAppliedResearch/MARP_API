@@ -154,3 +154,60 @@ export function edgeAt(rect, x, grab) {
   if (Math.min(fromStart, fromEnd) > grab) return null;
   return fromStart <= fromEnd ? 'start' : 'end';
 }
+
+/* ------------------------------------------------------------------ zoom (R6, R7) */
+
+/** The shortest stretch of video the strip zooms in to, in seconds. */
+export const MIN_VIEW_SECONDS = 10;
+
+/** The whole video: what the strip shows until it is zoomed. */
+export function wholeView(duration) {
+  return { from: 0, to: duration };
+}
+
+/** Kept inside the video, its length unchanged where it fits. */
+function inside(view, duration) {
+  const span = Math.min(view.to - view.from, duration);
+  const from = Math.min(Math.max(view.from, 0), duration - span);
+  return { from, to: from + span };
+}
+
+/**
+ * Zoom around a moment (R6): the moment under the pointer stays under the pointer, as a map
+ * zooms. Never closer than `min` seconds, never further out than the whole video.
+ *
+ * @param {{from: number, to: number}} view - What the strip shows now, in seconds.
+ * @param {number} duration - The video's length.
+ * @param {number} anchor - The moment to zoom around.
+ * @param {number} factor - Below 1 zooms in, above 1 out.
+ * @param {number} [min]
+ * @returns {{from: number, to: number}}
+ */
+export function zoomView(view, duration, anchor, factor, min = MIN_VIEW_SECONDS) {
+  const span = Math.min(duration, Math.max(Math.min(min, duration), (view.to - view.from) * factor));
+  const along = (anchor - view.from) / (view.to - view.from);
+  const from = anchor - along * span;
+  return inside({ from, to: from + span }, duration);
+}
+
+/** Moved along by `seconds` (R6), stopping at either end of the video. */
+export function panView(view, duration, seconds) {
+  return inside({ from: view.from + seconds, to: view.to + seconds }, duration);
+}
+
+/**
+ * Kept on the playhead while the video plays (R7). Unchanged while `t` is on screen; once it
+ * runs off an end, the strip moves so it is a tenth of the way in from the side it was going,
+ * as a video editor pages along.
+ */
+export function followView(view, duration, t) {
+  if (t >= view.from && t <= view.to) return view;
+  const span = view.to - view.from;
+  const from = t > view.to ? t - span * 0.1 : t - span * 0.9;
+  return inside({ from, to: from + span }, duration);
+}
+
+/** Whether a view is the whole video, to the frame. */
+export function isWhole(view, duration) {
+  return view.from <= 0.04 && view.to >= duration - 0.04;
+}

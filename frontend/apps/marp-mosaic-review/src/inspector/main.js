@@ -517,6 +517,7 @@ const editor = createBoxEditor({
 /* The habitat timeline (#287): the opened observation's habitat session along the whole video. */
 const strip = createHabitatStrip($('habitatStrip'), {
   duration: () => (player.engine ? player.engine.duration : NaN),
+  playing: () => Boolean(player.engine && !player.engine.paused),
   seek(t) {
     if (!player.engine) return;
     player.engine.pause();

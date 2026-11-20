@@ -506,9 +506,33 @@ body {
 .hstrip-lanes {
   position: relative;
   height: calc(var(--rows) * var(--lane));
+  overflow: hidden;
   touch-action: none;
   cursor: pointer;
   user-select: none;
+}
+
+.hstrip-lanes.panning,
+.hstrip-lanes.panning * {
+  cursor: grabbing;
+}
+
+/* R6: zoomed in, which part of the whole video is on screen. */
+.hstrip-overview {
+  position: relative;
+  height: 4px;
+  margin-bottom: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.hstrip-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--muted);
 }
 
 .hstrip-lanes.over-edge,
@@ -562,8 +586,8 @@ body {
 
 .hstrip-playhead {
   position: absolute;
-  top: -3px;
-  bottom: -3px;
+  top: 0;
+  bottom: 0;
   width: 2px;
   margin-left: -1px;
   background: var(--white);

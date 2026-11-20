@@ -87,3 +87,19 @@ then a way to see on the timeline, if it's been reviewed or flagged"*.
       (it can be replaced with *Use this picture*), rather than re-cutting it. Proposed default.
 - [ ] **A6 · product/UI · non-blocking** — Lanes taller than the GUI's 5 px so an end can be
       grabbed with a mouse or a finger; the GUI's lanes and colours otherwise. Proposed default.
+
+## Zoom, and smaller player controls (Isaac, 2026-11-20)
+
+Asked for after using the strip: *"to make it easier to edit things on the timeline, we should
+make it possible to zoom in on the timeline as well"*, and *"adapt the video player controls to
+make them take up less of the screen"*.
+
+- **R6** -- The strip zooms: the mouse wheel over it zooms in and out around the pointer (pinch
+  on a touch screen), dragging an empty part pans, and a double-click on an empty part shows the
+  whole video again. A click still goes there; dragging a bar's end still retimes it.
+- **R7** -- Zoomed in, the strip follows the playhead: when the video plays past the part on
+  screen, the strip moves along so the playhead stays in view.
+- **R8** -- The player's controls take less of the screen. Settled: **in the player itself**
+  (`marp-video-player`), not restyled on this page, so the GUI's WebView2 copy changes with it.
+  Its contract -- `MarpVideoEngine`, the `postMessage` protocol, `player.html`'s parameters --
+  does not change; only how big the controls are.

@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  laneOf, colourOf, reviewOf, stripLayout, dragTo, mergesInto, edgeAt
+  laneOf, colourOf, reviewOf, stripLayout, dragTo, mergesInto, edgeAt,
+  wholeView, zoomView, panView, followView, isWhole
 } from '../../src/model/habitat-timeline.js';
 
 /** A stretch as the video read gives one. */
@@ -89,4 +90,34 @@ test('R5: a press near a bar\'s end picks that end up; the middle does not', () 
   assert.equal(edgeAt(rect, 196, 6), 'end');
   assert.equal(edgeAt(rect, 150, 6), null);
   assert.equal(edgeAt({ left: 100, right: 104 }, 103, 6), 'end', 'a narrow bar is all ends, the nearer one');
+});
+
+test('R6: zooming keeps the moment under the pointer under the pointer', () => {
+  const whole = wholeView(1000);
+  const view = zoomView(whole, 1000, 250, 0.5);
+  assert.deepEqual(view, { from: 125, to: 625 }, 'half as long, 250 still a quarter of the way along');
+  assert.deepEqual(zoomView(view, 1000, 250, 2), whole, 'and back out');
+});
+
+test('R6: never closer than ten seconds, never further out than the video, never past its ends', () => {
+  assert.equal(zoomView({ from: 100, to: 112 }, 1000, 106, 0.1).to - zoomView({ from: 100, to: 112 }, 1000, 106, 0.1).from, 10);
+  assert.deepEqual(zoomView(wholeView(1000), 1000, 500, 4), wholeView(1000));
+  assert.deepEqual(zoomView({ from: 0, to: 100 }, 1000, 5, 0.5), { from: 2.5, to: 52.5 });
+  assert.deepEqual(zoomView({ from: 900, to: 1000 }, 1000, 1000, 1.5), { from: 850, to: 1000 }, 'held at the end');
+  assert.deepEqual(zoomView(wholeView(6), 6, 3, 0.5), wholeView(6), 'a video shorter than the closest zoom stays whole');
+});
+
+test('R6: panning moves along and stops at either end of the video', () => {
+  assert.deepEqual(panView({ from: 100, to: 200 }, 1000, 50), { from: 150, to: 250 });
+  assert.deepEqual(panView({ from: 100, to: 200 }, 1000, -500), { from: 0, to: 100 });
+  assert.deepEqual(panView({ from: 100, to: 200 }, 1000, 5000), { from: 900, to: 1000 });
+});
+
+test('R7: zoomed in, the strip pages along to keep the playhead in view', () => {
+  const view = { from: 100, to: 200 };
+  assert.equal(followView(view, 1000, 150), view, 'on screen: left alone');
+  assert.deepEqual(followView(view, 1000, 201), { from: 191, to: 291 }, 'played off the end: a tenth in from the left');
+  assert.deepEqual(followView(view, 1000, 40), { from: 0, to: 100 }, 'sought back before it: held at the start');
+  assert.ok(isWhole(wholeView(500), 500));
+  assert.ok(!isWhole(view, 1000));
 });
