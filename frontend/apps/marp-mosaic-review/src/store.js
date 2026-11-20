@@ -2218,7 +2218,16 @@ export const actions = {
       row.review_reviewer_id = decision ? (me.user_id ?? null) : null;
       row.review_reviewer_initials = decision ? initialsOfUsername(me.username) : null;
     }
-    if (state.mode === 'scientific') state.marks.delete(observationId);
+    /* And it is the tile's newest outcome. A page committed earlier in this sitting holds
+       an outcome per tile, and an outcome outranks the record, so a decision made on the
+       video page left the tile showing the old one (Isaac, 2026-11-20). Scientific's own
+       outcomes only -- in front, or parked while another mode is. */
+    const outcomes = state.mode === 'scientific' ? state.outcomes : state.parked.get('scientific')?.outcomes;
+    if (outcomes && outcomes.has(observationId)) outcomes.set(observationId, decision || 'withdrawn');
+    if (state.mode === 'scientific') {
+      state.marks.delete(observationId);
+      state.takenBack.delete(observationId);
+    }
     fire('reviewedInVideo', { id: observationId, decision, reason });
     notify();
   }

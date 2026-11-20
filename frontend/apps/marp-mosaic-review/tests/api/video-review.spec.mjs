@@ -8,7 +8,9 @@
  */
 import { test, expect } from '@playwright/test';
 import { editableObservation, openAndPlay, boxOf, centre } from './video-page.mjs';
-import { ready } from './support.mjs';
+import { ready, expectRealBacking } from './support.mjs';
+import { seedPage } from './seed.mjs';
+import { VIDEO_WINDOW } from '../../src/model/video-review.js';
 
 /* The observation's scientific review as the video page is told it. */
 async function reviewOf(request, id) {
@@ -92,5 +94,40 @@ test('#337 the video page flags an observation and takes the flag back, and the 
       await expect(mosaic.locator('#logList')).toContainText(`id:${id},decision:reviewed`);
     } finally {
       await putBack(request, id, before);
+    }
+  });
+
+/* Isaac, 2026-11-20: a decision made on the video page did not reach a tile whose page had been
+   committed earlier in the sitting, because that commit's outcome outranked the record. The
+   test above only read the Mosaic's log, which said the message arrived while the tile said
+   nothing had changed. This one reads the tile. No video is needed: the Mosaic is sent
+   exactly what the video page sends. */
+test('a review made on the video page shows on its tile, even after that tile was committed here',
+  async ({ page, context, request }) => {
+    const seeded = await seedPage({ count: 1, thumbnail: 'ready' });
+    try {
+      await page.goto(seeded.address);
+      await expectRealBacking(page);
+      await ready(page);
+      const [id] = seeded.ids;
+      const tile = page.locator(`.tile[data-id="${id}"]`);
+
+      // Committed as reviewed in this sitting: the tile now draws that commit's outcome.
+      await tile.click({ button: 'right' });
+      await page.locator('#commitMarked').click();
+      await expect(page.locator('#commitMarked')).toContainText('Saved');
+      await expect(tile.locator('.badge')).toContainText('REVIEWED');
+
+      // Then flagged on the video page, which tells the Mosaic as it always does.
+      const video = await context.newPage();
+      await video.goto(seeded.address);
+      await video.evaluate(({ id: observationId, channel }) => {
+        new BroadcastChannel(channel).postMessage({ type: 'reviewed', observationId, decision: 'flagged', reason: 'False detection' });
+      }, { id, channel: VIDEO_WINDOW });
+      await expect(tile.locator('.badge')).toContainText('FLAGGED');
+      await expect(tile.locator('.badge')).toHaveAttribute('title', /False detection/);
+      await video.close();
+    } finally {
+      await seeded.remove();
     }
   });
