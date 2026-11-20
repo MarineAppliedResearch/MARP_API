@@ -216,3 +216,43 @@ describe('changing a habitat stretch\'s times (#287 R5)', () => {
         expect(backwards.status).toBe(400);
     });
 });
+
+describe('a habitat stretch\'s box is the habitat crop, not the reviewer\'s to place (#359)', () => {
+    const edits = require('../service/mosaic-video-edit.service');
+    const annotate = require('../service/mosaic-video-annotate.service');
+    const { HABITAT_BOX } = require('../db/habitat-keyframes');
+    const drawn = { x: 0.3, y: 0.3, width: 0.2, height: 0.2 };
+    const boxOfKeyframe = (k) => ({ x: Number(k.x), y: Number(k.y), width: Number(k.width), height: Number(k.height) });
+
+    test('moving or resizing it is refused, and nothing changes', async () => {
+        const id = await stretch(await session('Habitat'), 20, 40, { keyed: true });
+        const [start] = await q('SELECT keyframe_id, x, y, width, height FROM keyframes WHERE observation_id = :id AND type = \'start\'', { id });
+        await expect(edits.moveBox(start.keyframe_id, drawn)).rejects.toMatchObject({ status: 400 });
+        const [after] = await q('SELECT x, y, width, height FROM keyframes WHERE keyframe_id = :k', { k: start.keyframe_id });
+        expect(boxOfKeyframe(after)).toEqual(boxOfKeyframe(start));
+    });
+
+    test('a keyframe added to it, its end included, keeps its own box whatever was drawn', async () => {
+        const id = await stretch(await session('Habitat'), 20, 40, { keyed: true });
+        const answer = await edits.addKeyframe({ observation_id: id, t: 30, ...drawn });
+        expect(answer.changed.map((k) => ({ x: k.x, y: k.y, width: k.width, height: k.height })))
+            .toEqual([{ x: 0.5, y: 0.75, width: 0.5, height: 0.5 }]);
+    });
+
+    test('one added on the video page is given the habitat crop, whatever was drawn', async () => {
+        const sessionId = await session('Habitat');
+        const opened = await stretch(sessionId, 20, 40);
+        const answer = await annotate.createObservation({
+            observation_id: opened, session_id: sessionId, species_id: seeded.species[0].id, t: 60, ...drawn,
+        });
+        seeded.ids.push(answer.observation.observation_id);
+        expect(boxOfKeyframe(answer.keyframes[0])).toEqual(HABITAT_BOX);
+    });
+
+    test('anything not in a habitat session still moves where it is dragged', async () => {
+        const id = await stretch(await session('transect'), 20, 40, { keyed: true });
+        const [start] = await q('SELECT keyframe_id FROM keyframes WHERE observation_id = :id AND type = \'start\'', { id });
+        const answer = await edits.moveBox(start.keyframe_id, drawn);
+        expect(answer.changed[0]).toMatchObject(drawn);
+    });
+});

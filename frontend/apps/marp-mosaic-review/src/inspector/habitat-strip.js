@@ -21,7 +21,7 @@
 
 import {
   stripLayout, dragTo, mergesInto, edgeAt, wholeView, zoomView, panView, followView, isWhole, stretchMenu,
-  snapToPlayhead
+  snapToPlayhead, habitatsAt
 } from '../model/habitat-timeline.js';
 
 /* Pixels either side of a bar's end that pick it up: more for a finger than a mouse. */
@@ -379,6 +379,21 @@ export function createHabitatStrip(root, host) {
       stretch.flag_reason = reason;
       layout = stripLayout(habitat.stretches);
       if (!drag) render();
+    },
+    /**
+     * An observation added or edited on this page (#357): its bar, added or redrawn, when it
+     * belongs to the timeline's session.
+     */
+    upsert(row) {
+      if (!habitat || row.session_id !== habitat.session_id) return;
+      const others = habitat.stretches.filter((s) => s.observation_id !== row.observation_id);
+      habitat = { ...habitat, stretches: [...others, { ...row }] };
+      layout = stripLayout(habitat.stretches);
+      if (!drag) render();
+    },
+    /** The habitats the moment `t` is in, for the list over the picture (#358). */
+    habitatsAt(t) {
+      return habitat ? habitatsAt(habitat.stretches, t) : [];
     },
     /** An observation deleted or merged away on this page: its bar goes too. */
     forget(id) {

@@ -497,7 +497,8 @@ body {
 /* #287: the habitat timeline, the annotation GUI's strip under the video. Lanes taller than
    the GUI's 5 px so an end can be grabbed (A6). */
 .hstrip {
-  --lane: 12px;
+  /* 8 px, down from 12 (Isaac, #357). */
+  --lane: 8px;
   padding: 6px 12px;
   background: var(--navy-850);
   border-top: 1px solid var(--border);
@@ -555,8 +556,8 @@ body {
    A fade and a thin line were tried first and could not be told apart (2026-11-20). */
 .hstrip-bar {
   position: absolute;
-  top: calc(var(--row) * var(--lane) + 1px);
-  height: calc(var(--lane) - 2px);
+  top: calc(var(--row) * var(--lane) + 0.5px);
+  height: calc(var(--lane) - 1px);
   box-sizing: border-box;
   border-radius: 2px;
   border: 2px solid var(--colour);
@@ -598,4 +599,25 @@ body {
 /* #353: a bar's right-click menu, opened where the pointer is rather than inside the player. */
 .hstrip-menu {
   position: fixed;
+}
+
+/* #358: the habitats the picture is in, as the GUI lists them over it. Sized with the boxes'
+   labels, so it is the GUI's 20 px on a picture the GUI's size. */
+.habitat-now {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--scale, 1));
+  pointer-events: none;
+}
+
+.habitat-now-item {
+  align-self: flex-start;
+  padding: calc(4px * var(--scale, 1)) calc(10px * var(--scale, 1));
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  color: #fff;
+  font: 700 calc(20px * var(--scale, 1)) / 1.2 "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }

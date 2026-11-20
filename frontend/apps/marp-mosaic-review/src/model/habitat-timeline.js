@@ -240,3 +240,27 @@ export function stretchMenu(bar) {
 export function snapToPlayhead(t, playhead, tolerance) {
   return Number.isFinite(playhead) && Math.abs(t - playhead) <= tolerance ? playhead : t;
 }
+
+/**
+ * The habitats the moment `t` is in (#358), for the list the GUI shows over the picture: every
+ * stretch of the session that covers `t`, by name, once each, in the timeline's lane order. A
+ * stretch with no end yet is in only at its start, as the GUI counts one.
+ *
+ * @param {Array<Object>} stretches - The session's, as the video read gives them.
+ * @param {number} t - Seconds into the video.
+ * @returns {Array<string>}
+ */
+export function habitatsAt(stretches, t) {
+  if (!Number.isFinite(t)) return [];
+  const names = new Map();
+  for (const s of stretches || []) {
+    const end = s.open_ended || !Number.isFinite(s.end_s) ? s.start_s : s.end_s;
+    if (s.start_s <= t && t <= end && s.comname) names.set(key(s.comname), s.comname);
+  }
+  const rank = (name) => {
+    const lane = laneOf(name);
+    const within = lane < 0 ? 0 : LANES[lane].findIndex((item) => key(item) === key(name));
+    return (lane < 0 ? LANES.length : lane) * 10 + within;
+  };
+  return [...names.values()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}

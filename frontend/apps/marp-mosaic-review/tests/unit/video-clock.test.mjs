@@ -39,9 +39,10 @@ test('#76: nothing typed, or nothing a date, is not a reading', () => {
 });
 
 test('#351: the frame on screen has a clock time, the start plus where the picture is', () => {
-  assert.equal(clockAt(set, 0), '2021-06-14 16:40:46 UTC');
-  assert.equal(clockAt(set, 74.6), '2021-06-14 16:42:00 UTC', 'rounded to the millisecond, shown to the second');
-  assert.equal(clockAt(set, 3600 * 8), '2021-06-15 00:40:46 UTC', 'past midnight is the next day');
+  assert.equal(clockAt(set, 0), '2021-06-14 16:40:46.000 UTC');
+  assert.equal(clockAt(set, 74.6), '2021-06-14 16:42:00.600 UTC', 'to the millisecond, so each frame has its own time');
+  assert.equal(clockAt(set, 74.64), '2021-06-14 16:42:00.640 UTC', 'the next frame, 40 ms on');
+  assert.equal(clockAt(set, 3600 * 8), '2021-06-15 00:40:46.000 UTC', 'past midnight is the next day');
   assert.equal(clockAt(unset, 10), null, 'no clock, no clock time: a suggested start is not one');
   assert.equal(clockAt(null, 10), null);
   assert.equal(clockAt(set, NaN), null, 'before the video knows where it is');

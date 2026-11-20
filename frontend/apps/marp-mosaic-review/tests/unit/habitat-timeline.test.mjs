@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   laneOf, colourOf, reviewOf, stripLayout, dragTo, mergesInto, edgeAt,
-  wholeView, zoomView, panView, followView, isWhole, stretchMenu, snapToPlayhead
+  wholeView, zoomView, panView, followView, isWhole, stretchMenu, snapToPlayhead, habitatsAt
 } from '../../src/model/habitat-timeline.js';
 
 /** A stretch as the video read gives one. */
@@ -137,4 +137,15 @@ test('#355: a dragged end near the playhead lands exactly on it', () => {
   assert.equal(snapToPlayhead(101.3, 101.68, 0.5), 101.68, 'within reach: the playhead');
   assert.equal(snapToPlayhead(99, 101.68, 0.5), 99, 'out of reach: where the pointer is');
   assert.equal(snapToPlayhead(99, NaN, 5), 99, 'no playhead yet: where the pointer is');
+});
+
+test('#358: the habitats a moment is in, once each, in the timeline\'s order', () => {
+  const stretches = [
+    stretch(1, 'Rock', 0, 100), stretch(2, 'Sand', 40, 60), stretch(3, 'Cobble', 50, 55),
+    stretch(4, 'Rock', 50, 70), stretch(5, 'Mud', 80, 90), stretch(6, 'Sand', 52, NaN, { open_ended: true })
+  ];
+  assert.deepEqual(habitatsAt(stretches, 52), ['Cobble', 'Sand', 'Rock'], 'Rock twice is Rock once');
+  assert.deepEqual(habitatsAt(stretches, 85), ['Mud', 'Rock']);
+  assert.deepEqual(habitatsAt(stretches, 200), []);
+  assert.deepEqual(habitatsAt(stretches, NaN), []);
 });

@@ -75,3 +75,24 @@ test('#352: labels sharing a box keep their places when one is selected and draw
   assert.deepEqual(before.map((s) => s.top), [0, 44, 88]);
   assert.deepEqual(after.map((s) => s.top), [44, 88, 0], 'Rock still first, Mud and Cobble where they were');
 });
+
+test('#352: habitat labels go Cobble, Boulder, Sand, Mud, Rock, packed, whatever their ids', () => {
+  const crop = { left: 100, top: 200, width: 300, height: 150 };
+  const widths = { top: 40, bottom: 30 };
+  const shifts = sharedTabShifts([
+    { id: 1, name: 'Rock', rect: crop, widths },
+    { id: 2, name: 'Sand', rect: crop, widths },
+    { id: 3, name: 'Cobble', rect: crop, widths }
+  ], 1);
+  assert.deepEqual(shifts.map((s) => s.top), [88, 44, 0], 'Cobble first, then Sand, then Rock; no gap where Boulder would be');
+});
+
+test('#352: boxes a fraction of a pixel apart are one place, so their labels still do not overlap', () => {
+  const widths = { top: 40, bottom: 30 };
+  const shifts = sharedTabShifts([
+    { id: 1, name: 'Mud', rect: { left: 100.49, top: 200, width: 300, height: 150 }, widths },
+    { id: 2, name: 'Sand', rect: { left: 100.51, top: 200.4, width: 299.6, height: 150 }, widths },
+    { id: 3, name: 'Rock', rect: { left: 140, top: 200, width: 300, height: 150 }, widths }
+  ], 1);
+  assert.deepEqual(shifts.map((s) => s.top), [44, 0, 0], 'Sand then Mud side by side; a box 40 px over is a place of its own');
+});

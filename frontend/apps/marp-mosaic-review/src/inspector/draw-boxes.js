@@ -108,7 +108,7 @@ export function tabRects(context, { box, rect }, scale, shift) {
  *   colour, the kind of keyframe on this picture, whether it is selected, the part being
  *   pressed if any, the label scale, and how far along the edge its tabs start (#352).
  */
-export function drawBox(context, { box, rect }, { colour, type, selected, pressed, scale, shift }) {
+export function drawBox(context, { box, rect }, { colour, type, selected, pressed, scale, shift, fixed }) {
   // Pressed, it is the GUI's state colour: the outline and the tab both.
   const tone = pressed ? (pressed === 'body' ? DRAGGING : RESIZING) : colour;
 
@@ -157,7 +157,7 @@ export function drawBox(context, { box, rect }, { colour, type, selected, presse
   context.fillStyle = '#ffffff';
   context.fillText(identifier, layout.bottom.textLeft, layout.bottom.middle);
 
-  if (selected) {
+  if (selected && !fixed) {
     for (const grip of gripsOf(rect)) {
       context.beginPath();
       context.arc(grip.x, grip.y, GRIP_RADIUS, 0, Math.PI * 2);

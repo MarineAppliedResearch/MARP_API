@@ -32,6 +32,7 @@ const thumbnails = require('../repository/observation-thumbnail.repository');
 const { resolveVideo } = require('./mosaic-video-context.service');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { ASSUMED_FPS } = require('../db/timecode');
+const { HABITAT_SESSION_TYPE, HABITAT_BOX } = require('../db/habitat-keyframes');
 
 const KEYFRAME_COLUMNS = 'keyframe_id, observation_id, subset, type, framenum, x, y, width, height';
 
@@ -163,11 +164,35 @@ async function edit(work, { refresh = true } = {}) {
     return result;
 }
 
+/**
+ * A habitat stretch's box, which is not the reviewer's to place (#359): the habitat crop, as
+ * its track already has it, or null for anything not in a habitat session.
+ *
+ * @async
+ * @param {number} observationId
+ * @param {Array<Object>} track - Its keyframes, in frame order; the first one's box is its own.
+ * @param {Object} transaction
+ * @returns {Promise<?Object>} `{ x, y, width, height }`, or null.
+ */
+async function habitatBox(observationId, track, transaction) {
+    const [session] = await db.sequelize.query(
+        'SELECT s.type FROM observations o JOIN sessions s ON s.session_id = o.session_id WHERE o.observation_id = :id',
+        { replacements: { id: observationId }, type: QueryTypes.SELECT, transaction }
+    );
+    if (!session || session.type !== HABITAT_SESSION_TYPE) return null;
+    const own = track && track[0];
+    return own ? { x: own.x, y: own.y, width: own.width, height: own.height } : { ...HABITAT_BOX };
+}
+
 /** Move or resize a keyframe's box. Its frame and type stay. */
 function moveBox(keyframeId, body) {
     const box = boxOf(body);
     return edit(async (transaction) => {
         const { observation } = await keyframeForEdit(keyframeId, transaction);
+        // A habitat stretch's box is the habitat crop, and only its times change (#359).
+        if (await habitatBox(observation.observation_id, null, transaction)) {
+            throw invalid('A habitat stretch\'s box is the habitat crop; it is not moved or resized.');
+        }
         const [rows] = await db.sequelize.query(
             `UPDATE keyframes SET x = :x, y = :y, width = :width, height = :height, "updatedAt" = NOW()
               WHERE keyframe_id = :keyframeId RETURNING ${KEYFRAME_COLUMNS}`,
@@ -181,7 +206,7 @@ function moveBox(keyframeId, body) {
 /** Add a keyframe at `t` on an observation's track: a pinned or dragged in-between box, or one
     drawn before its start or after its end, which extends it (R2). */
 function addKeyframe(body = {}, { refresh = true } = {}) {
-    const box = boxOf(body);
+    let box = boxOf(body);
     const observationId = body.observation_id;
     const subset = body.subset == null ? '1' : String(body.subset);
     if (!Number.isInteger(observationId)) throw invalid('observation_id must be an integer.');
@@ -197,6 +222,8 @@ function addKeyframe(body = {}, { refresh = true } = {}) {
         const framenum = Math.round(body.t * rate);
         const track = await trackOf(observationId, subset, transaction);
         if (track.length === 0) throw invalid(`Observation ${observationId} has no track ${subset} to add to.`);
+        // A habitat stretch's keyframes all carry its own box, whatever was drawn (#359).
+        box = (await habitatBox(observationId, track, transaction)) || box;
 
         // On a keyframe already: that one is moved instead, as the GUI does.
         const existing = track.find((row) => Number(row.framenum) === framenum);

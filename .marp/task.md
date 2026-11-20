@@ -109,3 +109,16 @@ make them take up less of the screen"*.
   no box, and clicking it said so. Isaac: *"All the data we should show should be cohesive."*
   On a habitat video the page draws every stretch of the opened session, plus whatever else in
   the video the filter matches.
+
+## Answered while using it (Isaac, 2026-11-20)
+
+- **#352** -- Habitat labels sharing a box go in a **fixed order, packed**: Cobble, Boulder, Sand,
+  Mud, Rock, Stop, Pull, Off Transect, then anything else; only the types showing at that moment,
+  side by side, no gaps. They were laid side by side only when their boxes matched to the pixel,
+  which two habitat boxes half a pixel apart did not.
+- **#357** -- A stretch added on the video page appears on the timeline at once. **The GUI's
+  lanes stay** (Sand and Mud share one). **Lanes 8 px**, down from 12.
+- **#358** -- The habitat list over the picture is **the GUI's**: top left, one translucent panel
+  per habitat at the current moment in its timeline colour, its name in white, no clicks.
+- **#355** -- Dragging an end leaves the video where it is; near the playhead it lands on it.
+- **#356** -- A press on the player's controls is the controls', whatever box is beneath.

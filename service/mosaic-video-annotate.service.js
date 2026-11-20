@@ -36,6 +36,7 @@ const edits = require('./mosaic-video-edit.service');
 const { sessionsInVideo } = require('./mosaic-video.service');
 const { formatTimeSpan, deriveTc, deriveFrame, ASSUMED_FPS } = require('../db/timecode');
 const videoClock = require('./video-clock.service');
+const { HABITAT_SESSION_TYPE, HABITAT_BOX } = require('../db/habitat-keyframes');
 
 const { boxOf, rateOf, asSeconds, invalid, notFound, KEYFRAME_COLUMNS } = edits;
 
@@ -125,8 +126,10 @@ async function createObservation(body = {}, userId = null) {
             actualPosition: formatTimeSpan(clockMs),
             observed_at: clock ? clock.observedAt : null,
         }, transaction);
+        // A habitat stretch's box is the habitat crop, whatever was drawn (#359).
+        const placed = session.type === HABITAT_SESSION_TYPE ? { ...HABITAT_BOX } : box;
         await keys.insertKeyframes(observationId, [{
-            subset: NEW_SUBSET, comname: species.comname, type: 'start', framenum, ...box,
+            subset: NEW_SUBSET, comname: species.comname, type: 'start', framenum, ...placed,
         }], transaction);
 
         const [row] = await db.sequelize.query(

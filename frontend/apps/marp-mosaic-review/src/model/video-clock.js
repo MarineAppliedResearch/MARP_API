@@ -93,5 +93,7 @@ export function readingBody(typed, seconds, clock) {
 export function clockAt(clock, seconds) {
   if (!clock || !clock.recorded_start || !Number.isFinite(seconds)) return null;
   const iso = new Date(Date.parse(clock.recorded_start) + Math.round(seconds * 1000)).toISOString();
-  return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
+  // To the millisecond, so each frame has its own time: a clock synced to the second could
+  // still be most of a second out, and frames are 40 ms apart (Isaac, 2026-11-20).
+  return `${iso.slice(0, 10)} ${iso.slice(11, 23)} UTC`;
 }

@@ -30,6 +30,7 @@ import { labelScale, sharedTabShifts } from '../model/box-style.js';
 import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
 import { clockAt, clockLine, positionText, readingOffered, readingBody } from '../model/video-clock.js';
 import { createHabitatStrip } from './habitat-strip.js';
+import { colourOf } from '../model/habitat-timeline.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -45,6 +46,8 @@ const playerRoot = $('player').querySelector('.marp-player') || $('player');
 const pictureCanvas = playerRoot.querySelector('.marp-canvas');
 if (pictureCanvas) pictureCanvas.insertAdjacentElement('afterend', $('boxes'));
 else playerRoot.appendChild($('boxes'));
+// The habitat list over the picture (#358) goes with the boxes, fullscreen included.
+$('boxes').insertAdjacentElement('afterend', $('habitatNow'));
 playerRoot.appendChild($('boxMenu'));
 // The add popup and the observation panel go fullscreen with the player too.
 playerRoot.appendChild($('addPopup'));
@@ -157,6 +160,7 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   if (!showing) return;
   const area = contentRect(width, height, pictureWidth, pictureHeight);
   const scale = labelScale(area.height);
+  showHabitatsNow(overlay, area, scale, t);
   const rate = showing.video.frame_rate || 25;
   const entries = boxesAt(drawable, t, trackTolerance(rate)).map((box) => {
     const key = trackKey(box);
@@ -179,7 +183,7 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   // Boxes drawn in one place -- habitat stretches all share the habitat crop -- lay their
   // labels side by side, so each one can be read (#352).
   const shifts = sharedTabShifts(entries.map((entry) => ({
-    id: entry.box.observation_id, rect: entry.rect, widths: tabWidths(context, entry, scale)
+    id: entry.box.observation_id, name: entry.box.comname, rect: entry.rect, widths: tabWidths(context, entry, scale)
   })), scale);
   entries.forEach((entry, index) => {
     // Where its labels are, so a click on one selects this box rather than the one on top.
@@ -190,6 +194,8 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
       colour: reviewColour(reviewed && reviewed.review_decision) || speciesColour(entry.box.comname),
       type: keyframe ? keyframe.type : 'interpolated',
       selected: entry.key === editor.selectedKey,
+      // No corner grips on a box that is not resized (#359).
+      fixed: inHabitatSession(entry.box.observation_id),
       pressed: editor.pressFor(entry.key),
       scale,
       shift: shifts[index]
@@ -483,6 +489,8 @@ const editor = createBoxEditor({
       // windows ask for it, so it is re-derived from the keyframes rather than assumed: an
       // edit can have just added the end, or taken it away (2026-10-14).
       refreshOpenEnded(answer.observation_id);
+      // A stretch added, or given its end, shows on the habitat timeline at once (#357).
+      syncStretch(answer.observation_id);
       rebuildDrawable();
       // The panel lists the selected observation's keyframes, so an edit that adds or removes
       // one has to redraw it or the list is a stale answer (2026-10-14).
@@ -510,6 +518,10 @@ const editor = createBoxEditor({
     usePicture,
     canDraw: () => canAnnotate,
     isPicture: (target) => target === pictureCanvas,
+    // The player's controls bar and its settings menu, which keep their own presses (#356).
+    isControls: (target) => Boolean(target && target.closest && target.closest('.marp-controls-bar, .marp-settings-menu')),
+    // A habitat stretch's box is the habitat crop: never dragged or resized (#359).
+    boxFixed: (id) => inHabitatSession(id),
     onDrawn: openAdd,
     selectionChanged: (key) => {
       updatePanel();
@@ -596,6 +608,53 @@ function refreshOpenEnded(id) {
   row.open_ended = !keyframes.some((k) => k.type === 'end');
   const span = showing.observations.find((o) => o.observation_id === id);
   if (span) span.open_ended = row.open_ended;
+}
+
+/* Whether an observation is a habitat stretch: in a session of the habitat type. */
+function inHabitatSession(id) {
+  const row = showing && showing.rows.get(id);
+  const session = row && showing.sessions.find((s) => s.session_id === row.session_id);
+  return Boolean(session && session.type === 'Habitat');
+}
+
+/* The habitat list over the picture (#358), as the annotation GUI shows it: one panel per
+   habitat the moment is in, in its timeline colour let down so the video reads through, its
+   name in white. Down the left of the picture and a fifth of the way down it, below the
+   numbers burned into the top corner of the video, as the GUI places it. Takes no clicks. */
+let habitatsShown = '';
+function showHabitatsNow(overlay, area, scale, t) {
+  const list = $('habitatNow');
+  const names = strip.habitatsAt(t);
+  list.hidden = !names.length;
+  if (!names.length) return;
+  list.style.left = `${overlay.offsetLeft + area.left + 18 * scale}px`;
+  list.style.top = `${overlay.offsetTop + area.top + area.height * 0.2}px`;
+  list.style.setProperty('--scale', scale);
+  const text = names.join('|');
+  if (text === habitatsShown) return;
+  habitatsShown = text;
+  list.replaceChildren(...names.map((name) => {
+    const panel = document.createElement('div');
+    panel.className = 'habitat-now-item';
+    panel.textContent = name;
+    // The GUI's alpha, 0x99.
+    panel.style.background = `${colourOf(name)}99`;
+    return panel;
+  }));
+}
+
+/* The habitat timeline's bar for an observation, from its keyframes as the page now holds
+   them (#357): its start, and its end once it has one. A new stretch appears and an end set
+   on the picture shows, without reading the video again. */
+function syncStretch(id) {
+  const row = showing && showing.rows.get(id);
+  if (!row) return;
+  const keyframes = [...held.values()].flat().filter((k) => k.observation_id === id);
+  const start = keyframes.find((k) => k.type === 'start');
+  const end = keyframes.find((k) => k.type === 'end');
+  if (start) row.start_s = start.t;
+  if (end) row.end_s = end.t;
+  strip.upsert(row);
 }
 
 /* Widen an observation's span to cover a keyframe, so the windows still ask for it. */
@@ -824,6 +883,7 @@ function updatePanel() {
           held.clear();
           for (const [index, keyframes] of next) held.set(index, keyframes);
           for (const keyframe of answer.keyframes) cover(id, keyframe.t);
+          syncStretch(id);
           rebuildDrawable();
           // Paused, no new frame comes to draw it: the merged box is drawn now.
           redraw();

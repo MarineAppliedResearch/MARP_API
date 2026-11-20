@@ -162,3 +162,57 @@ test('#181 the boxes go fullscreen with the player, in the GUI\'s style, over a 
       await held.restore();
     }
   });
+
+/* #356, Isaac 2026-11-20: a box under the player's controls -- every habitat stretch's is, its
+   box being the bottom half of the picture -- took the scrub bar's clicks, so the reviewer
+   moved the box when they meant to move the video. The controls bar is lifted over the opened
+   box here, so any observation will do and nothing on the record is touched. */
+test('#356 a press on the player\'s controls is theirs, though a box is drawn beneath them',
+  async ({ page, request }) => {
+    test.setTimeout(240_000);
+    const id = await editableObservation(request);
+    await openAndPlay(page, id);
+    const edits = [];
+    page.on('request', (r) => { if (isEdit({ url: () => r.url(), request: () => r })) edits.push(r.url()); });
+
+    // The opened observation's panel is closed first, as a reviewer would: at phone width it
+    // covers the picture, box and all.
+    const panel = page.locator('#obsPanel');
+    if (await panel.isVisible()) {
+      await panel.getByRole('button', { name: '×' }).click();
+      await expect(panel).toBeHidden();
+    }
+    const box = (await boxOf(page, id)).rect;
+    const middle = centre(box);
+    await page.evaluate((y) => {
+      const bar = document.querySelector('.marp-controls-bar');
+      const track = bar.querySelector('.marp-scrub-track').getBoundingClientRect();
+      // The scrub track's middle moved onto the box's middle; and kept on screen, as when paused.
+      const top = bar.offsetTop + (y - (track.top + track.height / 2));
+      bar.style.bottom = 'auto';
+      bar.style.top = `${top}px`;
+      bar.classList.remove('marp-faded');
+    }, middle.y);
+    const track = await page.locator('.marp-scrub-track').boundingBox();
+    expect(Math.abs(track.y + track.height / 2 - middle.y), 'the scrub bar is not over the box').toBeLessThan(2);
+
+    // A point that is both the box and the scrub bar: at phone width the observation's panel
+    // covers part of the picture, so it is looked for along the box rather than assumed.
+    const found = await page.evaluate(({ left, width, y }) => {
+      const seen = [];
+      for (let x = left + 4; x < left + width - 4; x += 4) {
+        const element = document.elementFromPoint(x, y);
+        if (element && element.closest('.marp-scrub-track')) return { x, y };
+        seen.push(element ? element.className || element.tagName : 'nothing');
+      }
+      return { seen: [...new Set(seen)] };
+    }, { left: box.left, width: box.width, y: middle.y });
+    expect(found.x, `no point of the box is the scrub bar; found ${JSON.stringify(found.seen)}`).toBeDefined();
+    const at = found;
+    const before = await page.evaluate(() => window.MARP_VIDEO.time);
+    await page.mouse.click(at.x, at.y);
+    await expect.poll(() => page.evaluate(() => window.MARP_VIDEO.time), {
+      message: 'the click on the scrub bar did not move the video', timeout: 30_000
+    }).not.toBeCloseTo(before, 0);
+    expect(edits, 'a click on the scrub bar edited the box beneath it').toEqual([]);
+  });
