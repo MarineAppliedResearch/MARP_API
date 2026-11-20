@@ -188,6 +188,22 @@ export function pictureTime(metadata) {
  * landing correction then steps onto the moment.
  */
 export function firstSeekTarget(moment, fps = 25) {
-  const frame = 1 / fps;
-  return moment >= frame ? moment - frame : moment + frame;
+  // From the frame the moment is in, not the moment: one a millisecond short of a frame
+  // stepped back onto the frame already shown, which painted nothing (Isaac, 2026-11-20).
+  const frame = Math.floor(moment * fps + 1e-6);
+  return frame >= 1 ? (frame - 1) / fps : (frame + 1) / fps;
+}
+
+/**
+ * The moment as the frame it falls in (2026-11-20). A position recorded in milliseconds, as
+ * the annotation GUI writes them, is seldom exactly on a frame: 1027.599 s is a millisecond short
+ * of frame 25690 at 25 a second. The page opens and steps on whole frames, so it is given one --
+ * the frame a habitat stretch's start is drawn on (`absoluteFrame`, which also rounds down).
+ *
+ * @param {number} moment - Seconds.
+ * @param {number} [fps]
+ * @returns {number} The start of the frame it is in, in seconds.
+ */
+export function frameTime(moment, fps = 25) {
+  return Math.floor(moment * fps + 1e-6) / fps;
 }

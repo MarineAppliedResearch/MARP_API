@@ -18,7 +18,7 @@
  * the password: it goes from this form to Jellyfin and nowhere else.
  */
 import { MarpApi } from '../api/index.js';
-import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
+import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget, frameTime } from '../model/video-boxes.js';
 import {
   windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW, withSession
 } from '../model/video-review.js';
@@ -426,7 +426,10 @@ async function followQuery(filters) {
 
 /* Open the video at the moment, or seek to it when that video is already open. */
 async function play(mine) {
-  const { video, moment } = showing;
+  const { video } = showing;
+  // On a frame: a moment a millisecond short of one never painted, and the page sat at
+  // "Opening the video..." for good (2026-11-20).
+  const moment = frameTime(showing.moment, video.frame_rate || 25);
   if (player.currentItemId !== video.jellyfin_item_id || !player.engine) {
     status('Opening the video…');
     // Opened at the moment itself, so the start of the dive is neither fetched nor shown
@@ -624,8 +627,11 @@ function refreshOpenEnded(id) {
 
 /* ---------------------------------------------------------------- cutting (#360) */
 
-/* The stretch picked second, with Ctrl or Shift, to be cut by the selected one. */
+/* The stretch picked second, with Ctrl or Shift, to be cut by the selected one -- and that
+   selected one, kept from the moment of the pick: right-clicking the second selects it, and
+   reading the selection then offered no cut at all (Isaac, 2026-11-20). */
 let secondId = null;
+let cutterId = null;
 
 const selectedId = () => (editor.selectedKey ? Number(editor.selectedKey.split('_')[0]) : null);
 const nameOf = (id) => {
@@ -639,6 +645,7 @@ function pickSecond(id) {
   if (!canAnnotate || !inHabitatSession(id)) return;
   const cutter = selectedId();
   secondId = id === secondId || id === cutter ? null : id;
+  cutterId = secondId == null ? null : cutter;
   strip.second(secondId);
   redraw();
   status(secondId == null ? ''
@@ -648,7 +655,7 @@ function pickSecond(id) {
 
 /* The cut offered on a right-clicked stretch, when it is the one picked second. */
 function cutItems(id) {
-  const choice = showing && canAnnotate ? cutChoice({ selectedId: selectedId(), secondId, clickedId: id, rows: showing.rows }) : null;
+  const choice = showing && canAnnotate ? cutChoice({ selectedId: cutterId, secondId, clickedId: id, rows: showing.rows }) : null;
   return choice ? [{ label: choice.label, run: () => cut(choice) }] : [];
 }
 
@@ -660,6 +667,7 @@ async function cut({ target, by }) {
       ? `${nameOf(target)} is cut in two around ${nameOf(by)}.`
       : `${nameOf(target)} now runs ${positionText(answer.start_s)} to ${positionText(answer.end_s)}.`);
     secondId = null;
+    cutterId = null;
     strip.second(null);
     // Every box and bar read again: a split makes a new stretch.
     await followQuery(showing.filters);
@@ -1049,11 +1057,13 @@ MarpApi.whoami().then((user) => {
 window.MARP_VIDEO = {
   get drawn() {
     const o = $('boxes').getBoundingClientRect();
-    return drawnNow.rects.map(({ key, box, rect }) => ({
+    return drawnNow.rects.map(({ key, box, rect, tabs }) => ({
       key, observation_id: box.observation_id, comname: box.comname,
       // The colour it is drawn in, which says its review (#337).
       colour: boxColour(box.observation_id, box.comname),
-      rect: { left: rect.left + o.left, top: rect.top + o.top, width: rect.width, height: rect.height }
+      rect: { left: rect.left + o.left, top: rect.top + o.top, width: rect.width, height: rect.height },
+      // Where its labels are, which a press can pick it by (#352, #360).
+      tabs: (tabs || []).map((tab) => ({ left: tab.left + o.left, top: tab.top + o.top, width: tab.width, height: tab.height }))
     }));
   },
   get selected() { return editor.selectedKey; },

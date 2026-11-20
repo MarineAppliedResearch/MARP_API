@@ -108,8 +108,10 @@ test('#181 the picture time is the decoded frame\'s own timestamp when there is 
 test('#181 the first seek is one frame short of the moment, so the player paints and reports', async () => {
   const { firstSeekTarget } = await import('../../src/model/video-boxes.js');
   assert.ok(Math.abs(firstSeekTarget(267.2, 25) - 267.16) < 1e-9);
-  // At the very start there is no frame before it, so it goes one after.
-  assert.ok(Math.abs(firstSeekTarget(0.02, 25) - 0.06) < 1e-9);
+  // At the very start there is no frame before it, so it goes one after -- the frame after the
+  // one the moment is in: 0.02 s is in frame 0, so frame 1 at 0.04 s (it was 0.06 s, a moment
+  // plus a frame, before moments were put on their frame on 2026-11-20).
+  assert.ok(Math.abs(firstSeekTarget(0.02, 25) - 0.04) < 1e-9);
 });
 
 test('#181: a box drawn at 25 on a 29.97 video is drawn on the picture it was made on', async () => {
@@ -127,4 +129,14 @@ test('#181: a box drawn at 25 on a 29.97 video is drawn on the picture it was ma
     { keyframe_id: 3, subset: '1', type: 'end', t: 12, x: 0.6, y: 0.5, width: 0.1, height: 0.1 }] };
   assert.ok(Math.abs(boxesAt([track], 11, trackTolerance(29.97))[0].x - 0.4) < 1e-9);
   assert.equal(boxesAt([track], 12.015, trackTolerance(29.97))[0].x, 0.6);
+});
+
+test('a moment a millisecond short of a frame opens on that frame and steps back from it, so the step paints', async () => {
+  const { firstSeekTarget, frameTime } = await import('../../src/model/video-boxes.js');
+  // 1027.599 s is recorded in milliseconds; the frame it is in starts at 1027.56 s.
+  assert.ok(Math.abs(frameTime(1027.599, 25) - 1027.56) < 1e-9);
+  assert.ok(Math.abs(frameTime(1027.6, 25) - 1027.6) < 1e-9, 'on a frame already: itself');
+  // The step back is a whole frame before that frame, never the frame already shown.
+  assert.ok(Math.abs(firstSeekTarget(1027.599, 25) - 1027.52) < 1e-9);
+  assert.ok(Math.abs(firstSeekTarget(1027.6, 25) - 1027.56) < 1e-9);
 });

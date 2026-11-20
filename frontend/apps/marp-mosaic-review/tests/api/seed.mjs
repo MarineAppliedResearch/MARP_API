@@ -37,14 +37,16 @@ import { join } from 'node:path';
 import pg from 'pg';
 
 /** A prefix nothing else uses, so a leaked row is identifiable and a stale one findable. */
-const MARK = 'marp-157-seed';
+export const MARK = 'marp-157-seed';
 
 /**
  * Connect to the testing database, refusing to guess which one it is.
  *
+ * Shared with `habitat-seed.mjs`, so the habitat checks reach the same database by the same rule.
+ *
  * @returns {Promise<Object>} A connected `pg` client.
  */
-async function connect() {
+export async function connect() {
   const database = process.env.MARP_TESTING_DB_NAME;
 
   if (!database) {

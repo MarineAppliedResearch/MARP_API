@@ -179,7 +179,7 @@ test('#356 a press on the player\'s controls is theirs, though a box is drawn be
     // covers the picture, box and all.
     const panel = page.locator('#obsPanel');
     if (await panel.isVisible()) {
-      await panel.getByRole('button', { name: '×' }).click();
+      await panel.getByRole('button', { name: 'Close' }).click();
       await expect(panel).toBeHidden();
     }
     const box = (await boxOf(page, id)).rect;
