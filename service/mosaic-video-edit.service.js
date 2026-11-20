@@ -32,7 +32,7 @@ const thumbnails = require('../repository/observation-thumbnail.repository');
 const { resolveVideo } = require('./mosaic-video-context.service');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { ASSUMED_FPS } = require('../db/timecode');
-const { HABITAT_SESSION_TYPE, HABITAT_BOX } = require('../db/habitat-keyframes');
+const { HABITAT_SESSION_TYPE, HABITAT_BOX, retimedColumns } = require('../db/habitat-keyframes');
 
 const KEYFRAME_COLUMNS = 'keyframe_id, observation_id, subset, type, framenum, x, y, width, height';
 
@@ -157,7 +157,11 @@ async function setType(keyframeId, type, transaction) {
  * @async
  */
 async function edit(work, { refresh = true } = {}) {
-    const result = await db.sequelize.transaction(work);
+    const result = await db.sequelize.transaction(async (transaction) => {
+        const done = await work(transaction);
+        await habitatTimesFromKeyframes(done.observation_id, transaction);
+        return done;
+    });
     // Not when the caller cuts the picture itself (#181 R6): a queued refresh would be
     // claimed by the extractor and cut the automatic picture over the chosen one.
     if (refresh) await thumbnails.requestRefresh(result.observation_id);
@@ -182,6 +186,54 @@ async function habitatBox(observationId, track, transaction) {
     if (!session || session.type !== HABITAT_SESSION_TYPE) return null;
     const own = track && track[0];
     return own ? { x: own.x, y: own.y, width: own.width, height: own.height } : { ...HABITAT_BOX };
+}
+
+/**
+ * A habitat stretch's time columns, in step with its start and end keyframes (Isaac,
+ * 2026-11-20). A stretch added on the video page had its end only as a keyframe, so its
+ * `etc` -- which the scientific data reads -- was never written. After any keyframe edit,
+ * every column stating its start or end is worked out again from them, by the same rule as a
+ * drag on the timeline (`retimedColumns`); with no end keyframe, `etc` is empty. Anything not
+ * in a habitat session is left alone.
+ *
+ * @async
+ * @param {number} observationId
+ * @param {Object} transaction
+ */
+async function habitatTimesFromKeyframes(observationId, transaction) {
+    const [row] = await db.sequelize.query(
+        `SELECT o.observation_id, o.gpu_job_id, o.video_source, o."mediaPosition", o."actualPosition",
+                o.tc, o.etc, o.frame, o.observed_at, s.type AS session_type
+           FROM observations o JOIN sessions s ON s.session_id = o.session_id
+          WHERE o.observation_id = :observationId`,
+        { replacements: { observationId }, type: QueryTypes.SELECT, transaction }
+    );
+    if (!row || row.session_type !== HABITAT_SESSION_TYPE) return;
+    const keyframes = await db.sequelize.query(
+        'SELECT type, framenum FROM keyframes WHERE observation_id = :observationId',
+        { replacements: { observationId }, type: QueryTypes.SELECT, transaction }
+    );
+    const start = keyframes.find((k) => k.type === 'start');
+    const end = keyframes.find((k) => k.type === 'end');
+    if (!start) return;
+    const rate = await rateOf(row);
+    const startMs = Math.round((Number(start.framenum) * 1000) / rate);
+    let columns;
+    if (end) {
+        ({ columns } = retimedColumns(row, {
+            startMs, endMs: Math.round((Number(end.framenum) * 1000) / rate), keyed: true, fps: rate,
+        }));
+    } else {
+        // Still being made: where it starts, and no end yet.
+        ({ columns } = retimedColumns(row, { startMs, endMs: startMs, keyed: true, fps: rate }));
+        columns.etc = null;
+    }
+    const names = Object.keys(columns);
+    await db.sequelize.query(
+        `UPDATE observations SET ${names.map((name) => `"${name}" = :${name}`).join(', ')}, "updatedAt" = NOW()
+          WHERE observation_id = :observationId`,
+        { replacements: { ...columns, observationId }, transaction }
+    );
 }
 
 /** Move or resize a keyframe's box. Its frame and type stay. */

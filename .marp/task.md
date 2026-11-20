@@ -122,3 +122,11 @@ make them take up less of the screen"*.
   per habitat at the current moment in its timeline colour, its name in white, no clicks.
 - **#355** -- Dragging an end leaves the video where it is; near the playhead it lands on it.
 - **#356** -- A press on the player's controls is the controls', whatever box is beneath.
+- **#360 cut** (Isaac, 2026-11-20) -- select the cutter, then Ctrl+click the stretch to cut, on the
+  timeline's bars or the boxes' labels; right-click, *Cut <second> with <first>*. The second no
+  longer covers the first's time. **A cut in the middle splits it in two**: the original keeps the
+  part before, a new stretch of the same substrate (new obs ID) takes the part after. **Both keep
+  the original's review**, as a drag does (A3).
+- **End time** (Isaac, 2026-11-20) -- setting, moving or removing a habitat stretch's end keyframe
+  keeps `etc` (and the start columns) in step, by the same rule as a drag (`retimedColumns`). A
+  stretch added on the video page had its end only as a keyframe and no `etc`.

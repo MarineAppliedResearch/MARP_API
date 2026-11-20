@@ -256,3 +256,39 @@ describe('a habitat stretch\'s box is the habitat crop, not the reviewer\'s to p
         expect(answer.changed[0]).toMatchObject(drawn);
     });
 });
+
+describe('a habitat stretch\'s end time follows its end keyframe (Isaac, 2026-11-20)', () => {
+    const edits = require('../service/mosaic-video-edit.service');
+    const annotate = require('../service/mosaic-video-annotate.service');
+    const box = { x: 0.5, y: 0.75, width: 0.5, height: 0.5 };
+    const etcOf = async (id) => (await q('SELECT etc, tc FROM observations WHERE observation_id = :id', { id }))[0];
+
+    test('one added on the video page gets its etc when its end is set, and again when it moves', async () => {
+        const sessionId = await session('Habitat');
+        const opened = await stretch(sessionId, 20, 40);
+        const created = await annotate.createObservation({
+            observation_id: opened, session_id: sessionId, species_id: seeded.species[0].id, t: 60, ...box,
+        });
+        const id = created.observation.observation_id;
+        seeded.ids.push(id);
+        expect((await etcOf(id)).etc).toBeNull();
+
+        // A box 30 s on, made the end: etc is its start plus 30 s, on the same clock as tc.
+        const added = await edits.addKeyframe({ observation_id: id, t: 90, ...box });
+        await edits.setEnd(added.changed.find((k) => k.t === 90).keyframe_id);
+        let row = await etcOf(id);
+        expect(parseTimeSpan(row.etc) - parseTimeSpan(row.tc)).toBe(30000);
+
+        // A box drawn after the end becomes the new end, 45 s on.
+        await edits.addKeyframe({ observation_id: id, t: 105, ...box });
+        row = await etcOf(id);
+        expect(parseTimeSpan(row.etc) - parseTimeSpan(row.tc)).toBe(45000);
+    });
+
+    test('anything not in a habitat session keeps the etc it had', async () => {
+        const id = await stretch(await session('transect'), 20, 40, { keyed: true });
+        const before = await etcOf(id);
+        await edits.addKeyframe({ observation_id: id, t: 50, ...box });
+        expect(await etcOf(id)).toEqual(before);
+    });
+});
