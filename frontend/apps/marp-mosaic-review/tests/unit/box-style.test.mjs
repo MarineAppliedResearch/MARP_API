@@ -65,3 +65,13 @@ test('#352: boxes drawn in one place lay their labels side by side, so every sub
   assert.equal(moved.bottom.left - plain.bottom.left, 34);
   assert.equal(moved.bottom.textLeft - plain.bottom.textLeft, 34);
 });
+
+test('#352: labels sharing a box keep their places when one is selected and drawn on top', () => {
+  const crop = { left: 100, top: 200, width: 300, height: 150 };
+  const widths = { top: 40, bottom: 30 };
+  // Rock (7), Mud (8), Cobble (9); then Rock selected, so drawn last.
+  const before = sharedTabShifts([7, 8, 9].map((id) => ({ id, rect: crop, widths })), 1);
+  const after = sharedTabShifts([8, 9, 7].map((id) => ({ id, rect: crop, widths })), 1);
+  assert.deepEqual(before.map((s) => s.top), [0, 44, 88]);
+  assert.deepEqual(after.map((s) => s.top), [44, 88, 0], 'Rock still first, Mud and Cobble where they were');
+});

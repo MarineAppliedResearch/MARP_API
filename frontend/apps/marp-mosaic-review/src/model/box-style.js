@@ -126,23 +126,32 @@ const TAB_GAP = 4;
  *
  * Every habitat stretch is drawn with the same box -- the habitat crop -- so a moment with
  * Mud, Cobble and Boulder drew three labels at one corner and only the top one could be
- * read. Boxes in the same place (to the pixel) have their tabs laid side by side, in drawing
- * order; a box alone keeps its tabs where they always were.
+ * read. Boxes in the same place (to the pixel) have their tabs laid side by side; a box alone
+ * keeps its tabs where they always were.
  *
- * @param {Array<{rect: Object, widths: {top: number, bottom: number}}>} boxes - In drawing
- *   order: each box on screen and its two tabs' full widths.
+ * **In the order of their ids, not the order they are drawn in.** Selecting a box draws it on
+ * top, and a click on a label selects that box -- so labels placed in drawing order jumped to
+ * the end of the row the moment one was clicked.
+ *
+ * @param {Array<{id: number, rect: Object, widths: {top: number, bottom: number}}>} boxes -
+ *   Each box on screen, its observation, and its two tabs' full widths.
  * @param {number} scale - From `labelScale`.
- * @returns {Array<{top: number, bottom: number}>} Each box's shift along its edge.
+ * @returns {Array<{top: number, bottom: number}>} Each box's shift along its edge, in the
+ *   order the boxes were given.
  */
 export function sharedTabShifts(boxes, scale) {
   const placed = new Map();
-  return boxes.map(({ rect, widths }) => {
+  const shifts = new Array(boxes.length);
+  const order = boxes.map((_, index) => index).sort((a, b) => (boxes[a].id ?? a) - (boxes[b].id ?? b) || a - b);
+  for (const index of order) {
+    const { rect, widths } = boxes[index];
     const key = [rect.left, rect.top, rect.width, rect.height].map(Math.round).join(',');
     const used = placed.get(key) || { top: 0, bottom: 0 };
     placed.set(key, {
       top: used.top + widths.top + TAB_GAP * scale,
       bottom: used.bottom + widths.bottom + TAB_GAP * scale,
     });
-    return { top: used.top, bottom: used.bottom };
-  });
+    shifts[index] = { top: used.top, bottom: used.bottom };
+  }
+  return shifts;
 }

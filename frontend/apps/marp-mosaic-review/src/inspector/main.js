@@ -25,7 +25,7 @@ import { createBoxEditor } from './editing.js';
 import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '../model/box-edit.js';
 import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
 import { labelScale, sharedTabShifts } from '../model/box-style.js';
-import { drawBox, tabWidths } from './draw-boxes.js';
+import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
 import { clockAt, clockLine, positionText, readingOffered, readingBody } from '../model/video-clock.js';
 import { createHabitatStrip } from './habitat-strip.js';
 
@@ -176,8 +176,12 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
 
   // Boxes drawn in one place -- habitat stretches all share the habitat crop -- lay their
   // labels side by side, so each one can be read (#352).
-  const shifts = sharedTabShifts(entries.map((entry) => ({ rect: entry.rect, widths: tabWidths(context, entry, scale) })), scale);
+  const shifts = sharedTabShifts(entries.map((entry) => ({
+    id: entry.box.observation_id, rect: entry.rect, widths: tabWidths(context, entry, scale)
+  })), scale);
   entries.forEach((entry, index) => {
+    // Where its labels are, so a click on one selects this box rather than the one on top.
+    entry.tabs = tabRects(context, entry, scale, shifts[index]);
     const keyframe = keyframeShown(entry.box.keyframes, t, rate);
     const reviewed = showing.rows.get(entry.box.observation_id);
     drawBox(context, entry, {

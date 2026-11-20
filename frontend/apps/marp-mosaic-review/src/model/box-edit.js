@@ -67,10 +67,15 @@ export function gripsOf(rect) {
 
 /**
  * What a press at `point` lands on: a grip of the selected box first -- they are drawn
- * over everything -- then the topmost box whose body holds the point. `rects` is in draw
- * order, so the last is on top. Null when the press is on the picture and no box.
+ * over everything -- then a box's label, then the topmost box whose body holds the point.
+ * `rects` is in draw order, so the last is on top. Null when the press is on the picture
+ * and no box.
  *
- * @param {Array<{key: string, rect: Object}>} rects
+ * **A label picks its own box** (#352). Every habitat stretch at one moment is the same
+ * rectangle, so the body can only ever give the one on top; the labels are side by side,
+ * and are the only way to say which one is meant.
+ *
+ * @param {Array<{key: string, rect: Object, tabs: ?Array<Object>}>} rects
  * @param {{x: number, y: number}} point
  * @param {string|null} selectedKey
  * @returns {{key: string, part: 'body'|'tl'|'tr'|'bl'|'br'}|null}
@@ -86,6 +91,12 @@ export function hitTest(rects, point, selectedKey) {
       if (distance <= GRIP_REACH && (!nearest || distance < nearest.distance)) nearest = { corner: grip.corner, distance };
     }
     if (nearest) return { key: selected.key, part: nearest.corner };
+  }
+  const inside = (rect) => point.x >= rect.left && point.x <= rect.left + rect.width
+    && point.y >= rect.top && point.y <= rect.top + rect.height;
+  for (let index = rects.length - 1; index >= 0; index -= 1) {
+    const { key, tabs } = rects[index];
+    if ((tabs || []).some(inside)) return { key, part: 'body' };
   }
   for (let index = rects.length - 1; index >= 0; index -= 1) {
     const { key, rect } = rects[index];

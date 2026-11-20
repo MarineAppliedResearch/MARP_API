@@ -82,6 +82,24 @@ export function tabWidths(context, { box, rect }, scale) {
 }
 
 /**
+ * Where a box's two tabs are on screen, so a click on a label can pick its box (#352): the
+ * boxes of one moment's habitat stretches are one rectangle, and only their labels differ.
+ *
+ * @param {CanvasRenderingContext2D} context
+ * @param {Object} entry - `{ box, rect }`.
+ * @param {number} scale - From `labelScale`.
+ * @param {{top: number, bottom: number}} shift - From `sharedTabShifts`.
+ * @returns {Array<{left: number, top: number, width: number, height: number}>}
+ */
+export function tabRects(context, { box, rect }, scale, shift) {
+  const layout = tabLayout(rect, scale, {
+    top: textWidth(context, box.comname || 'Unknown', `bold ${GUI.topFont * scale}px ${FONT}`),
+    bottom: textWidth(context, identifierText(box), `${GUI.bottomFont * scale}px ${FONT}`)
+  }, shift);
+  return [layout.top, layout.bottom].map(({ left, top, width, height }) => ({ left, top, width, height }));
+}
+
+/**
  * Paint one box.
  *
  * @param {CanvasRenderingContext2D} context

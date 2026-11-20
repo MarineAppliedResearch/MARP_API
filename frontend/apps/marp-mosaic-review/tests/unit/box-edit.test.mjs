@@ -126,3 +126,16 @@ test('the recent species list puts the newest first, once, and keeps eight', () 
   assert.deepEqual(recent.map((s) => s.id), [10, 9, 8, 7, 6, 5, 4, 3]);
   assert.deepEqual(withRecent(recent, { id: 5, comname: 's5' }).map((s) => s.id), [5, 10, 9, 8, 7, 6, 4, 3]);
 });
+
+test('#352: a click on a label picks its own box, though another one is drawn on top of it', () => {
+  const crop = { left: 100, top: 200, width: 300, height: 150 };
+  const tab = (left) => [{ left, top: 180, width: 40, height: 18 }, { left, top: 340, width: 30, height: 14 }];
+  const rects = [
+    { key: '7_1', rect: crop, tabs: tab(110) },  // Rock
+    { key: '8_1', rect: crop, tabs: tab(154) },  // Mud
+    { key: '9_1', rect: crop, tabs: tab(198) }   // Cobble, selected and drawn on top
+  ];
+  assert.deepEqual(hitTest(rects, { x: 120, y: 190 }, '9_1'), { key: '7_1', part: 'body' }, 'Rock\'s label');
+  assert.deepEqual(hitTest(rects, { x: 160, y: 345 }, '9_1'), { key: '8_1', part: 'body' }, 'Mud\'s bottom label');
+  assert.deepEqual(hitTest(rects, { x: 250, y: 280 }, '9_1'), { key: '9_1', part: 'body' }, 'the box itself: the one on top');
+});
