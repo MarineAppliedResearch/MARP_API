@@ -30,7 +30,7 @@ import { labelScale, sharedTabShifts } from '../model/box-style.js';
 import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
 import { clockAt, clockLine, positionText, readingOffered, readingBody } from '../model/video-clock.js';
 import { createHabitatStrip } from './habitat-strip.js';
-import { colourOf } from '../model/habitat-timeline.js';
+import { colourOf, cutChoice } from '../model/habitat-timeline.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -199,6 +199,7 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
       selected: entry.key === editor.selectedKey,
       // No corner grips on a box that is not resized (#359).
       fixed: inHabitatSession(entry.box.observation_id),
+      second: entry.box.observation_id === secondId,
       pressed: editor.pressFor(entry.key),
       scale,
       shift: shifts[index]
@@ -525,6 +526,9 @@ const editor = createBoxEditor({
     isControls: (target) => Boolean(target && target.closest && target.closest('.marp-controls-bar, .marp-settings-menu')),
     // A habitat stretch's box is the habitat crop: never dragged or resized (#359).
     boxFixed: (id) => inHabitatSession(id),
+    // Ctrl or Shift on a box picks it to be cut, and its menu offers the cut (#360).
+    pickSecond,
+    menuExtras: cutItems,
     onDrawn: openAdd,
     selectionChanged: (key) => {
       updatePanel();
@@ -547,6 +551,8 @@ const strip = createHabitatStrip($('habitatStrip'), {
     if (showing && showing.rows.has(id)) editor.select(`${id}_1`);
   },
   canDrag: () => canAnnotate,
+  pickSecond,
+  menuExtras: cutItems,
   async save(bar, span, merging) {
     // A merge deletes the stretch dragged into, so it is asked about, as the Mosaic's merge is.
     if (merging && !window.confirm(`Merge ${merging === 1 ? 'the outlined stretch' : `the ${merging} outlined stretches`} `
@@ -611,6 +617,54 @@ function refreshOpenEnded(id) {
   row.open_ended = !keyframes.some((k) => k.type === 'end');
   const span = showing.observations.find((o) => o.observation_id === id);
   if (span) span.open_ended = row.open_ended;
+}
+
+/* ---------------------------------------------------------------- cutting (#360) */
+
+/* The stretch picked second, with Ctrl or Shift, to be cut by the selected one. */
+let secondId = null;
+
+const selectedId = () => (editor.selectedKey ? Number(editor.selectedKey.split('_')[0]) : null);
+const nameOf = (id) => {
+  const row = showing && showing.rows.get(id);
+  return row ? `${row.obs_id ?? '?'} · ${row.comname || 'Unnamed'}` : String(id);
+};
+
+/* Ctrl or Shift on a habitat stretch: picked to be cut by the selected one. Again, or on the
+   selection itself, lets it go. */
+function pickSecond(id) {
+  if (!canAnnotate || !inHabitatSession(id)) return;
+  const cutter = selectedId();
+  secondId = id === secondId || id === cutter ? null : id;
+  strip.second(secondId);
+  redraw();
+  status(secondId == null ? ''
+    : cutter == null ? `${nameOf(secondId)} picked. Select the stretch to cut it with, then right-click ${nameOf(secondId)}.`
+      : `${nameOf(secondId)} picked. Right-click it to cut it with ${nameOf(cutter)}.`);
+}
+
+/* The cut offered on a right-clicked stretch, when it is the one picked second. */
+function cutItems(id) {
+  const choice = showing && canAnnotate ? cutChoice({ selectedId: selectedId(), secondId, clickedId: id, rows: showing.rows }) : null;
+  return choice ? [{ label: choice.label, run: () => cut(choice) }] : [];
+}
+
+async function cut({ target, by }) {
+  const row = showing.rows.get(target);
+  try {
+    const answer = await MarpApi.cutStretch(target, { byId: by, version: row.version });
+    status(answer.split_observation_id
+      ? `${nameOf(target)} is cut in two around ${nameOf(by)}.`
+      : `${nameOf(target)} now runs ${positionText(answer.start_s)} to ${positionText(answer.end_s)}.`);
+    secondId = null;
+    strip.second(null);
+    // Every box and bar read again: a split makes a new stretch.
+    await followQuery(showing.filters);
+  } catch (error) {
+    status(error.status === 409
+      ? 'Not cut: that stretch changed since the page read it. Reopen it from the Mosaic and cut again.'
+      : `Not cut: ${error.message}`);
+  }
 }
 
 /* The colour a box is drawn in. A habitat stretch's is its habitat's, the colour the habitat

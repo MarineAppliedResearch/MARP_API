@@ -303,3 +303,10 @@ export function stretchTimesBody({ startS, endS, version }) {
   if (!Number.isInteger(version)) throw new TypeError(`version must be an integer, not ${JSON.stringify(version)}`);
   return { start_s: startS, end_s: endS, version };
 }
+
+/** `POST .../observation/:id/cut` (#360): the stretch it is cut with, and the version read. */
+export function cutBody({ byId, version }) {
+  if (!Number.isInteger(byId)) throw new TypeError(`byId must be an integer, not ${JSON.stringify(byId)}`);
+  if (!Number.isInteger(version)) throw new TypeError(`version must be an integer, not ${JSON.stringify(version)}`);
+  return { by_observation_id: byId, version };
+}

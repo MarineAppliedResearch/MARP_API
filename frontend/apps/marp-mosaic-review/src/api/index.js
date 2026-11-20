@@ -28,7 +28,7 @@ import { request, thumbnailUrl, fullFrameUrl } from './transport.js';
 import {
   pagesBody, countsBody, commitBody, correctionBody, retryBody, facetsBody, filtersBody,
   idList, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody,
-  createObservationBody, countBody, pictureBody, stretchTimesBody
+  createObservationBody, countBody, pictureBody, stretchTimesBody, cutBody
 } from './requests.js';
 import { sortTerms } from '../model/filters.js';
 
@@ -248,6 +248,13 @@ export const MarpApi = {
   async setStretchTimes(observationId, { startS, endS, version }, { signal } = {}) {
     return request(`/mosaic/video/observation/${encodeURIComponent(observationId)}/times`, {
       method: 'PUT', body: stretchTimesBody({ startS, endS, version }), signal
+    });
+  },
+
+  /* A habitat stretch cut with another (#360): trimmed, or split in two around it. */
+  async cutStretch(observationId, { byId, version }, { signal } = {}) {
+    return request(`/mosaic/video/observation/${encodeURIComponent(observationId)}/cut`, {
+      method: 'POST', body: cutBody({ byId, version }), signal
     });
   },
 

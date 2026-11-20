@@ -51,6 +51,8 @@ export function createHabitatStrip(root, host) {
   let drawnFor = NaN;
   let view = null;
   let selectedId = null;
+  // The stretch picked second with Ctrl or Shift, to be cut by the selected one (#360).
+  let secondId = null;
   let playheadAt = NaN;
   let drag = null;
   // Every pointer down on the strip, for a pinch.
@@ -119,7 +121,7 @@ export function createHabitatStrip(root, host) {
     for (const bar of layout.bars) {
       if (bar.row < 0 || bar.end < view.from || bar.start > view.to) continue;
       const element = document.createElement('div');
-      element.className = `hstrip-bar ${bar.review}${bar.id === selectedId ? ' selected' : ''}`;
+      element.className = `hstrip-bar ${bar.review}${bar.id === selectedId ? ' selected' : ''}${bar.id === secondId ? ' second' : ''}`;
       element.dataset.id = bar.id;
       element.style.setProperty('--row', bar.row);
       element.style.setProperty('--colour', bar.colour);
@@ -179,6 +181,7 @@ export function createHabitatStrip(root, host) {
   /* The GUI's right click on a bar: its name, then Go To Start and Go To End. Going to either
      end also selects it, as a click on the bar does. */
   function openMenu(bar, clientX, clientY) {
+    const extras = host.menuExtras ? host.menuExtras(bar.id) : [];
     menu.replaceChildren(...stretchMenu(bar).map((item) => {
       const button = document.createElement('button');
       button.type = 'button';
@@ -190,6 +193,16 @@ export function createHabitatStrip(root, host) {
         selectedId = bar.id;
         host.select(bar.id);
         render();
+      });
+      return button;
+    }), ...extras.map((item) => {
+      // The page's own items: a cut (#360).
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = item.label;
+      button.addEventListener('click', () => {
+        closeMenu();
+        item.run();
       });
       return button;
     }));
@@ -308,6 +321,11 @@ export function createHabitatStrip(root, host) {
     const { bar, edge, span, moved, merging } = drag;
     const t = timeAt(event.clientX);
     endDrag();
+    if (!moved && bar && (event.ctrlKey || event.metaKey || event.shiftKey) && host.pickSecond) {
+      // Ctrl or Shift: picked second, beside the selection, to be cut by it (#360).
+      host.pickSecond(bar.id);
+      return;
+    }
     if (!moved) {
       // A click: there, and the stretch under it selected.
       host.seek(t);
@@ -401,6 +419,12 @@ export function createHabitatStrip(root, host) {
       habitat = { ...habitat, stretches: habitat.stretches.filter((s) => s.observation_id !== id) };
       layout = stripLayout(habitat.stretches);
       if (selectedId === id) selectedId = null;
+      if (!drag) render();
+    },
+    /** The stretch picked second, or null (#360). */
+    second(id) {
+      if (id === secondId) return;
+      secondId = id;
       if (!drag) render();
     },
     /** The page's selection changed: outline that stretch, if it is one. */

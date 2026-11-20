@@ -210,17 +210,20 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   function openMenu(entry, point) {
     const { t, keyframe } = boxHere(entry);
     const items = menuFor({ ...entry.box, keyframe, t })
-      .filter((item) => item.action !== 'deleteObservation' || canDeleteObservations);
+      .filter((item) => item.action !== 'deleteObservation' || canDeleteObservations)
+      // And whatever the page offers on this box: a cut (#360).
+      .concat(host.menuExtras ? host.menuExtras(entry.box.observation_id) : []);
     menu.replaceChildren(...items.map((item) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = item.label;
-      button.dataset.action = item.action;
+      if (item.action) button.dataset.action = item.action;
       button.disabled = Boolean(item.disabled);
       button.addEventListener('click', (event) => {
         event.stopPropagation();
         closeMenu();
-        act(item.action, entry);
+        if (item.run) item.run();
+        else act(item.action, entry);
       });
       return button;
     }));
@@ -272,6 +275,14 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
       host.pause();
       host.focusPlayer();
       handler(entryFor(hit.key));
+      return;
+    }
+
+    // Ctrl or Shift picks a second box beside the selected one, for a cut (#360); the
+    // selection stays where it is.
+    if ((event.ctrlKey || event.metaKey || event.shiftKey) && host.pickSecond) {
+      host.pickSecond(Number(hit.key.split('_')[0]));
+      host.redraw();
       return;
     }
 

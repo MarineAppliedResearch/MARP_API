@@ -264,3 +264,24 @@ export function habitatsAt(stretches, t) {
   };
   return [...names.values()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
+
+/**
+ * The cut a right click offers (#360): the selected stretch cuts the one picked with Ctrl or
+ * Shift, offered on that second one -- what is being cut is what was clicked.
+ *
+ * @param {Object} pick
+ * @param {?number} pick.selectedId - The selected stretch: the cutter.
+ * @param {?number} pick.secondId - The one picked with Ctrl or Shift: to be cut.
+ * @param {number} pick.clickedId - The one right-clicked.
+ * @param {Map<number, Object>} pick.rows - The page's observations, by id.
+ * @returns {?{label: string, target: number, by: number}}
+ */
+export function cutChoice({ selectedId, secondId, clickedId, rows }) {
+  if (selectedId == null || secondId == null || selectedId === secondId || clickedId !== secondId) return null;
+  const target = rows.get(secondId);
+  const by = rows.get(selectedId);
+  if (!target || !by) return null;
+  // The video page's rows, not the Mosaic's: named for what they are.
+  const name = (stretch) => `${stretch.obs_id != null ? `${stretch.obs_id} · ` : ''}${stretch.comname || 'Unnamed'}`;
+  return { label: `Cut ${name(target)} with ${name(by)}`, target: secondId, by: selectedId };
+}

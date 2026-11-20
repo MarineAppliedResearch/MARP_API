@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   laneOf, colourOf, reviewOf, stripLayout, dragTo, mergesInto, edgeAt,
-  wholeView, zoomView, panView, followView, isWhole, stretchMenu, snapToPlayhead, habitatsAt
+  wholeView, zoomView, panView, followView, isWhole, stretchMenu, snapToPlayhead, habitatsAt, cutChoice
 } from '../../src/model/habitat-timeline.js';
 
 /** A stretch as the video read gives one. */
@@ -148,4 +148,13 @@ test('#358: the habitats a moment is in, once each, in the timeline\'s order', (
   assert.deepEqual(habitatsAt(stretches, 85), ['Mud', 'Rock']);
   assert.deepEqual(habitatsAt(stretches, 200), []);
   assert.deepEqual(habitatsAt(stretches, NaN), []);
+});
+
+test('#360: the selected stretch cuts the one picked second, offered on that one', () => {
+  const rows = new Map([[10, { obs_id: 3, comname: 'Rock' }], [20, { obs_id: 9, comname: 'Off Transect' }]]);
+  assert.deepEqual(cutChoice({ selectedId: 20, secondId: 10, clickedId: 10, rows }),
+    { label: 'Cut 3 · Rock with 9 · Off Transect', target: 10, by: 20 });
+  assert.equal(cutChoice({ selectedId: 20, secondId: 10, clickedId: 20, rows }), null, 'not on the cutter');
+  assert.equal(cutChoice({ selectedId: 20, secondId: null, clickedId: 10, rows }), null, 'nothing picked second');
+  assert.equal(cutChoice({ selectedId: 10, secondId: 10, clickedId: 10, rows }), null, 'not with itself');
 });

@@ -629,3 +629,10 @@ body {
   background: none;
   border-top: 0;
 }
+
+/* #360: picked second with Ctrl or Shift, to be cut by the selected stretch. */
+.hstrip-bar.second {
+  outline: 2px dashed var(--white);
+  outline-offset: 1px;
+  z-index: 1;
+}

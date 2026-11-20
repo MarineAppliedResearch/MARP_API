@@ -26,7 +26,7 @@ import assert from 'node:assert/strict';
 import {
   idList, filtersBody, pagesBody, countsBody, commitBody, correctionBody, retryBody,
   facetsBody, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody,
-  createObservationBody, countBody, pictureBody, stretchTimesBody
+  createObservationBody, countBody, pictureBody, stretchTimesBody, cutBody
 } from '../../src/api/requests.js';
 import { sortTerms } from '../../src/model/filters.js';
 import { DIMENSIONS, KIND } from '../../src/model/dimensions.js';
@@ -482,4 +482,10 @@ test('#287 R5: a habitat stretch\'s new span reaches the wire in seconds, with t
   assert.throws(() => stretchTimesBody({ startS: 40, endS: 12, version: 3 }), /start before its end/);
   assert.throws(() => stretchTimesBody({ startS: -1, endS: 12, version: 3 }), /start before its end/);
   assert.throws(() => stretchTimesBody({ startS: 1, endS: 12 }), /version/);
+});
+
+test('#360: a cut reaches the wire as the stretch it is cut with and the version read', () => {
+  assert.deepEqual(onWire(cutBody({ byId: 40, version: 3 })), { by_observation_id: 40, version: 3 });
+  assert.throws(() => cutBody({ byId: '40', version: 3 }), /byId/);
+  assert.throws(() => cutBody({ byId: 40 }), /version/);
 });
