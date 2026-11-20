@@ -815,6 +815,36 @@ function registerMosaicRoutes(app) {
 
     registerVersionedRoute(app, {
         method: 'post',
+        permission: ANNOTATE_PERMISSION,
+        path: '/api/mosaic/video/observation/:observation_id/cut',
+        summary: 'Cut a habitat stretch with another',
+        description:
+            'The stretch no longer covers the time `by_observation_id` does (#360): an analyst annotates off bottom inside a '
+            + 'stretch the model called Rock, and cuts the Rock with it. A cutter at one end trims it. **One in its middle splits '
+            + 'it in two**: it keeps the part before, and a new stretch of the same substrate -- every other column copied, a new '
+            + 'obs ID -- takes the part after. Both keep its review. Every column stating a time moves together, and a model\'s '
+            + 'keyframes with them. Refused with 400 when they do not overlap or the cutter covers it all; with 409 when it changed '
+            + 'since `version` was read. Habitat stretches in one video, both with an end.',
+        tags: [TAG],
+        parameters: observationParameter,
+        requestBody: json({
+            by_observation_id: { type: 'integer', description: 'The stretch it is cut with.' },
+            version: { type: 'integer' },
+        }, ['by_observation_id', 'version']),
+        responses: {
+            ...answered('Where the stretch now is, and the new stretch a split made.', {
+                observation_id: { type: 'integer' }, start_s: { type: 'number' }, end_s: { type: 'number' },
+                version: { type: 'integer' }, split_observation_id: { type: 'integer', nullable: true },
+            }),
+            409: { $ref: '#/components/responses/ConflictError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await habitatStretchService.cutStretch(observationIdOf(req), req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
         permission: EDIT_PERMISSION,
         path: '/api/mosaic/video/observation/:observation_id/picture',
         summary: 'Cut the observation\'s Mosaic picture from one frame\'s box',

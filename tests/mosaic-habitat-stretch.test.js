@@ -292,3 +292,77 @@ describe('a habitat stretch\'s end time follows its end keyframe (Isaac, 2026-11
         expect(await etcOf(id)).toEqual(before);
     });
 });
+
+describe('cutting one habitat stretch with another (#360)', () => {
+    const { cutStretch } = require('../service/mosaic-habitat-stretch.service');
+    const spanOfRow = async (id) => {
+        const read = await videoService.videoObservations({ observation_id: id });
+        return read.habitat.stretches.find((s) => s.observation_id === id);
+    };
+
+    test('a cutter at the end trims it, and its review stays', async () => {
+        const sessionId = await session('Habitat');
+        const rock = await stretch(sessionId, 100, 200, { keyed: true });
+        const offBottom = await stretch(sessionId, 170, 230, { species: seeded.species[1] });
+        const reviewed = await global.api.post('/api/v2/mosaic/observations/review').send({
+            observations: [{ observation_id: rock, version: await versionOf(rock) }],
+            marks: [{ observation_id: rock, kind: 'accept' }], seen_in_video: true,
+        });
+        expect(reviewed.status).toBe(200);
+
+        const res = await global.api.post(`/api/v2/mosaic/video/observation/${rock}/cut`)
+            .send({ by_observation_id: offBottom, version: await versionOf(rock) });
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({ start_s: 100, end_s: 170, split_observation_id: null });
+        expect(await spanOfRow(rock)).toMatchObject({ start_s: 100, end_s: 170, review_decision: 'reviewed' });
+        // The cutter is not touched.
+        expect(await spanOfRow(offBottom)).toMatchObject({ start_s: 170, end_s: 230 });
+    });
+
+    test('a cutter in the middle splits it: the piece after is a new stretch with the same review', async () => {
+        const sessionId = await session('Habitat');
+        const rock = await stretch(sessionId, 100, 200);
+        const offBottom = await stretch(sessionId, 130, 150, { species: seeded.species[1] });
+        await global.api.post('/api/v2/mosaic/observations/review').send({
+            observations: [{ observation_id: rock, version: await versionOf(rock) }],
+            marks: [{ observation_id: rock, kind: 'except', reason: 'False detection' }], seen_in_video: true,
+        });
+
+        const answer = await cutStretch(rock, { by_observation_id: offBottom, version: await versionOf(rock) });
+        const split = answer.split_observation_id;
+        expect(split).toEqual(expect.any(Number));
+        seeded.ids.push(split);
+        expect(answer).toMatchObject({ start_s: 100, end_s: 130 });
+        expect(await spanOfRow(split)).toMatchObject({
+            start_s: 150, end_s: 200, species_id: seeded.species[0].id, review_decision: 'flagged', flag_reason: 'False detection',
+        });
+        const [piece] = await q('SELECT "obsID", session_id, project_id, tc FROM observations WHERE observation_id = :id', { id: split });
+        const [whole] = await q('SELECT "obsID", session_id, project_id FROM observations WHERE observation_id = :id', { id: rock });
+        expect(piece).toMatchObject({ session_id: whole.session_id, project_id: whole.project_id });
+        expect(piece.obsID).not.toBe(whole.obsID);
+        expect(piece.tc).toBe(deriveTc(CLOCK_MS + 150000));
+    });
+
+    test('a model\'s stretch split in two has start and end keyframes on both pieces', async () => {
+        const sessionId = await session('Habitat');
+        const rock = await stretch(sessionId, 100, 200, { keyed: true });
+        const offBottom = await stretch(sessionId, 130, 150, { species: seeded.species[1] });
+        const answer = await cutStretch(rock, { by_observation_id: offBottom, version: await versionOf(rock) });
+        seeded.ids.push(answer.split_observation_id);
+        const frames = async (id) => (await q('SELECT type, framenum FROM keyframes WHERE observation_id = :id ORDER BY framenum', { id }))
+            .map((k) => [k.type, k.framenum]);
+        expect(await frames(rock)).toEqual([['start', 2500], ['end', 3250]]);
+        expect(await frames(answer.split_observation_id)).toEqual([['start', 3750], ['end', 5000]]);
+    });
+
+    test('refuses a cutter that does not overlap, one covering it all, and a stretch that changed', async () => {
+        const sessionId = await session('Habitat');
+        const rock = await stretch(sessionId, 100, 200);
+        const apart = await stretch(sessionId, 300, 320, { species: seeded.species[1] });
+        const over = await stretch(sessionId, 90, 210, { species: seeded.species[1] });
+        await expect(cutStretch(rock, { by_observation_id: apart, version: await versionOf(rock) })).rejects.toMatchObject({ status: 400 });
+        await expect(cutStretch(rock, { by_observation_id: over, version: await versionOf(rock) })).rejects.toMatchObject({ status: 400 });
+        await expect(cutStretch(rock, { by_observation_id: apart, version: (await versionOf(rock)) - 1 })).rejects.toMatchObject({ status: 409 });
+        expect(await spanOfRow(rock)).toMatchObject({ start_s: 100, end_s: 200 });
+    });
+});

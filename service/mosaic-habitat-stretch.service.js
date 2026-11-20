@@ -27,6 +27,8 @@ const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middlewa
 const { HABITAT_SESSION_TYPE, derivedKeyframes, retimedColumns } = require('../db/habitat-keyframes');
 const { ASSUMED_FPS } = require('../db/timecode');
 const { rateOf, invalid, notFound } = require('./mosaic-video-edit.service');
+const keys = require('../repository/observation-ingest.repository');
+const thumbnails = require('../repository/observation-thumbnail.repository');
 
 /* The columns a stretch's times are read from, for itself and for its neighbours. */
 const STRETCH_COLUMNS = `o.observation_id, o.session_id, o.species_id, o.video_source, o.gpu_job_id,
@@ -220,4 +222,187 @@ async function setStretchTimes(observationId, body = {}) {
     });
 }
 
-module.exports = { setStretchTimes, absorbing, spanOf };
+/**
+ * What a cut leaves of a stretch (#360): the parts of `target` outside `by`.
+ *
+ * @param {{start: number, end: number}} target - The stretch being cut.
+ * @param {{start: number, end: number}} by - The stretch it is cut with.
+ * @returns {?{keep: ?{start: number, end: number}, split: ?{start: number, end: number}}} What it
+ *   keeps and, when the cutter is in its middle, the piece after it; null when they do not
+ *   overlap, and `keep` null when the cutter covers it all.
+ */
+function cutSpans(target, by) {
+    if (by.end <= target.start || by.start >= target.end) return null;
+    const before = by.start > target.start ? { start: target.start, end: by.start } : null;
+    const after = by.end < target.end ? { start: by.end, end: target.end } : null;
+    if (before && after) return { keep: before, split: after };
+    return { keep: before || after, split: null };
+}
+
+/* Every column an observation has, for copying one whole: an annotator's row may carry
+   columns the ingest never writes, and a split-off piece must not silently lose them. */
+async function observationColumns(transaction) {
+    const rows = await db.sequelize.query(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_schema = current_schema() AND table_name = 'observations'`,
+        { type: QueryTypes.SELECT, transaction }
+    );
+    return rows.map((row) => row.column_name);
+}
+
+/* A stretch given a span: its time columns, and a model's start and end keyframes. */
+async function applySpan(row, { keyed, rate }, span, transaction) {
+    const { columns, startFrame, endFrame } = retimedColumns(row, {
+        startMs: Math.round(span.start * 1000), endMs: Math.round(span.end * 1000),
+        keyed, fps: keyed ? rate : ASSUMED_FPS,
+    });
+    const names = Object.keys(columns);
+    await db.sequelize.query(
+        `UPDATE observations SET ${names.map((name) => `"${name}" = :${name}`).join(', ')}, "updatedAt" = NOW()
+          WHERE observation_id = :id`,
+        { replacements: { ...columns, id: row.observation_id }, transaction }
+    );
+    if (keyed) {
+        for (const [type, framenum] of [['start', startFrame], ['end', endFrame]]) {
+            await db.sequelize.query(
+                'UPDATE keyframes SET framenum = :framenum, "updatedAt" = NOW() WHERE observation_id = :id AND type = :type',
+                { replacements: { framenum, id: row.observation_id, type }, transaction }
+            );
+        }
+    }
+}
+
+/* The piece of a split stretch after its cutter: the same stretch in every other column, with
+   its own keys, its own start and end keyframes when the stretch has them, and its review. */
+async function splitOff(target, kind, span, transaction) {
+    await keys.lockObservationKeys(transaction);
+    const obsID = await keys.nextKey(
+        'SELECT COALESCE(MAX("obsID"), 0)::int AS m FROM observations WHERE session_id = :sessionId',
+        { sessionId: target.session_id }, transaction
+    );
+    const PobsID = await keys.nextKey(
+        `SELECT COALESCE(MAX(o."PobsID"), 0)::int AS m
+           FROM observations o JOIN sessions s ON s.session_id = o.session_id
+          WHERE o.project_id = :projectId AND s.type = :type`,
+        { projectId: target.project_id, type: target.session_type }, transaction
+    );
+    const splitId = await keys.nextObservationId(transaction);
+    const skip = new Set(['observation_id', 'obsID', 'PobsID', 'version', 'createdAt', 'updatedAt']);
+    const list = (await observationColumns(transaction)).filter((name) => !skip.has(name))
+        .map((name) => `"${name}"`).join(', ');
+    await db.sequelize.query(
+        `INSERT INTO observations (observation_id, "obsID", "PobsID", ${list}, "createdAt", "updatedAt")
+         SELECT :splitId, :obsID, :PobsID, ${list}, NOW(), NOW() FROM observations WHERE observation_id = :targetId`,
+        { replacements: { splitId, obsID, PobsID, targetId: target.observation_id }, transaction }
+    );
+    if (kind.keyed) {
+        await db.sequelize.query(
+            `INSERT INTO keyframes (observation_id, subset, comname, type, framenum, x, y, width, height, confidence, "createdAt", "updatedAt")
+             SELECT :splitId, k.subset, k.comname, k.type, k.framenum, k.x, k.y, k.width, k.height, k.confidence, NOW(), NOW()
+               FROM keyframes k WHERE k.observation_id = :targetId AND k.type IN ('start', 'end')`,
+            { replacements: { splitId, targetId: target.observation_id }, transaction }
+        );
+    }
+    // The original's times as read before the cut, moved onto the piece's span.
+    await applySpan({ ...target, observation_id: splitId }, kind, span, transaction);
+    // Its review as it stood (A3): a copy of each current decision, as a row of its own.
+    const [{ version }] = await db.sequelize.query(
+        'SELECT version FROM observations WHERE observation_id = :splitId',
+        { replacements: { splitId }, type: QueryTypes.SELECT, transaction }
+    );
+    await db.sequelize.query(
+        `WITH copied AS (
+             INSERT INTO observation_reviews (observation_id, purpose, decision, reason, note, reviewer_id,
+                    observation_version, reviewed_keyframe_count, reviewed_keyframe_max_updated_at,
+                    representative_keyframe_id, decided_at, created_at, updated_at)
+             SELECT :splitId, r.purpose, r.decision, r.reason, r.note, r.reviewer_id,
+                    :version, r.reviewed_keyframe_count, r.reviewed_keyframe_max_updated_at,
+                    NULL, r.decided_at, NOW(), NOW()
+               FROM observation_review_current c JOIN observation_reviews r ON r.review_id = c.review_id
+              WHERE c.observation_id = :targetId
+          RETURNING review_id, observation_id, purpose, decision, reason, note, reviewer_id, decided_at, observation_version)
+         INSERT INTO observation_review_current (observation_id, purpose, review_id, decision, reason, note,
+                reviewer_id, decided_at, observation_version)
+         SELECT observation_id, purpose, review_id, decision, reason, note, reviewer_id, decided_at, observation_version
+           FROM copied`,
+        { replacements: { splitId, version, targetId: target.observation_id }, transaction }
+    );
+    return splitId;
+}
+
+/**
+ * Cut one habitat stretch with another (#360): `targetId` no longer covers the time `by` does.
+ *
+ * Settled with Isaac on 2026-11-20: the model marks Rock for a whole section, the analyst finds
+ * part of it is off bottom and annotates that, and cuts the Rock with it. A cutter at one end
+ * trims it; **one in its middle splits it in two** -- it keeps the part before, and a new stretch
+ * of the same substrate, every other column copied and a new obs ID, takes the part after.
+ * **Both keep its review**, as a drag does (A3). A cutter covering all of it is refused: that is
+ * deleting it.
+ *
+ * @async
+ * @param {number} targetId - The stretch being cut.
+ * @param {Object} body - `{ by_observation_id, version }`: the cutter, and the version of the
+ *   stretch being cut that the page read.
+ * @returns {Promise<Object>} `{ observation_id, start_s, end_s, version, split_observation_id }`.
+ * @throws {ApiError} 400, 404, or 409 for a stretch that changed since it was read.
+ */
+async function cutStretch(targetId, body = {}) {
+    const byId = body.by_observation_id;
+    if (!Number.isInteger(targetId) || !Number.isInteger(byId)) {
+        throw invalid('observation_id and by_observation_id must be integers.');
+    }
+    if (byId === targetId) throw invalid('A stretch cannot be cut with itself.');
+    if (!Number.isInteger(body.version)) throw invalid('version must be the version the page read.');
+
+    const result = await db.sequelize.transaction(async (transaction) => {
+        // Both locked, in id order, as the merge locks its pair.
+        const pair = await db.sequelize.query(
+            `SELECT ${STRETCH_COLUMNS}, o.project_id, o.comname, s.type AS session_type
+               FROM observations o LEFT JOIN sessions s ON s.session_id = o.session_id
+              WHERE o.observation_id IN (:ids) ORDER BY o.observation_id FOR UPDATE OF o`,
+            { replacements: { ids: [targetId, byId] }, type: QueryTypes.SELECT, transaction }
+        );
+        const target = pair.find((row) => row.observation_id === targetId);
+        const by = pair.find((row) => row.observation_id === byId);
+        if (!target) throw notFound(`Observation ${targetId} does not exist.`);
+        if (!by) throw notFound(`Observation ${byId} does not exist.`);
+        if (target.session_type !== HABITAT_SESSION_TYPE || by.session_type !== HABITAT_SESSION_TYPE) {
+            throw invalid('Only habitat stretches are cut.');
+        }
+        if (target.video_source !== by.video_source) throw invalid('Only stretches in the same video are cut.');
+        if (target.version !== body.version) {
+            throw new ApiError(409, ERROR_CODES.CONFLICT,
+                `Observation ${targetId} changed since the page read it. Open it again and cut again.`);
+        }
+
+        const keyframes = await keyframesOf([targetId, byId], transaction);
+        const rate = await rateOf(target);
+        const targetSpan = spanOf(target, keyframes.get(targetId), rate);
+        const bySpan = spanOf(by, keyframes.get(byId), await rateOf(by));
+        if (!targetSpan || !targetSpan.hasEnd || !bySpan || !bySpan.hasEnd) {
+            throw invalid('Both stretches need an end before one can cut the other.');
+        }
+        const name = (row, fallback) => row.comname || fallback;
+        const cut = cutSpans(targetSpan, bySpan);
+        if (!cut) throw invalid(`${name(by, 'That stretch')} does not overlap ${name(target, 'this one')}, so there is nothing to cut.`);
+        if (!cut.keep) throw invalid(`${name(by, 'That stretch')} covers all of ${name(target, 'this one')}; delete it instead.`);
+
+        const kind = { keyed: targetSpan.keyed, rate };
+        const splitId = cut.split ? await splitOff(target, kind, cut.split, transaction) : null;
+        await applySpan(target, kind, cut.keep, transaction);
+
+        const [after] = await db.sequelize.query(
+            `SELECT ${STRETCH_COLUMNS} FROM observations o WHERE o.observation_id = :targetId`,
+            { replacements: { targetId }, type: QueryTypes.SELECT, transaction }
+        );
+        const now = spanOf(after, (await keyframesOf([targetId], transaction)).get(targetId), rate);
+        return { observation_id: targetId, start_s: now.start, end_s: now.end, version: after.version, split_observation_id: splitId };
+    });
+
+    // The new piece gets a Mosaic picture of its own.
+    if (result.split_observation_id) await thumbnails.requestRefresh(result.split_observation_id);
+    return result;
+}
+
+module.exports = { setStretchTimes, cutStretch, cutSpans, absorbing, spanOf };
