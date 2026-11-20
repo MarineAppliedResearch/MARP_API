@@ -703,6 +703,7 @@ async function recordReview(row, { kind, reason = null, takeBack = false }) {
     const decision = takeBack ? null : kind === 'accept' ? 'reviewed' : 'flagged';
     row.review_decision = decision;
     row.flag_reason = decision === 'flagged' ? reason : null;
+    strip.review(id, decision, row.flag_reason);
     status(takeBack ? 'Decision taken back.'
       : decision === 'reviewed' ? 'Marked reviewed.' : `Flagged: ${reason}.`);
     redraw();
@@ -943,6 +944,8 @@ if (typeof BroadcastChannel !== 'undefined') {
     if (!event.data) return;
     if (event.data.type === 'show') show(event.data);
     if (event.data.type === 'query') followQuery(event.data.filters);
+    // A page committed in the Mosaic: read again, so the timeline shows what was reviewed.
+    if (event.data.type === 'committed' && showing) followQuery(showing.filters);
   });
 }
 

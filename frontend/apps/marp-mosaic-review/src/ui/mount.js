@@ -14,7 +14,9 @@ import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
 import { renderFrameViewer, wireFrameViewer } from './frame-viewer.js';
-import { followQueryInVideoWindow, showInVideoWindow, onVideoWindowReview, renderVideoBlocked } from './video-window.js';
+import {
+  followQueryInVideoWindow, showInVideoWindow, onVideoWindowReview, renderVideoBlocked, tellVideoWindowCommitted
+} from './video-window.js';
 import { queryFilters } from '../model/filters.js';
 import { MARK_ACCEPT, MARK_EXCEPT } from '../model/modes.js';
 import { normalizeRect, idsInRect } from '../model/drag-selection.js';
@@ -72,6 +74,8 @@ let gridDrag = null;
 let touchChoice = null;
 let suppressClickUntil = 0;
 let suppressContextUntil = 0;
+/* The last commit an open video page was told about (#287 R4). */
+let toldCommit = null;
 
 function clearGridDrag() {
   if (!gridDrag) return;
@@ -478,6 +482,9 @@ export function mount() {
     // An open video page draws what the query matches; when the query changes, so do its
     // boxes (#181 R9). Sent only when it has changed.
     followQueryInVideoWindow(queryFilters(state.mode, state.filters));
+    // And when a commit lands, so its timeline shows what was just reviewed (#287 R4).
+    if (state.lastCommit && state.lastCommit !== toldCommit) tellVideoWindowCommitted();
+    toldCommit = state.lastCommit;
     renderConfirm();
     renderVideoBlocked();
     renderFrameViewer();

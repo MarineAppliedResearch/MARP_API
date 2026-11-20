@@ -3,8 +3,9 @@
  * habitat session as a bar along the video, in the annotation GUI's lanes and colours.
  *
  * - **Click the strip** to go there; **click a bar** to go to that point in it and select it.
- * - **Each bar shows its review** (R4): faded until reviewed, a green line once reviewed, an
- *   amber one when flagged, with the reason on hover.
+ * - **Each bar shows its review** (R4): an outline until it is reviewed, solid once it is,
+ *   solid and striped amber when flagged, with the reason on hover. The review used to be a
+ *   fade and a thin line, which could not be told apart at a glance (Isaac, 2026-11-20).
  * - **Drag an end** (R5) to change when the stretch starts or ends. The video follows the end
  *   being dragged, so the frame it will land on is on screen; a stretch of the same substrate
  *   the drag reaches is outlined, because letting go merges it in (A4). Escape cancels.
@@ -210,6 +211,15 @@ export function createHabitatStrip(root, host) {
       if (!habitat) return;
       if (duration() !== drawnFor) render();
       if (Number.isFinite(t) && Number.isFinite(drawnFor) && drawnFor > 0) playhead.style.left = percent(t);
+    },
+    /** A review made on this page (R4): the bar shows it at once. */
+    review(id, decision, reason) {
+      const stretch = habitat && habitat.stretches.find((s) => s.observation_id === id);
+      if (!stretch) return;
+      stretch.review_decision = decision;
+      stretch.flag_reason = reason;
+      layout = stripLayout(habitat.stretches);
+      if (!drag) render();
     },
     /** The page's selection changed: outline that stretch, if it is one. */
     selected(id) {
