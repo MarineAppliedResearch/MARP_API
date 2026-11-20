@@ -160,6 +160,9 @@ async function edit(work, { refresh = true } = {}) {
     const result = await db.sequelize.transaction(async (transaction) => {
         const done = await work(transaction);
         await habitatTimesFromKeyframes(done.observation_id, transaction);
+        // The version the edit leaves, so the page's next change is not refused as out of date
+        // (#363): a habitat stretch's keyframe edit rewrites its row, which moves it on.
+        done.version = await versionOf(done.observation_id, transaction);
         return done;
     });
     // Not when the caller cuts the picture itself (#181 R6): a queued refresh would be
@@ -186,6 +189,15 @@ async function habitatBox(observationId, track, transaction) {
     if (!session || session.type !== HABITAT_SESSION_TYPE) return null;
     const own = track && track[0];
     return own ? { x: own.x, y: own.y, width: own.width, height: own.height } : { ...HABITAT_BOX };
+}
+
+/* An observation's version now: what a change to it must name next. */
+async function versionOf(observationId, transaction) {
+    const [row] = await db.sequelize.query(
+        'SELECT version FROM observations WHERE observation_id = :observationId',
+        { replacements: { observationId }, type: QueryTypes.SELECT, transaction }
+    );
+    return row ? row.version : null;
 }
 
 /**
@@ -363,5 +375,7 @@ function deleteKeyframe(keyframeId) {
 module.exports = {
     moveBox, addKeyframe, setEnd, deleteKeyframe,
     // Shared with the annotation service, which counts frames and checks boxes the same way.
-    boxOf, rateOf, asSeconds, invalid, notFound, KEYFRAME_COLUMNS
+    boxOf, rateOf, asSeconds, invalid, notFound, KEYFRAME_COLUMNS,
+    // And the merge, which moves keyframes onto a stretch outside these edits.
+    habitatTimesFromKeyframes, versionOf,
 };

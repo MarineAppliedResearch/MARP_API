@@ -240,13 +240,17 @@ async function merge(intoId, body = {}) {
         await db.sequelize.query('DELETE FROM observations WHERE observation_id = :fromId', {
             replacements: { fromId }, transaction,
         });
-        return { rate: rateInto, keyframes: await keyframesOf(intoId, transaction) };
+        // A habitat stretch's times follow its keyframes, and the page is handed the version
+        // that leaves it (#363).
+        await edits.habitatTimesFromKeyframes(intoId, transaction);
+        return { rate: rateInto, keyframes: await keyframesOf(intoId, transaction), version: await edits.versionOf(intoId, transaction) };
     });
 
     await thumbnails.requestRefresh(intoId);
     return {
         observation_id: intoId,
         deleted_observation_id: fromId,
+        version: result.version,
         keyframes: result.keyframes.map((k) => asSeconds(k, result.rate)),
     };
 }

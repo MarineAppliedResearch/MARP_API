@@ -366,3 +366,28 @@ describe('cutting one habitat stretch with another (#360)', () => {
         expect(await spanOfRow(rock)).toMatchObject({ start_s: 100, end_s: 200 });
     });
 });
+
+describe('a keyframe edit hands back the version it leaves (#363)', () => {
+    const edits = require('../service/mosaic-video-edit.service');
+    const annotate = require('../service/mosaic-video-annotate.service');
+    const box = { x: 0.5, y: 0.75, width: 0.5, height: 0.5 };
+
+    test('a stretch added and given its end on the video page can then be dragged, with no refusal', async () => {
+        const sessionId = await session('Habitat');
+        const opened = await stretch(sessionId, 20, 40);
+        const created = await annotate.createObservation({
+            observation_id: opened, session_id: sessionId, species_id: seeded.species[0].id, t: 60, ...box,
+        });
+        const id = created.observation.observation_id;
+        seeded.ids.push(id);
+
+        // What the page holds after each edit: the version the edit handed back.
+        const added = await edits.addKeyframe({ observation_id: id, t: 90, ...box });
+        expect(added.version).toBe(await versionOf(id));
+        const ended = await edits.setEnd(added.changed.find((k) => k.t === 90).keyframe_id);
+        expect(ended.version).toBe(await versionOf(id));
+
+        const dragged = await setStretchTimes(id, { start_s: 60, end_s: 95, version: ended.version });
+        expect(dragged).toMatchObject({ start_s: 60, end_s: 95 });
+    });
+});

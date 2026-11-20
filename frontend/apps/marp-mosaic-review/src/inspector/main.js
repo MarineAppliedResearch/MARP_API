@@ -486,6 +486,9 @@ const editor = createBoxEditor({
     redraw,
     status,
     apply(answer) {
+      // The version the edit left, so the next change to it is not refused as stale (#363).
+      const edited = showing && showing.rows.get(answer.observation_id);
+      if (edited && Number.isInteger(answer.version)) edited.version = answer.version;
       const next = withEdit(held, answer);
       held.clear();
       for (const [index, keyframes] of next) held.set(index, keyframes);
@@ -946,6 +949,7 @@ function updatePanel() {
         editor.save(async () => {
           const answer = await MarpApi.mergeObservations(id, fromId);
           forgetObservation(fromId);
+          if (Number.isInteger(answer.version)) row.version = answer.version;
           const next = withObservation(held, id, answer.keyframes);
           held.clear();
           for (const [index, keyframes] of next) held.set(index, keyframes);
