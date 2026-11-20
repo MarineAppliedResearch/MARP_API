@@ -48,6 +48,10 @@ if (pictureCanvas) pictureCanvas.insertAdjacentElement('afterend', $('boxes'));
 else playerRoot.appendChild($('boxes'));
 // The habitat list over the picture (#358) goes with the boxes, fullscreen included.
 $('boxes').insertAdjacentElement('afterend', $('habitatNow'));
+/* The habitat timeline sits directly above the scrub bar, inside the player's controls, as the
+   GUI has it (#362): lined up with the scrub bar, and fullscreen with the player. */
+const scrubTrack = playerRoot.querySelector('.marp-scrub-track');
+if (scrubTrack) scrubTrack.insertAdjacentElement('beforebegin', $('habitatStrip'));
 playerRoot.appendChild($('boxMenu'));
 // The add popup and the observation panel go fullscreen with the player too.
 playerRoot.appendChild($('addPopup'));
