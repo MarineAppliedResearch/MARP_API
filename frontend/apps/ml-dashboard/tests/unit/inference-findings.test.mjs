@@ -97,6 +97,8 @@ test('a finished piece shows its species, and its run what all the pieces found 
 
   assert.equal(detail.querySelector('.findings-go a').getAttribute('href'), '/apps/marp-mosaic-review/?session=641',
     'and one link to review them in the mosaic');
+  assert.equal(detail.querySelector('[data-mosaic-run]').getAttribute('href'), `/apps/marp-mosaic-review/?run=${RUN}`,
+    'and one for every line of its run at once, through the Run filter (#350)');
   assert.deepEqual(screen.asked.run, [RUN], 'the run is one read, not one per piece');
 });
 
