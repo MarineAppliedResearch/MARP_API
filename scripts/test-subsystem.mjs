@@ -79,6 +79,8 @@ const SUBSYSTEMS = {
             'gpu-training-job-name',
             'gpu-trained-model-registration',
             'habitat-model-registration',
+            // #287: a habitat model trained outside MARP, registered from its weights and results.
+            'habitat-model-import',
             'habitat-ingest',
             /* #268: what the training panel reads back -- the per-epoch metric names the
                ingest was getting wrong, and the pace series nothing served. */
