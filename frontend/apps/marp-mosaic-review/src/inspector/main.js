@@ -561,6 +561,8 @@ function forgetObservation(id) {
   held.clear();
   for (const [index, keyframes] of next) held.set(index, keyframes);
   if (editor.selectedKey && editor.selectedKey.startsWith(`${id}_`)) editor.select(null);
+  // Off the habitat timeline too, or a deleted stretch's bar stays behind (#353).
+  strip.forget(id);
   rebuildDrawable();
   redraw();
   updatePanel();

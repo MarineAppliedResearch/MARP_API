@@ -384,6 +384,14 @@ export function createHabitatStrip(root, host) {
       layout = stripLayout(habitat.stretches);
       if (!drag) render();
     },
+    /** An observation deleted or merged away on this page: its bar goes too. */
+    forget(id) {
+      if (!habitat || !habitat.stretches.some((s) => s.observation_id === id)) return;
+      habitat = { ...habitat, stretches: habitat.stretches.filter((s) => s.observation_id !== id) };
+      layout = stripLayout(habitat.stretches);
+      if (selectedId === id) selectedId = null;
+      if (!drag) render();
+    },
     /** The page's selection changed: outline that stretch, if it is one. */
     selected(id) {
       if (id === selectedId) return;
