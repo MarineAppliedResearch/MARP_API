@@ -189,9 +189,8 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
     // Where its labels are, so a click on one selects this box rather than the one on top.
     entry.tabs = tabRects(context, entry, scale, shifts[index]);
     const keyframe = keyframeShown(entry.box.keyframes, t, rate);
-    const reviewed = showing.rows.get(entry.box.observation_id);
     drawBox(context, entry, {
-      colour: reviewColour(reviewed && reviewed.review_decision) || speciesColour(entry.box.comname),
+      colour: boxColour(entry.box.observation_id, entry.box.comname),
       type: keyframe ? keyframe.type : 'interpolated',
       selected: entry.key === editor.selectedKey,
       // No corner grips on a box that is not resized (#359).
@@ -610,6 +609,16 @@ function refreshOpenEnded(id) {
   if (span) span.open_ended = row.open_ended;
 }
 
+/* The colour a box is drawn in. A habitat stretch's is its habitat's, the colour the habitat
+   list and the timeline give it (#361), so one habitat is one colour wherever it is shown; its
+   review shows on the timeline and in its panel. Anything else is its species' colour, or its
+   review's once reviewed (#337). */
+function boxColour(id, comname) {
+  if (inHabitatSession(id)) return colourOf(comname);
+  const row = showing && showing.rows.get(id);
+  return reviewColour(row && row.review_decision) || speciesColour(comname);
+}
+
 /* Whether an observation is a habitat stretch: in a session of the habitat type. */
 function inHabitatSession(id) {
   const row = showing && showing.rows.get(id);
@@ -798,7 +807,7 @@ function updatePanel() {
   const keyframes = drawnRow ? drawnRow.tracks.flat().sort((a, b) => a.t - b.t) : [];
   renderPanel($('obsPanel'), {
     row,
-    colour: speciesColour(row.comname),
+    colour: boxColour(row.observation_id, row.comname),
     session: showing.sessions.find((s) => s.session_id === row.session_id),
     keyframes,
     canWrite: canAnnotate,
@@ -981,7 +990,7 @@ window.MARP_VIDEO = {
     return drawnNow.rects.map(({ key, box, rect }) => ({
       key, observation_id: box.observation_id, comname: box.comname,
       // The colour it is drawn in, which says its review (#337).
-      colour: reviewColour((showing.rows.get(box.observation_id) || {}).review_decision) || speciesColour(box.comname),
+      colour: boxColour(box.observation_id, box.comname),
       rect: { left: rect.left + o.left, top: rect.top + o.top, width: rect.width, height: rect.height }
     }));
   },
