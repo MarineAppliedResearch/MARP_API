@@ -294,3 +294,12 @@ export function facetsBody({ filters, dimensions } = {}) {
   if (Array.isArray(dimensions)) body.dimensions = [...dimensions];
   return body;
 }
+
+/** `PUT .../observation/:id/times` (#287 R5): a habitat stretch's new span, and the version read. */
+export function stretchTimesBody({ startS, endS, version }) {
+  if (!Number.isFinite(startS) || !Number.isFinite(endS) || startS < 0 || endS <= startS) {
+    throw new TypeError(`a stretch is seconds into the video with its start before its end, not ${JSON.stringify({ startS, endS })}`);
+  }
+  if (!Number.isInteger(version)) throw new TypeError(`version must be an integer, not ${JSON.stringify(version)}`);
+  return { start_s: startS, end_s: endS, version };
+}

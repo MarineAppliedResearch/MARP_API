@@ -27,6 +27,7 @@ import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
 import { labelScale, sharedTabShifts } from '../model/box-style.js';
 import { drawBox, tabWidths } from './draw-boxes.js';
 import { clockAt, clockLine, positionText, readingOffered, readingBody } from '../model/video-clock.js';
+import { createHabitatStrip } from './habitat-strip.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -206,6 +207,7 @@ function redraw() {
   const t = shownAt ?? player.engine.currentTime;
   const canvas = $('player').querySelector('.marp-canvas');
   if (canvas) drawBoxes($('boxes'), canvas, canvas.width, canvas.height, t);
+  strip.playhead(t);
   // This frame's clock time, beside when the recording started (#351).
   const now = clockAt(clock, t);
   $('clockNow').textContent = now ? `This frame: ${now}` : '';
@@ -293,6 +295,7 @@ function watch(engine) {
       engine.currentTime = to;
     }
     followPlayhead(shownAt);
+    strip.playhead(shownAt);
     drawBoxes($('boxes'), canvas, canvas.width, canvas.height, shownAt);
     if (showing && Math.abs(shownAt - showing.moment) < 0.25) status('');
     engine.requestVideoFrameCallback(onFrame);
@@ -325,6 +328,7 @@ async function show(request) {
 
   const { answer, rows } = read;
   const { video } = answer;
+  strip.set(answer.habitat);
   const comname = rows.has(request.observationId) ? rows.get(request.observationId).comname : null;
   $('inspectTitle').textContent = `${comname || 'Observation'} · ${request.observationId}`;
   openedTitle = $('inspectTitle').textContent;
@@ -393,6 +397,7 @@ async function followQuery(filters) {
   }
   if (mine !== latest || !showing) return;
   forgetKeyframes();
+  strip.set(read.answer.habitat);
   showing = {
     ...showing, filters: filters || {}, observations: read.answer.observations, rows: read.rows,
     sessions: read.answer.sessions || showing.sessions
@@ -498,7 +503,45 @@ const editor = createBoxEditor({
     canDraw: () => canAnnotate,
     isPicture: (target) => target === pictureCanvas,
     onDrawn: openAdd,
-    selectionChanged: () => updatePanel()
+    selectionChanged: (key) => {
+      updatePanel();
+      strip.selected(key ? Number(key.split('_')[0]) : null);
+    }
+  }
+});
+
+/* The habitat timeline (#287): the opened observation's habitat session along the whole video. */
+const strip = createHabitatStrip($('habitatStrip'), {
+  duration: () => (player.engine ? player.engine.duration : NaN),
+  seek(t) {
+    if (!player.engine) return;
+    player.engine.pause();
+    player.engine.currentTime = t;
+  },
+  select(id) {
+    // Its box is drawn, and so can be selected, only when the Mosaic's query matches it.
+    if (showing && showing.rows.has(id)) editor.select(`${id}_1`);
+    else status('That stretch is outside what the Mosaic is filtered to, so its box is not drawn here.');
+  },
+  canDrag: () => canAnnotate,
+  async save(bar, span, merging) {
+    // A merge deletes the stretch dragged into, so it is asked about, as the Mosaic's merge is.
+    if (merging && !window.confirm(`Merge ${merging === 1 ? 'the outlined stretch' : `the ${merging} outlined stretches`} `
+      + `into this ${bar.name}? ${merging === 1 ? 'It is' : 'They are'} deleted, with ${merging === 1 ? 'its' : 'their'} reviews.`)) {
+      throw new Error('not merged');
+    }
+    try {
+      const answer = await MarpApi.setStretchTimes(bar.id, { startS: span.start, endS: span.end, version: bar.version });
+      status(`${bar.name} now runs ${positionText(answer.start_s)} to ${positionText(answer.end_s)}`
+        + (answer.merged.length ? `, with ${answer.merged.length} merged into it.` : '.'));
+    } catch (error) {
+      status(error.status === 409
+        ? 'Not changed: this stretch changed since the page read it. Reopen it from the Mosaic and drag again.'
+        : `Not changed: ${error.message}`);
+      throw error;
+    }
+    // Every box, keyframe window and bar is read again: a merge deletes observations.
+    await followQuery(showing.filters);
   }
 });
 

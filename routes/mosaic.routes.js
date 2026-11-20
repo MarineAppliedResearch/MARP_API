@@ -41,6 +41,7 @@ const videoContextService = require('../service/mosaic-video-context.service');
 const videoService = require('../service/mosaic-video.service');
 const videoEditService = require('../service/mosaic-video-edit.service');
 const annotateService = require('../service/mosaic-video-annotate.service');
+const habitatStretchService = require('../service/mosaic-habitat-stretch.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
@@ -778,6 +779,37 @@ function registerMosaicRoutes(app) {
         }),
         handler: asyncHandler(async (req, res) => {
             res.json(await annotateService.merge(observationIdOf(req), req.body || {}));
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'put',
+        permission: ANNOTATE_PERMISSION,
+        path: '/api/mosaic/video/observation/:observation_id/times',
+        summary: 'Change when a habitat stretch starts and ends',
+        description:
+            'Dragging an end of a stretch on the video page\'s habitat timeline (#287 R5). Every column that states its start or '
+            + 'end moves together -- `mediaPosition`, `actualPosition`, `tc`, `frame`, `observed_at`, `etc`, and a model\'s start '
+            + 'and end keyframes -- and its review is kept. A neighbour of the same substrate in the same session that the new '
+            + 'span reaches is **merged into it and deleted**, with its reviews and picture; one it already overlapped is left '
+            + 'alone. `version` is the one the page read: a stretch that changed since is refused with 409. Only a habitat '
+            + 'stretch with an end.',
+        tags: [TAG],
+        parameters: observationParameter,
+        requestBody: json({
+            start_s: { type: 'number', description: 'Seconds into the video.' },
+            end_s: { type: 'number', description: 'Seconds into the video, after start_s.' },
+            version: { type: 'integer' },
+        }, ['start_s', 'end_s', 'version']),
+        responses: {
+            ...answered('Where the stretch now is, and the neighbours merged into it.', {
+                observation_id: { type: 'integer' }, start_s: { type: 'number' }, end_s: { type: 'number' },
+                version: { type: 'integer' }, merged: { type: 'array', items: { type: 'integer' } },
+            }),
+            409: { $ref: '#/components/responses/ConflictError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await habitatStretchService.setStretchTimes(observationIdOf(req), req.body || {}));
         }),
     });
 

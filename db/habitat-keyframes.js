@@ -16,7 +16,9 @@
 
 'use strict';
 
-const { parseTimeSpan, absoluteFrame } = require('./timecode');
+const {
+    parseTimeSpan, formatTimeSpan, absoluteFrame, deriveTc, deriveFrame, shiftTruncated, ASSUMED_FPS,
+} = require('./timecode');
 
 /** The session type whose observations are habitat stretches. */
 const HABITAT_SESSION_TYPE = 'Habitat';
@@ -50,4 +52,66 @@ function derivedKeyframes(row) {
     return [keyframe('start', start), keyframe('end', absoluteFrame(media + (etc - tc)))];
 }
 
-module.exports = { HABITAT_SESSION_TYPE, HABITAT_BOX, derivedKeyframes };
+/**
+ * The columns that change when a habitat stretch is given a new start and end (#287, R5).
+ *
+ * A stretch states its start in `mediaPosition`, `actualPosition`, `tc`, `frame` and
+ * `observed_at`, and its end in `etc`; a model's stretch also in its start and end keyframes.
+ * They all move together, by the same rules that wrote them:
+ *
+ * - **The start moves every start column by the same amount**, so a row keeps its own clock:
+ *   whatever lay between its position in the video and its `actualPosition` still does.
+ *   `tc` and `frame` are worked out again where the row's own values were worked out that way
+ *   (`classifyRow`'s test); where something else wrote them they are shifted, never replaced
+ *   with a guess.
+ * - **The end is `etc`.** A model's is `actualPosition` plus the length, as the ingest wrote
+ *   it. An annotator's is read back as its start plus `etc - tc` (`derivedKeyframes`), and
+ *   both are whole seconds, so its length is kept to the nearest whole second -- the
+ *   resolution the annotation was recorded at.
+ *
+ * @param {Object} row - `mediaPosition`, `actualPosition`, `tc`, `etc`, `frame`, `observed_at`.
+ * @param {Object} change
+ * @param {number} change.startMs - The new start, in milliseconds of the video.
+ * @param {number} change.endMs - The new end, in milliseconds of the video.
+ * @param {boolean} change.keyed - A model's stretch, with keyframes of its own.
+ * @param {number} [change.fps] - The rate its frames count at.
+ * @returns {{columns: Object, startFrame: number, endFrame: number}} The columns to write, and
+ *   the keyframe frames a keyed stretch's start and end move to.
+ * @throws {Error} When the row has no readable position to move from.
+ */
+function retimedColumns(row, { startMs, endMs, keyed, fps = ASSUMED_FPS }) {
+    const mediaMs = parseTimeSpan(row.mediaPosition);
+    if (mediaMs === null) throw new Error('The stretch has no readable position in the video.');
+    const shift = startMs - mediaMs;
+    const lengthMs = endMs - startMs;
+    const columns = { mediaPosition: formatTimeSpan(startMs) };
+
+    const actualMs = parseTimeSpan(row.actualPosition);
+    const actualNow = actualMs === null ? null : actualMs + shift;
+    if (actualNow !== null) columns.actualPosition = formatTimeSpan(actualNow);
+
+    // Worked out again only where the row's own value was worked out this way.
+    const tcDerived = actualMs !== null && deriveTc(actualMs) === row.tc;
+    columns.tc = tcDerived ? deriveTc(actualNow) : shiftTruncated(row.tc, shift);
+    const frame = row.frame == null ? null : String(row.frame);
+    if (actualMs !== null && frame !== null && deriveFrame(actualMs, fps) === frame) {
+        columns.frame = deriveFrame(actualNow, fps);
+    }
+    if (row.observed_at) columns.observed_at = new Date(new Date(row.observed_at).getTime() + shift);
+
+    if (keyed && actualNow !== null) {
+        columns.etc = deriveTc(actualNow + lengthMs);
+    } else {
+        const tcMs = parseTimeSpan(columns.tc);
+        if (tcMs === null) throw new Error('The stretch has no readable tc to measure its end from.');
+        columns.etc = deriveTc(tcMs + Math.round(lengthMs / 1000) * 1000);
+    }
+
+    return {
+        columns,
+        startFrame: Math.round((startMs * fps) / 1000),
+        endFrame: Math.round((endMs * fps) / 1000),
+    };
+}
+
+module.exports = { HABITAT_SESSION_TYPE, HABITAT_BOX, derivedKeyframes, retimedColumns };

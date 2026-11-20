@@ -121,6 +121,8 @@ const SUBSYSTEMS = {
             'mosaic-video',
             'mosaic-video-edit',
             'mosaic-video-annotate',
+            // #287: the video page's habitat timeline, and retiming a stretch from it.
+            'mosaic-habitat-stretch',
             // #181: the Jellyfin proxy the video page plays through, and the one port
             // that answers HTTPS beside HTTP so that page can be secure.
             'jellyfin-proxy',

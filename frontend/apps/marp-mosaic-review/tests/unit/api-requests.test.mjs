@@ -26,7 +26,7 @@ import assert from 'node:assert/strict';
 import {
   idList, filtersBody, pagesBody, countsBody, commitBody, correctionBody, retryBody,
   facetsBody, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody,
-  createObservationBody, countBody, pictureBody
+  createObservationBody, countBody, pictureBody, stretchTimesBody
 } from '../../src/api/requests.js';
 import { sortTerms } from '../../src/model/filters.js';
 import { DIMENSIONS, KIND } from '../../src/model/dimensions.js';
@@ -475,4 +475,11 @@ test('#181: annotating sends what each route takes, and refuses what it cannot b
   assert.throws(() => countBody(0), /at least 1/);
   assert.throws(() => countBody(2.5), /whole number/);
   assert.deepEqual(onWire(pictureBody({ t: 12, subset: 1, box })), { t: 12, x: 0.3, y: 0.4, width: 0.1, height: 0.2, subset: '1' });
+});
+
+test('#287 R5: a habitat stretch\'s new span reaches the wire in seconds, with the version read', () => {
+  assert.deepEqual(onWire(stretchTimesBody({ startS: 12.5, endS: 40.04, version: 3 })), { start_s: 12.5, end_s: 40.04, version: 3 });
+  assert.throws(() => stretchTimesBody({ startS: 40, endS: 12, version: 3 }), /start before its end/);
+  assert.throws(() => stretchTimesBody({ startS: -1, endS: 12, version: 3 }), /start before its end/);
+  assert.throws(() => stretchTimesBody({ startS: 1, endS: 12 }), /version/);
 });

@@ -34,3 +34,56 @@ so this adds a way to register one trained outside it: the feasibility experimen
 ## Open assumptions
 
 None open.
+
+---
+
+# A habitat timeline on the Mosaic's video page
+
+Issue: MarineAppliedResearch/MARP_API#287 · Branch: `287-trial-fixes`
+
+## Goal
+
+Isaac, 2026-11-20: *"in our video_processing_gui, when we have a habitat session, we show a
+special timeline the user can click on to navigate and generally see what is happening for
+the whole video, i'd like to be able to show this timeline here too, and perhaps also be able
+to drag and drop the ends of this timeline to change how long a specific observation is, and
+then a way to see on the timeline, if it's been reviewed or flagged"*.
+
+## What exists
+
+- **The GUI's strip** (`VIDEO_PROCESSING_GUI` `HabitatTimelineWindow.xaml.cs`, its #205): one
+  thin bar per habitat record in its place along the video, fixed lanes top to bottom --
+  Cobble; Boulder; Sand and Mud; Rock; Stop, Pull and Off Transect -- each substrate its own
+  colour, a playhead, and a right-click menu naming the record with Go To Start / Go To End.
+  No labels on the strip.
+- **The video page already holds what a strip needs to draw**: `POST /api/mosaic/video/observations`
+  answers every observation in the video that the Mosaic's query matches, each with
+  `start_s`, `end_s`, `comname`, `session_id`, `review_decision` and `flag_reason`.
+- **A habitat stretch's ends are stored in more than one place.** A machine stretch carries
+  `mediaPosition`, `actualPosition`, `tc`, `frame`, `observed_at` for its start and `etc` for
+  its end, *and* a start and an end keyframe. A GUI-annotated stretch carries the timecode
+  columns only; its keyframes are worked out from them (`db/habitat-keyframes.js`). The box
+  editor refuses to edit a habitat stretch for exactly this reason (A20, A22).
+
+## Proposed requirements (not settled)
+
+- **R3** -- On a habitat session's video, a strip under the player draws each stretch as a bar
+  in its substrate's GUI lane and colour, with the playhead. Clicking the strip seeks there;
+  clicking a bar selects that stretch, as clicking its box does.
+- **R4** -- Each bar shows its scientific review: reviewed, flagged (with the reason on hover),
+  or not yet reviewed, distinguishably at a glance.
+- **R5** -- Dragging either end of a bar changes when the stretch starts or ends. Every column
+  that states that time moves together, through `db/timecode.js`, for both kinds of stretch;
+  the video follows the dragged end so the reviewer sees the frame it lands on. Only for a
+  reviewer who may annotate.
+
+## Open assumptions
+
+- [x] **A1 · product/UI · blocking** — answered 2026-11-20: **the whole session**, whatever the Mosaic is filtered to, so the strip always shows every stretch and what has been reviewed. Needs a read the page does not make today: the video read follows the filter.
+- [x] **A2 · product/UI · blocking** — answered 2026-11-20: **the opened observation's session only.**
+- [x] **A3 · scientific/data-meaning · blocking** — answered 2026-11-20: **it stays reviewed**; fixing the times is part of reviewing it. A flag stays until it is taken back.
+- [x] **A4 · behavioural · blocking** — answered 2026-11-20: **the two merge**, through the Mosaic's existing merge.
+- [ ] **A5 · behavioural · non-blocking** — Moving a start leaves the Mosaic picture as it is
+      (it can be replaced with *Use this picture*), rather than re-cutting it. Proposed default.
+- [ ] **A6 · product/UI · non-blocking** — Lanes taller than the GUI's 5 px so an end can be
+      grabbed with a mouse or a finger; the GUI's lanes and colours otherwise. Proposed default.
