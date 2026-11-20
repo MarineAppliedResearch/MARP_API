@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   laneOf, colourOf, reviewOf, stripLayout, dragTo, mergesInto, edgeAt,
-  wholeView, zoomView, panView, followView, isWhole
+  wholeView, zoomView, panView, followView, isWhole, stretchMenu
 } from '../../src/model/habitat-timeline.js';
 
 /** A stretch as the video read gives one. */
@@ -120,4 +120,15 @@ test('R7: zoomed in, the strip pages along to keep the playhead in view', () => 
   assert.deepEqual(followView(view, 1000, 40), { from: 0, to: 100 }, 'sought back before it: held at the start');
   assert.ok(isWhole(wholeView(500), 500));
   assert.ok(!isWhole(view, 1000));
+});
+
+test('#353: a bar\'s menu names the stretch, then goes to its start or its end', () => {
+  const [bar] = stripLayout([stretch(1, 'Sand', 12.5, 40.04, { obs_id: 7 })]).bars;
+  assert.deepEqual(stretchMenu(bar), [
+    { label: '7 · Sand' },
+    { label: 'Go to start', t: 12.5 },
+    { label: 'Go to end', t: 40.04 }
+  ]);
+  const [open] = stripLayout([stretch(2, 'Mud', 3, NaN, { open_ended: true })]).bars;
+  assert.deepEqual(stretchMenu(open).map((item) => item.label), ['Mud', 'Go to start'], 'no end yet: nowhere to go but the start');
 });

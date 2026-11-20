@@ -594,3 +594,8 @@ body {
   pointer-events: none;
   z-index: 2;
 }
+
+/* #353: a bar's right-click menu, opened where the pointer is rather than inside the player. */
+.hstrip-menu {
+  position: fixed;
+}

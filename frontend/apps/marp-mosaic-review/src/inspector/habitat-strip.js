@@ -18,7 +18,7 @@
  */
 
 import {
-  stripLayout, dragTo, mergesInto, edgeAt, wholeView, zoomView, panView, followView, isWhole
+  stripLayout, dragTo, mergesInto, edgeAt, wholeView, zoomView, panView, followView, isWhole, stretchMenu
 } from '../model/habitat-timeline.js';
 
 /* Pixels either side of a bar's end that pick it up: more for a finger than a mouse. */
@@ -64,7 +64,12 @@ export function createHabitatStrip(root, host) {
   lanes.className = 'hstrip-lanes';
   const playhead = document.createElement('div');
   playhead.className = 'hstrip-playhead';
-  root.append(overview, lanes);
+  // A bar's right-click menu, the box menu's look (#353).
+  const menu = document.createElement('div');
+  menu.className = 'inspect-menu hstrip-menu';
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+  root.append(overview, lanes, menu);
 
   const duration = () => host.duration();
   const at = (t) => (100 * (t - view.from)) / (view.to - view.from);
@@ -169,6 +174,51 @@ export function createHabitatStrip(root, host) {
     drag = null;
     lanes.classList.remove('dragging', 'panning');
   }
+
+  /* -------------------------------------------------------------- the menu (#353) */
+
+  function closeMenu() {
+    menu.hidden = true;
+  }
+
+  /* The GUI's right click on a bar: its name, then Go To Start and Go To End. Going to either
+     end also selects it, as a click on the bar does. */
+  function openMenu(bar, clientX, clientY) {
+    menu.replaceChildren(...stretchMenu(bar).map((item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = item.label;
+      button.disabled = item.t === undefined;
+      button.addEventListener('click', () => {
+        closeMenu();
+        host.seek(item.t);
+        selectedId = bar.id;
+        host.select(bar.id);
+        render();
+      });
+      return button;
+    }));
+    menu.hidden = false;
+    // The strip is at the bottom of the page, so it opens upward, and stays on screen.
+    menu.style.left = `${Math.max(0, Math.min(clientX, innerWidth - menu.offsetWidth))}px`;
+    menu.style.top = `${Math.max(0, clientY - menu.offsetHeight)}px`;
+  }
+
+  lanes.addEventListener('contextmenu', (event) => {
+    const { bar } = barAt(event.target);
+    if (!bar) return;
+    event.preventDefault();
+    openMenu(bar, event.clientX, event.clientY);
+  });
+
+  // Anywhere else, Escape, or the strip moving underneath it closes it.
+  document.addEventListener('pointerdown', (event) => {
+    if (!menu.hidden && !menu.contains(event.target)) closeMenu();
+  }, true);
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !menu.hidden) closeMenu();
+  });
+  lanes.addEventListener('wheel', closeMenu);
 
   /* -------------------------------------------------------------- zooming (R6) */
 

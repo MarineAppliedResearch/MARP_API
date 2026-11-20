@@ -211,3 +211,18 @@ export function followView(view, duration, t) {
 export function isWhole(view, duration) {
   return view.from <= 0.04 && view.to >= duration - 0.04;
 }
+
+/**
+ * A bar's right-click menu, as the GUI's strip has it (#353): the stretch named first -- the
+ * strip carries no labels, so this is where it says what it is -- then its two ends.
+ *
+ * @param {Object} bar - From `stripLayout`.
+ * @returns {Array<{label: string, t?: number}>} An entry with no `t` is a heading.
+ */
+export function stretchMenu(bar) {
+  const name = `${bar.obsId != null ? `${bar.obsId} · ` : ''}${bar.name}`;
+  const items = [{ label: name }, { label: 'Go to start', t: bar.start }];
+  // One with no end yet has nowhere to go but its start.
+  if (bar.draggable) items.push({ label: 'Go to end', t: bar.end });
+  return items;
+}
