@@ -44,9 +44,7 @@ export function createHabitatStrip(root, host) {
   lanes.className = 'hstrip-lanes';
   const playhead = document.createElement('div');
   playhead.className = 'hstrip-playhead';
-  const legend = document.createElement('p');
-  legend.className = 'hstrip-legend';
-  root.append(lanes, legend);
+  root.append(lanes);
 
   const duration = () => host.duration();
   const percent = (t) => `${(100 * t) / duration()}%`;
@@ -67,8 +65,9 @@ export function createHabitatStrip(root, host) {
   function render() {
     drawnFor = duration();
     lanes.replaceChildren();
-    root.hidden = !habitat;
-    if (!habitat || !Number.isFinite(drawnFor) || drawnFor <= 0) return;
+    // Nothing on screen until there are bars to draw: no empty band while the video loads.
+    root.hidden = !habitat || !Number.isFinite(drawnFor) || drawnFor <= 0;
+    if (root.hidden) return;
     lanes.style.setProperty('--rows', layout.rows.length);
     for (let row = 0; row < layout.rows.length; row += 2) {
       const stripe = document.createElement('div');
@@ -88,9 +87,6 @@ export function createHabitatStrip(root, host) {
       lanes.append(element);
     }
     lanes.append(playhead);
-    legend.textContent = `${habitat.stretches.length} stretches in this session · faded: not reviewed · `
-      + 'green line: reviewed · amber line: flagged'
-      + (host.canDrag() ? ' · drag a bar\'s end to change its times' : '');
   }
 
   function timeAt(clientX) {

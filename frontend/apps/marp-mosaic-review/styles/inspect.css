@@ -498,7 +498,7 @@ body {
    the GUI's 5 px so an end can be grabbed (A6). */
 .hstrip {
   --lane: 12px;
-  padding: 6px 12px 4px;
+  padding: 6px 12px;
   background: var(--navy-850);
   border-top: 1px solid var(--border);
 }
@@ -570,10 +570,4 @@ body {
   background: var(--white);
   pointer-events: none;
   z-index: 2;
-}
-
-.hstrip-legend {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 0.8em;
 }
