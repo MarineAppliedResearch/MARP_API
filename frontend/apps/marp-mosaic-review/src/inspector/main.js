@@ -24,7 +24,7 @@ import {
 } from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
-import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '../model/box-edit.js';
+import { toScreen, trackKey, withEdit, withObservation, keyframeShown, placePanel } from '../model/box-edit.js';
 import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
 import { labelScale, sharedTabShifts } from '../model/box-style.js';
 import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
@@ -535,7 +535,10 @@ const editor = createBoxEditor({
     canDraw: () => canAnnotate,
     isPicture: (target) => target === pictureCanvas,
     // The player's controls bar and its settings menu, which keep their own presses (#356).
-    isControls: (target) => Boolean(target && target.closest && target.closest('.marp-controls-bar, .marp-settings-menu')),
+    // The observation panel and the species popup keep theirs too: a box beneath one must not
+    // take a press on it, now that the panel can be dragged over the picture (#364).
+    isControls: (target) => Boolean(target && target.closest
+      && target.closest('.marp-controls-bar, .marp-settings-menu, .annotate-panel, .annotate-popup')),
     // A habitat stretch's box is the habitat crop: never dragged or resized (#359).
     boxFixed: (id) => inHabitatSession(id),
     // Ctrl or Shift on a box picks it to be cut, and its menu offers the cut (#360).
@@ -1113,4 +1116,61 @@ try {
   if (first && first.type === 'show') show(first);
 } catch {
   status('Open a video from the Mosaic.');
+}
+
+/* ---------------------------------------------------------------- the panel moves (#364) */
+
+/* Dragged by its title row to anywhere over the player, and kept there: where it was left is
+   remembered in this browser, as a reviewer's own arrangement of the page. */
+const PANEL_PLACE = 'marp-video-panel-place';
+{
+  const panel = $('obsPanel');
+  let dragging = null;
+
+  const put = (at) => {
+    const area = panel.offsetParent || playerRoot;
+    const place = placePanel(at, { width: panel.offsetWidth, height: panel.offsetHeight },
+      { width: area.clientWidth, height: area.clientHeight });
+    panel.style.left = `${place.left}px`;
+    panel.style.top = `${place.top}px`;
+    panel.style.right = 'auto';
+    return place;
+  };
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(PANEL_PLACE) || 'null');
+    if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+      // Put back once it is on screen with a size, and kept inside the player as it resizes.
+      new MutationObserver(() => { if (!panel.hidden && !panel.dataset.placed) { panel.dataset.placed = '1'; put(saved); } })
+        .observe(panel, { attributes: true, attributeFilter: ['hidden'] });
+    }
+  } catch {
+    // No storage here: it opens where it always has.
+  }
+
+  panel.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || !event.target.closest('.annotate-head') || event.target.closest('button')) return;
+    dragging = { pointer: event.pointerId, x: event.clientX, y: event.clientY, left: panel.offsetLeft, top: panel.offsetTop };
+    panel.setPointerCapture(event.pointerId);
+    panel.classList.add('moving');
+    event.preventDefault();
+  });
+  panel.addEventListener('pointermove', (event) => {
+    if (!dragging || event.pointerId !== dragging.pointer) return;
+    put({ left: dragging.left + event.clientX - dragging.x, top: dragging.top + event.clientY - dragging.y });
+  });
+  const drop = (event) => {
+    if (!dragging || event.pointerId !== dragging.pointer) return;
+    dragging = null;
+    panel.classList.remove('moving');
+    panel.dataset.placed = '1';
+    try {
+      localStorage.setItem(PANEL_PLACE, JSON.stringify({ left: panel.offsetLeft, top: panel.offsetTop }));
+    } catch {
+      // Not remembered, and that is all.
+    }
+  };
+  panel.addEventListener('pointerup', drop);
+  panel.addEventListener('pointercancel', drop);
+  window.addEventListener('resize', () => { if (panel.dataset.placed) put({ left: panel.offsetLeft, top: panel.offsetTop }); });
 }

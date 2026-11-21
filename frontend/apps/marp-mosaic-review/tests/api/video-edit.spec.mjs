@@ -216,3 +216,42 @@ test('#356 a press on the player\'s controls is theirs, though a box is drawn be
     }).not.toBeCloseTo(before, 0);
     expect(edits, 'a click on the scrub bar edited the box beneath it').toEqual([]);
   });
+
+/* #364, Isaac 2026-11-20: the observation panel "is supposed to be movable and draggable to
+   other parts of the screen". */
+test('#364 the observation panel is dragged by its title to anywhere over the player, and stays there',
+  async ({ page, request }) => {
+    test.setTimeout(240_000);
+    const id = await editableObservation(request);
+    await openAndPlay(page, id);
+    const panel = page.locator('#obsPanel');
+    await expect(panel).toBeVisible();
+    const before = await panel.boundingBox();
+    const title = await panel.locator('.annotate-head strong').boundingBox();
+    await mouseDrag(page, { x: title.x + 10, y: title.y + title.height / 2 }, -400, 120);
+    const after = await panel.boundingBox();
+    expect(Math.round(after.x - before.x)).toBe(-400);
+    expect(Math.round(after.y - before.y)).toBe(120);
+
+    // Dragged off the edge, it stops at it, its title still in reach.
+    await mouseDrag(page, { x: after.x + 20, y: after.y + 10 }, -5000, -5000);
+    const corner = await panel.boundingBox();
+    const player = await page.locator('#player').boundingBox();
+    expect(corner.x).toBeGreaterThanOrEqual(player.x - 1);
+    expect(corner.y).toBeGreaterThanOrEqual(player.y - 1);
+
+    // Where it was left is where it opens next time.
+    await page.reload();
+    // Still signed in to Jellyfin, which keeps its session in the browser; signed in again if not.
+    const form = page.locator('#signIn');
+    const asked = await form.waitFor({ state: 'visible', timeout: 60_000 }).then(() => true, () => false);
+    if (asked) {
+      await form.getByLabel('User').fill(process.env.JELLYFIN_USERNAME);
+      await form.getByLabel('Password').fill(process.env.JELLYFIN_PASSWORD);
+      await form.getByRole('button', { name: 'Sign in' }).click();
+    }
+    await expect(panel).toBeVisible({ timeout: 120_000 });
+    const reopened = await panel.boundingBox();
+    expect(Math.round(reopened.x)).toBe(Math.round(corner.x));
+    expect(Math.round(reopened.y)).toBe(Math.round(corner.y));
+  });

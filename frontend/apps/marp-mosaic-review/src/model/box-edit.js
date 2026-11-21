@@ -245,3 +245,18 @@ export function withEdit(held, { changed = [], deleted = [] }) {
   }
   return out;
 }
+
+/**
+ * Where a dragged panel goes (#364): where the pointer has taken it, kept inside the area it is
+ * shown in, so its title can always be reached to drag it back.
+ *
+ * @param {{left: number, top: number}} at - Where it is asked to be.
+ * @param {{width: number, height: number}} size - The panel's size.
+ * @param {{width: number, height: number}} area - What it is shown in.
+ * @returns {{left: number, top: number}}
+ */
+export function placePanel(at, size, area) {
+  const left = Math.min(Math.max(at.left, 0), Math.max(0, area.width - size.width));
+  const top = Math.min(Math.max(at.top, 0), Math.max(0, area.height - size.height));
+  return { left, top };
+}

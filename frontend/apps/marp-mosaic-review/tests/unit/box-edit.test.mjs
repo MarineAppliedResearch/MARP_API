@@ -139,3 +139,13 @@ test('#352: a click on a label picks its own box, though another one is drawn on
   assert.deepEqual(hitTest(rects, { x: 160, y: 345 }, '9_1'), { key: '8_1', part: 'body' }, 'Mud\'s bottom label');
   assert.deepEqual(hitTest(rects, { x: 250, y: 280 }, '9_1'), { key: '9_1', part: 'body' }, 'the box itself: the one on top');
 });
+
+test('#364: a dragged panel goes where it is taken, and stays inside what it is shown in', async () => {
+  const { placePanel } = await import('../../src/model/box-edit.js');
+  const size = { width: 270, height: 400 };
+  const area = { width: 1600, height: 900 };
+  assert.deepEqual(placePanel({ left: 300, top: 120 }, size, area), { left: 300, top: 120 });
+  assert.deepEqual(placePanel({ left: -50, top: -10 }, size, area), { left: 0, top: 0 });
+  assert.deepEqual(placePanel({ left: 1500, top: 800 }, size, area), { left: 1330, top: 500 });
+  assert.deepEqual(placePanel({ left: 40, top: 40 }, size, { width: 200, height: 300 }), { left: 0, top: 0 }, 'bigger than the area: at its corner');
+});

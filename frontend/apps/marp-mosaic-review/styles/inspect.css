@@ -636,3 +636,18 @@ body {
   outline-offset: 1px;
   z-index: 1;
 }
+
+/* #364: the observation panel is dragged by its title row. */
+.annotate-panel .annotate-head {
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.annotate-panel .annotate-head button {
+  cursor: pointer;
+}
+
+.annotate-panel.moving {
+  opacity: 0.9;
+}
