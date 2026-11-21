@@ -12,7 +12,7 @@
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, readdirSync, copyFileSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, copyFileSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { narrate, synthesize, pickEngine } from './narrate.mjs';
 
@@ -75,6 +75,7 @@ export async function recordWalkthroughs({
     const scenario = scenarios[id];
     console.log(`\n── ${scenario.title} ──`);
     rmSync(results, { recursive: true, force: true });
+    rmSync(join(outDir, `${id}.trim.json`), { force: true });
 
     /* Speak the lines first, so the walkthrough knows how long to hold each one.
        Without this the captions advance on a timer and lines overlap. */
@@ -106,9 +107,13 @@ export async function recordWalkthroughs({
     const webm = findVideo(results);
     if (!webm) { console.error(`${id}: no video was produced`); process.exitCode = 1; continue; }
 
+    /* A scenario's setup is not filmed: the video starts where its first scene does. */
+    const trimPath = join(outDir, `${id}.trim.json`);
+    const trim = existsSync(trimPath) ? Number(JSON.parse(readFileSync(trimPath, 'utf8'))) || 0 : 0;
+
     const silent = join(outDir, `${id}-${stamp}.mp4`);
     const ff = spawnSync('ffmpeg', [
-      '-y', '-loglevel', 'error', '-i', webm,
+      '-y', '-loglevel', 'error', '-i', webm, '-ss', String(trim / 1000),
       '-vf', 'scale=1280:-2:flags=lanczos',
       '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'slow', '-crf', '23',
       '-movflags', '+faststart', silent
@@ -124,7 +129,7 @@ export async function recordWalkthroughs({
     if (narrating && clips) {
       const spoken = join(outDir, `${id}-${stamp}-narrated.mp4`);
       const r = narrate({
-        video, clips, timeline: join(outDir, `${id}.timeline.json`), out: spoken
+        video, clips, timeline: join(outDir, `${id}.timeline.json`), out: spoken, offset: trim
       });
       console.log(r.ok
         ? `wrote ${r.out}  (${r.spoken} lines, ${r.engine})`

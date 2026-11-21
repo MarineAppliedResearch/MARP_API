@@ -20,7 +20,7 @@
  */
 
 import { request } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 /** Where the signed-in state is left. Under `demo/`, which is git-ignored. */
@@ -34,6 +34,16 @@ export default async function signIn() {
   if (!username || !password) {
     throw new Error('MARP_API_BASE needs MARP_REVIEW_USERNAME and MARP_REVIEW_PASSWORD too.\n'
       + 'Create the login with: node scripts/create-review-user.js --username <name>');
+  }
+
+  /* A run of several recordings signs in once: the login route allows ten attempts per
+     fifteen minutes per address, and on a server somebody is using that lockout is theirs too.
+     MARP_REUSE_SESSION keeps a session file that still answers. */
+  if (process.env.MARP_REUSE_SESSION && existsSync(SESSION_FILE)) {
+    const held = await request.newContext({ baseURL: base, storageState: SESSION_FILE });
+    const still = await held.get('/api/v2/auth/me').then((r) => r.ok(), () => false);
+    await held.dispose();
+    if (still) { console.log(`still signed in to ${base}`); return; }
   }
 
   const api = await request.newContext({ baseURL: base });
