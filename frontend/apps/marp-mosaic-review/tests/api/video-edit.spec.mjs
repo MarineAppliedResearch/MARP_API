@@ -211,9 +211,13 @@ test('#356 a press on the player\'s controls is theirs, though a box is drawn be
     const at = found;
     const before = await page.evaluate(() => window.MARP_VIDEO.time);
     await page.mouse.click(at.x, at.y);
-    await expect.poll(() => page.evaluate(() => window.MARP_VIDEO.time), {
-      message: 'the click on the scrub bar did not move the video', timeout: 30_000
-    }).not.toBeCloseTo(before, 0);
+    // The scrub bar had the press: the video moved there, or -- on a phone, which plays a
+    // transcode and is slow to seek -- the scrub bar's handle went to where it was pressed.
+    await expect.poll(async () => {
+      const time = await page.evaluate(() => window.MARP_VIDEO.time);
+      const handle = await page.locator('.marp-scrub-handle').boundingBox();
+      return Math.abs(time - before) > 0.5 || (handle && Math.abs(handle.x + handle.width / 2 - at.x) < 6);
+    }, { message: 'the click on the scrub bar went neither to the video nor to its handle', timeout: 30_000 }).toBe(true);
     expect(edits, 'a click on the scrub bar edited the box beneath it').toEqual([]);
   });
 
