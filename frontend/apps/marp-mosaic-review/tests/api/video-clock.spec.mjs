@@ -80,7 +80,10 @@ test('#367: the frame\'s clock time follows the video, frame by frame', async ({
     const put = page.waitForResponse(isClockPut);
     await page.locator('#clockForm button[type=submit]').click();
     expect((await put).ok()).toBeTruthy();
-    await expect(page.locator('#clockNow')).toContainText('This frame:');
+    // In the player's controls now, the time alone, the day on hover (#367).
+    await expect(page.locator('#clockNow')).toContainText('UTC');
+    await expect(page.locator('#clockNow')).toHaveAttribute('title', /^This frame: /);
+    expect(await page.locator('#clockNow').evaluate((e) => Boolean(e.closest('.marp-controls-row')))).toBe(true);
 
     // Each step forward is a new frame 40 ms on, and the readout says so.
     for (let step = 0; step < 3; step += 1) {

@@ -651,3 +651,37 @@ body {
 .annotate-panel.moving {
   opacity: 0.9;
 }
+
+/* #367: the frame's clock time, after the play time in the player's controls. */
+.marp-controls-row .inspect-clock-now {
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* #367: the video's own lines at the foot of the observation panel. */
+.panel-video {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 0.85em;
+}
+
+.panel-video .inspect-detail {
+  overflow-wrap: anywhere;
+}
+
+.panel-video .inspect-clock-button {
+  align-self: flex-start;
+}
+
+.panel-video .inspect-clock-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}

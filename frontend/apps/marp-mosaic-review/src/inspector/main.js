@@ -32,7 +32,10 @@ import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText
 import { createHabitatStrip } from './habitat-strip.js';
 import { colourOf, cutChoice } from '../model/habitat-timeline.js';
 
-const $ = (id) => document.getElementById(id);
+/* The video's own lines live in the observation panel (#367), which is out of the document while
+   no observation is selected; a lookup by id finds them there too, or Set clock is null. */
+let videoLines = null;
+const $ = (id) => document.getElementById(id) || (videoLines && videoLines.querySelector(`#${id}`));
 
 /* The most observations one keyframe request names; the API takes up to 2,000. */
 const IDS_PER_REQUEST = 1000;
@@ -52,6 +55,15 @@ $('boxes').insertAdjacentElement('afterend', $('habitatNow'));
    GUI has it (#362): lined up with the scrub bar, and fullscreen with the player. */
 const scrubTrack = playerRoot.querySelector('.marp-scrub-track');
 if (scrubTrack) scrubTrack.insertAdjacentElement('beforebegin', $('habitatStrip'));
+/* No band above the video (Isaac, #367: it "makes it so we can't use as much of the window"):
+   the frame's clock time sits after the play time in the player's controls, and the video's own
+   lines -- its file, when it was recorded, Set clock -- at the foot of the observation panel. */
+const playTime = playerRoot.querySelector('.marp-time');
+if (playTime) playTime.insertAdjacentElement('afterend', $('clockNow'));
+const videoInfo = document.createElement('section');
+videoInfo.className = 'panel-video';
+videoInfo.append($('inspectDetail'), $('clockState'), $('setClock'), $('clockForm'));
+videoLines = videoInfo;
 playerRoot.appendChild($('boxMenu'));
 // The add popup and the observation panel go fullscreen with the player too.
 playerRoot.appendChild($('addPopup'));
@@ -231,7 +243,9 @@ function redraw() {
    shows, not only on a redraw -- it stood still through playback (#367). */
 function sayFrameClock(t) {
   const now = clockAt(clock, t);
-  $('clockNow').textContent = now ? `This frame: ${now}` : '';
+  // The time in the controls, the day on hover: the readout is beside the play time now (#367).
+  $('clockNow').textContent = now ? now.slice(11) : '';
+  $('clockNow').title = now ? `This frame: ${now}` : '';
 }
 
 /* The held windows' keyframes, gathered per observation. A keyframe held by two windows
@@ -621,6 +635,8 @@ function showTitle() {
   $('inspectTitle').textContent = row
     ? `${row.comname || 'Observation'} · ${row.observation_id}`
     : openedTitle;
+  // With no band above the video, the window's title says what is open (#367).
+  if ($('inspectTitle').textContent) document.title = `${$('inspectTitle').textContent} · MARP Source Video`;
 }
 
 /* Whether an observation's track still lacks an end keyframe, from what the page holds. An
@@ -883,6 +899,8 @@ function updatePanel() {
   }
   showTitle();
   const drawnRow = drawable.find((o) => o.observation_id === id);
+  // The video's own lines, at the panel's foot, after it is drawn afresh (#367).
+  queueMicrotask(() => { if (!$('obsPanel').hidden) $('obsPanel').append(videoInfo); });
   const keyframes = drawnRow ? drawnRow.tracks.flat().sort((a, b) => a.t - b.t) : [];
   renderPanel($('obsPanel'), {
     row,

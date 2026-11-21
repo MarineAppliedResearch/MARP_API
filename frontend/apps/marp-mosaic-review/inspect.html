@@ -11,7 +11,9 @@
 <script src="../../shared/vendor/marp-video-player/dist/marp-video-player.standalone.js"></script>
 </head>
 <body>
-<header class="inspect-head">
+<!-- No band above the video (#367): its parts are moved into the player's controls and the
+     observation panel when the page starts, and this header stays hidden. -->
+<header class="inspect-head" hidden>
   <strong id="inspectTitle">Source video</strong>
   <span id="inspectDetail" class="inspect-detail"></span>
   <!-- When the recording started, or that it has none (#76). -->
