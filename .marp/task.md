@@ -130,3 +130,8 @@ make them take up less of the screen"*.
 - **End time** (Isaac, 2026-11-20) -- setting, moving or removing a habitat stretch's end keyframe
   keeps `etc` (and the start columns) in step, by the same rule as a drag (`retimedColumns`). A
   stretch added on the video page had its end only as a keyframe and no `etc`.
+- **#367 header** (Isaac, 2026-11-20) -- no band above the video. The frame's clock time sits beside
+  the play time in the player's controls; the observation's name, file, recording start and Set
+  clock move into the observation panel, which can be dragged about (#364).
+- **#365, #366** -- keyframes in the panel and the page's messages give the clock time where the
+  video has a clock, to the frame; the position in the video where it has none.

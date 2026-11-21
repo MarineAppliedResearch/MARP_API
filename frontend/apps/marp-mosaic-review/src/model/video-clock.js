@@ -97,3 +97,17 @@ export function clockAt(clock, seconds) {
   // still be most of a second out, and frames are 40 ms apart (Isaac, 2026-11-20).
   return `${iso.slice(0, 10)} ${iso.slice(11, 23)} UTC`;
 }
+
+/**
+ * A moment as the page tells it to the reviewer (#365, #366): the time on the video's clock,
+ * to the millisecond, where it has one -- `19:12:59.440 UTC` -- and its position in the video
+ * where it has none. The day is left to the readout of the frame on screen, which carries it.
+ *
+ * @param {Object|null} clock - `GET /videos/clock`'s answer.
+ * @param {number} seconds - Where it is in the video.
+ * @returns {string}
+ */
+export function timeText(clock, seconds) {
+  const at = clockAt(clock, seconds);
+  return at ? at.slice(11) : positionText(seconds);
+}

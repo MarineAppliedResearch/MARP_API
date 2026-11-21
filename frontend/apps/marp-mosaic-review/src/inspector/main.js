@@ -28,7 +28,7 @@ import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '..
 import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
 import { labelScale, sharedTabShifts } from '../model/box-style.js';
 import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
-import { clockAt, clockLine, positionText, readingOffered, readingBody } from '../model/video-clock.js';
+import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText } from '../model/video-clock.js';
 import { createHabitatStrip } from './habitat-strip.js';
 import { colourOf, cutChoice } from '../model/habitat-timeline.js';
 
@@ -573,7 +573,8 @@ const strip = createHabitatStrip($('habitatStrip'), {
     }
     try {
       const answer = await MarpApi.setStretchTimes(bar.id, { startS: span.start, endS: span.end, version: bar.version });
-      status(`${bar.name} now runs ${positionText(answer.start_s)} to ${positionText(answer.end_s)}`
+      // On the video's clock where it has one (#366).
+      status(`${bar.name} now runs ${timeText(clock, answer.start_s)} to ${timeText(clock, answer.end_s)}`
         + (answer.merged.length ? `, with ${answer.merged.length} merged into it.` : '.'));
     } catch (error) {
       status(error.status === 409
@@ -671,7 +672,7 @@ async function cut({ target, by }) {
     const answer = await MarpApi.cutStretch(target, { byId: by, version: row.version });
     status(answer.split_observation_id
       ? `${nameOf(target)} is cut in two around ${nameOf(by)}.`
-      : `${nameOf(target)} now runs ${positionText(answer.start_s)} to ${positionText(answer.end_s)}.`);
+      : `${nameOf(target)} now runs ${timeText(clock, answer.start_s)} to ${timeText(clock, answer.end_s)}.`);
     secondId = null;
     cutterId = null;
     strip.second(null);
@@ -888,7 +889,9 @@ function updatePanel() {
     canWrite: canAnnotate,
     canDelete,
     picture: pictureState,
-    review: { canReview, busy: reviewing }
+    review: { canReview, busy: reviewing },
+    // Keyframes on the video's clock where it has one (#365).
+    timeOf: (t) => timeText(clock, t)
   }, {
     close: () => { editor.select(null); returnKeyboard(); },
     review: (kind, reason) => recordReview(row, { kind, reason }),

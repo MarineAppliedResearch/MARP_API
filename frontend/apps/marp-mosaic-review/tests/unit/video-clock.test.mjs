@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clockAt, clockLine, positionText, readingOffered, readingBody } from '../../src/model/video-clock.js';
+import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText } from '../../src/model/video-clock.js';
 
 const unset = { recorded_start: null, start_source: null, suggested_start: '2021-06-14T16:40:41.000Z' };
 const set = { recorded_start: '2021-06-14T16:40:46.000Z', start_source: 'synced', suggested_start: '2021-06-14T16:40:41.000Z' };
@@ -46,4 +46,10 @@ test('#351: the frame on screen has a clock time, the start plus where the pictu
   assert.equal(clockAt(unset, 10), null, 'no clock, no clock time: a suggested start is not one');
   assert.equal(clockAt(null, 10), null);
   assert.equal(clockAt(set, NaN), null, 'before the video knows where it is');
+});
+
+test('#365 #366: a moment is told on the clock to the millisecond, or as its position without one', () => {
+  assert.equal(timeText(set, 74.64), '16:42:00.640 UTC');
+  assert.equal(timeText(unset, 74.64), positionText(74.64));
+  assert.equal(timeText(null, 74.64), positionText(74.64));
 });
