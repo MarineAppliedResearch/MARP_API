@@ -26,7 +26,7 @@ import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
 import { toScreen, trackKey, withEdit, withObservation, keyframeShown, placePanel } from '../model/box-edit.js';
 import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
-import { labelScale, sharedTabShifts, labelColumns } from '../model/box-style.js';
+import { labelScale, sharedTabShifts, labelColumns, TAB_ALPHA } from '../model/box-style.js';
 import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
 import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText } from '../model/video-clock.js';
 import { createHabitatStrip } from './habitat-strip.js';
@@ -777,8 +777,8 @@ function showHabitatsNow(overlay, area, scale, t) {
     const panel = document.createElement('div');
     panel.className = 'habitat-now-item';
     panel.textContent = name;
-    // The GUI's alpha, 0x99.
-    panel.style.background = `${colourOf(name)}99`;
+    // As see-through as the labels on the boxes (Isaac, 2026-11-23).
+    panel.style.background = `${colourOf(name)}${Math.round(TAB_ALPHA * 255).toString(16).padStart(2, '0')}`;
     return panel;
   }));
 }

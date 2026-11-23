@@ -43,6 +43,7 @@ test('a box\'s name tab and identifier tab are see-through, and their text is no
   assert.ok(nameTab && identifierTab, 'both tabs were painted');
   assert.equal(nameTab.alpha, TAB_ALPHA);
   assert.equal(identifierTab.alpha, TAB_ALPHA);
-  assert.ok(TAB_ALPHA > 0.4 && TAB_ALPHA < 0.8, 'partly, not barely, see-through');
+  // 0x99 was not see-through enough (Isaac, 2026-11-23).
+  assert.ok(TAB_ALPHA <= 0.45 && TAB_ALPHA >= 0.3, 'well see-through, but the colour still shows');
   assert.ok(texts.length >= 2 && texts.every((t) => t.alpha === 1), 'the writing on them stays solid');
 });
