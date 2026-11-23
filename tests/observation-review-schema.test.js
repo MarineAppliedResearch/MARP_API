@@ -506,11 +506,13 @@ describe('#103 schema objects', () => {
         });
 
         it('adds no soft-delete marker and no review columns to observations', async () => {
+            // observed_at is not here: the video clock added it on purpose (#76),
+            // and tests/video-clock.test.js covers it.
             const present = (await rows(
                 `SELECT column_name FROM information_schema.columns
                   WHERE table_name = 'observations'
                     AND column_name IN ('review_status', 'training_disposition',
-                                        'deleted_at', 'is_deleted', 'observed_at')`
+                                        'deleted_at', 'is_deleted')`
             )).map((r) => r.column_name);
             expect(present).toEqual([]);
         });
