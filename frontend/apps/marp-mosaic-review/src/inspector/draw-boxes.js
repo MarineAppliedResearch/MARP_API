@@ -5,7 +5,7 @@
  * Text widths are measured once per label and font size and kept, because a busy frame
  * draws hundreds of labels and measuring each one every frame is a cost paid for nothing.
  */
-import { GUI, DRAGGING, RESIZING, TAB_ALPHA, markerFor, identifierText, tabLayout } from '../model/box-style.js';
+import { GUI, DRAGGING, RESIZING, TAB_ALPHA, OUTLINE_ALPHA, markerFor, identifierText, tabLayout } from '../model/box-style.js';
 import { gripsOf, GRIP_RADIUS } from '../model/box-edit.js';
 
 const FONT = '"Segoe UI", system-ui, sans-serif';
@@ -132,10 +132,14 @@ export function drawBox(context, { box, rect }, { colour, type, selected, presse
 
   // Inside the box's bounds, as WPF strokes a Rectangle.
   const line = (selected ? GUI.selectedStroke : GUI.stroke) * scale;
+  context.save();
   context.lineWidth = line;
   context.strokeStyle = tone;
+  // A little see-through, so the picture under the line still shows (Isaac, 2026-11-23).
+  context.globalAlpha = OUTLINE_ALPHA;
   context.strokeRect(rect.left + line / 2, rect.top + line / 2,
     Math.max(0, rect.width - line), Math.max(0, rect.height - line));
+  context.restore();
 
   const topFont = `bold ${GUI.topFont * scale}px ${FONT}`;
   const bottomFont = `${GUI.bottomFont * scale}px ${FONT}`;

@@ -51,6 +51,10 @@ export const GUI = {
    shows through every label. The GUI's 0x99 was not see-through enough (Isaac, 2026-11-23). */
 export const TAB_ALPHA = 0x66 / 0xff;
 
+/* How solid a box's outline is drawn: a little see-through, so the picture under it shows
+   (Isaac, 2026-11-23). Not the selection halo, which marks the box being worked on. */
+export const OUTLINE_ALPHA = 0.7;
+
 /* The GUI's state colours: Colors.Orange while a box is moved, BlueViolet while resized. */
 export const DRAGGING = '#ffa500';
 export const RESIZING = '#8a2be2';
