@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 import {
   WINDOW_SECONDS, windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, withSession
-} from '../../src/model/video-review.js';
+, sessionLine } from '../../src/model/video-review.js';
 
 test('#337: a reviewed box is green, a flagged one amber, an undecided one keeps its species colour', () => {
   assert.equal(reviewColour('reviewed'), '#a7ec35');
@@ -62,4 +62,11 @@ test('#287 A7: on a habitat video the boxes are the whole session, the same stre
     'the reviewed stretch the default filter hides, the matched one once, and the rest of the video as the filter has it');
   assert.equal(drawn[1], matched[0], 'a stretch the query matched keeps its own row');
   assert.deepEqual(withSession(matched, null), matched, 'not a habitat video: the query alone');
+});
+
+test('#372: the video page names its session by dive, line and id, whichever way the dive was recorded', () => {
+  assert.equal(sessionLine({ session_id: 4377, dive: 'Dive 2', line: '370' }), 'Dive 2 · line 370 · session 4377');
+  assert.equal(sessionLine({ session_id: 4297, dive: '21', line: '620' }), 'Dive 21 · line 620 · session 4297');
+  assert.equal(sessionLine({ session_id: 9, dive: null, line: '' }), 'session 9');
+  assert.equal(sessionLine(undefined), '');
 });

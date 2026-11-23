@@ -660,6 +660,17 @@ body {
   white-space: nowrap;
 }
 
+/* #372: which session this is, after the clock; cut short with an ellipsis on a narrow screen. */
+.marp-controls-row .inspect-session-now {
+  color: var(--text-muted, var(--text));
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 40vw;
+}
+
 /* #367: the video's own lines at the foot of the observation panel. */
 .panel-video {
   display: flex;

@@ -20,7 +20,8 @@
 import { MarpApi } from '../api/index.js';
 import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget, frameTime } from '../model/video-boxes.js';
 import {
-  windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW, withSession
+  windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW, withSession,
+  sessionLine
 } from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
@@ -60,6 +61,8 @@ if (scrubTrack) scrubTrack.insertAdjacentElement('beforebegin', $('habitatStrip'
    lines -- its file, when it was recorded, Set clock -- at the foot of the observation panel. */
 const playTime = playerRoot.querySelector('.marp-time');
 if (playTime) playTime.insertAdjacentElement('afterend', $('clockNow'));
+// And which session this is, after it (#372).
+if (playTime) $('clockNow').insertAdjacentElement('afterend', $('sessionNow'));
 const videoInfo = document.createElement('section');
 videoInfo.className = 'panel-video';
 videoInfo.append($('inspectDetail'), $('clockState'), $('setClock'), $('clockForm'));
@@ -396,6 +399,8 @@ async function show(request) {
     openedSession: answer.opened.session_id,
     server
   };
+  // Which session this is, by the timecode (#372).
+  $('sessionNow').textContent = sessionLine(showing.sessions.find((s) => s.session_id === showing.openedSession));
   if (answer.truncated) status(`Only the first ${answer.observations.length} matching observations are drawn.`);
   // The boxes around the moment start loading now, so they are there when the picture is.
   followPlayhead(showing.moment);
