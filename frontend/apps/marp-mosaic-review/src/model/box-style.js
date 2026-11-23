@@ -155,25 +155,80 @@ const rankOf = (name) => {
  * @param {Array<{id: number, name: string, rect: Object, widths: {top: number, bottom: number}}>} boxes -
  *   Each box on screen, its observation, its name, and its two tabs' full widths.
  * @param {number} scale - From `labelScale`.
+ * @param {?{at: Map<string, number>, end: number}} [slots] - From `labelSlots`: a label with a
+ *   slot sits in it, and the rest are packed after the slots.
  * @returns {Array<{top: number, bottom: number}>} Each box's shift along its edge, in the
  *   order the boxes were given.
  */
-export function sharedTabShifts(boxes, scale) {
+export function sharedTabShifts(boxes, scale, slots = null) {
   const near = (a, b) => ['left', 'top', 'width', 'height'].every((edge) => Math.abs(a[edge] - b[edge]) <= SAME_PLACE);
   const places = [];
+  const placeOf = (rect) => {
+    let place = places.find((p) => near(p.rect, rect));
+    if (!place) {
+      place = { rect, top: 0, bottom: 0, taken: new Set() };
+      places.push(place);
+    }
+    return place;
+  };
   const shifts = new Array(boxes.length);
   const order = boxes.map((_, index) => index).sort((a, b) => rankOf(boxes[a].name) - rankOf(boxes[b].name)
     || (boxes[a].id ?? a) - (boxes[b].id ?? b) || a - b);
+
+  // A label with a slot goes in it, whoever else is showing. A second label of one name in
+  // one place -- two stretches of Rock overlapping -- is packed after the slots instead.
+  const packed = [];
   for (const index of order) {
-    const { rect, widths } = boxes[index];
-    let place = places.find((p) => near(p.rect, rect));
-    if (!place) {
-      place = { rect, top: 0, bottom: 0 };
-      places.push(place);
+    const key = nameKey(boxes[index].name);
+    const place = placeOf(boxes[index].rect);
+    if (slots && slots.at.has(key) && !place.taken.has(key)) {
+      place.taken.add(key);
+      place.top = place.bottom = slots.end;
+      shifts[index] = { top: slots.at.get(key), bottom: slots.at.get(key) };
+    } else {
+      packed.push(index);
     }
+  }
+  for (const index of packed) {
+    const place = placeOf(boxes[index].rect);
+    const { widths } = boxes[index];
     shifts[index] = { top: place.top, bottom: place.bottom };
     place.top += widths.top + TAB_GAP * scale;
     place.bottom += widths.bottom + TAB_GAP * scale;
   }
   return shifts;
+}
+
+const nameKey = (name) => String(name || '').trim().toLowerCase();
+
+/**
+ * A fixed slot along the habitat box for each habitat label on this video (Isaac, 2026-11-23).
+ *
+ * Packed, the labels moved: Rock alone sat first, and moved to second the moment Mud showed,
+ * and back when Mud went. With a slot each, a label never moves; an empty slot is left empty.
+ * Only the habitats this video's stretches use get one, in `LABEL_ORDER`, so a video of Mud and
+ * Rock alone has two slots rather than eight. A slot is as wide as its name's tab or the widest
+ * identifier tab of any stretch, whichever is wider, so the tabs above and below the box share it.
+ *
+ * @param {Array<{name: string, widths: {top: number, bottom: number}}>} stretches - Every habitat
+ *   stretch on the video, its name and its two tabs' full widths.
+ * @param {number} scale - From `labelScale`.
+ * @returns {{at: Map<string, number>, end: number}} Each name's shift, by its lower case, and
+ *   where the slots end.
+ */
+export function labelSlots(stretches, scale) {
+  const tops = new Map();
+  let bottom = 0;
+  for (const { name, widths } of stretches || []) {
+    const key = nameKey(name);
+    tops.set(key, Math.max(tops.get(key) || 0, widths.top));
+    bottom = Math.max(bottom, widths.bottom);
+  }
+  const at = new Map();
+  let end = 0;
+  for (const key of [...tops.keys()].sort((a, b) => rankOf(a) - rankOf(b) || a.localeCompare(b))) {
+    at.set(key, end);
+    end += Math.max(tops.get(key), bottom) + TAB_GAP * scale;
+  }
+  return { at, end };
 }

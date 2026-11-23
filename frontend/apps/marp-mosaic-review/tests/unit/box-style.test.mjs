@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { labelScale, markerFor, identifierText, tabLayout, sharedTabShifts, GUI } from '../../src/model/box-style.js';
+import { labelScale, markerFor, identifierText, tabLayout, sharedTabShifts, labelSlots, GUI } from '../../src/model/box-style.js';
 
 test('labels are the GUI\'s size on a 600-pixel picture, and follow the picture within limits', () => {
   assert.equal(labelScale(600), 1);
@@ -85,6 +85,49 @@ test('#352: habitat labels go Cobble, Boulder, Sand, Mud, Rock, packed, whatever
     { id: 3, name: 'Cobble', rect: crop, widths }
   ], 1);
   assert.deepEqual(shifts.map((s) => s.top), [88, 44, 0], 'Cobble first, then Sand, then Rock; no gap where Boulder would be');
+});
+
+test('a habitat label keeps its slot whichever others are showing: Rock, then Mud and Rock, then Rock (2026-11-23)', () => {
+  const crop = { left: 100, top: 200, width: 300, height: 150 };
+  // The video's stretches: Mud and Rock, each tab 40 wide on top and 30 underneath.
+  const slots = labelSlots([
+    { name: 'Rock', widths: { top: 40, bottom: 30 } },
+    { name: 'Mud', widths: { top: 40, bottom: 30 } },
+    { name: 'Rock', widths: { top: 40, bottom: 30 } }
+  ], 1);
+  const rock = { id: 7, name: 'Rock', rect: crop, widths: { top: 40, bottom: 30 } };
+  const mud = { id: 8, name: 'Mud', rect: crop, widths: { top: 40, bottom: 30 } };
+
+  const alone = sharedTabShifts([rock], 1, slots);
+  const both = sharedTabShifts([rock, mud], 1, slots);
+  const again = sharedTabShifts([rock], 1, slots);
+  assert.deepEqual(alone[0], { top: 44, bottom: 44 }, 'Rock alone is in its own slot, past the empty Mud slot');
+  assert.deepEqual(both[0], alone[0], 'Rock does not move when Mud shows');
+  assert.deepEqual(both[1], { top: 0, bottom: 0 }, 'Mud in its slot');
+  assert.deepEqual(again[0], alone[0], 'nor when Mud goes');
+});
+
+test('a slot is as wide as its name or the widest identifier, so a long identifier never runs into the next label', () => {
+  const slots = labelSlots([
+    { name: 'Mud', widths: { top: 30, bottom: 70 } },
+    { name: 'Rock', widths: { top: 35, bottom: 20 } },
+    { name: 'Off Bottom', widths: { top: 80, bottom: 20 } }
+  ], 1);
+  // Mud (70 for the widest identifier, then 4), Rock (70, then 4), then anything else by name.
+  assert.deepEqual([...slots.at], [['mud', 0], ['rock', 74], ['off bottom', 148]]);
+  assert.equal(slots.end, 232);
+});
+
+test('a second label of one name in one place, and a box elsewhere, are packed and left alone', () => {
+  const crop = { left: 100, top: 200, width: 300, height: 150 };
+  const slots = labelSlots([{ name: 'Rock', widths: { top: 40, bottom: 30 } }], 1);
+  const widths = { top: 40, bottom: 30 };
+  const shifts = sharedTabShifts([
+    { id: 1, name: 'Rock', rect: crop, widths },
+    { id: 2, name: 'Rock', rect: crop, widths },
+    { id: 3, name: 'Rockfish', rect: { left: 10, top: 10, width: 50, height: 50 }, widths }
+  ], 1, slots);
+  assert.deepEqual(shifts.map((s) => s.top), [0, 44, 0]);
 });
 
 test('#352: boxes a fraction of a pixel apart are one place, so their labels still do not overlap', () => {

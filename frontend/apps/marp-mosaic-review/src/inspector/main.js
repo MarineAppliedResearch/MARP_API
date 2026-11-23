@@ -26,7 +26,7 @@ import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
 import { toScreen, trackKey, withEdit, withObservation, keyframeShown, placePanel } from '../model/box-edit.js';
 import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
-import { labelScale, sharedTabShifts } from '../model/box-style.js';
+import { labelScale, sharedTabShifts, labelSlots } from '../model/box-style.js';
 import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
 import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText } from '../model/video-clock.js';
 import { createHabitatStrip } from './habitat-strip.js';
@@ -197,10 +197,10 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   }
 
   // Boxes drawn in one place -- habitat stretches all share the habitat crop -- lay their
-  // labels side by side, so each one can be read (#352).
+  // labels side by side, so each one can be read (#352); a habitat label in its own slot.
   const shifts = sharedTabShifts(entries.map((entry) => ({
     id: entry.box.observation_id, name: entry.box.comname, rect: entry.rect, widths: tabWidths(context, entry, scale)
-  })), scale);
+  })), scale, habitatSlots(context, area, scale));
   entries.forEach((entry, index) => {
     // Where its labels are, so a click on one selects this box rather than the one on top.
     entry.tabs = tabRects(context, entry, scale, shifts[index]);
@@ -734,6 +734,17 @@ function boxColour(id, comname) {
   if (inHabitatSession(id)) return colourOf(comname);
   const row = showing && showing.rows.get(id);
   return reviewColour(row && row.review_decision) || speciesColour(comname);
+}
+
+/* Each habitat label's slot along the box, from every habitat stretch the page holds, so a
+   label keeps its place whichever others are showing (Isaac, 2026-11-23). Measured as if on
+   a two-digit track, the widest identifier a stretch has, so no real one outgrows its slot. */
+function habitatSlots(context, area, scale) {
+  const stretches = [...showing.rows.values()].filter((row) => inHabitatSession(row.observation_id));
+  if (!stretches.length) return null;
+  return labelSlots(stretches.map((row) => ({
+    name: row.comname, widths: tabWidths(context, { box: { ...row, subset: '99' }, rect: area }, scale)
+  })), scale);
 }
 
 /* Whether an observation is a habitat stretch: in a session of the habitat type. */
