@@ -602,6 +602,20 @@ body {
   background: var(--white);
   pointer-events: none;
   z-index: 2;
+  transition: width 0.1s, margin-left 0.1s;
+}
+
+/* #374: over the line, or dragging it, it thickens: a sign it can be taken hold of. */
+.hstrip-lanes.over-playhead .hstrip-playhead,
+.hstrip-lanes.scrubbing .hstrip-playhead {
+  width: 4px;
+  margin-left: -2px;
+}
+
+.hstrip-lanes.over-playhead,
+.hstrip-lanes.scrubbing,
+.hstrip-lanes.scrubbing * {
+  cursor: ew-resize;
 }
 
 /* #353: a bar's right-click menu, opened where the pointer is rather than inside the player. */

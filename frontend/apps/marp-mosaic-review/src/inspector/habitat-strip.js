@@ -21,7 +21,7 @@
 
 import {
   stripLayout, dragTo, mergesInto, edgeAt, wholeView, zoomView, panView, followView, isWhole, stretchMenu,
-  snapToPlayhead, habitatsAt
+  snapToPlayhead, habitatsAt, grabsPlayhead
 } from '../model/habitat-timeline.js';
 
 /* Pixels either side of a bar's end that pick it up: more for a finger than a mouse. */
@@ -99,6 +99,23 @@ export function createHabitatStrip(root, host) {
     if (visible) playhead.style.left = `${at(playheadAt)}%`;
   }
 
+  /* Where the line is on screen, or null when it is not. */
+  function playheadX() {
+    if (playhead.hidden || !playhead.isConnected) return null;
+    const rect = playhead.getBoundingClientRect();
+    return rect.left + rect.width / 2;
+  }
+
+  /* The playhead dragged (#374): the line follows the pointer, and the video goes there once,
+     where it is let go. Seeking as it moved queued a fetch of the video per step, and the last
+     one -- the place wanted -- landed twelve seconds after the drag ended. */
+  function scrubTo(clientX, { go = false } = {}) {
+    const length = duration();
+    playheadAt = Math.min(Math.max(timeAt(clientX), 0), Number.isFinite(length) ? length : Infinity);
+    placePlayhead();
+    if (go) host.seek(playheadAt);
+  }
+
   /* The whole strip, outright: a session holds tens to hundreds of stretches. */
   function render() {
     const length = duration();
@@ -172,7 +189,7 @@ export function createHabitatStrip(root, host) {
   function endDrag() {
     if (drag && lanes.hasPointerCapture(drag.pointer)) lanes.releasePointerCapture(drag.pointer);
     drag = null;
-    lanes.classList.remove('dragging', 'panning');
+    lanes.classList.remove('dragging', 'panning', 'scrubbing');
   }
 
   /* -------------------------------------------------------------- the menu (#353) */
@@ -267,6 +284,7 @@ export function createHabitatStrip(root, host) {
       // A second finger: a pinch, and whatever the first one started is let go.
       if (drag) render();
       drag = null;
+      lanes.classList.remove('scrubbing');
       // The moment between the fingers is what stays between them.
       const spread = pinchSpread();
       pinch = { ...spread, view, anchor: timeAt(spread.middle) };
@@ -274,6 +292,14 @@ export function createHabitatStrip(root, host) {
     }
     const { element, bar } = barAt(event.target);
     const edge = bar && bar.draggable && host.canDrag() ? edgeAt(element.getBoundingClientRect(), event.clientX, grabOf(event)) : null;
+    // On the playhead: dragged, it moves the video (#374). Not with Ctrl or Shift, which pick.
+    if (!(event.ctrlKey || event.metaKey || event.shiftKey)
+      && grabsPlayhead(event.clientX, playheadX(), grabOf(event), Boolean(edge))) {
+      drag = { pointer: event.pointerId, scrub: true };
+      lanes.classList.add('scrubbing');
+      scrubTo(event.clientX);
+      return;
+    }
     drag = {
       pointer: event.pointerId, x: event.clientX, bar, edge, view,
       span: bar ? { start: bar.start, end: bar.end } : null, moved: false
@@ -290,10 +316,16 @@ export function createHabitatStrip(root, host) {
       return;
     }
     if (!drag) {
-      // What a press would do here: a resize arrow over a draggable end.
+      // What a press would do here: a resize arrow over a draggable end, and over the playhead
+      // a thicker line, which says it can be dragged (#374).
       const { element, bar } = barAt(event.target);
       const onEdge = bar && bar.draggable && host.canDrag() && edgeAt(element.getBoundingClientRect(), event.clientX, grabOf(event));
       lanes.classList.toggle('over-edge', Boolean(onEdge));
+      lanes.classList.toggle('over-playhead', grabsPlayhead(event.clientX, playheadX(), grabOf(event), Boolean(onEdge)));
+      return;
+    }
+    if (drag.scrub) {
+      scrubTo(event.clientX);
       return;
     }
     if (!drag.moved && Math.abs(event.clientX - drag.x) < DRAG_PIXELS) return;
@@ -321,6 +353,12 @@ export function createHabitatStrip(root, host) {
       return;
     }
     if (!drag) return;
+    if (drag.scrub) {
+      // Where it was let go: the one seek.
+      scrubTo(event.clientX, { go: true });
+      endDrag();
+      return;
+    }
     const { bar, edge, span, moved, merging } = drag;
     const t = timeAt(event.clientX);
     endDrag();
@@ -377,6 +415,9 @@ export function createHabitatStrip(root, host) {
     /** Every frame: move the playhead, and draw the bars once the video's length is known. */
     playhead(t) {
       if (!habitat) return;
+      // While it is being dragged the line is where the pointer is, not where the last
+      // decoded frame was, or it jumps back under the pointer (#374).
+      if (drag && drag.scrub) return;
       playheadAt = t;
       if (duration() !== drawnFor) render();
       if (!view) return;

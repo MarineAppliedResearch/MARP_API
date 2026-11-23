@@ -242,6 +242,21 @@ export function snapToPlayhead(t, playhead, tolerance) {
 }
 
 /**
+ * Whether a press takes hold of the playhead, to drag the video along the timeline (#374):
+ * within `grab` pixels of the line, and not on a stretch's end. An end wins, because an end
+ * dragged to the playhead snaps onto it (#355) and would otherwise never be grabbed again.
+ *
+ * @param {number} x - The press, in screen pixels.
+ * @param {?number} playheadX - The line, in screen pixels; null when it is not on screen.
+ * @param {number} grab - How near counts, in pixels: more for a finger than a mouse.
+ * @param {boolean} onEdge - Whether the press is on a draggable end.
+ * @returns {boolean}
+ */
+export function grabsPlayhead(x, playheadX, grab, onEdge) {
+  return !onEdge && Number.isFinite(playheadX) && Math.abs(x - playheadX) <= grab;
+}
+
+/**
  * The habitats the moment `t` is in (#358), for the list the GUI shows over the picture: every
  * stretch of the session that covers `t`, by name, once each, in the timeline's lane order. A
  * stretch with no end yet is in only at its start, as the GUI counts one.
