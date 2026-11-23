@@ -37,6 +37,7 @@
 
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -469,4 +470,94 @@ async function uniqueName(db, base, transaction) {
 }
 
 
-module.exports = { registerTrainedModel, composeName };
+/** The architecture every habitat model is, as timm names it (#287). */
+const HABITAT_ARCHITECTURE = 'vit_base_patch14_dinov2.lvd142m';
+
+/**
+ * Register a habitat model whose weights were trained outside MARP (#287).
+ *
+ * Isaac, 2026-11-20: bring the feasibility experiment's trained model into MARP so habitat
+ * lines can be run and reviewed now, rather than a weekend of training first. Its weights
+ * are the same file MARP's own habitat trainer writes -- a timm state dict, loaded strictly
+ * by the worker -- so it is registered exactly as {@link registerTrainedModel} registers
+ * one: its substrates from the Habitat list in the file's class order, its published
+ * cut-offs, crop and input size turned into rules by `rulesForModel` (the settled stretch
+ * rules, Mud's raise among them), the weights copied into the model store, and a row per
+ * substrate. What is missing is a training job, so it has none.
+ *
+ * **The same weights twice are one model**: a file already registered is reported, not
+ * registered again, so the import can be run twice.
+ *
+ * @async
+ * @param {Object} options
+ * @param {Object} options.db - The models object.
+ * @param {string} options.weightsPath - The `.pt` state dict.
+ * @param {Object} options.published - `{substrates, cut_offs, crop, input_size}`, as a habitat
+ *   trainer publishes them.
+ * @param {string} options.name - What to call it; made unique if taken.
+ * @param {string} options.notes - Where it came from.
+ * @param {Object} options.transaction - The open transaction.
+ * @returns {Promise<{id: number, name: string, existing: boolean}>}
+ * @throws {Error} When the weights are missing or a substrate is not on the Habitat list.
+ */
+async function registerHabitatModel({ db, weightsPath, published, name, notes, transaction }) {
+    if (!fs.existsSync(weightsPath)) throw new Error(`no weights at ${weightsPath}`);
+    const sha256 = crypto.createHash('sha256').update(fs.readFileSync(weightsPath)).digest('hex');
+
+    const [existing] = await db.sequelize.query(
+        'SELECT id, name FROM ml_models WHERE artifact_sha256 = :sha256 AND model_type = :type LIMIT 1',
+        { replacements: { sha256, type: HABITAT_MODEL_TYPE }, type: db.Sequelize.QueryTypes.SELECT, transaction, logging: false }
+    );
+    if (existing) return { id: Number(existing.id), name: existing.name, existing: true };
+
+    // Looked up on the Habitat list alone: "Sand" is on another list too.
+    const substrates = (published && published.substrates) || [];
+    const rows = await db.sequelize.query(
+        "SELECT id, comname FROM species WHERE species_list = 'Habitat' AND comname IN (:names)",
+        { replacements: { names: substrates.length ? substrates : [''] }, type: db.Sequelize.QueryTypes.SELECT, transaction, logging: false }
+    );
+    const idOf = new Map(rows.map((row) => [row.comname, Number(row.id)]));
+    const missing = substrates.filter((substrate) => !idOf.has(substrate));
+    if (missing.length) throw new Error(`not on the Habitat list: ${missing.join(', ')}`);
+    const decisionRules = rulesForModel(published, substrates);
+
+    const unique = await uniqueName(db, name, transaction);
+    const relative = `${MODEL_PATH_PREFIX}/${unique}/weights/${unique}.pt`;
+    const destination = path.resolve(storageRoot(), relative);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    const partial = `${destination}.partial`;
+    fs.copyFileSync(weightsPath, partial);
+    fs.renameSync(partial, destination);
+
+    const [registered] = await db.sequelize.query(
+        `INSERT INTO ml_models (name, model_type, architecture_version, engine, file_format,
+                                storage_path, artifact_sha256, status, preferred, notes,
+                                decision_rules, created_at, updated_at)
+         VALUES (:name, :modelType, :architecture, 'timm', 'pt', :storagePath, :sha256, 'active',
+                 false, :notes, CAST(:rules AS jsonb), now(), now())
+         RETURNING id`,
+        {
+            replacements: {
+                name: unique, modelType: HABITAT_MODEL_TYPE, architecture: HABITAT_ARCHITECTURE,
+                storagePath: relative, sha256, notes, rules: JSON.stringify(decisionRules),
+            },
+            type: db.Sequelize.QueryTypes.INSERT,
+            transaction,
+            logging: false,
+        }
+    );
+    const modelId = registered[0].id;
+
+    for (const substrate of substrates) {
+        await db.sequelize.query(
+            `INSERT INTO model_species (model_id, species_id, created_at, updated_at)
+             VALUES (:modelId, :speciesId, now(), now())`,
+            { replacements: { modelId, speciesId: idOf.get(substrate) }, transaction, logging: false }
+        );
+    }
+
+    logger.info(`Registered habitat model ${modelId} (${unique}) from ${weightsPath}`);
+    return { id: modelId, name: unique, existing: false };
+}
+
+module.exports = { registerTrainedModel, registerHabitatModel, composeName };

@@ -301,7 +301,7 @@ export function renderPanel(panel, model, on) {
     panel.replaceChildren();
     return;
   }
-  const { row, colour, session, keyframes, canWrite, canDelete, picture, review } = model;
+  const { row, colour, session, keyframes, canWrite, canDelete, picture, review, timeOf } = model;
   const head = element('div', 'annotate-head');
   const swatch = element('span', 'swatch');
   swatch.style.background = colour;
@@ -339,7 +339,8 @@ export function renderPanel(panel, model, on) {
   const list = element('ol', 'panel-keyframes');
   for (const keyframe of keyframes) {
     const item = element('li');
-    const jump = element('button', null, `${keyframe.type}  ${keyframe.t.toFixed(2)} s`);
+    // On the video's clock where it has one, its position where not (#365).
+    const jump = element('button', null, `${keyframe.type}  ${timeOf ? timeOf(keyframe.t) : `${keyframe.t.toFixed(2)} s`}`);
     jump.type = 'button';
     jump.addEventListener('click', () => on.seek(keyframe.t));
     item.append(jump);

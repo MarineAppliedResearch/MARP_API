@@ -132,3 +132,21 @@ function roundHalfEven(value) {
   if (Math.abs(fraction - 0.5) > 1e-9) return Math.round(value);
   return floor % 2 === 0 ? floor : floor + 1;
 }
+
+/**
+ * What the video page draws (#287, A7): the observations the Mosaic's query matches, and on a
+ * habitat video every stretch of the opened session too, so its boxes and its habitat timeline
+ * show the same stretches. The query's default hides reviewed ones, which left a reviewed
+ * stretch on the timeline with no box.
+ *
+ * @param {Array<Object>} observations - The query's matches in this video.
+ * @param {?{stretches: Array<Object>}} habitat - The opened session's stretches, or null.
+ * @returns {Array<Object>} Each observation once, by id.
+ */
+export function withSession(observations, habitat) {
+  const byId = new Map((observations || []).map((row) => [row.observation_id, row]));
+  for (const stretch of (habitat && habitat.stretches) || []) {
+    if (!byId.has(stretch.observation_id)) byId.set(stretch.observation_id, { ...stretch });
+  }
+  return [...byId.values()].sort((a, b) => a.observation_id - b.observation_id);
+}

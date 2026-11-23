@@ -18,17 +18,24 @@
  * the password: it goes from this form to Jellyfin and nowhere else.
  */
 import { MarpApi } from '../api/index.js';
-import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget } from '../model/video-boxes.js';
-import { windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW } from '../model/video-review.js';
+import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget, frameTime } from '../model/video-boxes.js';
+import {
+  windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW, withSession
+} from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
-import { toScreen, trackKey, withEdit, withObservation, keyframeShown } from '../model/box-edit.js';
+import { toScreen, trackKey, withEdit, withObservation, keyframeShown, placePanel } from '../model/box-edit.js';
 import { openSpeciesPopup, renderPanel } from './annotate-ui.js';
-import { labelScale } from '../model/box-style.js';
-import { drawBox } from './draw-boxes.js';
-import { clockLine, positionText, readingOffered, readingBody } from '../model/video-clock.js';
+import { labelScale, sharedTabShifts } from '../model/box-style.js';
+import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
+import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText } from '../model/video-clock.js';
+import { createHabitatStrip } from './habitat-strip.js';
+import { colourOf, cutChoice } from '../model/habitat-timeline.js';
 
-const $ = (id) => document.getElementById(id);
+/* The video's own lines live in the observation panel (#367), which is out of the document while
+   no observation is selected; a lookup by id finds them there too, or Set clock is null. */
+let videoLines = null;
+const $ = (id) => document.getElementById(id) || (videoLines && videoLines.querySelector(`#${id}`));
 
 /* The most observations one keyframe request names; the API takes up to 2,000. */
 const IDS_PER_REQUEST = 1000;
@@ -42,6 +49,21 @@ const playerRoot = $('player').querySelector('.marp-player') || $('player');
 const pictureCanvas = playerRoot.querySelector('.marp-canvas');
 if (pictureCanvas) pictureCanvas.insertAdjacentElement('afterend', $('boxes'));
 else playerRoot.appendChild($('boxes'));
+// The habitat list over the picture (#358) goes with the boxes, fullscreen included.
+$('boxes').insertAdjacentElement('afterend', $('habitatNow'));
+/* The habitat timeline sits directly above the scrub bar, inside the player's controls, as the
+   GUI has it (#362): lined up with the scrub bar, and fullscreen with the player. */
+const scrubTrack = playerRoot.querySelector('.marp-scrub-track');
+if (scrubTrack) scrubTrack.insertAdjacentElement('beforebegin', $('habitatStrip'));
+/* No band above the video (Isaac, #367: it "makes it so we can't use as much of the window"):
+   the frame's clock time sits after the play time in the player's controls, and the video's own
+   lines -- its file, when it was recorded, Set clock -- at the foot of the observation panel. */
+const playTime = playerRoot.querySelector('.marp-time');
+if (playTime) playTime.insertAdjacentElement('afterend', $('clockNow'));
+const videoInfo = document.createElement('section');
+videoInfo.className = 'panel-video';
+videoInfo.append($('inspectDetail'), $('clockState'), $('setClock'), $('clockForm'));
+videoLines = videoInfo;
 playerRoot.appendChild($('boxMenu'));
 // The add popup and the observation panel go fullscreen with the player too.
 playerRoot.appendChild($('addPopup'));
@@ -154,6 +176,7 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
   if (!showing) return;
   const area = contentRect(width, height, pictureWidth, pictureHeight);
   const scale = labelScale(area.height);
+  showHabitatsNow(overlay, area, scale, t);
   const rate = showing.video.frame_rate || 25;
   const entries = boxesAt(drawable, t, trackTolerance(rate)).map((box) => {
     const key = trackKey(box);
@@ -173,17 +196,27 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
     }
   }
 
-  for (const entry of entries) {
+  // Boxes drawn in one place -- habitat stretches all share the habitat crop -- lay their
+  // labels side by side, so each one can be read (#352).
+  const shifts = sharedTabShifts(entries.map((entry) => ({
+    id: entry.box.observation_id, name: entry.box.comname, rect: entry.rect, widths: tabWidths(context, entry, scale)
+  })), scale);
+  entries.forEach((entry, index) => {
+    // Where its labels are, so a click on one selects this box rather than the one on top.
+    entry.tabs = tabRects(context, entry, scale, shifts[index]);
     const keyframe = keyframeShown(entry.box.keyframes, t, rate);
-    const reviewed = showing.rows.get(entry.box.observation_id);
     drawBox(context, entry, {
-      colour: reviewColour(reviewed && reviewed.review_decision) || speciesColour(entry.box.comname),
+      colour: boxColour(entry.box.observation_id, entry.box.comname),
       type: keyframe ? keyframe.type : 'interpolated',
       selected: entry.key === editor.selectedKey,
+      // No corner grips on a box that is not resized (#359).
+      fixed: inHabitatSession(entry.box.observation_id),
+      second: entry.box.observation_id === secondId,
       pressed: editor.pressFor(entry.key),
-      scale
+      scale,
+      shift: shifts[index]
     });
-  }
+  });
   const draft = editor.draftRect();
   if (draft) {
     context.save();
@@ -199,8 +232,20 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
 
 function redraw() {
   if (!showing || !player.engine) return;
+  const t = shownAt ?? player.engine.currentTime;
   const canvas = $('player').querySelector('.marp-canvas');
-  if (canvas) drawBoxes($('boxes'), canvas, canvas.width, canvas.height, shownAt ?? player.engine.currentTime);
+  if (canvas) drawBoxes($('boxes'), canvas, canvas.width, canvas.height, t);
+  strip.playhead(t);
+  sayFrameClock(t);
+}
+
+/* This frame's clock time, beside when the recording started (#351): every frame the video
+   shows, not only on a redraw -- it stood still through playback (#367). */
+function sayFrameClock(t) {
+  const now = clockAt(clock, t);
+  // The time in the controls, the day on hover: the readout is beside the play time now (#367).
+  $('clockNow').textContent = now ? now.slice(11) : '';
+  $('clockNow').title = now ? `This frame: ${now}` : '';
 }
 
 /* The held windows' keyframes, gathered per observation. A keyframe held by two windows
@@ -285,6 +330,8 @@ function watch(engine) {
       engine.currentTime = to;
     }
     followPlayhead(shownAt);
+    strip.playhead(shownAt);
+    sayFrameClock(shownAt);
     drawBoxes($('boxes'), canvas, canvas.width, canvas.height, shownAt);
     if (showing && Math.abs(shownAt - showing.moment) < 0.25) status('');
     engine.requestVideoFrameCallback(onFrame);
@@ -295,6 +342,8 @@ function watch(engine) {
 /* The observations the query matches in the opened one's video. */
 async function readObservations(observationId, filters) {
   const answer = await MarpApi.videoObservations({ observationId, filters });
+  // On a habitat video, the whole session as well: the boxes and the timeline agree (A7).
+  answer.observations = withSession(answer.observations, answer.habitat);
   return {
     answer,
     rows: new Map(answer.observations.map((row) => [row.observation_id, row]))
@@ -317,6 +366,7 @@ async function show(request) {
 
   const { answer, rows } = read;
   const { video } = answer;
+  strip.set(answer.habitat);
   const comname = rows.has(request.observationId) ? rows.get(request.observationId).comname : null;
   $('inspectTitle').textContent = `${comname || 'Observation'} · ${request.observationId}`;
   openedTitle = $('inspectTitle').textContent;
@@ -385,6 +435,7 @@ async function followQuery(filters) {
   }
   if (mine !== latest || !showing) return;
   forgetKeyframes();
+  strip.set(read.answer.habitat);
   showing = {
     ...showing, filters: filters || {}, observations: read.answer.observations, rows: read.rows,
     sessions: read.answer.sessions || showing.sessions
@@ -393,9 +444,32 @@ async function followQuery(filters) {
   redraw();
 }
 
+/* The rows and the timeline's stretches again, for their versions: the keyframes held and the
+   timeline's zoom stay as they are, because nothing about them moved. */
+async function rereadRows() {
+  if (!showing) return;
+  const mine = latest;
+  let read;
+  try {
+    read = await readObservations(showing.observationId, showing.filters);
+  } catch {
+    // The clock is still set; the next edit says to reopen, as it did before this read.
+    return;
+  }
+  if (mine !== latest || !showing) return;
+  strip.set(read.answer.habitat);
+  showing = {
+    ...showing, observations: read.answer.observations, rows: read.rows,
+    sessions: read.answer.sessions || showing.sessions
+  };
+}
+
 /* Open the video at the moment, or seek to it when that video is already open. */
 async function play(mine) {
-  const { video, moment } = showing;
+  const { video } = showing;
+  // On a frame: a moment a millisecond short of one never painted, and the page sat at
+  // "Opening the video..." for good (2026-11-20).
+  const moment = frameTime(showing.moment, video.frame_rate || 25);
   if (player.currentItemId !== video.jellyfin_item_id || !player.engine) {
     status('Opening the video…');
     // Opened at the moment itself, so the start of the dive is neither fetched nor shown
@@ -455,6 +529,9 @@ const editor = createBoxEditor({
     redraw,
     status,
     apply(answer) {
+      // The version the edit left, so the next change to it is not refused as stale (#363).
+      const edited = showing && showing.rows.get(answer.observation_id);
+      if (edited && Number.isInteger(answer.version)) edited.version = answer.version;
       const next = withEdit(held, answer);
       held.clear();
       for (const [index, keyframes] of next) held.set(index, keyframes);
@@ -462,6 +539,8 @@ const editor = createBoxEditor({
       // windows ask for it, so it is re-derived from the keyframes rather than assumed: an
       // edit can have just added the end, or taken it away (2026-10-14).
       refreshOpenEnded(answer.observation_id);
+      // A stretch added, or given its end, shows on the habitat timeline at once (#357).
+      syncStretch(answer.observation_id);
       rebuildDrawable();
       // The panel lists the selected observation's keyframes, so an edit that adds or removes
       // one has to redraw it or the list is a stale answer (2026-10-14).
@@ -489,8 +568,61 @@ const editor = createBoxEditor({
     usePicture,
     canDraw: () => canAnnotate,
     isPicture: (target) => target === pictureCanvas,
+    // The player's controls bar and its settings menu, which keep their own presses (#356).
+    // The observation panel and the species popup keep theirs too: a box beneath one must not
+    // take a press on it, now that the panel can be dragged over the picture (#364). Nor the
+    // timeline's menu, which sits over the picture beside the panel rather than in the controls.
+    isControls: (target) => Boolean(target && target.closest
+      && target.closest('.marp-controls-bar, .marp-settings-menu, .annotate-panel, .annotate-popup, .hstrip-menu')),
+    // A habitat stretch's box is the habitat crop: never dragged or resized (#359).
+    boxFixed: (id) => inHabitatSession(id),
+    // Ctrl or Shift on a box picks it to be cut, and its menu offers the cut (#360).
+    pickSecond,
+    menuExtras: cutItems,
     onDrawn: openAdd,
-    selectionChanged: () => updatePanel()
+    selectionChanged: (key) => {
+      updatePanel();
+      strip.selected(key ? Number(key.split('_')[0]) : null);
+    }
+  }
+});
+
+/* The habitat timeline (#287): the opened observation's habitat session along the whole video. */
+const strip = createHabitatStrip($('habitatStrip'), {
+  duration: () => (player.engine ? player.engine.duration : NaN),
+  playing: () => Boolean(player.engine && !player.engine.paused),
+  seek(t) {
+    if (!player.engine) return;
+    player.engine.pause();
+    player.engine.currentTime = t;
+  },
+  select(id) {
+    // Every stretch on the timeline is drawn as a box too (A7).
+    if (showing && showing.rows.has(id)) editor.select(`${id}_1`);
+  },
+  canDrag: () => canAnnotate,
+  pickSecond,
+  menuExtras: cutItems,
+  menuIn: playerRoot,
+  async save(bar, span, merging) {
+    // A merge deletes the stretch dragged into, so it is asked about, as the Mosaic's merge is.
+    if (merging && !window.confirm(`Merge ${merging === 1 ? 'the outlined stretch' : `the ${merging} outlined stretches`} `
+      + `into this ${bar.name}? ${merging === 1 ? 'It is' : 'They are'} deleted, with ${merging === 1 ? 'its' : 'their'} reviews.`)) {
+      throw new Error('not merged');
+    }
+    try {
+      const answer = await MarpApi.setStretchTimes(bar.id, { startS: span.start, endS: span.end, version: bar.version });
+      // On the video's clock where it has one (#366).
+      status(`${bar.name} now runs ${timeText(clock, answer.start_s)} to ${timeText(clock, answer.end_s)}`
+        + (answer.merged.length ? `, with ${answer.merged.length} merged into it.` : '.'));
+    } catch (error) {
+      status(error.status === 409
+        ? 'Not changed: this stretch changed since the page read it. Reopen it from the Mosaic and drag again.'
+        : `Not changed: ${error.message}`);
+      throw error;
+    }
+    // Every box, keyframe window and bar is read again: a merge deletes observations.
+    await followQuery(showing.filters);
   }
 });
 
@@ -502,6 +634,8 @@ function forgetObservation(id) {
   held.clear();
   for (const [index, keyframes] of next) held.set(index, keyframes);
   if (editor.selectedKey && editor.selectedKey.startsWith(`${id}_`)) editor.select(null);
+  // Off the habitat timeline too, or a deleted stretch's bar stays behind (#353).
+  strip.forget(id);
   rebuildDrawable();
   redraw();
   updatePanel();
@@ -523,6 +657,8 @@ function showTitle() {
   $('inspectTitle').textContent = row
     ? `${row.comname || 'Observation'} · ${row.observation_id}`
     : openedTitle;
+  // With no band above the video, the window's title says what is open (#367).
+  if ($('inspectTitle').textContent) document.title = `${$('inspectTitle').textContent} · MARP Source Video`;
 }
 
 /* Whether an observation's track still lacks an end keyframe, from what the page holds. An
@@ -535,6 +671,116 @@ function refreshOpenEnded(id) {
   row.open_ended = !keyframes.some((k) => k.type === 'end');
   const span = showing.observations.find((o) => o.observation_id === id);
   if (span) span.open_ended = row.open_ended;
+}
+
+/* ---------------------------------------------------------------- cutting (#360) */
+
+/* The stretch picked second, with Ctrl or Shift, to be cut by the selected one -- and that
+   selected one, kept from the moment of the pick: right-clicking the second selects it, and
+   reading the selection then offered no cut at all (Isaac, 2026-11-20). */
+let secondId = null;
+let cutterId = null;
+
+const selectedId = () => (editor.selectedKey ? Number(editor.selectedKey.split('_')[0]) : null);
+const nameOf = (id) => {
+  const row = showing && showing.rows.get(id);
+  return row ? `${row.obs_id ?? '?'} · ${row.comname || 'Unnamed'}` : String(id);
+};
+
+/* Ctrl or Shift on a habitat stretch: picked to be cut by the selected one. Again, or on the
+   selection itself, lets it go. */
+function pickSecond(id) {
+  if (!canAnnotate || !inHabitatSession(id)) return;
+  const cutter = selectedId();
+  secondId = id === secondId || id === cutter ? null : id;
+  cutterId = secondId == null ? null : cutter;
+  strip.second(secondId);
+  redraw();
+  status(secondId == null ? ''
+    : cutter == null ? `${nameOf(secondId)} picked. Select the stretch to cut it with, then right-click ${nameOf(secondId)}.`
+      : `${nameOf(secondId)} picked. Right-click it to cut it with ${nameOf(cutter)}.`);
+}
+
+/* The cut offered on a right-clicked stretch, when it is the one picked second. */
+function cutItems(id) {
+  const choice = showing && canAnnotate ? cutChoice({ selectedId: cutterId, secondId, clickedId: id, rows: showing.rows }) : null;
+  return choice ? [{ label: choice.label, run: () => cut(choice) }] : [];
+}
+
+async function cut({ target, by }) {
+  const row = showing.rows.get(target);
+  try {
+    const answer = await MarpApi.cutStretch(target, { byId: by, version: row.version });
+    status(answer.split_observation_id
+      ? `${nameOf(target)} is cut in two around ${nameOf(by)}.`
+      : `${nameOf(target)} now runs ${timeText(clock, answer.start_s)} to ${timeText(clock, answer.end_s)}.`);
+    secondId = null;
+    cutterId = null;
+    strip.second(null);
+    // Every box and bar read again: a split makes a new stretch.
+    await followQuery(showing.filters);
+  } catch (error) {
+    status(error.status === 409
+      ? 'Not cut: that stretch changed since the page read it. Reopen it from the Mosaic and cut again.'
+      : `Not cut: ${error.message}`);
+  }
+}
+
+/* The colour a box is drawn in. A habitat stretch's is its habitat's, the colour the habitat
+   list and the timeline give it (#361), so one habitat is one colour wherever it is shown; its
+   review shows on the timeline and in its panel. Anything else is its species' colour, or its
+   review's once reviewed (#337). */
+function boxColour(id, comname) {
+  if (inHabitatSession(id)) return colourOf(comname);
+  const row = showing && showing.rows.get(id);
+  return reviewColour(row && row.review_decision) || speciesColour(comname);
+}
+
+/* Whether an observation is a habitat stretch: in a session of the habitat type. */
+function inHabitatSession(id) {
+  const row = showing && showing.rows.get(id);
+  const session = row && showing.sessions.find((s) => s.session_id === row.session_id);
+  return Boolean(session && session.type === 'Habitat');
+}
+
+/* The habitat list over the picture (#358), as the annotation GUI shows it: one panel per
+   habitat the moment is in, in its timeline colour let down so the video reads through, its
+   name in white. Down the left of the picture and a fifth of the way down it, below the
+   numbers burned into the top corner of the video, as the GUI places it. Takes no clicks. */
+let habitatsShown = '';
+function showHabitatsNow(overlay, area, scale, t) {
+  const list = $('habitatNow');
+  const names = strip.habitatsAt(t);
+  list.hidden = !names.length;
+  if (!names.length) return;
+  list.style.left = `${overlay.offsetLeft + area.left + 18 * scale}px`;
+  list.style.top = `${overlay.offsetTop + area.top + area.height * 0.2}px`;
+  list.style.setProperty('--scale', scale);
+  const text = names.join('|');
+  if (text === habitatsShown) return;
+  habitatsShown = text;
+  list.replaceChildren(...names.map((name) => {
+    const panel = document.createElement('div');
+    panel.className = 'habitat-now-item';
+    panel.textContent = name;
+    // The GUI's alpha, 0x99.
+    panel.style.background = `${colourOf(name)}99`;
+    return panel;
+  }));
+}
+
+/* The habitat timeline's bar for an observation, from its keyframes as the page now holds
+   them (#357): its start, and its end once it has one. A new stretch appears and an end set
+   on the picture shows, without reading the video again. */
+function syncStretch(id) {
+  const row = showing && showing.rows.get(id);
+  if (!row) return;
+  const keyframes = [...held.values()].flat().filter((k) => k.observation_id === id);
+  const start = keyframes.find((k) => k.type === 'start');
+  const end = keyframes.find((k) => k.type === 'end');
+  if (start) row.start_s = start.t;
+  if (end) row.end_s = end.t;
+  strip.upsert(row);
 }
 
 /* Widen an observation's span to cover a keyframe, so the windows still ask for it. */
@@ -648,6 +894,7 @@ async function recordReview(row, { kind, reason = null, takeBack = false }) {
     const decision = takeBack ? null : kind === 'accept' ? 'reviewed' : 'flagged';
     row.review_decision = decision;
     row.flag_reason = decision === 'flagged' ? reason : null;
+    strip.review(id, decision, row.flag_reason);
     status(takeBack ? 'Decision taken back.'
       : decision === 'reviewed' ? 'Marked reviewed.' : `Flagged: ${reason}.`);
     redraw();
@@ -674,16 +921,20 @@ function updatePanel() {
   }
   showTitle();
   const drawnRow = drawable.find((o) => o.observation_id === id);
+  // The video's own lines, at the panel's foot, after it is drawn afresh (#367).
+  queueMicrotask(() => { if (!$('obsPanel').hidden) $('obsPanel').append(videoInfo); });
   const keyframes = drawnRow ? drawnRow.tracks.flat().sort((a, b) => a.t - b.t) : [];
   renderPanel($('obsPanel'), {
     row,
-    colour: speciesColour(row.comname),
+    colour: boxColour(row.observation_id, row.comname),
     session: showing.sessions.find((s) => s.session_id === row.session_id),
     keyframes,
     canWrite: canAnnotate,
     canDelete,
     picture: pictureState,
-    review: { canReview, busy: reviewing }
+    review: { canReview, busy: reviewing },
+    // Keyframes on the video's clock where it has one (#365).
+    timeOf: (t) => timeText(clock, t)
   }, {
     close: () => { editor.select(null); returnKeyboard(); },
     review: (kind, reason) => recordReview(row, { kind, reason }),
@@ -758,10 +1009,12 @@ function updatePanel() {
         editor.save(async () => {
           const answer = await MarpApi.mergeObservations(id, fromId);
           forgetObservation(fromId);
+          if (Number.isInteger(answer.version)) row.version = answer.version;
           const next = withObservation(held, id, answer.keyframes);
           held.clear();
           for (const [index, keyframes] of next) held.set(index, keyframes);
           for (const keyframe of answer.keyframes) cover(id, keyframe.t);
+          syncStretch(id);
           rebuildDrawable();
           // Paused, no new frame comes to draw it: the merged box is drawn now.
           redraw();
@@ -779,6 +1032,8 @@ let clockVideo = null;
 
 function sayClock() {
   const line = clockLine(clock);
+  // And this frame's time on it: a clock just set or read changes it too (#367).
+  sayFrameClock(shownAt ?? (player.engine ? player.engine.currentTime : NaN));
   $('clockState').textContent = clockVideo ? line.text : '';
   $('clockState').classList.toggle('unset', Boolean(clockVideo) && line.unset);
   $('setClock').hidden = !clockVideo || !canAnnotate;
@@ -831,6 +1086,11 @@ $('clockForm').addEventListener('submit', async (event) => {
     clock = answer;
     $('clockForm').hidden = true;
     sayClock();
+    // Setting it rewrote every observation in the video, and each one's version with it:
+    // read them again, or the next drag or cut is refused as changed (2026-11-21).
+    await rereadRows();
+    // The open panel's keyframes, in clock time now (#365).
+    updatePanel();
     status(`Clock set. ${answer.observations} observation${answer.observations === 1 ? '' : 's'} in this video now carry the time ${answer.observations === 1 ? 'it was' : 'they were'} seen.`);
     returnKeyboard();
   } catch (error) {
@@ -856,11 +1116,13 @@ MarpApi.whoami().then((user) => {
 window.MARP_VIDEO = {
   get drawn() {
     const o = $('boxes').getBoundingClientRect();
-    return drawnNow.rects.map(({ key, box, rect }) => ({
+    return drawnNow.rects.map(({ key, box, rect, tabs }) => ({
       key, observation_id: box.observation_id, comname: box.comname,
       // The colour it is drawn in, which says its review (#337).
-      colour: reviewColour((showing.rows.get(box.observation_id) || {}).review_decision) || speciesColour(box.comname),
-      rect: { left: rect.left + o.left, top: rect.top + o.top, width: rect.width, height: rect.height }
+      colour: boxColour(box.observation_id, box.comname),
+      rect: { left: rect.left + o.left, top: rect.top + o.top, width: rect.width, height: rect.height },
+      // Where its labels are, which a press can pick it by (#352, #360).
+      tabs: (tabs || []).map((tab) => ({ left: tab.left + o.left, top: tab.top + o.top, width: tab.width, height: tab.height }))
     }));
   },
   get selected() { return editor.selectedKey; },
@@ -888,6 +1150,8 @@ if (typeof BroadcastChannel !== 'undefined') {
     if (!event.data) return;
     if (event.data.type === 'show') show(event.data);
     if (event.data.type === 'query') followQuery(event.data.filters);
+    // A page committed in the Mosaic: read again, so the timeline shows what was reviewed.
+    if (event.data.type === 'committed' && showing) followQuery(showing.filters);
   });
 }
 
@@ -897,4 +1161,61 @@ try {
   if (first && first.type === 'show') show(first);
 } catch {
   status('Open a video from the Mosaic.');
+}
+
+/* ---------------------------------------------------------------- the panel moves (#364) */
+
+/* Dragged by its title row to anywhere over the player, and kept there: where it was left is
+   remembered in this browser, as a reviewer's own arrangement of the page. */
+const PANEL_PLACE = 'marp-video-panel-place';
+{
+  const panel = $('obsPanel');
+  let dragging = null;
+
+  const put = (at) => {
+    const area = panel.offsetParent || playerRoot;
+    const place = placePanel(at, { width: panel.offsetWidth, height: panel.offsetHeight },
+      { width: area.clientWidth, height: area.clientHeight });
+    panel.style.left = `${place.left}px`;
+    panel.style.top = `${place.top}px`;
+    panel.style.right = 'auto';
+    return place;
+  };
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(PANEL_PLACE) || 'null');
+    if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+      // Put back once it is on screen with a size, and kept inside the player as it resizes.
+      new MutationObserver(() => { if (!panel.hidden && !panel.dataset.placed) { panel.dataset.placed = '1'; put(saved); } })
+        .observe(panel, { attributes: true, attributeFilter: ['hidden'] });
+    }
+  } catch {
+    // No storage here: it opens where it always has.
+  }
+
+  panel.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || !event.target.closest('.annotate-head') || event.target.closest('button')) return;
+    dragging = { pointer: event.pointerId, x: event.clientX, y: event.clientY, left: panel.offsetLeft, top: panel.offsetTop };
+    panel.setPointerCapture(event.pointerId);
+    panel.classList.add('moving');
+    event.preventDefault();
+  });
+  panel.addEventListener('pointermove', (event) => {
+    if (!dragging || event.pointerId !== dragging.pointer) return;
+    put({ left: dragging.left + event.clientX - dragging.x, top: dragging.top + event.clientY - dragging.y });
+  });
+  const drop = (event) => {
+    if (!dragging || event.pointerId !== dragging.pointer) return;
+    dragging = null;
+    panel.classList.remove('moving');
+    panel.dataset.placed = '1';
+    try {
+      localStorage.setItem(PANEL_PLACE, JSON.stringify({ left: panel.offsetLeft, top: panel.offsetTop }));
+    } catch {
+      // Not remembered, and that is all.
+    }
+  };
+  panel.addEventListener('pointerup', drop);
+  panel.addEventListener('pointercancel', drop);
+  window.addEventListener('resize', () => { if (panel.dataset.placed) put({ left: panel.offsetLeft, top: panel.offsetTop }); });
 }

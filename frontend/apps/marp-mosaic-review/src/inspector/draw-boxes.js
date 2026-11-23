@@ -66,15 +66,49 @@ function marker(context, type, x, middle, size) {
 }
 
 /**
+ * How wide a box's two tabs are on screen, for laying out boxes that share a place (#352).
+ *
+ * @param {CanvasRenderingContext2D} context
+ * @param {Object} entry - `{ box, rect }`.
+ * @param {number} scale - The label scale.
+ * @returns {{top: number, bottom: number}}
+ */
+export function tabWidths(context, { box, rect }, scale) {
+  const layout = tabLayout(rect, scale, {
+    top: textWidth(context, box.comname || 'Unknown', `bold ${GUI.topFont * scale}px ${FONT}`),
+    bottom: textWidth(context, identifierText(box), `${GUI.bottomFont * scale}px ${FONT}`)
+  });
+  return { top: layout.top.width, bottom: layout.bottom.width };
+}
+
+/**
+ * Where a box's two tabs are on screen, so a click on a label can pick its box (#352): the
+ * boxes of one moment's habitat stretches are one rectangle, and only their labels differ.
+ *
+ * @param {CanvasRenderingContext2D} context
+ * @param {Object} entry - `{ box, rect }`.
+ * @param {number} scale - From `labelScale`.
+ * @param {{top: number, bottom: number}} shift - From `sharedTabShifts`.
+ * @returns {Array<{left: number, top: number, width: number, height: number}>}
+ */
+export function tabRects(context, { box, rect }, scale, shift) {
+  const layout = tabLayout(rect, scale, {
+    top: textWidth(context, box.comname || 'Unknown', `bold ${GUI.topFont * scale}px ${FONT}`),
+    bottom: textWidth(context, identifierText(box), `${GUI.bottomFont * scale}px ${FONT}`)
+  }, shift);
+  return [layout.top, layout.bottom].map(({ left, top, width, height }) => ({ left, top, width, height }));
+}
+
+/**
  * Paint one box.
  *
  * @param {CanvasRenderingContext2D} context
  * @param {Object} entry - `{ box, rect }`: the box and where it is on screen.
- * @param {Object} state - `{ colour, type, selected, pressed, scale }`: its species'
+ * @param {Object} state - `{ colour, type, selected, pressed, scale, shift }`: its species'
  *   colour, the kind of keyframe on this picture, whether it is selected, the part being
- *   pressed if any, and the label scale.
+ *   pressed if any, the label scale, and how far along the edge its tabs start (#352).
  */
-export function drawBox(context, { box, rect }, { colour, type, selected, pressed, scale }) {
+export function drawBox(context, { box, rect }, { colour, type, selected, pressed, scale, shift, fixed, second }) {
   // Pressed, it is the GUI's state colour: the outline and the tab both.
   const tone = pressed ? (pressed === 'body' ? DRAGGING : RESIZING) : colour;
 
@@ -106,7 +140,7 @@ export function drawBox(context, { box, rect }, { colour, type, selected, presse
   const layout = tabLayout(rect, scale, {
     top: textWidth(context, name, topFont),
     bottom: textWidth(context, identifier, bottomFont)
-  });
+  }, shift || { top: 0, bottom: 0 });
   const r = GUI.radius * scale;
 
   // The species tab, square at the corner it sits on.
@@ -123,7 +157,18 @@ export function drawBox(context, { box, rect }, { colour, type, selected, presse
   context.fillStyle = '#ffffff';
   context.fillText(identifier, layout.bottom.textLeft, layout.bottom.middle);
 
-  if (selected) {
+  // Picked second, to be cut by the selected one (#360): a dashed outline just outside it.
+  if (second) {
+    const gap = 6 * scale;
+    context.save();
+    context.setLineDash([6 * scale, 4 * scale]);
+    context.lineWidth = 2 * scale;
+    context.strokeStyle = '#ffffff';
+    context.strokeRect(rect.left - gap, rect.top - gap, rect.width + gap * 2, rect.height + gap * 2);
+    context.restore();
+  }
+
+  if (selected && !fixed) {
     for (const grip of gripsOf(rect)) {
       context.beginPath();
       context.arc(grip.x, grip.y, GRIP_RADIUS, 0, Math.PI * 2);

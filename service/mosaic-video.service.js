@@ -136,35 +136,75 @@ async function videoObservations(body = {}) {
     answer.truncated = rows.length > MAX_VIDEO_OBSERVATIONS;
     // GUI rows count at 25, GPU rows at the video's nominal rate (#231).
     answer.sessions = opened.video_source ? await sessionsInVideo(opened.video_source) : [];
-    answer.observations = rows.slice(0, MAX_VIDEO_OBSERVATIONS).map((row) => {
-        const rate = row.machine ? nominal : ASSUMED_FPS;
-        /* An annotated habitat stretch has no keyframes in the table and is drawn from the
-           two worked out from its times (#287, A20 and A22). */
-        if (Number(row.keyframe_rows) === 0) {
-            const derived = derivedKeyframes({ ...row, mediaPosition: row.media_position });
-            row.first_framenum = derived.length ? derived[0].framenum : null;
-            row.last_framenum = derived.length ? derived[derived.length - 1].framenum : null;
-            row.has_end = derived.some((k) => k.type === 'end');
-        }
-        return {
-            observation_id: row.observation_id,
-            species_id: row.species_id,
-            comname: row.comname,
-            obs_id: row.obs_id,
-            count: row.count,
-            session_id: row.session_id,
-            version: row.version,
-            // The scientific review, so the page can show and change it (#337).
-            review_decision: row.review_decision || null,
-            flag_reason: row.flag_reason || null,
-            start_s: Number(row.first_framenum) / rate,
-            end_s: Number(row.last_framenum) / rate,
-            // No `end` keyframe: still being made, so the page draws its last box forward
-            // and every window from its start onwards wants its keyframes (2026-10-14).
-            open_ended: !row.has_end,
-        };
-    });
+    answer.observations = rows.slice(0, MAX_VIDEO_OBSERVATIONS).map((row) => pageRow(row, nominal));
+    answer.habitat = await habitatStretches(opened, nominal);
     return answer;
+}
+
+/**
+ * One observation as the video page reads it.
+ *
+ * @param {Object} row - From `buildVideoObservationsQuery`.
+ * @param {number} nominal - The video's nominal rate, which a GPU row's frames count at.
+ * @returns {Object}
+ */
+function pageRow(row, nominal) {
+    const rate = row.machine ? nominal : ASSUMED_FPS;
+    /* An annotated habitat stretch has no keyframes in the table and is drawn from the
+       two worked out from its times (#287, A20 and A22). */
+    if (Number(row.keyframe_rows) === 0) {
+        const derived = derivedKeyframes({ ...row, mediaPosition: row.media_position });
+        row.first_framenum = derived.length ? derived[0].framenum : null;
+        row.last_framenum = derived.length ? derived[derived.length - 1].framenum : null;
+        row.has_end = derived.some((k) => k.type === 'end');
+    }
+    return {
+        observation_id: row.observation_id,
+        species_id: row.species_id,
+        comname: row.comname,
+        obs_id: row.obs_id,
+        count: row.count,
+        session_id: row.session_id,
+        version: row.version,
+        // The scientific review, so the page can show and change it (#337).
+        review_decision: row.review_decision || null,
+        flag_reason: row.flag_reason || null,
+        start_s: Number(row.first_framenum) / rate,
+        end_s: Number(row.last_framenum) / rate,
+        // No `end` keyframe: still being made, so the page draws its last box forward
+        // and every window from its start onwards wants its keyframes (2026-10-14).
+        open_ended: !row.has_end,
+    };
+}
+
+/**
+ * Every stretch of the opened observation's habitat session in this video, for the page's
+ * habitat timeline (#287, A1 and A2): the whole session, whatever the Mosaic is filtered to,
+ * so the strip always shows every stretch and what has been reviewed. Null when the opened
+ * observation is not in a habitat session.
+ *
+ * @async
+ * @param {Object} opened - `{ observation_id, video_source, session_id }`.
+ * @param {number} nominal - The video's nominal rate.
+ * @returns {Promise<Object|null>} `{ session_id, stretches }`, in the page's row shape.
+ */
+async function habitatStretches(opened, nominal) {
+    if (opened.session_id == null) return null;
+    const [session] = await db.sequelize.query(
+        'SELECT type FROM sessions WHERE session_id = :id',
+        { replacements: { id: opened.session_id }, type: QueryTypes.SELECT }
+    );
+    if (!session || session.type !== HABITAT_SESSION_TYPE) return null;
+    const { sql, bind } = mosaicRepository.buildVideoObservationsQuery({
+        filters: { session: [opened.session_id] }, videoSource: opened.video_source,
+        include: opened.observation_id, limit: MAX_VIDEO_OBSERVATIONS,
+    });
+    const rows = await db.sequelize.query(sql, { bind, type: QueryTypes.SELECT });
+    return {
+        session_id: opened.session_id,
+        stretches: rows.slice(0, MAX_VIDEO_OBSERVATIONS).map((row) => pageRow(row, nominal)),
+        truncated: rows.length > MAX_VIDEO_OBSERVATIONS,
+    };
 }
 
 /**
@@ -307,6 +347,7 @@ function sessionsInVideo(videoSource, transaction) {
 }
 
 module.exports = {
+    pageRow,
     sessionsInVideo,
     videoObservations,
     videoKeyframes,

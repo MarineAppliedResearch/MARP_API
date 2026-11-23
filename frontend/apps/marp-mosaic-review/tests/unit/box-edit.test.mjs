@@ -126,3 +126,26 @@ test('the recent species list puts the newest first, once, and keeps eight', () 
   assert.deepEqual(recent.map((s) => s.id), [10, 9, 8, 7, 6, 5, 4, 3]);
   assert.deepEqual(withRecent(recent, { id: 5, comname: 's5' }).map((s) => s.id), [5, 10, 9, 8, 7, 6, 4, 3]);
 });
+
+test('#352: a click on a label picks its own box, though another one is drawn on top of it', () => {
+  const crop = { left: 100, top: 200, width: 300, height: 150 };
+  const tab = (left) => [{ left, top: 180, width: 40, height: 18 }, { left, top: 340, width: 30, height: 14 }];
+  const rects = [
+    { key: '7_1', rect: crop, tabs: tab(110) },  // Rock
+    { key: '8_1', rect: crop, tabs: tab(154) },  // Mud
+    { key: '9_1', rect: crop, tabs: tab(198) }   // Cobble, selected and drawn on top
+  ];
+  assert.deepEqual(hitTest(rects, { x: 120, y: 190 }, '9_1'), { key: '7_1', part: 'body' }, 'Rock\'s label');
+  assert.deepEqual(hitTest(rects, { x: 160, y: 345 }, '9_1'), { key: '8_1', part: 'body' }, 'Mud\'s bottom label');
+  assert.deepEqual(hitTest(rects, { x: 250, y: 280 }, '9_1'), { key: '9_1', part: 'body' }, 'the box itself: the one on top');
+});
+
+test('#364: a dragged panel goes where it is taken, and stays inside what it is shown in', async () => {
+  const { placePanel } = await import('../../src/model/box-edit.js');
+  const size = { width: 270, height: 400 };
+  const area = { width: 1600, height: 900 };
+  assert.deepEqual(placePanel({ left: 300, top: 120 }, size, area), { left: 300, top: 120 });
+  assert.deepEqual(placePanel({ left: -50, top: -10 }, size, area), { left: 0, top: 0 });
+  assert.deepEqual(placePanel({ left: 1500, top: 800 }, size, area), { left: 1330, top: 500 });
+  assert.deepEqual(placePanel({ left: 40, top: 40 }, size, { width: 200, height: 300 }), { left: 0, top: 0 }, 'bigger than the area: at its corner');
+});

@@ -162,3 +162,100 @@ test('#181 the boxes go fullscreen with the player, in the GUI\'s style, over a 
       await held.restore();
     }
   });
+
+/* #356, Isaac 2026-11-20: a box under the player's controls -- every habitat stretch's is, its
+   box being the bottom half of the picture -- took the scrub bar's clicks, so the reviewer
+   moved the box when they meant to move the video. The controls bar is lifted over the opened
+   box here, so any observation will do and nothing on the record is touched. */
+test('#356 a press on the player\'s controls is theirs, though a box is drawn beneath them',
+  async ({ page, request }) => {
+    test.setTimeout(240_000);
+    const id = await editableObservation(request);
+    await openAndPlay(page, id);
+    const edits = [];
+    page.on('request', (r) => { if (isEdit({ url: () => r.url(), request: () => r })) edits.push(r.url()); });
+
+    // The opened observation's panel is closed first, as a reviewer would: at phone width it
+    // covers the picture, box and all.
+    const panel = page.locator('#obsPanel');
+    if (await panel.isVisible()) {
+      await panel.getByRole('button', { name: 'Close' }).click();
+      await expect(panel).toBeHidden();
+    }
+    const box = (await boxOf(page, id)).rect;
+    const middle = centre(box);
+    await page.evaluate((y) => {
+      const bar = document.querySelector('.marp-controls-bar');
+      const track = bar.querySelector('.marp-scrub-track').getBoundingClientRect();
+      // The scrub track's middle moved onto the box's middle; and kept on screen, as when paused.
+      const top = bar.offsetTop + (y - (track.top + track.height / 2));
+      bar.style.bottom = 'auto';
+      bar.style.top = `${top}px`;
+      bar.classList.remove('marp-faded');
+    }, middle.y);
+    const track = await page.locator('.marp-scrub-track').boundingBox();
+    expect(Math.abs(track.y + track.height / 2 - middle.y), 'the scrub bar is not over the box').toBeLessThan(2);
+
+    // A point that is both the box and the scrub bar: at phone width the observation's panel
+    // covers part of the picture, so it is looked for along the box rather than assumed.
+    const found = await page.evaluate(({ left, width, y }) => {
+      const seen = [];
+      for (let x = left + 4; x < left + width - 4; x += 4) {
+        const element = document.elementFromPoint(x, y);
+        if (element && element.closest('.marp-scrub-track')) return { x, y };
+        seen.push(element ? element.className || element.tagName : 'nothing');
+      }
+      return { seen: [...new Set(seen)] };
+    }, { left: box.left, width: box.width, y: middle.y });
+    expect(found.x, `no point of the box is the scrub bar; found ${JSON.stringify(found.seen)}`).toBeDefined();
+    const at = found;
+    const before = await page.evaluate(() => window.MARP_VIDEO.time);
+    await page.mouse.click(at.x, at.y);
+    // The scrub bar had the press: the video moved there, or -- on a phone, which plays a
+    // transcode and is slow to seek -- the scrub bar's handle went to where it was pressed.
+    await expect.poll(async () => {
+      const time = await page.evaluate(() => window.MARP_VIDEO.time);
+      const handle = await page.locator('.marp-scrub-handle').boundingBox();
+      return Math.abs(time - before) > 0.5 || (handle && Math.abs(handle.x + handle.width / 2 - at.x) < 6);
+    }, { message: 'the click on the scrub bar went neither to the video nor to its handle', timeout: 30_000 }).toBe(true);
+    expect(edits, 'a click on the scrub bar edited the box beneath it').toEqual([]);
+  });
+
+/* #364, Isaac 2026-11-20: the observation panel "is supposed to be movable and draggable to
+   other parts of the screen". */
+test('#364 the observation panel is dragged by its title to anywhere over the player, and stays there',
+  async ({ page, request }) => {
+    test.setTimeout(240_000);
+    const id = await editableObservation(request);
+    await openAndPlay(page, id);
+    const panel = page.locator('#obsPanel');
+    await expect(panel).toBeVisible();
+    const before = await panel.boundingBox();
+    const title = await panel.locator('.annotate-head strong').boundingBox();
+    await mouseDrag(page, { x: title.x + 10, y: title.y + title.height / 2 }, -400, 120);
+    const after = await panel.boundingBox();
+    expect(Math.round(after.x - before.x)).toBe(-400);
+    expect(Math.round(after.y - before.y)).toBe(120);
+
+    // Dragged off the edge, it stops at it, its title still in reach.
+    await mouseDrag(page, { x: after.x + 20, y: after.y + 10 }, -5000, -5000);
+    const corner = await panel.boundingBox();
+    const player = await page.locator('#player').boundingBox();
+    expect(corner.x).toBeGreaterThanOrEqual(player.x - 1);
+    expect(corner.y).toBeGreaterThanOrEqual(player.y - 1);
+
+    // Where it was left is where it opens next time.
+    await page.reload();
+    // Still signed in to Jellyfin, which keeps its session in the browser; signed in again if not.
+    const form = page.locator('#signIn');
+    const asked = await form.waitFor({ state: 'visible', timeout: 60_000 }).then(() => true, () => false);
+    if (asked) {
+      await form.getByLabel('User').fill(process.env.JELLYFIN_USERNAME);
+      await form.getByLabel('Password').fill(process.env.JELLYFIN_PASSWORD);
+      await form.getByRole('button', { name: 'Sign in' }).click();
+    }
+    await expect(panel).toBeVisible({ timeout: 120_000 });
+    const reopened = await panel.boundingBox();
+    expect(Math.round(reopened.x)).toBe(Math.round(corner.x));
+    expect(Math.round(reopened.y)).toBe(Math.round(corner.y));
+  });

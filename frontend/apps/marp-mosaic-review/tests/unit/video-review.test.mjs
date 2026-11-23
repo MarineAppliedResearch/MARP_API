@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  WINDOW_SECONDS, windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour
+  WINDOW_SECONDS, windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, withSession
 } from '../../src/model/video-review.js';
 
 test('#337: a reviewed box is green, a flagged one amber, an undecided one keeps its species colour', () => {
@@ -49,4 +49,17 @@ test('#181: a species is the annotation GUI\'s colour, checked against its own C
   assert.equal(speciesColour('Sunflower star'), 'rgb(155, 71, 225)');
   assert.equal(speciesColour(''), 'rgb(255, 255, 255)');
   assert.equal(speciesColour(null), 'rgb(255, 255, 255)');
+});
+
+test('#287 A7: on a habitat video the boxes are the whole session, the same stretches as the timeline', () => {
+  const matched = [{ observation_id: 5, review_decision: null }, { observation_id: 9, comname: 'Sea star' }];
+  const habitat = { stretches: [
+    { observation_id: 3, review_decision: 'reviewed' },
+    { observation_id: 5, review_decision: null }
+  ] };
+  const drawn = withSession(matched, habitat);
+  assert.deepEqual(drawn.map((row) => row.observation_id), [3, 5, 9],
+    'the reviewed stretch the default filter hides, the matched one once, and the rest of the video as the filter has it');
+  assert.equal(drawn[1], matched[0], 'a stretch the query matched keeps its own row');
+  assert.deepEqual(withSession(matched, null), matched, 'not a habitat video: the query alone');
 });

@@ -15,6 +15,10 @@ const WALKTHROUGH = process.env.MARP_WALKTHROUGH === '1'
   || process.argv.some((a) => a === 'walkthrough' || a.endsWith('=walkthrough'));
 if (WALKTHROUGH) process.env.MARP_WALKTHROUGH = '1';
 
+/* The walkthrough's page size, `1600x900` unless MARP_WALKTHROUGH_SIZE names another. */
+const [walkWidth, walkHeight] = (process.env.MARP_WALKTHROUGH_SIZE || '1600x900').split('x').map(Number);
+const WALKTHROUGH_SIZE = { width: walkWidth, height: walkHeight };
+
 /**
  * Where the real MARP API is. **There is nothing else left to run against.**
  *
@@ -94,8 +98,10 @@ export default defineConfig({
       timeout: 240_000,
       use: {
         ...devices['Desktop Chrome'],
-        viewport: { width: 1600, height: 900 },
-        video: { mode: 'on', size: { width: 1600, height: 900 } },
+        /* Smaller than the browser tier's, when asked, so the recording is enlarged: the
+           recorder scales every video to 1280 wide. */
+        viewport: WALKTHROUGH_SIZE,
+        video: { mode: 'on', size: WALKTHROUGH_SIZE },
         storageState: SESSION_FILE
       }
     }]),

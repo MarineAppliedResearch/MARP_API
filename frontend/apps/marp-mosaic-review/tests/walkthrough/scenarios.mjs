@@ -16,6 +16,7 @@
    scenes below need a page where no picture arrived, and the mosaic has no
    thumbnail-status filter -- so such a page is made rather than looked for. */
 import { seedPage } from '../api/seed.mjs';
+import { videoScenarios } from './video-scenarios.mjs';
 
 const tilesIn = (page) => page.locator('.tile:not(.failed):not(.queued)');
 
@@ -2320,5 +2321,8 @@ export const scenarios = {
     ]
   }
 };
+
+/* The video page's habitat films, one per issue from the 2026-11-20 trial. */
+Object.assign(scenarios, videoScenarios);
 
 export const scenarioIds = Object.keys(scenarios);

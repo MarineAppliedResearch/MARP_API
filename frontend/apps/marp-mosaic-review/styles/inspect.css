@@ -51,6 +51,12 @@ body {
   color: var(--amber-300);
 }
 
+/* #351: the clock time of the frame on screen, to hold against the time in the picture. */
+.inspect-clock-now {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9em;
+}
+
 .inspect-clock-button,
 .inspect-clock-form button {
   font: inherit;
@@ -132,10 +138,10 @@ body {
   touch-action: none;
 }
 
-/* The annotation GUI's box menu. */
+/* The annotation GUI's box menu. Over the observation panel, which can be dragged under it. */
 .inspect-menu {
   position: absolute;
-  z-index: 20;
+  z-index: 24;
   display: flex;
   flex-direction: column;
   min-width: 200px;
@@ -486,4 +492,196 @@ body {
   display: block;
   color: var(--cyan-300, #64f6f2);
   font-size: 0.8em;
+}
+
+/* #287: the habitat timeline, the annotation GUI's strip under the video. Lanes taller than
+   the GUI's 5 px so an end can be grabbed (A6). */
+.hstrip {
+  /* 8 px, down from 12 (Isaac, #357). */
+  --lane: 8px;
+  padding: 6px 12px;
+  background: var(--navy-850);
+  border-top: 1px solid var(--border);
+}
+
+.hstrip-lanes {
+  position: relative;
+  height: calc(var(--rows) * var(--lane));
+  overflow: hidden;
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hstrip-lanes.panning,
+.hstrip-lanes.panning * {
+  cursor: grabbing;
+}
+
+/* R6: zoomed in, which part of the whole video is on screen. */
+.hstrip-overview {
+  position: relative;
+  height: 4px;
+  margin-bottom: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.hstrip-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--muted);
+}
+
+.hstrip-lanes.over-edge,
+.hstrip-lanes.dragging,
+.hstrip-lanes.dragging * {
+  cursor: ew-resize;
+}
+
+.hstrip-stripe {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--row) * var(--lane));
+  height: var(--lane);
+  background: rgba(255, 255, 255, 0.07);
+  pointer-events: none;
+}
+
+/* R4: an outline until reviewed, solid once reviewed, solid and striped amber when flagged.
+   A fade and a thin line were tried first and could not be told apart (2026-11-20). */
+.hstrip-bar {
+  position: absolute;
+  top: calc(var(--row) * var(--lane) + 0.5px);
+  height: calc(var(--lane) - 1px);
+  box-sizing: border-box;
+  border-radius: 2px;
+  border: 2px solid var(--colour);
+  background: transparent;
+}
+
+.hstrip-bar.reviewed {
+  background: var(--colour);
+}
+
+.hstrip-bar.flagged {
+  border-color: var(--amber-300);
+  background: repeating-linear-gradient(135deg, var(--colour) 0 4px, var(--amber-300) 4px 7px);
+}
+
+.hstrip-bar.selected {
+  outline: 2px solid var(--white);
+  outline-offset: 0;
+  z-index: 1;
+}
+
+/* Letting go merges these in (A4), so they say so while the drag is on. */
+.hstrip-bar.merging {
+  outline: 2px dashed var(--white);
+  opacity: 1;
+}
+
+.hstrip-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--white);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* #353: a bar's right-click menu, opened where the pointer is rather than inside the player. */
+.hstrip-menu {
+  position: fixed;
+}
+
+/* #358: the habitats the picture is in, as the GUI lists them over it. Sized with the boxes'
+   labels, so it is the GUI's 20 px on a picture the GUI's size. */
+.habitat-now {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--scale, 1));
+  pointer-events: none;
+}
+
+.habitat-now-item {
+  align-self: flex-start;
+  padding: calc(4px * var(--scale, 1)) calc(10px * var(--scale, 1));
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  color: #fff;
+  font: 700 calc(20px * var(--scale, 1)) / 1.2 "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* #362: inside the player's controls, above its scrub bar, the strip is part of the bar:
+   no band of its own, only the lanes. */
+.marp-controls-bar .hstrip {
+  padding: 0 0 4px;
+  background: none;
+  border-top: 0;
+}
+
+/* #360: picked second with Ctrl or Shift, to be cut by the selected stretch. */
+.hstrip-bar.second {
+  outline: 2px dashed var(--white);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+/* #364: the observation panel is dragged by its title row. */
+.annotate-panel .annotate-head {
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.annotate-panel .annotate-head button {
+  cursor: pointer;
+}
+
+.annotate-panel.moving {
+  opacity: 0.9;
+}
+
+/* #367: the frame's clock time, after the play time in the player's controls. */
+.marp-controls-row .inspect-clock-now {
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* #367: the video's own lines at the foot of the observation panel. */
+.panel-video {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 0.85em;
+}
+
+.panel-video .inspect-detail {
+  overflow-wrap: anywhere;
+}
+
+.panel-video .inspect-clock-button {
+  align-self: flex-start;
+}
+
+.panel-video .inspect-clock-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
 }

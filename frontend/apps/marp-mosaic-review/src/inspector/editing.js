@@ -32,6 +32,15 @@ import {
  */
 export function createBoxEditor({ stage, overlay, menu, host }) {
   let enabled = false;
+
+  /* A press on the player's own controls is theirs, whatever box is drawn beneath them (#356):
+     every habitat stretch's box is the bottom half of the picture, under the scrub bar, and
+     this editor listens first, so it moved the box when the reviewer meant to scrub. */
+  const onControls = (target) => Boolean(host.isControls && host.isControls(target));
+
+  /* A habitat stretch's box is the habitat crop, which the reviewer does not place (#359): it
+     is selected and its keyframes set like any other, but it is never dragged or resized. */
+  const isFixed = (key) => Boolean(key && host.boxFixed && host.boxFixed(Number(key.split('_')[0])));
   let canDeleteObservations = false;
 
   /* The selected track, by the GUI's key: observation and subset. */
@@ -201,17 +210,20 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   function openMenu(entry, point) {
     const { t, keyframe } = boxHere(entry);
     const items = menuFor({ ...entry.box, keyframe, t })
-      .filter((item) => item.action !== 'deleteObservation' || canDeleteObservations);
+      .filter((item) => item.action !== 'deleteObservation' || canDeleteObservations)
+      // And whatever the page offers on this box: a cut (#360).
+      .concat(host.menuExtras ? host.menuExtras(entry.box.observation_id) : []);
     menu.replaceChildren(...items.map((item) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = item.label;
-      button.dataset.action = item.action;
+      if (item.action) button.dataset.action = item.action;
       button.disabled = Boolean(item.disabled);
       button.addEventListener('click', (event) => {
         event.stopPropagation();
         closeMenu();
-        act(item.action, entry);
+        if (item.run) item.run();
+        else act(item.action, entry);
       });
       return button;
     }));
@@ -230,6 +242,10 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
     if (!enabled) return;
     if (menu.contains(event.target)) return;
     if (!menu.hidden) closeMenu();
+    if (onControls(event.target)) {
+      swallowClick = false;
+      return;
+    }
     const point = pointIn(event);
     const hit = hitTest(host.drawn().rects, point, selectedKey);
     // Each press decides whether the click after it is the editor's or the player's, so both
@@ -259,6 +275,14 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
       host.pause();
       host.focusPlayer();
       handler(entryFor(hit.key));
+      return;
+    }
+
+    // Ctrl or Shift picks a second box beside the selected one, for a cut (#360); the
+    // selection stays where it is.
+    if ((event.ctrlKey || event.metaKey || event.shiftKey) && host.pickSecond) {
+      host.pickSecond(Number(hit.key.split('_')[0]));
+      host.redraw();
       return;
     }
 
@@ -314,8 +338,9 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
     }
     if (!gesture) {
       if (enabled && event.pointerType === 'mouse') {
-        const hit = hitTest(host.drawn().rects, pointIn(event), selectedKey);
-        showCursor(hit ? hit.part : null);
+        // Over the controls a press is theirs, so no move or resize cursor there either.
+        const hit = onControls(event.target) ? null : hitTest(host.drawn().rects, pointIn(event), selectedKey);
+        showCursor(hit && !isFixed(hit.key) ? hit.part : null);
       }
       return;
     }
@@ -329,6 +354,7 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
     gesture.moved = true;
     lastPress = null;
     cancelLongPress();
+    if (isFixed(gesture.key)) return;
     preview = { key: gesture.key, part: gesture.part, rect: dragged(gesture.rect, gesture.part, dx, dy, gesture.area) };
     host.redraw();
   }
@@ -372,7 +398,7 @@ export function createBoxEditor({ stage, overlay, menu, host }) {
   }
 
   function onContextMenu(event) {
-    if (!enabled) return;
+    if (!enabled || onControls(event.target)) return;
     const point = pointIn(event);
     const hit = hitTest(host.drawn().rects, point, selectedKey);
     if (!hit) return;

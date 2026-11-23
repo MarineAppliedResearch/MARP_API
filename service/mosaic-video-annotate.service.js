@@ -36,6 +36,7 @@ const edits = require('./mosaic-video-edit.service');
 const { sessionsInVideo } = require('./mosaic-video.service');
 const { formatTimeSpan, deriveTc, deriveFrame, ASSUMED_FPS } = require('../db/timecode');
 const videoClock = require('./video-clock.service');
+const { HABITAT_SESSION_TYPE, HABITAT_BOX } = require('../db/habitat-keyframes');
 
 const { boxOf, rateOf, asSeconds, invalid, notFound, KEYFRAME_COLUMNS } = edits;
 
@@ -125,8 +126,10 @@ async function createObservation(body = {}, userId = null) {
             actualPosition: formatTimeSpan(clockMs),
             observed_at: clock ? clock.observedAt : null,
         }, transaction);
+        // A habitat stretch's box is the habitat crop, whatever was drawn (#359).
+        const placed = session.type === HABITAT_SESSION_TYPE ? { ...HABITAT_BOX } : box;
         await keys.insertKeyframes(observationId, [{
-            subset: NEW_SUBSET, comname: species.comname, type: 'start', framenum, ...box,
+            subset: NEW_SUBSET, comname: species.comname, type: 'start', framenum, ...placed,
         }], transaction);
 
         const [row] = await db.sequelize.query(
@@ -237,13 +240,17 @@ async function merge(intoId, body = {}) {
         await db.sequelize.query('DELETE FROM observations WHERE observation_id = :fromId', {
             replacements: { fromId }, transaction,
         });
-        return { rate: rateInto, keyframes: await keyframesOf(intoId, transaction) };
+        // A habitat stretch's times follow its keyframes, and the page is handed the version
+        // that leaves it (#363).
+        await edits.habitatTimesFromKeyframes(intoId, transaction);
+        return { rate: rateInto, keyframes: await keyframesOf(intoId, transaction), version: await edits.versionOf(intoId, transaction) };
     });
 
     await thumbnails.requestRefresh(intoId);
     return {
         observation_id: intoId,
         deleted_observation_id: fromId,
+        version: result.version,
         keyframes: result.keyframes.map((k) => asSeconds(k, result.rate)),
     };
 }

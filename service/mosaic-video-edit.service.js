@@ -32,6 +32,7 @@ const thumbnails = require('../repository/observation-thumbnail.repository');
 const { resolveVideo } = require('./mosaic-video-context.service');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { ASSUMED_FPS } = require('../db/timecode');
+const { HABITAT_SESSION_TYPE, HABITAT_BOX, retimedColumns } = require('../db/habitat-keyframes');
 
 const KEYFRAME_COLUMNS = 'keyframe_id, observation_id, subset, type, framenum, x, y, width, height';
 
@@ -156,11 +157,95 @@ async function setType(keyframeId, type, transaction) {
  * @async
  */
 async function edit(work, { refresh = true } = {}) {
-    const result = await db.sequelize.transaction(work);
+    const result = await db.sequelize.transaction(async (transaction) => {
+        const done = await work(transaction);
+        await habitatTimesFromKeyframes(done.observation_id, transaction);
+        // The version the edit leaves, so the page's next change is not refused as out of date
+        // (#363): a habitat stretch's keyframe edit rewrites its row, which moves it on.
+        done.version = await versionOf(done.observation_id, transaction);
+        return done;
+    });
     // Not when the caller cuts the picture itself (#181 R6): a queued refresh would be
     // claimed by the extractor and cut the automatic picture over the chosen one.
     if (refresh) await thumbnails.requestRefresh(result.observation_id);
     return result;
+}
+
+/**
+ * A habitat stretch's box, which is not the reviewer's to place (#359): the habitat crop, as
+ * its track already has it, or null for anything not in a habitat session.
+ *
+ * @async
+ * @param {number} observationId
+ * @param {Array<Object>} track - Its keyframes, in frame order; the first one's box is its own.
+ * @param {Object} transaction
+ * @returns {Promise<?Object>} `{ x, y, width, height }`, or null.
+ */
+async function habitatBox(observationId, track, transaction) {
+    const [session] = await db.sequelize.query(
+        'SELECT s.type FROM observations o JOIN sessions s ON s.session_id = o.session_id WHERE o.observation_id = :id',
+        { replacements: { id: observationId }, type: QueryTypes.SELECT, transaction }
+    );
+    if (!session || session.type !== HABITAT_SESSION_TYPE) return null;
+    const own = track && track[0];
+    return own ? { x: own.x, y: own.y, width: own.width, height: own.height } : { ...HABITAT_BOX };
+}
+
+/* An observation's version now: what a change to it must name next. */
+async function versionOf(observationId, transaction) {
+    const [row] = await db.sequelize.query(
+        'SELECT version FROM observations WHERE observation_id = :observationId',
+        { replacements: { observationId }, type: QueryTypes.SELECT, transaction }
+    );
+    return row ? row.version : null;
+}
+
+/**
+ * A habitat stretch's time columns, in step with its start and end keyframes (Isaac,
+ * 2026-11-20). A stretch added on the video page had its end only as a keyframe, so its
+ * `etc` -- which the scientific data reads -- was never written. After any keyframe edit,
+ * every column stating its start or end is worked out again from them, by the same rule as a
+ * drag on the timeline (`retimedColumns`); with no end keyframe, `etc` is empty. Anything not
+ * in a habitat session is left alone.
+ *
+ * @async
+ * @param {number} observationId
+ * @param {Object} transaction
+ */
+async function habitatTimesFromKeyframes(observationId, transaction) {
+    const [row] = await db.sequelize.query(
+        `SELECT o.observation_id, o.gpu_job_id, o.video_source, o."mediaPosition", o."actualPosition",
+                o.tc, o.etc, o.frame, o.observed_at, s.type AS session_type
+           FROM observations o JOIN sessions s ON s.session_id = o.session_id
+          WHERE o.observation_id = :observationId`,
+        { replacements: { observationId }, type: QueryTypes.SELECT, transaction }
+    );
+    if (!row || row.session_type !== HABITAT_SESSION_TYPE) return;
+    const keyframes = await db.sequelize.query(
+        'SELECT type, framenum FROM keyframes WHERE observation_id = :observationId',
+        { replacements: { observationId }, type: QueryTypes.SELECT, transaction }
+    );
+    const start = keyframes.find((k) => k.type === 'start');
+    const end = keyframes.find((k) => k.type === 'end');
+    if (!start) return;
+    const rate = await rateOf(row);
+    const startMs = Math.round((Number(start.framenum) * 1000) / rate);
+    let columns;
+    if (end) {
+        ({ columns } = retimedColumns(row, {
+            startMs, endMs: Math.round((Number(end.framenum) * 1000) / rate), keyed: true, fps: rate,
+        }));
+    } else {
+        // Still being made: where it starts, and no end yet.
+        ({ columns } = retimedColumns(row, { startMs, endMs: startMs, keyed: true, fps: rate }));
+        columns.etc = null;
+    }
+    const names = Object.keys(columns);
+    await db.sequelize.query(
+        `UPDATE observations SET ${names.map((name) => `"${name}" = :${name}`).join(', ')}, "updatedAt" = NOW()
+          WHERE observation_id = :observationId`,
+        { replacements: { ...columns, observationId }, transaction }
+    );
 }
 
 /** Move or resize a keyframe's box. Its frame and type stay. */
@@ -168,6 +253,10 @@ function moveBox(keyframeId, body) {
     const box = boxOf(body);
     return edit(async (transaction) => {
         const { observation } = await keyframeForEdit(keyframeId, transaction);
+        // A habitat stretch's box is the habitat crop, and only its times change (#359).
+        if (await habitatBox(observation.observation_id, null, transaction)) {
+            throw invalid('A habitat stretch\'s box is the habitat crop; it is not moved or resized.');
+        }
         const [rows] = await db.sequelize.query(
             `UPDATE keyframes SET x = :x, y = :y, width = :width, height = :height, "updatedAt" = NOW()
               WHERE keyframe_id = :keyframeId RETURNING ${KEYFRAME_COLUMNS}`,
@@ -181,7 +270,7 @@ function moveBox(keyframeId, body) {
 /** Add a keyframe at `t` on an observation's track: a pinned or dragged in-between box, or one
     drawn before its start or after its end, which extends it (R2). */
 function addKeyframe(body = {}, { refresh = true } = {}) {
-    const box = boxOf(body);
+    let box = boxOf(body);
     const observationId = body.observation_id;
     const subset = body.subset == null ? '1' : String(body.subset);
     if (!Number.isInteger(observationId)) throw invalid('observation_id must be an integer.');
@@ -197,6 +286,8 @@ function addKeyframe(body = {}, { refresh = true } = {}) {
         const framenum = Math.round(body.t * rate);
         const track = await trackOf(observationId, subset, transaction);
         if (track.length === 0) throw invalid(`Observation ${observationId} has no track ${subset} to add to.`);
+        // A habitat stretch's keyframes all carry its own box, whatever was drawn (#359).
+        box = (await habitatBox(observationId, track, transaction)) || box;
 
         // On a keyframe already: that one is moved instead, as the GUI does.
         const existing = track.find((row) => Number(row.framenum) === framenum);
@@ -284,5 +375,7 @@ function deleteKeyframe(keyframeId) {
 module.exports = {
     moveBox, addKeyframe, setEnd, deleteKeyframe,
     // Shared with the annotation service, which counts frames and checks boxes the same way.
-    boxOf, rateOf, asSeconds, invalid, notFound, KEYFRAME_COLUMNS
+    boxOf, rateOf, asSeconds, invalid, notFound, KEYFRAME_COLUMNS,
+    // And the merge, which moves keyframes onto a stretch outside these edits.
+    habitatTimesFromKeyframes, versionOf,
 };

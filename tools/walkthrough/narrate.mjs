@@ -100,7 +100,7 @@ export function synthesize(lines, workDir) {
  * Mix spoken captions onto a video.
  * @returns {{ok: boolean, reason?: string, out?: string}}
  */
-export function narrate({ video, clips, timeline, out }) {
+export function narrate({ video, clips, timeline, out, offset = 0 }) {
   if (!existsSync(video)) return { ok: false, reason: `no video at ${video}` };
   if (!existsSync(timeline)) return { ok: false, reason: `no caption timeline at ${timeline}` };
   if (!has('ffmpeg', ['-version'])) return { ok: false, reason: 'ffmpeg is not installed' };
@@ -110,7 +110,7 @@ export function narrate({ video, clips, timeline, out }) {
   if (!marks.length) return { ok: false, reason: 'the walkthrough recorded no captions' };
 
   /* Place each already-spoken clip at the moment its caption appeared. */
-  const placed = clips.slice(0, marks.length).map((c, i) => ({ ...c, at: marks[i].at }));
+  const placed = clips.slice(0, marks.length).map((c, i) => ({ ...c, at: marks[i].at - offset }));
 
   /* Delay each clip to its caption's moment, then mix them into one track. */
   const inputs = placed.flatMap((c) => ['-i', c.file]);

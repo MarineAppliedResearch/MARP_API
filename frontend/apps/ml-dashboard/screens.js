@@ -857,6 +857,29 @@ function sessionFor(spec) {
   return named || asked || {};
 }
 
+/**
+ * The id the Mosaic's Run filter knows a job's run by (#350): its submission, else its batch,
+ * else the job itself -- the order `RUN_KEY` in `repository/mosaic.repository.js` uses.
+ *
+ * @param {Object} job - A `gpu_jobs` row.
+ * @returns {string}
+ */
+function runKeyOf(job) {
+  return job.submission_id || job.batch_id || `job-${job.id}`;
+}
+
+/**
+ * Into the Mosaic, filtered to what a job produced (#350): one session, or a whole run.
+ *
+ * @param {{session?: number, run?: string}} what
+ * @returns {string}
+ */
+function mosaicHrefFor({ session, run }) {
+  return run
+    ? `/apps/marp-mosaic-review/?run=${encodeURIComponent(run)}`
+    : `/apps/marp-mosaic-review/?session=${encodeURIComponent(session)}`;
+}
+
 function jobView(job, issueBatches) {
   const spec = job.spec || {};
   const session = sessionFor(spec);
@@ -976,7 +999,16 @@ function rowFor(view) {
       + '</span>'
     : '';
 
-  const actions = move + retry + (live
+  /* **Straight into the Mosaic** (#350): what this job wrote is its session, and running a
+     job used to leave the reviewer to work out which session that was. Offered once there
+     can be something to see -- while it runs, or when it has finished. */
+  const sessionId = spec.session && spec.session.session_id;
+  const review = job.kind === 'inference' && sessionId != null && ['leased', 'succeeded'].includes(job.state)
+    ? `<a class="btn sm" data-mosaic href="${mosaicHrefFor({ session: sessionId })}"`
+      + ' title="Review what this job found in the Mosaic">Review</a>'
+    : '';
+
+  const actions = review + move + retry + (live
     ? `<button class="btn sm icon" type="button" data-control data-cancel-job="${job.id}" aria-label="Cancel job ${job.id}"`
       + ' title="Cancel this job"><svg class="ico sm"><use href="#i-stop"/></svg></button>'
       + (job.batch_id
@@ -5520,8 +5552,13 @@ async function fillInferenceFindings(place) {
   if (ended) fillJobAttempts(place, jobId);
   const anything = $$('.findlist li', place).length > 0;
   if (session && anything) {
-    place.insertAdjacentHTML('beforeend', `<p class="findings-go"><a class="btn sm" href="/apps/marp-mosaic-review/?session=${session}">`
-      + 'Review these in the mosaic</a></p>');
+    /* This line's session, and -- when it was submitted with others -- every line of its run
+       together, through the Mosaic's Run filter (#350): a run of two lines is two sessions. */
+    const run = place.dataset.run;
+    place.insertAdjacentHTML('beforeend', `<p class="findings-go"><a class="btn sm" href="${mosaicHrefFor({ session })}">`
+      + 'Review these in the mosaic</a>'
+      + (run ? ` <a class="btn sm" data-mosaic-run href="${mosaicHrefFor({ run })}">Review the whole run</a>` : '')
+      + '</p>');
   }
 }
 
@@ -5597,7 +5634,10 @@ function renderInferenceRecent(views = inferenceList.views) {
       + '<td class="jacts"></td>'
       + '</tr>'
       + `<tr class="runrow-body" hidden><td colspan="10"><div class="rundetail" data-inference-findings="${job.id}"`
-      + ` data-batch="${job.batch_id || ''}" data-state="${view.state}"><p class="faint">Opening the row reads what it found.</p></div></td></tr>`;
+      + ` data-batch="${job.batch_id || ''}" data-state="${view.state}"`
+      // The run it belongs to, for opening every line of it in the Mosaic at once (#350).
+      + ` data-run="${job.submission_id || job.batch_id ? escapeHtml(runKeyOf(job)) : ''}">`
+      + '<p class="faint">Opening the row reads what it found.</p></div></td></tr>';
   }).join('');
 
   /* However it is opened, the row's `hidden` is what changes, so that is what is watched. */

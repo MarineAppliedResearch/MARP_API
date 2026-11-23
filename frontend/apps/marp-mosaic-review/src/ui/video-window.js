@@ -128,3 +128,14 @@ export function followQueryInVideoWindow(filters) {
   const open = videoChannel();
   if (open) open.postMessage({ type: 'query', filters: filters || {} });
 }
+
+/**
+ * Tell an open video page that a page was committed here, so it reads again what it shows:
+ * its habitat timeline marks what has been reviewed, and a review made in the grid is one
+ * (#287 R4). Nothing is sent when no video page was opened from here.
+ */
+export function tellVideoWindowCommitted() {
+  if (toldQuery === null) return;
+  const open = videoChannel();
+  if (open) open.postMessage({ type: 'committed' });
+}

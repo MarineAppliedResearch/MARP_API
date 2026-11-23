@@ -81,28 +81,42 @@ export function walkthrough({ test, expect, scenarios, settled, outDir = 'demo',
     await page.goto(url);
     await waitSettled();
 
-    for (const [i, scene] of scenario.scenes.entries()) {
-      await showCaption(page, scene.caption);
-      /* The voice starts here, so this is the moment the audio is placed at. */
-      await page.waitForTimeout(READ_LEAD);
-      timeline.push({ at: Date.now() - t0, text: scene.say });
+    /* Getting somewhere worth filming -- seeding, signing in, a video loading -- is cut from
+       the film: the recorder starts the video where the first scene starts. */
+    let trim = 0;
+    try {
+      if (scenario.setup) {
+        await scenario.setup({ page, expect, settled: waitSettled, store });
+        trim = Date.now() - t0;
+      }
 
-      if (scene.act) await scene.act({ page, expect, settled: waitSettled, store });
+      for (const [i, scene] of scenario.scenes.entries()) {
+        await showCaption(page, scene.caption);
+        /* The voice starts here, so this is the moment the audio is placed at. */
+        await page.waitForTimeout(READ_LEAD);
+        timeline.push({ at: Date.now() - t0, text: scene.say });
 
-      /* Hold out the rest of the spoken line, so the next caption never cuts in. */
-      const spoken = holds ? holds[i] : null;
-      const elapsed = Date.now() - t0 - timeline[timeline.length - 1].at;
-      const remaining = (spoken ?? SILENT_HOLD) - elapsed;
-      if (remaining > 0) await page.waitForTimeout(remaining);
-      await page.waitForTimeout(450);          // a breath between lines
+        if (scene.act) await scene.act({ page, expect, settled: waitSettled, store });
+
+        /* Hold out the rest of the spoken line, so the next caption never cuts in. */
+        const spoken = holds ? holds[i] : null;
+        const elapsed = Date.now() - t0 - timeline[timeline.length - 1].at;
+        const remaining = (spoken ?? SILENT_HOLD) - elapsed;
+        if (remaining > 0) await page.waitForTimeout(remaining);
+        await page.waitForTimeout(450);          // a breath between lines
+      }
+
+      await page.evaluate(() => document.getElementById('__cap')?.remove());
+      await page.waitForTimeout(700);
+    } finally {
+      /* Whatever a scenario made it removes, whether or not the film got to the end. */
+      if (scenario.teardown) await scenario.teardown({ page, expect, store });
     }
-
-    await page.evaluate(() => document.getElementById('__cap')?.remove());
-    await page.waitForTimeout(700);
 
     expect(errors).toEqual([]);
 
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, `${id}.timeline.json`), JSON.stringify(timeline, null, 1));
+    writeFileSync(join(outDir, `${id}.trim.json`), JSON.stringify(trim));
   });
 }

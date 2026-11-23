@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clockLine, positionText, readingOffered, readingBody } from '../../src/model/video-clock.js';
+import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText } from '../../src/model/video-clock.js';
 
 const unset = { recorded_start: null, start_source: null, suggested_start: '2021-06-14T16:40:41.000Z' };
 const set = { recorded_start: '2021-06-14T16:40:46.000Z', start_source: 'synced', suggested_start: '2021-06-14T16:40:41.000Z' };
@@ -36,4 +36,20 @@ test('#76: the file name\'s reading left as offered is accepting it; anything el
 test('#76: nothing typed, or nothing a date, is not a reading', () => {
   assert.equal(readingBody('', 60, unset), null);
   assert.equal(readingBody('yesterday', 60, unset), null);
+});
+
+test('#351: the frame on screen has a clock time, the start plus where the picture is', () => {
+  assert.equal(clockAt(set, 0), '2021-06-14 16:40:46.000 UTC');
+  assert.equal(clockAt(set, 74.6), '2021-06-14 16:42:00.600 UTC', 'to the millisecond, so each frame has its own time');
+  assert.equal(clockAt(set, 74.64), '2021-06-14 16:42:00.640 UTC', 'the next frame, 40 ms on');
+  assert.equal(clockAt(set, 3600 * 8), '2021-06-15 00:40:46.000 UTC', 'past midnight is the next day');
+  assert.equal(clockAt(unset, 10), null, 'no clock, no clock time: a suggested start is not one');
+  assert.equal(clockAt(null, 10), null);
+  assert.equal(clockAt(set, NaN), null, 'before the video knows where it is');
+});
+
+test('#365 #366: a moment is told on the clock to the millisecond, or as its position without one', () => {
+  assert.equal(timeText(set, 74.64), '16:42:00.640 UTC');
+  assert.equal(timeText(unset, 74.64), positionText(74.64));
+  assert.equal(timeText(null, 74.64), positionText(74.64));
 });

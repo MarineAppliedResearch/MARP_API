@@ -80,3 +80,34 @@ export function readingBody(typed, seconds, clock) {
     source: at === offered ? 'file-name' : 'synced'
   };
 }
+
+/**
+ * The clock time of the frame on screen (#351), `19:01:14 UTC`, or null when the video has
+ * no clock. Shown beside the picture so it can be held up against the time stamped on it,
+ * which is how anyone can see whether the clock is right.
+ *
+ * @param {Object|null} clock - `GET /videos/clock`'s answer.
+ * @param {number} seconds - Where the picture is in the video.
+ * @returns {?string}
+ */
+export function clockAt(clock, seconds) {
+  if (!clock || !clock.recorded_start || !Number.isFinite(seconds)) return null;
+  const iso = new Date(Date.parse(clock.recorded_start) + Math.round(seconds * 1000)).toISOString();
+  // To the millisecond, so each frame has its own time: a clock synced to the second could
+  // still be most of a second out, and frames are 40 ms apart (Isaac, 2026-11-20).
+  return `${iso.slice(0, 10)} ${iso.slice(11, 23)} UTC`;
+}
+
+/**
+ * A moment as the page tells it to the reviewer (#365, #366): the time on the video's clock,
+ * to the millisecond, where it has one -- `19:12:59.440 UTC` -- and its position in the video
+ * where it has none. The day is left to the readout of the frame on screen, which carries it.
+ *
+ * @param {Object|null} clock - `GET /videos/clock`'s answer.
+ * @param {number} seconds - Where it is in the video.
+ * @returns {string}
+ */
+export function timeText(clock, seconds) {
+  const at = clockAt(clock, seconds);
+  return at ? at.slice(11) : positionText(seconds);
+}
