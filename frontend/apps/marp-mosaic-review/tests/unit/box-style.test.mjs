@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { labelScale, markerFor, identifierText, tabLayout, sharedTabShifts, labelSlots, GUI } from '../../src/model/box-style.js';
+import { labelScale, markerFor, identifierText, tabLayout, sharedTabShifts, labelColumns, GUI } from '../../src/model/box-style.js';
 
 test('labels are the GUI\'s size on a 600-pixel picture, and follow the picture within limits', () => {
   assert.equal(labelScale(600), 1);
@@ -87,46 +87,69 @@ test('#352: habitat labels go Cobble, Boulder, Sand, Mud, Rock, packed, whatever
   assert.deepEqual(shifts.map((s) => s.top), [88, 44, 0], 'Cobble first, then Sand, then Rock; no gap where Boulder would be');
 });
 
-test('a habitat label keeps its slot whichever others are showing: Rock, then Mud and Rock, then Rock (2026-11-23)', () => {
+test('a habitat label keeps its column while it lasts, from the box\'s left edge: Rock, then Mud and Rock, then Rock (2026-11-23)', () => {
   const crop = { left: 100, top: 200, width: 300, height: 150 };
-  // The video's stretches: Mud and Rock, each tab 40 wide on top and 30 underneath.
-  const slots = labelSlots([
-    { name: 'Rock', widths: { top: 40, bottom: 30 } },
-    { name: 'Mud', widths: { top: 40, bottom: 30 } },
-    { name: 'Rock', widths: { top: 40, bottom: 30 } }
+  const widths = { top: 40, bottom: 30 };
+  // Rock from 0 to 30 s; Mud from 10 to 20 s, under it.
+  const columns = labelColumns([
+    { id: 7, start: 0, end: 30, widths },
+    { id: 8, start: 10, end: 20, widths }
   ], 1);
-  const rock = { id: 7, name: 'Rock', rect: crop, widths: { top: 40, bottom: 30 } };
-  const mud = { id: 8, name: 'Mud', rect: crop, widths: { top: 40, bottom: 30 } };
+  const rock = { id: 7, name: 'Rock', rect: crop, widths };
+  const mud = { id: 8, name: 'Mud', rect: crop, widths };
 
-  const alone = sharedTabShifts([rock], 1, slots);
-  const both = sharedTabShifts([rock, mud], 1, slots);
-  const again = sharedTabShifts([rock], 1, slots);
-  assert.deepEqual(alone[0], { top: 44, bottom: 44 }, 'Rock alone is in its own slot, past the empty Mud slot');
-  assert.deepEqual(both[0], alone[0], 'Rock does not move when Mud shows');
-  assert.deepEqual(both[1], { top: 0, bottom: 0 }, 'Mud in its slot');
+  const alone = sharedTabShifts([rock], 1, columns);
+  const both = sharedTabShifts([mud, rock], 1, columns);
+  const again = sharedTabShifts([rock], 1, columns);
+  assert.deepEqual(alone[0], { top: 0, bottom: 0, width: 40 }, 'Rock alone at the box\'s left edge');
+  assert.deepEqual(both[1], alone[0], 'Rock does not move when Mud shows, though Mud comes first in the old order');
+  assert.deepEqual(both[0], { top: 44, bottom: 44, width: 40 }, 'Mud in the next column');
   assert.deepEqual(again[0], alone[0], 'nor when Mud goes');
 });
 
-test('a slot is as wide as its name or the widest identifier, so a long identifier never runs into the next label', () => {
-  const slots = labelSlots([
-    { name: 'Mud', widths: { top: 30, bottom: 70 } },
-    { name: 'Rock', widths: { top: 35, bottom: 20 } },
-    { name: 'Off Bottom', widths: { top: 80, bottom: 20 } }
+test('a stretch takes the leftmost column free for its whole life, and one that starts as another ends takes its place', () => {
+  const widths = { top: 40, bottom: 30 };
+  const { columnOf } = labelColumns([
+    { id: 1, start: 0, end: 10, widths },
+    { id: 2, start: 5, end: 20, widths },
+    { id: 3, start: 10, end: 30, widths },
+    { id: 4, start: 15, end: Infinity, widths },
+    { id: 5, start: 25, end: 40, widths }
   ], 1);
-  // Mud (70 for the widest identifier, then 4), Rock (70, then 4), then anything else by name.
-  assert.deepEqual([...slots.at], [['mud', 0], ['rock', 74], ['off bottom', 148]]);
-  assert.equal(slots.end, 232);
+  // 3 starts as 1 ends: column 0. 4 overlaps 2 and 3: column 2. 5 overlaps 3 and 4 only: column 1.
+  assert.deepEqual([...columnOf], [[1, 0], [2, 1], [3, 0], [4, 2], [5, 1]]);
 });
 
-test('a second label of one name in one place, and a box elsewhere, are packed and left alone', () => {
+test('columns are even, as wide as the widest tab above or below, and each tab is drawn that wide', () => {
   const crop = { left: 100, top: 200, width: 300, height: 150 };
-  const slots = labelSlots([{ name: 'Rock', widths: { top: 40, bottom: 30 } }], 1);
+  const columns = labelColumns([
+    { id: 1, start: 0, end: 10, widths: { top: 30, bottom: 70 } },
+    { id: 2, start: 0, end: 10, widths: { top: 80, bottom: 20 } }
+  ], 1);
+  assert.equal(columns.width, 80);
+  assert.equal(columns.step, 84);
+  const shifts = sharedTabShifts([
+    { id: 1, name: 'Mud', rect: crop, widths: { top: 30, bottom: 70 } },
+    { id: 2, name: 'Off Bottom', rect: crop, widths: { top: 80, bottom: 20 } }
+  ], 1, columns);
+  assert.deepEqual(shifts.map((s) => s.top), [0, 84]);
+  const plain = tabLayout(crop, 1, { top: 10, bottom: 10 });
+  const drawn = tabLayout(crop, 1, { top: 10, bottom: 10 }, shifts[1]);
+  assert.equal(drawn.top.width, 80, 'the name tab fills its column');
+  assert.equal(drawn.bottom.width, 80, 'and so does the identifier under it');
+  assert.equal(drawn.top.left - plain.top.left, 84);
+  assert.equal(drawn.bottom.left, drawn.top.left, 'the identifier lines up under its name');
+});
+
+test('a box with no column, in the same place or elsewhere, is packed after the columns and left alone', () => {
+  const crop = { left: 100, top: 200, width: 300, height: 150 };
   const widths = { top: 40, bottom: 30 };
+  const columns = labelColumns([{ id: 1, start: 0, end: 10, widths }], 1);
   const shifts = sharedTabShifts([
     { id: 1, name: 'Rock', rect: crop, widths },
-    { id: 2, name: 'Rock', rect: crop, widths },
+    { id: 2, name: 'Sea star', rect: crop, widths },
     { id: 3, name: 'Rockfish', rect: { left: 10, top: 10, width: 50, height: 50 }, widths }
-  ], 1, slots);
+  ], 1, columns);
   assert.deepEqual(shifts.map((s) => s.top), [0, 44, 0]);
 });
 
