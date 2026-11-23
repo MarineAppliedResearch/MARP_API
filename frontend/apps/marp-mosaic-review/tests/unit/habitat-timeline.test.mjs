@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   laneOf, colourOf, reviewOf, stripLayout, dragTo, mergesInto, edgeAt,
-  wholeView, zoomView, panView, followView, isWhole, stretchMenu, snapToPlayhead, habitatsAt, cutChoice
+  wholeView, zoomView, panView, followView, isWhole, stretchMenu, snapToPlayhead, habitatsAt, cutChoice, grabsPlayhead, HABITAT_BOX
 } from '../../src/model/habitat-timeline.js';
 
 /** A stretch as the video read gives one. */
@@ -157,4 +157,22 @@ test('#360: the selected stretch cuts the one picked second, offered on that one
   assert.equal(cutChoice({ selectedId: 20, secondId: 10, clickedId: 20, rows }), null, 'not on the cutter');
   assert.equal(cutChoice({ selectedId: 20, secondId: null, clickedId: 10, rows }), null, 'nothing picked second');
   assert.equal(cutChoice({ selectedId: 10, secondId: 10, clickedId: 10, rows }), null, 'not with itself');
+});
+
+test('#374: a press near the playhead takes hold of it, unless it is on a stretch end', () => {
+  assert.equal(grabsPlayhead(503, 500, 6, false), true, 'within a mouse grab');
+  assert.equal(grabsPlayhead(507, 500, 6, false), false, 'past it');
+  assert.equal(grabsPlayhead(512, 500, 14, false), true, 'a finger reaches further');
+  assert.equal(grabsPlayhead(500, 500, 6, true), false, 'an end under the line is the end');
+  assert.equal(grabsPlayhead(500, null, 6, false), false, 'no line on screen');
+});
+
+test('#375: Off Bottom shares Off Transect\'s lane and colour, rather than the catch-all lane', () => {
+  assert.equal(laneOf('Off Bottom'), laneOf('Off Transect'));
+  assert.notEqual(laneOf('Off Bottom'), -1);
+  assert.equal(colourOf('Off Bottom'), colourOf('Off Transect'));
+});
+
+test('#375: every habitat stretch is drawn in the habitat crop, the one the server settles', () => {
+  assert.deepEqual({ ...HABITAT_BOX }, { x: 0.5, y: 0.75, width: 0.5, height: 0.5 });
 });

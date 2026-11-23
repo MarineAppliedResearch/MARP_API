@@ -357,6 +357,8 @@ export function renderPanel(panel, model, on) {
     actions.append(button);
   };
   action('Change species…', 'rename', on.rename, canWrite);
+  // Also in the box's right-click menu; here so it can be found without one (#373).
+  if (on.setEnd) action('Set end here', 'setEnd', on.setEnd, canWrite);
   action(picture === 'working' ? 'Cutting the picture from this frame…'
     : picture === 'done' ? 'Mosaic picture updated ✓'
       : 'Use this frame for the Mosaic picture', 'picture', on.picture, picture !== 'working');

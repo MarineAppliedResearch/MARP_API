@@ -340,6 +340,21 @@ describe('the mosaic facets route and the row reviewer ids (#124)', () => {
             expect(valuesOf(res.body, 'line')).not.toContain('L9');
         });
 
+        it('names each session by its dive, line and type, newest first, so it can be searched (#371)', async () => {
+            const res = await global.api.post(FACETS).send({
+                filters: question(), dimensions: ['session'],
+            });
+
+            expect(res.status).toBe(200);
+            const own = facetOf(res.body, 'session')
+                .filter((s) => [seeded.sessions.diveA, seeded.sessions.diveA2, seeded.sessions.diveB].includes(s.value));
+            expect(own.map((s) => s.value)).toEqual(
+                [seeded.sessions.diveB, seeded.sessions.diveA2, seeded.sessions.diveA]
+            );
+            expect(own.find((s) => s.value === seeded.sessions.diveA2).label)
+                .toBe(`${seeded.sessions.diveA2} · Dive JEST-A-${runId} · line L2 · JestInvert`);
+        });
+
         it('excludes a dimension from its own predicate, so the list does not collapse to the selection', async () => {
             // Choosing one dive must not reduce the dive list to that dive: it is
             // the one thing a reviewer cannot use the control for.
@@ -427,7 +442,8 @@ describe('the mosaic facets route and the row reviewer ids (#124)', () => {
             ]);
         });
 
-        it('gives session the id as both, because a session has no name', async () => {
+        it('gives session its id as the value, and a label that starts with it, because a session has no name', async () => {
+            // The label goes on with its dive, line and type since #371; the id still leads it.
             const res = await global.api.post(FACETS).send({
                 filters: question(), dimensions: ['session'],
             });
@@ -437,7 +453,7 @@ describe('the mosaic facets route and the row reviewer ids (#124)', () => {
 
             expect(mine.length).toBeGreaterThan(0);
             for (const entry of mine) {
-                expect(String(entry.value)).toBe(entry.label);
+                expect(entry.label.startsWith(`${entry.value} · `)).toBe(true);
             }
         });
 

@@ -76,7 +76,8 @@ export const DIMENSIONS = [
     key: 'session', field: 'session_id',
     source: 'observations.session_id', kind: KIND.SET,
     nestsUnder: 'sessionType', label: 'session', all: 'All sessions',
-    one: (v) => `Session ${v}`, numeric: true,
+    // Labelled by the server with its dive, line and type, and searchable by them (#371).
+    one: (v) => `Session ${v}`, numeric: true, searchable: true,
   },
 
   {

@@ -1303,5 +1303,196 @@ video at ${await videoTime(page)}, paused ${await page.evaluate(() => window.MAR
         }
       }
     ]
+  },
+
+  'trial-2026-11-23': {
+    title: 'Habitat trial fixes, 23 November',
+    async setup({ page, store }) {
+      await page.addInitScript(drawPointer);
+      await sweepEarlierFilms();
+      const { videoSource, at } = await filmVideo(page);
+      store.at = at;
+      // The run the page is opened on: Rock for 40 s, with Mud for ten of them.
+      store.seeded = await seedHabitat({
+        videoSource,
+        stretches: [{ start: at, end: at + 40, substrate: 'Rock' }, { start: at + 10, end: at + 20, substrate: 'Mud' }]
+      });
+      // Another run over the same moment, as the three experiment runs were.
+      store.other = await seedHabitat({ videoSource, stretches: [{ start: at, end: at + 40, substrate: 'Rock' }] });
+      // A click with no end, like the White sea pen: a dot at 30 s.
+      store.dot = await seedClick({ videoSource, at: at + 30, name: 'White sea pen' });
+      [store.rock, store.mud] = store.seeded.ids;
+      await openAndPlay(page, store.rock);
+      await closePanel(page);
+      await page.mouse.move(40, 40);
+    },
+    async teardown({ store }) {
+      for (const seeded of [store.dot, store.other, store.seeded]) if (seeded) await seeded.remove();
+    },
+    scenes: [
+      {
+        caption: 'One run\'s boxes only',
+        say: `These are the fixes from the trial on the twenty-third. This video has two habitat runs, and both say Rock here. Every run used to draw its own box, so the labels stacked up. Now only the run you opened is drawn, the same one the timeline shows.`,
+        async act({ page, store }) {
+          await expect.poll(() => drawnOf(page, store.rock)).toBeTruthy();
+          expect(await drawnOf(page, store.other.ids[0]), 'the other run\'s Rock was drawn').toBeFalsy();
+          const rocks = (await page.evaluate(() => window.MARP_VIDEO.drawn)).filter((d) => d.comname === 'Rock');
+          expect(rocks).toHaveLength(1);
+          await ring(page, asRect((await drawnOf(page, store.rock)).rect), 7000);
+        }
+      },
+      {
+        caption: 'Rock alone sits at the box\'s left edge',
+        say: `Rock is the only habitat here, and its label sits at the left edge of the box.`,
+        async act({ page, store }) {
+          await zoomOn(page, [store.rock, store.mud], 0.55, { slow: true });
+          const rock = await drawnOf(page, store.rock);
+          expect(Math.abs(rock.tabs[0].left - rock.rect.left)).toBeLessThan(4);
+          store.rockTab = rock.tabs[0];
+          await ring(page, asRect(rock.tabs[0]), 4000);
+        }
+      },
+      {
+        caption: 'Mud starts: it goes beside Rock',
+        say: `Now I move to where Mud starts. Mud goes in the next column, and Rock has not moved.`,
+        async act({ page, store }) {
+          await seekOnTimeline(page, store, store.at + 15);
+          await expect.poll(() => drawnOf(page, store.mud), { timeout: 20_000 }).toBeTruthy();
+          const rock = (await drawnOf(page, store.rock)).tabs[0];
+          const mud = (await drawnOf(page, store.mud)).tabs[0];
+          expect(Math.abs(rock.left - store.rockTab.left)).toBeLessThan(1);
+          expect(mud.left).toBeGreaterThanOrEqual(rock.left + rock.width - 1);
+          expect(Math.abs(mud.width - rock.width), 'the columns are even').toBeLessThan(1);
+          await ring(page, { x: rock.left, y: rock.top, width: mud.left + mud.width - rock.left, height: rock.height }, 6000);
+        }
+      },
+      {
+        caption: 'Mud ends: Rock is still where it was',
+        say: `And when Mud ends, Rock is still exactly where it was. A label keeps its place for as long as its stretch lasts.`,
+        async act({ page, store }) {
+          await seekOnTimeline(page, store, store.at + 25);
+          await expect.poll(() => drawnOf(page, store.mud), { timeout: 20_000 }).toBeFalsy();
+          const rock = (await drawnOf(page, store.rock)).tabs[0];
+          expect(Math.abs(rock.left - store.rockTab.left)).toBeLessThan(1);
+          await ring(page, asRect(rock), 5000);
+        }
+      },
+      {
+        caption: 'Labels and outlines are see-through',
+        say: `The labels are see-through now, so the video shows behind them, while the writing stays solid. The box outline is a little see-through too.`,
+        async act({ page, store }) {
+          const rock = await drawnOf(page, store.rock);
+          const tab = rock.tabs[0];
+          // Mud was selected by the click at its start, and is not drawn now: no selection glow
+          // around Rock to add to what is measured.
+          expect(await page.evaluate(() => window.MARP_VIDEO.selected)).toBe(`${store.mud}_1`);
+          // The tab's left padding, before its marker: only the tab's own fill is there.
+          expect(Math.abs((await alphaAt(page, { x: tab.left + 2, y: tab.top + tab.height / 2 })) - 102)).toBeLessThan(6);
+          // The middle of the box's left edge: only the outline.
+          expect(Math.abs((await alphaAt(page, { x: rock.rect.left + 1.5, y: rock.rect.top + rock.rect.height / 2 })) - 179)).toBeLessThan(6);
+          await ring(page, asRect(tab), 4500);
+          await pause(page, 4800);
+          await ring(page, { x: rock.rect.left - 8, y: rock.rect.top + rock.rect.height * 0.3, width: 16, height: rock.rect.height * 0.4 }, 4500);
+        }
+      },
+      {
+        caption: 'A one-click dot shows for about a second',
+        say: `Last, a dot. An annotator clicked here instead of drawing a box, and never ended it, so it used to stay on screen to the end of the video. Here it is, on its moment.`,
+        async act({ page, store }) {
+          await seekOnTimeline(page, store, store.at + 30);
+          await expect.poll(() => drawnOf(page, store.dot.id), { timeout: 20_000 }).toBeTruthy();
+          const dot = await drawnOf(page, store.dot.id);
+          await ring(page, { x: dot.rect.left - 30, y: dot.rect.top - 40, width: 140, height: 90 }, 5000);
+        }
+      },
+      {
+        caption: 'A second later, it is gone',
+        say: `A second and a half later, it is gone, and it stays gone.`,
+        async act({ page, store }) {
+          await seekOnTimeline(page, store, store.at + 31.5);
+          await expect.poll(() => drawnOf(page, store.dot.id), { timeout: 20_000 }).toBeFalsy();
+          await pause(page, 1500);
+          await seekOnTimeline(page, store, store.at + 38);
+          await pause(page, 1500);
+          expect(await drawnOf(page, store.dot.id)).toBeFalsy();
+          await ring(page, asRect((await drawnOf(page, store.rock)).rect), 3500);
+        }
+      }
+    ]
   }
 };
+
+/* Move the video to `t` by clicking the habitat timeline there, as a reviewer would: where the
+   Rock bar says that moment is, in the Mud lane, which is empty away from Mud. */
+async function seekOnTimeline(page, store, t) {
+  const rock = await bar(page, store.rock).boundingBox();
+  const mud = await bar(page, store.mud).boundingBox();
+  const x = rock.x + ((t - store.at) / 40) * rock.width;
+  await clickAt(page, { x, y: mud.y + mud.height / 2 });
+  await expect.poll(() => videoTime(page), { timeout: 30_000 }).toBeGreaterThan(t - 0.3);
+  expect(await videoTime(page)).toBeLessThan(t + 0.3);
+  await pause(page, 800);
+}
+
+/* How solid the overlay is at a point, 0 to 255. */
+const alphaAt = (page, at) => page.evaluate(({ x, y }) => {
+  const canvas = document.getElementById('boxes');
+  const r = canvas.getBoundingClientRect();
+  return canvas.getContext('2d').getImageData(Math.round((x - r.left) * (canvas.width / r.width)),
+    Math.round((y - r.top) * (canvas.height / r.height)), 1, 1).data[3];
+}, at);
+
+/* A one-click annotation with no end, as the annotation GUI records one: an invertebrate
+   session of its own, one `start` keyframe, a box a thousandth of the picture across. */
+async function seedClick({ videoSource, at, name }) {
+  const client = await connect();
+  const planted = { sessionId: null };
+  const remove = async () => {
+    if (planted.sessionId == null) return;
+    const cleaner = await connect();
+    try {
+      await cleaner.query('DELETE FROM observations WHERE session_id = $1', [planted.sessionId]);
+      await cleaner.query('DELETE FROM sessions WHERE session_id = $1', [planted.sessionId]);
+    } finally {
+      await cleaner.end();
+    }
+  };
+  try {
+    const { rows: [project] } = await client.query('SELECT project_id FROM projects ORDER BY project_id LIMIT 1');
+    // Named as the habitat films' sessions are, so a film that failed is swept up by the next.
+    const line = `${MARK}-habitat-click-${`${Date.now()}`.slice(-9)}`;
+    const { rows: [session] } = await client.query(
+      `INSERT INTO sessions (project_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $3, 'Invert', NOW(), NOW()) RETURNING session_id`,
+      [project.project_id, `${MARK} dive`, line]
+    );
+    planted.sessionId = session.session_id;
+    const { rows: [species] } = await client.query('SELECT id, comname FROM species WHERE lower(comname) = lower($1) ORDER BY id LIMIT 1', [name]);
+    if (!species) throw new Error(`the database has no species called ${name}`);
+    const { rows: [obs] } = await client.query(
+      `INSERT INTO observations (project_id, session_id, "obsID", species_id, comname, count, video_source, version, "createdAt", "updatedAt")
+       VALUES ($1, $2, 1, $3, $4, 1, $5, 1, NOW(), NOW()) RETURNING observation_id`,
+      [project.project_id, session.session_id, species.id, species.comname, videoSource]
+    );
+    // Frames count at 25 for a row the annotation GUI wrote.
+    await client.query(
+      `INSERT INTO keyframes (observation_id, subset, comname, type, framenum, x, y, width, height, "createdAt", "updatedAt")
+       VALUES ($1, '0', $2, 'start', $3, 0.4, 0.6, 0.001, 0.001, NOW(), NOW())`,
+      [obs.observation_id, species.comname, Math.round(at * 25)]
+    );
+    // Its picture marked as done with, as the habitat seeder does, so none is cut while filming.
+    await client.query(
+      `INSERT INTO observation_thumbnails (observation_id, status, permanent, generation, attempts, last_error,
+                                           requested_at, created_at, updated_at)
+       VALUES ($1, 'failed', true, 1, 1, 'seeded by a film', NOW(), NOW(), NOW())
+       ON CONFLICT (observation_id) DO UPDATE SET status = 'failed', permanent = true`,
+      [obs.observation_id]
+    );
+    return { id: obs.observation_id, remove };
+  } catch (error) {
+    await remove();
+    throw error;
+  } finally {
+    await client.end();
+  }
+}

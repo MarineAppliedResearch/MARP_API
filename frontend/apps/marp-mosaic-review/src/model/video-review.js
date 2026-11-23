@@ -134,6 +134,43 @@ function roundHalfEven(value) {
 }
 
 /**
+ * What the page is anchored on once the observation it was opened on is deleted or merged
+ * away: the nearest one in time in the same session, else the nearest in the video. The page
+ * names its opened observation to the server when it adds one, so anchored on a deleted one
+ * every new observation was refused and its box left behind (Isaac, 2026-11-23).
+ *
+ * @param {Array<{observation_id: number, session_id: number, start_s: number}>} remaining -
+ *   What the page still holds, the gone one already left out.
+ * @param {?number} session - The session the page was opened in.
+ * @param {number} moment - Where the gone one started, in seconds.
+ * @returns {?number} The observation to anchor on, or null when none is left.
+ */
+export function anchorAfter(remaining, session, moment) {
+  const near = (observations) => observations.reduce((best, observation) => (best == null
+    || Math.abs(observation.start_s - moment) < Math.abs(best.start_s - moment) ? observation : best), null);
+  const pick = near((remaining || []).filter((observation) => observation.session_id === session)) || near(remaining || []);
+  return pick ? pick.observation_id : null;
+}
+
+/**
+ * Which session the page is on, as it reads by the timecode (#372): its dive, its line and its
+ * id. A dive is recorded as "Dive 2" by some and "21" by others, so a bare number gets the word.
+ *
+ * @param {?{session_id: number, dive: ?string, line: ?string}} session
+ * @returns {string} Empty when there is no session.
+ */
+export function sessionLine(session) {
+  if (!session) return '';
+  const dive = session.dive == null || String(session.dive).trim() === '' ? null : String(session.dive).trim();
+  const line = session.line == null || String(session.line).trim() === '' ? null : String(session.line).trim();
+  return [
+    dive && (/^dive\b/i.test(dive) ? dive : `Dive ${dive}`),
+    line && `line ${line}`,
+    `session ${session.session_id}`
+  ].filter(Boolean).join(' · ');
+}
+
+/**
  * What the video page draws (#287, A7): the observations the Mosaic's query matches, and on a
  * habitat video every stretch of the opened session too, so its boxes and its habitat timeline
  * show the same stretches. The query's default hides reviewed ones, which left a reviewed

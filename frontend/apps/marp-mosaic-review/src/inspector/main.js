@@ -20,7 +20,8 @@
 import { MarpApi } from '../api/index.js';
 import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget, frameTime } from '../model/video-boxes.js';
 import {
-  windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW, withSession
+  windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW, withSession,
+  sessionLine, anchorAfter
 } from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
@@ -30,7 +31,7 @@ import { labelScale, sharedTabShifts, labelColumns, TAB_ALPHA } from '../model/b
 import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
 import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText } from '../model/video-clock.js';
 import { createHabitatStrip } from './habitat-strip.js';
-import { colourOf, cutChoice } from '../model/habitat-timeline.js';
+import { colourOf, cutChoice, stripLayout, mergesInto, HABITAT_BOX } from '../model/habitat-timeline.js';
 
 /* The video's own lines live in the observation panel (#367), which is out of the document while
    no observation is selected; a lookup by id finds them there too, or Set clock is null. */
@@ -60,6 +61,8 @@ if (scrubTrack) scrubTrack.insertAdjacentElement('beforebegin', $('habitatStrip'
    lines -- its file, when it was recorded, Set clock -- at the foot of the observation panel. */
 const playTime = playerRoot.querySelector('.marp-time');
 if (playTime) playTime.insertAdjacentElement('afterend', $('clockNow'));
+// And which session this is, after it (#372).
+if (playTime) $('clockNow').insertAdjacentElement('afterend', $('sessionNow'));
 const videoInfo = document.createElement('section');
 videoInfo.className = 'panel-video';
 videoInfo.append($('inspectDetail'), $('clockState'), $('setClock'), $('clockForm'));
@@ -136,8 +139,36 @@ let drawnNow = { rects: [], area: null };
 /* How long the last frame's boxes took to draw, for the console (`MARP_VIDEO.drawMs`). */
 let drawMs = 0;
 
-function status(text) {
-  $('inspectStatus').textContent = text || '';
+/* A message fades after a few seconds: an error used to stay over the video until something
+   else replaced it (Isaac, 2026-11-23). `stay` keeps one up that says work is in progress,
+   which the page clears itself when the work is done. */
+const STATUS_SHOWN_MS = 4000;
+
+/* Just above the player's controls, wherever their top is: a fixed distance from the bottom put
+   it over the habitat timeline, which sits in the controls and is as tall as its lanes
+   (Isaac, 2026-11-23). */
+function placeStatus(line) {
+  const bar = playerRoot && playerRoot.querySelector('.marp-controls-bar');
+  const host = line.offsetParent;
+  if (!bar || !host) return;
+  const above = host.getBoundingClientRect().bottom - bar.getBoundingClientRect().top;
+  if (above > 0) line.style.bottom = `${Math.round(above + 8)}px`;
+}
+let statusTimer = null;
+function status(text, { stay = false } = {}) {
+  const line = $('inspectStatus');
+  clearTimeout(statusTimer);
+  line.classList.remove('fading');
+  line.textContent = text || '';
+  if (text) placeStatus(line);
+  if (!text || stay) return;
+  statusTimer = setTimeout(() => {
+    line.classList.add('fading');
+    statusTimer = setTimeout(() => {
+      line.textContent = '';
+      line.classList.remove('fading');
+    }, 400);
+  }, STATUS_SHOWN_MS);
 }
 
 /* The overlay canvas sized and placed exactly over the picture's element.
@@ -182,7 +213,9 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
     const key = trackKey(box);
     const opened = box.observation_id === showing.observationId;
     const preview = editor.previewFor(key);
-    return { key, box, opened, rect: preview ? preview.rect : toScreen(box, area) };
+    // A habitat stretch is always in the habitat crop, whatever box it was saved with (#375).
+    const shape = inHabitatSession(box.observation_id) ? { ...box, ...HABITAT_BOX } : box;
+    return { key, box, opened, rect: preview ? preview.rect : toScreen(shape, area) };
   }).sort((a, b) => editor.rankOf(a.key, a.opened) - editor.rankOf(b.key, b.opened));
 
   // The one the page was opened from starts selected, so the halo is on it before anything is
@@ -353,7 +386,7 @@ async function readObservations(observationId, filters) {
 async function show(request) {
   const mine = ++latest;
   lastRequest = request;
-  status('Finding the video…');
+  status('Finding the video…', { stay: true });
 
   let read;
   try {
@@ -396,6 +429,8 @@ async function show(request) {
     openedSession: answer.opened.session_id,
     server
   };
+  // Which session this is, by the timecode (#372).
+  $('sessionNow').textContent = sessionLine(showing.sessions.find((s) => s.session_id === showing.openedSession));
   if (answer.truncated) status(`Only the first ${answer.observations.length} matching observations are drawn.`);
   // The boxes around the moment start loading now, so they are there when the picture is.
   followPlayhead(showing.moment);
@@ -471,7 +506,7 @@ async function play(mine) {
   // "Opening the video..." for good (2026-11-20).
   const moment = frameTime(showing.moment, video.frame_rate || 25);
   if (player.currentItemId !== video.jellyfin_item_id || !player.engine) {
-    status('Opening the video…');
+    status('Opening the video…', { stay: true });
     // Opened at the moment itself, so the start of the dive is neither fetched nor shown
     // first. A phone opens a transcode rather than the original file, which it cannot hold.
     const engine = await player.loadItem(video.jellyfin_item_id, quality, { startTime: moment });
@@ -604,7 +639,13 @@ const strip = createHabitatStrip($('habitatStrip'), {
   pickSecond,
   menuExtras: cutItems,
   menuIn: playerRoot,
-  async save(bar, span, merging) {
+  save: saveStretch
+});
+
+/* A habitat stretch's new start and end, from the timeline's drag or the panel's Set end here
+   (#373). */
+async function saveStretch(bar, span, merging) {
+  {
     // A merge deletes the stretch dragged into, so it is asked about, as the Mosaic's merge is.
     if (merging && !window.confirm(`Merge ${merging === 1 ? 'the outlined stretch' : `the ${merging} outlined stretches`} `
       + `into this ${bar.name}? ${merging === 1 ? 'It is' : 'They are'} deleted, with ${merging === 1 ? 'its' : 'their'} reviews.`)) {
@@ -615,6 +656,12 @@ const strip = createHabitatStrip($('habitatStrip'), {
       // On the video's clock where it has one (#366).
       status(`${bar.name} now runs ${timeText(clock, answer.start_s)} to ${timeText(clock, answer.end_s)}`
         + (answer.merged.length ? `, with ${answer.merged.length} merged into it.` : '.'));
+      // Merged away, the one the page was opened on: anchored on the stretch it joined, or the
+      // read below asks for an observation that no longer exists (2026-11-23).
+      if (answer.merged.includes(showing.observationId)) {
+        showing.observationId = bar.id;
+        history.replaceState(null, '', `#${encodeURIComponent(JSON.stringify({ type: 'show', observationId: bar.id, filters: showing.filters }))}`);
+      }
     } catch (error) {
       status(error.status === 409
         ? 'Not changed: this stretch changed since the page read it. Reopen it from the Mosaic and drag again.'
@@ -624,12 +671,22 @@ const strip = createHabitatStrip($('habitatStrip'), {
     // Every box, keyframe window and bar is read again: a merge deletes observations.
     await followQuery(showing.filters);
   }
-});
+}
 
 /* An observation the page no longer holds: deleted, or merged into another. */
 function forgetObservation(id) {
+  const gone = showing.observations.find((o) => o.observation_id === id);
   showing = { ...showing, observations: showing.observations.filter((o) => o.observation_id !== id) };
   showing.rows.delete(id);
+  // The one the page was opened on: anchor on another, or nothing more can be added (2026-11-23).
+  if (id === showing.observationId) {
+    const next = anchorAfter(showing.observations, showing.openedSession, gone ? gone.start_s : showing.moment);
+    if (next != null) {
+      showing.observationId = next;
+      // And the address, so a reload opens one that exists.
+      history.replaceState(null, '', `#${encodeURIComponent(JSON.stringify({ type: 'show', observationId: next, filters: showing.filters }))}`);
+    }
+  }
   const next = withObservation(held, id);
   held.clear();
   for (const [index, keyframes] of next) held.set(index, keyframes);
@@ -806,6 +863,17 @@ function cover(id, t) {
   }
 }
 
+/* A drawn box whose save failed is taken away, with the failure said: left behind it was a
+   dashed outline belonging to nothing, with no way to use or remove it (2026-11-23). */
+async function keepNoDraft(work) {
+  try {
+    return await work();
+  } catch (error) {
+    editor.clearDraft();
+    throw error;
+  }
+}
+
 /* The box drawn on empty picture: a species makes it a new observation, or it joins the
    selected one (R1, R2). */
 function openAdd({ rect, box, selectedKey }) {
@@ -823,13 +891,13 @@ function openAdd({ rect, box, selectedKey }) {
     sessionId,
     extendLabel: selected ? `Add to ${selected.obs_id ?? '?'} · ${selected.comname || 'Unknown'}` : null,
     onExtend: () => editor.save(async () => {
-      const answer = await MarpApi.addKeyframe({ observationId: selectedId, subset: selectedKey.split('_')[1] || null, t, box });
+      const answer = await keepNoDraft(() => MarpApi.addKeyframe({ observationId: selectedId, subset: selectedKey.split('_')[1] || null, t, box }));
       cover(selectedId, t);
       editor.clearDraft();
       return answer;
     }),
     onPick: ({ species, sessionId: chosen }) => editor.save(async () => {
-      const answer = await MarpApi.createObservation({ openedId: showing.observationId, sessionId: chosen, speciesId: species.id, t, box });
+      const answer = await keepNoDraft(() => MarpApi.createObservation({ openedId: showing.observationId, sessionId: chosen, speciesId: species.id, t, box }));
       const row = answer.observation;
       showing.observations.push(row);
       showing.rows.set(row.observation_id, row);
@@ -848,7 +916,7 @@ function openAdd({ rect, box, selectedKey }) {
    there reads as a button that does nothing (2026-10-14). */
 function usePicture(entry, t) {
   pictureState = 'working';
-  status('Cutting the Mosaic picture from this frame. This takes a few seconds…');
+  status('Cutting the Mosaic picture from this frame. This takes a few seconds…', { stay: true });
   updatePanel();
   return editor.save(async () => {
     try {
@@ -1005,6 +1073,28 @@ function updatePanel() {
       usePicture(entry, shownAt ?? player.engine.currentTime);
     },
     remove: () => editor.act('deleteObservation', editor.selectedEntry() || { box: { observation_id: id, comname: row.comname } }),
+    // The box menu's Set As End Keyframe, here too; a habitat stretch ends here as a drag of
+    // its end on the timeline would end it (#373).
+    setEnd: () => {
+      const t = shownAt ?? player.engine.currentTime;
+      if (inHabitatSession(id)) {
+        const bar = stripLayout([row]).bars[0];
+        if (!bar || !(t > bar.start)) {
+          status('Go to a frame after this stretch starts, then set its end.');
+          return;
+        }
+        const span = { start: bar.start, end: t };
+        const bars = stripLayout([...showing.rows.values()].filter((r) => inHabitatSession(r.observation_id))).bars;
+        saveStretch(bar, span, mergesInto(bars, bar, span).length).catch(() => {});
+        return;
+      }
+      const entry = editor.selectedEntry();
+      if (!entry) {
+        status("Go to a frame where this observation's box is drawn, then set its end.");
+        return;
+      }
+      editor.act('end', entry);
+    },
     merge: () => {
       const label = `${row.obs_id ?? '?'} · ${row.comname || 'Unknown'}`;
       status(`Click the observation to merge into ${label}. Escape cancels.`);
@@ -1094,7 +1184,7 @@ $('clockForm').addEventListener('submit', async (event) => {
     status('Type the date and time the clock in the picture shows.');
     return;
   }
-  status('Setting the clock…');
+  status('Setting the clock…', { stay: true });
   try {
     const answer = await MarpApi.setVideoClock({ video_source: clockVideo, ...body });
     clock = answer;

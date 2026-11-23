@@ -180,9 +180,17 @@ body {
   bottom: 56px;
   margin: 0;
   padding: 4px 8px;
-  background: rgba(1, 5, 13, 0.75);
+  /* See-through, as the labels on the boxes are; the shadow keeps the text readable over a
+     bright picture (Isaac, 2026-11-23). */
+  background: rgba(1, 5, 13, 0.4);
   color: var(--white);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   pointer-events: none;
+  transition: opacity 0.4s;
+}
+
+.inspect-status.fading {
+  opacity: 0;
 }
 
 .inspect-status:empty {
@@ -594,6 +602,20 @@ body {
   background: var(--white);
   pointer-events: none;
   z-index: 2;
+  transition: width 0.1s, margin-left 0.1s;
+}
+
+/* #374: over the line, or dragging it, it thickens: a sign it can be taken hold of. */
+.hstrip-lanes.over-playhead .hstrip-playhead,
+.hstrip-lanes.scrubbing .hstrip-playhead {
+  width: 4px;
+  margin-left: -2px;
+}
+
+.hstrip-lanes.over-playhead,
+.hstrip-lanes.scrubbing,
+.hstrip-lanes.scrubbing * {
+  cursor: ew-resize;
 }
 
 /* #353: a bar's right-click menu, opened where the pointer is rather than inside the player. */
@@ -658,6 +680,17 @@ body {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* #372: which session this is, after the clock; cut short with an ellipsis on a narrow screen. */
+.marp-controls-row .inspect-session-now {
+  color: var(--text-muted, var(--text));
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 40vw;
 }
 
 /* #367: the video's own lines at the foot of the observation panel. */

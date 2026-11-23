@@ -6,8 +6,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  WINDOW_SECONDS, windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, withSession
+  WINDOW_SECONDS, windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, withSession,
+  sessionLine, anchorAfter
 } from '../../src/model/video-review.js';
+
+test('after the opened observation is deleted, the page anchors on the nearest in its session, else in the video (2026-11-23)', () => {
+  const kept = [
+    { observation_id: 1, session_id: 9, start_s: 100 },
+    { observation_id: 2, session_id: 4377, start_s: 10 },
+    { observation_id: 3, session_id: 4377, start_s: 80 }
+  ];
+  assert.equal(anchorAfter(kept, 4377, 95), 3, 'same session, nearest in time, over a nearer one elsewhere');
+  assert.equal(anchorAfter(kept.filter((o) => o.session_id === 9), 4377, 95), 1, 'none left in the session: the nearest in the video');
+  assert.equal(anchorAfter([], 4377, 95), null);
+});
 
 test('#337: a reviewed box is green, a flagged one amber, an undecided one keeps its species colour', () => {
   assert.equal(reviewColour('reviewed'), '#a7ec35');
@@ -62,4 +74,11 @@ test('#287 A7: on a habitat video the boxes are the whole session, the same stre
     'the reviewed stretch the default filter hides, the matched one once, and the rest of the video as the filter has it');
   assert.equal(drawn[1], matched[0], 'a stretch the query matched keeps its own row');
   assert.deepEqual(withSession(matched, null), matched, 'not a habitat video: the query alone');
+});
+
+test('#372: the video page names its session by dive, line and id, whichever way the dive was recorded', () => {
+  assert.equal(sessionLine({ session_id: 4377, dive: 'Dive 2', line: '370' }), 'Dive 2 · line 370 · session 4377');
+  assert.equal(sessionLine({ session_id: 4297, dive: '21', line: '620' }), 'Dive 21 · line 620 · session 4297');
+  assert.equal(sessionLine({ session_id: 9, dive: null, line: '' }), 'session 9');
+  assert.equal(sessionLine(undefined), '');
 });
