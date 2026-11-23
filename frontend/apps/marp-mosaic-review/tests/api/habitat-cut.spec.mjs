@@ -130,3 +130,58 @@ test('#360 on the boxes: select the cutter by its label, Ctrl+click the Rock\'s 
       await seeded.remove();
     }
   });
+
+/* Found filming the trial fixes, 2026-11-21: a stretch's right-click menu (#353) opened inside
+   the player's controls, which are drawn under the observation panel -- so with the panel
+   dragged over that spot (#364), Go to start and Go to end showed and could not be clicked. */
+test('#353 with the panel dragged over it: the timeline menu is on top, and Go to end goes there',
+  async ({ page, request }) => {
+    test.setTimeout(240_000);
+    const seeded = await habitatInVideo(request);
+    const [rock, sand] = seeded.ids;
+    try {
+      await openAndPlay(page, rock);
+      await expect(bar(page, sand)).toBeVisible();
+      await zoomOn(page, sand);
+      await bar(page, sand).click();
+      const panel = page.locator('#obsPanel');
+      await expect(panel).toBeVisible();
+
+      // Where the right-click will be: on the Sand, inside the strip.
+      const sandBox = await bar(page, sand).boundingBox();
+      const lanes = await page.locator('#habitatStrip .hstrip-lanes').boundingBox();
+      const at = { x: Math.max(sandBox.x, lanes.x) + 12, y: sandBox.y + sandBox.height / 2 };
+
+      // The panel dragged by its title until its foot is just above that point, where the menu opens.
+      const head = await panel.locator('.annotate-head').boundingBox();
+      const before = await panel.boundingBox();
+      const from = { x: head.x + 40, y: head.y + head.height / 2 };
+      const dx = (at.x - 20) - before.x;
+      const dy = (at.y - 14) - (before.y + before.height);
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      for (let n = 1; n <= 12; n += 1) await page.mouse.move(from.x + (dx * n) / 12, from.y + (dy * n) / 12);
+      await page.mouse.up();
+      // The point itself still the strip's, so the right-click reaches the stretch.
+      expect(await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y).closest('.hstrip-lanes')), at)).toBe(true);
+
+      await page.mouse.click(at.x, at.y, { button: 'right' });
+      const end = page.locator('.hstrip-menu button', { hasText: /^Go to end$/ });
+      await expect(end).toBeVisible();
+      const item = await end.boundingBox();
+      const under = await panel.boundingBox();
+      // The case under test: the menu and the panel really overlap where the item is.
+      const middle = { x: item.x + item.width / 2, y: item.y + item.height / 2 };
+      expect(middle.x > under.x && middle.x < under.x + under.width && middle.y > under.y && middle.y < under.y + under.height,
+        `the panel ${JSON.stringify(under)} was not dragged under the menu item ${JSON.stringify(item)}`).toBe(true);
+      expect(await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y).closest('.hstrip-menu')), middle)).toBe(true);
+
+      // Clicked where it is drawn, as a reviewer would: the video goes to the Sand's end.
+      const read = await (await request.post('/api/v2/mosaic/video/observations', { data: { observation_id: sand, filters: {} } })).json();
+      const sandEnd = read.habitat.stretches.find((s) => s.observation_id === sand).end_s;
+      await page.mouse.click(middle.x, middle.y);
+      await expect.poll(() => page.evaluate(() => window.MARP_VIDEO.time), { timeout: 30_000 }).toBeCloseTo(sandEnd, 0);
+    } finally {
+      await seeded.remove();
+    }
+  });

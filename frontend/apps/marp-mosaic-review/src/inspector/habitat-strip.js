@@ -43,6 +43,7 @@ const WHEEL_ZOOM = 0.0015;
  * @param {Function} host.select - `(id)`: select that observation, if the page has it.
  * @param {Function} host.canDrag - Whether this reviewer may change stretches.
  * @param {Function} host.save - `(bar, {start, end}, merging)`: write the new span; resolves when done.
+ * @param {HTMLElement} [host.menuIn] - Where the right-click menu goes; the strip itself if absent.
  * @returns {Object} `{ set, playhead, review, selected }`.
  */
 export function createHabitatStrip(root, host) {
@@ -73,7 +74,9 @@ export function createHabitatStrip(root, host) {
   menu.className = 'inspect-menu hstrip-menu';
   menu.setAttribute('role', 'menu');
   menu.hidden = true;
-  root.append(overview, lanes, menu);
+  root.append(overview, lanes);
+  // Beside the observation panel, not inside the controls: there it was drawn under the panel.
+  (host.menuIn || root).append(menu);
 
   const duration = () => host.duration();
   const at = (t) => (100 * (t - view.from)) / (view.to - view.from);

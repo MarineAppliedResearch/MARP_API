@@ -570,9 +570,10 @@ const editor = createBoxEditor({
     isPicture: (target) => target === pictureCanvas,
     // The player's controls bar and its settings menu, which keep their own presses (#356).
     // The observation panel and the species popup keep theirs too: a box beneath one must not
-    // take a press on it, now that the panel can be dragged over the picture (#364).
+    // take a press on it, now that the panel can be dragged over the picture (#364). Nor the
+    // timeline's menu, which sits over the picture beside the panel rather than in the controls.
     isControls: (target) => Boolean(target && target.closest
-      && target.closest('.marp-controls-bar, .marp-settings-menu, .annotate-panel, .annotate-popup')),
+      && target.closest('.marp-controls-bar, .marp-settings-menu, .annotate-panel, .annotate-popup, .hstrip-menu')),
     // A habitat stretch's box is the habitat crop: never dragged or resized (#359).
     boxFixed: (id) => inHabitatSession(id),
     // Ctrl or Shift on a box picks it to be cut, and its menu offers the cut (#360).
@@ -602,6 +603,7 @@ const strip = createHabitatStrip($('habitatStrip'), {
   canDrag: () => canAnnotate,
   pickSecond,
   menuExtras: cutItems,
+  menuIn: playerRoot,
   async save(bar, span, merging) {
     // A merge deletes the stretch dragged into, so it is asked about, as the Mosaic's merge is.
     if (merging && !window.confirm(`Merge ${merging === 1 ? 'the outlined stretch' : `the ${merging} outlined stretches`} `
