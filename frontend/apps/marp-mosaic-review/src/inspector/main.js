@@ -31,7 +31,7 @@ import { labelScale, sharedTabShifts, labelColumns, TAB_ALPHA } from '../model/b
 import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
 import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText } from '../model/video-clock.js';
 import { createHabitatStrip } from './habitat-strip.js';
-import { colourOf, cutChoice } from '../model/habitat-timeline.js';
+import { colourOf, cutChoice, stripLayout, mergesInto } from '../model/habitat-timeline.js';
 
 /* The video's own lines live in the observation panel (#367), which is out of the document while
    no observation is selected; a lookup by id finds them there too, or Set clock is null. */
@@ -625,7 +625,13 @@ const strip = createHabitatStrip($('habitatStrip'), {
   pickSecond,
   menuExtras: cutItems,
   menuIn: playerRoot,
-  async save(bar, span, merging) {
+  save: saveStretch
+});
+
+/* A habitat stretch's new start and end, from the timeline's drag or the panel's Set end here
+   (#373). */
+async function saveStretch(bar, span, merging) {
+  {
     // A merge deletes the stretch dragged into, so it is asked about, as the Mosaic's merge is.
     if (merging && !window.confirm(`Merge ${merging === 1 ? 'the outlined stretch' : `the ${merging} outlined stretches`} `
       + `into this ${bar.name}? ${merging === 1 ? 'It is' : 'They are'} deleted, with ${merging === 1 ? 'its' : 'their'} reviews.`)) {
@@ -651,7 +657,7 @@ const strip = createHabitatStrip($('habitatStrip'), {
     // Every box, keyframe window and bar is read again: a merge deletes observations.
     await followQuery(showing.filters);
   }
-});
+}
 
 /* An observation the page no longer holds: deleted, or merged into another. */
 function forgetObservation(id) {
@@ -1053,6 +1059,28 @@ function updatePanel() {
       usePicture(entry, shownAt ?? player.engine.currentTime);
     },
     remove: () => editor.act('deleteObservation', editor.selectedEntry() || { box: { observation_id: id, comname: row.comname } }),
+    // The box menu's Set As End Keyframe, here too; a habitat stretch ends here as a drag of
+    // its end on the timeline would end it (#373).
+    setEnd: () => {
+      const t = shownAt ?? player.engine.currentTime;
+      if (inHabitatSession(id)) {
+        const bar = stripLayout([row]).bars[0];
+        if (!bar || !(t > bar.start)) {
+          status('Go to a frame after this stretch starts, then set its end.');
+          return;
+        }
+        const span = { start: bar.start, end: t };
+        const bars = stripLayout([...showing.rows.values()].filter((r) => inHabitatSession(r.observation_id))).bars;
+        saveStretch(bar, span, mergesInto(bars, bar, span).length).catch(() => {});
+        return;
+      }
+      const entry = editor.selectedEntry();
+      if (!entry) {
+        status("Go to a frame where this observation's box is drawn, then set its end.");
+        return;
+      }
+      editor.act('end', entry);
+    },
     merge: () => {
       const label = `${row.obs_id ?? '?'} · ${row.comname || 'Unknown'}`;
       status(`Click the observation to merge into ${label}. Escape cancels.`);
