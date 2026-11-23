@@ -136,8 +136,16 @@ async function videoObservations(body = {}) {
     answer.truncated = rows.length > MAX_VIDEO_OBSERVATIONS;
     // GUI rows count at 25, GPU rows at the video's nominal rate (#231).
     answer.sessions = opened.video_source ? await sessionsInVideo(opened.video_source) : [];
-    answer.observations = rows.slice(0, MAX_VIDEO_OBSERVATIONS).map((row) => pageRow(row, nominal));
     answer.habitat = await habitatStretches(opened, nominal);
+    /* Opened on a habitat stretch, the picture leaves out every other habitat session in the
+       video. Each covers the whole video, so drawn together they stacked one substrate box
+       per session at every moment, while the timeline showed the opened one only. Fish,
+       invertebrates and the rest are untouched. Isaac, 2026-11-23. */
+    const drawn = answer.habitat
+        ? rows.slice(0, MAX_VIDEO_OBSERVATIONS).filter((row) =>
+            row.session_type !== HABITAT_SESSION_TYPE || row.session_id === opened.session_id)
+        : rows.slice(0, MAX_VIDEO_OBSERVATIONS);
+    answer.observations = drawn.map((row) => pageRow(row, nominal));
     return answer;
 }
 
