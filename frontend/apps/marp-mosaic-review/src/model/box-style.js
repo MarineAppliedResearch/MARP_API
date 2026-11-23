@@ -47,6 +47,10 @@ export const GUI = {
   bottomBelow: 22
 };
 
+/* How solid a label's tab is drawn: the annotation GUI's 0x99, which the habitat list over the
+   picture already uses, so the video shows through every label (Isaac, 2026-11-23). */
+export const TAB_ALPHA = 0x99 / 0xff;
+
 /* The GUI's state colours: Colors.Orange while a box is moved, BlueViolet while resized. */
 export const DRAGGING = '#ffa500';
 export const RESIZING = '#8a2be2';

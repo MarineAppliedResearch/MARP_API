@@ -5,7 +5,7 @@
  * Text widths are measured once per label and font size and kept, because a busy frame
  * draws hundreds of labels and measuring each one every frame is a cost paid for nothing.
  */
-import { GUI, DRAGGING, RESIZING, markerFor, identifierText, tabLayout } from '../model/box-style.js';
+import { GUI, DRAGGING, RESIZING, TAB_ALPHA, markerFor, identifierText, tabLayout } from '../model/box-style.js';
 import { gripsOf, GRIP_RADIUS } from '../model/box-edit.js';
 
 const FONT = '"Segoe UI", system-ui, sans-serif';
@@ -34,7 +34,11 @@ function tab(context, { left, top, width, height }, radii, fill) {
   context.beginPath();
   context.roundRect(left, top, width, height, radii);
   context.fillStyle = fill;
+  // Let down, so the video reads through a label (Isaac, 2026-11-23); the text stays solid.
+  context.save();
+  context.globalAlpha = TAB_ALPHA;
   context.fill();
+  context.restore();
 }
 
 function marker(context, type, x, middle, size) {
@@ -152,7 +156,7 @@ export function drawBox(context, { box, rect }, { colour, type, selected, presse
   context.fillText(name, layout.top.textLeft, layout.top.middle);
 
   // The identifier tab, under the box, on every box as the GUI shows it.
-  tab(context, layout.bottom, [0, r, r, r], 'rgba(0, 0, 0, 0.8)');
+  tab(context, layout.bottom, [0, r, r, r], '#000000');
   context.font = bottomFont;
   context.fillStyle = '#ffffff';
   context.fillText(identifier, layout.bottom.textLeft, layout.bottom.middle);
