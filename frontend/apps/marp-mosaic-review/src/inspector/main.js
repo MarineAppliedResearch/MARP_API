@@ -143,12 +143,24 @@ let drawMs = 0;
    else replaced it (Isaac, 2026-11-23). `stay` keeps one up that says work is in progress,
    which the page clears itself when the work is done. */
 const STATUS_SHOWN_MS = 4000;
+
+/* Just above the player's controls, wherever their top is: a fixed distance from the bottom put
+   it over the habitat timeline, which sits in the controls and is as tall as its lanes
+   (Isaac, 2026-11-23). */
+function placeStatus(line) {
+  const bar = playerRoot && playerRoot.querySelector('.marp-controls-bar');
+  const host = line.offsetParent;
+  if (!bar || !host) return;
+  const above = host.getBoundingClientRect().bottom - bar.getBoundingClientRect().top;
+  if (above > 0) line.style.bottom = `${Math.round(above + 8)}px`;
+}
 let statusTimer = null;
 function status(text, { stay = false } = {}) {
   const line = $('inspectStatus');
   clearTimeout(statusTimer);
   line.classList.remove('fading');
   line.textContent = text || '';
+  if (text) placeStatus(line);
   if (!text || stay) return;
   statusTimer = setTimeout(() => {
     line.classList.add('fading');
