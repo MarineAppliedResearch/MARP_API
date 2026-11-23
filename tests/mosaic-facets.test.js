@@ -442,7 +442,8 @@ describe('the mosaic facets route and the row reviewer ids (#124)', () => {
             ]);
         });
 
-        it('gives session the id as both, because a session has no name', async () => {
+        it('gives session its id as the value, and a label that starts with it, because a session has no name', async () => {
+            // The label goes on with its dive, line and type since #371; the id still leads it.
             const res = await global.api.post(FACETS).send({
                 filters: question(), dimensions: ['session'],
             });
@@ -452,7 +453,7 @@ describe('the mosaic facets route and the row reviewer ids (#124)', () => {
 
             expect(mine.length).toBeGreaterThan(0);
             for (const entry of mine) {
-                expect(String(entry.value)).toBe(entry.label);
+                expect(entry.label.startsWith(`${entry.value} · `)).toBe(true);
             }
         });
 
