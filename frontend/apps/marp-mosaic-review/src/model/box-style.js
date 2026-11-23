@@ -134,7 +134,7 @@ const TAB_GAP = 4;
  * timeline's lanes, top to bottom, so a type is always in the same place relative to the others.
  * Anything not named comes after them.
  */
-export const LABEL_ORDER = Object.freeze(['cobble', 'boulder', 'sand', 'mud', 'rock', 'stop', 'pull', 'off transect']);
+export const LABEL_ORDER = Object.freeze(['cobble', 'boulder', 'sand', 'mud', 'rock', 'stop', 'pull', 'off transect', 'off bottom']);
 
 /** Pixels two boxes' edges may differ by and still be one place (#352). */
 const SAME_PLACE = 3;

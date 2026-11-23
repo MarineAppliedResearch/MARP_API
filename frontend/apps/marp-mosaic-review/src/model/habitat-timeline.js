@@ -15,7 +15,8 @@ export const LANES = Object.freeze([
   ['Boulder'],
   ['Sand', 'Mud'],
   ['Rock'],
-  ['Stop', 'Pull', 'Off Transect']
+  // Off Bottom shares Off Transect's lane and colour (Isaac, 2026-11-23, #375).
+  ['Stop', 'Pull', 'Off Transect', 'Off Bottom']
 ]);
 
 /** Each substrate's colour, the GUI's. */
@@ -27,8 +28,17 @@ export const COLOURS = Object.freeze({
   rock: '#8b5a2b',
   pull: '#e04f45',
   stop: '#a81c1c',
-  'off transect': '#ff8570'
+  'off transect': '#ff8570',
+  'off bottom': '#ff8570'
 });
+
+/**
+ * Where every habitat stretch's box is drawn: the habitat crop, as `db/habitat-keyframes.js`'s
+ * `HABITAT_BOX` settles it (2026-11-10), centre and size as shares of the picture. A stretch saved
+ * with a hand-drawn box a little off it was taken for a box somewhere else, and its label landed
+ * on another's (Isaac, 2026-11-23, #375). What is stored is not changed.
+ */
+export const HABITAT_BOX = Object.freeze({ x: 0.5, y: 0.75, width: 0.5, height: 0.5 });
 
 /** Anything the GUI names no colour for. */
 const OTHER_COLOUR = '#6fb1ff';

@@ -31,7 +31,7 @@ import { labelScale, sharedTabShifts, labelColumns, TAB_ALPHA } from '../model/b
 import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
 import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText } from '../model/video-clock.js';
 import { createHabitatStrip } from './habitat-strip.js';
-import { colourOf, cutChoice, stripLayout, mergesInto } from '../model/habitat-timeline.js';
+import { colourOf, cutChoice, stripLayout, mergesInto, HABITAT_BOX } from '../model/habitat-timeline.js';
 
 /* The video's own lines live in the observation panel (#367), which is out of the document while
    no observation is selected; a lookup by id finds them there too, or Set clock is null. */
@@ -213,7 +213,9 @@ function drawBoxes(overlay, element, pictureWidth, pictureHeight, t) {
     const key = trackKey(box);
     const opened = box.observation_id === showing.observationId;
     const preview = editor.previewFor(key);
-    return { key, box, opened, rect: preview ? preview.rect : toScreen(box, area) };
+    // A habitat stretch is always in the habitat crop, whatever box it was saved with (#375).
+    const shape = inHabitatSession(box.observation_id) ? { ...box, ...HABITAT_BOX } : box;
+    return { key, box, opened, rect: preview ? preview.rect : toScreen(shape, area) };
   }).sort((a, b) => editor.rankOf(a.key, a.opened) - editor.rankOf(b.key, b.opened));
 
   // The one the page was opened from starts selected, so the halo is on it before anything is
