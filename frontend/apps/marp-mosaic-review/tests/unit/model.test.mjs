@@ -1831,3 +1831,10 @@ test('progress is what has left the mode\'s work, over the question', async () =
 
   assert.equal(questionProgress({ mode: 'training', counts: { total: 0 } }), null, 'nothing before the counts arrive');
 });
+
+test('#371: the session filter can be searched, and reads with the dive, line and type the server names it by', () => {
+  const session = dimensions.DIMENSION.session;
+  assert.equal(session.searchable, true);
+  const facets = { session: [{ value: 4377, label: '4377 · Dive 2 · line 370 · Habitat' }] };
+  assert.equal(dimensions.optionLabel(session, 4377, facets), 'Session 4377 · Dive 2 · line 370 · Habitat');
+});

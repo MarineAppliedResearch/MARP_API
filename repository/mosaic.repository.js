@@ -1023,7 +1023,17 @@ const FACET_DIMENSIONS = {
     dive: { value: 's.dive', label: 's.dive' },
     line: { value: 's.line', label: 's.line' },
     sessionType: { value: 's.type', label: 's.type' },
-    session: { value: 'o.session_id', label: 'o.session_id::text' },
+    // #371: a session reads with its dive, line and type, so the rail can be searched for
+    // "line 370" rather than only by an id nobody knows. Newest first.
+    session: {
+        value: 'o.session_id',
+        label: "o.session_id::text"
+            + " || coalesce(' · ' || CASE WHEN min(s.dive) ILIKE 'dive%' THEN min(s.dive) ELSE 'Dive ' || min(s.dive) END, '')"
+            + " || coalesce(' · line ' || min(s.line), '')"
+            + " || coalesce(' · ' || min(s.type), '')",
+        aggregateLabel: true,
+        order: 'o.session_id DESC',
+    },
     // #287: where each tile's picture stands. The client words each value.
     picture: { value: PICTURE_STATE, label: PICTURE_STATE },
     species: { value: 'o.species_id', label: 'sp.comname', list: 'sp.species_list' },
