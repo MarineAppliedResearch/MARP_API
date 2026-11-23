@@ -194,6 +194,19 @@ describe('changing a habitat stretch\'s times (#287 R5)', () => {
         expect(read.habitat.stretches.map((s) => s.observation_id)).toEqual(expect.arrayContaining([a, b]));
     });
 
+    test('the picture draws the opened habitat session only, and every other kind of session (2026-11-23)', async () => {
+        const opened = await session('Habitat');
+        const mine = await stretch(opened, 10, 20);
+        // Another habitat session over the same moment: a second box on top of the first.
+        const otherRun = await stretch(await session('Habitat'), 10, 20);
+        const fish = await stretch(await session('Fish'), 12, 18, { keyed: true });
+
+        const read = await videoService.videoObservations({ observation_id: mine });
+        const drawn = read.observations.map((o) => o.observation_id);
+        expect(drawn).toEqual(expect.arrayContaining([mine, fish]));
+        expect(drawn).not.toContain(otherRun);
+    });
+
     test('refuses a stretch that changed since it was read, one with no end, and anything not a stretch', async () => {
         const habitat = await session('Habitat');
         const id = await stretch(habitat, 10, 20);

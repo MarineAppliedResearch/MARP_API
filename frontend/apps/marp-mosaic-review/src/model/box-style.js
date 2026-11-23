@@ -47,6 +47,14 @@ export const GUI = {
   bottomBelow: 22
 };
 
+/* How solid a label is drawn, its tabs and the habitat list over the picture alike, so the video
+   shows through every label. The GUI's 0x99 was not see-through enough (Isaac, 2026-11-23). */
+export const TAB_ALPHA = 0x66 / 0xff;
+
+/* How solid a box's outline is drawn: a little see-through, so the picture under it shows
+   (Isaac, 2026-11-23). Not the selection halo, which marks the box being worked on. */
+export const OUTLINE_ALPHA = 0.7;
+
 /* The GUI's state colours: Colors.Orange while a box is moved, BlueViolet while resized. */
 export const DRAGGING = '#ffa500';
 export const RESIZING = '#8a2be2';
@@ -96,7 +104,8 @@ export function tabLayout(rect, scale, textWidths, shift = { top: 0, bottom: 0 }
   const top = {
     left,
     top: rect.top - GUI.topAbove * scale,
-    width: tl + marker + GUI.markerGap * scale + textWidths.top + tr,
+    // In a column, as wide as the column, so the labels read as even columns (2026-11-23).
+    width: Math.max(tl + marker + GUI.markerGap * scale + textWidths.top + tr, shift.width || 0),
     height: topHeight,
     markerLeft: left + tl,
     textLeft: left + tl + marker + GUI.markerGap * scale,
@@ -109,7 +118,7 @@ export function tabLayout(rect, scale, textWidths, shift = { top: 0, bottom: 0 }
   const bottom = {
     left: bottomLeft,
     top: bottomEdge - bottomHeight,
-    width: bl + textWidths.bottom + br,
+    width: Math.max(bl + textWidths.bottom + br, shift.width || 0),
     height: bottomHeight,
     textLeft: bottomLeft + bl,
     middle: bottomEdge - bottomHeight / 2
@@ -155,25 +164,85 @@ const rankOf = (name) => {
  * @param {Array<{id: number, name: string, rect: Object, widths: {top: number, bottom: number}}>} boxes -
  *   Each box on screen, its observation, its name, and its two tabs' full widths.
  * @param {number} scale - From `labelScale`.
- * @returns {Array<{top: number, bottom: number}>} Each box's shift along its edge, in the
- *   order the boxes were given.
+ * @param {?{columnOf: Map<number, number>, width: number, step: number}} [slots] - From
+ *   `labelColumns`: a stretch with a column sits in it, and the rest are packed after.
+ * @returns {Array<{top: number, bottom: number, width?: number}>} Each box's shift along its
+ *   edge, and for one in a column how wide its tabs are drawn, in the order the boxes were given.
  */
-export function sharedTabShifts(boxes, scale) {
+export function sharedTabShifts(boxes, scale, slots = null) {
   const near = (a, b) => ['left', 'top', 'width', 'height'].every((edge) => Math.abs(a[edge] - b[edge]) <= SAME_PLACE);
   const places = [];
+  const placeOf = (rect) => {
+    let place = places.find((p) => near(p.rect, rect));
+    if (!place) {
+      place = { rect, top: 0, bottom: 0, taken: new Set() };
+      places.push(place);
+    }
+    return place;
+  };
   const shifts = new Array(boxes.length);
   const order = boxes.map((_, index) => index).sort((a, b) => rankOf(boxes[a].name) - rankOf(boxes[b].name)
     || (boxes[a].id ?? a) - (boxes[b].id ?? b) || a - b);
+
+  // A stretch with a column sits in it, whoever else is showing; anything else in that place
+  // is packed after the columns in use.
+  const packed = [];
   for (const index of order) {
-    const { rect, widths } = boxes[index];
-    let place = places.find((p) => near(p.rect, rect));
-    if (!place) {
-      place = { rect, top: 0, bottom: 0 };
-      places.push(place);
+    const column = slots ? slots.columnOf.get(boxes[index].id) : undefined;
+    const place = placeOf(boxes[index].rect);
+    if (column !== undefined && !place.taken.has(column)) {
+      place.taken.add(column);
+      const at = column * slots.step;
+      place.top = place.bottom = Math.max(place.top, at + slots.step);
+      shifts[index] = { top: at, bottom: at, width: slots.width };
+    } else {
+      packed.push(index);
     }
+  }
+  for (const index of packed) {
+    const place = placeOf(boxes[index].rect);
+    const { widths } = boxes[index];
     shifts[index] = { top: place.top, bottom: place.bottom };
     place.top += widths.top + TAB_GAP * scale;
     place.bottom += widths.bottom + TAB_GAP * scale;
   }
   return shifts;
+}
+
+/**
+ * A column along the habitat box for each habitat stretch, kept for its whole life (Isaac,
+ * 2026-11-23).
+ *
+ * Packed, labels moved: Rock alone sat first, and moved to second the moment Mud showed, and
+ * back when Mud went. A slot per habitat kept them still but started Rock five columns in on a
+ * video with six habitats. So each stretch, in the order they start, takes the leftmost column
+ * no stretch overlapping it holds: Rock alone is at the box's left edge, Mud starting under it
+ * goes beside it, and Rock never moves while it lasts. Worked out from the stretches' times
+ * alone, so a seek lands on the same layout as playing up to it.
+ *
+ * Columns are even: as wide as the widest tab of any stretch, above or below, and each tab is
+ * drawn that wide, so the labels read as a row of columns with each identifier under its name.
+ *
+ * @param {Array<{id: number, start: number, end: number, widths: {top: number, bottom: number}}>} stretches -
+ *   Every habitat stretch on the video: its observation, its start and end in seconds (an
+ *   unfinished one ends at Infinity), and its two tabs' full widths.
+ * @param {number} scale - From `labelScale`.
+ * @returns {{columnOf: Map<number, number>, width: number, step: number}} Each stretch's column,
+ *   how wide a column is, and how far apart two are.
+ */
+export function labelColumns(stretches, scale) {
+  let width = 0;
+  for (const { widths } of stretches || []) width = Math.max(width, widths.top, widths.bottom);
+  const placed = [];
+  const columnOf = new Map();
+  const order = [...(stretches || [])].sort((a, b) => a.start - b.start || a.id - b.id);
+  for (const stretch of order) {
+    // Touching is not overlapping: Mud starting the moment Rock ends takes Rock's column.
+    const busy = new Set(placed.filter((p) => p.start < stretch.end && stretch.start < p.end).map((p) => p.column));
+    let column = 0;
+    while (busy.has(column)) column += 1;
+    columnOf.set(stretch.id, column);
+    placed.push({ start: stretch.start, end: stretch.end, column });
+  }
+  return { columnOf, width, step: width + TAB_GAP * scale };
 }
