@@ -46,6 +46,21 @@ test('#181: a track with no end keyframe keeps drawing its last box forward (202
   assert.deepEqual(boxesAt([ended], 40), []);
 });
 
+test('a click with no end shows for about a second around its moment, not to the end of the video (2026-11-23)', () => {
+  // The White Sea Pen on Dive 14 line 1890: one keyframe, a dot, never ended.
+  const click = { observation_id: 436181, comname: 'White sea pen', keyframes: [box(84, 0.08, { type: 'start', width: 0.001, height: 0.001 })] };
+  assert.deepEqual(boxesAt([click], 83.4), [], 'not yet');
+  assert.equal(boxesAt([click], 83.6).length, 1, 'just before its moment');
+  assert.equal(boxesAt([click], 84).length, 1, 'on its moment');
+  assert.equal(boxesAt([click], 84.4).length, 1, 'just after');
+  assert.deepEqual(boxesAt([click], 84.6), [], 'gone after about a second');
+  assert.deepEqual(boxesAt([click], 421), [], 'and not still there minutes later');
+
+  // A drawn box with no end is still drawn forward: that is a box being made.
+  const drawn = { observation_id: 9, comname: 'Rockfish', keyframes: [box(84, 0.2, { type: 'start' })] };
+  assert.equal(boxesAt([drawn], 421).length, 1);
+});
+
 test('#181: every observation spanning the moment is drawn, each on its own track', () => {
   const rockfish = { observation_id: 2, comname: 'Rockfish', keyframes: [box(11, 0.9, { type: 'start' }), done(14, 0.9)] };
   const split = {

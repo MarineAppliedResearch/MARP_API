@@ -73,9 +73,33 @@ export function tracksOf(keyframes) {
   return [...bySubset.values()].map((track) => track.slice().sort((a, b) => a.t - b.t));
 }
 
+/* A box narrower and shorter than this share of the picture is a click, not a drawn box. */
+const POINT = 0.01;
+
+/* How long a click is shown, centred on its moment (Isaac, 2026-11-23). */
+export const POINT_SHOWN = 1;
+
+/**
+ * Whether a track is a single click with no end: one keyframe, a dot rather than a box. The
+ * annotation GUI records one when an annotator clicks instead of drawing, and never ends it,
+ * so drawn forward like an unfinished track it stayed on screen to the end of the video.
+ */
+export function isClick(track) {
+  if (!track || track.length !== 1 || track[0].type === 'end') return false;
+  return track[0].width < POINT && track[0].height < POINT;
+}
+
 /* The box on one track at `t`, or null outside its span. */
 function boxOnTrack(track, t, tolerance) {
-  if (!track.length || t < track[0].t - tolerance) return null;
+  if (!track.length) return null;
+  // A click is shown for about a second around its moment, then gone. A drawn box with no end
+  // is still drawn forward below: that is how a box just started on the page stays up.
+  if (isClick(track)) {
+    const k = track[0];
+    return Math.abs(t - k.t) <= POINT_SHOWN / 2 + tolerance
+      ? { x: k.x, y: k.y, width: k.width, height: k.height } : null;
+  }
+  if (t < track[0].t - tolerance) return null;
   const last = track[track.length - 1];
   if (t > last.t + tolerance) {
     // Past the last keyframe. A track with an `end` stops there -- after it the animal is
