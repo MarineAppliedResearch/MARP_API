@@ -6,8 +6,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  WINDOW_SECONDS, windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, withSession
-, sessionLine } from '../../src/model/video-review.js';
+  WINDOW_SECONDS, windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, withSession,
+  sessionLine, anchorAfter
+} from '../../src/model/video-review.js';
+
+test('after the opened observation is deleted, the page anchors on the nearest in its session, else in the video (2026-11-23)', () => {
+  const kept = [
+    { observation_id: 1, session_id: 9, start_s: 100 },
+    { observation_id: 2, session_id: 4377, start_s: 10 },
+    { observation_id: 3, session_id: 4377, start_s: 80 }
+  ];
+  assert.equal(anchorAfter(kept, 4377, 95), 3, 'same session, nearest in time, over a nearer one elsewhere');
+  assert.equal(anchorAfter(kept.filter((o) => o.session_id === 9), 4377, 95), 1, 'none left in the session: the nearest in the video');
+  assert.equal(anchorAfter([], 4377, 95), null);
+});
 
 test('#337: a reviewed box is green, a flagged one amber, an undecided one keeps its species colour', () => {
   assert.equal(reviewColour('reviewed'), '#a7ec35');

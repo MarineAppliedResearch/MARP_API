@@ -21,7 +21,7 @@ import { MarpApi } from '../api/index.js';
 import { boxesAt, tracksOf, trackTolerance, contentRect, playbackBlocker, pictureTime, firstSeekTarget, frameTime } from '../model/video-boxes.js';
 import {
   windowsAround, windowRange, observationsIn, windowsToDrop, speciesColour, reviewColour, VIDEO_WINDOW, withSession,
-  sessionLine
+  sessionLine, anchorAfter
 } from '../model/video-review.js';
 import { createInspectorPlayer, applyBudgets } from './player-setup.js';
 import { createBoxEditor } from './editing.js';
@@ -636,6 +636,12 @@ const strip = createHabitatStrip($('habitatStrip'), {
       // On the video's clock where it has one (#366).
       status(`${bar.name} now runs ${timeText(clock, answer.start_s)} to ${timeText(clock, answer.end_s)}`
         + (answer.merged.length ? `, with ${answer.merged.length} merged into it.` : '.'));
+      // Merged away, the one the page was opened on: anchored on the stretch it joined, or the
+      // read below asks for an observation that no longer exists (2026-11-23).
+      if (answer.merged.includes(showing.observationId)) {
+        showing.observationId = bar.id;
+        history.replaceState(null, '', `#${encodeURIComponent(JSON.stringify({ type: 'show', observationId: bar.id, filters: showing.filters }))}`);
+      }
     } catch (error) {
       status(error.status === 409
         ? 'Not changed: this stretch changed since the page read it. Reopen it from the Mosaic and drag again.'
@@ -649,8 +655,18 @@ const strip = createHabitatStrip($('habitatStrip'), {
 
 /* An observation the page no longer holds: deleted, or merged into another. */
 function forgetObservation(id) {
+  const gone = showing.observations.find((o) => o.observation_id === id);
   showing = { ...showing, observations: showing.observations.filter((o) => o.observation_id !== id) };
   showing.rows.delete(id);
+  // The one the page was opened on: anchor on another, or nothing more can be added (2026-11-23).
+  if (id === showing.observationId) {
+    const next = anchorAfter(showing.observations, showing.openedSession, gone ? gone.start_s : showing.moment);
+    if (next != null) {
+      showing.observationId = next;
+      // And the address, so a reload opens one that exists.
+      history.replaceState(null, '', `#${encodeURIComponent(JSON.stringify({ type: 'show', observationId: next, filters: showing.filters }))}`);
+    }
+  }
   const next = withObservation(held, id);
   held.clear();
   for (const [index, keyframes] of next) held.set(index, keyframes);
@@ -827,6 +843,17 @@ function cover(id, t) {
   }
 }
 
+/* A drawn box whose save failed is taken away, with the failure said: left behind it was a
+   dashed outline belonging to nothing, with no way to use or remove it (2026-11-23). */
+async function keepNoDraft(work) {
+  try {
+    return await work();
+  } catch (error) {
+    editor.clearDraft();
+    throw error;
+  }
+}
+
 /* The box drawn on empty picture: a species makes it a new observation, or it joins the
    selected one (R1, R2). */
 function openAdd({ rect, box, selectedKey }) {
@@ -844,13 +871,13 @@ function openAdd({ rect, box, selectedKey }) {
     sessionId,
     extendLabel: selected ? `Add to ${selected.obs_id ?? '?'} · ${selected.comname || 'Unknown'}` : null,
     onExtend: () => editor.save(async () => {
-      const answer = await MarpApi.addKeyframe({ observationId: selectedId, subset: selectedKey.split('_')[1] || null, t, box });
+      const answer = await keepNoDraft(() => MarpApi.addKeyframe({ observationId: selectedId, subset: selectedKey.split('_')[1] || null, t, box }));
       cover(selectedId, t);
       editor.clearDraft();
       return answer;
     }),
     onPick: ({ species, sessionId: chosen }) => editor.save(async () => {
-      const answer = await MarpApi.createObservation({ openedId: showing.observationId, sessionId: chosen, speciesId: species.id, t, box });
+      const answer = await keepNoDraft(() => MarpApi.createObservation({ openedId: showing.observationId, sessionId: chosen, speciesId: species.id, t, box }));
       const row = answer.observation;
       showing.observations.push(row);
       showing.rows.set(row.observation_id, row);
