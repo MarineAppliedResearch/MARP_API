@@ -139,8 +139,24 @@ let drawnNow = { rects: [], area: null };
 /* How long the last frame's boxes took to draw, for the console (`MARP_VIDEO.drawMs`). */
 let drawMs = 0;
 
-function status(text) {
-  $('inspectStatus').textContent = text || '';
+/* A message fades after a few seconds: an error used to stay over the video until something
+   else replaced it (Isaac, 2026-11-23). `stay` keeps one up that says work is in progress,
+   which the page clears itself when the work is done. */
+const STATUS_SHOWN_MS = 4000;
+let statusTimer = null;
+function status(text, { stay = false } = {}) {
+  const line = $('inspectStatus');
+  clearTimeout(statusTimer);
+  line.classList.remove('fading');
+  line.textContent = text || '';
+  if (!text || stay) return;
+  statusTimer = setTimeout(() => {
+    line.classList.add('fading');
+    statusTimer = setTimeout(() => {
+      line.textContent = '';
+      line.classList.remove('fading');
+    }, 400);
+  }, STATUS_SHOWN_MS);
 }
 
 /* The overlay canvas sized and placed exactly over the picture's element.
@@ -356,7 +372,7 @@ async function readObservations(observationId, filters) {
 async function show(request) {
   const mine = ++latest;
   lastRequest = request;
-  status('Finding the video…');
+  status('Finding the video…', { stay: true });
 
   let read;
   try {
@@ -476,7 +492,7 @@ async function play(mine) {
   // "Opening the video..." for good (2026-11-20).
   const moment = frameTime(showing.moment, video.frame_rate || 25);
   if (player.currentItemId !== video.jellyfin_item_id || !player.engine) {
-    status('Opening the video…');
+    status('Opening the video…', { stay: true });
     // Opened at the moment itself, so the start of the dive is neither fetched nor shown
     // first. A phone opens a transcode rather than the original file, which it cannot hold.
     const engine = await player.loadItem(video.jellyfin_item_id, quality, { startTime: moment });
@@ -853,7 +869,7 @@ function openAdd({ rect, box, selectedKey }) {
    there reads as a button that does nothing (2026-10-14). */
 function usePicture(entry, t) {
   pictureState = 'working';
-  status('Cutting the Mosaic picture from this frame. This takes a few seconds…');
+  status('Cutting the Mosaic picture from this frame. This takes a few seconds…', { stay: true });
   updatePanel();
   return editor.save(async () => {
     try {
@@ -1099,7 +1115,7 @@ $('clockForm').addEventListener('submit', async (event) => {
     status('Type the date and time the clock in the picture shows.');
     return;
   }
-  status('Setting the clock…');
+  status('Setting the clock…', { stay: true });
   try {
     const answer = await MarpApi.setVideoClock({ video_source: clockVideo, ...body });
     clock = answer;

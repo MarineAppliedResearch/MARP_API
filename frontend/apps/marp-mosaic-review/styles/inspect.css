@@ -180,9 +180,17 @@ body {
   bottom: 56px;
   margin: 0;
   padding: 4px 8px;
-  background: rgba(1, 5, 13, 0.75);
+  /* See-through, as the labels on the boxes are; the shadow keeps the text readable over a
+     bright picture (Isaac, 2026-11-23). */
+  background: rgba(1, 5, 13, 0.4);
   color: var(--white);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   pointer-events: none;
+  transition: opacity 0.4s;
+}
+
+.inspect-status.fading {
+  opacity: 0;
 }
 
 .inspect-status:empty {
