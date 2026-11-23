@@ -444,6 +444,26 @@ async function followQuery(filters) {
   redraw();
 }
 
+/* The rows and the timeline's stretches again, for their versions: the keyframes held and the
+   timeline's zoom stay as they are, because nothing about them moved. */
+async function rereadRows() {
+  if (!showing) return;
+  const mine = latest;
+  let read;
+  try {
+    read = await readObservations(showing.observationId, showing.filters);
+  } catch {
+    // The clock is still set; the next edit says to reopen, as it did before this read.
+    return;
+  }
+  if (mine !== latest || !showing) return;
+  strip.set(read.answer.habitat);
+  showing = {
+    ...showing, observations: read.answer.observations, rows: read.rows,
+    sessions: read.answer.sessions || showing.sessions
+  };
+}
+
 /* Open the video at the moment, or seek to it when that video is already open. */
 async function play(mine) {
   const { video } = showing;
@@ -1064,6 +1084,11 @@ $('clockForm').addEventListener('submit', async (event) => {
     clock = answer;
     $('clockForm').hidden = true;
     sayClock();
+    // Setting it rewrote every observation in the video, and each one's version with it:
+    // read them again, or the next drag or cut is refused as changed (2026-11-21).
+    await rereadRows();
+    // The open panel's keyframes, in clock time now (#365).
+    updatePanel();
     status(`Clock set. ${answer.observations} observation${answer.observations === 1 ? '' : 's'} in this video now carry the time ${answer.observations === 1 ? 'it was' : 'they were'} seen.`);
     returnKeyboard();
   } catch (error) {
