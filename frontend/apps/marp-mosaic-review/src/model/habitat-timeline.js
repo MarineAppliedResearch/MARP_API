@@ -301,6 +301,25 @@ export function habitatsAt(stretches, t) {
  * @param {Map<number, Object>} pick.rows - The page's observations, by id.
  * @returns {?{label: string, target: number, by: number}}
  */
+/**
+ * The stretch a cut is made with, once the selection moves (#360, Isaac 2026-11-24): the habitat
+ * stretch selected most recently that is not the one picked second.
+ *
+ * Not the selection at the moment of the cut: right-clicking the second selects it. Nor at the
+ * moment of the pick: picking first and selecting the cutter after, as the page's own message
+ * says to, offered no cut. And kept when the selection is let go, because in a narrow window the
+ * panel a selection opens covers the labels, and closing it is how a reviewer reaches them.
+ *
+ * @param {{cutterId: ?number, selectedId: ?number, secondId: ?number, habitat: boolean}} now -
+ *   The cutter so far, what is selected now, what is picked second, and whether the selection is
+ *   a habitat stretch.
+ * @returns {?number} The cutter from here on.
+ */
+export function cutterAfter({ cutterId, selectedId, secondId, habitat }) {
+  if (selectedId == null || selectedId === secondId || !habitat) return cutterId;
+  return selectedId;
+}
+
 export function cutChoice({ selectedId, secondId, clickedId, rows }) {
   if (selectedId == null || secondId == null || selectedId === secondId || clickedId !== secondId) return null;
   const target = rows.get(secondId);

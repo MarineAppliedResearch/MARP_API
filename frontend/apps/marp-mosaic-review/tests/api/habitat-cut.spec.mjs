@@ -109,18 +109,63 @@ test('#360 on the boxes: select the cutter by its label, Ctrl+click the Rock\'s 
       await zoomOn(page, sand);
       await bar(page, sand).click();
       await expect.poll(() => tabOf(sand), { timeout: 60_000 }).toBeTruthy();
-      // The panel would cover the labels at phone width: closed first, as a reviewer would.
+      // The panel covers the labels at phone width and selecting a stretch opens it, so it is
+      // closed after the Sand is selected, as a reviewer would. Closing it lets the selection go,
+      // and the Sand is still the one to cut with (Isaac, 2026-11-24).
       const panel = page.locator('#obsPanel');
-      if (await panel.isVisible()) await panel.getByRole('button', { name: 'Close' }).click();
+      const closePanel = async () => {
+        if (await panel.isVisible()) await panel.getByRole('button', { name: 'Close' }).click();
+      };
+      await closePanel();
 
       await page.mouse.click(centre(await tabOf(sand)).x, centre(await tabOf(sand)).y);
       await expect.poll(() => page.evaluate(() => window.MARP_VIDEO.selected)).toBe(`${sand}_1`);
+      await closePanel();
       await ctrlClick(page, centre(await tabOf(rock)));
       await expect(bar(page, rock)).toHaveClass(/second/);
 
       await page.mouse.click(centre(await tabOf(rock)).x, centre(await tabOf(rock)).y, { button: 'right' });
       const item = page.locator('#boxMenu button', { hasText: /^Cut / });
       await expect(item).toBeVisible();
+      const cut = page.waitForResponse((r) => r.url().endsWith('/cut'));
+      await item.click();
+      const answer = await cut;
+      expect(answer.ok(), `the cut was refused: ${answer.status()} ${await answer.text()}`).toBe(true);
+      await expect.poll(() => stretchesOf(request, rock)).toEqual(splitAround);
+    } finally {
+      await seeded.remove();
+    }
+  });
+
+/* The other order, which the page's own message gives: "Rock picked. Select the stretch to cut it
+   with, then right-click Rock." Followed, it offered no cut (2026-11-24). */
+test('#360 picked first: Ctrl+click the Rock, then select the cutter, right-click the Rock, Cut',
+  async ({ page, request }) => {
+    test.setTimeout(240_000);
+    const seeded = await habitatInVideo(request);
+    const [rock, sand] = seeded.ids;
+    try {
+      await openAndPlay(page, rock);
+      await expect(bar(page, rock)).toBeVisible();
+      await zoomOn(page, sand);
+
+      const rockBox = await bar(page, rock).boundingBox();
+      const lanes = await page.locator('#habitatStrip .hstrip-lanes').boundingBox();
+      const onRock = { x: Math.max(rockBox.x, lanes.x) + 12, y: rockBox.y + rockBox.height / 2 };
+      // The page opens with the Rock selected, and Ctrl+clicking the selection lets it go: the
+      // panel closed first, so nothing is selected when the Rock is picked.
+      const panel = page.locator('#obsPanel');
+      if (await panel.isVisible()) await panel.getByRole('button', { name: 'Close' }).click();
+      await expect.poll(() => page.evaluate(() => window.MARP_VIDEO.selected)).toBe(null);
+      await ctrlClick(page, onRock);
+      await expect(bar(page, rock)).toHaveClass(/second/);
+      await bar(page, sand).click();
+      await expect(bar(page, sand)).toHaveClass(/selected/);
+
+      await page.mouse.click(onRock.x, onRock.y, { button: 'right' });
+      const item = page.locator('.hstrip-menu button', { hasText: /^Cut / });
+      await expect(item).toBeVisible();
+      await expect(item).toContainText(/with .*Sand$/);
       const cut = page.waitForResponse((r) => r.url().endsWith('/cut'));
       await item.click();
       const answer = await cut;

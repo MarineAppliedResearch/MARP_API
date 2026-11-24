@@ -31,7 +31,7 @@ import { labelScale, sharedTabShifts, labelColumns, TAB_ALPHA } from '../model/b
 import { drawBox, tabWidths, tabRects } from './draw-boxes.js';
 import { clockAt, clockLine, positionText, readingOffered, readingBody, timeText } from '../model/video-clock.js';
 import { createHabitatStrip } from './habitat-strip.js';
-import { colourOf, cutChoice, stripLayout, mergesInto, HABITAT_BOX } from '../model/habitat-timeline.js';
+import { colourOf, cutChoice, cutterAfter, stripLayout, mergesInto, HABITAT_BOX } from '../model/habitat-timeline.js';
 
 /* The video's own lines live in the observation panel (#367), which is out of the document while
    no observation is selected; a lookup by id finds them there too, or Set clock is null. */
@@ -618,6 +618,7 @@ const editor = createBoxEditor({
     selectionChanged: (key) => {
       updatePanel();
       strip.selected(key ? Number(key.split('_')[0]) : null);
+      cutterFollows(key ? Number(key.split('_')[0]) : null);
     }
   }
 });
@@ -732,9 +733,10 @@ function refreshOpenEnded(id) {
 
 /* ---------------------------------------------------------------- cutting (#360) */
 
-/* The stretch picked second, with Ctrl or Shift, to be cut by the selected one -- and that
-   selected one, kept from the moment of the pick: right-clicking the second selects it, and
-   reading the selection then offered no cut at all (Isaac, 2026-11-20). */
+/* The stretch picked second, with Ctrl or Shift, to be cut -- and the stretch to cut it with,
+   the habitat stretch selected most recently (`cutterAfter`). Not read from the selection at
+   the cut: right-clicking the second selects it (Isaac, 2026-11-20). Kept when the selection is
+   let go, since closing the panel is how a narrow window reaches the labels (2026-11-24). */
 let secondId = null;
 let cutterId = null;
 
@@ -744,18 +746,36 @@ const nameOf = (id) => {
   return row ? `${row.obs_id ?? '?'} · ${row.comname || 'Unnamed'}` : String(id);
 };
 
-/* Ctrl or Shift on a habitat stretch: picked to be cut by the selected one. Again, or on the
-   selection itself, lets it go. */
+/* What to do next, once something is picked second. */
+function cutStatus() {
+  if (secondId == null) return;
+  status(cutterId == null
+    ? `${nameOf(secondId)} picked. Select the stretch to cut it with, then right-click ${nameOf(secondId)}.`
+    : `${nameOf(secondId)} picked. Right-click it to cut it with ${nameOf(cutterId)}.`);
+}
+
+/* The selection moved: a habitat stretch selected becomes the one to cut with. */
+function cutterFollows(id) {
+  const before = cutterId;
+  cutterId = cutterAfter({ cutterId, selectedId: id, secondId, habitat: id != null && inHabitatSession(id) });
+  if (cutterId !== before) cutStatus();
+}
+
+/* Ctrl or Shift on a habitat stretch: picked to be cut. Again, or on the stretch it would be
+   cut with, lets it go. */
 function pickSecond(id) {
   if (!canAnnotate || !inHabitatSession(id)) return;
-  const cutter = selectedId();
-  secondId = id === secondId || id === cutter ? null : id;
-  cutterId = secondId == null ? null : cutter;
+  if (id === secondId || id === selectedId()) {
+    secondId = null;
+  } else {
+    secondId = id;
+    // Picked to be cut, so no longer the one to cut with: a cutter is selected again.
+    if (cutterId === id) cutterId = null;
+  }
   strip.second(secondId);
   redraw();
-  status(secondId == null ? ''
-    : cutter == null ? `${nameOf(secondId)} picked. Select the stretch to cut it with, then right-click ${nameOf(secondId)}.`
-      : `${nameOf(secondId)} picked. Right-click it to cut it with ${nameOf(cutter)}.`);
+  if (secondId == null) status('');
+  else cutStatus();
 }
 
 /* The cut offered on a right-clicked stretch, when it is the one picked second. */
@@ -771,8 +791,8 @@ async function cut({ target, by }) {
     status(answer.split_observation_id
       ? `${nameOf(target)} is cut in two around ${nameOf(by)}.`
       : `${nameOf(target)} now runs ${timeText(clock, answer.start_s)} to ${timeText(clock, answer.end_s)}.`);
+    // The cutter stays remembered, so the next stretch can be cut with it too.
     secondId = null;
-    cutterId = null;
     strip.second(null);
     // Every box and bar read again: a split makes a new stretch.
     await followQuery(showing.filters);
