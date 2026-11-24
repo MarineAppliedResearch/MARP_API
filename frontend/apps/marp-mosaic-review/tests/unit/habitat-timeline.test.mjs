@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   laneOf, colourOf, reviewOf, stripLayout, dragTo, mergesInto, edgeAt,
-  wholeView, zoomView, panView, followView, isWhole, stretchMenu, snapToPlayhead, habitatsAt, cutChoice, grabsPlayhead, HABITAT_BOX
+  wholeView, zoomView, panView, followView, isWhole, stretchMenu, snapToPlayhead, habitatsAt, cutChoice, cutterAfter, grabsPlayhead, HABITAT_BOX
 } from '../../src/model/habitat-timeline.js';
 
 /** A stretch as the video read gives one. */
@@ -157,6 +157,16 @@ test('#360: the selected stretch cuts the one picked second, offered on that one
   assert.equal(cutChoice({ selectedId: 20, secondId: 10, clickedId: 20, rows }), null, 'not on the cutter');
   assert.equal(cutChoice({ selectedId: 20, secondId: null, clickedId: 10, rows }), null, 'nothing picked second');
   assert.equal(cutChoice({ selectedId: 10, secondId: 10, clickedId: 10, rows }), null, 'not with itself');
+});
+
+test('#360: the stretch to cut with is the habitat stretch selected most recently, other than the one picked', () => {
+  const after = (cutterId, selectedId, secondId, habitat = true) => cutterAfter({ cutterId, selectedId, secondId, habitat });
+  assert.equal(after(null, 20, null), 20, 'selected: the cutter');
+  assert.equal(after(null, 20, 10), 20, 'selected after the pick, as the message says to');
+  assert.equal(after(20, null, 10), 20, 'kept when the selection is let go -- the panel closed');
+  assert.equal(after(20, 10, 10), 20, 'not the picked one: right-clicking it selects it');
+  assert.equal(after(20, 30, 10), 30, 'a later selection replaces it');
+  assert.equal(after(20, 5, 10, false), 20, 'never something that is not a habitat stretch');
 });
 
 test('#374: a press near the playhead takes hold of it, unless it is on a stretch end', () => {
