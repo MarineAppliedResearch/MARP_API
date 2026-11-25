@@ -144,4 +144,8 @@ Filled in at G3.
 ## Status
 
 - **Gate:** implementing
-- **Notes:** Design settled 2026-11-24. Starting at step 1.
+- **Notes:** Steps 1-5 built 2026-11-24 (schema, builds, API, Mosaic). Mode id is
+  `datasetReview`, not `dataset`, because `dataset` is the filter's name. Step 6 (pictures
+  for datasets built before this) not started. Tested: `tests/dataset-review-build.test.js`,
+  the build tests it touches, `npm run test:mosaic`, and the app's unit tests. Not yet: the
+  Mosaic's browser tier.
