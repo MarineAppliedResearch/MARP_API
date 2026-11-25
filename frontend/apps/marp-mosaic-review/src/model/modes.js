@@ -89,6 +89,29 @@ export const MODES = {
     alsoStatusKey: 'trainingDisposition',
     alsoDefaultStatus: ['undecided', 'promoted', 'excluded'],
     reasons: []
+  },
+
+  /* #271: a built dataset, one track per tile, reviewed picture by picture. Isaac,
+     2026-11-24: a picture is promoted or flagged with a reason, and only a flagged picture
+     is left out of new datasets. A mark is "this track has flagged pictures"; which ones is
+     on the mark (`model/dataset-review.js`). */
+  datasetReview: {
+    id: 'datasetReview',
+    label: 'Dataset Review',
+    mark: 'Flagged',
+    verb: 'Flag',
+    pending: 'flag',
+    commit: 'Promote Page',
+    sweep: 'Promote page',
+    accepts: 'picture-checked',
+    marks: 'picture-flagged',
+    note: 'Commit promotes every picture on the page you did not flag — a flagged picture is left out of new datasets',
+    statusKey: 'pictureReview',
+    defaultStatus: ['unchecked', 'picture-flagged'],
+    /* The two this review is for first (Isaac, 2026-11-24), then the training list. The
+       server's list is `service/dataset-review.service.js`, and must match. */
+    reasons: ['Box off the animal', 'An animal has no box',
+              'Bounding box too loose', 'Occluded', 'Too small', 'Ambiguous ID', 'Other / unsure']
   }
 };
 
@@ -128,6 +151,8 @@ export function statusDimensions(modeId) {
      mode's rail by adding one entry to `STATUS_DIMENSIONS`. */
   for (const dim of Object.values(STATUS_DIMENSIONS)) {
     if (dims.some((d) => d.key === dim.key)) continue;
+    // A dimension only one mode can answer is not offered to the others (#271).
+    if (dim.onlyIn && !dim.onlyIn.includes(modeId)) continue;
     dims.push({ key: dim.key, defaults: [], own: false });
   }
   /* The label and the value list describe the dimension, not the mode — they were copied
@@ -654,6 +679,21 @@ export const STATUS_DIMENSIONS = {
     noteColumn: 'training_note',
     reviewerColumn: 'training_reviewer_id',
     reviewerInitialsColumn: 'training_reviewer_initials'
+  },
+  /* #271: where a dataset track's pictures stand. Its own words, so its counts cannot be
+     confused with another dimension's. Only a dataset can answer it. */
+  pictureReview: {
+    key: 'pictureReview',
+    column: 'picture_review',
+    neutral: 'unchecked',
+    workflow: 'Dataset review',
+    label: 'Pictures',
+    statuses: [['unchecked', 'Unchecked'], ['picture-flagged', 'Has a flagged picture'], ['picture-checked', 'Checked']],
+    reasonColumn: 'picture_reason',
+    noteColumn: null,
+    reviewerColumn: null,
+    reviewerInitialsColumn: null,
+    onlyIn: ['datasetReview']
   }
 };
 

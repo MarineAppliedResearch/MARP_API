@@ -24,7 +24,7 @@
  * than it was going to be.
  */
 
-import { request, thumbnailUrl, fullFrameUrl } from './transport.js';
+import { request, thumbnailUrl, fullFrameUrl, pictureUrl } from './transport.js';
 import {
   pagesBody, countsBody, commitBody, correctionBody, retryBody, facetsBody, filtersBody,
   idList, videoObservationsBody, videoKeyframesBody, keyframeBoxBody, addKeyframeBody,
@@ -286,6 +286,20 @@ export const MarpApi = {
    * can answer with the route, and `ui/tile.js` never learns that either exists.
    */
   thumbnailUrl: (row) => thumbnailUrl(row && row.observation_id),
+
+  /** Where one of a dataset tile's pictures is (#271): its row, the frame, and `crop` for the
+      tile's zoomed-in view. */
+  pictureUrl: (row, framenum, kind) => pictureUrl(row.dataset_id, row.observation_id, framenum, kind),
+
+  /**
+   * Promote or flag a dataset's pictures (#271). Only what changed is sent: each decision is
+   * `{observation_id, framenum, decision, reason}`.
+   */
+  async reviewPictures({ datasetId, decisions = [], signal } = {}) {
+    return request(`/dataset/${encodeURIComponent(datasetId)}/pictures/review`, {
+      method: 'POST', body: { decisions }, signal
+    });
+  },
 
   /**
    * Free-text search over the taxonomy, as the correction picker needs (A11).

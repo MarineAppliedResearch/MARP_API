@@ -73,7 +73,9 @@ export function filtersBody(filters = {}) {
      it, so choosing one changed nothing. */
   const keys = [
     'project', 'dive', 'line', 'sessionType', 'run', 'picture',
-    'confidence', 'timeOfDay', 'date', 'reviewStatus', 'trainingDisposition'
+    'confidence', 'timeOfDay', 'date', 'reviewStatus', 'trainingDisposition',
+    // #271: where a dataset track's pictures stand; meaningful only with `dataset`.
+    'pictureReview'
   ];
 
   for (const key of keys) {
@@ -83,7 +85,7 @@ export function filtersBody(filters = {}) {
     out[key] = Array.isArray(value) ? [...value] : value;
   }
 
-  for (const key of ['species', 'model', 'session']) {
+  for (const key of ['species', 'model', 'session', 'dataset']) {
     const value = filters[key];
     if (value == null || (Array.isArray(value) && !value.length)) continue;
     const ids = idList(value, `filters.${key}`);

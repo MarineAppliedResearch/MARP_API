@@ -361,19 +361,28 @@ function vocabulary(rows) {
  * @param {Map<string, Array<Object>>} splits - From {@link assignSplits}.
  * @param {Array<Object>} classes - From {@link vocabulary}.
  * @param {?Object} [sampling] - From {@link samplingSettings}; null for every frame.
- * @returns {Map<string, {split: string, frames: Map<number, Array<string>>}>} Keyed by
- * video source; each frame number maps to its label lines.
+ * **A flagged picture is never cut** (#271), sampled or not: see {@link blockedFrames}.
+ * Sampling picks from what is left, so a track keeps its share of frames.
+ *
+ * **`drawn` says which observation each label line is for** (#271), in the same order as
+ * the lines: the archive's label files cannot, and reviewing a dataset one track at a time
+ * needs it.
+ *
+ * @returns {Map<string, {split: string, frames: Map<number, Array<string>>,
+ * drawn: Map<number, Array<{observation_id: number, drawn: Object}>>}>} Keyed by video
+ * source; each frame number maps to its label lines.
  */
 function extractionPlan(splits, classes, sampling = null) {
     const indexOf = new Map(classes.map((c) => [c.species_id, c.class_index]));
     const byVideo = new Map();
+    const blocked = blockedFrames(splits);
 
     /* Every frame picked for any object, per split and video. Splits are settled before
        this, so a picked frame is shared only with objects in the same split. */
     const chosen = new Map();
 
     if (sampling) {
-        const picked = sampleFrames(splits, sampling);
+        const picked = sampleFrames(splits, sampling, blocked);
 
         for (const [split, rows] of splits) {
             for (const row of rows) {
@@ -392,12 +401,13 @@ function extractionPlan(splits, classes, sampling = null) {
             const key = `${split}::${row.video_source}`;
 
             if (!byVideo.has(key)) {
-                byVideo.set(key, { split, video: row.video_source, frames: new Map() });
+                byVideo.set(key, { split, video: row.video_source, frames: new Map(), drawn: new Map() });
             }
 
             const plan = byVideo.get(key);
             const boxes = row.keyframes || [];
             const index = indexOf.get(Number(row.species_id));
+            const skip = blocked.get(row.video_source);
 
             const first = Number(row.first_framenum);
             const last = Number(row.last_framenum);
@@ -409,16 +419,30 @@ function extractionPlan(splits, classes, sampling = null) {
                 : Array.from({ length: last - first + 1 }, (_, i) => first + i);
 
             for (const frame of frames) {
+                if (skip && skip.has(frame)) continue;
+
                 const box = boxAt(boxes, frame);
 
                 if (!box) continue;
 
-                if (!plan.frames.has(frame)) plan.frames.set(frame, []);
+                if (!plan.frames.has(frame)) {
+                    plan.frames.set(frame, []);
+                    plan.drawn.set(frame, []);
+                }
+
+                const rounded = {
+                    cx: Number(box.cx.toFixed(6)), cy: Number(box.cy.toFixed(6)),
+                    w: Number(box.w.toFixed(6)), h: Number(box.h.toFixed(6)),
+                };
 
                 plan.frames.get(frame).push(
                     `${index} ${box.cx.toFixed(6)} ${box.cy.toFixed(6)} `
                     + `${box.w.toFixed(6)} ${box.h.toFixed(6)}`
                 );
+                plan.drawn.get(frame).push({
+                    observation_id: Number(row.observation_id),
+                    drawn: { box: rounded, class_index: index },
+                });
             }
         }
     }
@@ -815,18 +839,55 @@ function objectRandom(seed, id) {
  * Usually every frame from first to last; a frame whose box falls wholly outside the
  * picture has nothing to label, and is not a frame to pick.
  *
+ * **A flagged picture is not a frame to pick either** (#271): see {@link blockedFrames}.
+ *
  * @param {Object} row - A selected observation.
+ * @param {?Map<string, Set<number>>} [blocked] - From {@link blockedFrames}.
  * @returns {Array<number>} Ascending.
  */
-function framesWithBox(row) {
+function framesWithBox(row, blocked = null) {
     const boxes = row.keyframes || [];
     const out = [];
+    const skip = (blocked && blocked.get(row.video_source)) || null;
 
     for (let frame = Number(row.first_framenum); frame <= Number(row.last_framenum); frame++) {
+        if (skip && skip.has(frame)) continue;
         if (boxAt(boxes, frame)) out.push(frame);
     }
 
     return out;
+}
+
+/**
+ * The frames of each video no build may cut (#271): a picture of a selected observation that
+ * a reviewer flagged, and a picture showing an animal of the dataset's species that the build
+ * did not select (`unboxed_frames`), which would be in it with no box.
+ *
+ * Isaac, 2026-11-24: a flagged picture is that one frame of that track, and only it is left
+ * out; the rest of the track is still used. **Blocked for the whole video, not only for the
+ * observation flagged**, because the picture is shared: another animal's track reaching that
+ * frame would put it back, carrying the flagged box or -- without it -- teaching the model the
+ * flagged animal is background.
+ *
+ * @param {Map<string, Array<Object>>} splits - Split name to its observations, each with
+ * `flagged_frames` when it has any.
+ * @returns {Map<string, Set<number>>} Video source to the frames left out.
+ */
+function blockedFrames(splits) {
+    const blocked = new Map();
+
+    for (const rows of splits.values()) {
+        for (const row of rows) {
+            const frames = [...(row.flagged_frames || []), ...(row.unboxed_frames || [])];
+
+            for (const frame of frames) {
+                if (!blocked.has(row.video_source)) blocked.set(row.video_source, new Set());
+                blocked.get(row.video_source).add(Number(frame));
+            }
+        }
+    }
+
+    return blocked;
 }
 
 /**
@@ -921,13 +982,14 @@ function quotas(splits, available, sampling) {
  * @param {Map<string, Array<Object>>} splits - Split name to its observations.
  * @param {{frames_per_object: number, balance_classes: boolean, seed: number}} sampling -
  * From {@link samplingSettings}.
+ * @param {Map<string, Set<number>>} [blocked] - From {@link blockedFrames}: never picked.
  * @returns {Map<number, Array<number>>} Observation id to its picked frames, ascending.
  */
-function sampleFrames(splits, sampling) {
+function sampleFrames(splits, sampling, blocked = blockedFrames(splits)) {
     const available = new Map();
 
     for (const rows of splits.values()) {
-        for (const row of rows) available.set(Number(row.observation_id), framesWithBox(row));
+        for (const row of rows) available.set(Number(row.observation_id), framesWithBox(row, blocked));
     }
 
     const take = quotas(splits, available, sampling);
@@ -1012,6 +1074,7 @@ module.exports = {
     CLASS_SLUG_LENGTH,
     assignFromSubsets,
     assignSplits,
+    blockedFrames,
     boxAt,
     classFolderName,
     classesJson,

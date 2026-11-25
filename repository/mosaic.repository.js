@@ -44,6 +44,7 @@ const db = require('../model');
 const { SESSION_TYPE_TO_SPECIES_LIST } = require('../db/species-lists');
 const { HABITAT_SESSION_TYPE } = require('../db/habitat-keyframes');
 const thumbnailRepository = require('./observation-thumbnail.repository');
+const pictureRepository = require('./dataset-picture.repository');
 
 /**
  * The cap on one page-set request: 12 pages or 600 rows, whichever binds first.
@@ -589,6 +590,62 @@ function statusPredicate(key, selected, bind) {
                            AND rcf.decision = ANY(${complement}::varchar[]))`;
 }
 
+/** What `filters.pictureReview` may ask about a track's pictures in a dataset (#271). */
+/* Its own words rather than `flagged` and `reviewed`: the Mosaic reads status counts by value
+   alone, so a value shared with another dimension would show that dimension's count. */
+const PICTURE_REVIEW_STATES = ['unchecked', 'picture-flagged', 'picture-checked'];
+
+/**
+ * A built dataset's tracks (#271): the observations it holds pictures of, optionally only
+ * in some splits, and optionally by the state of those pictures' review.
+ *
+ * - `unchecked`: some picture of it in the dataset has no decision yet;
+ * - `picture-flagged`: some picture of it in the dataset is flagged;
+ * - `picture-checked`: every one of them is decided, and none is flagged.
+ *
+ * @param {Object} filters - The request's filters.
+ * @param {Object} bind - From `binder()`.
+ * @param {Array<string>} where - Predicates so far; appended to.
+ * @throws {MosaicRequestError} If a value cannot be served.
+ */
+function datasetPredicates(filters, bind, where) {
+    const datasets = setValue(filters.dataset, 'dataset');
+
+    // A split or a review state means nothing without a dataset, so alone they narrow nothing.
+    if (!datasets) return;
+
+    if (datasets.some((value) => !Number.isInteger(value))) {
+        throw new MosaicRequestError(`filters.dataset takes integer ids, not ${JSON.stringify(datasets[0])}`);
+    }
+
+    const splits = setValue(filters.datasetSplit, 'datasetSplit');
+    const own = `dp.observation_id = o.observation_id AND dp.dataset_id = ANY(${bind.add(datasets)}::int[])`
+        + (splits ? ` AND dp.split = ANY(${bind.add(splits)}::varchar[])` : '');
+    const pictures = (extra) => `EXISTS (SELECT 1 FROM dataset_pictures dp
+                 LEFT JOIN picture_review_current pr ON pr.observation_id = dp.observation_id AND pr.framenum = dp.framenum
+                WHERE ${own}${extra})`;
+
+    where.push(pictures(''));
+
+    const states = setValue(filters.pictureReview, 'pictureReview');
+
+    if (states) {
+        const unknown = states.find((value) => !PICTURE_REVIEW_STATES.includes(value));
+
+        if (unknown !== undefined) {
+            throw new MosaicRequestError(`filters.pictureReview takes ${PICTURE_REVIEW_STATES.join(', ')}, not ${JSON.stringify(unknown)}`);
+        }
+
+        const either = states.map((state) => ({
+            unchecked: pictures(' AND pr.decision IS NULL'),
+            'picture-flagged': pictures(" AND pr.decision = 'flagged'"),
+            'picture-checked': `NOT ${pictures(" AND (pr.decision IS NULL OR pr.decision = 'flagged')")}`,
+        })[state]);
+
+        where.push(`(${either.join(' OR ')})`);
+    }
+}
+
 /**
  * Every predicate the request asks for, as SQL fragments.
  *
@@ -631,6 +688,8 @@ function predicates(filters, bind, { status = true } = {}) {
     // were made. The client still sends a name; that rename is Phase 8's.
     set('species', 'o.species_id', 'int[]');
     set('model', 'o.ml_model_id', 'int[]');
+
+    datasetPredicates(filters, bind, where);
 
     // #287: only tiles whose picture is in a given state -- "only images actually available".
     const pictures = setValue(filters.picture, 'picture');
@@ -1036,6 +1095,17 @@ const FACET_DIMENSIONS = {
     },
     // #287: where each tile's picture stands. The client words each value.
     picture: { value: PICTURE_STATE, label: PICTURE_STATE },
+    // #271: the built datasets holding pictures of these observations, newest first.
+    dataset: {
+        value: 'dof.dataset_id',
+        label: "min(dsf.name) || ' · ' || coalesce(min(dsf.task), 'detection')",
+        aggregateLabel: true,
+        order: 'dof.dataset_id DESC',
+        joins: `
+  JOIN dataset_observations dof ON dof.observation_id = o.observation_id
+  JOIN datasets dsf ON dsf.id = dof.dataset_id`
+            + ' AND EXISTS (SELECT 1 FROM dataset_pictures dpx WHERE dpx.dataset_id = dsf.id)',
+    },
     species: { value: 'o.species_id', label: 'sp.comname', list: 'sp.species_list' },
     model: { value: 'o.ml_model_id', label: 'm.name', joins: '\n  LEFT JOIN ml_models m ON m.id = o.ml_model_id' },
     // #336. Named by what it was given, its model, when, and how many videos it covers,
@@ -1321,7 +1391,11 @@ SELECT o.observation_id,
        s.line,
        k.first_framenum,
        k.last_framenum,
-       k.keyframes
+       k.keyframes,
+       -- Pictures a reviewer flagged, which no build cuts (#271).
+       ARRAY(SELECT pr.framenum FROM picture_review_current pr
+              WHERE pr.observation_id = o.observation_id AND pr.decision = 'flagged'
+              ORDER BY pr.framenum) AS flagged_frames
   FROM observations o
   LEFT JOIN sessions s ON s.session_id = o.session_id
   LEFT JOIN projects p ON p.project_id = o.project_id
@@ -1355,6 +1429,38 @@ SELECT o.observation_id,
  * @returns {Promise<Array<Object>>} The rows, grouped by video and ordered within it.
  * @throws {MosaicRequestError} If a filter cannot be served.
  */
+/**
+ * The annotations of some species in some videos that a build did not select (#271): every
+ * one of them is an animal of the dataset's species, and a picture showing one without a box
+ * teaches the model it is background.
+ *
+ * @async
+ * @param {Array<string>} videos - The videos the build cuts from.
+ * @param {Array<number>} speciesIds - The dataset's species.
+ * @param {Array<number>} selectedIds - What the build did select.
+ * @returns {Promise<Array<Object>>} `{observation_id, video_source, first_framenum,
+ *   last_framenum, keyframes}`, shaped as the selection's rows are.
+ */
+async function unselectedForBuild(videos, speciesIds, selectedIds) {
+    if (!videos.length || !speciesIds.length) return [];
+
+    return db.sequelize.query(
+        `SELECT o.observation_id, o.video_source,
+                min(kf.framenum)::int AS first_framenum,
+                max(kf.framenum)::int AS last_framenum,
+                json_agg(json_build_object('framenum', kf.framenum, 'x', kf.x, 'y', kf.y,
+                                           'width', kf.width, 'height', kf.height)
+                         ORDER BY kf.framenum) AS keyframes
+           FROM observations o
+           JOIN keyframes kf ON kf.observation_id = o.observation_id
+          WHERE o.video_source = ANY($1::varchar[])
+            AND o.species_id = ANY($2::int[])
+            AND NOT (o.observation_id = ANY($3::int[]))
+          GROUP BY o.observation_id, o.video_source`,
+        { bind: [videos, speciesIds, selectedIds], type: db.Sequelize.QueryTypes.SELECT }
+    );
+}
+
 async function selectForBuild(request = {}) {
     const { sql, bind } = buildSelectionQuery(request);
 
@@ -1376,6 +1482,52 @@ function readPageSize(value) {
     }
 
     return pageSize;
+}
+
+/**
+ * Give each row the pictures one dataset took of it (#271), when the question is about
+ * exactly one dataset: `{framenum, split, drawn, has_picture, decision, reason, note}`, in
+ * frame order. The client knows the address of a picture; the row only says which.
+ *
+ * @async
+ * @param {?Object} filters - The request's filters.
+ * @param {Array<Object>} rows - The rows being served; changed in place.
+ * @returns {Promise<void>}
+ */
+async function attachDatasetPictures(filters, rows) {
+    const datasets = filters && Array.isArray(filters.dataset) ? filters.dataset : [];
+
+    if (datasets.length !== 1 || !rows.length) return;
+
+    const byObservation = new Map(rows.map((row) => [Number(row.observation_id), []]));
+
+    for (const picture of await pictureRepository.picturesOf(datasets[0], [...byObservation.keys()])) {
+        byObservation.get(Number(picture.observation_id)).push({
+            framenum: picture.framenum,
+            split: picture.split,
+            drawn: picture.drawn,
+            has_picture: Boolean(picture.archive_member),
+            has_crop: Boolean(picture.crop),
+            crop_rect: picture.crop_rect || null,
+            // The other boxes the dataset drew on the same picture (#271).
+            others: picture.others || [],
+            decision: picture.decision || null,
+            reason: picture.reason || null,
+            note: picture.note || null,
+        });
+    }
+
+    for (const row of rows) {
+        const pictures = byObservation.get(Number(row.observation_id));
+        const flagged = pictures.find((p) => p.decision === 'flagged');
+
+        row.dataset_id = datasets[0];
+        row.pictures = pictures;
+        // The track's state, in `filters.pictureReview`'s words; null is unchecked.
+        row.picture_review = flagged ? 'picture-flagged'
+            : pictures.length && pictures.every((p) => p.decision) ? 'picture-checked' : null;
+        row.picture_reason = flagged ? flagged.reason : null;
+    }
 }
 
 /**
@@ -1456,6 +1608,8 @@ async function queryPages(request = {}) {
         [...byPage.values()].flat().map((row) => row.observation_id)
     );
 
+    await attachDatasetPictures(request.filters, [...byPage.values()].flat());
+
     return {
         pageSize,
         ...(includeTotal
@@ -1513,6 +1667,7 @@ module.exports = {
     frames,
     queryPages,
     selectForBuild,
+    unselectedForBuild,
     // For the habitat dataset build (#287), which chooses sessions as tiles are filtered.
     binder,
     predicates,

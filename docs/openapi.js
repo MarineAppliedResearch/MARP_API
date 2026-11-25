@@ -3263,6 +3263,28 @@ const buildOpenApiSpec = () => {
                             full_frame_width: { type: 'integer', nullable: true, description: 'Native stored frame width in pixels.' },
                             full_frame_height: { type: 'integer', nullable: true, description: 'Native stored frame height in pixels.' },
                             full_frame_box: { type: 'object', nullable: true, description: 'Normalised observation bounding box drawn by default in the full-frame viewer.' },
+                            dataset_id: { type: 'integer', description: '#271. **Only when the question names exactly one dataset** (`filters.dataset`): the dataset whose pictures follow.' },
+                            pictures: {
+                                type: 'array',
+                                description: '#271. **Only when the question names exactly one dataset.** The pictures that dataset took of this track, in frame order, each with what the build drew on it and its current review. The picture itself is at /api/v2/dataset/{dataset_id}/pictures/{observation_id}/{framenum}.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        framenum: { type: 'integer' },
+                                        split: { type: 'string' },
+                                        drawn: { type: 'object', description: '`{box: {cx, cy, w, h}, class_index}` for detection, `{labels: [...]}` for habitat.' },
+                                        has_picture: { type: 'boolean' },
+                                        has_crop: { type: 'boolean', description: 'Whether there is a crop zoomed in on this track, at ?kind=crop.' },
+                                        crop_rect: { type: 'object', nullable: true, description: 'Where the crop is in the picture, as fractions of it.' },
+                                        others: { type: 'array', description: 'Every other box the dataset drew on this picture: `{observation_id, drawn}`.', items: { type: 'object' } },
+                                        decision: { type: 'string', nullable: true, enum: ['promoted', 'flagged', null] },
+                                        reason: { type: 'string', nullable: true },
+                                        note: { type: 'string', nullable: true },
+                                    },
+                                },
+                            },
+                            picture_review: { type: 'string', nullable: true, enum: ['picture-flagged', 'picture-checked', null], description: '#271. **Only with one dataset.** The track: a picture flagged, or every one decided and none flagged. Null is unchecked.' },
+                            picture_reason: { type: 'string', nullable: true, description: '#271. **Only with one dataset.** A flagged picture\'s reason.' },
                         },
                     },
                     ThumbnailExtractorStatus: {

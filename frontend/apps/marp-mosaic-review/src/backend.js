@@ -34,6 +34,7 @@ const METHODS = [
   'commitPage', 'setSpecies',
   'retryThumbnails', 'requestThumbnailReplacement', 'thumbnailUrl',
   'requestFullFrame', 'fullFrameUrl',
+  'pictureUrl', 'reviewPictures',
   'searchSpecies'
 ];
 

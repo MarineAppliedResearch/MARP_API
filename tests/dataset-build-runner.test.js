@@ -198,6 +198,8 @@ afterAll(async () => {
         });
     }
 
+    fixture.removePictures(made.datasetIds);
+
     if (made.datasetIds.length) {
         await db.sequelize.query('DELETE FROM datasets WHERE id IN (:ids)', {
             replacements: { ids: made.datasetIds },
@@ -571,7 +573,8 @@ describe('a dataset build, end to end with the extractor stubbed (#268)', () => 
 
         expect(attempt.state).toBe('succeeded');
         expect(attempt.progress_unit).toBe('frames');
-        expect(attempt.progress_phase).toBe('packaging');
+        // The last thing a build does now is save the pictures it is reviewed from (#271).
+        expect(attempt.progress_phase).toBe('saving pictures');
         expect(Number(attempt.progress_done)).toBe(9);
         expect(Number(attempt.progress_total)).toBe(9);
     });

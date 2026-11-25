@@ -478,6 +478,9 @@ async function frame(datasetId, index, limit = DEFAULT_LIMIT) {
 module.exports = {
     preview,
     frame,
+    // #271: reading one named picture out of an archive, for reviewing a dataset.
+    members,
+    read,
     splitImages,
     splitClassImages,
     DEFAULT_LIMIT,

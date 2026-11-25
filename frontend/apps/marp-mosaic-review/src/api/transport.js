@@ -136,3 +136,8 @@ export const thumbnailUrl = (observationId) =>
 /** Native video frame previously requested for review. */
 export const fullFrameUrl = (observationId) =>
   `${BASE}/observations/${observationId}/full-frame`;
+
+/** One of a dataset's pictures by its track and frame (#271): the whole picture, or `crop`,
+    zoomed in on that track's box. */
+export const pictureUrl = (datasetId, observationId, framenum, kind = 'picture') =>
+  `${BASE}/dataset/${datasetId}/pictures/${observationId}/${framenum}${kind === 'crop' ? '?kind=crop' : ''}`;

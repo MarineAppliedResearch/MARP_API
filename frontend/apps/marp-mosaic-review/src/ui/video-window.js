@@ -36,8 +36,9 @@ function videoChannel() {
  * the Mosaic's query matches. `filters` is that query, as the grid's own page request
  * sends it.
  */
-export function openVideoWindow(observationId, filters) {
-  const request = { type: 'show', observationId, filters: filters || {} };
+export function openVideoWindow(observationId, filters, frame = null) {
+  // `frame`: open at one frame of the video rather than the observation's moment (#271).
+  const request = { type: 'show', observationId, filters: filters || {}, ...(frame != null ? { frame } : {}) };
   toldQuery = JSON.stringify(request.filters);
   const existing = window.open('', VIDEO_WINDOW);
 
@@ -81,15 +82,15 @@ export function openVideoWindow(observationId, filters) {
  *
  * @param {number} id - The observation.
  */
-export function showInVideoWindow(id) {
+export function showInVideoWindow(id, frame = null) {
   const filters = queryFilters(state.mode, state.filters);
-  if (openVideoWindow(id, filters)) {
+  if (openVideoWindow(id, filters, frame)) {
     if (state.videoBlocked) actions.dismissVideoBlocked();
     actions.openVideo(id);
     return;
   }
   const url = new URL(PAGE, window.location.href);
-  url.hash = encodeURIComponent(JSON.stringify({ type: 'show', observationId: id, filters }));
+  url.hash = encodeURIComponent(JSON.stringify({ type: 'show', observationId: id, filters, ...(frame != null ? { frame } : {}) }));
   actions.videoBlocked(id, url.toString());
 }
 

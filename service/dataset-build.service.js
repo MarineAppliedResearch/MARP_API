@@ -40,6 +40,7 @@ const logger = require('../logger/api.logger');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const mosaicRepository = require('../repository/mosaic.repository');
 const buildRepository = require('../repository/dataset-build.repository');
+const pictureRepository = require('../repository/dataset-picture.repository');
 const extraction = require('./thumbnail-extraction.service');
 /* **The same resolved directory the extractor writes to**, never a path computed
    here. A corpus and its thumbnails are one unit -- a worktree reading a shared
@@ -47,6 +48,8 @@ const extraction = require('./thumbnail-extraction.service');
    is the one place that decides which directory this process is looking at. */
 const { STORAGE_DIR: THUMBNAIL_DIR } = require('../config/thumbnails');
 const plan = require('./dataset-build-plan');
+const geometry = require('./thumbnail-geometry');
+const { HABITAT_BOX } = require('../db/habitat-keyframes');
 const habitatSelect = require('./habitat-dataset-select');
 const { SUBSTRATES } = require('./habitat-dataset-plan');
 
@@ -539,11 +542,51 @@ async function cutPass(streamUrl, batch, fps, batchDir, image, video) {
     );
 }
 
+/**
+ * A detection picture's name in the archive, without its extension.
+ *
+ * @param {string} video - The video it was cut from.
+ * @param {number} frame - The frame.
+ * @returns {string}
+ */
+function stemFor(video, frame) {
+    return `${path.parse(video).name}_${String(frame).padStart(8, '0')}`;
+}
+
+/**
+ * Every picture of a detection build that is in staging, with whom it is of (#271).
+ *
+ * @param {Map<string, Object>} videos - From `plan.extractionPlan`.
+ * @param {string} staging - The build's staging directory.
+ * @param {Object} image - From {@link imageSettings}.
+ * @returns {Array<Object>} For {@link savePictures}.
+ */
+function detectionPictures(videos, staging, image) {
+    const out = [];
+
+    for (const entry of videos.values()) {
+        const images = path.join(staging, directoryFor(entry.split), 'images');
+
+        for (const [frame, owners] of entry.drawn || []) {
+            const source = path.join(images, `${stemFor(entry.video, frame)}.${image.extension}`);
+
+            if (fs.existsSync(source)) {
+                out.push({
+                    source, member: path.posix.join(directoryFor(entry.split), 'images', path.basename(source)),
+                    split: entry.split, video: entry.video, framenum: frame, owners,
+                });
+            }
+        }
+    }
+
+    return out;
+}
+
 async function cutVideo(entry, staging, image = imageSettings(), onBatch = null) {
     const directory = directoryFor(entry.split);
     const images = path.join(staging, directory, 'images');
     const labels = path.join(staging, directory, 'labels');
-    const stemOf = (frame) => `${path.parse(entry.video).name}_${String(frame).padStart(8, '0')}`;
+    const stemOf = (frame) => stemFor(entry.video, frame);
 
     fs.mkdirSync(images, { recursive: true });
     fs.mkdirSync(labels, { recursive: true });
@@ -677,6 +720,147 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
         return { written, missing, perClass };
     } finally {
         fs.rmSync(cut, { recursive: true, force: true });
+    }
+}
+
+/**
+ * How wide a track's crop is: a Mosaic tile, zoomed in on that track's box (#271). The crop
+ * is the one copy a build keeps; the whole picture is read out of the archive when it is
+ * opened, so nothing full-size is stored twice (Isaac, 2026-11-24).
+ */
+const CROP_WIDTH = 256;
+
+/** Pictures cropped at once, so a big build is neither one at a time nor all at once. */
+const PICTURE_CONCURRENCY = 8;
+
+/**
+ * The box a track's crop is cut around: its own box, or for a habitat picture the habitat
+ * crop the model is trained on. Centre-origin and normalised, as `cropRectangle` takes.
+ *
+ * @param {Object} drawn - What the build drew for this observation on the picture.
+ * @returns {{x: number, y: number, width: number, height: number}}
+ */
+function cropBoxOf(drawn) {
+    const box = drawn && drawn.box;
+
+    return box ? { x: box.cx, y: box.cy, width: box.w, height: box.h } : { ...HABITAT_BOX };
+}
+
+/**
+ * Record every picture a build cut -- where it is in the archive, which observation each is
+ * of, and what was drawn on it -- and save for each track a small crop zoomed in on its box
+ * (#271), so the dataset can be reviewed in the Mosaic.
+ *
+ * **Never fails the build.** A crop that cannot be made is recorded without one, and
+ * anything else that goes wrong is logged and the build carries on: the dataset is what was
+ * asked for, and these are for looking at it. That is why the caller wraps this as well.
+ *
+ * @async
+ * @param {Object} options - What to save.
+ * @param {number} options.datasetId - The dataset being built.
+ * @param {Array<Object>} options.pictures - `{source, member, split, video, framenum, owners}`:
+ *   `source` is the picture in staging, `member` its name in the archive, and `owners`
+ *   `[{observation_id, drawn}]`.
+ * @param {Function} [options.onProgress] - Called with the count done so far.
+ * @returns {Promise<{saved: number, failed: number}>} Crops made, and not made.
+ */
+async function savePictures({ datasetId, pictures, onProgress = null }) {
+    const sharp = require('sharp');
+    let saved = 0;
+    let failed = 0;
+    let done = 0;
+
+    // One picture's crops. Each is its own try, so one bad box costs that tile its zoom only.
+    const one = async (picture) => {
+        const crops = new Map();
+        let size;
+
+        try {
+            size = await sharp(picture.source).metadata();
+        } catch (error) {
+            failed += picture.owners.length;
+            logger.warn(`Dataset ${datasetId}: ${picture.source} could not be read. ${error && error.message}`);
+
+            return crops;
+        }
+
+        const folder = path.posix.join('pictures', String(datasetId), picture.split);
+
+        fs.mkdirSync(path.join(ARCHIVE_DIRECTORY, folder), { recursive: true });
+
+        for (const owner of picture.owners) {
+            try {
+                const { clamped } = geometry.cropRectangle(cropBoxOf(owner.drawn), size.width, size.height);
+                const relative = path.posix.join(folder, `${path.parse(picture.source).name}_${owner.observation_id}.jpg`);
+
+                await sharp(picture.source).extract(clamped)
+                    .resize({ width: CROP_WIDTH, height: CROP_WIDTH, fit: 'fill' })
+                    .jpeg({ quality: 80 }).toFile(path.join(ARCHIVE_DIRECTORY, relative));
+                crops.set(owner.observation_id, {
+                    crop: relative,
+                    crop_rect: {
+                        left: clamped.left / size.width, top: clamped.top / size.height,
+                        width: clamped.width / size.width, height: clamped.height / size.height,
+                    },
+                });
+                saved += 1;
+            } catch (error) {
+                failed += 1;
+                logger.warn(`Dataset ${datasetId}: no crop of ${picture.source} for ${owner.observation_id}. ${error && error.message}`);
+            }
+        }
+
+        return crops;
+    };
+
+    for (let at = 0; at < pictures.length; at += PICTURE_CONCURRENCY) {
+        const batch = pictures.slice(at, at + PICTURE_CONCURRENCY);
+        const results = await Promise.all(batch.map(one));
+
+        await pictureRepository.recordPictures(batch.flatMap((picture, i) => picture.owners.map((owner) => {
+            const crop = results[i].get(owner.observation_id) || { crop: null, crop_rect: null };
+
+            return {
+                dataset_id: datasetId,
+                observation_id: owner.observation_id,
+                video_source: picture.video,
+                framenum: picture.framenum,
+                split: picture.split,
+                drawn: owner.drawn,
+                archive_member: picture.member,
+                crop: crop.crop,
+                crop_rect: crop.crop_rect,
+            };
+        })));
+
+        done += batch.length;
+        if (onProgress) await onProgress(done);
+    }
+
+    return { saved, failed };
+}
+
+/**
+ * Save a build's pictures without ever letting that fail the build (#271).
+ *
+ * @async
+ * @param {Object} options - As {@link savePictures}, plus `attemptId` for progress.
+ * @returns {Promise<void>}
+ */
+async function savePicturesQuietly({ datasetId, attemptId, pictures }) {
+    try {
+        const total = pictures.length;
+        const result = await savePictures({
+            datasetId,
+            pictures,
+            onProgress: (done) => buildRepository.reportProgress(attemptId, {
+                phase: 'saving pictures', done, total, unit: 'frames',
+            }),
+        });
+
+        logger.info(`Dataset ${datasetId}: ${result.saved} pictures saved for review, ${result.failed} not.`);
+    } catch (error) {
+        logger.warn(`Dataset ${datasetId}: pictures for review not saved. ${error && error.message}`);
     }
 }
 
@@ -1039,6 +1223,7 @@ async function runHabitatBuild({ job, attempt, datasetId, staging, image, spec }
     const kept = [];
     const rejected = [];
     let missing = 0;
+    let flaggedOut = 0;
     let at = 0;
 
     const stop = async (where) => {
@@ -1066,7 +1251,12 @@ async function runHabitatBuild({ job, attempt, datasetId, staging, image, spec }
             const split = path.join(staging, frame.split, 'images');
             fs.mkdirSync(split, { recursive: true });
             const number = Math.round((frame.positionMs * opened.probe.fps) / 1000);
-            const item = { frame, number, file: path.join(split, `${stemOf(frame, number)}.${image.extension}`) };
+            // A picture a reviewer flagged is never cut (#271).
+            if (frame.flagged && frame.flagged.has(number)) {
+                flaggedOut += 1;
+                continue;
+            }
+            const item ={ frame, number, file: path.join(split, `${stemOf(frame, number)}.${image.extension}`) };
             if (fs.existsSync(item.file)) kept.push(item);
             else pending.push(item);
         }
@@ -1137,10 +1327,27 @@ async function runHabitatBuild({ job, attempt, datasetId, staging, image, spec }
     }
     fs.writeFileSync(path.join(staging, 'classes.json'), `${JSON.stringify(used)}\n`, 'utf8');
     fs.writeFileSync(path.join(staging, 'habitat-report.json'), `${JSON.stringify({
-        frames: kept.length, rejected, drifting_sessions: drifting, not_cut: missing,
+        frames: kept.length, rejected, drifting_sessions: drifting, not_cut: missing, flagged_out: flaggedOut,
     }, null, 2)}\n`, 'utf8');
 
     const archive = packageArchive(staging);
+
+    // Each picture is every covering stretch's, labelled as the archive labels it (#271).
+    await savePicturesQuietly({
+        datasetId,
+        attemptId: attempt.id,
+        pictures: kept.map(({ frame, number, file }) => ({
+            source: file,
+            member: path.posix.join(frame.split, 'images', path.basename(file)),
+            split: frame.split,
+            video: frame.video,
+            framenum: number,
+            owners: (frame.covering || []).map((id) => ({
+                observation_id: id,
+                drawn: { labels: used.filter((name, k) => frame.labels[columns[k]]) },
+            })),
+        })),
+    });
 
     await buildRepository.recordBuild({
         jobId: job.id,
@@ -1211,7 +1418,49 @@ async function selectSplits(spec) {
         );
     }
 
+    await markUnboxed(rows);
+
     return { rows, splits };
+}
+
+/**
+ * Mark the pictures no build may take because an animal of the dataset's species is in them
+ * without a box (#271).
+ *
+ * Isaac, 2026-11-24: "if something is not reviewed, it shouldn't end up in the data set at
+ * all." A build takes only the tracks it selected -- promoted ones -- but a picture can also
+ * show a track it did not: one nobody has reviewed yet, or one left out for another reason.
+ * That animal would be in the picture with no box, and YOLO learns it as background. So any
+ * frame another annotation of the dataset's species covers is left out, for every animal in
+ * it. **Whatever the other annotation's own state**: an animal excluded for a loose box is
+ * still an animal on the picture with no box.
+ *
+ * @async
+ * @param {Array<Object>} rows - The selected rows; each in a video with such frames gets
+ *   `unboxed_frames`, which `plan.blockedFrames` reads.
+ * @returns {Promise<void>}
+ */
+async function markUnboxed(rows) {
+    if (!rows.length) return;
+
+    const videos = [...new Set(rows.map((row) => row.video_source))];
+    const species = [...new Set(rows.map((row) => Number(row.species_id)))];
+    const others = await mosaicRepository.unselectedForBuild(
+        videos, species, rows.map((row) => Number(row.observation_id))
+    );
+    const byVideo = new Map();
+
+    for (const other of others) {
+        if (!byVideo.has(other.video_source)) byVideo.set(other.video_source, new Set());
+        for (const frame of plan.framesWithBox(other)) byVideo.get(other.video_source).add(frame);
+    }
+
+    // One array per video, shared by its rows: the blocking is per video anyway.
+    const frames = new Map([...byVideo].map(([video, set]) => [video, [...set]]));
+
+    for (const row of rows) {
+        if (frames.has(row.video_source)) row.unboxed_frames = frames.get(row.video_source);
+    }
 }
 
 /**
@@ -1458,6 +1707,9 @@ async function runOne() {
         await buildRepository.reportProgress(attempt.id, { phase: 'packaging', done, total, unit: 'frames' });
 
         const archive = packageArchive(staging);
+
+        // Before the dataset is ready, so a ready dataset can be reviewed straight away.
+        await savePicturesQuietly({ datasetId, attemptId: attempt.id, pictures: detectionPictures(videos, staging, image) });
 
         const members = [];
 

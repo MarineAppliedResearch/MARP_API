@@ -423,7 +423,8 @@ async function show(request) {
     video,
     observations: answer.observations,
     rows,
-    moment: answer.opened.moment_s,
+    // A picture of a dataset opens at its own frame (#271), to fix the box there.
+    moment: Number.isInteger(request.frame) && video.frame_rate ? request.frame / video.frame_rate : answer.opened.moment_s,
     selectOpened: true,
     sessions: answer.sessions || [],
     openedSession: answer.opened.session_id,

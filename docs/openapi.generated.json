@@ -4981,6 +4981,80 @@
             "type": "object",
             "nullable": true,
             "description": "Normalised observation bounding box drawn by default in the full-frame viewer."
+          },
+          "dataset_id": {
+            "type": "integer",
+            "description": "#271. **Only when the question names exactly one dataset** (`filters.dataset`): the dataset whose pictures follow."
+          },
+          "pictures": {
+            "type": "array",
+            "description": "#271. **Only when the question names exactly one dataset.** The pictures that dataset took of this track, in frame order, each with what the build drew on it and its current review. The picture itself is at /api/v2/dataset/{dataset_id}/pictures/{observation_id}/{framenum}.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "framenum": {
+                  "type": "integer"
+                },
+                "split": {
+                  "type": "string"
+                },
+                "drawn": {
+                  "type": "object",
+                  "description": "`{box: {cx, cy, w, h}, class_index}` for detection, `{labels: [...]}` for habitat."
+                },
+                "has_picture": {
+                  "type": "boolean"
+                },
+                "has_crop": {
+                  "type": "boolean",
+                  "description": "Whether there is a crop zoomed in on this track, at ?kind=crop."
+                },
+                "crop_rect": {
+                  "type": "object",
+                  "nullable": true,
+                  "description": "Where the crop is in the picture, as fractions of it."
+                },
+                "others": {
+                  "type": "array",
+                  "description": "Every other box the dataset drew on this picture: `{observation_id, drawn}`.",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "decision": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": [
+                    "promoted",
+                    "flagged",
+                    null
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "note": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "picture_review": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "picture-flagged",
+              "picture-checked",
+              null
+            ],
+            "description": "#271. **Only with one dataset.** The track: a picture flagged, or every one decided and none flagged. Null is unchecked."
+          },
+          "picture_reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "#271. **Only with one dataset.** A flagged picture's reason."
           }
         }
       },
@@ -11846,6 +11920,189 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/dataset/{id}/pictures/{observationId}/{framenum}": {
+      "get": {
+        "summary": "One of a dataset's pictures, for reviewing it",
+        "description": "One picture a build cut for one observation (#271): what the Mosaic shows when a dataset is reviewed. Addressed by observation and frame, never by filename. **The whole picture is read straight out of the dataset's archive**, which is the only full-size copy; `?kind=crop` is the small copy the build saved, zoomed in on this observation's box, for its tile. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The dataset."
+          },
+          {
+            "in": "path",
+            "name": "observationId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The observation."
+          },
+          {
+            "in": "path",
+            "name": "framenum",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The frame."
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "picture",
+                "crop"
+              ],
+              "default": "picture"
+            },
+            "description": "`picture`, the whole picture, or `crop`, zoomed in on the observation box for its tile."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The picture.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/dataset/{id}/pictures/review": {
+      "post": {
+        "summary": "Promote or flag a dataset's pictures",
+        "description": "Records a reviewer's decision about each picture -- one frame of one observation -- while reviewing a built dataset (#271). `promoted` or `flagged`, and a flag carries a reason from the training review list; `withdrawn` takes a decision back. **The decision is about the observation, not the dataset**: a flagged picture is left out of every dataset built afterwards until it is promoted again. The dataset itself never changes. **A service token is refused with 403**: a review belongs to the person who made it. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The dataset being reviewed."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "decisions"
+                ],
+                "properties": {
+                  "decisions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "observation_id",
+                        "framenum",
+                        "decision"
+                      ],
+                      "properties": {
+                        "observation_id": {
+                          "type": "integer"
+                        },
+                        "framenum": {
+                          "type": "integer"
+                        },
+                        "decision": {
+                          "type": "string",
+                          "enum": [
+                            "promoted",
+                            "flagged",
+                            "withdrawn"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "Box off the animal",
+                            "An animal has no box",
+                            "Bounding box too loose",
+                            "Occluded",
+                            "Too small",
+                            "Ambiguous ID",
+                            "Other / unsure"
+                          ]
+                        },
+                        "note": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many decisions were recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "recorded": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -19574,6 +19831,7 @@
                         "sessionType",
                         "session",
                         "picture",
+                        "dataset",
                         "species",
                         "model",
                         "run"

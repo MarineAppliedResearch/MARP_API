@@ -43,6 +43,18 @@ body[data-mode="training"] {
   --chrome: #17102b;
   --chrome-rail: #120c22;
 }
+body[data-mode="datasetReview"] {
+  /* Mint (#271): reviewing a built dataset's pictures, a training question of its own. */
+  --commit: var(--mint-400);
+  --commit-pale: var(--mint-300);
+  --commit-soft: rgba(80, 220, 190, .55);
+  --commit-line: rgba(80, 220, 190, .42);
+  --commit-ink: #03201a;
+  --mode: var(--mint-500);
+  --mode-line: rgba(80, 220, 190, .30);
+  --chrome: #0b1c1a;
+  --chrome-rail: #081614;
+}
 body[data-mode="delete"] {
   /* Red, because a Delete commit destroys — the same red-500/red-400 pair the mode
      already uses for its note, a marked tile's outline and its commit button. */
@@ -1029,4 +1041,53 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
   margin-left: auto; flex: none; font-size: 9.5px; letter-spacing: .06em;
   text-transform: uppercase; color: var(--faint);
   border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+}
+
+/* ---- #271: a built dataset's pictures ------------------------------------------------ */
+/* A tile flips through its track's pictures; each is the whole frame, the dataset's box on it. */
+.tile .flip { position: absolute; inset: 0; display: flex; align-items: center; background: #000; }
+/* The picture keeps its own shape -- videos differ -- and the box is placed in fractions of it. */
+.dframe { display: block; position: relative; }
+.flip .dframe { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); visibility: hidden; }
+.flip .dframe.on { visibility: visible; }
+.dframe img { display: block; width: 100%; height: auto; object-fit: fill; }
+.dframe .dbox { position: absolute; border: 2px solid var(--cyan-300); box-shadow: 0 0 0 1px #000; pointer-events: none; }
+/* Another track's box on the same picture: there, but not the one this tile is about. */
+.dframe .dbox.other { border: 2px dashed var(--amber-300); }
+/* A tile's crop is square and fills the tile. */
+.flip .dframe.crop { top: 0; bottom: 0; transform: none; }
+.flip .dframe.crop img { height: 100%; object-fit: cover; }
+.dframe .dlabels { position: absolute; left: 4px; bottom: 4px; padding: 1px 5px; font-size: 10px;
+                   background: rgba(0, 0, 0, .65); color: var(--white); border-radius: 3px; }
+.dframe .dmissing { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 11px; }
+/* One dot per picture, so a flagged one is seen without opening the track. */
+.tile .dots { position: absolute; left: 4px; right: 4px; bottom: 18px; display: flex; gap: 2px; pointer-events: none; }
+.tile .dots i { flex: 1; height: 3px; border-radius: 2px; background: var(--grey-400); opacity: .7; }
+.tile .dots i.d-promoted { background: var(--commit); opacity: 1; }
+.tile .dots i.d-flagged { background: var(--amber-300); opacity: 1; }
+
+#picturesPanel { position: fixed; left: 50%; top: 56px; transform: translateX(-50%); z-index: 40;
+                 width: min(1400px, calc(100vw - 32px)); max-height: calc(100vh - 80px); overflow: auto;
+                 background: var(--chrome); border: 1px solid var(--mode-line); border-radius: 8px;
+                 box-shadow: 0 12px 40px rgba(0, 0, 0, .55); padding: 10px 12px; }
+#picturesPanel[hidden] { display: none; }
+#picturesPanel header { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; }
+#picturesPanel header div { display: flex; flex-direction: column; gap: 2px; }
+#picturesPanel .muted { color: var(--muted); font-size: 11px; }
+#picturesPanel .reasons { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+#picturesPanel .reasons button { font-size: 11px; padding: 3px 8px; border-radius: 12px; border: 1px solid var(--mode-line);
+                                 background: none; color: var(--muted); }
+#picturesPanel .reasons button.on { background: var(--amber-300); color: #241a02; border-color: var(--amber-300); }
+/* Two across, so a picture is large enough to see what is in it. */
+#picturesPanel .pics { display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 10px; }
+#picturesPanel .pic { margin: 0; cursor: pointer; border: 2px solid transparent; border-radius: 6px; overflow: hidden; background: #000; }
+#picturesPanel .pic.p-flagged { border-color: var(--amber-300); }
+#picturesPanel .pic.p-promoted { border-color: var(--commit-line); }
+#picturesPanel figcaption { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 11px; background: var(--chrome-rail); }
+#picturesPanel figcaption b { margin-left: auto; font-weight: 600; }
+#picturesPanel .p-flagged figcaption b { color: var(--amber-300); }
+#picturesPanel figcaption button { font-size: 11px; padding: 1px 7px; }
+@media (max-width: 600px) {
+  #picturesPanel { top: 8px; width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
+  #picturesPanel .pics { grid-template-columns: 1fr; }
 }

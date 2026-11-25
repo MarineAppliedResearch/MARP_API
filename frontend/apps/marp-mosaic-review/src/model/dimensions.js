@@ -170,6 +170,14 @@ export const DIMENSIONS = [
     label: 'picture', all: 'Any picture',
     one: (v) => ({ available: 'Available', preparing: 'Preparing', 'no video': 'No video available', 'no image': 'No image' }[v] || v),
   },
+  {
+    /* #271: one built dataset's tracks, each tile with the pictures the dataset took of it.
+       Labelled by the server with the dataset's name and task, newest first. */
+    key: 'dataset', field: 'dataset_id',
+    source: 'dataset_pictures.dataset_id', kind: KIND.SET,
+    label: 'dataset', all: 'Any dataset', one: (v) => v,
+    labelled: true, numeric: true,
+  },
 ];
 
 /** By key, for the many places that have one and want the rest. */

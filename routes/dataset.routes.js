@@ -30,6 +30,7 @@ const { imageSettings, concurrency, BUILD_TASKS, estimate } = require('../servic
 const { samplingSettings } = require('../service/dataset-build-plan');
 const datasetRepository = require('../repository/dataset.repository');
 const datasetPreviewService = require('../service/dataset-preview.service');
+const datasetReviewService = require('../service/dataset-review.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
@@ -1083,6 +1084,127 @@ function registerDatasetRoutes(app) {
             res.setHeader('Content-Type', frame.contentType);
             res.setHeader('Content-Length', frame.buffer.length);
             res.send(frame.buffer);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'datasets:read',
+        path: '/api/dataset/:id/pictures/:observationId/:framenum',
+        summary: 'One of a dataset\'s pictures, for reviewing it',
+        description:
+            'One picture a build cut for one observation (#271): what the Mosaic shows when a dataset is '
+            + 'reviewed. Addressed by observation and frame, never by filename. **The whole picture is read '
+            + 'straight out of the dataset\'s archive**, which is the only full-size copy; `?kind=crop` is the '
+            + 'small copy the build saved, zoomed in on this observation\'s box, for its tile.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset.' },
+            { in: 'path', name: 'observationId', required: true, schema: { type: 'integer' }, description: 'The observation.' },
+            { in: 'path', name: 'framenum', required: true, schema: { type: 'integer' }, description: 'The frame.' },
+            { in: 'query', name: 'kind', required: false, schema: { type: 'string', enum: ['picture', 'crop'], default: 'picture' }, description: '`picture`, the whole picture, or `crop`, zoomed in on the observation box for its tile.' },
+        ],
+        responses: {
+            200: { description: 'The picture.', content: { 'image/jpeg': { schema: { type: 'string', format: 'binary' } } } },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const [id, observationId, framenum] = [req.params.id, req.params.observationId, req.params.framenum].map(Number);
+            const valid = [id, observationId, framenum].every(Number.isInteger);
+            const missing = () => new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                'The dataset has no picture of that observation at that frame.');
+
+            // A dataset never changes, so neither does its picture.
+            res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+
+            if (req.query.kind === 'crop') {
+                const file = valid ? await datasetReviewService.pictureFile(id, observationId, framenum) : null;
+
+                if (!file || !fs.existsSync(file)) throw missing();
+                res.type('jpeg').sendFile(file);
+
+                return;
+            }
+
+            const picture = valid ? await datasetReviewService.wholePicture(id, observationId, framenum) : null;
+
+            if (!picture) throw missing();
+            res.setHeader('Content-Type', picture.contentType);
+            res.setHeader('Content-Length', picture.buffer.length);
+            res.send(picture.buffer);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'observations:write',
+        path: '/api/dataset/:id/pictures/review',
+        summary: 'Promote or flag a dataset\'s pictures',
+        description:
+            'Records a reviewer\'s decision about each picture -- one frame of one observation -- while reviewing '
+            + 'a built dataset (#271). `promoted` or `flagged`, and a flag carries a reason from the training '
+            + 'review list; `withdrawn` takes a decision back. **The decision is about the observation, not the '
+            + 'dataset**: a flagged picture is left out of every dataset built afterwards until it is promoted '
+            + 'again. The dataset itself never changes. **A service token is refused with 403**: a review '
+            + 'belongs to the person who made it.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset being reviewed.' },
+        ],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        required: ['decisions'],
+                        properties: {
+                            decisions: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    required: ['observation_id', 'framenum', 'decision'],
+                                    properties: {
+                                        observation_id: { type: 'integer' },
+                                        framenum: { type: 'integer' },
+                                        decision: { type: 'string', enum: datasetReviewService.DECISIONS },
+                                        reason: { type: 'string', enum: datasetReviewService.REASONS },
+                                        note: { type: 'string' },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: 'How many decisions were recorded.',
+                content: { 'application/json': { schema: { type: 'object', properties: { recorded: { type: 'integer' } } } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            403: { $ref: '#/components/responses/ForbiddenError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            if (!req.principal || req.principal.type !== 'user') {
+                throw new ApiError(403, ERROR_CODES.FORBIDDEN, 'Only a signed-in reviewer can review a dataset\'s pictures.');
+            }
+
+            const id = Number(req.params.id);
+
+            if (!Number.isInteger(id)) throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'The dataset id must be an integer.');
+
+            try {
+                res.json(await datasetReviewService.review(id, req.body, req.principal.id));
+            } catch (error) {
+                if (error instanceof datasetReviewService.PictureReviewError) {
+                    throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, error.message);
+                }
+                throw error;
+            }
         }),
     });
 
