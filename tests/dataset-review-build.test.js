@@ -34,10 +34,10 @@ const made = { datasetIds: [], jobIds: [], archives: [], workerCreated: false };
 const q = (sql, replacements = {}) => db.sequelize.query(sql, { type: QueryTypes.SELECT, replacements });
 
 /** Queue a build of the fixture's first video and run it, insisting it was this suite's. */
-async function build(name) {
+async function build(name, species = seeded.speciesIds.slice(0, 2)) {
     const response = await global.api.post('/api/v2/dataset/build').send({
         name: `${name} ${runId}`,
-        subsets: [{ split: 'train', filters: { session: [seeded.sessionId], species: seeded.speciesIds.slice(0, 2) } }],
+        subsets: [{ split: 'train', filters: { session: [seeded.sessionId], species } }],
     });
 
     expect(response.status).toBe(201);
@@ -58,7 +58,7 @@ async function build(name) {
 /* Video one's two animals; species B's other observation, in video two, is in the build
    too and is not what these tests are about. */
 const picturesOf = (datasetId) => q(
-    `SELECT observation_id, framenum, split, drawn, picture, crop, crop_rect FROM dataset_pictures
+    `SELECT observation_id, framenum, split, drawn, archive_member, crop, crop_rect FROM dataset_pictures
       WHERE dataset_id = :datasetId AND observation_id IN (:ids) ORDER BY observation_id, framenum`,
     { datasetId, ids: [seeded.first, seeded.second] }
 );
@@ -132,8 +132,8 @@ describe('reviewing a dataset\'s pictures (#271)', () => {
         for (const row of rows) {
             expect(row.split).toBe('train');
             expect(row.drawn.box).toEqual(expect.objectContaining({ cx: expect.any(Number), w: expect.any(Number) }));
-            expect(row.picture).toBeTruthy();
-            expect(fs.existsSync(path.join(ARCHIVE_DIRECTORY, row.picture))).toBe(true);
+            // The whole picture is its place in the archive: no second full-size copy is kept.
+            expect(row.archive_member).toMatch(new RegExp(`^train/images/.+_${String(row.framenum).padStart(8, '0')}[.]jpg$`));
             // R9: and a crop zoomed in on this track, for its tile.
             expect(fs.existsSync(path.join(ARCHIVE_DIRECTORY, row.crop))).toBe(true);
             expect(row.crop_rect).toEqual(expect.objectContaining({ left: expect.any(Number), width: expect.any(Number) }));
@@ -263,4 +263,24 @@ describe('the API a dataset is reviewed through (#271)', () => {
 
         expect(rows).toEqual([]);
     });
+});
+
+/* Last in the file: the animal it adds would take frames out of every build after it. */
+describe('an animal the dataset did not take (#271)', () => {
+
+    test('A8: a picture showing an animal of the dataset species that the build did not select is left out', async () => {
+        // Species A in video one again, at frames 100-101, in a session the build does not ask for.
+        const elsewhere = await fixture.addSession(seeded, 'U');
+        const unseen = await fixture.addObservation(seeded, {
+            obsID: 9, speciesId: seeded.speciesIds[0], video: seeded.videos.one, sessionId: elsewhere,
+        });
+
+        await fixture.addKeyframes(seeded, unseen, [100, 101]);
+
+        const datasetId = await build('Jest Review Unboxed', [seeded.speciesIds[0]]);
+        const frames = (await picturesOf(datasetId)).filter((r) => r.observation_id === seeded.first).map((r) => r.framenum);
+
+        // It would be in frames 100 and 101 with no box, so only 102 is taken.
+        expect(frames).toEqual([102]);
+    }, 120000);
 });

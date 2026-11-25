@@ -11930,7 +11930,7 @@
     "/v2/dataset/{id}/pictures/{observationId}/{framenum}": {
       "get": {
         "summary": "One of a dataset's pictures, for reviewing it",
-        "description": "The small copy a build saved of one picture it cut for one observation (#271): what the Mosaic shows when a dataset is reviewed. Addressed by observation and frame, never by filename. A picture has one copy however many animals are in it. Requires the `datasets:read` permission.",
+        "description": "One picture a build cut for one observation (#271): what the Mosaic shows when a dataset is reviewed. Addressed by observation and frame, never by filename. **The whole picture is read straight out of the dataset's archive**, which is the only full-size copy; `?kind=crop` is the small copy the build saved, zoomed in on this observation's box, for its tile. Requires the `datasets:read` permission.",
         "tags": [
           "V2 · MachineLearning"
         ],
@@ -12059,6 +12059,8 @@
                         "reason": {
                           "type": "string",
                           "enum": [
+                            "Box off the animal",
+                            "An animal has no box",
                             "Bounding box too loose",
                             "Occluded",
                             "Too small",

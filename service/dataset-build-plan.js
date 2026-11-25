@@ -859,8 +859,9 @@ function framesWithBox(row, blocked = null) {
 }
 
 /**
- * The frames of each video no build may cut: a picture of a selected observation that a
- * reviewer flagged (#271).
+ * The frames of each video no build may cut (#271): a picture of a selected observation that
+ * a reviewer flagged, and a picture showing an animal of the dataset's species that the build
+ * did not select (`unboxed_frames`), which would be in it with no box.
  *
  * Isaac, 2026-11-24: a flagged picture is that one frame of that track, and only it is left
  * out; the rest of the track is still used. **Blocked for the whole video, not only for the
@@ -877,7 +878,9 @@ function blockedFrames(splits) {
 
     for (const rows of splits.values()) {
         for (const row of rows) {
-            for (const frame of row.flagged_frames || []) {
+            const frames = [...(row.flagged_frames || []), ...(row.unboxed_frames || [])];
+
+            for (const frame of frames) {
                 if (!blocked.has(row.video_source)) blocked.set(row.video_source, new Set());
                 blocked.get(row.video_source).add(Number(frame));
             }

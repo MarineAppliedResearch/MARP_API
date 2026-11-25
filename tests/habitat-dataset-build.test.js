@@ -221,7 +221,7 @@ describe('a habitat dataset build (#287)', () => {
         const again = {};
         const at = (s) => s * fixture.FPS;
         const picturesOf = (datasetId) => q(
-            `SELECT observation_id, framenum, drawn, picture FROM dataset_pictures
+            `SELECT observation_id, framenum, drawn, archive_member, crop FROM dataset_pictures
               WHERE dataset_id = :id ORDER BY framenum, observation_id`,
             { id: datasetId }
         );
@@ -252,7 +252,10 @@ describe('a habitat dataset build (#287)', () => {
                 [seeded.ids.boulder, at(20), ['Mud', 'Boulder']],
                 [seeded.ids.mud, at(40), ['Mud']],
             ]);
-            for (const row of rows) expect(fs.existsSync(path.join(buildService.ARCHIVE_DIRECTORY, row.picture))).toBe(true);
+            for (const row of rows) {
+                expect(row.archive_member).toMatch(/^train\/images\/.+\.jpg$/);
+                expect(fs.existsSync(path.join(buildService.ARCHIVE_DIRECTORY, row.crop))).toBe(true);
+            }
         });
 
         test('R5: a flagged habitat picture is left out of the next build, and the others are in it', async () => {

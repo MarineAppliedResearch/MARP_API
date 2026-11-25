@@ -1429,6 +1429,38 @@ SELECT o.observation_id,
  * @returns {Promise<Array<Object>>} The rows, grouped by video and ordered within it.
  * @throws {MosaicRequestError} If a filter cannot be served.
  */
+/**
+ * The annotations of some species in some videos that a build did not select (#271): every
+ * one of them is an animal of the dataset's species, and a picture showing one without a box
+ * teaches the model it is background.
+ *
+ * @async
+ * @param {Array<string>} videos - The videos the build cuts from.
+ * @param {Array<number>} speciesIds - The dataset's species.
+ * @param {Array<number>} selectedIds - What the build did select.
+ * @returns {Promise<Array<Object>>} `{observation_id, video_source, first_framenum,
+ *   last_framenum, keyframes}`, shaped as the selection's rows are.
+ */
+async function unselectedForBuild(videos, speciesIds, selectedIds) {
+    if (!videos.length || !speciesIds.length) return [];
+
+    return db.sequelize.query(
+        `SELECT o.observation_id, o.video_source,
+                min(kf.framenum)::int AS first_framenum,
+                max(kf.framenum)::int AS last_framenum,
+                json_agg(json_build_object('framenum', kf.framenum, 'x', kf.x, 'y', kf.y,
+                                           'width', kf.width, 'height', kf.height)
+                         ORDER BY kf.framenum) AS keyframes
+           FROM observations o
+           JOIN keyframes kf ON kf.observation_id = o.observation_id
+          WHERE o.video_source = ANY($1::varchar[])
+            AND o.species_id = ANY($2::int[])
+            AND NOT (o.observation_id = ANY($3::int[]))
+          GROUP BY o.observation_id, o.video_source`,
+        { bind: [videos, speciesIds, selectedIds], type: db.Sequelize.QueryTypes.SELECT }
+    );
+}
+
 async function selectForBuild(request = {}) {
     const { sql, bind } = buildSelectionQuery(request);
 
@@ -1474,7 +1506,7 @@ async function attachDatasetPictures(filters, rows) {
             framenum: picture.framenum,
             split: picture.split,
             drawn: picture.drawn,
-            has_picture: Boolean(picture.picture),
+            has_picture: Boolean(picture.archive_member),
             has_crop: Boolean(picture.crop),
             crop_rect: picture.crop_rect || null,
             // The other boxes the dataset drew on the same picture (#271).
@@ -1635,6 +1667,7 @@ module.exports = {
     frames,
     queryPages,
     selectForBuild,
+    unselectedForBuild,
     // For the habitat dataset build (#287), which chooses sessions as tiles are filtered.
     binder,
     predicates,

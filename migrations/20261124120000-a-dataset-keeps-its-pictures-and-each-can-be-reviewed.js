@@ -51,7 +51,7 @@ module.exports = {
                      framenum       INTEGER NOT NULL,
                      split          VARCHAR(16) NOT NULL,
                      drawn          JSONB NOT NULL,
-                     picture        VARCHAR(512),
+                     archive_member VARCHAR(1024),
                      crop           VARCHAR(512),
                      crop_rect      JSONB,
                      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -68,10 +68,10 @@ module.exports = {
                    'The split the build put the picture in: train, val or test.';
                  COMMENT ON COLUMN dataset_pictures.drawn IS
                    'What the build labelled this observation with on this picture, exactly as written into the archive: {"box": {cx, cy, w, h}, "class_index"} for detection, {"labels": [substrate, ...]} for habitat.';
-                 COMMENT ON COLUMN dataset_pictures.picture IS
-                   'The picture, large enough to judge, relative to the dataset directory. Shared by every observation in it. Null when it could not be saved: a build never fails over one.';
+                 COMMENT ON COLUMN dataset_pictures.archive_member IS
+                   'Where the picture is inside the dataset''s own archive, which is where it is read from: no second full-size copy is kept (Isaac, 2026-11-24, on storage).';
                  COMMENT ON COLUMN dataset_pictures.crop IS
-                   'The picture zoomed in on this observation''s box, for its Mosaic tile, relative to the dataset directory.';
+                   'The picture zoomed in on this observation''s box, for its Mosaic tile, relative to the dataset directory. Small, and the one copy kept. Null when it could not be made: a build never fails over one.';
                  COMMENT ON COLUMN dataset_pictures.crop_rect IS
                    'Where the crop is in the picture, as fractions of it: {left, top, width, height}.'`,
                 { transaction }

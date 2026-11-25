@@ -94,12 +94,14 @@ entirely in MARP (#287).
   picture is saved when a dataset is built, with a record per picture of its dataset,
   observation, video, frame, split and the box or labels drawn on it. Saving them must never
   fail a build. Datasets built before this get theirs once, by a script, as a later step.
-- [ ] **A8 · scientific or data-meaning · non-blocking** — Blocks the build change only, so nothing in the build is changed for it until it is answered; the pictures work does not depend on it. An animal of the dataset's species can
+- [x] **A8 · scientific or data-meaning · blocking** — answered 2026-11-24: "if something is
+  not reviewed, it shouldn't end up in the data set at all." The build leaves out any picture
+  another annotation of the dataset's species covers. An animal of the dataset's species can
   be annotated in MARP and still left out of the dataset, because only promoted tracks are
   taken; the build then cuts a picture showing it with no box. In dataset 382, 54% of the
   California sea cucumber pictures had one. Does the build leave such a picture out by itself,
   or put it in and leave it to review?
-- [ ] **A9 · product/UI · non-blocking** — The flag reasons. "Box off the animal" and "An
+- [x] **A9 · product/UI · non-blocking** — answered 2026-11-24: add both. The flag reasons. "Box off the animal" and "An
   animal has no box" are the two this review is for and neither is in the training list. Add
   both?
 - [ ] **A7 · database/schema · non-blocking** — A picture's review is kept like an

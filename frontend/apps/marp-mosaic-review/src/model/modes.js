@@ -108,7 +108,10 @@ export const MODES = {
     note: 'Commit promotes every picture on the page you did not flag — a flagged picture is left out of new datasets',
     statusKey: 'pictureReview',
     defaultStatus: ['unchecked', 'picture-flagged'],
-    reasons: ['Bounding box too loose', 'Occluded', 'Too small', 'Ambiguous ID', 'Other / unsure']
+    /* The two this review is for first (Isaac, 2026-11-24), then the training list. The
+       server's list is `service/dataset-review.service.js`, and must match. */
+    reasons: ['Box off the animal', 'An animal has no box',
+              'Bounding box too loose', 'Occluded', 'Too small', 'Ambiguous ID', 'Other / unsure']
   }
 };
 

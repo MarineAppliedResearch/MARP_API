@@ -1093,9 +1093,10 @@ function registerDatasetRoutes(app) {
         path: '/api/dataset/:id/pictures/:observationId/:framenum',
         summary: 'One of a dataset\'s pictures, for reviewing it',
         description:
-            'The small copy a build saved of one picture it cut for one observation (#271): what the Mosaic '
-            + 'shows when a dataset is reviewed. Addressed by observation and frame, never by filename. A '
-            + 'picture has one copy however many animals are in it.',
+            'One picture a build cut for one observation (#271): what the Mosaic shows when a dataset is '
+            + 'reviewed. Addressed by observation and frame, never by filename. **The whole picture is read '
+            + 'straight out of the dataset\'s archive**, which is the only full-size copy; `?kind=crop` is the '
+            + 'small copy the build saved, zoomed in on this observation\'s box, for its tile.',
         tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset.' },
@@ -1110,17 +1111,28 @@ function registerDatasetRoutes(app) {
         },
         handler: asyncHandler(async (req, res) => {
             const [id, observationId, framenum] = [req.params.id, req.params.observationId, req.params.framenum].map(Number);
-            const file = [id, observationId, framenum].every(Number.isInteger)
-                ? await datasetReviewService.pictureFile(id, observationId, framenum, req.query.kind)
-                : null;
-
-            if (!file || !fs.existsSync(file)) {
-                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, 'The dataset has no saved picture of that observation at that frame.');
-            }
+            const valid = [id, observationId, framenum].every(Number.isInteger);
+            const missing = () => new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                'The dataset has no picture of that observation at that frame.');
 
             // A dataset never changes, so neither does its picture.
             res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
-            res.type('jpeg').sendFile(file);
+
+            if (req.query.kind === 'crop') {
+                const file = valid ? await datasetReviewService.pictureFile(id, observationId, framenum) : null;
+
+                if (!file || !fs.existsSync(file)) throw missing();
+                res.type('jpeg').sendFile(file);
+
+                return;
+            }
+
+            const picture = valid ? await datasetReviewService.wholePicture(id, observationId, framenum) : null;
+
+            if (!picture) throw missing();
+            res.setHeader('Content-Type', picture.contentType);
+            res.setHeader('Content-Length', picture.buffer.length);
+            res.send(picture.buffer);
         }),
     });
 

@@ -57,8 +57,8 @@ test('#271 R4: a dataset commit answers in the page commit\'s shape, a track at 
   assert.deepEqual(result.reverted, [{ observation_id: 3, outcome: 'withdrawn' }]);
 });
 
-test('#271: Dataset Review flags with the training reasons, and only it offers the Pictures filter', () => {
-  assert.deepEqual(MODES.datasetReview.reasons, MODES.training.reasons);
+test('#271: Dataset Review flags with its own two reasons and the training ones, and only it offers the Pictures filter', () => {
+  assert.deepEqual(MODES.datasetReview.reasons, ['Box off the animal', 'An animal has no box', ...MODES.training.reasons]);
   assert.equal(MODES.datasetReview.marks, PICTURE_FLAGGED);
   assert.equal(MODES.datasetReview.accepts, PICTURE_CHECKED);
   assert.ok(statusDimensions('datasetReview').some((d) => d.key === 'pictureReview' && d.own));

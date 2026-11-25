@@ -571,7 +571,10 @@ function detectionPictures(videos, staging, image) {
             const source = path.join(images, `${stemFor(entry.video, frame)}.${image.extension}`);
 
             if (fs.existsSync(source)) {
-                out.push({ source, split: entry.split, video: entry.video, framenum: frame, owners });
+                out.push({
+                    source, member: path.posix.join(directoryFor(entry.split), 'images', path.basename(source)),
+                    split: entry.split, video: entry.video, framenum: frame, owners,
+                });
             }
         }
     }
@@ -721,15 +724,13 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
 }
 
 /**
- * How wide a dataset picture is saved: large enough to judge a box on (#271). At 320 a Bat
- * star was a few pixels across, which cannot be judged at all.
+ * How wide a track's crop is: a Mosaic tile, zoomed in on that track's box (#271). The crop
+ * is the one copy a build keeps; the whole picture is read out of the archive when it is
+ * opened, so nothing full-size is stored twice (Isaac, 2026-11-24).
  */
-const PICTURE_WIDTH = 1280;
+const CROP_WIDTH = 256;
 
-/** How wide a track's crop is: a Mosaic tile, zoomed in on that track's box. */
-const CROP_WIDTH = 320;
-
-/** Pictures saved at once, so a big build is neither one at a time nor all at once. */
+/** Pictures cropped at once, so a big build is neither one at a time nor all at once. */
 const PICTURE_CONCURRENCY = 8;
 
 /**
@@ -746,73 +747,70 @@ function cropBoxOf(drawn) {
 }
 
 /**
- * Save every picture a build cut, large enough to judge, and for each track in it a crop
- * zoomed in on that track's box; record which observation each is of and what was drawn on
- * it (#271), so the dataset can be reviewed in the Mosaic.
+ * Record every picture a build cut -- where it is in the archive, which observation each is
+ * of, and what was drawn on it -- and save for each track a small crop zoomed in on its box
+ * (#271), so the dataset can be reviewed in the Mosaic.
  *
- * **Never fails the build.** A picture that cannot be saved is recorded with no file, and
+ * **Never fails the build.** A crop that cannot be made is recorded without one, and
  * anything else that goes wrong is logged and the build carries on: the dataset is what was
  * asked for, and these are for looking at it. That is why the caller wraps this as well.
  *
  * @async
  * @param {Object} options - What to save.
  * @param {number} options.datasetId - The dataset being built.
- * @param {Array<Object>} options.pictures - `{source, split, video, framenum, owners}`, where
- *   `source` is the picture in staging and `owners` is `[{observation_id, drawn}]`.
- * @param {Function} [options.onProgress] - Called with the count saved so far.
- * @returns {Promise<{saved: number, failed: number}>} Pictures saved, and not saved.
+ * @param {Array<Object>} options.pictures - `{source, member, split, video, framenum, owners}`:
+ *   `source` is the picture in staging, `member` its name in the archive, and `owners`
+ *   `[{observation_id, drawn}]`.
+ * @param {Function} [options.onProgress] - Called with the count done so far.
+ * @returns {Promise<{saved: number, failed: number}>} Crops made, and not made.
  */
 async function savePictures({ datasetId, pictures, onProgress = null }) {
     const sharp = require('sharp');
-    const folder = (picture) => path.posix.join('pictures', String(datasetId), picture.split);
-    const stem = (picture) => path.parse(picture.source).name;
     let saved = 0;
     let failed = 0;
+    let done = 0;
 
-    /* One picture: the large copy, then a crop per track in it. Each crop is its own try, so
-       one bad box costs that tile its zoom and nothing else. */
+    // One picture's crops. Each is its own try, so one bad box costs that tile its zoom only.
     const one = async (picture) => {
-        const out = { picture: null, crops: new Map() };
+        const crops = new Map();
+        let size;
 
         try {
-            const relative = path.posix.join(folder(picture), `${stem(picture)}.jpg`);
-            const target = path.join(ARCHIVE_DIRECTORY, relative);
-
-            fs.mkdirSync(path.dirname(target), { recursive: true });
-            await sharp(picture.source).resize({ width: PICTURE_WIDTH, withoutEnlargement: true })
-                .jpeg({ quality: 85 }).toFile(target);
-            out.picture = relative;
-            saved += 1;
+            size = await sharp(picture.source).metadata();
         } catch (error) {
-            failed += 1;
-            logger.warn(`Dataset ${datasetId}: ${picture.source} not saved. ${error && error.message}`);
+            failed += picture.owners.length;
+            logger.warn(`Dataset ${datasetId}: ${picture.source} could not be read. ${error && error.message}`);
 
-            return out;
+            return crops;
         }
 
-        const { width, height } = await sharp(picture.source).metadata();
+        const folder = path.posix.join('pictures', String(datasetId), picture.split);
+
+        fs.mkdirSync(path.join(ARCHIVE_DIRECTORY, folder), { recursive: true });
 
         for (const owner of picture.owners) {
             try {
-                const { clamped } = geometry.cropRectangle(cropBoxOf(owner.drawn), width, height);
-                const relative = path.posix.join(folder(picture), `${stem(picture)}_${owner.observation_id}.jpg`);
+                const { clamped } = geometry.cropRectangle(cropBoxOf(owner.drawn), size.width, size.height);
+                const relative = path.posix.join(folder, `${path.parse(picture.source).name}_${owner.observation_id}.jpg`);
 
                 await sharp(picture.source).extract(clamped)
                     .resize({ width: CROP_WIDTH, height: CROP_WIDTH, fit: 'fill' })
-                    .jpeg({ quality: 85 }).toFile(path.join(ARCHIVE_DIRECTORY, relative));
-                out.crops.set(owner.observation_id, {
+                    .jpeg({ quality: 80 }).toFile(path.join(ARCHIVE_DIRECTORY, relative));
+                crops.set(owner.observation_id, {
                     crop: relative,
                     crop_rect: {
-                        left: clamped.left / width, top: clamped.top / height,
-                        width: clamped.width / width, height: clamped.height / height,
+                        left: clamped.left / size.width, top: clamped.top / size.height,
+                        width: clamped.width / size.width, height: clamped.height / size.height,
                     },
                 });
+                saved += 1;
             } catch (error) {
+                failed += 1;
                 logger.warn(`Dataset ${datasetId}: no crop of ${picture.source} for ${owner.observation_id}. ${error && error.message}`);
             }
         }
 
-        return out;
+        return crops;
     };
 
     for (let at = 0; at < pictures.length; at += PICTURE_CONCURRENCY) {
@@ -820,7 +818,7 @@ async function savePictures({ datasetId, pictures, onProgress = null }) {
         const results = await Promise.all(batch.map(one));
 
         await pictureRepository.recordPictures(batch.flatMap((picture, i) => picture.owners.map((owner) => {
-            const crop = results[i].crops.get(owner.observation_id) || { crop: null, crop_rect: null };
+            const crop = results[i].get(owner.observation_id) || { crop: null, crop_rect: null };
 
             return {
                 dataset_id: datasetId,
@@ -829,13 +827,14 @@ async function savePictures({ datasetId, pictures, onProgress = null }) {
                 framenum: picture.framenum,
                 split: picture.split,
                 drawn: owner.drawn,
-                picture: results[i].picture,
+                archive_member: picture.member,
                 crop: crop.crop,
                 crop_rect: crop.crop_rect,
             };
         })));
 
-        if (onProgress) await onProgress(saved + failed);
+        done += batch.length;
+        if (onProgress) await onProgress(done);
     }
 
     return { saved, failed };
@@ -1339,6 +1338,7 @@ async function runHabitatBuild({ job, attempt, datasetId, staging, image, spec }
         attemptId: attempt.id,
         pictures: kept.map(({ frame, number, file }) => ({
             source: file,
+            member: path.posix.join(frame.split, 'images', path.basename(file)),
             split: frame.split,
             video: frame.video,
             framenum: number,
@@ -1418,7 +1418,49 @@ async function selectSplits(spec) {
         );
     }
 
+    await markUnboxed(rows);
+
     return { rows, splits };
+}
+
+/**
+ * Mark the pictures no build may take because an animal of the dataset's species is in them
+ * without a box (#271).
+ *
+ * Isaac, 2026-11-24: "if something is not reviewed, it shouldn't end up in the data set at
+ * all." A build takes only the tracks it selected -- promoted ones -- but a picture can also
+ * show a track it did not: one nobody has reviewed yet, or one left out for another reason.
+ * That animal would be in the picture with no box, and YOLO learns it as background. So any
+ * frame another annotation of the dataset's species covers is left out, for every animal in
+ * it. **Whatever the other annotation's own state**: an animal excluded for a loose box is
+ * still an animal on the picture with no box.
+ *
+ * @async
+ * @param {Array<Object>} rows - The selected rows; each in a video with such frames gets
+ *   `unboxed_frames`, which `plan.blockedFrames` reads.
+ * @returns {Promise<void>}
+ */
+async function markUnboxed(rows) {
+    if (!rows.length) return;
+
+    const videos = [...new Set(rows.map((row) => row.video_source))];
+    const species = [...new Set(rows.map((row) => Number(row.species_id)))];
+    const others = await mosaicRepository.unselectedForBuild(
+        videos, species, rows.map((row) => Number(row.observation_id))
+    );
+    const byVideo = new Map();
+
+    for (const other of others) {
+        if (!byVideo.has(other.video_source)) byVideo.set(other.video_source, new Set());
+        for (const frame of plan.framesWithBox(other)) byVideo.get(other.video_source).add(frame);
+    }
+
+    // One array per video, shared by its rows: the blocking is per video anyway.
+    const frames = new Map([...byVideo].map(([video, set]) => [video, [...set]]));
+
+    for (const row of rows) {
+        if (frames.has(row.video_source)) row.unboxed_frames = frames.get(row.video_source);
+    }
 }
 
 /**

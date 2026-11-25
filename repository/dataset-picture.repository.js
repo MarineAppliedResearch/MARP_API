@@ -32,7 +32,7 @@ async function recordPictures(rows) {
             const base = bind.length;
 
             bind.push(row.dataset_id, row.observation_id, row.video_source, row.framenum,
-                row.split, JSON.stringify(row.drawn), row.picture, row.crop || null,
+                row.split, JSON.stringify(row.drawn), row.archive_member, row.crop || null,
                 row.crop_rect ? JSON.stringify(row.crop_rect) : null);
 
             return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}::jsonb, `
@@ -41,7 +41,7 @@ async function recordPictures(rows) {
 
         await db.sequelize.query(
             `INSERT INTO dataset_pictures
-                 (dataset_id, observation_id, video_source, framenum, split, drawn, picture, crop, crop_rect)
+                 (dataset_id, observation_id, video_source, framenum, split, drawn, archive_member, crop, crop_rect)
              VALUES ${values.join(', ')}
              ON CONFLICT (dataset_id, observation_id, framenum) DO NOTHING`,
             { bind }
@@ -63,7 +63,7 @@ async function picturesOf(datasetId, observationIds) {
     if (!observationIds.length) return [];
 
     return db.sequelize.query(
-        `SELECT dp.observation_id, dp.framenum, dp.split, dp.drawn, dp.picture, dp.crop, dp.crop_rect,
+        `SELECT dp.observation_id, dp.framenum, dp.split, dp.drawn, dp.archive_member, dp.crop, dp.crop_rect,
                 pr.decision, pr.reason, pr.note, pr.reviewer_id,
                 -- Every other box the dataset drew on the same picture, so a missing one shows.
                 (SELECT coalesce(json_agg(json_build_object('observation_id', o2.observation_id, 'drawn', o2.drawn)
@@ -81,26 +81,27 @@ async function picturesOf(datasetId, observationIds) {
 }
 
 /**
- * Where one picture's file is -- the whole picture, or this observation's crop of it -- or
- * null when the dataset has no such picture.
+ * Where one picture is -- the whole picture's name inside the dataset's archive, or this
+ * observation's crop of it as a file -- or null when the dataset has no such picture.
  *
  * @async
  * @param {number} datasetId - The dataset.
  * @param {number} observationId - The observation.
  * @param {number} framenum - The frame.
- * @param {string} [kind] - `picture` or `crop`.
- * @returns {Promise<?string>} Relative to the dataset directory.
+ * @param {string} [kind] - `picture`, a name in the archive, or `crop`, a file relative to
+ *   the dataset directory.
+ * @returns {Promise<?string>}
  */
 async function pictureFile(datasetId, observationId, framenum, kind = 'picture') {
     const [row] = await db.sequelize.query(
-        `SELECT picture, crop FROM dataset_pictures
+        `SELECT archive_member, crop FROM dataset_pictures
           WHERE dataset_id = $1 AND observation_id = $2 AND framenum = $3`,
         { bind: [datasetId, observationId, framenum], type: db.Sequelize.QueryTypes.SELECT }
     );
 
     if (!row) return null;
 
-    return kind === 'crop' ? row.crop : row.picture;
+    return kind === 'crop' ? row.crop : row.archive_member;
 }
 
 /**

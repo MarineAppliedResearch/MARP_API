@@ -15,6 +15,8 @@
 const path = require('path');
 
 const pictureRepository = require('../repository/dataset-picture.repository');
+const gpuService = require('./gpu.service');
+const { members, read } = require('./dataset-preview.service');
 const { MODES } = require('../repository/mosaic-commit.repository');
 const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
 
@@ -22,10 +24,11 @@ const { DATASET_DIRECTORY } = require('../config/gpu-orchestration');
 const DECISIONS = ['promoted', 'flagged', 'withdrawn'];
 
 /**
- * Why a picture can be flagged: the Training Data Review list, since this is training
- * data (A5, the default until Isaac says otherwise).
+ * Why a picture can be flagged: the two this review is for first, added by Isaac on
+ * 2026-11-24, then the Training Data Review list. The Mosaic's list is the same, in
+ * `MODES.datasetReview.reasons`.
  */
-const REASONS = MODES.training.reasons;
+const REASONS = ['Box off the animal', 'An animal has no box', ...MODES.training.reasons];
 
 /** A request the caller can fix: a 400, not a failure. */
 class PictureReviewError extends Error {}
@@ -87,17 +90,16 @@ async function review(datasetId, body, reviewerId) {
 }
 
 /**
- * The file holding one of a dataset's pictures, or its crop, or null when there is none.
+ * The file holding a track's crop of one of a dataset's pictures, or null when there is none.
  *
  * @async
  * @param {number} datasetId - The dataset.
  * @param {number} observationId - The observation.
  * @param {number} framenum - The frame.
- * @param {string} [kind] - `picture`, the whole picture, or `crop`, zoomed in on this track.
  * @returns {Promise<?string>} An absolute path inside the dataset directory.
  */
-async function pictureFile(datasetId, observationId, framenum, kind = 'picture') {
-    const relative = await pictureRepository.pictureFile(datasetId, observationId, framenum, kind === 'crop' ? 'crop' : 'picture');
+async function pictureFile(datasetId, observationId, framenum) {
+    const relative = await pictureRepository.pictureFile(datasetId, observationId, framenum, 'crop');
 
     if (!relative) return null;
 
@@ -107,8 +109,54 @@ async function pictureFile(datasetId, observationId, framenum, kind = 'picture')
     return absolute.startsWith(path.resolve(DATASET_DIRECTORY) + path.sep) ? absolute : null;
 }
 
+/**
+ * Each archive's pictures by name, walked once: a walk is one read per member, about 140 ms
+ * over a 2.4 GB archive, and a dataset never changes, so its index never does. Keyed by the
+ * archive's hash. A few archives are held; the oldest is let go.
+ */
+const indexes = new Map();
+const KEEP_INDEXES = 8;
+
+function indexOf(archive) {
+    if (!indexes.has(archive.sha256)) {
+        indexes.set(archive.sha256, new Map(members(archive.absolutePath).map((m) => [m.name, m])));
+        if (indexes.size > KEEP_INDEXES) indexes.delete(indexes.keys().next().value);
+    }
+
+    return indexes.get(archive.sha256);
+}
+
+/**
+ * One of a dataset's pictures, whole, read straight out of its archive (#271). The archive
+ * is the only full-size copy: keeping a second one of every picture would double what every
+ * dataset costs on disk (Isaac, 2026-11-24).
+ *
+ * @async
+ * @param {number} datasetId - The dataset.
+ * @param {number} observationId - An observation in the picture.
+ * @param {number} framenum - The frame.
+ * @returns {Promise<?{buffer: Buffer, contentType: string, sha256: string}>} Null when there is none.
+ */
+async function wholePicture(datasetId, observationId, framenum) {
+    const name = await pictureRepository.pictureFile(datasetId, observationId, framenum, 'picture');
+
+    if (!name) return null;
+
+    const archive = await gpuService.datasetArchive(datasetId);
+    const member = indexOf(archive).get(name);
+
+    if (!member) return null;
+
+    return {
+        buffer: read(archive.absolutePath, member),
+        contentType: /\.png$/i.test(name) ? 'image/png' : 'image/jpeg',
+        sha256: archive.sha256,
+    };
+}
+
 module.exports = {
     DECISIONS,
+    wholePicture,
     PictureReviewError,
     REASONS,
     checkDecisions,
