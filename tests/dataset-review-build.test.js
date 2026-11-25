@@ -1,0 +1,171 @@
+/**
+ * A build saves its pictures for review, and leaves out a picture a reviewer flagged (#271).
+ *
+ * The same stubbed-extractor build as `tests/dataset-build-runner.test.js`: only the two
+ * calls that reach the media server are stubbed, so the selection, the plan, the cutting,
+ * the small copies and every row are real. Everything is seeded here and removed again.
+ *
+ * Refs MarineAppliedResearch/MARP_API#271.
+ *
+ * @fileoverview Integration tests for dataset pictures and flagged pictures in a build.
+ * @module tests/dataset-review-build
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+const db = require('../model');
+const jellyfin = require('../repository/jellyfin.repository');
+const extraction = require('../service/thumbnail-extraction.service');
+const buildService = require('../service/dataset-build.service');
+const pictureRepository = require('../repository/dataset-picture.repository');
+
+const fixture = require('./fixtures/dataset-build-fixture');
+
+const { QueryTypes } = db.Sequelize;
+const runId = Date.now();
+const ARCHIVE_DIRECTORY = buildService.ARCHIVE_DIRECTORY;
+
+let seeded;
+let stub;
+let reviewerId;
+const made = { datasetIds: [], jobIds: [], archives: [], workerCreated: false };
+
+const q = (sql, replacements = {}) => db.sequelize.query(sql, { type: QueryTypes.SELECT, replacements });
+
+/** Queue a build of the fixture's first video and run it, insisting it was this suite's. */
+async function build(name) {
+    const response = await global.api.post('/api/v2/dataset/build').send({
+        name: `${name} ${runId}`,
+        subsets: [{ split: 'train', filters: { session: [seeded.sessionId], species: seeded.speciesIds.slice(0, 2) } }],
+    });
+
+    expect(response.status).toBe(201);
+    made.datasetIds.push(response.body.dataset.id);
+    made.jobIds.push(response.body.job.id);
+    await db.sequelize.query('UPDATE gpu_jobs SET priority = 5000 WHERE id = :id', {
+        replacements: { id: response.body.job.id },
+    });
+
+    const result = await buildService.runOne();
+
+    expect(result.jobId).toBe(response.body.job.id);
+    if (result.archive) made.archives.push(path.join(ARCHIVE_DIRECTORY, `${result.archive.sha256}.tar`));
+
+    return response.body.dataset.id;
+}
+
+/* Video one's two animals; species B's other observation, in video two, is in the build
+   too and is not what these tests are about. */
+const picturesOf = (datasetId) => q(
+    `SELECT observation_id, framenum, split, drawn, picture FROM dataset_pictures
+      WHERE dataset_id = :datasetId AND observation_id IN (:ids) ORDER BY observation_id, framenum`,
+    { datasetId, ids: [seeded.first, seeded.second] }
+);
+
+beforeAll(async () => {
+    const [worker] = await q("SELECT id FROM gpu_workers WHERE local_id = 'marp-api-internal'");
+
+    made.workerCreated = !worker;
+    seeded = await fixture.seedCorpus(runId);
+    stub = fixture.stubExtraction({ jellyfin, extraction });
+    [{ user_id: reviewerId }] = await q('SELECT user_id FROM users ORDER BY user_id LIMIT 1');
+}, 60000);
+
+afterAll(async () => {
+    if (stub) stub.restore();
+
+    await db.sequelize.query('DELETE FROM picture_reviews WHERE observation_id IN (:ids)', {
+        replacements: { ids: seeded.observationIds },
+    });
+
+    for (const id of made.datasetIds) {
+        fs.rmSync(path.join(ARCHIVE_DIRECTORY, 'pictures', String(id)), { recursive: true, force: true });
+    }
+
+    if (made.datasetIds.length) {
+        for (const table of ['dataset_pictures', 'dataset_observations', 'dataset_classes']) {
+            await db.sequelize.query(`DELETE FROM ${table} WHERE dataset_id IN (:ids)`, {
+                replacements: { ids: made.datasetIds },
+            });
+        }
+    }
+
+    if (made.jobIds.length) {
+        await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE job_id IN (:ids)', { replacements: { ids: made.jobIds } });
+        await db.sequelize.query('DELETE FROM gpu_jobs WHERE id IN (:ids)', { replacements: { ids: made.jobIds } });
+    }
+
+    if (made.datasetIds.length) {
+        await db.sequelize.query('DELETE FROM datasets WHERE id IN (:ids)', { replacements: { ids: made.datasetIds } });
+    }
+
+    if (made.workerCreated) {
+        await db.sequelize.query("DELETE FROM gpu_workers WHERE local_id = 'marp-api-internal'");
+    }
+
+    for (const archive of made.archives) {
+        if (fs.existsSync(archive)) fs.rmSync(archive, { force: true });
+    }
+
+    await fixture.removeCorpus(seeded);
+});
+
+describe('reviewing a dataset\'s pictures (#271)', () => {
+
+    let first;
+
+    beforeAll(async () => {
+        first = await build('Jest Review Build');
+    }, 120000);
+
+    test('R8: every picture is recorded per observation, with a small copy on disk', async () => {
+        const rows = await picturesOf(first);
+
+        // `first` is frames 100-102 and `second` 101-103, both in video one: frames 101 and
+        // 102 are one picture each, holding both animals, so two rows each.
+        expect(rows.map((r) => [r.observation_id, r.framenum])).toEqual([
+            [seeded.first, 100], [seeded.first, 101], [seeded.first, 102],
+            [seeded.second, 101], [seeded.second, 102], [seeded.second, 103],
+        ]);
+
+        for (const row of rows) {
+            expect(row.split).toBe('train');
+            expect(row.drawn.box).toEqual(expect.objectContaining({ cx: expect.any(Number), w: expect.any(Number) }));
+            expect(row.picture).toBeTruthy();
+            expect(fs.existsSync(path.join(ARCHIVE_DIRECTORY, row.picture))).toBe(true);
+        }
+    });
+
+    test('R4/R5: a flagged picture is left out of the next build, and the rest of its track is in it', async () => {
+        await pictureRepository.recordDecisions([
+            { observation_id: seeded.first, framenum: 101, decision: 'flagged', reason: 'Bounding box too loose' },
+        ], reviewerId, first);
+
+        const second = await build('Jest Review Rebuild');
+        const frames = (await picturesOf(second)).map((r) => [r.observation_id, r.framenum]);
+
+        // Frame 101 is one picture holding both animals, so it goes for both.
+        expect(frames).toEqual([
+            [seeded.first, 100], [seeded.first, 102],
+            [seeded.second, 102], [seeded.second, 103],
+        ]);
+    }, 120000);
+
+    test('R6: promoting it again puts it back', async () => {
+        await pictureRepository.recordDecisions([
+            { observation_id: seeded.first, framenum: 101, decision: 'promoted' },
+        ], reviewerId, first);
+
+        const third = await build('Jest Review Promoted');
+        const frames = (await picturesOf(third)).map((r) => r.framenum);
+
+        expect(frames).toContain(101);
+    }, 120000);
+
+    test('the pictures and their decisions read back together', async () => {
+        const rows = await pictureRepository.picturesOf(first, [seeded.first]);
+
+        expect(rows.map((r) => [r.framenum, r.decision])).toEqual([[100, null], [101, 'promoted'], [102, null]]);
+    });
+});

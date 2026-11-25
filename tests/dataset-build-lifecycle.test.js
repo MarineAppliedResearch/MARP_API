@@ -184,6 +184,8 @@ afterAll(async () => {
         });
     }
 
+    fixture.removePictures(made.datasetIds);
+
     if (made.datasetIds.length) {
         await db.sequelize.query('DELETE FROM datasets WHERE id IN (:ids)', {
             replacements: { ids: made.datasetIds },

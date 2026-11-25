@@ -99,6 +99,8 @@ afterAll(async () => {
         for (const id of made.jobIds) fs.rmSync(buildService.stagingFor(id), { recursive: true, force: true });
     }
 
+    fixture.removePictures(made.datasetIds);
+
     if (made.datasetIds.length) {
         await db.sequelize.query('DELETE FROM datasets WHERE id IN (:ids)', { replacements: { ids: made.datasetIds } });
     }

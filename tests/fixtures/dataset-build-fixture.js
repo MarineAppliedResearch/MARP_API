@@ -481,6 +481,20 @@ function stagingDirectories() {
         .sort();
 }
 
+/**
+ * Remove the small pictures builds saved for review (#271). They are files beside the
+ * archives, so deleting the dataset rows does not take them.
+ *
+ * @param {Array<number>} datasetIds - The datasets this suite built.
+ */
+function removePictures(datasetIds) {
+    const { ARCHIVE_DIRECTORY } = require('../../service/dataset-build.service');
+
+    for (const id of datasetIds) {
+        if (id) fs.rmSync(path.join(ARCHIVE_DIRECTORY, 'pictures', String(id)), { recursive: true, force: true });
+    }
+}
+
 module.exports = {
     DEFAULT_BOX,
     FPS,
@@ -488,6 +502,7 @@ module.exports = {
     addObservation,
     addSession,
     removeCorpus,
+    removePictures,
     seedCorpus,
     stagingDirectories,
     stubExtraction,

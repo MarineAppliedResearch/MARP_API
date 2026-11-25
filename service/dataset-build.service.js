@@ -40,6 +40,7 @@ const logger = require('../logger/api.logger');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const mosaicRepository = require('../repository/mosaic.repository');
 const buildRepository = require('../repository/dataset-build.repository');
+const pictureRepository = require('../repository/dataset-picture.repository');
 const extraction = require('./thumbnail-extraction.service');
 /* **The same resolved directory the extractor writes to**, never a path computed
    here. A corpus and its thumbnails are one unit -- a worktree reading a shared
@@ -539,11 +540,48 @@ async function cutPass(streamUrl, batch, fps, batchDir, image, video) {
     );
 }
 
+/**
+ * A detection picture's name in the archive, without its extension.
+ *
+ * @param {string} video - The video it was cut from.
+ * @param {number} frame - The frame.
+ * @returns {string}
+ */
+function stemFor(video, frame) {
+    return `${path.parse(video).name}_${String(frame).padStart(8, '0')}`;
+}
+
+/**
+ * Every picture of a detection build that is in staging, with whom it is of (#271).
+ *
+ * @param {Map<string, Object>} videos - From `plan.extractionPlan`.
+ * @param {string} staging - The build's staging directory.
+ * @param {Object} image - From {@link imageSettings}.
+ * @returns {Array<Object>} For {@link savePictures}.
+ */
+function detectionPictures(videos, staging, image) {
+    const out = [];
+
+    for (const entry of videos.values()) {
+        const images = path.join(staging, directoryFor(entry.split), 'images');
+
+        for (const [frame, owners] of entry.drawn || []) {
+            const source = path.join(images, `${stemFor(entry.video, frame)}.${image.extension}`);
+
+            if (fs.existsSync(source)) {
+                out.push({ source, split: entry.split, video: entry.video, framenum: frame, owners });
+            }
+        }
+    }
+
+    return out;
+}
+
 async function cutVideo(entry, staging, image = imageSettings(), onBatch = null) {
     const directory = directoryFor(entry.split);
     const images = path.join(staging, directory, 'images');
     const labels = path.join(staging, directory, 'labels');
-    const stemOf = (frame) => `${path.parse(entry.video).name}_${String(frame).padStart(8, '0')}`;
+    const stemOf = (frame) => stemFor(entry.video, frame);
 
     fs.mkdirSync(images, { recursive: true });
     fs.mkdirSync(labels, { recursive: true });
@@ -677,6 +715,93 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
         return { written, missing, perClass };
     } finally {
         fs.rmSync(cut, { recursive: true, force: true });
+    }
+}
+
+/** How wide a dataset picture's small copy is: a Mosaic tile, not a full frame (#271). */
+const PICTURE_WIDTH = 320;
+
+/** Small copies made at once, so a big build is not one at a time nor all at once. */
+const PICTURE_CONCURRENCY = 8;
+
+/**
+ * Save a small copy of every picture a build cut, and record which observation each is of
+ * and what was drawn on it (#271), so the dataset can be reviewed in the Mosaic.
+ *
+ * **Never fails the build.** A picture that cannot be copied is recorded with no copy, and
+ * anything else that goes wrong is logged and the build carries on: the dataset is what was
+ * asked for, and these are for looking at it. That is why the caller wraps this as well.
+ *
+ * @async
+ * @param {Object} options - What to save.
+ * @param {number} options.datasetId - The dataset being built.
+ * @param {Array<Object>} options.pictures - `{source, split, video, framenum, owners}`, where
+ *   `source` is the picture in staging and `owners` is `[{observation_id, drawn}]`.
+ * @param {Function} [options.onProgress] - Called with the count saved so far.
+ * @returns {Promise<{saved: number, failed: number}>} Small copies made, and not made.
+ */
+async function savePictures({ datasetId, pictures, onProgress = null }) {
+    const sharp = require('sharp');
+    const relative = (picture) => path.posix.join('pictures', String(datasetId), picture.split, path.basename(picture.source));
+    let saved = 0;
+    let failed = 0;
+
+    for (let at = 0; at < pictures.length; at += PICTURE_CONCURRENCY) {
+        const batch = pictures.slice(at, at + PICTURE_CONCURRENCY);
+        const copies = await Promise.all(batch.map(async (picture) => {
+            const target = path.join(ARCHIVE_DIRECTORY, relative(picture));
+
+            try {
+                fs.mkdirSync(path.dirname(target), { recursive: true });
+                await sharp(picture.source).resize({ width: PICTURE_WIDTH }).jpeg({ quality: 80 }).toFile(target);
+                saved += 1;
+
+                return relative(picture);
+            } catch (error) {
+                failed += 1;
+                logger.warn(`Dataset ${datasetId}: no small copy of ${picture.source}. ${error && error.message}`);
+
+                return null;
+            }
+        }));
+
+        await pictureRepository.recordPictures(batch.flatMap((picture, i) => picture.owners.map((owner) => ({
+            dataset_id: datasetId,
+            observation_id: owner.observation_id,
+            video_source: picture.video,
+            framenum: picture.framenum,
+            split: picture.split,
+            drawn: owner.drawn,
+            picture: copies[i],
+        }))));
+
+        if (onProgress) await onProgress(saved + failed);
+    }
+
+    return { saved, failed };
+}
+
+/**
+ * Save a build's pictures without ever letting that fail the build (#271).
+ *
+ * @async
+ * @param {Object} options - As {@link savePictures}, plus `attemptId` for progress.
+ * @returns {Promise<void>}
+ */
+async function savePicturesQuietly({ datasetId, attemptId, pictures }) {
+    try {
+        const total = pictures.length;
+        const result = await savePictures({
+            datasetId,
+            pictures,
+            onProgress: (done) => buildRepository.reportProgress(attemptId, {
+                phase: 'saving pictures', done, total, unit: 'frames',
+            }),
+        });
+
+        logger.info(`Dataset ${datasetId}: ${result.saved} pictures saved for review, ${result.failed} not.`);
+    } catch (error) {
+        logger.warn(`Dataset ${datasetId}: pictures for review not saved. ${error && error.message}`);
     }
 }
 
@@ -1039,6 +1164,7 @@ async function runHabitatBuild({ job, attempt, datasetId, staging, image, spec }
     const kept = [];
     const rejected = [];
     let missing = 0;
+    let flaggedOut = 0;
     let at = 0;
 
     const stop = async (where) => {
@@ -1066,7 +1192,12 @@ async function runHabitatBuild({ job, attempt, datasetId, staging, image, spec }
             const split = path.join(staging, frame.split, 'images');
             fs.mkdirSync(split, { recursive: true });
             const number = Math.round((frame.positionMs * opened.probe.fps) / 1000);
-            const item = { frame, number, file: path.join(split, `${stemOf(frame, number)}.${image.extension}`) };
+            // A picture a reviewer flagged is never cut (#271).
+            if (frame.flagged && frame.flagged.has(number)) {
+                flaggedOut += 1;
+                continue;
+            }
+            const item ={ frame, number, file: path.join(split, `${stemOf(frame, number)}.${image.extension}`) };
             if (fs.existsSync(item.file)) kept.push(item);
             else pending.push(item);
         }
@@ -1137,10 +1268,26 @@ async function runHabitatBuild({ job, attempt, datasetId, staging, image, spec }
     }
     fs.writeFileSync(path.join(staging, 'classes.json'), `${JSON.stringify(used)}\n`, 'utf8');
     fs.writeFileSync(path.join(staging, 'habitat-report.json'), `${JSON.stringify({
-        frames: kept.length, rejected, drifting_sessions: drifting, not_cut: missing,
+        frames: kept.length, rejected, drifting_sessions: drifting, not_cut: missing, flagged_out: flaggedOut,
     }, null, 2)}\n`, 'utf8');
 
     const archive = packageArchive(staging);
+
+    // Each picture is every covering stretch's, labelled as the archive labels it (#271).
+    await savePicturesQuietly({
+        datasetId,
+        attemptId: attempt.id,
+        pictures: kept.map(({ frame, number, file }) => ({
+            source: file,
+            split: frame.split,
+            video: frame.video,
+            framenum: number,
+            owners: (frame.covering || []).map((id) => ({
+                observation_id: id,
+                drawn: { labels: used.filter((name, k) => frame.labels[columns[k]]) },
+            })),
+        })),
+    });
 
     await buildRepository.recordBuild({
         jobId: job.id,
@@ -1458,6 +1605,9 @@ async function runOne() {
         await buildRepository.reportProgress(attempt.id, { phase: 'packaging', done, total, unit: 'frames' });
 
         const archive = packageArchive(staging);
+
+        // Before the dataset is ready, so a ready dataset can be reviewed straight away.
+        await savePicturesQuietly({ datasetId, attemptId: attempt.id, pictures: detectionPictures(videos, staging, image) });
 
         const members = [];
 

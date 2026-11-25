@@ -166,6 +166,7 @@ describe('a habitat dataset build (#287)', () => {
             await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE job_id = :id', { replacements: { id: made.jobId } });
             await db.sequelize.query('DELETE FROM gpu_jobs WHERE id = :id', { replacements: { id: made.jobId } });
         }
+        if (made.datasetId) fs.rmSync(path.join(buildService.ARCHIVE_DIRECTORY, 'pictures', String(made.datasetId)), { recursive: true, force: true });
         if (made.datasetId) await db.sequelize.query('DELETE FROM datasets WHERE id = :id', byDataset);
         if (made.workerCreated) await db.sequelize.query("DELETE FROM gpu_workers WHERE local_id = 'marp-api-internal'");
         if (ids.length) {
@@ -214,5 +215,66 @@ describe('a habitat dataset build (#287)', () => {
             { observation_id: seeded.ids.mud, inclusion_type: 'train' },
             { observation_id: seeded.ids.boulder, inclusion_type: 'train' },
         ]);
+    });
+
+    describe('reviewing its pictures (#271)', () => {
+        const again = {};
+        const at = (s) => s * fixture.FPS;
+        const picturesOf = (datasetId) => q(
+            `SELECT observation_id, framenum, drawn, picture FROM dataset_pictures
+              WHERE dataset_id = :id ORDER BY framenum, observation_id`,
+            { id: datasetId }
+        );
+
+        afterAll(async () => {
+            const ids = Object.values(seeded.ids);
+            await db.sequelize.query('DELETE FROM picture_reviews WHERE observation_id IN (:ids)', { replacements: { ids } });
+            if (again.datasetId) {
+                const byDataset = { replacements: { id: again.datasetId } };
+                for (const table of ['dataset_pictures', 'dataset_observations', 'dataset_classes', 'dataset_split_species', 'dataset_splits']) {
+                    await db.sequelize.query(`DELETE FROM ${table} WHERE dataset_id = :id`, byDataset);
+                }
+                fs.rmSync(path.join(buildService.ARCHIVE_DIRECTORY, 'pictures', String(again.datasetId)), { recursive: true, force: true });
+            }
+            if (again.jobId) {
+                await db.sequelize.query('DELETE FROM gpu_job_attempts WHERE job_id = :id', { replacements: { id: again.jobId } });
+                await db.sequelize.query('DELETE FROM gpu_jobs WHERE id = :id', { replacements: { id: again.jobId } });
+            }
+            if (again.datasetId) await db.sequelize.query('DELETE FROM datasets WHERE id = :id', { replacements: { id: again.datasetId } });
+            if (again.archive && fs.existsSync(again.archive)) fs.rmSync(again.archive, { force: true });
+        });
+
+        test('R8: each picture is recorded for every stretch over it, with the labels the archive gives it', async () => {
+            const rows = await picturesOf(made.datasetId);
+            expect(rows.map((r) => [r.observation_id, r.framenum, r.drawn.labels])).toEqual([
+                [seeded.ids.mud, at(10), ['Mud']],
+                [seeded.ids.mud, at(20), ['Mud', 'Boulder']],
+                [seeded.ids.boulder, at(20), ['Mud', 'Boulder']],
+                [seeded.ids.mud, at(40), ['Mud']],
+            ]);
+            for (const row of rows) expect(fs.existsSync(path.join(buildService.ARCHIVE_DIRECTORY, row.picture))).toBe(true);
+        });
+
+        test('R5: a flagged habitat picture is left out of the next build, and the others are in it', async () => {
+            await db.sequelize.query(
+                `INSERT INTO picture_reviews (observation_id, framenum, decision, reason, reviewer_id, dataset_id)
+                 VALUES (:obs, :frame, 'flagged', 'Other / unsure', :reviewer, :dataset)`,
+                { replacements: { obs: seeded.ids.boulder, frame: at(20), reviewer: seeded.reviewerId, dataset: made.datasetId } }
+            );
+
+            const response = await global.api.post('/api/v2/dataset/build')
+                .send({ name: `Jest Habitat Rebuild ${runId}`, task: 'habitat', filters: { session: [seeded.sessionId] } });
+            expect(response.status).toBe(201);
+            again.datasetId = response.body.dataset.id;
+            again.jobId = response.body.job.id;
+            await db.sequelize.query('UPDATE gpu_jobs SET priority = 5000 WHERE id = :id', { replacements: { id: again.jobId } });
+
+            const rebuilt = await buildService.runOne();
+            expect(rebuilt.jobId).toBe(again.jobId);
+            again.archive = path.join(buildService.ARCHIVE_DIRECTORY, `${rebuilt.archive.sha256}.tar`);
+
+            // The picture at 20 s is the Boulder's and the Mud's, so it goes for both.
+            expect((await picturesOf(again.datasetId)).map((r) => r.framenum)).toEqual([at(10), at(40)]);
+        }, 120000);
     });
 });

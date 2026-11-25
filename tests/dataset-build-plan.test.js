@@ -1142,3 +1142,61 @@ describe('frames per object (#296)', () => {
         expect(DEFAULT_FRAMES_PER_OBJECT).toBe(10);
     });
 });
+
+describe('reviewing a dataset\'s pictures (#271)', () => {
+
+    const sampling = (n, seed = 7) => ({ frames_per_object: n, balance_classes: false, seed });
+    const plan = (rows, how = null) => [...extractionPlan(
+        assignSplits(connectedGroups(selected(rows)), { train: 1 }), vocabulary(rows), how
+    ).values()][0];
+
+    test('R5: a flagged picture is left out and the rest of its track is cut', () => {
+        const entry = plan([{ ...observation({ id: 1, first: 100, last: 120 }), flagged_frames: [105] }]);
+
+        expect(entry.frames.has(105)).toBe(false);
+        expect(entry.frames.size).toBe(20);
+    });
+
+    test('R5: a flagged frame is left out for every animal in it, since the picture is shared', () => {
+        const entry = plan([
+            { ...observation({ id: 1, first: 100, last: 120 }), flagged_frames: [115] },
+            observation({ id: 2, first: 110, last: 130, species: 2, comname: 'Mussel' }),
+        ]);
+
+        expect(entry.frames.has(115)).toBe(false);
+        expect(entry.frames.has(116)).toBe(true);
+    });
+
+    test('R5: sampling picks around a flagged picture and still takes its share', () => {
+        const row = observation({ id: 1, first: 0, last: 99 });
+        const before = [...plan([row], sampling(10)).frames.keys()];
+        const flagged = before[3];
+        const after = [...plan([{ ...row, flagged_frames: [flagged] }], sampling(10)).frames.keys()];
+
+        expect(after).not.toContain(flagged);
+        expect(after).toHaveLength(10);
+    });
+
+    test('R8: each label line says which observation it is for, and what was drawn', () => {
+        const entry = plan([
+            observation({ id: 1, first: 100, last: 120 }),
+            observation({ id: 2, first: 110, last: 130, species: 2, comname: 'Mussel' }),
+        ]);
+        const drawn = entry.drawn.get(115);
+
+        expect(drawn.map((d) => d.observation_id)).toEqual([1, 2]);
+        // The same box and class the label line carries, line for line.
+        drawn.forEach((d, i) => {
+            const [klass, cx, cy, w, h] = entry.frames.get(115)[i].split(' ').map(Number);
+
+            expect(d.drawn).toEqual({ box: { cx, cy, w, h }, class_index: klass });
+        });
+    });
+
+    test('nothing flagged: the plan is exactly what it was', () => {
+        const row = observation({ id: 1, first: 0, last: 99 });
+
+        expect([...plan([{ ...row, flagged_frames: [] }], sampling(10)).frames.keys()])
+            .toEqual([...plan([row], sampling(10)).frames.keys()]);
+    });
+});

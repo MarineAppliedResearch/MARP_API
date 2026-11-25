@@ -57,7 +57,10 @@ async function habitatStretches(filters = {}) {
     // Promotion is checked per frame afterwards, so every stretch of each session is read here.
     return db.sequelize.query(
         `SELECT o.observation_id, o.session_id, o.species_id, o.comname, o."actualPosition", o."mediaPosition",
-                o.tc, o.etc, o.video_source, s.dive, coalesce(p.name, '') AS project, rt.decision AS training_decision
+                o.tc, o.etc, o.video_source, s.dive, coalesce(p.name, '') AS project, rt.decision AS training_decision,
+                -- Pictures a reviewer flagged, which no build cuts (#271).
+                ARRAY(SELECT pr.framenum FROM picture_review_current pr
+                       WHERE pr.observation_id = o.observation_id AND pr.decision = 'flagged') AS flagged_frames
            FROM observations o
            JOIN sessions s ON s.session_id = o.session_id
            LEFT JOIN projects p ON p.project_id = o.project_id
@@ -132,6 +135,7 @@ function selectFrames(rows) {
             id: row.observation_id, name: row.comname, file: row.video_source,
             startMs: media, endMs: media + (etc - tc), offsetMs: actual - media,
             promoted: row.training_decision === PROMOTED,
+            flagged: row.flagged_frames || [],
         });
     }
 
@@ -152,8 +156,11 @@ function selectFrames(rows) {
         for (const frame of plan.framesForSession(session.stretches)) {
             // Only where every stretch over it is promoted, so every label on it was checked.
             if (!frame.covering.every((id) => byId.get(id).promoted)) continue;
+            // `covering` says whose picture it is, and `flagged` which frame numbers of theirs a
+            // reviewer flagged: the number is known only once the video's rate is (#271).
             frames.push({ split, project: session.project, dive: session.dive, session_id: sessionId,
-                video: frame.file, positionMs: frame.positionMs, labels: frame.labels });
+                video: frame.file, positionMs: frame.positionMs, labels: frame.labels, covering: frame.covering,
+                flagged: new Set(frame.covering.flatMap((id) => byId.get(id).flagged.map(Number))) });
             frame.covering.forEach((id) => members.set(id, split));
         }
     }

@@ -1321,7 +1321,11 @@ SELECT o.observation_id,
        s.line,
        k.first_framenum,
        k.last_framenum,
-       k.keyframes
+       k.keyframes,
+       -- Pictures a reviewer flagged, which no build cuts (#271).
+       ARRAY(SELECT pr.framenum FROM picture_review_current pr
+              WHERE pr.observation_id = o.observation_id AND pr.decision = 'flagged'
+              ORDER BY pr.framenum) AS flagged_frames
   FROM observations o
   LEFT JOIN sessions s ON s.session_id = o.session_id
   LEFT JOIN projects p ON p.project_id = o.project_id

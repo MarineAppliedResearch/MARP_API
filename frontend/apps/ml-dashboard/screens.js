@@ -10989,7 +10989,8 @@ async function fillDatasetPickers() {
 const DATASET_POLL_MS = 5000;
 
 /** What the runner's phases are called on screen. */
-const BUILD_PHASES = { selecting: 'Selecting', extracting: 'Extracting', packaging: 'Packaging' };
+// `saving pictures` is the small copies a dataset is reviewed from (#271).
+const BUILD_PHASES = { selecting: 'Selecting', extracting: 'Extracting', packaging: 'Packaging', saving: 'Saving' };
 
 /* How many frames a dataset's preview shows. Eight is two rows of four at the width the
    panel has, and enough to cover several videos once they are spread across the archive
