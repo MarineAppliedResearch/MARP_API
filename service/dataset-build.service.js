@@ -48,6 +48,8 @@ const extraction = require('./thumbnail-extraction.service');
    is the one place that decides which directory this process is looking at. */
 const { STORAGE_DIR: THUMBNAIL_DIR } = require('../config/thumbnails');
 const plan = require('./dataset-build-plan');
+const geometry = require('./thumbnail-geometry');
+const { HABITAT_BOX } = require('../db/habitat-keyframes');
 const habitatSelect = require('./habitat-dataset-select');
 const { SUBSTRATES } = require('./habitat-dataset-plan');
 
@@ -718,17 +720,37 @@ async function cutVideo(entry, staging, image = imageSettings(), onBatch = null)
     }
 }
 
-/** How wide a dataset picture's small copy is: a Mosaic tile, not a full frame (#271). */
-const PICTURE_WIDTH = 320;
+/**
+ * How wide a dataset picture is saved: large enough to judge a box on (#271). At 320 a Bat
+ * star was a few pixels across, which cannot be judged at all.
+ */
+const PICTURE_WIDTH = 1280;
 
-/** Small copies made at once, so a big build is not one at a time nor all at once. */
+/** How wide a track's crop is: a Mosaic tile, zoomed in on that track's box. */
+const CROP_WIDTH = 320;
+
+/** Pictures saved at once, so a big build is neither one at a time nor all at once. */
 const PICTURE_CONCURRENCY = 8;
 
 /**
- * Save a small copy of every picture a build cut, and record which observation each is of
- * and what was drawn on it (#271), so the dataset can be reviewed in the Mosaic.
+ * The box a track's crop is cut around: its own box, or for a habitat picture the habitat
+ * crop the model is trained on. Centre-origin and normalised, as `cropRectangle` takes.
  *
- * **Never fails the build.** A picture that cannot be copied is recorded with no copy, and
+ * @param {Object} drawn - What the build drew for this observation on the picture.
+ * @returns {{x: number, y: number, width: number, height: number}}
+ */
+function cropBoxOf(drawn) {
+    const box = drawn && drawn.box;
+
+    return box ? { x: box.cx, y: box.cy, width: box.w, height: box.h } : { ...HABITAT_BOX };
+}
+
+/**
+ * Save every picture a build cut, large enough to judge, and for each track in it a crop
+ * zoomed in on that track's box; record which observation each is of and what was drawn on
+ * it (#271), so the dataset can be reviewed in the Mosaic.
+ *
+ * **Never fails the build.** A picture that cannot be saved is recorded with no file, and
  * anything else that goes wrong is logged and the build carries on: the dataset is what was
  * asked for, and these are for looking at it. That is why the caller wraps this as well.
  *
@@ -738,42 +760,80 @@ const PICTURE_CONCURRENCY = 8;
  * @param {Array<Object>} options.pictures - `{source, split, video, framenum, owners}`, where
  *   `source` is the picture in staging and `owners` is `[{observation_id, drawn}]`.
  * @param {Function} [options.onProgress] - Called with the count saved so far.
- * @returns {Promise<{saved: number, failed: number}>} Small copies made, and not made.
+ * @returns {Promise<{saved: number, failed: number}>} Pictures saved, and not saved.
  */
 async function savePictures({ datasetId, pictures, onProgress = null }) {
     const sharp = require('sharp');
-    const relative = (picture) => path.posix.join('pictures', String(datasetId), picture.split, path.basename(picture.source));
+    const folder = (picture) => path.posix.join('pictures', String(datasetId), picture.split);
+    const stem = (picture) => path.parse(picture.source).name;
     let saved = 0;
     let failed = 0;
 
+    /* One picture: the large copy, then a crop per track in it. Each crop is its own try, so
+       one bad box costs that tile its zoom and nothing else. */
+    const one = async (picture) => {
+        const out = { picture: null, crops: new Map() };
+
+        try {
+            const relative = path.posix.join(folder(picture), `${stem(picture)}.jpg`);
+            const target = path.join(ARCHIVE_DIRECTORY, relative);
+
+            fs.mkdirSync(path.dirname(target), { recursive: true });
+            await sharp(picture.source).resize({ width: PICTURE_WIDTH, withoutEnlargement: true })
+                .jpeg({ quality: 85 }).toFile(target);
+            out.picture = relative;
+            saved += 1;
+        } catch (error) {
+            failed += 1;
+            logger.warn(`Dataset ${datasetId}: ${picture.source} not saved. ${error && error.message}`);
+
+            return out;
+        }
+
+        const { width, height } = await sharp(picture.source).metadata();
+
+        for (const owner of picture.owners) {
+            try {
+                const { clamped } = geometry.cropRectangle(cropBoxOf(owner.drawn), width, height);
+                const relative = path.posix.join(folder(picture), `${stem(picture)}_${owner.observation_id}.jpg`);
+
+                await sharp(picture.source).extract(clamped)
+                    .resize({ width: CROP_WIDTH, height: CROP_WIDTH, fit: 'fill' })
+                    .jpeg({ quality: 85 }).toFile(path.join(ARCHIVE_DIRECTORY, relative));
+                out.crops.set(owner.observation_id, {
+                    crop: relative,
+                    crop_rect: {
+                        left: clamped.left / width, top: clamped.top / height,
+                        width: clamped.width / width, height: clamped.height / height,
+                    },
+                });
+            } catch (error) {
+                logger.warn(`Dataset ${datasetId}: no crop of ${picture.source} for ${owner.observation_id}. ${error && error.message}`);
+            }
+        }
+
+        return out;
+    };
+
     for (let at = 0; at < pictures.length; at += PICTURE_CONCURRENCY) {
         const batch = pictures.slice(at, at + PICTURE_CONCURRENCY);
-        const copies = await Promise.all(batch.map(async (picture) => {
-            const target = path.join(ARCHIVE_DIRECTORY, relative(picture));
+        const results = await Promise.all(batch.map(one));
 
-            try {
-                fs.mkdirSync(path.dirname(target), { recursive: true });
-                await sharp(picture.source).resize({ width: PICTURE_WIDTH }).jpeg({ quality: 80 }).toFile(target);
-                saved += 1;
+        await pictureRepository.recordPictures(batch.flatMap((picture, i) => picture.owners.map((owner) => {
+            const crop = results[i].crops.get(owner.observation_id) || { crop: null, crop_rect: null };
 
-                return relative(picture);
-            } catch (error) {
-                failed += 1;
-                logger.warn(`Dataset ${datasetId}: no small copy of ${picture.source}. ${error && error.message}`);
-
-                return null;
-            }
-        }));
-
-        await pictureRepository.recordPictures(batch.flatMap((picture, i) => picture.owners.map((owner) => ({
-            dataset_id: datasetId,
-            observation_id: owner.observation_id,
-            video_source: picture.video,
-            framenum: picture.framenum,
-            split: picture.split,
-            drawn: owner.drawn,
-            picture: copies[i],
-        }))));
+            return {
+                dataset_id: datasetId,
+                observation_id: owner.observation_id,
+                video_source: picture.video,
+                framenum: picture.framenum,
+                split: picture.split,
+                drawn: owner.drawn,
+                picture: results[i].picture,
+                crop: crop.crop,
+                crop_rect: crop.crop_rect,
+            };
+        })));
 
         if (onProgress) await onProgress(saved + failed);
     }

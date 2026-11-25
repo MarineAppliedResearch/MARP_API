@@ -1091,7 +1091,7 @@ function registerDatasetRoutes(app) {
         method: 'get',
         permission: 'datasets:read',
         path: '/api/dataset/:id/pictures/:observationId/:framenum',
-        summary: 'One of a dataset\'s pictures, small, for reviewing it',
+        summary: 'One of a dataset\'s pictures, for reviewing it',
         description:
             'The small copy a build saved of one picture it cut for one observation (#271): what the Mosaic '
             + 'shows when a dataset is reviewed. Addressed by observation and frame, never by filename. A '
@@ -1101,6 +1101,7 @@ function registerDatasetRoutes(app) {
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'The dataset.' },
             { in: 'path', name: 'observationId', required: true, schema: { type: 'integer' }, description: 'The observation.' },
             { in: 'path', name: 'framenum', required: true, schema: { type: 'integer' }, description: 'The frame.' },
+            { in: 'query', name: 'kind', required: false, schema: { type: 'string', enum: ['picture', 'crop'], default: 'picture' }, description: '`picture`, the whole picture, or `crop`, zoomed in on the observation box for its tile.' },
         ],
         responses: {
             200: { description: 'The picture.', content: { 'image/jpeg': { schema: { type: 'string', format: 'binary' } } } },
@@ -1110,7 +1111,7 @@ function registerDatasetRoutes(app) {
         handler: asyncHandler(async (req, res) => {
             const [id, observationId, framenum] = [req.params.id, req.params.observationId, req.params.framenum].map(Number);
             const file = [id, observationId, framenum].every(Number.isInteger)
-                ? await datasetReviewService.pictureFile(id, observationId, framenum)
+                ? await datasetReviewService.pictureFile(id, observationId, framenum, req.query.kind)
                 : null;
 
             if (!file || !fs.existsSync(file)) {

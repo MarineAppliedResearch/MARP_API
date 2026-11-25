@@ -12,7 +12,7 @@
 
 const db = require('../model');
 
-/** Rows per insert: well under PostgreSQL's 65,535 bind parameters at seven a row. */
+/** Rows per insert: well under PostgreSQL's 65,535 bind parameters at nine a row. */
 const CHUNK = 1000;
 
 /**
@@ -32,14 +32,16 @@ async function recordPictures(rows) {
             const base = bind.length;
 
             bind.push(row.dataset_id, row.observation_id, row.video_source, row.framenum,
-                row.split, JSON.stringify(row.drawn), row.picture);
+                row.split, JSON.stringify(row.drawn), row.picture, row.crop || null,
+                row.crop_rect ? JSON.stringify(row.crop_rect) : null);
 
-            return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}::jsonb, $${base + 7})`;
+            return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}::jsonb, `
+                + `$${base + 7}, $${base + 8}, $${base + 9}::jsonb)`;
         });
 
         await db.sequelize.query(
             `INSERT INTO dataset_pictures
-                 (dataset_id, observation_id, video_source, framenum, split, drawn, picture)
+                 (dataset_id, observation_id, video_source, framenum, split, drawn, picture, crop, crop_rect)
              VALUES ${values.join(', ')}
              ON CONFLICT (dataset_id, observation_id, framenum) DO NOTHING`,
             { bind }
@@ -61,8 +63,14 @@ async function picturesOf(datasetId, observationIds) {
     if (!observationIds.length) return [];
 
     return db.sequelize.query(
-        `SELECT dp.observation_id, dp.framenum, dp.split, dp.drawn, dp.picture,
-                pr.decision, pr.reason, pr.note, pr.reviewer_id
+        `SELECT dp.observation_id, dp.framenum, dp.split, dp.drawn, dp.picture, dp.crop, dp.crop_rect,
+                pr.decision, pr.reason, pr.note, pr.reviewer_id,
+                -- Every other box the dataset drew on the same picture, so a missing one shows.
+                (SELECT coalesce(json_agg(json_build_object('observation_id', o2.observation_id, 'drawn', o2.drawn)
+                                          ORDER BY o2.observation_id), '[]'::json)
+                   FROM dataset_pictures o2
+                  WHERE o2.dataset_id = dp.dataset_id AND o2.video_source = dp.video_source
+                    AND o2.framenum = dp.framenum AND o2.observation_id <> dp.observation_id) AS others
            FROM dataset_pictures dp
            LEFT JOIN picture_review_current pr
                   ON pr.observation_id = dp.observation_id AND pr.framenum = dp.framenum
@@ -73,22 +81,26 @@ async function picturesOf(datasetId, observationIds) {
 }
 
 /**
- * Where one picture's small copy is, or null when the dataset has no such picture.
+ * Where one picture's file is -- the whole picture, or this observation's crop of it -- or
+ * null when the dataset has no such picture.
  *
  * @async
  * @param {number} datasetId - The dataset.
  * @param {number} observationId - The observation.
  * @param {number} framenum - The frame.
+ * @param {string} [kind] - `picture` or `crop`.
  * @returns {Promise<?string>} Relative to the dataset directory.
  */
-async function pictureFile(datasetId, observationId, framenum) {
+async function pictureFile(datasetId, observationId, framenum, kind = 'picture') {
     const [row] = await db.sequelize.query(
-        `SELECT picture FROM dataset_pictures
+        `SELECT picture, crop FROM dataset_pictures
           WHERE dataset_id = $1 AND observation_id = $2 AND framenum = $3`,
         { bind: [datasetId, observationId, framenum], type: db.Sequelize.QueryTypes.SELECT }
     );
 
-    return row ? row.picture : null;
+    if (!row) return null;
+
+    return kind === 'crop' ? row.crop : row.picture;
 }
 
 /**

@@ -58,7 +58,7 @@ async function build(name) {
 /* Video one's two animals; species B's other observation, in video two, is in the build
    too and is not what these tests are about. */
 const picturesOf = (datasetId) => q(
-    `SELECT observation_id, framenum, split, drawn, picture FROM dataset_pictures
+    `SELECT observation_id, framenum, split, drawn, picture, crop, crop_rect FROM dataset_pictures
       WHERE dataset_id = :datasetId AND observation_id IN (:ids) ORDER BY observation_id, framenum`,
     { datasetId, ids: [seeded.first, seeded.second] }
 );
@@ -134,6 +134,9 @@ describe('reviewing a dataset\'s pictures (#271)', () => {
             expect(row.drawn.box).toEqual(expect.objectContaining({ cx: expect.any(Number), w: expect.any(Number) }));
             expect(row.picture).toBeTruthy();
             expect(fs.existsSync(path.join(ARCHIVE_DIRECTORY, row.picture))).toBe(true);
+            // R9: and a crop zoomed in on this track, for its tile.
+            expect(fs.existsSync(path.join(ARCHIVE_DIRECTORY, row.crop))).toBe(true);
+            expect(row.crop_rect).toEqual(expect.objectContaining({ left: expect.any(Number), width: expect.any(Number) }));
         }
     });
 
@@ -199,8 +202,14 @@ describe('the API a dataset is reviewed through (#271)', () => {
         expect(rows.every((r) => r.dataset_id === datasetId)).toBe(true);
         expect(first.pictures.map((p) => p.framenum)).toEqual([100, 101, 102]);
         expect(first.pictures[0]).toEqual(expect.objectContaining({
-            split: 'train', has_picture: true, drawn: expect.objectContaining({ box: expect.any(Object) }),
+            split: 'train', has_picture: true, has_crop: true, drawn: expect.objectContaining({ box: expect.any(Object) }),
         }));
+        // R10: frame 101 holds the second animal too, and its box comes with the picture.
+        expect(first.pictures[1].others.map((o) => o.observation_id)).toEqual([seeded.second]);
+
+        const crop = await global.api.get(`/api/v2/dataset/${datasetId}/pictures/${seeded.first}/100?kind=crop`);
+
+        expect(crop.status).toBe(200);
         // Only the dataset's tracks: the fourth observation, species C, is not in it.
         expect(rows.map((r) => r.observation_id)).not.toContain(seeded.fourth);
     });

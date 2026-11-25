@@ -1475,6 +1475,10 @@ async function attachDatasetPictures(filters, rows) {
             split: picture.split,
             drawn: picture.drawn,
             has_picture: Boolean(picture.picture),
+            has_crop: Boolean(picture.crop),
+            crop_rect: picture.crop_rect || null,
+            // The other boxes the dataset drew on the same picture (#271).
+            others: picture.others || [],
             decision: picture.decision || null,
             reason: picture.reason || null,
             note: picture.note || null,

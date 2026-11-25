@@ -87,16 +87,17 @@ async function review(datasetId, body, reviewerId) {
 }
 
 /**
- * The file holding one picture's small copy, or null when there is none.
+ * The file holding one of a dataset's pictures, or its crop, or null when there is none.
  *
  * @async
  * @param {number} datasetId - The dataset.
  * @param {number} observationId - The observation.
  * @param {number} framenum - The frame.
+ * @param {string} [kind] - `picture`, the whole picture, or `crop`, zoomed in on this track.
  * @returns {Promise<?string>} An absolute path inside the dataset directory.
  */
-async function pictureFile(datasetId, observationId, framenum) {
-    const relative = await pictureRepository.pictureFile(datasetId, observationId, framenum);
+async function pictureFile(datasetId, observationId, framenum, kind = 'picture') {
+    const relative = await pictureRepository.pictureFile(datasetId, observationId, framenum, kind === 'crop' ? 'crop' : 'picture');
 
     if (!relative) return null;
 

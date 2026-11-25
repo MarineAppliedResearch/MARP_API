@@ -137,6 +137,7 @@ export const thumbnailUrl = (observationId) =>
 export const fullFrameUrl = (observationId) =>
   `${BASE}/observations/${observationId}/full-frame`;
 
-/** One of a dataset's pictures, small, by its track and frame (#271). */
-export const pictureUrl = (datasetId, observationId, framenum) =>
-  `${BASE}/dataset/${datasetId}/pictures/${observationId}/${framenum}`;
+/** One of a dataset's pictures by its track and frame (#271): the whole picture, or `crop`,
+    zoomed in on that track's box. */
+export const pictureUrl = (datasetId, observationId, framenum, kind = 'picture') =>
+  `${BASE}/dataset/${datasetId}/pictures/${observationId}/${framenum}${kind === 'crop' ? '?kind=crop' : ''}`;

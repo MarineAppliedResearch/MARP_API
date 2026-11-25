@@ -5005,6 +5005,22 @@
                 "has_picture": {
                   "type": "boolean"
                 },
+                "has_crop": {
+                  "type": "boolean",
+                  "description": "Whether there is a crop zoomed in on this track, at ?kind=crop."
+                },
+                "crop_rect": {
+                  "type": "object",
+                  "nullable": true,
+                  "description": "Where the crop is in the picture, as fractions of it."
+                },
+                "others": {
+                  "type": "array",
+                  "description": "Every other box the dataset drew on this picture: `{observation_id, drawn}`.",
+                  "items": {
+                    "type": "object"
+                  }
+                },
                 "decision": {
                   "type": "string",
                   "nullable": true,
@@ -11913,7 +11929,7 @@
     },
     "/v2/dataset/{id}/pictures/{observationId}/{framenum}": {
       "get": {
-        "summary": "One of a dataset's pictures, small, for reviewing it",
+        "summary": "One of a dataset's pictures, for reviewing it",
         "description": "The small copy a build saved of one picture it cut for one observation (#271): what the Mosaic shows when a dataset is reviewed. Addressed by observation and frame, never by filename. A picture has one copy however many animals are in it. Requires the `datasets:read` permission.",
         "tags": [
           "V2 · MachineLearning"
@@ -11945,6 +11961,20 @@
               "type": "integer"
             },
             "description": "The frame."
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "picture",
+                "crop"
+              ],
+              "default": "picture"
+            },
+            "description": "`picture`, the whole picture, or `crop`, zoomed in on the observation box for its tile."
           }
         ],
         "responses": {

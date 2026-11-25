@@ -52,6 +52,8 @@ module.exports = {
                      split          VARCHAR(16) NOT NULL,
                      drawn          JSONB NOT NULL,
                      picture        VARCHAR(512),
+                     crop           VARCHAR(512),
+                     crop_rect      JSONB,
                      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                      UNIQUE (dataset_id, observation_id, framenum)
                  )`,
@@ -67,7 +69,11 @@ module.exports = {
                  COMMENT ON COLUMN dataset_pictures.drawn IS
                    'What the build labelled this observation with on this picture, exactly as written into the archive: {"box": {cx, cy, w, h}, "class_index"} for detection, {"labels": [substrate, ...]} for habitat.';
                  COMMENT ON COLUMN dataset_pictures.picture IS
-                   'A small copy of the picture, relative to the dataset directory. Null when it could not be saved: a build never fails over one.'`,
+                   'The picture, large enough to judge, relative to the dataset directory. Shared by every observation in it. Null when it could not be saved: a build never fails over one.';
+                 COMMENT ON COLUMN dataset_pictures.crop IS
+                   'The picture zoomed in on this observation''s box, for its Mosaic tile, relative to the dataset directory.';
+                 COMMENT ON COLUMN dataset_pictures.crop_rect IS
+                   'Where the crop is in the picture, as fractions of it: {left, top, width, height}.'`,
                 { transaction }
             );
 

@@ -66,6 +66,14 @@ entirely in MARP (#287).
 - **2026-11-24** (Isaac) — Both ways of fixing: find now and fix later in a batch from the
   Mosaic, or fix one straight away on the video page.
 
+- **2026-11-24** (Isaac) — **The pictures must be big enough to judge.** A Bat star was a
+  few pixels in a 320-pixel whole frame. The tile is zoomed in on the track's box; the opened
+  tile shows each picture large.
+- **2026-11-24** (Isaac) — **Every animal of the dataset's species in a picture must be
+  boxed.** YOLO reads an unboxed animal as background, so a frame with three starfish and two
+  boxes teaches the model wrong. Reviewing a picture is also checking that nothing of the
+  dataset's species is left without a box.
+
 ## Open assumptions
 
 - [x] **A1 · scientific or data-meaning · blocking** — answered 2026-11-24: the picture is the
@@ -86,6 +94,14 @@ entirely in MARP (#287).
   picture is saved when a dataset is built, with a record per picture of its dataset,
   observation, video, frame, split and the box or labels drawn on it. Saving them must never
   fail a build. Datasets built before this get theirs once, by a script, as a later step.
+- [ ] **A8 · scientific or data-meaning · non-blocking** — Blocks the build change only, so nothing in the build is changed for it until it is answered; the pictures work does not depend on it. An animal of the dataset's species can
+  be annotated in MARP and still left out of the dataset, because only promoted tracks are
+  taken; the build then cuts a picture showing it with no box. In dataset 382, 54% of the
+  California sea cucumber pictures had one. Does the build leave such a picture out by itself,
+  or put it in and leave it to review?
+- [ ] **A9 · product/UI · non-blocking** — The flag reasons. "Box off the animal" and "An
+  animal has no box" are the two this review is for and neither is in the training list. Add
+  both?
 - [ ] **A7 · database/schema · non-blocking** — A picture's review is kept like an
   observation's: a log of every decision and a current one per observation and frame, so the
   last commit wins and nothing is lost.
@@ -107,6 +123,10 @@ entirely in MARP (#287).
 - **R7** — From a picture, one action opens the video page at that exact frame to fix it.
 - **R8** — A build saves the small pictures and their records, and a failure to save them
   never fails the build.
+- **R9** — A tile shows each picture zoomed in on its track's box; an opened tile shows each
+  picture large enough to judge.
+- **R10** — An opened picture draws every box the dataset put on it, of every species, the
+  track's own picked out, so a missing box can be seen and flagged.
 
 ## Plan
 

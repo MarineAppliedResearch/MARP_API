@@ -33,24 +33,42 @@ function standing(row) {
     : { state: picture.decision === 'promoted' ? 'promoted' : 'unchecked', reason: null });
 }
 
-/** What the dataset drew on one picture: its box, or a habitat picture's substrates. */
-function drawn(picture) {
-  const box = picture.drawn && picture.drawn.box;
-  if (box) {
-    const left = (box.cx - box.w / 2) * 100;
-    const top = (box.cy - box.h / 2) * 100;
-    return `<i class="dbox" style="left:${left}%;top:${top}%;width:${box.w * 100}%;height:${box.h * 100}%"></i>`;
-  }
-  const labels = (picture.drawn && picture.drawn.labels) || [];
+/* One box, placed in fractions of whatever it is drawn over. `within` is the crop's place in
+   the picture, so a box drawn over a crop lands where it is in the crop. */
+function boxMarkup(drawn, cls, within = { left: 0, top: 0, width: 1, height: 1 }) {
+  const box = drawn && drawn.box;
+  if (!box) return '';
+  const left = ((box.cx - box.w / 2) - within.left) / within.width * 100;
+  const top = ((box.cy - box.h / 2) - within.top) / within.height * 100;
+  const width = box.w / within.width * 100;
+  const height = box.h / within.height * 100;
+  return `<i class="${cls}" style="left:${left}%;top:${top}%;width:${width}%;height:${height}%"></i>`;
+}
+
+/** A habitat picture's substrates, which is what the dataset says about it. */
+function labelsMarkup(drawn) {
+  const labels = (drawn && drawn.labels) || [];
   return labels.length ? `<span class="dlabels">${labels.map(escapeText).join(' · ')}</span>` : '';
 }
 
-/** One picture with what was drawn on it. */
-function frame(row, picture, extra = '') {
+/** A tile's picture: zoomed in on this track's box, so it can be judged at tile size (R9). */
+function cropFrame(row, picture, extra) {
+  if (!picture.has_crop) return wholeFrame(row, picture, extra);
+  return `<span class="dframe crop${extra}"><img draggable="false" loading="lazy" alt=""
+    src="${MarpBackend.pictureUrl(row, picture.framenum, 'crop')}">${boxMarkup(picture.drawn, 'dbox', picture.crop_rect)}${labelsMarkup(picture.drawn)}</span>`;
+}
+
+/**
+ * The whole picture, large, with **every** box the dataset drew on it (R10): this track's
+ * picked out, the rest beside it. An animal of the dataset's species with no box teaches the
+ * model it is background, so a missing one has to be visible to be flagged.
+ */
+function wholeFrame(row, picture, extra = '') {
   const image = picture.has_picture
     ? `<img draggable="false" loading="lazy" alt="" src="${MarpBackend.pictureUrl(row, picture.framenum)}">`
     : '<span class="dmissing">no picture</span>';
-  return `<span class="dframe${extra}">${image}${drawn(picture)}</span>`;
+  const others = (picture.others || []).map((other) => boxMarkup(other.drawn, 'dbox other')).join('');
+  return `<span class="dframe${extra}">${image}${others}${boxMarkup(picture.drawn, 'dbox')}${labelsMarkup(picture.drawn)}</span>`;
 }
 
 /**
@@ -63,7 +81,7 @@ function frame(row, picture, extra = '') {
 export function flipbook(row) {
   const stand = standing(row);
   const pictures = row.pictures;
-  const frames = pictures.map((p, i) => frame(row, p, i === 0 ? ' on' : '')).join('');
+  const frames = pictures.map((p, i) => cropFrame(row, p, i === 0 ? ' on' : '')).join('');
   const dots = pictures.map((p) => `<i class="d-${stand(p).state}"></i>`).join('');
   return `<span class="flip" data-flip="${row.observation_id}">${frames}</span><span class="dots">${dots}</span>`;
 }
@@ -103,7 +121,7 @@ export function renderPictures() {
     const word = now.state === 'flagged' ? `Flagged · ${escapeText(now.reason)}`
       : now.state === 'promoted' ? 'Promoted' : 'Not checked';
     return `<figure class="pic p-${now.state}" data-frame="${picture.framenum}">
-      ${frame(row, picture, ' on')}
+      ${wholeFrame(row, picture, ' on')}
       <figcaption><span>Frame ${picture.framenum} · ${escapeText(picture.split)}</span><b>${word}</b>
         <button type="button" data-fix="${picture.framenum}" title="Open the video at this frame">Fix</button></figcaption>
     </figure>`;
@@ -111,7 +129,7 @@ export function renderPictures() {
 
   host.innerHTML = `<header>
       <div><b>${escapeText(currentSpeciesName(row))} · ${row.obsID != null ? escapeText(row.obsID) : row.observation_id}</b>
-        <span class="muted">${row.pictures.length} pictures in this dataset. Click a picture to flag it, again to take the flag off.</span></div>
+        <span class="muted">${row.pictures.length} pictures in this dataset. This track's box is solid, every other box the dataset has on the picture is dashed: any animal of the dataset's species without a box is a reason to flag it. Click a picture to flag it, again to take the flag off.</span></div>
       <button type="button" data-act="close-pictures" aria-label="Close">Close</button>
     </header>
     <div class="reasons"><span class="muted">Flag with:</span>${reasons}</div>

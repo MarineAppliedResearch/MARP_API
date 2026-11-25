@@ -287,8 +287,9 @@ export const MarpApi = {
    */
   thumbnailUrl: (row) => thumbnailUrl(row && row.observation_id),
 
-  /** Where one of a dataset tile's pictures is (#271): its row and the frame. */
-  pictureUrl: (row, framenum) => pictureUrl(row.dataset_id, row.observation_id, framenum),
+  /** Where one of a dataset tile's pictures is (#271): its row, the frame, and `crop` for the
+      tile's zoomed-in view. */
+  pictureUrl: (row, framenum, kind) => pictureUrl(row.dataset_id, row.observation_id, framenum, kind),
 
   /**
    * Promote or flag a dataset's pictures (#271). Only what changed is sent: each decision is
