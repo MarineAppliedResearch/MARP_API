@@ -44,6 +44,7 @@ const db = require('../model');
 const { SESSION_TYPE_TO_SPECIES_LIST } = require('../db/species-lists');
 const { HABITAT_SESSION_TYPE } = require('../db/habitat-keyframes');
 const thumbnailRepository = require('./observation-thumbnail.repository');
+const pictureRepository = require('./dataset-picture.repository');
 
 /**
  * The cap on one page-set request: 12 pages or 600 rows, whichever binds first.
@@ -589,6 +590,65 @@ function statusPredicate(key, selected, bind) {
                            AND rcf.decision = ANY(${complement}::varchar[]))`;
 }
 
+/** What `filters.pictureReview` may ask about a track's pictures in a dataset (#271). */
+const PICTURE_REVIEW_STATES = ['unchecked', 'flagged', 'checked'];
+
+/**
+ * A built dataset's tracks (#271): the observations it holds pictures of, optionally only
+ * in some splits, and optionally by the state of those pictures' review.
+ *
+ * - `unchecked`: some picture of it in the dataset has no decision yet;
+ * - `flagged`: some picture of it in the dataset is flagged;
+ * - `checked`: every one of them is decided, and none is flagged.
+ *
+ * @param {Object} filters - The request's filters.
+ * @param {Object} bind - From `binder()`.
+ * @param {Array<string>} where - Predicates so far; appended to.
+ * @throws {MosaicRequestError} If a value cannot be served.
+ */
+function datasetPredicates(filters, bind, where) {
+    const datasets = setValue(filters.dataset, 'dataset');
+
+    if (!datasets) {
+        if (filters.datasetSplit || filters.pictureReview) {
+            throw new MosaicRequestError('filters.datasetSplit and filters.pictureReview need filters.dataset');
+        }
+
+        return;
+    }
+
+    if (datasets.some((value) => !Number.isInteger(value))) {
+        throw new MosaicRequestError(`filters.dataset takes integer ids, not ${JSON.stringify(datasets[0])}`);
+    }
+
+    const splits = setValue(filters.datasetSplit, 'datasetSplit');
+    const own = `dp.observation_id = o.observation_id AND dp.dataset_id = ANY(${bind.add(datasets)}::int[])`
+        + (splits ? ` AND dp.split = ANY(${bind.add(splits)}::varchar[])` : '');
+    const pictures = (extra) => `EXISTS (SELECT 1 FROM dataset_pictures dp
+                 LEFT JOIN picture_review_current pr ON pr.observation_id = dp.observation_id AND pr.framenum = dp.framenum
+                WHERE ${own}${extra})`;
+
+    where.push(pictures(''));
+
+    const states = setValue(filters.pictureReview, 'pictureReview');
+
+    if (states) {
+        const unknown = states.find((value) => !PICTURE_REVIEW_STATES.includes(value));
+
+        if (unknown !== undefined) {
+            throw new MosaicRequestError(`filters.pictureReview takes ${PICTURE_REVIEW_STATES.join(', ')}, not ${JSON.stringify(unknown)}`);
+        }
+
+        const either = states.map((state) => ({
+            unchecked: pictures(' AND pr.decision IS NULL'),
+            flagged: pictures(" AND pr.decision = 'flagged'"),
+            checked: `NOT ${pictures(" AND (pr.decision IS NULL OR pr.decision = 'flagged')")}`,
+        })[state]);
+
+        where.push(`(${either.join(' OR ')})`);
+    }
+}
+
 /**
  * Every predicate the request asks for, as SQL fragments.
  *
@@ -631,6 +691,8 @@ function predicates(filters, bind, { status = true } = {}) {
     // were made. The client still sends a name; that rename is Phase 8's.
     set('species', 'o.species_id', 'int[]');
     set('model', 'o.ml_model_id', 'int[]');
+
+    datasetPredicates(filters, bind, where);
 
     // #287: only tiles whose picture is in a given state -- "only images actually available".
     const pictures = setValue(filters.picture, 'picture');
@@ -1383,6 +1445,41 @@ function readPageSize(value) {
 }
 
 /**
+ * Give each row the pictures one dataset took of it (#271), when the question is about
+ * exactly one dataset: `{framenum, split, drawn, has_picture, decision, reason, note}`, in
+ * frame order. The client knows the address of a picture; the row only says which.
+ *
+ * @async
+ * @param {?Object} filters - The request's filters.
+ * @param {Array<Object>} rows - The rows being served; changed in place.
+ * @returns {Promise<void>}
+ */
+async function attachDatasetPictures(filters, rows) {
+    const datasets = filters && Array.isArray(filters.dataset) ? filters.dataset : [];
+
+    if (datasets.length !== 1 || !rows.length) return;
+
+    const byObservation = new Map(rows.map((row) => [Number(row.observation_id), []]));
+
+    for (const picture of await pictureRepository.picturesOf(datasets[0], [...byObservation.keys()])) {
+        byObservation.get(Number(picture.observation_id)).push({
+            framenum: picture.framenum,
+            split: picture.split,
+            drawn: picture.drawn,
+            has_picture: Boolean(picture.picture),
+            decision: picture.decision || null,
+            reason: picture.reason || null,
+            note: picture.note || null,
+        });
+    }
+
+    for (const row of rows) {
+        row.dataset_id = datasets[0];
+        row.pictures = byObservation.get(Number(row.observation_id));
+    }
+}
+
+/**
  * A set of pages, in one request, for one question.
  *
  * `POST /api/v2/mosaic/observations/pages`. Every page asked for comes back, in
@@ -1459,6 +1556,8 @@ async function queryPages(request = {}) {
     await thumbnailRepository.enqueueMissing(
         [...byPage.values()].flat().map((row) => row.observation_id)
     );
+
+    await attachDatasetPictures(request.filters, [...byPage.values()].flat());
 
     return {
         pageSize,

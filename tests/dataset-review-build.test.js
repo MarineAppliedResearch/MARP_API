@@ -169,3 +169,89 @@ describe('reviewing a dataset\'s pictures (#271)', () => {
         expect(rows.map((r) => [r.framenum, r.decision])).toEqual([[100, null], [101, 'promoted'], [102, null]]);
     });
 });
+
+describe('the API a dataset is reviewed through (#271)', () => {
+
+    let datasetId;
+    const page = (filters) => global.api.post('/api/v2/mosaic/observations/pages')
+        .send({ filters, pages: [1], pageSize: 45, includeTotal: true });
+
+    beforeAll(async () => {
+        datasetId = await build('Jest Review API');
+    }, 120000);
+
+    /* Here rather than at the end of the file: these decisions are the signed-in fixture
+       user's, and that user is removed before the file's own cleanup runs. */
+    afterAll(async () => {
+        await db.sequelize.query('DELETE FROM picture_reviews WHERE observation_id IN (:ids)', {
+            replacements: { ids: seeded.observationIds },
+        });
+    });
+
+    test('R1/R2: pointed at a dataset, the Mosaic gives its tracks, each with its pictures', async () => {
+        const response = await page({ dataset: [datasetId], session: [seeded.sessionId] });
+
+        expect(response.status).toBe(200);
+
+        const rows = response.body.pages[0].rows;
+        const first = rows.find((r) => r.observation_id === seeded.first);
+
+        expect(rows.every((r) => r.dataset_id === datasetId)).toBe(true);
+        expect(first.pictures.map((p) => p.framenum)).toEqual([100, 101, 102]);
+        expect(first.pictures[0]).toEqual(expect.objectContaining({
+            split: 'train', has_picture: true, drawn: expect.objectContaining({ box: expect.any(Object) }),
+        }));
+        // Only the dataset's tracks: the fourth observation, species C, is not in it.
+        expect(rows.map((r) => r.observation_id)).not.toContain(seeded.fourth);
+    });
+
+    test('R2: a picture is served small, by observation and frame', async () => {
+        const response = await global.api.get(`/api/v2/dataset/${datasetId}/pictures/${seeded.first}/100`);
+
+        expect(response.status).toBe(200);
+        expect(response.headers['content-type']).toMatch(/jpeg/);
+
+        const missing = await global.api.get(`/api/v2/dataset/${datasetId}/pictures/${seeded.first}/999`);
+
+        expect(missing.status).toBe(404);
+    });
+
+    test('R3/R4: a flag needs a reason from the list, and is recorded on the observation', async () => {
+        const refused = await global.api.post(`/api/v2/dataset/${datasetId}/pictures/review`)
+            .send({ decisions: [{ observation_id: seeded.second, framenum: 103, decision: 'flagged', reason: 'needs fixing' }] });
+
+        expect(refused.status).toBe(400);
+
+        const recorded = await global.api.post(`/api/v2/dataset/${datasetId}/pictures/review`).send({
+            decisions: [
+                { observation_id: seeded.second, framenum: 103, decision: 'flagged', reason: 'Bounding box too loose' },
+                { observation_id: seeded.second, framenum: 101, decision: 'promoted' },
+            ],
+        });
+
+        expect(recorded.status).toBe(200);
+        expect(recorded.body.recorded).toBe(2);
+
+        const rows = (await page({ dataset: [datasetId], session: [seeded.sessionId] })).body.pages[0].rows;
+        const second = rows.find((r) => r.observation_id === seeded.second);
+
+        expect(second.pictures.map((p) => [p.framenum, p.decision, p.reason])).toEqual([
+            [101, 'promoted', null], [102, null, null], [103, 'flagged', 'Bounding box too loose'],
+        ]);
+    });
+
+    test('R6: flagged pictures are found again, and a track with none is not', async () => {
+        const rows = (await page({ dataset: [datasetId], session: [seeded.sessionId], pictureReview: ['flagged'] })).body.pages[0].rows;
+
+        expect(rows.map((r) => r.observation_id)).toEqual([seeded.second]);
+    });
+
+    test('R6: a take-back returns a picture to undecided', async () => {
+        await global.api.post(`/api/v2/dataset/${datasetId}/pictures/review`)
+            .send({ decisions: [{ observation_id: seeded.second, framenum: 103, decision: 'withdrawn' }] });
+
+        const rows = (await page({ dataset: [datasetId], session: [seeded.sessionId], pictureReview: ['flagged'] })).body.pages[0].rows;
+
+        expect(rows).toEqual([]);
+    });
+});
