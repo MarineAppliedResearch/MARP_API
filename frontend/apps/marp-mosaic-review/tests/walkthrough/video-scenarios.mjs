@@ -1496,3 +1496,6 @@ async function seedClick({ videoSource, at, name }) {
     await client.end();
   }
 }
+
+/* Shared with the other films (#271). */
+export { drawPointer, ring, glide, clickAt, clickOn, pause };
