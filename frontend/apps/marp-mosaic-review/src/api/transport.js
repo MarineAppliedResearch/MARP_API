@@ -136,3 +136,7 @@ export const thumbnailUrl = (observationId) =>
 /** Native video frame previously requested for review. */
 export const fullFrameUrl = (observationId) =>
   `${BASE}/observations/${observationId}/full-frame`;
+
+/** One of a dataset's pictures, small, by its track and frame (#271). */
+export const pictureUrl = (datasetId, observationId, framenum) =>
+  `${BASE}/dataset/${datasetId}/pictures/${observationId}/${framenum}`;

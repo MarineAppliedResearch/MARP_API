@@ -19,6 +19,7 @@ import { plan } from './model/schedule.js';
 import { createCache, keyFor } from './model/cache.js';
 import { clampZoom } from './model/frame-viewer.js';
 import { setMarks } from './model/drag-selection.js';
+import { flaggedFrames, pictureCommit, withPicture } from './model/dataset-review.js';
 
 export { MODES };
 
@@ -191,6 +192,9 @@ export const state = {
    */
   parked: new Map(),       // mode -> { pageMembers, committedPages, outcomes }
   picker: null,            // { id, correcting, position?: { x, y } }
+  /* The dataset tile whose pictures are open side by side (#271), and the reason a click on
+     one of them flags it with. */
+  pictures: null,          // { id, reason }
   frameViewer: null,       // { id, overlay, zoom }
   lastCommit: null,
   /* What the commit button is doing. A page commit is the one action here that can
@@ -683,6 +687,23 @@ function decidedFor(id) {
  * @param {boolean} options.selective - True for the main button, false for the sweep.
  * @returns {Promise<void>}
  */
+/**
+ * A Dataset Review commit (#271): each picture's decision, sent as one request, answered in
+ * the page commit's own shape so everything after it is the code every mode runs.
+ *
+ * @param {Array<Object>} rows - The rows committed, with their pictures.
+ * @param {Map} marks - Their marks.
+ * @param {Array<number>} withdraw - The ids taken back.
+ * @returns {Promise<Object>} A page commit's result.
+ */
+async function commitPictures(rows, marks, withdraw) {
+  const datasetId = (rows.find((r) => r.dataset_id != null) || {}).dataset_id;
+  if (datasetId == null) throw new Error('Choose a dataset to review: these tiles hold no dataset pictures.');
+  const { decisions, result } = pictureCommit(rows, marks, withdraw);
+  if (decisions.length) await MarpBackend.reviewPictures({ datasetId, decisions });
+  return result;
+}
+
 async function runCommit({ selective }) {
   /* What the reviewer marked by hand, **and** what they have taken back (#135 R3). Both
      go in `observations`, because the endpoint refuses a `withdraw` naming an id the
@@ -754,9 +775,11 @@ async function runCommit({ selective }) {
 
   let res;
   try {
-    res = await MarpBackend.commitPage({
-      mode: startedIn, rows: sent, marks, withdraw: takeBacks.map((r) => r.observation_id)
-    });
+    res = startedIn === 'datasetReview'
+      ? await commitPictures(pageRows, marks, takeBacks.map((r) => r.observation_id))
+      : await MarpBackend.commitPage({
+        mode: startedIn, rows: sent, marks, withdraw: takeBacks.map((r) => r.observation_id)
+      });
   } catch (err) {
     /* Nothing is applied. The marks are untouched, so the reviewer can try again
        without redoing the page -- and that holds for all three of A4's failures, which
@@ -1275,6 +1298,7 @@ export const actions = {
        one workflow, and the reviewer walked away from it. */
     state.marks.clear();
     state.picker = null;
+    state.pictures = null;
     state.refused = null;
     state.dragSummary = null;
     state.page = 1;
@@ -1528,6 +1552,47 @@ export const actions = {
   },
 
   closePicker() { if (state.picker) { state.picker = null; fire('closePicker'); notify(); } },
+
+  /* #271: a dataset tile's pictures, side by side, each one flagged or not. */
+  openPictures(id) {
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row || !row.pictures || destroyed(id)) return;
+    state.picker = null;
+    state.pictures = { id, reason: (state.pictures && state.pictures.reason) || MODES.datasetReview.reasons[0] };
+    fire('openPictures', { id, pictures: row.pictures.length });
+    notify();
+  },
+
+  closePictures() { if (state.pictures) { state.pictures = null; fire('closePictures'); notify(); } },
+
+  /** The reason the next picture clicked is flagged with. */
+  setPictureReason(reason) {
+    if (!state.pictures || !MODES.datasetReview.reasons.includes(reason)) return;
+    state.pictures = { ...state.pictures, reason };
+    notify();
+  },
+
+  /**
+   * Flag one of the open tile's pictures, or take its flag off (#271). The tile's mark is
+   * what remembers which pictures, so the page commit -- and everything that reads a mark --
+   * works as it does for a whole tile.
+   */
+  togglePicture(framenum) {
+    if (!state.pictures) return;
+    const id = state.pictures.id;
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row) return;
+    const now = state.marks.get(id) || null;
+    const flagged = flaggedFrames(row, now).has(framenum);
+    const next = withPicture(row, now, framenum, flagged ? null : state.pictures.reason);
+    state.marks = new Map(state.marks);
+    if (next) state.marks.set(id, next);
+    else state.marks.delete(id);
+    state.touched.add(id);
+    state.takenBack.delete(id);
+    fire(flagged ? 'unflagPicture' : 'flagPicture', { id, framenum, reason: flagged ? null : state.pictures.reason });
+    notify();
+  },
 
   async changeSpecies(id, speciesId) {
     const before = state.rows.find((r) => r.observation_id === id);

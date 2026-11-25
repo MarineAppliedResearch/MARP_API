@@ -241,7 +241,7 @@ describe('the API a dataset is reviewed through (#271)', () => {
     });
 
     test('R6: flagged pictures are found again, and a track with none is not', async () => {
-        const rows = (await page({ dataset: [datasetId], session: [seeded.sessionId], pictureReview: ['flagged'] })).body.pages[0].rows;
+        const rows = (await page({ dataset: [datasetId], session: [seeded.sessionId], pictureReview: ['picture-flagged'] })).body.pages[0].rows;
 
         expect(rows.map((r) => r.observation_id)).toEqual([seeded.second]);
     });
@@ -250,7 +250,7 @@ describe('the API a dataset is reviewed through (#271)', () => {
         await global.api.post(`/api/v2/dataset/${datasetId}/pictures/review`)
             .send({ decisions: [{ observation_id: seeded.second, framenum: 103, decision: 'withdrawn' }] });
 
-        const rows = (await page({ dataset: [datasetId], session: [seeded.sessionId], pictureReview: ['flagged'] })).body.pages[0].rows;
+        const rows = (await page({ dataset: [datasetId], session: [seeded.sessionId], pictureReview: ['picture-flagged'] })).body.pages[0].rows;
 
         expect(rows).toEqual([]);
     });

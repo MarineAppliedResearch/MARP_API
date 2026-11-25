@@ -591,15 +591,17 @@ function statusPredicate(key, selected, bind) {
 }
 
 /** What `filters.pictureReview` may ask about a track's pictures in a dataset (#271). */
-const PICTURE_REVIEW_STATES = ['unchecked', 'flagged', 'checked'];
+/* Its own words rather than `flagged` and `reviewed`: the Mosaic reads status counts by value
+   alone, so a value shared with another dimension would show that dimension's count. */
+const PICTURE_REVIEW_STATES = ['unchecked', 'picture-flagged', 'picture-checked'];
 
 /**
  * A built dataset's tracks (#271): the observations it holds pictures of, optionally only
  * in some splits, and optionally by the state of those pictures' review.
  *
  * - `unchecked`: some picture of it in the dataset has no decision yet;
- * - `flagged`: some picture of it in the dataset is flagged;
- * - `checked`: every one of them is decided, and none is flagged.
+ * - `picture-flagged`: some picture of it in the dataset is flagged;
+ * - `picture-checked`: every one of them is decided, and none is flagged.
  *
  * @param {Object} filters - The request's filters.
  * @param {Object} bind - From `binder()`.
@@ -609,13 +611,8 @@ const PICTURE_REVIEW_STATES = ['unchecked', 'flagged', 'checked'];
 function datasetPredicates(filters, bind, where) {
     const datasets = setValue(filters.dataset, 'dataset');
 
-    if (!datasets) {
-        if (filters.datasetSplit || filters.pictureReview) {
-            throw new MosaicRequestError('filters.datasetSplit and filters.pictureReview need filters.dataset');
-        }
-
-        return;
-    }
+    // A split or a review state means nothing without a dataset, so alone they narrow nothing.
+    if (!datasets) return;
 
     if (datasets.some((value) => !Number.isInteger(value))) {
         throw new MosaicRequestError(`filters.dataset takes integer ids, not ${JSON.stringify(datasets[0])}`);
@@ -641,8 +638,8 @@ function datasetPredicates(filters, bind, where) {
 
         const either = states.map((state) => ({
             unchecked: pictures(' AND pr.decision IS NULL'),
-            flagged: pictures(" AND pr.decision = 'flagged'"),
-            checked: `NOT ${pictures(" AND (pr.decision IS NULL OR pr.decision = 'flagged')")}`,
+            'picture-flagged': pictures(" AND pr.decision = 'flagged'"),
+            'picture-checked': `NOT ${pictures(" AND (pr.decision IS NULL OR pr.decision = 'flagged')")}`,
         })[state]);
 
         where.push(`(${either.join(' OR ')})`);
@@ -1098,6 +1095,17 @@ const FACET_DIMENSIONS = {
     },
     // #287: where each tile's picture stands. The client words each value.
     picture: { value: PICTURE_STATE, label: PICTURE_STATE },
+    // #271: the built datasets holding pictures of these observations, newest first.
+    dataset: {
+        value: 'dof.dataset_id',
+        label: "min(dsf.name) || ' · ' || coalesce(min(dsf.task), 'detection')",
+        aggregateLabel: true,
+        order: 'dof.dataset_id DESC',
+        joins: `
+  JOIN dataset_observations dof ON dof.observation_id = o.observation_id
+  JOIN datasets dsf ON dsf.id = dof.dataset_id`
+            + ' AND EXISTS (SELECT 1 FROM dataset_pictures dpx WHERE dpx.dataset_id = dsf.id)',
+    },
     species: { value: 'o.species_id', label: 'sp.comname', list: 'sp.species_list' },
     model: { value: 'o.ml_model_id', label: 'm.name', joins: '\n  LEFT JOIN ml_models m ON m.id = o.ml_model_id' },
     // #336. Named by what it was given, its model, when, and how many videos it covers,
@@ -1474,8 +1482,15 @@ async function attachDatasetPictures(filters, rows) {
     }
 
     for (const row of rows) {
+        const pictures = byObservation.get(Number(row.observation_id));
+        const flagged = pictures.find((p) => p.decision === 'flagged');
+
         row.dataset_id = datasets[0];
-        row.pictures = byObservation.get(Number(row.observation_id));
+        row.pictures = pictures;
+        // The track's state, in `filters.pictureReview`'s words; null is unchecked.
+        row.picture_review = flagged ? 'picture-flagged'
+            : pictures.length && pictures.every((p) => p.decision) ? 'picture-checked' : null;
+        row.picture_reason = flagged ? flagged.reason : null;
     }
 }
 

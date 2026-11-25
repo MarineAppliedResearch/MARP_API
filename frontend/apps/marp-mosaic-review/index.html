@@ -20,6 +20,7 @@
     <nav class="seg" aria-label="Review mode">
       <button data-mode="scientific" class="on">Scientific Data Review</button>
       <button data-mode="training">Training Data Review</button>
+      <button data-mode="datasetReview">Dataset Review</button>
       <button data-mode="delete" class="danger">Delete</button>
     </nav>
     <span class="mode-note" id="modeNote"></span>
@@ -100,6 +101,8 @@
 
     <div id="confirm" hidden></div>
     <div id="frameViewer" hidden></div>
+    <!-- #271: a dataset track's pictures, side by side. -->
+    <div id="picturesPanel" hidden></div>
     <!-- Expired, refused and failed, as three distinct states (A4, R20). Interrupting
          rather than a toast, because a reviewer who does not notice a 401 goes on marking
          a page that cannot be committed — and none of the three ever discards a mark. -->

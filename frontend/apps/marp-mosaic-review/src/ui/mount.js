@@ -14,6 +14,7 @@ import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
 import { renderFrameViewer, wireFrameViewer } from './frame-viewer.js';
+import { renderPictures, startFlipbooks } from './pictures.js';
 import {
   followQueryInVideoWindow, showInVideoWindow, onVideoWindowReview, renderVideoBlocked, tellVideoWindowCommitted
 } from './video-window.js';
@@ -261,7 +262,13 @@ function wireGrid() {
     /* The badge opens the panel; the tile itself marks. Marking must stay a single
        uninterrupted gesture, so opening the panel is a separate target. */
     const badge = e.target.closest('[data-badge]');
-    if (badge) { e.stopPropagation(); actions.openPicker(Number(badge.dataset.badge)); return; }
+    if (badge) {
+      e.stopPropagation();
+      // A dataset tile's reasons are its pictures', so its badge opens them (#271).
+      if (state.mode === 'datasetReview') actions.openPictures(Number(badge.dataset.badge));
+      else actions.openPicker(Number(badge.dataset.badge));
+      return;
+    }
 
     /* The tile's video button (#338): opens the video and marks nothing. The query goes
        too, so every observation in the video it matches is drawn beside this one. */
@@ -312,8 +319,25 @@ function wireGrid() {
       lastTap = { id, at: now };
     }
 
+    /* In Dataset Review a tile is a track whose pictures are judged one by one, so a
+       click opens them rather than marking the whole track (#271). */
+    if (state.mode === 'datasetReview') { actions.openPictures(id); return; }
+
     /* No stopPropagation: the document handler still needs to close open menus. */
     actions.toggleMark(id);
+  });
+}
+
+/** The pictures panel (#271): a picture flags or unflags, a reason is chosen, Fix opens it. */
+function wirePictures() {
+  $('#picturesPanel').addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="close-pictures"]')) { actions.closePictures(); return; }
+    const reason = e.target.closest('[data-picture-reason]');
+    if (reason) { actions.setPictureReason(reason.dataset.pictureReason); return; }
+    const fix = e.target.closest('[data-fix]');
+    if (fix && state.pictures) { showInVideoWindow(state.pictures.id, Number(fix.dataset.fix)); return; }
+    const picture = e.target.closest('[data-frame]');
+    if (picture) actions.togglePicture(Number(picture.dataset.frame));
   });
 }
 
@@ -463,6 +487,8 @@ export function mount() {
   $('#videoBlocked').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="dismiss-video-blocked"],[data-video-link]')) actions.dismissVideoBlocked();
   });
+  wirePictures();
+  startFlipbooks();
 
   /* Re-measure after every render: a single measurement is unreliable because the
      field settles after layout, and setPageSize no-ops when nothing changed, so this
@@ -488,6 +514,7 @@ export function mount() {
     renderConfirm();
     renderVideoBlocked();
     renderFrameViewer();
+    renderPictures();
     renderRail();
     requestAnimationFrame(computeLayout);
   });

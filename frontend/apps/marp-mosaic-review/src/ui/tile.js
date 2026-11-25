@@ -15,12 +15,13 @@ import { isDestroyed } from '../model/page.js';
 import { MarpBackend } from '../backend.js';
 import { ICON } from './dom.js';
 import { clockText } from '../model/video-clock.js';
+import { flipbook } from './pictures.js';
 
 export const markIcon = (mode = state.mode) =>
-  ({ scientific: ICON.flag, training: ICON.exc, delete: ICON.del }[mode]);
+  ({ scientific: ICON.flag, training: ICON.exc, delete: ICON.del, datasetReview: ICON.flag }[mode]);
 
 export const markClass = (mode = state.mode) =>
-  ({ scientific: 'b-flag', training: 'b-exc', delete: 'b-del' }[mode]);
+  ({ scientific: 'b-flag', training: 'b-exc', delete: 'b-del', datasetReview: 'b-flag' }[mode]);
 
 /**
  * The other half of the pair, for an **accept** mark (#126 A6).
@@ -69,6 +70,10 @@ function outcomeBadge(outcome, row, id, initials) {
        violet. Reusing the reviewed badge made the two read as the same answer. */
     case 'promoted': return `<span class="badge b-pro" data-badge="${id}">${ICON.pro}PROMOTED${attribution(initials)}${noteIndicator(existingNote(state.mode, row))}</span>`;
     case 'reviewed': return `<span class="badge b-out" data-badge="${id}">${ICON.tick}REVIEWED${attribution(initials)}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    /* #271: a dataset track -- a picture flagged, or every picture checked. */
+    case 'picture-flagged': return `<span class="badge b-flag" data-badge="${id}"
+      title="A picture flagged${row.picture_reason ? ' — ' + row.picture_reason : ''}">${ICON.flag}FLAGGED</span>`;
+    case 'picture-checked': return `<span class="badge b-out" data-badge="${id}">${ICON.tick}CHECKED</span>`;
     default: return '';
   }
 }
@@ -81,6 +86,10 @@ function existingBadge(existing, row, id, initials) {
       title="Flagged${row.flag_reason ? ' — ' + row.flag_reason : ''}">${ICON.flag}FLAGGED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
     case 'excluded': return `<span class="badge b-exc" data-badge="${id}">${ICON.exc}EXCLUDED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
     case 'promoted': return `<span class="badge b-pro" data-badge="${id}">${ICON.pro}PROMOTED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    /* #271: a dataset track -- a picture flagged, or every picture checked. */
+    case 'picture-flagged': return `<span class="badge b-flag" data-badge="${id}"
+      title="A picture flagged${row.picture_reason ? ' — ' + row.picture_reason : ''}">${ICON.flag}FLAGGED</span>`;
+    case 'picture-checked': return `<span class="badge b-out" data-badge="${id}">${ICON.tick}CHECKED</span>`;
     default: return `<span class="badge b-out" data-badge="${id}">${ICON.tick}REVIEWED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
   }
 }
@@ -178,6 +187,8 @@ function reasonChip(row, id, { marked, changed, existing, outcome }) {
  * markable. It is only excluded from the bulk commit, which is a separate rule.
  */
 function body(row) {
+  // A track of a dataset (#271): the pictures the dataset took of it, not the thumbnail.
+  if (row.pictures && row.pictures.length) return flipbook(row);
   if (row.thumbnail_status === 'ready') {
     /**
      * The address comes from the seam (R10, F7, R1).
