@@ -1,137 +1,124 @@
-# Bring the feasibility habitat model into MARP
+---
+task: MarineAppliedResearch/MARP_API#271
+repos: [MARP_API]
+status: design
+needs: []
+---
 
-Issue: MarineAppliedResearch/MARP_API#287 · Branch: `287-import-habitat-model` from `develop`
+# Review a built dataset in the Mosaic
+
+Issue: MarineAppliedResearch/MARP_API#271 · Branch: `271-dataset-review` from `develop`
 
 ## Goal
 
-Isaac, 2026-11-20: run a habitat line now and review it in the Mosaic, without a weekend of
-training through MARP first. MARP registers habitat models only from its own training jobs,
-so this adds a way to register one trained outside it: the feasibility experiment's.
+A reviewer can open any built dataset in the Mosaic and check exactly the pictures a model
+was trained on. Pick a species and see every Bat star picture the dataset holds, say, then
+mark the 17 that are wrong. Each wrong picture is recorded on the observation it came from:
+the next dataset built leaves it out and keeps the rest of the track, and it waits in the
+Mosaic to be fixed. This is needed before the first habitat model is trained entirely in
+MARP (#287).
 
-## Settled (Isaac, 2026-11-20, in conversation)
+## What the investigation found (2026-11-24)
 
-- **Import the experiment's trained model** rather than train one through MARP or use only
-  existing results. Machine-learning work otherwise waits; the focus is the Mosaic and the
-  biologists' review tools.
-- **Seed 2 of the habitat-crop runs**, the best single model: test macro F1 0.738. Its
-  weights are a timm state dict, the same file MARP's habitat trainer writes, and load into
-  the worker's habitat engine unchanged.
-- **Mud's +0.2 raise applies**, the settled rule for every habitat model, though it was tuned
-  on the five-seed average rather than on seed 2 alone.
-- **Into the production copy** (`habitat-test`), where the real dives and 44,453 annotated
-  habitat stretches are, for Isaac's trial of the review tools.
+- **The model mostly trains on pictures between keyframes.** Since #296 a build takes 10
+  frames per object, spread along the track (`service/dataset-build-plan.js`,
+  `DEFAULT_FRAMES_PER_OBJECT`). Most of them fall between keyframes, where the box is a
+  straight line from one keyframe to the next. Reviewing only the keyframes would miss the
+  very pictures this is for.
+- **A built dataset is frozen.** It is one archive named for its own hash, so a training run
+  can be traced to exactly what it learned from. Review changes what the *next* build takes,
+  never an existing dataset.
+- **The dataset's pictures exist only inside its archive**, named `<video>_<frame>.jpg`. A
+  YOLO label line says class and box, not which observation the box came from, so the archive
+  alone cannot give "this track's pictures".
+- **Reviews today are per observation** (`observation_reviews`, purpose `training`:
+  promoted, excluded, withdrawn). Keyframes carry no review state.
+- **The video page can already fix a line that has drifted off the animal.** Dragging an
+  in-between box and double-clicking pins it as a new keyframe, as in the annotation GUI
+  (`src/model/box-edit.js`).
+- **The Mosaic fits**, with additions. Its grid, paging, filters, page-at-a-time commit and
+  link to the video page carry over. It needs a dataset filter, a new kind of tile, and
+  pictures for that tile.
+
+## Decisions
+
+- **2026-11-24** (Isaac) — It lives in the Mosaic.
+- **2026-11-24** (Isaac) — One tile is one track (one stretch for habitat). It flips through
+  the pictures the dataset took from that track, one after another, with the box drawn on
+  each. Opening a tile shows its pictures side by side, and single pictures are marked there.
+- **2026-11-24** (Isaac) — Draw only what is in the dataset itself: its own boxes, not the
+  other animals annotated in the same picture.
+- **2026-11-24** (Isaac) — Only the bad pictures are kept out of new datasets. The good
+  pictures of the same track are still used.
+- **2026-11-24** (Isaac) — Something marked wrong is flagged and waits to be taken care of.
+  Fixing it does not return it to promoted by itself.
+- **2026-11-24** (Isaac) — Both ways of fixing: find now and fix later in a batch from the
+  Mosaic, or fix one straight away on the video page.
+- **2026-11-24** (Isaac) — The reason for checking: the ROV does not move in a straight line,
+  but the box between two keyframes does, so the line can drift off the animal. This applies
+  to every interpolated track, a model's or a person's.
+- **2026-11-24** (Isaac) — Reviewing writes to the source observation or keyframe, so a new
+  dataset built afterwards does not choose what was marked wrong.
+
+## Open assumptions
+
+- [ ] **A1 · scientific or data-meaning · blocking** — A wrong picture between two keyframes
+  means the straight line between *those two keyframes* is off. Is it that whole stretch of
+  the track between the two keyframes around it that new builds leave out until it is fixed?
+  The alternative is leaving out only that one frame. That one is weaker: the next build
+  takes its 10 frames afresh, and could pick a neighbouring frame on the same wrong line. A
+  wrong picture that is itself a keyframe would leave out just that keyframe's frame.
+- [ ] **A2 · behavioural · blocking** — How is a flag taken care of? Proposed: fixing the box
+  on the video page does not clear it, as decided. The flag shows in the Mosaic under a new
+  "Needs fixing" filter, a reviewer looks at it again there and marks it fixed, and only then
+  can new builds take that stretch again. The track's own promotion is left as it is
+  throughout, since its good pictures are still used.
+- [ ] **A3 · scientific or data-meaning · blocking** — Habitat. A stretch has no keyframes in
+  between and no box line to drift. A wrong habitat picture means the stretch's substrate, or
+  one of its ends, is wrong at that moment. Proposed: the flag covers the 10 seconds that
+  picture stands for, and new builds leave those out until it is fixed on the video page's
+  habitat timeline.
+- [ ] **A4 · behavioural · non-blocking** — A committed page records its unmarked pictures as
+  looked at and fine, not only the bad ones. A dataset can then say how much of it has been
+  checked. Proposed: yes.
+- [ ] **A5 · architectural · non-blocking** — Pictures for the tiles: a small copy of every
+  picture is saved when a dataset is built, with a record per picture of its dataset,
+  observation, video, frame, split and the box or labels drawn on it. Datasets built before
+  this get theirs once, by a script reading their archives. Proposed default, given on
+  2026-11-24 without objection. It changes the build service, which must not become less
+  reliable, so saving the copies must never fail a build.
+- [ ] **A6 · database/schema · non-blocking** — A flag is stored as a frame range on the
+  observation (from frame, to frame), not as a pair of keyframe ids. Fixing a track adds or
+  moves keyframes, and a range still means the same thing afterwards.
 
 ## Requirements
 
-- **R1** -- `registerHabitatModel` registers a habitat model from a weights file and its
-  published rules exactly as a MARP-trained one is: substrates from the Habitat list in the
-  file's class order, `rulesForModel` rules, weights copied into the model store with their
-  sha256, a `model_species` row per substrate. The same weights twice register once.
-- **R2** -- `scripts/import-habitat-model.js` reads the experiment's `_results.json` (cut-offs,
-  crop, input size), refuses anything but a habitat-crop model of the five substrates, and
-  writes nothing without `--apply`.
+- **R1** — The Mosaic can be pointed at one built dataset. Its tiles are then that dataset's
+  tracks (stretches for habitat), filterable as now by species, and by the dataset's split.
+- **R2** — A dataset tile flips through the pictures the dataset took from that track, with
+  exactly the dataset's box drawn on each (its substrate labels, for habitat). Nothing loads
+  from Jellyfin to show it.
+- **R3** — Opening a tile shows its pictures side by side, and any of them can be marked wrong.
+- **R4** — Committing a page records the marks on the source observations (A1-A4). Existing
+  datasets are not changed.
+- **R5** — A new build leaves out what is flagged and still takes the rest of the track.
+- **R6** — A "Needs fixing" filter in the Mosaic lists what is flagged; it is cleared only by
+  a reviewer (A2).
+- **R7** — From a wrong picture, one action opens the video page at that exact frame to fix it.
 
-## Open assumptions
+## Plan
 
-None open.
+Written once A1-A3 are answered.
 
----
+## Acceptance criteria
 
-# A habitat timeline on the Mosaic's video page
+Written with the plan.
 
-Issue: MarineAppliedResearch/MARP_API#287 · Branch: `287-trial-fixes`
+## Test plan
 
-## Goal
+Filled in at G3.
 
-Isaac, 2026-11-20: *"in our video_processing_gui, when we have a habitat session, we show a
-special timeline the user can click on to navigate and generally see what is happening for
-the whole video, i'd like to be able to show this timeline here too, and perhaps also be able
-to drag and drop the ends of this timeline to change how long a specific observation is, and
-then a way to see on the timeline, if it's been reviewed or flagged"*.
+## Status
 
-## What exists
-
-- **The GUI's strip** (`VIDEO_PROCESSING_GUI` `HabitatTimelineWindow.xaml.cs`, its #205): one
-  thin bar per habitat record in its place along the video, fixed lanes top to bottom --
-  Cobble; Boulder; Sand and Mud; Rock; Stop, Pull and Off Transect -- each substrate its own
-  colour, a playhead, and a right-click menu naming the record with Go To Start / Go To End.
-  No labels on the strip.
-- **The video page already holds what a strip needs to draw**: `POST /api/mosaic/video/observations`
-  answers every observation in the video that the Mosaic's query matches, each with
-  `start_s`, `end_s`, `comname`, `session_id`, `review_decision` and `flag_reason`.
-- **A habitat stretch's ends are stored in more than one place.** A machine stretch carries
-  `mediaPosition`, `actualPosition`, `tc`, `frame`, `observed_at` for its start and `etc` for
-  its end, *and* a start and an end keyframe. A GUI-annotated stretch carries the timecode
-  columns only; its keyframes are worked out from them (`db/habitat-keyframes.js`). The box
-  editor refuses to edit a habitat stretch for exactly this reason (A20, A22).
-
-## Proposed requirements (not settled)
-
-- **R3** -- On a habitat session's video, a strip under the player draws each stretch as a bar
-  in its substrate's GUI lane and colour, with the playhead. Clicking the strip seeks there;
-  clicking a bar selects that stretch, as clicking its box does.
-- **R4** -- Each bar shows its scientific review: reviewed, flagged (with the reason on hover),
-  or not yet reviewed, distinguishably at a glance.
-- **R5** -- Dragging either end of a bar changes when the stretch starts or ends. Every column
-  that states that time moves together, through `db/timecode.js`, for both kinds of stretch;
-  the video follows the dragged end so the reviewer sees the frame it lands on. Only for a
-  reviewer who may annotate.
-
-## Open assumptions
-
-- [x] **A1 · product/UI · blocking** — answered 2026-11-20: **the whole session**, whatever the Mosaic is filtered to, so the strip always shows every stretch and what has been reviewed. Needs a read the page does not make today: the video read follows the filter.
-- [x] **A2 · product/UI · blocking** — answered 2026-11-20: **the opened observation's session only.**
-- [x] **A3 · scientific/data-meaning · blocking** — answered 2026-11-20: **it stays reviewed**; fixing the times is part of reviewing it. A flag stays until it is taken back.
-- [x] **A4 · behavioural · blocking** — answered 2026-11-20: **the two merge**, through the Mosaic's existing merge.
-- [ ] **A5 · behavioural · non-blocking** — Moving a start leaves the Mosaic picture as it is
-      (it can be replaced with *Use this picture*), rather than re-cutting it. Proposed default.
-- [ ] **A6 · product/UI · non-blocking** — Lanes taller than the GUI's 5 px so an end can be
-      grabbed with a mouse or a finger; the GUI's lanes and colours otherwise. Proposed default.
-
-## Zoom, and smaller player controls (Isaac, 2026-11-20)
-
-Asked for after using the strip: *"to make it easier to edit things on the timeline, we should
-make it possible to zoom in on the timeline as well"*, and *"adapt the video player controls to
-make them take up less of the screen"*.
-
-- **R6** -- The strip zooms: the mouse wheel over it zooms in and out around the pointer (pinch
-  on a touch screen), dragging an empty part pans, and a double-click on an empty part shows the
-  whole video again. A click still goes there; dragging a bar's end still retimes it.
-- **R7** -- Zoomed in, the strip follows the playhead: when the video plays past the part on
-  screen, the strip moves along so the playhead stays in view.
-- **R8** -- The player's controls take less of the screen. Settled: **in the player itself**
-  (`marp-video-player`), not restyled on this page, so the GUI's WebView2 copy changes with it.
-  Its contract -- `MarpVideoEngine`, the `postMessage` protocol, `player.html`'s parameters --
-  does not change; only how big the controls are.
-- **A7** (answered 2026-11-20, after using it) -- **the boxes and the timeline show the same
-  stretches.** A1 had the strip show the whole session while the boxes followed the Mosaic's
-  filter, whose default hides reviewed stretches -- so a reviewed stretch was on the strip with
-  no box, and clicking it said so. Isaac: *"All the data we should show should be cohesive."*
-  On a habitat video the page draws every stretch of the opened session, plus whatever else in
-  the video the filter matches.
-
-## Answered while using it (Isaac, 2026-11-20)
-
-- **#352** -- Habitat labels sharing a box go in a **fixed order, packed**: Cobble, Boulder, Sand,
-  Mud, Rock, Stop, Pull, Off Transect, then anything else; only the types showing at that moment,
-  side by side, no gaps. They were laid side by side only when their boxes matched to the pixel,
-  which two habitat boxes half a pixel apart did not.
-- **#357** -- A stretch added on the video page appears on the timeline at once. **The GUI's
-  lanes stay** (Sand and Mud share one). **Lanes 8 px**, down from 12.
-- **#358** -- The habitat list over the picture is **the GUI's**: top left, one translucent panel
-  per habitat at the current moment in its timeline colour, its name in white, no clicks.
-- **#355** -- Dragging an end leaves the video where it is; near the playhead it lands on it.
-- **#356** -- A press on the player's controls is the controls', whatever box is beneath.
-- **#360 cut** (Isaac, 2026-11-20) -- select the cutter, then Ctrl+click the stretch to cut, on the
-  timeline's bars or the boxes' labels; right-click, *Cut <second> with <first>*. The second no
-  longer covers the first's time. **A cut in the middle splits it in two**: the original keeps the
-  part before, a new stretch of the same substrate (new obs ID) takes the part after. **Both keep
-  the original's review**, as a drag does (A3).
-- **End time** (Isaac, 2026-11-20) -- setting, moving or removing a habitat stretch's end keyframe
-  keeps `etc` (and the start columns) in step, by the same rule as a drag (`retimedColumns`). A
-  stretch added on the video page had its end only as a keyframe and no `etc`.
-- **#367 header** (Isaac, 2026-11-20) -- no band above the video. The frame's clock time sits beside
-  the play time in the player's controls; the observation's name, file, recording start and Set
-  clock move into the observation panel, which can be dragged about (#364).
-- **#365, #366** -- keyframes in the panel and the page's messages give the clock time where the
-  video has a clock, to the frame; the position in the video where it has none.
+- **Gate:** design
+- **Notes:** A1-A3 block building. Nothing is implemented.
